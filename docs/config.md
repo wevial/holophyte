@@ -1016,3 +1016,22 @@ The store keeps recording the real hostname (`runs.host`,
 against its own, so the label can be renamed later without a migration. The
 value must be a non-empty string; anything else is a startup error naming the
 key.
+
+## `[questions]`
+
+Typed triage of bare PR mentions.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `url` | Default: `https://api.typesafe.ai/v1/systemone` | Typed-question HTTP(S) endpoint. |
+| `key_env` | Default: `TYPESAFE_API_KEY` | Environment variable holding the bearer key. |
+| `min_confidence` | Default: `0.6` | Confidence floor, a number from 0 to 1. |
+
+The key is read from that environment variable for each request. Missing keys,
+service failures, unclear answers and answers below the floor use the read-only
+answer path. Only a confident `fix` requests implementation; explicit `ask:`
+and `fix:` markers bypass triage.
+
+Run `python3 scripts/eval_triage.py --config PATH --min-accuracy 0.8` to replay
+the labelled fixture against the real service. It prints counts, accuracy and
+misses, and exits nonzero below the floor. Unit tests replace the service.

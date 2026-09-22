@@ -10,9 +10,7 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-# Discovery never imports `fake_agent`; put its `tests/` directory on the path.
-# Putting it there explicitly makes `discover -s tests` and `-m unittest
-# tests.<name>` resolve the harness the same way.
+# Resolve the harness identically under discovery and named unittest modules.
 sys.path.insert(0, str(HERE))
 import babysit_fixture as cases  # noqa: E402
 from ask_mention_fixture import AskMentionCases  # noqa: E402
@@ -24,10 +22,8 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     Reply,
 )
-from loop_fixture import (  # noqa: E402 - after the sys.path insert above
-    BRANCH,
-    MergeModeFixture,
-)
+from loop_fixture import BRANCH, MergeModeFixture  # noqa: E402
+from triage_mention_fixture import TriageMentionCases  # noqa: E402
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
@@ -35,7 +31,8 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
-class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
+class MergeModeBabysitThreadsTests(TriageMentionCases, AskMentionCases,
+                                 cases.OperatorNoteCase,
                                  BotThreadCases, cases.BabysitHelpers,
                                  MergeModeFixture):
     """Thread judgment, bot policy, operator notes, and fix rounds."""
@@ -63,7 +60,7 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
     def test_bot_conversation_mentions_and_unmentioned_humans_are_ignored(self):
         self.bot_conversation_mentions_and_unmentioned_humans_are_ignored()
 
-    def test_latest_mention_is_fixed_without_judgment_and_resolved(self):
+    def test_marked_mention_is_fixed_without_judgment_and_resolved(self):
         self.mentioned_thread_is_fixed(("reviewer", "User"))
 
     def test_advisory_bot_with_human_mention_is_an_instruction(self):
@@ -73,7 +70,7 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
         self.configure('[merge]\nmode = "pr"\nbot_threads = "advisory"\n')
         thread = ("src/app.py", 30, opener, "Which token?",
                   ((("operator", "User"),
-                    "@HoLoPhYtE drop guestTokenId and use the path tokenId"),))
+                    "@HoLoPhYtE fix: drop guestTokenId and use the path tokenId"),))
         self.fake_route(states=[self.pr_state([thread]), self.pr_state()])
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Commit("fix: use path token"), APPROVE, Idle(""),
@@ -92,9 +89,9 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
     def test_two_instructions_are_stored_with_posted_outcomes(self):
         self.configure('[merge]\nmode = "pr"\n')
         threads = [("src/app.py", 30, ("operator", "User"),
-                    "@holophyte use the path token\n  and reject missing tokens"),
+                    "@holophyte fix: use the path token\n  and reject missing tokens"),
                    ("src/app.py", 40, ("maintainer", "User"),
-                    "@holophyte preserve validation")]
+                    "@holophyte fix: preserve validation")]
         self.fake_route(states=[self.pr_state(threads), self.pr_state()])
         pending = []
         original = holophyte.pr.reply_thread
@@ -133,9 +130,10 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
                        'bot_authors = ["REVIEWER"]\n')
         authors = ("service", "Reviewer", "automation[BOT]")
         threads = [("src/app.py", 30, (author, "User"),
-                    "@holophyte fix tokens") for author in authors]
+                    "@holophyte fix: fix tokens") for author in authors]
         threads.append(("src/app.py", 40, ("service", "User"), "Which token?",
-                        ((("operator", "User"), "@holophyte preserve validation"),)))
+                        ((("operator", "User"),
+                          "@holophyte fix: preserve validation"),)))
         self.fake_route(states=[self.pr_state(threads), self.pr_state()])
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   Commit("fix tokens"), APPROVE, Idle(""), provider=self.provider())
@@ -157,7 +155,7 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
              "<details>In `@holophyte/app.py` handle empty tokens</details>\n"
              "**Handle empty tokens.**\nPreserve validation."),
             ("src/app.py", 40, ("coderabbitai", "Bot"), "Which token?",
-             ((("operator", "User"), "@holophyte preserve validation"),)),
+             ((("operator", "User"), "@holophyte fix: preserve validation"),)),
         ]
         self.fake_route(states=[self.pr_state(threads), self.pr_state()])
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
@@ -178,7 +176,7 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
         threads = [
             ("src/app.py", 30, ("reviewer", "User"), "Which token?",
              ((("operator", "User"), "Use the path tokenId"),)),
-            ("src/app.py", 40, ("reviewer", "User"), "@holophyte rename it",
+            ("src/app.py", 40, ("reviewer", "User"), "@holophyte fix: rename it",
              ((("operator", "User"), "Which name should we use?"),)),
         ]
         self.fake_route(states=[self.pr_state(threads)])
@@ -189,7 +187,7 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
         goal = fake.turns[3].goal
         self.assertLess(goal.index("@reviewer: Which token?"),
                         goal.index("@operator: Use the path tokenId"))
-        self.assertIn("@reviewer: @holophyte rename it", goal)
+        self.assertIn("@reviewer: @holophyte fix: rename it", goal)
         self.assertIn("@operator: Which name should we use?", goal)
         self.assertIn("a concrete change stated by a later reply "
                       "is the thread's request", goal)
@@ -206,7 +204,7 @@ class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
         self.configure('[merge]\nmode = "pr"\nhuman_threads = "act"\n'
                        'mention_handle = "factory-bot"\n')
         threads = [("src/app.py", 30, ("operator", "User"),
-                    "@factory-bot use path tokenId"),
+                    "@factory-bot fix: use path tokenId"),
                    ("src/app.py", 40, ("reviewer", "User"),
                     "@holophyte @factory-bot-extra @factory-bot2 which token?")]
         self.fake_route(states=[self.pr_state(threads)])

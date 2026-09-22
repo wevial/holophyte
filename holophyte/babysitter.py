@@ -766,7 +766,6 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     round_started = int(time() * 1000)
     # Park unmentioned human threads unless human_threads = "act".
-    # Mentions are instructions; bots alone enter adjudication under park.
     act = merge.human_threads == "act"
     judged = tuple(t for t in threads if not maintainer_notes.is_note(t)
                    and t.classification != "MENTIONED"
@@ -870,7 +869,8 @@ def _thread_findings(pull, pass_no, threads, verdicts, checks, sha, bot_logins):
             finding = dict(kind="instruction", path=thread.path or "(no file)",
                                  line=thread.line, author=author.author,
                                  request=thread.request, url=thread.url,
-                                 severity="nit", message=thread.request)
+                                 severity="nit", message=thread.request,
+                                 **({"triage": thread.triage} if thread.triage else {}))
             findings.append(thread_finding(thread, verdicts[n], finding, bot_logins)
                             if is_bot else finding)
         else:
