@@ -32,9 +32,11 @@ path a criterion, verify command or contract check names is asked of the
 target repository with "git check-ignore": an ignored path can never appear
 in the candidate export the reviewer sees, so it is a violation — but only
 when the caller names the repository (validate(t, repo=...), CLI --repo);
-without one repository checks are skipped. Named witness and verify paths
-must exist or be declared new; unittest modules must resolve to repository
-files. Verifying the blank template is always rejected. A criterion phrased
+without one repository checks are skipped. A named witness or verify path
+that resolves outside the repository is a violation; one that does not exist
+and is not declared new, or a unittest module with no repository file, is an
+advisory, since a ticket names files its candidate will create. Verifying the
+blank template is always rejected. A criterion phrased
 as something only an operator or a merged main could witness
 (OPERATOR_WITNESS_PHRASES) gets an advisory, since a sentence can mention an
 operator legitimately.
@@ -497,12 +499,16 @@ def _new_paths(t):
     return files, directories
 
 
+def _outside(repo, path):
+    try:
+        return not (repo / path).resolve().is_relative_to(repo.resolve())
+    except (OSError, RuntimeError):
+        return True
+
+
 def _available(repo, path, declarations):
     # Check containment before existence or exemptions, including new files.
-    try:
-        if not (repo / path).resolve().is_relative_to(repo.resolve()):
-            return False
-    except (OSError, RuntimeError):
+    if _outside(repo, path):
         return False
     files, directories = declarations
     normalized = str(Path(path))
@@ -557,6 +563,16 @@ def _module_available(repo, module, declarations):
     return _available(repo, stem + "/__init__.py", declarations)
 
 
+def _path_problem(repo, path, declarations, label):
+    """Escaping the repository blocks; a missing path is only an advisory,
+    since a ticket names files its own candidate will create."""
+    if _outside(repo, path):
+        return f"path is outside the repository in {label}: {path}"
+    if not _available(repo, path, declarations):
+        return f"{ADVISORY_PREFIX}path does not exist in {label}: {path}"
+    return None
+
+
 def _repository_problems(t, repo):
     repo = Path(repo)
     declarations = _new_paths(t)
@@ -566,18 +582,17 @@ def _repository_problems(t, repo):
     texts.append(("Implementation notes", t.sections.get("Implementation notes", "")))
     for label, text in texts:
         for path in dict.fromkeys(path for _, path in _prose_paths(text)):
-            if not _available(repo, path, declarations):
-                problems.append(f"path does not exist in {label}: {path}")
+            problems.append(_path_problem(repo, path, declarations, label))
     for command in t.verify_commands:
         for path in _repo_paths(command):
-            if not _available(repo, path, declarations):
-                problems.append(f"path does not exist in verify command: {path}")
+            problems.append(_path_problem(repo, path, declarations,
+                                          "verify command"))
         for tokens in _shell_commands(command):
             for module in _unittest_modules(tokens):
                 if not _module_available(repo, module, declarations):
-                    problems.append("unittest module does not exist in verify "
-                                    f"command: {module}")
-    return problems
+                    problems.append(f"{ADVISORY_PREFIX}unittest module does not "
+                                    f"exist in verify command: {module}")
+    return [problem for problem in problems if problem]
 
 
 def _script_arguments(tokens):
