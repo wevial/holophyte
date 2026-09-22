@@ -321,6 +321,21 @@ def replace_pr_text(body, text):
     return text.rstrip() + ("\n\n" if link else "") + preserved + tail
 
 
+def replace_pr_evidence(body, section):
+    """Replace only the Evidence slice, keeping the whitespace that followed
+    it; a body without one gains the section just before its Linear line."""
+    own, link, evidence, tail = split_pr_body(body)
+    section = section.rstrip()
+    if not evidence:
+        if not link:
+            return f"{body.rstrip()}\n\n{section}"
+        return (own.rstrip() + "\n\n" if own.strip() else "") + (
+            f"{section}\n\n{link}{tail}")
+    start = body.index(evidence)
+    space = evidence[len(evidence.rstrip()):]
+    return body[:start] + section + space + body[start + len(evidence):]
+
+
 def edit_pr_body(target, pull, body):
     """Edit only the body through the configured GitHub route."""
     body = outbound(body, known_secrets(target.config()))

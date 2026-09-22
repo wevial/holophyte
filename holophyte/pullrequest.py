@@ -221,36 +221,58 @@ def _without_changes(text):
 
 def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
                     beat_s, wt, budget_min, pull, answered, *, sha=None):
-    """One bounded writing turn after approval; refusal never overwrites prose."""
+    """One bounded writing turn after approval; refusal never overwrites prose.
+    A fix round whose change touches `[merge] ui_paths` since the sha the
+    Evidence names also replaces the Evidence (`pr_media.refresh()`)."""
     if sha and pr_activity.latest(conn, run_id, "pr_text_sha") == sha:
         return
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
         current = pr.rest(target, pull, "GET", endpoint)["body"] or ""
-    own, _, _, _ = pr.split_pr_body(current)
+    own, _, evidence, _ = pr.split_pr_body(current)
+    with heartbeat_while(conn, run_id, beat_s):
+        section = pr_media.refresh(
+            target, wt, task_id, evidence,
+            evidence_states=ticket_template.parse(ticket).evidence_states,
+            record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
+    text = _refreshed_prose(target, conn, run_id, task_id, task, branch, ticket,
+                            beat_s, wt, budget_min, own, answered)
+    if text is None and section is None:
+        return
+    with heartbeat_while(conn, run_id, beat_s):
+        body = pr.rest(target, pull, "GET", endpoint)["body"] or ""
+        if text is not None:
+            body = pr.replace_pr_text(body, text)
+        if section is not None:
+            body = pr.replace_pr_evidence(body, section)
+        pr.edit_pr_body(target, pull, body)
+    if text is not None and sha and conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "pr_text_sha", sha)
+
+
+def _refreshed_prose(target, conn, run_id, task_id, task, branch, ticket,
+                     beat_s, wt, budget_min, own, answered):
+    """The rewritten description with its maintained history, or None when
+    the writing turn is refused."""
     written = _written_pr_text(
         target, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
         monotonic(), budget_min or PR_TEXT_BUDGET_MIN, None,
         refresh=(own, answered))
     if written is None:
-        return
+        return None
     log_changes = merge_config(target).pr_changes_log
     description, changes = _without_changes(written[1])
     if (not description.strip() or (log_changes and
             (len(changes) != 1 or not changes[0][2:].strip()))):
         print(f"[holo2] written PR text refused for {task_id}: missing behaviour"
               " summary; leaving the pull request body unchanged")
-        return
+        return None
     text = description.rstrip()
     if log_changes:
         _, history = _without_changes(own)
         history.append(f"- Round {len(history) + 1}: {changes[0][2:]}")
         text += "\n\n" + CHANGES_HEADING + "\n" + "\n".join(history)
-    with heartbeat_while(conn, run_id, beat_s):
-        latest = pr.rest(target, pull, "GET", endpoint)["body"] or ""
-        pr.edit_pr_body(target, pull, pr.replace_pr_text(latest, text))
-    if sha and conn is not None and run_id is not None:
-        store.record_event(conn, run_id, "pr_text_sha", sha)
+    return text
 
 
 def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,

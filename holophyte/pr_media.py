@@ -21,7 +21,10 @@ from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
 CAPTURE_TIMEOUT = 300
-RECEIPT_VERSION = 4  # KO-530: receipts include capture execution inputs.
+RECEIPT_VERSION = 5  # KO-604: sections name the sha they capture.
+# The first line under an Evidence heading: the candidate it shows (KO-604).
+CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
+STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
 
 
 def implementer_brief(target, ticket):
@@ -287,20 +290,21 @@ def _produce(target, wt, task_id, command, note, cfg, states):
             (output / '.gitignore').write_text('*\n')
         error = _capture(command, wt, output, task_id, states, target=target)
         if error:
-            return _missing('## Evidence\n\n' + error, states)
+            return _missing('## Evidence\n\n' + error, states), error
         files = sorted(file for file in output.rglob('*')
                        if file.suffix in ('.png', '.webm', '.mp4')
                        and file.is_file() and not file.is_symlink()
                        and file.resolve().is_relative_to(output))
         if not files:
-            return _missing(f'## Evidence\n\nCapture command `{command}`'
-                            ' produced no media files.', states)
+            error = f'Capture command `{command}` produced no media files.'
+            return _missing('## Evidence\n\n' + error, states), error
         files, dropped = _cap_files(output, files, cfg)
         lines = ['## Evidence', f'Captured with `{command}`.']
         lines.extend(dropped)
         if not files:
-            lines.append('No media remains within the evidence size limits.')
-            return _missing('\n\n'.join(lines), states)
+            error = 'No media remains within the evidence size limits.'
+            lines.append(error)
+            return _missing('\n\n'.join(lines), states), error
         if cfg.media_bucket:
             description, urls = _publish_bucket(
                 target, output, files, task_id, cfg.media_bucket)
@@ -316,7 +320,7 @@ def _produce(target, wt, task_id, command, note, cfg, states):
             name = file.relative_to(output).as_posix()
             label = name.replace('[', r'\[').replace(']', r'\]')
             lines.append(f'{"!" if file.suffix == ".png" else ""}[{label}]({url})')
-        return '\n\n'.join(lines)
+        return '\n\n'.join(lines), ''
 
 
 def _execution_fingerprint(target):
@@ -345,10 +349,22 @@ def prepare(target, wt, task_id, record_note=None, evidence_states=()):
     Keep the receipt in the worktree's git directory, outside candidate files.
     Both the pre-PR review and PR creation call this entry point.
     """
+    return _prepare(target, wt, task_id, record_note, evidence_states)[0]
+
+
+def _stamp(section, sha):
+    """Name the candidate a section shows on its first line under the heading."""
+    return section.replace('## Evidence\n\n',
+                           f'## Evidence\n\nCaptured at {sha[:12]}\n\n', 1)
+
+
+def _prepare(target, wt, task_id, record_note, evidence_states):
+    """`prepare()`'s section with why its capture failed, empty on success."""
     cfg = merge_config(target)
     if not cfg.ui_paths or not matches(wt, cfg.ui_paths):
-        return ''
-    identity = [RECEIPT_VERSION, sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt),
+        return '', ''
+    revisions = sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt)
+    identity = [RECEIPT_VERSION, revisions,
                 task_id, cfg.ui_paths, cfg.ui_capture, pr.origin_url(target),
                 cfg.media_repo, cfg.media_bucket, cfg.media_max_file_mb,
                 cfg.media_max_total_mb, list(evidence_states),
@@ -357,24 +373,67 @@ def prepare(target, wt, task_id, record_note=None, evidence_states=()):
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
     receipt = git_dir / f'pr-media-{key}.txt'
     note = receipt.with_suffix('.note')
+    failed = receipt.with_suffix('.failed')
     if not receipt.exists():
         try:
-            section = _produce(target, wt, task_id, cfg.ui_capture, note,
-                               cfg, evidence_states)
+            section, failure = _produce(target, wt, task_id, cfg.ui_capture, note,
+                                        cfg, evidence_states)
         except (InfraFailure, OSError, RuntimeError, ValueError,
                 subprocess.TimeoutExpired) as error:
             destination = (" to media bucket" if cfg.media_bucket else
                            f" to {cfg.media_repo}" if cfg.media_repo else "")
             detail = (f": {error}" if isinstance(error, media_store.MissingCredentials)
                       else "")
-            section = (f'## Evidence\n\nCapture command `{cfg.ui_capture}` failed to'
+            failure = (f'Capture command `{cfg.ui_capture}` failed to'
                        f' publish evidence{destination}'
                        f' ({type(error).__name__}{detail}).')
-            section = _missing(section, evidence_states)
-        receipt.write_text(section)
+            section = _missing('## Evidence\n\n' + failure, evidence_states)
+        failed.unlink(missing_ok=True)
+        if failure:
+            failed.write_text(failure)
+        receipt.write_text(_stamp(section, revisions.split()[0]))
     if record_note is not None and note.exists():
         record_note(note.read_text())
-    return receipt.read_text()
+    return receipt.read_text(), failed.read_text() if failed.exists() else ''
+
+
+def _touched(wt, captured, patterns):
+    """Whether the change from the captured sha to HEAD touches `patterns`;
+    a sha this worktree cannot read counts as touched."""
+    try:
+        paths = sh(['git', 'diff', '--name-only', '-z', captured, 'HEAD'], cwd=wt)
+    except RuntimeError:
+        return True
+    return any(fnmatch.fnmatchcase(path, pattern)
+               for path in paths.split('\0') for pattern in patterns)
+
+
+def refresh(target, wt, task_id, evidence, record_note=None, evidence_states=()):
+    """The Evidence section after a fix round moved the candidate, or None
+    when `evidence`, the pull request's current section, still stands.
+
+    Capture again only when the change since the sha `evidence` names
+    touches `ui_paths`. When that capture fails, the old section stays,
+    headed by one line naming both shas and the failure.
+    """
+    cfg = merge_config(target)
+    if not cfg.ui_paths:
+        return None
+    captured = CAPTURED.search(evidence)
+    if captured and not _touched(wt, captured[1], cfg.ui_paths):
+        return None
+    section, failure = _prepare(target, wt, task_id, record_note, evidence_states)
+    if not section:
+        return None
+    if not failure or not evidence:
+        return section
+    head = sh(['git', 'rev-parse', 'HEAD'], cwd=wt)[:12]
+    shown = captured[1] if captured else 'an earlier commit'
+    notice = (f'This Evidence shows {shown}; the candidate has moved to {head},'
+              f' and capturing it failed: {" ".join(failure.split())}')
+    return re.sub(r'^## Evidence[ \t]*\r?\n+',
+                  lambda heading: heading[0] + notice + '\n\n',
+                  STALE.sub('', evidence), count=1, flags=re.MULTILINE)
 
 
 def append(body, section):
