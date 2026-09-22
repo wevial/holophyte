@@ -233,8 +233,12 @@ RUN_PHASE_TRANSITIONS = {
     RunPhase.ADDRESSING.value: frozenset({
         RunPhase.VERIFYING.value, RunPhase.FAILED.value,
         RunPhase.KILLED.value}),
+    # `merge_gate -> done` is the pull request a person merged on GitHub
+    # while the babysitter still watched it (KO-653): the run ends merged
+    # with that merge commit, and records no `merging` step it never took.
+    # The factory's own merges still go `merge_gate -> merging -> done`.
     RunPhase.MERGE_GATE.value: frozenset({
-        RunPhase.MERGING.value,
+        RunPhase.MERGING.value, RunPhase.DONE.value,
         # The babysitter verifies each new fix before its covering review.
         RunPhase.VERIFYING.value,
         RunPhase.AWAITING_MERGE_APPROVAL.value, RunPhase.FAILED.value,

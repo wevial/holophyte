@@ -96,3 +96,6 @@ BASELINE['RUN_PHASE_TRANSITIONS']['paused'] = frozenset({
 
 # KO-592: an emergency stop shares the request column with a distinct action.
 BASELINE['INTERVENTION_ACTIONS'] += ('abort',)
+
+# KO-653: a pull request a person merges while the run watches it in the gate.
+BASELINE['RUN_PHASE_TRANSITIONS']['merge_gate'] |= {'done'}
