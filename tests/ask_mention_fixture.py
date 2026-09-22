@@ -106,6 +106,10 @@ class AskMentionCases:
         )
         self.assertEqual(record["outcome"], "asked")
         self.assertIn(record["reply"], body)
+        self.assertNotIn("sentinel-ask-secret", json.dumps(record))
+        self.assertEqual(record["request"],
+                         "Can an existing guest be renamed? [redacted]")
+        self.assertEqual(record["line"], None if conversation else 30)
         self.assertFalse(any("push " in c for c in self.recorded()[calls_before:]))
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), sha)
 

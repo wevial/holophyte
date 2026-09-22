@@ -65,17 +65,23 @@ def previous_park_reason(conn, run_id, branch):
 def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=None):
     """Reply and optionally resolve a review thread; record each landed call."""
     from holophyte import babysitter
-    body = outbound(body, known_secrets(target.config()))
+    secrets = known_secrets(target.config())
+    body = outbound(body, secrets)
+    safe_instruction = (
+        {key: outbound(value, secrets) if isinstance(value, str) else value
+         for key, value in instruction.items()}
+        if instruction is not None else None
+    )
     with heartbeat_while(conn, run_id, beat_s):
         if thread.kind == "conversation":
             pr.comment_on_pull(target, pull, outbound(
-                f"{quote_request(thread)}\n\n{body}", known_secrets(target.config())))
+                f"{quote_request(thread)}\n\n{body}", secrets))
         else:
             pr.reply_thread(target, pull, thread.id, body)
         if thread.classification == "MENTIONED":
             record_instruction_reply(conn, run_id, thread.url,
                                      "asked" if thread.intent == "ask" else "changed",
-                                     body, instruction=instruction)
+                                     body, instruction=safe_instruction)
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "pull_request",
                                f"replied on thread {thread.url}:"
