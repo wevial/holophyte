@@ -1,0 +1,42 @@
+{
+  "schema_version": "ATIF-v1.7",
+  "session_id": "review-session",
+  "agent": "devin",
+  "steps": [
+    {
+      "source": "user",
+      "message": "Check the project."
+    },
+    {
+      "source": "agent",
+      "message": "I will run the checks.",
+      "tool_calls": [
+        {
+          "tool_call_id": "command-1",
+          "function_name": "exec",
+          "arguments": {
+            "command": "echo checked",
+            "timeout": 30000
+          }
+        }
+      ],
+      "observation": {
+        "results": [
+          {
+            "source_call_id": "command-1",
+            "content": "Output from command in shell 1:\nchecked\n\nExit code: 0"
+          }
+        ]
+      }
+    },
+    {
+      "source": "future_type",
+      "message": "DO NOT SHOW"
+    },
+    {
+      "source": "agent",
+      "message": "All checks passed.",
+      "tool_calls": []
+    }
+  ]
+}

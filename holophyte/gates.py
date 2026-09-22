@@ -262,6 +262,54 @@ def vacuous_green_report(cmd, cleaned):
             f"[verify]   output:\n{body[-2000:]}")
 
 
+# The module list after `-m unittest`, up to a shell operator, and one
+# `tests.name` token in it with its leading space (KO-597). A pipeline
+# stays one clause: dropping `unittest` must not leave its `| tail` behind.
+_UNITTEST_ARGS = re.compile(r"-m\s+unittest\b([^;&|\n]*)")
+_TEST_MODULE = re.compile(r"\s+tests\.(\w+)[\w.]*(?=\s|$)")
+_CLAUSE_OPERATOR = re.compile(r"(&&|\|\||;)")
+
+
+def _drop_clause_modules(clause, candidate, main):
+    """One clause without its candidate-only modules, and their names; the
+    clause is None when it named modules and none is left for main."""
+    found = _UNITTEST_ARGS.search(clause)
+    args = found.group(1) if found else ""
+    named = list(_TEST_MODULE.finditer(args))
+    gone = [m for m in named
+            if (candidate / "tests" / f"{m.group(1)}.py").exists()
+            and not (main / "tests" / f"{m.group(1)}.py").exists()]
+    names = [m.group(0).strip() for m in gone]
+    if not gone or len(gone) == len(named):
+        return (None if gone else clause), names
+    for m in reversed(gone):
+        args = args[:m.start()] + args[m.end():]
+    return clause[:found.start(1)] + args + clause[found.end(1):], names
+
+
+def drop_candidate_modules(command, candidate, main):
+    """Drop unittest modules whose file only the candidate has: main cannot
+    import them, so naming them there can only fail. A clause left with no
+    module is dropped with its operator rather than run as a bare,
+    discovering `unittest`; the line's other clauses still run.
+    Returns the command to run on main and the skipped module names."""
+    lines, skipped = [], []
+    for line in (command or "").splitlines():
+        parts = _CLAUSE_OPERATOR.split(line)
+        kept = []
+        for index in range(0, len(parts), 2):
+            clause, names = _drop_clause_modules(parts[index], candidate, main)
+            skipped += names
+            if clause is not None:
+                kept.append((parts[index - 1] if index else "", clause))
+        if len(kept) == len(parts[::2]):
+            lines.append("".join(op + clause for op, clause in kept))
+        elif kept:
+            lines.append(kept[0][1].strip() + "".join(
+                f" {op} {clause.strip()}" for op, clause in kept[1:]))
+    return ("\n".join(lines) if skipped else command), skipped
+
+
 def contract_report(contracts, cwd):
     """Run the ticket's literal contract checks — each a (relative path,
     expected literal) pair parsed from its `## Contract checks` fence — against

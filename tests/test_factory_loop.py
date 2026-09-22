@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.test_factory_loop` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
+from abort_fixture import AbortTurnCases  # noqa: E402
 from failure_kind_fixture import FailureKindCases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
@@ -67,8 +68,8 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
-class LoopTests(PauseFailureCases, FailureKindCases, ReviewSessionCases,
-                FixSessionCases, LoopFixture):
+class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
+                ReviewSessionCases, FixSessionCases, LoopFixture):
     def test_pause_after_implement_preserves_work_and_parks_with_note(self):
         from pause_fixture import PauseEdit
         self.loop(PauseEdit(self.db))

@@ -27,6 +27,7 @@ from holophyte.gates import (
     InfraFailure,
     RunFailure,
     VerificationOutput,
+    drop_candidate_modules,
     record_unreviewed_verification,
     run_verify,
     sh,
@@ -42,6 +43,8 @@ from holophyte.review import (
     criteria_findings,
     evidence_brief,
     parse_findings,
+    scope_brief,
+    scope_files,
 )
 from holophyte.run import Run
 from holophyte.runs import heartbeat_while, record_round
@@ -364,6 +367,13 @@ def _verify_detached_main(target, conn, run_id, beat_s, wt, ref, command, contra
         detached = Path(tmp) / "tree"
         sh(["git", "worktree", "add", "--detach", str(detached), sha], wt)
         try:
+            command, skipped = drop_candidate_modules(command, wt, detached)
+            if skipped and conn is not None and run_id is not None:
+                store.record_event(
+                    conn, run_id, "verification",
+                    f"main-side verify at {sha[:12]} skipped"
+                    f" {', '.join(skipped)}: exists only on the candidate,"
+                    " not on main, so main cannot import it")
             ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
                                       sha, command, contracts)
         finally:
@@ -621,6 +631,9 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     rnd = _next_round(conn, run_id)
     round_started = int(time() * 1000)
+    # Only what the covered range changes is put to the scope question.
+    covered = reviewed or base_sha
+    scope = scope_files(wt, ticket, covered, sha)
     with heartbeat_while(conn, run_id, beat_s):
         verdict, decision, first_reply = _review_reply(target,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
@@ -633,6 +646,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"{ticket}\n\n"
             + _verify_brief(verify_cmd, ok, out)
             + criteria_brief(criteria)
+            + scope_brief(wt, ticket, covered, sha)
             + evidence_brief(target, wt, task_id,
                                  ticket_template.parse(ticket).evidence_states)
             + "Do not modify anything. End your reply with exactly one "
@@ -643,7 +657,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out, started_at=round_started, criteria=criteria,
                  root=wt, prior_reply=first_reply,
-                 approved_range=(reviewed, sha) if reviewed else None)
+                 approved_range=(reviewed, sha) if reviewed else None,
+                 scope=scope)
     stop_if_requested(conn, run_id, "merge_gate")
     if decision == "MALFORMED":
         reason = "the reviewer gave no verdict after one reminder"
@@ -654,7 +669,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     # The same gate as a review round's: a criterion left not met or
     # unwitnessed is a blocker whatever the verdict line says.
     unwitnessed = criteria_findings(
-        verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None)
+        verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None,
+        scope=scope)
     if unwitnessed:
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed by the review of the fix; treating as "

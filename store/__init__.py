@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import socket
 import time
 
@@ -204,10 +205,10 @@ def claim(conn, project_id, ticket_id, now=None):
         run_id = conn.execute(
             "INSERT INTO runs"
             " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"
-            "  timeBoxMs, ticketSnapshot, host, workingMs)"
-            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, 0)",
+            "  timeBoxMs, ticketSnapshot, host, workerPid, workingMs)"
+            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?, 0)",
             (ticket_id, project_id, prior + 1, now, now, estimate, snapshot,
-             socket.gethostname()),
+             socket.gethostname(), os.getpid()),
         ).lastrowid
         # Scoped by projectId as well as id: claiming another project's ticket
         # would otherwise open a run of this project on work it does not
@@ -516,10 +517,10 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
     ways once a fix round moves the candidate: the resumed shepherd merges
     the candidate only at this sha, and reviews it again at any other.
 
-    `pr_seen` is `(updated_at, threads, checks, review)` as the pull
+    `pr_seen` is `(updated_at, threads, checks, review, title)` as the pull
     request read after the pass's own writes -- GitHub's `updatedAt`
-    string, its review thread count, the head's checks rollup and the
-    review decision -- written by `record_pr_seen()` in the same
+    string, its review thread count, the head's checks rollup, the
+    review decision and the title -- written by `record_pr_seen()` in the same
     transaction (KO-362, KO-368), so the loop's per-tick reconcile knows
     what activity the pass has already answered. None records nothing.
 
@@ -564,33 +565,36 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
 
 def record_pr_seen(conn, run_id, seen, parked_only=False, facts_only=False):
     """Record what one read of the pull request run `run_id` is parked on
-    saw: `seen` is `(updated_at, threads, checks, review)` -- GitHub's
-    `updatedAt` string, the review-thread count, the head's checks rollup
-    ("success", "pending", "failure") and the review decision
-    ("approved", "changes_requested", "review_required"), each None when
-    GitHub did not say -- written as `runs.prSeenAt`, `prSeenThreads`,
-    `prSeenChecks` and `prSeenReview` in one statement. The loop's
-    reconcile holds the first two against the next read to tell new
-    review activity from its own (KO-362); `/attention`'s `pr_open` item
-    carries the last three (KO-368). `parked_only` writes nothing to a
-    run no longer in `awaiting_merge_approval`, for a caller that read
-    the run outside the transaction it writes in. `facts_only` writes the
-    checks rollup and review decision alone, leaving the activity mark
+    saw: `seen` is `(updated_at, threads, checks, review, title)` --
+    GitHub's `updatedAt` string, the review-thread count, the head's
+    checks rollup ("success", "pending", "failure"), the review decision
+    ("approved", "changes_requested", "review_required") and the pull
+    request's title, each None when GitHub did not say -- written as
+    `runs.prSeenAt`, `prSeenThreads`, `prSeenChecks`, `prSeenReview` and
+    `prSeenTitle` in one statement. The loop's reconcile holds the first
+    two against the next read to tell new review activity from its own
+    (KO-362); `/attention`'s `pr_open` item carries the last four
+    (KO-368, KO-622). `parked_only` writes nothing to a run no longer in
+    `awaiting_merge_approval`, for a caller that read the run outside the
+    transaction it writes in. `facts_only` writes the checks rollup,
+    review decision and title alone, leaving the activity mark
     (`prSeenAt`, `prSeenThreads`) as the last pass recorded it: the
     reconcile's read of an unchanged pull request refreshes the facts
     without moving what it holds the next read against. Joins the
     caller's transaction when one is open.
     """
-    updated_at, threads, checks, review = seen
+    updated_at, threads, checks, review, title = seen
     guard = " AND phase = 'awaiting_merge_approval'" if parked_only else ""
     with _transaction(conn):
         if facts_only:
-            conn.execute("UPDATE runs SET prSeenChecks = ?, prSeenReview = ?"
-                         f" WHERE id = ?{guard}", (checks, review, run_id))
+            conn.execute("UPDATE runs SET prSeenChecks = ?, prSeenReview = ?,"
+                         f" prSeenTitle = ? WHERE id = ?{guard}",
+                         (checks, review, title, run_id))
             return
         conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?,"
-                     f" prSeenChecks = ?, prSeenReview = ? WHERE id = ?{guard}",
-                     (updated_at, threads, checks, review, run_id))
+                     " prSeenChecks = ?, prSeenReview = ?, prSeenTitle = ?"
+                     f" WHERE id = ?{guard}",
+                     (updated_at, threads, checks, review, title, run_id))
 
 
 def _json_list(field, values):
@@ -950,6 +954,7 @@ from .operate import (  # noqa: E402,F401 - re-export after the run API it calls
     RequeueRefused,
     ResumeRefused,
     _release_parked,
+    abort,
     approve,
     babysit,
     hold,

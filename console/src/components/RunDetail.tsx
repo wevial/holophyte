@@ -17,6 +17,7 @@ import { FindingCard } from "./FindingCard";
 import { OperatorNoteCard } from "./OperatorNoteCard";
 import { InstructionCard } from "./InstructionCard";
 import { RoundTimeline } from "./RoundTimeline";
+import { RunTurns } from "./RunTurns";
 import { RunLog } from "./RunLog";
 import { PrLink, Sha } from "./ShippedTable";
 
@@ -64,6 +65,7 @@ export function RunDetail({
         </p>
       )}
       {detail && <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs} />}
+      {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} polls={polls} deps={deps} />}
     </div>
   );
 }

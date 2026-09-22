@@ -54,7 +54,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
-      state merged headRefOid mergeable mergeCommit { oid } updatedAt
+      state merged headRefOid mergeable mergeCommit { oid } updatedAt title
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
       comments(first: 100, after: $commentsAfter) {
         pageInfo { hasNextPage endCursor }
@@ -97,7 +97,7 @@ query($owner: String!, $name: String!, $number: Int!) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
       state merged mergeable mergeCommit { oid } mergedBy { login }
-      updatedAt
+      updatedAt title
       threadCount: reviewThreads { totalCount }
       reviewDecision
       %s
@@ -128,17 +128,18 @@ class PullStatus:
     rate_remaining: int | None = None
     rate_reset: str | None = None
     activity: tuple = ()
+    title: str | None = None
 
 
 def pull_status(target, pull):
     """One GraphQL read of the pull request's `state`, `merged`,
-    `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, review-thread
-    count, authored content, `reviewDecision` and head checks rollup, with the token's
-    `rateLimit` (`PULL_QUERY`): the loop's reconcile of a run parked on
-    its PR asks this once per pass. GitHub answering without the pull
-    request is `InfraFailure`, as every read here is; an answer without
-    the activity, fact or budget fields is one without them (None), not
-    an error."""
+    `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, `title`,
+    review-thread count, authored content, `reviewDecision` and head
+    checks rollup, with the token's `rateLimit` (`PULL_QUERY`): the loop's
+    reconcile of a run parked on its PR asks this once per pass. GitHub
+    answering without the pull request is `InfraFailure`, as every read
+    here is; an answer without the activity, fact or budget fields is one
+    without them (None), not an error."""
     data = graphql(target, pull, PULL_QUERY,
                    {"owner": pull.owner, "name": pull.name,
                     "number": pull.number})
@@ -153,7 +154,9 @@ def pull_status(target, pull):
     rate = data.get("rateLimit") or {}
     updated = node.get("updatedAt")
     decision = node.get("reviewDecision")
-    return PullStatus(activity=activities(target, pull, node,
+    title = node.get("title")
+    return PullStatus(title=title if isinstance(title, str) else None,
+                      activity=activities(target, pull, node,
                       (data.get("viewer") or {}).get("login"), graphql, rate),
                       merged=bool(node.get("merged")),
                       closed=node.get("state") == "CLOSED",

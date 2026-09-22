@@ -174,6 +174,15 @@ export interface PrFacts {
   checks?: string | null;
   review?: string | null;
   threads?: number | null;
+  title?: string | null;
+}
+
+/** A `pr_open` item's name for its pull request: the title the reconcile
+ *  last read (`pr.title`), else the ticket's own `title`; null when the
+ *  daemon sent neither. */
+export function prTitle(item: AttentionItem): string | null {
+  const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PrFacts) : null;
+  return str(pr?.title) || str(item.title) || null;
 }
 
 const CHECKS: Record<string, Fact> = {

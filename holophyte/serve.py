@@ -134,12 +134,16 @@ from holophyte.serve_runs import (
     RUN_FILES_PATH,
     RUN_LEDGER_PATH,
     RUN_PATH,
+    RUN_TRANSCRIPT_PATH,
+    RUN_TURNS_PATH,
     json_host,
     ledger,
     no_store,
     run_detail,
     run_files,
     run_ledger,
+    run_transcript,
+    run_turns,
     runs,
     shipped,
 )
@@ -262,7 +266,8 @@ def status(target, now=None, started_ms=None):
                   "ticket_url": run.ticketUrl,
                   "title": run.title,
                   "phase": run.phase,
-                  "stop_requested": stops.get(run.id),
+                  "stop_requested": stops.get(run.id, (None, None))[1],
+                  "stop_action": stops.get(run.id, (None, None))[0],
                   "started_ms": run.startedAt,
                   "heartbeat_age_ms": now - run.lastHeartbeat,
                   "elapsed_ms": now - run.startedAt,
@@ -296,23 +301,25 @@ def parked_item(ticket):
     on a review or a merge, not on an answer, so the item carries the URL, the
     `reason` (the question with that first line removed) and `pr`: the
     pull request's `number` from the URL (null when the URL is not of
-    GitHub's shape) and the `checks`, `review` and `threads` the
+    GitHub's shape) and the `checks`, `review`, `threads` and `title` the
     reconcile last saw on it (`runs.prSeenChecks`, `prSeenReview`,
-    `prSeenThreads`, KO-368), each null for a run never polled. Every
-    other ticket is `blocked` with its `question`."""
+    `prSeenThreads`, `prSeenTitle`; KO-368, KO-622), each null for a run
+    never polled; the item's own `title` is the ticket's, for the console
+    to fall back on. Every other ticket is `blocked` with its `question`."""
     question = ticket.blockedQuestion or ""
     if ticket.prUrl and ticket.parkKind == "pull_request":
         _, separator, reason = question.partition("\n")
         reason = reason if separator else question
         match = PR_URL_RE.match(ticket.prUrl)
         return {"kind": "pr_open", "ticket": ticket.linearIdentifier,
-                "ticket_url": ticket.ticketUrl,
+                "ticket_url": ticket.ticketUrl, "title": ticket.title,
                 "run": ticket.runId, "pr_url": ticket.prUrl,
                 "reason": reason, "asked_ms": ticket.askedMs,
                 "pr": {"number": int(match.group(4)) if match else None,
                        "checks": ticket.prSeenChecks,
                        "review": ticket.prSeenReview,
-                       "threads": ticket.prSeenThreads},
+                       "threads": ticket.prSeenThreads,
+                       "title": ticket.prSeenTitle},
                 "level": "attention"}
     return {"kind": "blocked", "ticket": ticket.linearIdentifier,
             "ticket_url": ticket.ticketUrl,
@@ -588,6 +595,8 @@ def static_file(console_dir, path):
 SHAPED_ROUTES = (
     (RUN_PATH, run_detail),
     (RUN_FILES_PATH, run_files),
+    (RUN_TURNS_PATH, run_turns),
+    (RUN_TRANSCRIPT_PATH, run_transcript),
     (RUN_LEDGER_PATH, run_ledger),
     (TICKET_PATH, ticket_detail),
 )

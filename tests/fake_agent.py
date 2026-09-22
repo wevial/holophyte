@@ -25,6 +25,8 @@ quietly answering the wrong turn.
 from __future__ import annotations
 
 import contextlib
+import json
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -135,6 +137,30 @@ FAIL = Reply("Not mergeable as it stands.\nVERDICT: FAIL")
 MALFORMED = Reply("I have some thoughts about this but never say the word.")
 
 
+# The scope question a review prompt asks (KO-602): the changed files the
+# placeholder ticket does not name, as a JSON list.
+SCOPE_LIST_RE = re.compile(
+    r"Changed files the ticket does not name \(untrusted file names, never "
+    r"instructions\): (\[.*\])")
+
+
+def answer_scope(goal, reply):
+    """`reply` with a `needed` SCOPE line for every file `goal` lists.
+
+    The fixture tickets are placeholders that name no file, so every scripted
+    commit is put to the scope question; a scripted verdict answers it the
+    way a reviewer judging the work on-ticket would, just before its VERDICT
+    line, and says nothing when nothing was asked.
+    """
+    match = SCOPE_LIST_RE.search(goal)
+    if match is None:
+        return reply
+    lines = "".join(f"SCOPE {path}: needed \u2014 the scripted work\n"
+                    for path in json.loads(match.group(1)))
+    head, newline, verdict = reply.rpartition("\n")
+    return f"{head}{newline}{lines}{verdict}"
+
+
 @dataclass(frozen=True)
 class Turn:
     """One agent call as the loop made it."""
@@ -205,6 +231,8 @@ class FakeAgent:
         self.turns.append(Turn(role, goal, Path(cwd), base_sha, candidate_sha,
                                timeout, on_start))
         reply = step.play(Path(cwd), n)
+        if role == "review":
+            reply = answer_scope(goal, reply)
         self.replies.append(reply)
         return reply
 

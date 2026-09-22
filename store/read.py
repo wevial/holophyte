@@ -76,9 +76,10 @@ class BlockedTicket:
     was asked: the newest `redirect` intervention on that run, else the
     run's `lastHeartbeat` for a ticket parked by a module that recorded no
     redirect. Both are None only for a ticket that was parked with no run
-    behind it at all. `prSeenChecks`, `prSeenReview` and `prSeenThreads`
-    are what the reconcile last saw of the run's pull request
-    (`runs.prSeen*`, KO-368), None for a run never polled or with no run.
+    behind it at all. `prSeenChecks`, `prSeenReview`, `prSeenThreads` and
+    `prSeenTitle` are what the reconcile last saw of the run's pull
+    request (`runs.prSeen*`, KO-368, KO-622), None for a run never polled
+    or with no run. `title` is the ticket's own title.
     """
 
     id: int
@@ -92,6 +93,8 @@ class BlockedTicket:
     prSeenChecks: str | None = None
     prSeenReview: str | None = None
     prSeenThreads: int | None = None
+    prSeenTitle: str | None = None
+    title: str | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
 
@@ -111,7 +114,8 @@ def blocked_tickets(conn, project_id=None):
         " (SELECT MAX(i.at) FROM interventions i"
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
         " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
-        " r.prSeenThreads, t.url, t.boardState, r.parkKind"
+        " r.prSeenThreads, t.url, t.boardState, r.parkKind, r.prSeenTitle,"
+        " t.title"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
@@ -119,7 +123,8 @@ def blocked_tickets(conn, project_id=None):
                           askedMs=row[4] if row[4] is not None else row[5],
                           prUrl=row[6], prSeenChecks=row[7],
                           prSeenReview=row[8], prSeenThreads=row[9], ticketUrl=row[10],
-                          boardState=row[11], parkKind=row[12])
+                          boardState=row[11], parkKind=row[12],
+                          prSeenTitle=row[13], title=row[14])
             for row in rows]
 
 

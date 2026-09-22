@@ -76,11 +76,26 @@ class StagedCandidate:
 
 def _run(
     args: Sequence[str], *, cwd: Path | None = None, timeout: int = 300,
-    check: bool = True,
+    check: bool = True, on_start=None,
 ) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        list(args), cwd=cwd, capture_output=True, text=True, timeout=timeout
-    )
+    """Run `args`; `on_start`, when given, is handed the `Popen` as it starts,
+    so a caller can end the command from outside the wait (KO-592)."""
+    if on_start is None:
+        result = subprocess.run(
+            list(args), cwd=cwd, capture_output=True, text=True, timeout=timeout
+        )
+    else:
+        with subprocess.Popen(list(args), cwd=cwd, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True) as proc:
+            on_start(proc)
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                raise
+        result = subprocess.CompletedProcess(list(args), proc.returncode,
+                                             stdout, stderr)
     if check and result.returncode:
         error = ReviewBoundaryError(
             f"command failed ({result.returncode}): {' '.join(args)}\n"
@@ -506,8 +521,13 @@ def run_review(
     verdicts: Sequence[str] | None = REVIEW_VERDICTS,
     carry: Sequence[str] = (),
     run_id: int | None = None,
+    on_start=None,
 ) -> str:
     """Review `candidate_sha` against `base_sha` in the container; the reply.
+
+    `on_start`, when given, is handed the container client's `Popen` as it
+    starts: killing it ends the wait, and the `finally` below removes the
+    container, so a caller can stop a review mid-way (KO-592).
 
     `carry` is the target's `[worktree] carry` list, handed to
     `stage_candidate()` so the stage holds the worktree's installed
@@ -557,7 +577,7 @@ def run_review(
         )
         try:
             with _removing_on_signal(name):
-                result = _run(command, timeout=timeout)
+                result = _run(command, timeout=timeout, on_start=on_start)
         finally:
             _remove_container(name)
             if _fingerprint(staged.path, run_id) != staged.fingerprint:

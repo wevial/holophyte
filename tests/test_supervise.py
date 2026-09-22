@@ -870,7 +870,7 @@ class ParkedPullRequestTests(SweepTestCase):
         """The mark the babysitter's park left: a read older than
         `ACTIVE_PULL`'s activity, so the next read is new activity."""
         store.record_pr_seen(self.conn, run_id,
-                             ("2026-09-01T10:00:00Z", 1, None, None))
+                             ("2026-09-01T10:00:00Z", 1, None, None, None))
 
     def test_a_sweep_that_sent_a_ticket_back_starts_the_loop_unit(self):
         run_id = self.parked_on_pr()

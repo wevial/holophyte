@@ -36,6 +36,41 @@ and the `paused` outcome/phase and `pause` intervention action. A pending pause
 requires a writer running this build to reach a boundary.
 
 
+## Abort one run now
+
+`factory.py TARGET --abort KO-n --note "host going down"` ends a run
+immediately, and records before it acts: one transaction writes the `abort`
+intervention and marks the run (the same `runs.stopRequested` a pause uses;
+an abort supersedes a pending pause). `/status` reports `stop_action: "abort"`
+beside `stop_requested` and the console run card shows “Abort requested” until
+the run ends.
+
+The run's worker notices the mark at its next heartbeat. It kills the current
+turn's process group, the same `SIGKILL` a budget timeout sends: an
+implementer's, or a configured `[agents]` reviewer's. A review on the default
+container route has its container client killed, and the runner then
+removes the container. It then
+stages the tree with the reclaim path's environment exclusions and commits it
+as `WIP: preserve work at operator abort`. When the run has a pull request it
+pushes the branch. Last, it ends the run `abandoned` with the note and parks
+the ticket `blocked_on_operator` with the note as its question. When the run
+has no live worker, the command does the same itself, minus the kill, and
+moves the board issue to the parked state and takes the lease label off, as
+the worker does; so a target with no `[board]` table exits naming the key.
+No live worker means the run is parked awaiting merge approval, or, on the
+host that claimed it, the process recorded at claim (`runs.workerPid`) no
+longer exists. A stale heartbeat alone is not enough: a slow worker, a run
+claimed on another host, or one with no recorded pid may still be writing
+the tree, so the abort stays pending for its worker's next heartbeat, or
+for the sweep once that worker is confirmed silent. Nothing is merged and nothing is deleted: the worktree and
+branch stay for the sweep's debris path, and an open pull request stays open.
+An ended run, or one parked `blocked_on_operator`, refuses the request and
+names why, and nothing is written.
+
+This adds the `abort` intervention action and the `runs.workerPid` column.
+The store widens its action check and adds the column in place, with no
+schema version change.
+
 A ticket parked `blocked_on_operator` by a merge gate conflict -- the gate's
 merge of `main` into the branch conflicted, the run failed and the branch
 was preserved -- comes back through `--requeue KO-n --note TEXT` once you
