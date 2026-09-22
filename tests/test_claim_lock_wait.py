@@ -23,6 +23,7 @@ class ClaimLockWaitTests(SweepTestCase):
         self.release_at = None
         self.live = True
         self.beats = []
+        self.phases = []
         self.started = time.monotonic()
         # 180 lock seconds take 180ms; heartbeat timers keep real time.
         for name in ('holophyte.gates.monotonic',
@@ -44,6 +45,7 @@ class ClaimLockWaitTests(SweepTestCase):
         time.sleep(seconds / 1000)
         self.beats.append(store.read.run_snapshot(
             self.conn, self.waiter).lastHeartbeat)
+        self.phases.append(store.run_phase(self.conn, self.waiter))
         if self.release_at and self.elapsed() >= self.release_at:
             self.path.unlink()
             self.release_at = None
@@ -70,6 +72,11 @@ class ClaimLockWaitTests(SweepTestCase):
     def test_live_holder_waits_past_default_with_heartbeat_and_event(self):
         self.release_at = 400
         self.assertTrue(self.cut())
+        self.assertEqual(set(self.phases), {'working'})
+        self.assertEqual(store.run_phase(self.conn, self.waiter), 'working')
+        # No setup commands repair the phase before implementation finishes.
+        store.set_phase(self.conn, self.waiter, 'verifying')
+        self.assertEqual(store.run_phase(self.conn, self.waiter), 'verifying')
         self.assertGreaterEqual(self.elapsed(), 400)
         self.assertGreater(len(set(self.beats)), 3)
         self.assertLess(time.time() * 1000 - self.beats[-1], 100)
@@ -99,6 +106,7 @@ class ClaimLockWaitTests(SweepTestCase):
                 f'run {self.holder}.*the fetch before the cut did not run'):
             self.cut()
         self.assertGreaterEqual(self.elapsed(), 600)
+        self.assertEqual(store.run_phase(self.conn, self.waiter), 'working')
         self.assertLess(self.elapsed(), 850)
         self.assertEqual([event['state'] for event in self.events()],
                          ['begin', 'end'])

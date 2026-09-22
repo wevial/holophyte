@@ -375,7 +375,7 @@ def _refresh_main(target, run_id=None, conn=None):
 
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
     with live_merge_lock(target, conn, run_id, beat_s,
-                         operation="fetch before the cut"):
+                         operation="fetch before the cut", wait_phase="working"):
         fr = subprocess.run(["git", "fetch", "origin"], cwd=target.path,
                             capture_output=True, text=True)
         if fr.returncode != 0:

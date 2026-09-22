@@ -12,18 +12,19 @@ from holophyte.runs import heartbeat_while, set_phase
 
 
 @contextlib.contextmanager
-def live_merge_lock(target, conn, run_id, beat_s, operation="gate"):
-    """Keep the acquisition alive, then close its wait event before the work."""
+def live_merge_lock(target, conn, run_id, beat_s, operation="gate",
+                    wait_phase="merge_gate"):
+    """Keep acquisition alive in the caller's phase; close its event before work."""
     with contextlib.ExitStack() as stack:
         with heartbeat_while(conn, run_id, beat_s):
-            with _live_lock_wait(target, conn, run_id) as extend:
+            with _live_lock_wait(target, conn, run_id, wait_phase) as extend:
                 stack.enter_context(merge_lock(target, run_id, extend_wait=extend,
                                                operation=operation))
         yield
 
 
 @contextlib.contextmanager
-def _live_lock_wait(target, conn, run_id):
+def _live_lock_wait(target, conn, run_id, wait_phase):
     """One paired event for an extended acquisition, closed before the work."""
     started, since = monotonic(), time()
     waiting = {}
@@ -40,7 +41,7 @@ def _live_lock_wait(target, conn, run_id):
             return 0
         if not waiting:
             waiting.update(holder=holder[0], since=since)
-            set_phase(conn, run_id, "merge_gate",
+            set_phase(conn, run_id, wait_phase,
                       f"waiting for merge lock (run {holder[0]})")
             store.record_event(conn, run_id, "merge_lock_wait", json.dumps(
                 dict(waiting, state="begin", waited=elapsed)))
