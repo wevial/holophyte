@@ -19,6 +19,9 @@ def lines(conn):
 
 
 def state(conn, target):
+    # A read-only daemon may start before the writer migrates admission in v27.
+    if conn.execute("PRAGMA user_version").fetchone()[0] < 27:
+        return "enabled", None
     row = conn.execute("SELECT admission, holdNote FROM projects WHERE repoPath = ?",
                        (str(target.path),)).fetchone()
     return row or ("enabled", None)
