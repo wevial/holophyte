@@ -390,6 +390,34 @@ class SchemaOlder(SystemExit):
             " command from the build that wrote it")
 
 
+class SchemaError(sqlite3.DatabaseError):
+    """The store's schema names a table it does not have (KO-664).
+
+    A foreign key to a missing table fails every insert into its table, so
+    the store is refused as a whole, naming each dangling key, instead of
+    letting writes fail one by one."""
+
+    def __init__(self, dangling):
+        self.dangling = dangling
+        super().__init__("store schema references missing tables: " + "; ".join(
+            f"{table}.{column} references {parent}, which does not exist"
+            for table, column, parent in dangling))
+
+
+def _refuse_dangling_references(conn):
+    """Raise `SchemaError` if any foreign key names a table that is absent."""
+    tables = [name for (name,) in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")]
+    present = {name.lower() for name in tables}
+    dangling = [
+        (table, row[3], row[2])
+        for table in tables
+        for row in conn.execute(f'PRAGMA foreign_key_list("{table}")')
+        if row[2].lower() not in present]
+    if dangling:
+        raise SchemaError(dangling)
+
+
 class _Connection(sqlite3.Connection):
     """Allow a fallback heartbeat, serialized with the caller's transactions."""
 
@@ -421,7 +449,8 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
     Refuse a newer `user_version` with `SchemaNewer` (a `SystemExit`) before
     writing. Migrate older stores with `init()` and create missing indexes.
     With `migrate=False`, refuse older stores with `SchemaOlder` and skip
-    index creation. Require WAL so supervisor reads can overlap loop writes;
+    index creation. Refuse with `SchemaError` a store whose foreign keys
+    name a missing table. Require WAL so supervisor reads can overlap loop writes;
     a filesystem that cannot enable it raises rather than silently degrading."""
     # Before anything that writes, including the WAL switch below: a store a
     # newer module stamped is refused without touching it, so the file is
@@ -437,23 +466,27 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
     # `BEGIN IMMEDIATE` waits for on the write lock, and stating it on the
     # connection keeps it from depending on how sqlite3 applied the argument.
     conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_S * 1000}")
-    mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
-    if mode.lower() != "wal":
-        conn.close()
-        raise sqlite3.DatabaseError(
-            f"{path}: could not enable WAL mode (journal_mode is {mode!r})"
-        )
     try:
         if not migrate:
             if version < SCHEMA_VERSION:
                 raise SchemaOlder(path, version, SCHEMA_VERSION)
-            return conn
-        if version < SCHEMA_VERSION:
+        elif version < SCHEMA_VERSION:
             # 0 is every store made before the stamp existed, and a fresh
             # file; either way the ladder in init() carries it to the
             # current version and stamps it there, in one transaction.
+            # init() refuses a dangling key before it commits, so a store
+            # this refuses is left as it was found.
             init(conn)
-        conn.executescript(INDEXES)
+        # After migrating, not before: an older store may reference a table
+        # only the ladder creates. Read-only, ahead of the WAL switch and the
+        # index writes, both of which persist.
+        _refuse_dangling_references(conn)
+        mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+        if mode.lower() != "wal":
+            raise sqlite3.DatabaseError(
+                f"{path}: could not enable WAL mode (journal_mode is {mode!r})")
+        if migrate:
+            conn.executescript(INDEXES)
     except BaseException:
         conn.close()
         raise
@@ -614,17 +647,18 @@ def init(conn):
     tables inside one transaction with foreign keys checked before commit.
     Repeated initialization preserves existing rows and the schema version.
     """
-    conn.executescript(SCHEMA)
-    foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
     foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
     conn.execute("PRAGMA foreign_keys = OFF")
-    # Everything after the executescript rolls back together on failure: a
-    # migration that died must not leave an open transaction holding its
-    # half-done work, because the next caller's `executescript` would issue
-    # an implicit COMMIT and make the half-state durable — the exact hazard
-    # `_transaction()`'s docstring warns joined writers about.
+    # Everything rolls back together on failure, the tables SCHEMA creates
+    # included: a migration that died must not leave an open transaction
+    # holding its half-done work, because the next caller's `executescript`
+    # would issue an implicit COMMIT and make the half-state durable — the
+    # exact hazard `_transaction()`'s docstring warns joined writers about.
+    # The BEGIN opens the script because `executescript` commits whatever is
+    # pending before it runs, and would otherwise run SCHEMA in autocommit.
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        conn.executescript("BEGIN IMMEDIATE;\n" + SCHEMA)
+        foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.execute(_INTERVENTIONS_DDL)
         for table, column, ddl in ADDED_COLUMNS:
@@ -661,6 +695,9 @@ def init(conn):
         if version < SCHEMA_VERSION:
             _record_migration(conn, version)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION:d}")
+        # A migration that left a key naming a missing table rolls back here
+        # rather than committing a store that refuses its own writes.
+        _refuse_dangling_references(conn)
         if conn.execute("PRAGMA foreign_key_check").fetchall() != foreign_key_errors:
             raise sqlite3.IntegrityError("foreign key violation during migration")
         conn.commit()
@@ -767,18 +804,24 @@ def _widen_interventions_action(conn):
         raise sqlite3.IntegrityError(
             f"{orphans} interventions row(s) reference runs that do not"
             " exist; repair them before this store can migrate")
+    # Built beside the live table and renamed into place, never the live
+    # table renamed away: SQLite rewrites every key that points at a renamed
+    # table, so `runs.stopRequested` would follow it to a name the DROP
+    # then removes (KO-664).
     with _transaction(conn):
-        conn.execute("ALTER TABLE interventions RENAME TO interventions_old")
-        conn.execute(_INTERVENTIONS_DDL)
+        conn.execute(_INTERVENTIONS_DDL.replace(
+            "CREATE TABLE IF NOT EXISTS interventions (",
+            "CREATE TABLE interventions_new (", 1))
         conn.execute(
-            "INSERT INTO interventions"
+            "INSERT INTO interventions_new"
             ' (id, runId, source, "trigger", "action", question, guidance, at,'
             ' projectId, note)'
             ' SELECT id, runId, source, "trigger",'
             "   CASE \"action\" WHEN 'shepherd' THEN 'babysit'"
             '   ELSE "action" END, question, guidance, at, projectId, note'
-            " FROM interventions_old")
-        conn.execute("DROP TABLE interventions_old")
+            " FROM interventions")
+        conn.execute("DROP TABLE interventions")
+        conn.execute("ALTER TABLE interventions_new RENAME TO interventions")
 
 
 @contextlib.contextmanager
@@ -840,12 +883,13 @@ def _project_startup_events(conn):
     columns = conn.execute("PRAGMA table_info(runEvents)").fetchall()
     if not any(row[1] == "runId" and row[3] for row in columns):
         return
-    conn.execute("ALTER TABLE runEvents RENAME TO runEvents_old")
+    # Create, copy, drop, rename in: see `_widen_interventions_action()`.
     ddl = SCHEMA.split("CREATE TABLE IF NOT EXISTS runEvents (", 1)[1].split(
         ");", 1)[0]
-    conn.execute("CREATE TABLE runEvents (" + ddl + ")")
+    conn.execute("CREATE TABLE runEvents_new (" + ddl + ")")
     conn.execute(
-        "INSERT INTO runEvents (id, runId, seq, level, kind, summary, payload, at,"
-        " projectId) SELECT id, runId, seq, level, kind, summary, payload, at,"
-        " projectId FROM runEvents_old")
-    conn.execute("DROP TABLE runEvents_old")
+        "INSERT INTO runEvents_new (id, runId, seq, level, kind, summary,"
+        " payload, at, projectId) SELECT id, runId, seq, level, kind, summary,"
+        " payload, at, projectId FROM runEvents")
+    conn.execute("DROP TABLE runEvents")
+    conn.execute("ALTER TABLE runEvents_new RENAME TO runEvents")
