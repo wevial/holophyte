@@ -306,10 +306,13 @@ CRITERIA_PATH = "criteria"
 UNWITNESSED_NOTE = "no CRITERION line in the reply"
 # One line of the reviewer's scope answer for a changed file the ticket does
 # not name: `SCOPE path: needed — WHY` or `SCOPE path: tangent — WHY`, the
-# separator as loose as a criterion line's.
+# separator as loose as a criterion line's. The path runs to the `: needed`
+# or `: tangent` that ends it, or sits in backticks, so a file name with a
+# space in it can still be answered.
 SCOPE_LINE_RE = re.compile(
-    r"^\s*SCOPE\s+`?(\S+?)`?\s*:\s*(needed|tangent)\b"
-    r"\s*(?:[-\u2013\u2014:]+\s*)?(.*?)\s*$", re.I | re.M)
+    r"^[ \t]*SCOPE[ \t]+(?:`(?P<quoted>[^`\n]+)`|(?P<path>[^\n]+?))"
+    r"[ \t]*:[ \t]*(?P<status>needed|tangent)\b"
+    r"[ \t]*(?:[-\u2013\u2014:]+[ \t]*)?(?P<note>.*?)[ \t]*$", re.I | re.M)
 
 
 def criteria_block(reply):
@@ -595,8 +598,9 @@ def criteria_findings(reply, criteria, root=None, *, approved_range=None,
 
 def _scope_findings(reply, scope):
     """A finding per listed file the reply called a tangent or skipped."""
-    answers = {path: (status.lower(), note)
-               for path, status, note in SCOPE_LINE_RE.findall(reply)}
+    answers = {match["quoted"] or match["path"]:
+               (match["status"].lower(), match["note"])
+               for match in SCOPE_LINE_RE.finditer(reply)}
     findings = []
     for path in scope:
         status, note = answers.get(path, (None, ""))

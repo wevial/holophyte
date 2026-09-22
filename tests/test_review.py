@@ -243,6 +243,13 @@ class ScopeQuestionTests(unittest.TestCase):
         needed = "SCOPE other/file.ts: needed \u2014 the fix lives there"
         self.assertEqual(criteria_findings(needed, (), scope=["other/file.ts"]), [])
 
+    def test_path_with_a_space_can_be_answered(self):
+        scope = ["docs/release notes.md"]
+        for reply in ("SCOPE docs/release notes.md: needed \u2014 documents the fix",
+                      "SCOPE `docs/release notes.md`: needed \u2014 documents it"):
+            with self.subTest(reply=reply):
+                self.assertEqual(criteria_findings(reply, (), scope=scope), [])
+
     def test_listed_file_without_scope_line_is_unaccounted(self):
         reply = ("SCOPE other/file.ts: needed \u2014 the fix lives there\n"
                  "VERDICT: APPROVE")
