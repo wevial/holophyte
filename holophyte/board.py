@@ -320,8 +320,7 @@ def refresh_board_states(conn, project, provider):
         state = task.get("board_state") if task else None
         if state is not None:
             with store.transaction(conn):
-                conn.execute("UPDATE tickets SET boardState = ? WHERE id = ?",
-                             (state, ticket.id))
+                store.set_board_state(conn, ticket.id, state)
 
 
 def mirror_task(conn, project, task, specced=True):
@@ -398,7 +397,7 @@ def mirror_task(conn, project, task, specced=True):
 
 
 def release_run(conn, run_id, merged, reason=None, outcome_class="work",
-                merge_sha=None):
+                merge_sha=None, failure_kind=None):
     """Give the lease back when the loop is done with a run, merged or not.
 
     Called from the loop's `finally`, because the failure paths are the ones
@@ -429,7 +428,7 @@ def release_run(conn, run_id, merged, reason=None, outcome_class="work",
     record(conn, run_id, reason)
     store.release(conn, run_id, "failed", reason or
                   f"run stopped in phase {store.run_phase(conn, run_id)}",
-                  outcome_class=outcome_class)
+                  outcome_class=outcome_class, failure_kind=failure_kind)
 
 
 # --- Linear as the notice board ----------------------------------------------
@@ -701,17 +700,18 @@ def block_ticket(conn, ticket_id, provider, question, park_kind="question"):
     """
     if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
         return False
-    conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
-                 (redact_values(question), ticket_id))
-    conn.execute("UPDATE runs SET parkKind = ? WHERE id ="
-                 " (SELECT COALESCE(activeRunId, lastRunId) FROM tickets WHERE id = ?)",
-                 (park_kind, ticket_id))
-    conn.commit()
+    with store.transaction(conn):
+        store.set_question(conn, ticket_id, redact_values(question))
+        conn.execute("UPDATE runs SET parkKind = ? WHERE id ="
+                     " (SELECT COALESCE(activeRunId, lastRunId)"
+                     " FROM tickets WHERE id = ?)",
+                     (park_kind, ticket_id))
     return True
 
 
 def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=None,
-                      confirm=None, outcome_class="work", refresh=True):
+                      confirm=None, outcome_class="work", refresh=True,
+                      failure_kind=None):
     """End a failed run the one way the factory ends failed runs.
 
     Three writes in a fixed order, and the order is the point. The failure
@@ -759,7 +759,8 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
     with store.transaction(conn):
         if confirm is not None and not confirm():
             return False
-        release_run(conn, run_id, False, reason, outcome_class)
+        release_run(conn, run_id, False, reason, outcome_class,
+                    failure_kind=failure_kind)
     cleanup_review_refs(target.path, run_id)
     escalate(conn, ticket_id, provider)
     # The board lease goes with the store lease, in the same close-out

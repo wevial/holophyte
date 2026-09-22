@@ -274,8 +274,9 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
     print(f"[holo2] {ref} moved past {branch}; merging {ref} into the"
           " branch before the gate's verify")
     if status == "conflicted":
+        failure_kind = "unclassified"
         if detail:
-            merged = _resolve_merge_conflict(
+            merged, failure_kind = _resolve_merge_conflict(
                 target, conn, run_id, branch, wt, sha, detail, ticket,
                 beat_s, budget_min)
             if merged is not None:
@@ -298,7 +299,7 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
                       f"MERGE GATE: {ref} conflicts with {branch} on"
                       f" {paths}; the merge of {ref} into the branch was"
                       " aborted.")
-        raise RunFailure(why)
+        raise RunFailure(why, failure_kind)
     merged = detail
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "merge_gate",
@@ -348,7 +349,7 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
                       f"verify failed at the merge gate:\n{out[-2000:]}",
                       f"FAILED verify before merge.\n\n{out}\n")
         raise RunFailure(f"verify failed before merge; branch {branch}"
-                         f" preserved at {sha[:12]}")
+                         f" preserved at {sha[:12]}", "verify")
     print("[holo2] verify ok before merge")
 
     # The other half of the gate, and the one a mechanical verify cannot ask:

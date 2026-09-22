@@ -433,7 +433,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 # that produced no events. The candidate was never judged,
                 # so the failure is the factory's, not the ticket's.
                 raise InfraFailure(f"reviewer route failed for {role}:"
-                                   f" {e}") from e
+                                   f" {e}", "review_route") from e
         cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role != "implement":
@@ -566,7 +566,8 @@ def activate_fallback(target, role, reason, conn=None, run_id=None, *, probe=Non
         state.failed = True
         diagnostic = probe_diagnostic(target, probe)
         print(diagnostic)
-        raise InfraFailure(diagnostic)
+        raise InfraFailure(
+            diagnostic, "infra" if role == "implement" else "review_route")
     evidence = {"seat": AGENT_CONFIG_KEYS[role],
                 "reason": route_prose(target, reason),
                 "command": safe_command(target, command)}

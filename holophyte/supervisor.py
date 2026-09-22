@@ -290,7 +290,7 @@ def act_on_trip(target, conn, trip, provider=None, knobs=None):
         # `close_out_failure()` calls its `confirm` with no arguments, so
         # the target is bound here, where the dependency is visible,
         # rather than captured from this scope.
-        provider, functools.partial(confirm, target))
+        provider, functools.partial(confirm, target), failure_kind="swept")
     return Outcome(trip, acted, seen["phase"])
 
 
@@ -565,8 +565,7 @@ def board_ready(conn, project, provider, out, now=None, board_ask_ms=None):
         if asked_at is not None and now - asked_at < board_ask_ms:
             return 0
         with store.transaction(conn):
-            conn.execute("UPDATE projects SET boardAskedAt = ? WHERE id = ?",
-                         (now, project))
+            store.stamp_board_ask(conn, project, now)
     try:
         issues = provider.ready_issues()
     except Exception as e:  # noqa: BLE001 - never a strike, never the pass

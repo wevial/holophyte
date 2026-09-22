@@ -666,6 +666,9 @@ class ActingSweepTests(SweepTestCase):
         result = self.act(at)
 
         self.assertEqual(len(result.trips), 1)
+        self.assertEqual(self.conn.execute(
+            "SELECT failureKind FROM runs WHERE id = ?", (run_id,)).fetchone(),
+            ("swept",))
         phase, outcome, ended, reason = self.run_row(run_id)
         self.assertEqual((phase, outcome), ("failed", "failed"))
         # Stamped by the close-out's own clock: the sweep's `now` is when the

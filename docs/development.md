@@ -161,6 +161,7 @@ The store is its own package:
 - `store/operate.py` — the operator API: `release()`/`resume()`/
   `requeue()`/`repoint()`/`approve()`/`babysit()`, `record_intervention()`
   and the `runEvents` writers, re-exported from the package.
+- `store/failure_kinds.py` — prefix-only backfill for historical run failures.
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
   connection (`open`/`init`/`transaction`), re-exported from the package.
@@ -174,6 +175,8 @@ The store is its own package:
   project-owned startup evidence before a first claim (KO-466).
 - `store/working.py` — persisted work intervals, finally-safe settlement and
   non-mutating effective-work reads; excludes orchestration waits.
+- `store/writes.py` — named transactional writes for board state, questions,
+  pull request metadata, outcome reasons and board ask timestamps.
 - `store/read.py` — typed read views over the store: one query, one row
   type, no SQL elsewhere.
 

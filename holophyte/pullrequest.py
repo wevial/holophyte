@@ -52,8 +52,7 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
     sha = _sync_branch_from_origin(target, conn, run_id, provider, task_id,
                                    branch, wt, url, reviewed)
     with store.transaction(conn):
-        conn.execute("UPDATE runs SET prUrl = ?, candidateSha = ? WHERE id = ?",
-                     (url, carried.sha, run_id))
+        store.set_pull_request(conn, run_id, url, carried.sha)
         store.record_event(conn, run_id, "pull_request",
                            f"resuming run {carried.run_id}'s candidate {branch}"
                            f" at {sha[:12]} on {url}"
@@ -305,8 +304,7 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
             # The PR is the run's `prUrl` from this moment, not only
             # from a later park: a run that merges without parking
             # still names it on its row, whether opened or adopted.
-            conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
-                         (url, run_id))
+            store.set_pull_request(conn, run_id, url)
     return url
 
 
