@@ -1334,5 +1334,108 @@ class ParkKindMigrationTests(unittest.TestCase):
                              ("pull_request",))
 
 
+
+class RebuildKeepsForeignKeysTests(unittest.TestCase):
+    """A rebuild that renamed the live table away made SQLite rewrite every
+    key pointing at it to the `_old` name, then dropped that table: on
+    2026-09-22 `runs.stopRequested` was left referencing
+    `interventions_old` and no claim could create a run (KO-664)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+        conn = store.open(self.path)
+        self.project = store.tickets.ensure_project(conn, "team-1", "/repos/h")
+        conn.commit()
+        conn.close()
+
+    def rebuild_on_open(self, *statements):
+        """Apply `statements` to the store as an older build left it, stamp
+        it one version back and reopen it with this build."""
+        raw = sqlite3.connect(self.path)
+        raw.executescript("".join(f"{sql};\n" for sql in statements))
+        raw.execute(f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1:d}")
+        raw.commit()
+        raw.close()
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+        return conn
+
+    @staticmethod
+    def parent_of(conn, table, column):
+        return [row[2] for row in conn.execute(
+            f"PRAGMA foreign_key_list({table})") if row[3] == column]
+
+    def test_widening_interventions_keeps_runs_referencing_it(self):
+        raw = sqlite3.connect(self.path)
+        (ddl,) = raw.execute("SELECT sql FROM sqlite_master"
+                             " WHERE name = 'interventions'").fetchone()
+        raw.close()
+        self.assertIn("'abort'", ddl)
+        narrowed = ddl.replace(", 'abort'", "").replace("'abort', ", "")
+        self.assertNotIn("'abort'", narrowed)
+
+        conn = self.rebuild_on_open("DROP TABLE interventions", narrowed)
+
+        self.assertIn("'abort'", conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'interventions'"
+        ).fetchone()[0])
+        self.assertEqual(self.parent_of(conn, "runs", "stopRequested"),
+                         ["interventions"])
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone(), (1,))
+        ticket = store.tickets.mirror_ticket(
+            conn, self.project, linear_issue_id="issue-1",
+            linear_identifier="KO-1", title="ticket 1")
+        run_id = store.claim(conn, self.project, ticket, now=1_700_000_000_000)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM runs WHERE id = ?",
+                                      (run_id,)).fetchone(), (1,))
+
+    def test_rebuilding_run_events_keeps_references_to_it(self):
+        raw = sqlite3.connect(self.path)
+        (ddl,) = raw.execute("SELECT sql FROM sqlite_master"
+                             " WHERE name = 'runEvents'").fetchone()
+        raw.close()
+        required = ddl.replace("runId   INTEGER REFERENCES runs (id)",
+                               "runId   INTEGER NOT NULL REFERENCES runs (id)")
+        self.assertNotEqual(required, ddl)
+
+        conn = self.rebuild_on_open(
+            "DROP TABLE runEvents", required,
+            "CREATE TABLE eventNotes (id INTEGER PRIMARY KEY,"
+            " eventId INTEGER REFERENCES runEvents (id))")
+
+        self.assertFalse(any(row[1] == "runId" and row[3] for row in
+                             conn.execute("PRAGMA table_info(runEvents)")))
+        self.assertEqual(self.parent_of(conn, "eventNotes", "eventId"),
+                         ["runEvents"])
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_open_refuses_a_schema_referencing_a_missing_table(self):
+        raw = sqlite3.connect(self.path)
+        raw.execute("CREATE TABLE strays (id INTEGER PRIMARY KEY,"
+                    " ghostId INTEGER REFERENCES ghosts (id))")
+        raw.execute(f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1:d}")
+        raw.commit()
+        before = raw.execute("SELECT type, name, sql FROM sqlite_master"
+                             " ORDER BY name").fetchall()
+        interventions = raw.execute("SELECT * FROM interventions").fetchall()
+        raw.close()
+
+        with self.assertRaisesRegex(store.schema.SchemaError,
+                                    r"strays\.ghostId.*\bghosts\b"):
+            store.open(self.path)
+
+        raw = sqlite3.connect(self.path)
+        self.addCleanup(raw.close)
+        self.assertEqual(raw.execute("PRAGMA user_version").fetchone()[0],
+                         store.schema.SCHEMA_VERSION - 1)
+        self.assertEqual(raw.execute("SELECT type, name, sql FROM sqlite_master"
+                                     " ORDER BY name").fetchall(), before)
+        self.assertEqual(raw.execute("SELECT * FROM interventions").fetchall(),
+                         interventions)
+
+
 if __name__ == "__main__":
     unittest.main()
