@@ -28,6 +28,8 @@ import socket
 import time
 
 from . import PHASES, _append_event, _redact_values, record_ledger, set_phase
+from . import enums as _enums
+from .enums import RunPhase as _Phase
 from .schema import _transaction
 from .tickets import walk_ticket
 
@@ -35,11 +37,11 @@ from .tickets import walk_ticket
 # leave a finished run parked in the phase it was working in. `killed` is its
 # own phase in §4; the other two failure outcomes share `failed`.
 TERMINAL_PHASES = {
-    "rejected": "rejected",
-    "merged": "done",
-    "killed": "killed",
-    "abandoned": "failed",
-    "failed": "failed",
+    _enums.RunOutcome.REJECTED.value: _Phase.REJECTED.value,
+    _enums.RunOutcome.MERGED.value: _Phase.DONE.value,
+    _enums.RunOutcome.KILLED.value: _Phase.KILLED.value,
+    _enums.RunOutcome.ABANDONED.value: _Phase.FAILED.value,
+    _enums.RunOutcome.FAILED.value: _Phase.FAILED.value,
 }
 
 # The phases those outcomes leave behind. A run with `endedAt` stamped and
@@ -50,7 +52,7 @@ TERMINAL_PHASES = {
 ENDED_PHASES = frozenset(TERMINAL_PHASES.values())
 
 # `runs.outcomeClass`: what a failure is evidence about. Mirrors the CHECK.
-OUTCOME_CLASSES = frozenset({"work", "infra"})
+OUTCOME_CLASSES = frozenset(e.value for e in _enums.OutcomeClass)
 
 
 def release(conn, run_id, outcome, reason=None, now=None,
@@ -517,16 +519,19 @@ def repoint(conn, ticket_id, sha, note, now=None):
 # phases a run is parked *in*, not phases work was interrupted in, so neither
 # is a phase to send a resumed run back to.
 RESUMABLE_WORK_PHASES = frozenset(
-    {"working", "verifying", "reviewing", "addressing"}
+    {_Phase.WORKING.value, _Phase.VERIFYING.value, _Phase.REVIEWING.value,
+     _Phase.ADDRESSING.value}
 )
-RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {"failed", "blocked_on_operator"}
+RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {
+    _Phase.FAILED.value, _Phase.BLOCKED_ON_OPERATOR.value}
 # The phases a run is parked *in*, alive and waiting for a person: the loop
 # wrote a question (or, under `[merge] approve = "human"`, an approved
 # candidate), gave the lease back and went home. Neither has a heartbeat by
 # design, so the supervisor sweep leaves both alone; `park()` is the write
 # that puts a run in `awaiting_merge_approval`, and the ticket that releases
 # it (`--approve`) is what moves it on.
-PARKED_PHASES = frozenset({"blocked_on_operator", "awaiting_merge_approval"})
+PARKED_PHASES = frozenset({
+    _Phase.BLOCKED_ON_OPERATOR.value, _Phase.AWAITING_MERGE_APPROVAL.value})
 
 # §4's run graph as an edge table, keyed like `TICKET_TRANSITIONS` so both
 # state machines render through `render_state_graph()` the same way. The
@@ -545,29 +550,45 @@ RUN_PHASE_TRANSITIONS = {
     # ended the parked run with `resumePhase = 'merge_gate'`, and the claim
     # that follows reuses its worktree and branch and goes straight to the
     # gate -- nothing to implement or review, the candidate already was.
-    "claimed": frozenset({"working", "merge_gate", "failed", "killed"}),
-    "working": frozenset({"verifying", "failed", "killed"}),
-    "verifying": frozenset({"reviewing", "failed", "killed"}),
-    "reviewing": frozenset({"addressing", "merge_gate", "failed", "killed"}),
-    "addressing": frozenset({"verifying", "failed", "killed"}),
-    "merge_gate": frozenset({"merging", "awaiting_merge_approval", "failed",
-                             "killed", "rejected"}),
+    _Phase.CLAIMED.value: frozenset({
+        _Phase.WORKING.value, _Phase.MERGE_GATE.value,
+        _Phase.FAILED.value, _Phase.KILLED.value}),
+    _Phase.WORKING.value: frozenset({
+        _Phase.VERIFYING.value, _Phase.FAILED.value,
+        _Phase.KILLED.value}),
+    _Phase.VERIFYING.value: frozenset({
+        _Phase.REVIEWING.value, _Phase.FAILED.value,
+        _Phase.KILLED.value}),
+    _Phase.REVIEWING.value: frozenset({
+        _Phase.ADDRESSING.value, _Phase.MERGE_GATE.value,
+        _Phase.FAILED.value, _Phase.KILLED.value}),
+    _Phase.ADDRESSING.value: frozenset({
+        _Phase.VERIFYING.value, _Phase.FAILED.value,
+        _Phase.KILLED.value}),
+    _Phase.MERGE_GATE.value: frozenset({
+        _Phase.MERGING.value,
+        _Phase.AWAITING_MERGE_APPROVAL.value, _Phase.FAILED.value,
+        _Phase.KILLED.value, _Phase.REJECTED.value}),
     # `awaiting_merge_approval -> done` is the pull request a person merged
     # on GitHub while the run waited for `--approve`: the loop's reconcile
     # ends the parked run merged with that merge commit (KO-359). The
     # operator's own `--approve` still ends it `failed` (abandoned) and lets
     # the next run merge.
-    "awaiting_merge_approval": frozenset({"done", "failed", "killed", "rejected"}),
-    "merging": frozenset({"done", "failed", "killed"}),
-    "squashing": frozenset(),
-    "done": frozenset(),
+    _Phase.AWAITING_MERGE_APPROVAL.value: frozenset({
+        _Phase.DONE.value,
+        _Phase.FAILED.value, _Phase.KILLED.value, _Phase.REJECTED.value}),
+    _Phase.MERGING.value: frozenset({
+        _Phase.DONE.value, _Phase.FAILED.value,
+        _Phase.KILLED.value}),
+    _Phase.SQUASHING.value: frozenset(),
+    _Phase.DONE.value: frozenset(),
     # `resume()`: a failed run re-enters its `resumePhase`, or `working`
     # when none was recorded; a `blocked_on_operator` run always re-enters
     # `working`.
-    "failed": RESUMABLE_WORK_PHASES,
-    "blocked_on_operator": frozenset({"working"}),
-    "killed": frozenset(),
-    "rejected": frozenset(),
+    _Phase.FAILED.value: RESUMABLE_WORK_PHASES,
+    _Phase.BLOCKED_ON_OPERATOR.value: frozenset({_Phase.WORKING.value}),
+    _Phase.KILLED.value: frozenset(),
+    _Phase.REJECTED.value: frozenset(),
 }
 assert set(RUN_PHASE_TRANSITIONS) == set(PHASES)
 
@@ -673,19 +694,10 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
     return target
 
 
-# §2's intervention unions, transcribed from `_INTERVENTIONS_DDL` so a caller
-# can validate before the INSERT answers with a constraint name instead of
-# the value that was wrong. The schema test holds these against the database.
-INTERVENTION_SOURCES = ("supervisor", "human", "factory")
-INTERVENTION_TRIGGERS = ("time_box", "off_criteria", "looping",
-                         "review_stuck", "linear_cancelled", "linear_completed",
-                         "manual")
-INTERVENTION_ACTIONS = ("redirect", "kill", "extend_time_box", "resume",
-                        "close_out", "requeue", "approve", "repoint",
-                        "babysit", "reconcile", "restart_supervisor",
-                        "launch_loop", "launch_backoff", "route_fallback",
-                        "config_edit", "operator_note", "migrate",
-                        "hold", "release_hold")
+# Validate interventions before SQLite reports a constraint failure.
+INTERVENTION_SOURCES = tuple(e.value for e in _enums.InterventionSource)
+INTERVENTION_TRIGGERS = tuple(e.value for e in _enums.InterventionTrigger)
+INTERVENTION_ACTIONS = tuple(e.value for e in _enums.InterventionAction)
 
 
 def record_intervention(conn, run_id, action, note, source="human",

@@ -1181,7 +1181,7 @@ class AdmissionMigrationTests(unittest.TestCase):
             conn.close()
             conn = store.open(path)
             try:
-                self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (27,))
+                self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (28,))
                 self.assertEqual(
                     conn.execute("SELECT admission, holdNote FROM projects").fetchall(),
                     [("enabled", None)],
@@ -1189,6 +1189,99 @@ class AdmissionMigrationTests(unittest.TestCase):
                 store.hold(conn, 1, "migration supports holds")
             finally:
                 conn.close()
+
+
+class Version26EnumMigrationTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.db"
+        conn = sqlite3.connect(self.path)
+        self.addCleanup(conn.close)
+        conn.executescript(Path(__file__).with_name("store_v26.sql").read_text())
+        conn.executescript("""
+            INSERT INTO projects (id, linearTeamId, repoPath, defaultBranch,
+                autonomyProfile, activeRunId)
+                VALUES (1, 'team', '/repos/project', 'main', 'production', 1);
+            INSERT INTO tickets (id, projectId, linearIssueId, linearIdentifier,
+                title, status, affinity, mirroredAt, activeRunId, lastRunId)
+                VALUES (1, 1, 'issue', 'KO-1', 'title', 'in_flight', 'gui', 1, 1, 1);
+            INSERT INTO runs (id, ticketId, projectId, attempt, phase, startedAt,
+                lastHeartbeat, outcome, outcomeClass, resumePhase)
+                VALUES (1, 1, 1, 1, 'failed', 1, 2, 'failed', 'infra', 'reviewing');
+            INSERT INTO reviewRounds (id, runId, round, verdict,
+                findingsFingerprint, reviewerModel, startedAt)
+                VALUES (1, 1, 1, 'changes_requested', 'fingerprint', 'reviewer', 1);
+            INSERT INTO runEvents (id, runId, seq, level, kind, summary, at)
+                VALUES (1, 1, 1, 'detail', 'test', 'event', 1);
+            INSERT INTO ledger (id, runId, ticketId, at, kind, text, source)
+                VALUES (1, 1, 1, 1, 'adjudication', 'ADDRESS', 'operator');
+            INSERT INTO interventions (id, runId, source, "trigger", action, at)
+                VALUES (1, 1, 'human', 'review_stuck', 'redirect', 1);
+            CREATE INDEX enum_migration_index ON tickets(title);
+        """)
+        self.before = self.rows(conn)
+        self.old_schema = conn.execute(
+            "SELECT name, sql FROM sqlite_master ORDER BY name").fetchall()
+        conn.close()
+
+    @staticmethod
+    def rows(conn):
+        return {table: conn.execute(f'SELECT * FROM "{table}" ORDER BY id').fetchall()
+                for table in dict.fromkeys(
+                    t for t, _ in store.enums.CONSTRAINED_COLUMNS)}
+
+    def test_rows_survive_and_each_enum_still_rejects_invalid_inserts(self):
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+        after = self.rows(conn)
+        # Opening adds one truthful migration-evidence row, as every version does.
+        after['interventions'] = after['interventions'][:1]
+        # Admission columns are new; all pre-existing project values survive.
+        after['projects'] = [row[:7] + row[9:] for row in after['projects']]
+        self.assertEqual(after, self.before)
+        self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 28)
+        self.assertEqual(conn.execute('PRAGMA foreign_key_check').fetchall(), [])
+        self.assertIsNotNone(conn.execute(
+            "SELECT sql FROM sqlite_master"
+            " WHERE name = 'enum_migration_index'").fetchone())
+        from tests.test_store_enums import enum_checks
+        self.assertEqual(enum_checks(conn), {
+            key: store.enums.check_clause(key[1], enum)
+            for key, enum in store.enums.CONSTRAINED_COLUMNS.items()})
+        # Clone a populated row while avoiding unrelated UNIQUE constraints.
+        replacements = {'id': 'NULL', 'linearTeamId': "'new-team'",
+                        'linearIssueId': "'new-issue'", 'attempt': '999',
+                        'round': '999', 'seq': '999'}
+        for table, column in store.enums.CONSTRAINED_COLUMNS:
+            columns = [r[1] for r in conn.execute(f'PRAGMA table_info("{table}")')]
+            expressions = ["?" if c == column else replacements.get(c, f'"{c}"')
+                           for c in columns]
+            sql = (f'INSERT INTO "{table}" SELECT ' + ', '.join(expressions)
+                   + f' FROM "{table}" WHERE id = 1')
+            with self.subTest(table=table, column=column):
+                conn.execute('SAVEPOINT enum_insert')
+                for member in store.enums.CONSTRAINED_COLUMNS[table, column]:
+                    conn.execute(sql, (member.value,))
+                    conn.execute('ROLLBACK TO enum_insert')
+                with self.assertRaisesRegex(sqlite3.IntegrityError,
+                                            'CHECK constraint failed'):
+                    conn.execute(sql, ('outside-enum',))
+                conn.execute('ROLLBACK TO enum_insert')
+                conn.execute('RELEASE enum_insert')
+
+    def test_failed_rebuild_rolls_back_rows_schema_and_version(self):
+        with patch('store.schema._record_migration', side_effect=RuntimeError('stop')):
+            with self.assertRaisesRegex(RuntimeError, 'stop'):
+                store.open(self.path)
+        conn = sqlite3.connect(self.path)
+        self.addCleanup(conn.close)
+        self.assertEqual(self.rows(conn), self.before)
+        self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 26)
+        self.assertEqual(conn.execute(
+            'SELECT name, sql FROM sqlite_master ORDER BY name').fetchall(),
+            self.old_schema)
+
 
 if __name__ == "__main__":
     unittest.main()

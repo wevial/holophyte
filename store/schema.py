@@ -12,6 +12,8 @@ import threading
 import time
 from pathlib import Path
 
+from . import enums as _enums
+
 # One statement per table, in dependency order where it matters. Every
 # statement is IF NOT EXISTS, which is the whole of init()'s idempotency:
 # re-running it on a populated database is a no-op, not a rebuild. That same
@@ -22,7 +24,7 @@ from pathlib import Path
 # `trigger` and `action` are SQLite keywords, so those two column names are
 # quoted; they are the contract's names and renaming them to dodge the
 # quoting would break the mirror.
-SCHEMA = """
+SCHEMA = f"""
 -- projects: a repo + its autonomy policy (state-model §2).
 CREATE TABLE IF NOT EXISTS projects (
     id                  INTEGER PRIMARY KEY,
@@ -30,11 +32,11 @@ CREATE TABLE IF NOT EXISTS projects (
     repoPath            TEXT    NOT NULL,
     defaultBranch       TEXT    NOT NULL,
     autonomyProfile     TEXT    NOT NULL
-        CHECK (autonomyProfile IN ('personal', 'shared_low_risk', 'production')),
+        {_enums.check_clause('autonomyProfile', _enums.AutonomyProfile)},
     highRiskPaths       TEXT    NOT NULL DEFAULT '[]',  -- JSON string[] of globs
     verificationDefault TEXT,
     admission           TEXT NOT NULL DEFAULT 'enabled'
-        CHECK (admission IN ('enabled', 'held')),
+        {_enums.check_clause('admission', _enums.ProjectAdmission)},
     holdNote            TEXT,
     -- Epoch ms the supervisor's board fallback last asked Linear for the
     -- ready listing, so `board_ask_sec` throttles across passes and across
@@ -64,8 +66,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     -- not NULL, for a row mirrored before the column existed.
     body                 TEXT    NOT NULL DEFAULT '',
     status               TEXT    NOT NULL
-        CHECK (status IN ('needs_spec', 'ready', 'in_flight', 'blocked_on_deps',
-                          'blocked_on_operator', 'merged', 'abandoned')),
+        {_enums.check_clause('status', _enums.TicketStatus)},
     -- Empty either list makes the ticket unpickable by §2's predicate, which
     -- is why they default to '[]' rather than to NULL: "not specced yet" and
     -- "specced with nothing in it" are the same unpickable state.
@@ -73,7 +74,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     verificationCommands TEXT    NOT NULL DEFAULT '[]',  -- JSON string[]
     timeBoxMs            INTEGER,                        -- from the Linear estimate
     affinity             TEXT    NOT NULL
-        CHECK (affinity IN ('any', 'gui', 'headless')),
+        {_enums.check_clause('affinity', _enums.Affinity)},
     dependsOn            TEXT    NOT NULL DEFAULT '[]',  -- JSON linearIssueId[]
     activeRunId          INTEGER
         REFERENCES runs (id) DEFERRABLE INITIALLY DEFERRED,
@@ -91,10 +92,7 @@ CREATE TABLE IF NOT EXISTS runs (
     projectId         INTEGER NOT NULL REFERENCES projects (id),
     attempt           INTEGER NOT NULL,  -- 1-based
     phase             TEXT    NOT NULL
-        CHECK (phase IN ('claimed', 'working', 'verifying', 'reviewing',
-                         'addressing', 'merge_gate', 'awaiting_merge_approval',
-                         'merging', 'squashing', 'done', 'blocked_on_operator',
-                         'failed', 'killed', 'rejected')),
+        {_enums.check_clause('phase', _enums.RunPhase)},
     workerId          TEXT,
     providerSessionId TEXT,
     branch            TEXT,
@@ -122,8 +120,7 @@ CREATE TABLE IF NOT EXISTS runs (
     -- reads as nothing to compare rather than as no drift.
     ticketSnapshot    TEXT,
     outcome           TEXT
-        CHECK (outcome IS NULL
-               OR outcome IN ('merged', 'killed', 'abandoned', 'failed', 'rejected')),
+        {_enums.check_clause('outcome', _enums.RunOutcome)},
     outcomeReason     TEXT,
     -- The merge commit a `merged` run landed on main as, the full sha.
     -- NULL until the merge close-out writes it, and NULL forever on a run
@@ -138,7 +135,7 @@ CREATE TABLE IF NOT EXISTS runs (
     -- silent about the ticket, and so left out of the escalation count that
     -- parks a ticket for a human. The report still shows both.
     outcomeClass      TEXT    NOT NULL DEFAULT 'work'
-        CHECK (outcomeClass IN ('work', 'infra')),
+        {_enums.check_clause('outcomeClass', _enums.OutcomeClass)},
     -- The hostname that claimed the run. A target is pinned to one host
     -- and its store may be read from another, so the row is the only
     -- place "where is this run executing" can be answered from. Nullable:
@@ -151,12 +148,7 @@ CREATE TABLE IF NOT EXISTS runs (
     -- phase from the runEvents log. NULL means "nothing recorded", which
     -- `resume()` reads as §4's drawn edge back, `working`.
     resumePhase       TEXT
-        CHECK (resumePhase IS NULL
-               OR resumePhase IN ('claimed', 'working', 'verifying', 'reviewing',
-                                  'addressing', 'merge_gate',
-                                  'awaiting_merge_approval', 'merging',
-                                  'squashing', 'done', 'blocked_on_operator',
-                                  'failed', 'killed', 'rejected')),
+        {_enums.check_clause('resumePhase', _enums.ResumePhase)},
     -- The candidate a run parked awaiting merge approval was parked on: the
     -- full sha the reviewer approved and the pre-merge verify passed.
     -- Written by `park()` and read by the loop's resume at the merge gate,
@@ -204,11 +196,11 @@ CREATE TABLE IF NOT EXISTS reviewRounds (
     id                  INTEGER PRIMARY KEY,
     runId               INTEGER NOT NULL REFERENCES runs (id),
     round               INTEGER NOT NULL,  -- 1-based within the run
-    -- JSON { command, exitCode, output }[]
+    -- JSON {{ command, exitCode, output }}[]
     verificationResults TEXT    NOT NULL DEFAULT '[]',
     verdict             TEXT    NOT NULL
-        CHECK (verdict IN ('pass', 'changes_requested', 'error')),
-    -- JSON { path, line?, severity, criterion?, message }[]
+        {_enums.check_clause('verdict', _enums.ReviewVerdict)},
+    -- JSON {{ path, line?, severity, criterion?, message }}[]
     findings            TEXT    NOT NULL DEFAULT '[]',
     findingsFingerprint TEXT    NOT NULL,  -- hash of sorted (path:line:severity)
     reviewerModel       TEXT    NOT NULL,
@@ -223,7 +215,7 @@ CREATE TABLE IF NOT EXISTS runEvents (
     runId   INTEGER REFERENCES runs (id),
     projectId INTEGER REFERENCES projects (id),
     seq     INTEGER NOT NULL,  -- monotonic per run
-    level   TEXT    NOT NULL CHECK (level IN ('narrative', 'detail')),
+    level   TEXT    NOT NULL {_enums.check_clause('level', _enums.EventLevel)},
     kind    TEXT    NOT NULL,  -- 'phase_change' | 'tool_use' | 'supervisor_probe' | ...
     summary TEXT    NOT NULL,  -- human-readable, always present
     payload TEXT,              -- JSON, detail level only
@@ -302,10 +294,9 @@ CREATE TABLE IF NOT EXISTS ledger (
     ticketId INTEGER NOT NULL REFERENCES tickets (id),
     at       INTEGER NOT NULL,
     kind     TEXT    NOT NULL
-        CHECK (kind IN ('merge', 'failure', 'round', 'adjudication',
-                        'intervention', 'note')),
+        {_enums.check_clause('kind', _enums.LedgerKind)},
     text     TEXT    NOT NULL,
-    source   TEXT    NOT NULL CHECK (source IN ('loop', 'operator'))
+    source   TEXT    NOT NULL {_enums.check_clause('source', _enums.LedgerSource)}
 );
 """
 
@@ -315,23 +306,17 @@ CREATE TABLE IF NOT EXISTS ledger (
 # older store's table from this exact DDL — a rebuild transcribed by hand
 # could drift from the schema, and then a migrated store and a fresh one
 # would disagree about what the table accepts.
-_INTERVENTIONS_DDL = """
+_INTERVENTIONS_DDL = f"""
 CREATE TABLE IF NOT EXISTS interventions (
     id        INTEGER PRIMARY KEY,
     runId     INTEGER REFERENCES runs (id),
     projectId INTEGER REFERENCES projects (id),
-    source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human', 'factory')),
+    source    TEXT    NOT NULL {_enums.check_clause('source',
+                                                  _enums.InterventionSource)},
     "trigger" TEXT    NOT NULL
-        CHECK ("trigger" IN ('time_box', 'off_criteria', 'looping',
-                             'review_stuck', 'linear_cancelled',
-                             'linear_completed', 'manual')),
+        {_enums.check_clause('trigger', _enums.InterventionTrigger)},
     "action"  TEXT    NOT NULL
-        CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
-                            'close_out', 'requeue', 'approve', 'repoint',
-                            'babysit', 'reconcile', 'restart_supervisor',
-                            'launch_loop', 'launch_backoff', 'route_fallback',
-                            'config_edit', 'operator_note', 'migrate',
-                            'hold', 'release_hold')),
+        {_enums.check_clause('action', _enums.InterventionAction)},
     note      TEXT,  -- store-level migration evidence as JSON
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
@@ -344,8 +329,9 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 24 records the process responsible for schema migrations (KO-495).
 # Version 25 mirrors board state names for attention and requeue (KO-503).
 # Version 26 records explicit human merge approval on runs (KO-513).
-# Version 27 adds project admission holds and their interventions (KO-578).
-SCHEMA_VERSION = 27
+# Version 27 generates every enum CHECK from store.enums (KO-579).
+# Version 28 adds project admission holds and their interventions (KO-578).
+SCHEMA_VERSION = 28
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -469,7 +455,7 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
     ("projects", "admission", "admission TEXT NOT NULL DEFAULT 'enabled' "
-     "CHECK (admission IN ('enabled', 'held'))"),
+     + _enums.check_clause("admission", _enums.ProjectAdmission)),
     ("projects", "holdNote", "holdNote TEXT"),
     ("runs", "approvedAt", "approvedAt INTEGER"),
     ("runs", "approvedBy", "approvedBy TEXT"),
@@ -490,13 +476,7 @@ ADDED_COLUMNS = (
     (
         "runs",
         "resumePhase",
-        "resumePhase TEXT"
-        " CHECK (resumePhase IS NULL"
-        " OR resumePhase IN ('claimed', 'working', 'verifying', 'reviewing',"
-        "                    'addressing', 'merge_gate',"
-        "                    'awaiting_merge_approval', 'merging', 'squashing',"
-        "                    'done', 'blocked_on_operator', 'failed',"
-        "                    'killed'))",
+        "resumePhase TEXT " + _enums.check_clause("resumePhase", _enums.ResumePhase),
     ),
     (
         "runs",
@@ -507,7 +487,7 @@ ADDED_COLUMNS = (
         "runs",
         "outcomeClass",
         "outcomeClass TEXT NOT NULL DEFAULT 'work'"
-        " CHECK (outcomeClass IN ('work', 'infra'))",
+        " " + _enums.check_clause("outcomeClass", _enums.OutcomeClass),
     ),
     (
         "runs",
@@ -604,21 +584,9 @@ BACKFILLS = (
 def init(conn):
     """Create every table the state model defines, if absent, and migrate.
 
-    Three steps, because `CREATE TABLE IF NOT EXISTS` alone would only ever
-    bootstrap an empty file: the tables are created, then every `ADDED_COLUMNS`
-    entry missing from an existing table is added, then every `BACKFILLS`
-    statement repairs the rows an older version of this module left with a
-    value it never filled in. The second step is what carries a store created
-    by an earlier version forward instead of leaving it one column short of
-    the code that reads it; the third is what keeps that store's history from
-    reading as a confident zero.
-
-    Idempotent: safe to call on an already-initialized database, where it
-    creates nothing, adds nothing, and touches only rows a backfill finds
-    still disagreeing with what it recomputes — none, on the second call, and
-    none ever on a store this module wrote from the start. Not a downgrade
-    path — an older module opening a newer store sees columns it does not know
-    about, which is harmless, while the reverse is what this repairs.
+    Add missing columns, repair historical rows, and rebuild constrained
+    tables inside one transaction with foreign keys checked before commit.
+    Repeated initialization preserves existing rows and the schema version.
     """
     conn.executescript(SCHEMA)
     foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
@@ -647,6 +615,8 @@ def init(conn):
         _widen_runs_outcomes(conn)
         _widen_interventions_action(conn)
         _project_startup_events(conn)
+        if version < 28:
+            _rebuild_enum_tables(conn)
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the
         # version means.
@@ -661,6 +631,28 @@ def init(conn):
         raise
     finally:
         conn.execute(f"PRAGMA foreign_keys = {foreign_keys}")
+
+
+def _rebuild_enum_tables(conn):
+    """Copy constrained tables through the generated DDL in init's transaction."""
+    for table in dict.fromkeys(table for table, _ in _enums.CONSTRAINED_COLUMNS):
+        indexes = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE tbl_name = ?"
+            " AND type IN ('index', 'trigger') AND sql IS NOT NULL", (table,)
+        ).fetchall()
+        schema = _INTERVENTIONS_DDL if table == "interventions" else SCHEMA
+        ddl = schema.split(f"CREATE TABLE IF NOT EXISTS {table} (", 1)[1]
+        ddl = (ddl.rstrip().removesuffix(")") if table == "interventions"
+               else ddl.split(");", 1)[0])
+        conn.execute(f"CREATE TABLE {table}_enum_new (" + ddl + ")")
+        columns = ", ".join(f'"{row[1]}"' for row in conn.execute(
+            f"PRAGMA table_info({table})"))
+        conn.execute(f"INSERT INTO {table}_enum_new ({columns})"
+                     f" SELECT {columns} FROM {table}")
+        conn.execute(f"DROP TABLE {table}")
+        conn.execute(f"ALTER TABLE {table}_enum_new RENAME TO {table}")
+        for (sql,) in indexes:
+            conn.execute(sql)
 
 
 def _widen_runs_outcomes(conn):

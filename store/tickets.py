@@ -17,6 +17,8 @@ import json
 import time
 
 from . import _json_list
+from . import enums as _enums
+from .enums import TicketStatus as _Status
 from .schema import _transaction
 
 
@@ -80,19 +82,23 @@ def ensure_project(conn, linear_team_id, repo_path, default_branch="main",
 # A status is not in its own set: `ready → ready` is refused like any other
 # non-edge, so a no-op status write cannot pass for a real transition.
 TICKET_TRANSITIONS = {
-    "needs_spec": frozenset({"ready"}),
-    "ready": frozenset({"in_flight", "blocked_on_deps"}),
-    "in_flight": frozenset({"merged", "abandoned", "blocked_on_operator"}),
-    "blocked_on_deps": frozenset({"ready", "blocked_on_operator"}),
-    "blocked_on_operator": frozenset({"blocked_on_deps"}),
-    "merged": frozenset(),
-    "abandoned": frozenset(),
+    _Status.NEEDS_SPEC.value: frozenset({_Status.READY.value}),
+    _Status.READY.value: frozenset({
+        _Status.IN_FLIGHT.value,
+        _Status.BLOCKED_ON_DEPS.value}),
+    _Status.IN_FLIGHT.value: frozenset({
+        _Status.MERGED.value, _Status.ABANDONED.value,
+        _Status.BLOCKED_ON_OPERATOR.value}),
+    _Status.BLOCKED_ON_DEPS.value: frozenset({
+        _Status.READY.value,
+        _Status.BLOCKED_ON_OPERATOR.value}),
+    _Status.BLOCKED_ON_OPERATOR.value: frozenset({_Status.BLOCKED_ON_DEPS.value}),
+    _Status.MERGED.value: frozenset(),
+    _Status.ABANDONED.value: frozenset(),
 }
 
-# Derived, not re-typed, so the enum cannot drift from the transition table.
-# It must still match the `tickets.status` CHECK in SCHEMA above; the tests
-# assert that against the database rather than trusting the agreement.
-TICKET_STATUSES = tuple(TICKET_TRANSITIONS)
+# The status vocabulary is shared by the graph and the SQLite constraint.
+TICKET_STATUSES = tuple(e.value for e in _enums.TicketStatus)
 
 
 def render_state_graph(transitions):
