@@ -285,7 +285,8 @@ def _ending_of(conn, run_id):
 
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                  started_at=None, criteria=(), root=None, route=None,
-                 prior_reply="", structured_findings=None, approved_range=None):
+                 prior_reply="", structured_findings=None, approved_range=None,
+                 scope=()):
     """Record one review or adjudication round as a `reviewRounds` row.
 
     The round the loop just ran, as the store holds it: the verdict, the
@@ -312,7 +313,9 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     adjudicator keeps its bare PASS/FAIL contract and is not held to the
     checklist. `root` is the round's worktree: with it, a `met` witness that
     names a test must exist there (`criteria_findings()`), so a named test
-    not found is one more such finding.
+    not found is one more such finding. `scope` is the list of changed files
+    the ticket does not name that the round's prompt put to the reviewer; a
+    tangent or an unanswered one is a finding the same way.
 
     `route` names what issued the round when it was not the role's agent
     route: a babysit pass over a pull request is stamped `github:LOGIN`,
@@ -344,7 +347,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
         findings = structured_findings
     if role == "review" and verdict != "error":
         unwitnessed = criteria_findings(reply, criteria, root,
-                                        approved_range=approved_range)
+                                        approved_range=approved_range,
+                                        scope=scope)
         if unwitnessed:
             verdict = "changes_requested"
             findings = findings + unwitnessed
