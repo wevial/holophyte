@@ -648,17 +648,18 @@ def init(conn):
     tables inside one transaction with foreign keys checked before commit.
     Repeated initialization preserves existing rows and the schema version.
     """
-    conn.executescript(SCHEMA)
-    foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
     foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
     conn.execute("PRAGMA foreign_keys = OFF")
-    # Everything after the executescript rolls back together on failure: a
-    # migration that died must not leave an open transaction holding its
-    # half-done work, because the next caller's `executescript` would issue
-    # an implicit COMMIT and make the half-state durable — the exact hazard
-    # `_transaction()`'s docstring warns joined writers about.
+    # Everything rolls back together on failure, the tables SCHEMA creates
+    # included: a migration that died must not leave an open transaction
+    # holding its half-done work, because the next caller's `executescript`
+    # would issue an implicit COMMIT and make the half-state durable — the
+    # exact hazard `_transaction()`'s docstring warns joined writers about.
+    # The BEGIN opens the script because `executescript` commits whatever is
+    # pending before it runs, and would otherwise run SCHEMA in autocommit.
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        conn.executescript("BEGIN IMMEDIATE;\n" + SCHEMA)
+        foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.execute(_INTERVENTIONS_DDL)
         for table, column, ddl in ADDED_COLUMNS:

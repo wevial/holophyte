@@ -1416,6 +1416,9 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
         raw = sqlite3.connect(self.path)
         raw.execute("CREATE TABLE strays (id INTEGER PRIMARY KEY,"
                     " ghostId INTEGER REFERENCES ghosts (id))")
+        # A table the migration itself would create: refusing must not
+        # leave it behind either.
+        raw.execute("DROP TABLE loopRestarts")
         raw.execute(f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1:d}")
         raw.commit()
         before = raw.execute("SELECT type, name, sql FROM sqlite_master"
