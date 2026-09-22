@@ -228,14 +228,14 @@ retires it.
 
 Module size is a ratchet on the same terms: no source module over
 1000 lines, no test module over 1500. `tests/test_file_sizes.py` holds a
-table of the modules over their ceiling, each entry its module's count
+an `OVER` table of unpinned modules over their ceiling, each entry its count
 as `wc -l` measures it, and walks every tracked Python file against it —
 a module that grows past its entry, a module with no entry that passes
 its ceiling, and an entry whose module is back under the ceiling all
 fail the suite, and a second check holds every entry to `wc -l`'s exact
-count. A slice that changes a listed module's size rewrites its entry in
-the same commit; a module back under its ceiling leaves the table, so
-the numbers only move down.
+count. A slice that changes a listed unpinned module's size rewrites its
+entry in the same commit; a module back under its ceiling leaves the table.
+Pins are upper bounds; more than 150 lines of slack requires lowering the pin.
 
 ruff is a developer tool, not a dependency: install it on the host with
 `pip install --user ruff` (or `uv tool install ruff`). It is never vendored.
