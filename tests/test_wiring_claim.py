@@ -29,6 +29,7 @@ import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import merged_task  # noqa: E402 - after sys.path setup
 
 
 class StubProvider:
@@ -246,7 +247,7 @@ class WiringClaimTests(unittest.TestCase):
                 " verificationCommands, timeBoxMs, activeRunId FROM tickets")
             seen["runs"] = self.read(
                 "SELECT id, ticketId, projectId, attempt, phase FROM runs")
-            return True
+            return merged_task(target, task, conn, run_id, provider)
 
         with patch.object(holophyte.loop, "run_task", spy):
             holophyte.operator.main(self.tgt, StubProvider(a_task()))
@@ -275,7 +276,7 @@ class WiringClaimTests(unittest.TestCase):
         so the loop refuses the re-claim before it mirrors anything — the
         row count is the assertion, not a refreshed label.
         """
-        with patch.object(holophyte.loop, "run_task", return_value=True):
+        with patch.object(holophyte.loop, "run_task", side_effect=merged_task):
             holophyte.operator.main(self.tgt, StubProvider(a_task()))
             holophyte.operator.main(self.tgt,
                                 StubProvider(a_task(identifier="HOL-1-renamed")))
@@ -285,7 +286,7 @@ class WiringClaimTests(unittest.TestCase):
 
     def test_a_provider_without_a_uuid_still_mirrors_under_its_identifier(self):
         """A UUID-less provider keeps working, keyed on the id it does have."""
-        with patch.object(holophyte.loop, "run_task", return_value=True):
+        with patch.object(holophyte.loop, "run_task", side_effect=merged_task):
             holophyte.operator.main(self.tgt, StubProvider(a_task(issue_id=None)))
 
         self.assertEqual(
@@ -311,7 +312,7 @@ class WiringClaimTests(unittest.TestCase):
         stop this one, which claims a ticket of its own."""
         held = self.hold_the_lease()
 
-        with patch.object(holophyte.loop, "run_task", return_value=True):
+        with patch.object(holophyte.loop, "run_task", side_effect=merged_task):
             holophyte.operator.main(self.tgt, StubProvider(a_task()))
 
         self.assertEqual(
@@ -343,7 +344,8 @@ class WiringClaimTests(unittest.TestCase):
                          [("HOL-1", "in_flight")])
         before = self.read("SELECT id, ticketId FROM runs")
 
-        with patch.object(holophyte.loop, "run_task", return_value=True) as run_task, \
+        with patch.object(holophyte.loop, "run_task",
+                          side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
             holophyte.operator.main(self.tgt, StubProvider(first, second))
 
@@ -381,7 +383,8 @@ class WiringClaimTests(unittest.TestCase):
         self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
         live = dict(stale, verify="")
 
-        with patch.object(holophyte.loop, "run_task", return_value=True) as run_task, \
+        with patch.object(holophyte.loop, "run_task",
+                          side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
             holophyte.operator.main(self.tgt, StubProvider(live))
 
@@ -417,7 +420,8 @@ class WiringClaimTests(unittest.TestCase):
                             depends_on=[dep["issue_id"]])
         conn.commit()
 
-        with patch.object(holophyte.loop, "run_task", return_value=True) as run_task, \
+        with patch.object(holophyte.loop, "run_task",
+                          side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
             holophyte.operator.main(self.tgt, StubProvider(offered))
 
@@ -442,7 +446,8 @@ class WiringClaimTests(unittest.TestCase):
         second = a_task(identifier="HOL-2", title="the other thing",
                         issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
 
-        with patch.object(holophyte.loop, "run_task", return_value=True) as run_task:
+        with patch.object(holophyte.loop, "run_task",
+                          side_effect=merged_task) as run_task:
             holophyte.operator.main(self.tgt, StubProvider(unspecced, second))
 
         run_task.assert_called_once()
@@ -475,7 +480,8 @@ class WiringClaimTests(unittest.TestCase):
             self.read("SELECT status FROM tickets"), [("ready",)])
         now_invalid = dict(was_valid, body=INVALID_BODY)
 
-        with patch.object(holophyte.loop, "run_task", return_value=True) as run_task, \
+        with patch.object(holophyte.loop, "run_task",
+                          side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
             holophyte.operator.main(self.tgt, StubProvider(now_invalid))
 
@@ -502,7 +508,8 @@ class WiringClaimTests(unittest.TestCase):
                             issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc"),
                      body=VALID_BODY)
 
-        with patch.object(holophyte.loop, "run_task", return_value=True) as run_task, \
+        with patch.object(holophyte.loop, "run_task",
+                          side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
             holophyte.operator.main(self.tgt, StubProvider(invalid, valid))
 
@@ -524,7 +531,7 @@ class WiringClaimTests(unittest.TestCase):
         self.assertIn(PLACEHOLDER, lines[0])
 
     def test_a_merged_run_gives_the_lease_back(self):
-        with patch.object(holophyte.loop, "run_task", return_value=True):
+        with patch.object(holophyte.loop, "run_task", side_effect=merged_task):
             holophyte.operator.main(self.tgt, StubProvider(a_task()))
 
         (run_id, phase, outcome, ended), = self.read(

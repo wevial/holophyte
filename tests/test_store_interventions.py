@@ -275,6 +275,7 @@ class RequeueTests(InterventionFixture):
     def test_rejected_candidate_can_be_requeued(self):
         self.conn.execute("UPDATE runs SET branch = 'candidate',"
                           " candidateSha = 'abc' WHERE id = ?", (self.run,))
+        store.set_phase(self.conn, self.run, "merge_gate")
         store.release(self.conn, self.run, "rejected", "closed by alice")
         store.walk_ticket(self.conn, self.ticket, "blocked_on_operator")
         store.requeue(self.conn, self.ticket, "try again")
@@ -332,6 +333,8 @@ class RequeueTests(InterventionFixture):
     def test_a_ticket_whose_last_run_merged_is_refused(self):
         # Out of scope by name: a merged run is not a failure to recover
         # from, so the status stays where the merge left it.
+        for phase in ("merge_gate", "merging"):
+            store.set_phase(self.conn, self.run, phase, now=T0)
         store.release(self.conn, self.run, "merged", now=T0 + MINUTE)
         store.tickets.transition(self.conn, self.ticket, "merged")
         with self.assertRaises(store.RequeueRefused) as refused:

@@ -15,6 +15,7 @@ from holophyte import maintainer_notes
 from holophyte.pr import PrState
 from holophyte.runs import open_store
 from holophyte.target import Target
+from tests.phase_fixture import park_run
 
 
 class BabysitCliFixture:
@@ -43,7 +44,7 @@ class BabysitCliFixture:
             verification_commands=["echo ok"], time_box_ms=25 * 60 * 1000)
         store.tickets.transition(self.conn, self.ticket, "in_flight")
         self.run = store.claim(self.conn, self.project, self.ticket)
-        store.park(self.conn, self.run, "awaiting_merge_approval", "merge?",
+        park_run(self.conn, self.run, "awaiting_merge_approval", "merge?",
                    pr_url=self.URL, candidate_sha="a" * 40)
         store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
 

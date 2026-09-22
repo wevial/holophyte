@@ -20,6 +20,7 @@ from serve_fixture import MIN, ServeTestCase  # noqa: E402 - after the insert
 
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import finish_run  # noqa: E402
 
 GIT_IDENTITY = ("-c", "user.name=test", "-c", "user.email=test@example.com",
                 "-c", "commit.gpgsign=false")
@@ -75,7 +76,7 @@ class CommitUrlTests(ServeTestCase):
                 store.tickets.transition(conn, ticket, "in_flight")
                 run = store.claim(conn, project, ticket,
                                   now=self.now - (10 - n) * MIN)
-                store.release(conn, run, "merged", now=self.now - (5 - n) * MIN,
+                finish_run(conn, run, "merged", now=self.now - (5 - n) * MIN,
                               merge_sha=sha)
                 self.runs[sha] = run
         finally:

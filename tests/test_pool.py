@@ -50,6 +50,9 @@ import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import linear_provider  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import (  # noqa: E402 - after sys.path setup
+    park_run,
+)
 
 
 class GateConflictRequeueTests(LoopFixture):
@@ -130,7 +133,7 @@ class GateConflictRequeueTests(LoopFixture):
             ticket = holophyte.board.mirror_task(conn, project, a_task())
             run_id = store.claim(conn, project, ticket)
             tickets.transition(conn, ticket, "in_flight")
-            store.park(conn, run_id, "awaiting_merge_approval",
+            park_run(conn, run_id, "awaiting_merge_approval",
                        pr_url=url, candidate_sha="a" * 40)
             self.assertTrue(holophyte.board.block_ticket(
                 conn, ticket, provider, f"PR open: {url}"))

@@ -13,6 +13,7 @@ import store
 import store.read
 import store.tickets
 from provider import LinearProvider
+from tests.phase_fixture import advance_phase
 from tests.serve_fixture import MIN, ServeTestCase
 
 
@@ -110,7 +111,7 @@ class FailedAttentionTests(ServeTestCase):
         project = store.tickets.ensure_project(self.conn, "team-1", self.target)
         run = store.claim(self.conn, project, self.ticket.id,
                           now=self.now)
-        store.set_phase(self.conn, run, "reviewing", now=self.now)
+        advance_phase(self.conn, run, "reviewing", now=self.now)
         return run
 
     def test_newer_live_or_ended_attempt_supersedes_failure(self):

@@ -265,6 +265,9 @@ class FinishedRunsTests(unittest.TestCase):
             store.tickets.transition(conn, ticket, "in_flight")
             run = store.claim(conn, project, ticket, now=1)
             runs.append(run)
+            if outcome == "merged":
+                for phase in ("merge_gate", "merging"):
+                    store.set_phase(conn, run, phase, now=1)
             if outcome:
                 store.release(conn, run, outcome, now=end)
         first = store.read.finished_runs(conn, 2)

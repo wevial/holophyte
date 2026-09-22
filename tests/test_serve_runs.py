@@ -27,6 +27,7 @@ import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.serve_runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import finish_run
 from tests.ticket_url_fixture import assert_api_url
 
 SLACK = test_serve.SLACK
@@ -256,7 +257,7 @@ class ShippedTests(ServeTestCase):
                 conn.execute("UPDATE runs SET workingMs = ? WHERE id = ?",
                              (started_ago - ended_ago, run))
                 conn.commit()
-                store.release(conn, run, outcome, now=self.now - ended_ago,
+                finish_run(conn, run, outcome, now=self.now - ended_ago,
                               merge_sha=sha,
                               reason="verification failed" if outcome == "failed"
                               else None)
@@ -410,7 +411,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
                 started_at=started + 10 * MIN, ended_at=started + 12 * MIN)
             if cap is not None:
                 store.set_review_round_cap(conn, self.run, cap)
-            store.release(conn, self.run, "merged", now=started + 20 * MIN,
+            finish_run(conn, self.run, "merged", now=started + 20 * MIN,
                           merge_sha=MERGE_SHA)
         finally:
             conn.close()

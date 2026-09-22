@@ -64,6 +64,24 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class LoopTests(ReviewSessionCases, FixSessionCases, LoopFixture):
+    def test_illegal_phase_is_infrastructure_failure_and_preserves_work(self):
+        original = store.set_phase
+
+        def refuse(conn, run_id, phase, *args, **kwargs):
+            if phase == "verifying":
+                raise store.IllegalTransition(run_id, "merge_gate", "working")
+            return original(conn, run_id, phase, *args, **kwargs)
+
+        with patch.object(store, "set_phase", side_effect=refuse):
+            self.loop(Commit("candidate"))
+        ((outcome, kind, reason),) = self.read(
+            "SELECT outcome, outcomeClass, outcomeReason FROM runs")
+        self.assertEqual((outcome, kind), ("failed", "infra"))
+        self.assertIn("merge_gate -> working", reason)
+        self.assertIn("run 1", reason)
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").is_dir())
+        self.assertIn("candidate", self.subjects(BRANCH))
+
     def test_implementer_sessions_survive_implement_and_fix_turns(self):
         self.configure("[agents]\nimplementer_session = 'session id: ([a-z-]+)'\n")
 

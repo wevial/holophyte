@@ -46,6 +46,11 @@ from sweep_fixture import (  # noqa: E402 - after the insert
     no_network,
 )
 
+from tests.phase_fixture import (  # noqa: E402 - after sys.path setup
+    finish_run,
+    park_run,
+)
+
 
 def a_dead_pid():
     """A pid the kernel no longer knows: a child that has already been reaped.
@@ -686,7 +691,7 @@ class HeartbeatWhileTests(SweepTestCase):
 
     def test_a_heartbeat_on_an_ended_run_changes_nothing(self):
         run_id = self.a_run()
-        store.release(self.conn, run_id, "merged", now=T0 + MINUTE)
+        finish_run(self.conn, run_id, "merged", now=T0 + MINUTE)
         before = self.conn.execute(
             "SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
 
@@ -784,7 +789,7 @@ class ParkedPullRequestTests(SweepTestCase):
         self.conn.execute("UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                           (f"PR open: {self.URL}", ticket))
         self.conn.commit()
-        store.park(self.conn, run_id, "awaiting_merge_approval",
+        park_run(self.conn, run_id, "awaiting_merge_approval",
                    pr_url=self.URL, now=T0)
         return run_id
 

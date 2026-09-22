@@ -268,6 +268,9 @@ def set_phase(conn, run_id, phase, note=None, now=None):
     than a caller's counter. `now` is epoch milliseconds for `lastHeartbeat`
     and the event's `at`, defaulting to the clock.
 
+    An edge outside `RUN_PHASE_TRANSITIONS` raises `IllegalTransition`
+    without changing the run, heartbeat or event stream.
+
     Re-entering the phase a run is already in is allowed and logged: the loop
     verifies once per review round, and collapsing those into one event would
     erase the round boundary the log exists to show. `resume()` is the one
@@ -299,6 +302,8 @@ def set_phase(conn, run_id, phase, note=None, now=None):
         previous, ended_at, outcome, reason = row
         if ended_at is not None:
             raise RunEnded(run_id, outcome, reason)
+        if phase != previous and phase not in RUN_PHASE_TRANSITIONS[previous]:
+            raise IllegalTransition(run_id, previous, phase)
         conn.execute(
             "UPDATE runs SET phase = ?, lastHeartbeat = ? WHERE id = ?",
             (phase, now, run_id),

@@ -72,6 +72,8 @@ class PopulatedStore(unittest.TestCase):
         store.record_review_round(
             c, self.merged, 2, "pass", "codex-sol-medium",
             started_at=T0 + 3 * MIN)
+        for phase in ("merge_gate", "merging"):
+            store.set_phase(c, self.merged, phase, now=T0 + 9 * MIN)
         store.release(c, self.merged, "merged", now=T0 + 10 * MIN,
                       merge_sha=MERGE_SHA)
 

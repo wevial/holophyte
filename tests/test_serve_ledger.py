@@ -20,6 +20,7 @@ from serve_fixture import MERGE_SHA, MIN, ServeTestCase  # noqa: E402 - after th
 import holophyte.files  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import finish_run
 
 
 class RunLedgerTests(ServeTestCase):
@@ -52,7 +53,7 @@ class RunLedgerTests(ServeTestCase):
             for kind, text, source, at in self.seeded:
                 store.record_ledger(conn, self.run, kind, text, source=source,
                                     now=at)
-            store.release(conn, self.run, "merged", now=started + 20 * MIN,
+            finish_run(conn, self.run, "merged", now=started + 20 * MIN,
                           merge_sha=MERGE_SHA)
         finally:
             conn.close()
@@ -129,7 +130,7 @@ class LedgerWindowTests(ServeTestCase):
                                         now=at)
                     self.seeded.append((at, run, f"KO-{n}", kind, text,
                                         source))
-                store.release(conn, run, "merged", now=started + 30 * MIN,
+                finish_run(conn, run, "merged", now=started + 30 * MIN,
                               merge_sha=MERGE_SHA)
         finally:
             conn.close()
@@ -373,7 +374,7 @@ class RunFilesTests(ServeTestCase):
         sha = self.git("rev-parse", "HEAD")
         conn = store.open(str(self.db))
         try:
-            store.release(conn, self.run, "merged", now=self.now,
+            finish_run(conn, self.run, "merged", now=self.now,
                           merge_sha=sha)
         finally:
             conn.close()

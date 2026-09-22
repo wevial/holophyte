@@ -99,6 +99,8 @@ class RunPhaseTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
+        from tests.test_store_phase_gate import audit_loop_store
+        self.addCleanup(audit_loop_store, self)
         # The `Target` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
         self.tgt = holophyte.target.Target(
@@ -380,7 +382,8 @@ class ReleaseTests(unittest.TestCase):
             (self.run_id,))]
 
     def test_a_merged_run_stays_merged_when_released_again(self):
-        store.set_phase(self.conn, self.run_id, "working", now=2000)
+        for phase in ("merge_gate", "merging"):
+            store.set_phase(self.conn, self.run_id, phase, now=2000)
         store.release(self.conn, self.run_id, "merged", now=3000)
 
         store.release(self.conn, self.run_id, "failed", reason="stray", now=4000)
@@ -389,11 +392,12 @@ class ReleaseTests(unittest.TestCase):
         # And the ignored call left nothing in the stream either: an event
         # saying `done -> failed` would describe a transition that never was.
         self.assertEqual(
-            self.transitions()[-1:], ["working -> done: run ended, outcome merged"]
+            self.transitions()[-1:], ["merging -> done: run ended, outcome merged"]
         )
 
     def test_re_releasing_a_failed_run_keeps_its_resume_phase(self):
         store.set_phase(self.conn, self.run_id, "working", now=2000)
+        store.set_phase(self.conn, self.run_id, "verifying", now=2400)
         store.set_phase(self.conn, self.run_id, "reviewing", now=2500)
         store.release(self.conn, self.run_id, "failed", reason="reviewer died",
                       now=3000)
@@ -412,6 +416,8 @@ class ReleaseTests(unittest.TestCase):
         store.release(self.conn, self.run_id, "failed", now=3000)
         self.assertEqual(store.resume(self.conn, self.run_id, now=3500), "working")
 
+        for phase in ("verifying", "reviewing", "merge_gate", "merging"):
+            store.set_phase(self.conn, self.run_id, phase, now=3600)
         store.release(self.conn, self.run_id, "merged", now=4000)
 
         self.assertEqual(self.run_row(), ("done", "merged", None, None, 4000))

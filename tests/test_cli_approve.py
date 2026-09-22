@@ -29,6 +29,7 @@ import store
 import store.read
 import store.tickets
 from holophyte.runs import open_store
+from tests.phase_fixture import finish_run, park_run
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -78,7 +79,7 @@ class ApproveCliTests(unittest.TestCase):
             "UPDATE tickets SET blockedQuestion = 'merge?' WHERE id = ?",
             (self.ticket,))
         self.conn.commit()
-        store.park(self.conn, self.run, "awaiting_merge_approval",
+        park_run(self.conn, self.run, "awaiting_merge_approval",
                    now=T0 + 2 * MINUTE, pr_url=pr_url)
 
     def cli(self, *args):
@@ -269,7 +270,7 @@ class ApproveCliTests(unittest.TestCase):
         self.assertIn(f"run {self.run} still live", str(live.exception))
         self.assertEqual(self.run_row()[:2], ("claimed", None))
 
-        store.release(self.conn, self.run, "merged", now=T0 + MINUTE)
+        finish_run(self.conn, self.run, "merged", now=T0 + MINUTE)
         store.tickets.transition(self.conn, self.ticket, "merged")
         with self.assertRaises(SystemExit) as merged:
             self.cli("--approve", "KO-1", "--note", "ok")

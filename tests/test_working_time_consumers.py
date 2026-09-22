@@ -7,6 +7,7 @@ from sweep_fixture import MINUTE, T0, SweepTestCase
 import store
 from holophyte import babysitter, loop, pr, report, serve, serve_runs, supervisor
 from store.working import settle_work, working
+from tests.phase_fixture import finish_run
 
 
 class WorkingConsumers(SweepTestCase):
@@ -66,12 +67,12 @@ class WorkingConsumers(SweepTestCase):
         supervisor.sweep(self.tgt, self.conn, now + 100 * MINUTE)
         trips = supervisor.sweep(self.tgt, self.conn, now + 200 * MINUTE).trips
         self.assertEqual(trips[0].condition, supervisor.STALE_HEARTBEAT)
-        store.release(self.conn, run, "merged", now=now)
+        finish_run(self.conn, run, "merged", now=now)
         other = self.a_run(budget_min=10)
         with patch("store.working.time", return_value=T0 / 1000):
             with working(self.conn, other):
                 settle_work(self.conn, other, now=T0 + 2 * MINUTE)
-        store.release(self.conn, other, "merged", now=T0 + 3 * MINUTE)
+        finish_run(self.conn, other, "merged", now=T0 + 3 * MINUTE)
         self.assertEqual(
             [row[1:4] for row in report.report_rows(self.conn)],
             [(2, 10, 0.2), (2, 10, 0.2)],
@@ -181,7 +182,7 @@ class WorkingConsumers(SweepTestCase):
             (waiting["working_ms"], waiting["elapsed_ms"], waiting["work_started_ms"]),
             (4 * MINUTE, 30 * MINUTE, None),
         )
-        store.release(self.conn, run, "merged", now=now + 20 * MINUTE)
+        finish_run(self.conn, run, "merged", now=now + 20 * MINUTE)
         shipped = serve_runs.shipped(self.tgt)[1]["rows"][0]
         self.assertEqual((shipped["actual_min"], shipped["wall_min"]), (4, 30))
         self.assertEqual(report.report_rows(self.conn)[0][1:4], (4, 10, 0.4))

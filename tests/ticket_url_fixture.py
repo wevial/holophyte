@@ -8,6 +8,7 @@ import store
 import store.schema
 import store.tickets
 from holophyte.board import mirror_task
+from tests.phase_fixture import finish_run
 
 MIN = 60_000
 
@@ -82,7 +83,7 @@ def assert_api_url(case):
     case.assertEqual(row["ticket_url"], url)
     conn = store.open(case.db)
     try:
-        store.release(conn, case.run, "merged", now=case.now)
+        finish_run(conn, case.run, "merged", now=case.now)
     finally:
         conn.close()
     for path in ("/runs", "/shipped"):

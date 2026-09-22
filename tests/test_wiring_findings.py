@@ -28,6 +28,7 @@ import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import finish_run  # noqa: E402 - after sys.path setup
 
 
 class StubProvider:
@@ -115,7 +116,7 @@ class RenderedWindowTests(unittest.TestCase):
             title=f"ticket {n}", time_box_ms=25 * 60 * 1000)
         at = 1_700_000_000_000 + n * 60_000
         run_id = store.claim(self.conn, self.project, ticket, now=at)
-        store.release(self.conn, run_id, "merged", now=at + 30_000,
+        finish_run(self.conn, run_id, "merged", now=at + 30_000,
                       merge_sha=merge_sha)
         return run_id
 

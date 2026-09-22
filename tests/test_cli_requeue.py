@@ -28,6 +28,7 @@ import store
 import store.read
 import store.tickets
 from holophyte.runs import open_store
+from tests.phase_fixture import park_run
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -154,7 +155,7 @@ class RequeueCliTests(unittest.TestCase):
         the link while the ticket waits: the requeue's intervention note
         names the PR URL."""
         url = "https://github.com/example/repo/pull/2177"
-        store.park(self.conn, self.run, "awaiting_merge_approval",
+        park_run(self.conn, self.run, "awaiting_merge_approval",
                    "parked on its pull request", pr_url=url)
         store.release(self.conn, self.run, "failed",
                       "the babysit pass died", now=T0 + MINUTE)
@@ -195,7 +196,7 @@ class RequeueCliTests(unittest.TestCase):
         self.assertIn("lock released", store.read.ledger(self.conn, self.run)[-1].text)
 
     def test_requeue_refuses_parked_candidates_and_pull_requests_without_writes(self):
-        store.park(self.conn, self.run, "awaiting_merge_approval",
+        park_run(self.conn, self.run, "awaiting_merge_approval",
                    "merge?", candidate_sha="a" * 40, now=T0)
         store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
         self.conn.execute("UPDATE tickets SET blockedQuestion = 'merge?' WHERE id = ?",
