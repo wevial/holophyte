@@ -22,7 +22,8 @@ environment exclusions as worktree reclaim, commits remaining edits as WIP,
 preserves the worktree and branch, and ends the run with outcome `paused` and
 its next phase in `resumePhase`. The ticket is `blocked_on_operator` with the
 request note. Babysit fixes stop before their push or thread replies; resuming
-an open PR returns through its gate to read the current checks and threads.
+an open PR finishes a saved fix step (including its pending push and replies)
+before returning through the gate to read current checks and threads.
 
 `factory.py TARGET --resume KO-n` uses the store resume path and returns the
 ticket to ready. The next claim reuses the worktree and continues from the

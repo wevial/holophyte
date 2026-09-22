@@ -45,6 +45,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     StubProvider,
     a_task,
 )
+from pause_fixture import PauseFailureCases  # noqa: E402
 from review_session_fixture import ReviewSessionCases  # noqa: E402
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
@@ -64,7 +65,15 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
-class LoopTests(FailureKindCases, ReviewSessionCases, FixSessionCases, LoopFixture):
+class LoopTests(PauseFailureCases, FailureKindCases, ReviewSessionCases,
+                FixSessionCases, LoopFixture):
+    def test_pause_before_malformed_review_reminder(self):
+        from fake_agent import Reply
+        from pause_fixture import PauseReply
+        self.loop(Commit(), PauseReply(self.db, Reply("no verdict")))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "reviewing")])
+
     def test_pause_after_implement_preserves_work_and_parks_with_note(self):
         from pause_fixture import PauseEdit
         self.loop(PauseEdit(self.db))

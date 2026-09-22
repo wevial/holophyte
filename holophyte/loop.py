@@ -876,21 +876,21 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
                                  target=target)
             ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                    conn, run_id)
-        if not ok:
-            record_unreviewed_verification(conn, run_id, out)
-            print(f"[holo2] verify FAILED before adjudication; leaving branch "
-                  f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
-            ledger(conn, run_id, task_id, "failure",
-                   f"FAILED verify before terminal adjudication after "
-                   f"{cap} review rounds (the run's cap); branch {branch} preserved "
-                   f"at {sha}\n\n{out}", provider)
-            raise RunFailure(failure_reason.verify(
-                out, verify_cmd, f"before terminal adjudication; "
-                f"branch {branch} preserved at {sha[:12]}"))
-        print("[holo2] verify ok before adjudication")
-
     boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
              ok=ok, out=str(out), reply=pending.get("reply"))
+    if not ok:
+        record_unreviewed_verification(conn, run_id, out)
+        print(f"[holo2] verify FAILED before adjudication; leaving branch "
+              f"{branch} (worktree {wt}) at {sha} for a human:\n{out}")
+        ledger(conn, run_id, task_id, "failure",
+               f"FAILED verify before terminal adjudication after "
+               f"{cap} review rounds (the run's cap); branch {branch} preserved "
+               f"at {sha}\n\n{out}", provider)
+        raise RunFailure(failure_reason.verify(
+            out, verify_cmd, f"before terminal adjudication; "
+            f"branch {branch} preserved at {sha[:12]}"))
+    print("[holo2] verify ok before adjudication")
+
     set_phase(conn, run_id, "reviewing", "terminal adjudication")
     if pending.get("reply"):
         reply = pending["reply"]

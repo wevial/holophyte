@@ -4,14 +4,14 @@ from time import monotonic
 import store
 import store.read
 import ticket_template
-from holophyte import babysitter, pr, pr_activity, pr_media
+from holophyte import babysitter, pr, pr_activity, pr_media, pr_status
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config, sweep_config
 from holophyte.gates import MergeParked, RunFailure, sh
 from holophyte.reconcile import _pr_seen
 from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase
-from holophyte.stop import stop_if_requested
+from holophyte.stop import resume_babysit_fix, stop_if_requested
 
 
 def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
@@ -63,12 +63,17 @@ def _resume_on_pr(target, conn, run_id, provider, task_id, issue_id, task,
           " babysitting it")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
     set_phase(conn, run_id, "merge_gate", f"babysitting {url}")
+    sha, pushed = resume_babysit_fix(
+        target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
+        pr_status.parse_pr_url(url), f"{task}\n\n{body}" if body else task,
+        verify_cmd, contracts, budget_min, carried)
     merge_sha = babysitter._babysit(target, conn, run_id, provider, task_id,
                                     issue_id, task, branch, wt, sha, beat_s,
                                     url, f"{task}\n\n{body}" if body else task,
                                     verify_cmd, contracts, budget_min,
                                     criteria, approved=carried.approved,
                                     reviewed=reviewed, verified=None,
+                                    just_pushed=pushed,
                                     fix_note=(None if carried.approved else
                                               store.read.babysit_note(
                                                   conn, carried.run_id)))

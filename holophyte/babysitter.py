@@ -43,7 +43,7 @@ from holophyte.review import (
     parse_findings,
 )
 from holophyte.runs import heartbeat_while, record_round
-from holophyte.stop import stop_if_requested
+from holophyte.stop import boundary, fix_state, stop_if_requested
 from holophyte.thread_answers import answer_asks, post
 from holophyte.thread_findings import thread_finding
 
@@ -915,7 +915,8 @@ def _verdicts_by_kind(threads, judged, parsed):
 
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
-                 contracts, budget_min, pass_no, *, review_follows, goal=None):
+                 contracts, budget_min, pass_no, *, review_follows, goal=None,
+                 resume_step=None):
     from holophyte.loop import (
         _candidate_drift,
         _record_implementer_output,
@@ -924,11 +925,18 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     )
     from holophyte.pullrequest import _park_on_pr
     from holophyte.redact import known_secrets, outbound, redact_prose
-    record_step(conn, run_id, "fix")
-    maintainer_notes.start_fix(conn, run_id, addressed)
-    fixes, timed_out = _transport_timed(target, conn, run_id, beat_s, wt, budget_min,
-        goal or babysitter.fix_brief(pull, addressed, ticket))
-    stop_if_requested(conn, run_id, "merge_gate")
+    if resume_step is None:
+        record_step(conn, run_id, "fix")
+        maintainer_notes.start_fix(conn, run_id, addressed)
+        fixes, timed_out = _transport_timed(
+            target, conn, run_id, beat_s, wt, budget_min,
+            goal or babysitter.fix_brief(pull, addressed, ticket))
+        saved = fix_state(sha, fixes, timed_out, addressed, model,
+                          pass_no, review_follows)
+    else:
+        saved = dict(resume_step)
+        fixes, timed_out = saved["fixes"], saved["timed_out"]
+    boundary(conn, run_id, "merge_gate", **saved)
     fixed = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if fixed == sha:
         _record_implementer_output(conn, run_id, f"fix round {pass_no}: {fixes}",
@@ -963,7 +971,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                              target=target)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
-    stop_if_requested(conn, run_id, "merge_gate")
+    boundary(conn, run_id, "merge_gate", **saved)
     if not ok or not review_follows:
         record_unreviewed_verification(conn, run_id, out)
     if not ok:
@@ -981,7 +989,9 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         pr.push_branch(target, branch)
     fixed = sh(["git", "rev-parse", branch], wt)
     print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")
-    for n, thread, reason in addressed:
+    for index, (n, thread, reason) in enumerate(addressed):
+        if index < saved["posted"]:
+            continue
         if maintainer_notes.is_note(thread):
             continue
         reply = babysitter.addressed_reply(model, summaries.get(n, reason), fixed)
@@ -989,6 +999,9 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
               reply,
               resolve=(thread.author_kind == "bot"
                        or thread.classification == "MENTIONED"))
+        saved["posted"] = index + 1
+        boundary(conn, run_id, "merge_gate", **saved)
+    boundary(conn, run_id, "merge_gate")
     return fixed
 
 

@@ -1,6 +1,7 @@
 """Cooperative run stops and their durable continuation at stage boundaries."""
 import json
 from contextvars import ContextVar
+from dataclasses import asdict
 
 import store
 from holophyte.target import Target, worktree_path
@@ -121,3 +122,37 @@ def pending_requests(conn):
     return dict(conn.execute("SELECT r.id, i.guidance FROM runs r"
                              " JOIN interventions i ON i.id = r.stopRequested"
                              " WHERE r.endedAt IS NULL"))
+
+
+def fix_state(sha, fixes, timed_out, addressed, model, pass_no, review_follows):
+    """Serializable inputs for finishing an already-completed babysit fix turn."""
+    return dict(step="babysit_fix", sha=sha, fixes=str(fixes), timed_out=timed_out,
+                addressed=[(n, asdict(thread), reason)
+                           for n, thread, reason in addressed],
+                model=model, pass_no=pass_no, review_follows=review_follows, posted=0)
+
+
+def resume_babysit_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
+                       beat_s, pull, ticket, verify_cmd, contracts, budget_min,
+                       carried):
+    """Finish the preserved fix before reading another babysit pass."""
+    from holophyte.babysitter import _fix_threads
+    from holophyte.pr import Comment, Thread
+    row = conn.execute("SELECT payload FROM runEvents WHERE runId = ?"
+                       " AND kind = 'pause_checkpoint' ORDER BY id DESC LIMIT 1",
+                       (carried.run_id,)).fetchone()
+    saved = json.loads(row[0]) if row and row[0] else {}
+    if not carried.paused or saved.get("step") != "babysit_fix":
+        return sha, False
+    if sha != carried.sha:
+        from holophyte.gates import RunFailure
+        raise RunFailure("paused fix candidate moved; reconcile the preserved work")
+    addressed = []
+    for number, fields, reason in saved["addressed"]:
+        fields = dict(fields, replies=tuple(Comment(**r) for r in fields["replies"]))
+        addressed.append((number, Thread(**fields), reason))
+    fixed = _fix_threads(target, conn, run_id, provider, task_id, branch, wt,
+                         saved["sha"], beat_s, pull, addressed, saved["model"], ticket,
+                         verify_cmd, contracts, budget_min, saved["pass_no"],
+                         review_follows=saved["review_follows"], resume_step=saved)
+    return fixed, True
