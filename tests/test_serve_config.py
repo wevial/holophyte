@@ -650,7 +650,7 @@ class ConfigPatchTests(ServeTestCase):
     def test_a_patch_creates_a_missing_table_and_refuses_an_unknown_one(self):
         """`[report]` is not in the fixture and is created; `[linear]` is
         in the file but not a table the loader reads, `workers` names no
-        table, and a float is no patch value: each 400 names the key."""
+        table, and an integer key refuses a float: each 400 names the key."""
         self.seed()
         before = self.config("config_edit = true\n")
         self.start(before)
