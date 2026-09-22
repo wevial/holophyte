@@ -161,6 +161,7 @@ The store is its own package:
 - `store/operate.py` — the operator API: `release()`/`resume()`/
   `requeue()`/`repoint()`/`approve()`/`babysit()`, `record_intervention()`
   and the `runEvents` writers, re-exported from the package.
+- `store/failure_kinds.py` — prefix-only backfill for historical run failures.
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
   connection (`open`/`init`/`transaction`), re-exported from the package.

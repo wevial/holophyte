@@ -131,12 +131,14 @@ class BabysitterFailureTests(MergeModeFixture):
     def test_before_review_of_fix(self):
         reason = self.verify_failure('auto', True)
         self.assertIn('before the review of the fix', reason)
-        self.assertEqual(self.read('SELECT outcomeReason FROM runs'), [(reason,)])
+        self.assertEqual(self.read('SELECT outcomeReason, failureKind FROM runs'),
+                         [(reason, 'verify')])
 
     def test_after_fix_round(self):
         reason = self.verify_failure('auto', False)
         self.assertIn('after the fix round', reason)
-        self.assertEqual(self.read('SELECT outcomeReason FROM runs'), [(reason,)])
+        self.assertEqual(self.read('SELECT outcomeReason, failureKind FROM runs'),
+                         [(reason, 'verify')])
 
     def test_timed_out_thread_fix(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')

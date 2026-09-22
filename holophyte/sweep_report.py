@@ -18,7 +18,7 @@ from time import time
 import review_runner
 import store.read
 from holophyte.gates import merge_lock_path, read_merge_lock, remove_dead_merge_lock
-from holophyte.report import REPORT_GAP, host_label
+from holophyte.report import REPORT_GAP, failure_lines, host_label
 
 
 def merge_lock_lines(target, conn, act=False):
@@ -202,8 +202,10 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
             print(line, file=out)
         if now is None:
             now = int(time() * 1000)
-        print("\n".join(sweep_lines(sweep(target, conn, now, act, provider),
-                                     target)),
+        result = sweep(target, conn, now, act, provider)
+        for line in failure_lines(conn):
+            print(line, file=out)
+        print("\n".join(sweep_lines(result, target)),
               file=out)
     finally:
         if owned:

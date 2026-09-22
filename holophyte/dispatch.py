@@ -201,6 +201,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
     merged = False
     reason = None
     outcome_class = "work"
+    failure_kind = "unclassified"
     try:
         merged = run_task(target, task, conn, run_id, provider)
     except MergeParked as e:
@@ -211,6 +212,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
         print(f"[holo2] run parked: {e}")
     except RunFailure as e:
         reason = e.reason
+        failure_kind = e.failure_kind
         outcome_class = outcome_class_of(e)
         print(f"[holo2] run failed: {reason}")
     except Exception as e:  # noqa: BLE001 - crash containment
@@ -261,7 +263,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
                                   reason,
                                   provider=provider,
                                   outcome_class=outcome_class,
-                                  refresh=refresh)
+                                  refresh=refresh, failure_kind=failure_kind)
             except Exception as close_err:  # noqa: BLE001
                 print(f"[holo2] close-out failed: {close_err}")
     return merged

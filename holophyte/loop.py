@@ -557,7 +557,7 @@ def _check_run_cap(target, conn, run_id, budget_min, sha):
               f"preserved at {sha[:12]}; open findings: "
               f"{_open_findings(conn, run_id)}")
     store.record_event(conn, run_id, "run_cap", reason)
-    raise RunFailure(reason)
+    raise RunFailure(reason, "budget")
 
 
 # How much of the implementer's final output a no-commit turn keeps on the
@@ -680,11 +680,13 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
             sh(["git", "branch", "-D", branch], target.path)
             raise RunFailure("implementer made no commits; the empty branch"
-                             " and worktree were discarded")
+                             " and worktree were discarded",
+                             "budget" if timed_out else "no_commits")
         # A reused worktree holds work some earlier run preserved; this
         # run's implementer adding nothing is no reason to destroy it.
         raise RunFailure(f"implementer made no new commits; preserved work"
-                         f" kept on {branch} at {start_sha[:12]}")
+                         f" kept on {branch} at {start_sha[:12]}",
+                         "budget" if timed_out else "no_commits")
     if head == start_sha:
         note = (f"candidate carried from a prior run; implementer added"
                 f" nothing to {branch} at {start_sha[:12]}")
@@ -697,7 +699,7 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         # incident this path exists to prevent.
         raise RunFailure(f"implementer exceeded the {budget_min} min budget"
                          f"{_scale_note(target, budget_min)}; work kept on "
-                         f"{branch} at {head[:12]}")
+                         f"{branch} at {head[:12]}", "budget")
     return sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
 
@@ -792,7 +794,8 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
         if decision == "MALFORMED":
             reason = "reviewer returned no verdict line twice"
             print(f"[holo2] round {rnd}: {reason}")
-            raise InfraFailure(f"{reason}; candidate preserved at {sha}")
+            raise InfraFailure(f"{reason}; candidate preserved at {sha}",
+                               "review_route")
 
         # Unmet criteria or nonexistent named witnesses block approval.
         unwitnessed = criteria_findings(verdict, criteria, wt)

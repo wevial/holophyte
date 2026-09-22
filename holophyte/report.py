@@ -106,6 +106,13 @@ def report_summary(rows):
             f" · median ratio {statistics.median(ratios):.2f}")
 
 
+def failure_lines(conn):
+    """Typed failure counts, shared by the report and supervisor sweep."""
+    return [f"failures {kind}: {count}" for kind, count in conn.execute(
+        "SELECT COALESCE(failureKind, 'unclassified'), COUNT(*) FROM runs"
+        " WHERE outcome = 'failed' GROUP BY 1 ORDER BY 1")]
+
+
 def approval_lines(conn):
     """Explicit human approvals, including released candidates awaiting claim."""
     rows = conn.execute(
@@ -134,6 +141,7 @@ def report_lines(conn, target=None):
         from store.operator_notes import report_lines as note_lines
         live += note_lines(conn)
         live += approval_lines(conn)
+        live += failure_lines(conn)
     finally:
         if owns_transaction:
             conn.rollback()  # Release only our read transaction, even on errors.
