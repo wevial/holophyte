@@ -77,6 +77,22 @@ class NonPythonWitnessTests(unittest.TestCase):
             self.assertIn("internal/mail/flags_test.go", note)
             self.assertIn("TestMarkRead", note)
 
+    def test_title_with_escaped_quotes_is_found_by_its_real_title(self):
+        # KO-654: Relos REL-138 run 58 lost a round to this title.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            test = root / "components/x/test/Modal.test.tsx"
+            test.parent.mkdir(parents=True)
+            references = test_references(
+                'components/x/test/Modal.test.tsx::'
+                r'"titles the modal \"Rename Guest\" by default"')
+            test.write_text("it('titles the modal \"Rename Guest\" by default',"
+                            " () => {});\n")
+            self.assertEqual(missing_witnesses(references, root), [])
+            test.write_text("it('titles the modal', () => {});\n")
+            (note,) = missing_witnesses(references, root)
+            self.assertIn('titles the modal "Rename Guest" by default', note)
+
     def test_brief_shows_python_and_quoted_title_forms(self):
         brief = criteria_brief(["the behavior works"])
         self.assertIn("tests/file.py::TestClass::test_name", brief)
