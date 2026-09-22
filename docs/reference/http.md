@@ -469,7 +469,10 @@ A daemon bound to anything but loopback runs with `[serve] token_file`
 Authorization: Bearer TOKEN
 ```
 
-The value is compared whole, in constant time; a missing header, another
+With `[serve] machine_token_file` also set, the contents of that file are
+accepted as `TOKEN` too, on every route that demands the project's token:
+one token for every daemon on the machine, beside the project's own.
+Each value is compared whole, in constant time; a missing header, another
 scheme or any other value is 401 with the body `{}` and no store access,
 and nothing about the attempt is logged. `GET /`, the console's files
 under it and `GET /peers` are served without the header, so the page can

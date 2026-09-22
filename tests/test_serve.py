@@ -21,6 +21,8 @@ from time import monotonic, sleep, time
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# `-m unittest tests.<name>` resolves the sibling fixtures as discovery does.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
 
@@ -231,6 +233,42 @@ class TokenTests(ServeTestCase):
                     self.assertRaises(SystemExit) as raised:
                 holophyte.serve.serve(tgt, "0.0.0.0:0", out=io.StringIO())
             self.assertIn(str(path), str(raised.exception))
+
+    MACHINE_TOKEN = "machine-wide-token-value"
+
+    def machine_token_file(self):
+        path = self.root / "machine.token"
+        path.write_text(self.MACHINE_TOKEN + "\n")
+        path.chmod(0o600)
+        return path
+
+    def test_either_the_project_or_the_machine_token_is_accepted(self):
+        self.seed()
+        config = (self.token_config(self.token_file())
+                  + f'machine_token_file = "{self.machine_token_file()}"\n')
+        self.start(config, host="0.0.0.0")
+        for token in (self.TOKEN, self.MACHINE_TOKEN):
+            with self.subTest(token=token):
+                code, _, body = self.request(
+                    "GET", "/status", {"Authorization": f"Bearer {token}"})
+                self.assertEqual(code, 200)
+                self.assertEqual(body["target"], str(self.target))
+        for headers in (None, {"Authorization": "Bearer wrong"},
+                        {"Authorization": f"Bearer {self.MACHINE_TOKEN}x"},
+                        {"Authorization": f"Basic {self.MACHINE_TOKEN}"}):
+            with self.subTest(headers=headers):
+                code, _, body = self.request("GET", "/status", headers)
+                self.assertEqual((code, body), (401, {}))
+
+    def test_without_the_machine_key_only_the_project_token_is_accepted(self):
+        self.seed()
+        self.machine_token_file()  # on disk, but no key names it
+        self.start(self.token_config(self.token_file()), host="0.0.0.0")
+        code, _, _ = self.request("GET", "/status", self.BEARER)
+        self.assertEqual(code, 200)
+        code, _, _ = self.request(
+            "GET", "/status", {"Authorization": f"Bearer {self.MACHINE_TOKEN}"})
+        self.assertEqual(code, 401)
 
 
 class StatusTests(ServeTestCase):
