@@ -5,6 +5,7 @@ import io
 import json
 import socket
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 from time import time
@@ -31,6 +32,34 @@ from tests.phase_fixture import finish_run
 from tests.ticket_url_fixture import assert_api_url
 
 SLACK = test_serve.SLACK
+
+
+class PendingRunFilesTests(ServeTestCase):
+    BRANCH = "task/ko-7-ticket-7"
+
+    def setUp(self):
+        super().setUp()
+        subprocess.run(["git", "init", "-q", "-b", "main"],
+                       cwd=self.target, check=True, capture_output=True)
+        self.seed()
+        with store.open(str(self.db)) as conn:
+            store.set_branch(conn, self.run, self.BRANCH)
+        self.start()
+
+    def test_live_run_without_branch_or_worktree_is_pending(self):
+        code, _, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 409)
+        self.assertEqual(body, {"error": f"branch {self.BRANCH} not cut yet",
+                                "run": self.run, "pending": True})
+
+    def test_ended_run_without_branch_still_reports_it_missing(self):
+        with store.open(str(self.db)) as conn:
+            finish_run(conn, self.run, "failed", "fixture ended")
+        code, _, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 409)
+        self.assertEqual(body, {
+            "error": f"branch {self.BRANCH} no longer exists in the repository",
+            "run": self.run})
 
 
 class LivePullRequestTests(MergeModeFixture):

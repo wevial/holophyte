@@ -7,6 +7,7 @@ export class AnsweredError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly pending = false,
   ) {
     super(message);
     this.name = "AnsweredError";
@@ -20,6 +21,7 @@ export interface RunResourceState<T> {
   error: string | null;
   /** The HTTP status behind `error` when it was an `AnsweredError`, else null. */
   status: number | null;
+  pending: boolean;
   /** True until the first answer (good or bad) for this id lands. */
   loading: boolean;
 }
@@ -29,6 +31,7 @@ interface Inner<T> {
   body: T | null;
   error: string | null;
   status: number | null;
+  pending: boolean;
 }
 
 /**
@@ -48,7 +51,7 @@ export function useRunResource<T>(
   fetchRef.current = deps.fetch;
   const loadRef = useRef(load);
   loadRef.current = load;
-  const [state, setState] = useState<Inner<T>>({ id: null, body: null, error: null, status: null });
+  const [state, setState] = useState<Inner<T>>({ id: null, body: null, error: null, status: null, pending: false });
 
   useEffect(() => {
     if (id == null) return;
@@ -60,12 +63,13 @@ export function useRunResource<T>(
       if (!alive) return;
       try {
         const body = await loadRef.current(base, id, fetchRef.current);
-        if (alive) setState({ id, body, error: null, status: null });
+        if (alive) setState({ id, body, error: null, status: null, pending: false });
       } catch (failure) {
         if (!alive) return;
         const message = failure instanceof Error ? failure.message : String(failure);
         const status = failure instanceof AnsweredError ? failure.status : null;
-        setState((previous) => ({ id, body: !(failure instanceof ContractError) && previous.id === id ? previous.body : null, error: message, status }));
+        const pending = failure instanceof AnsweredError && failure.pending;
+        setState((previous) => ({ id, body: !(failure instanceof ContractError) && previous.id === id ? previous.body : null, error: message, status, pending }));
       }
     })();
     return () => {
@@ -73,6 +77,6 @@ export function useRunResource<T>(
     };
   }, [base, id, polls]);
 
-  if (id == null || state.id !== id) return { body: null, error: null, status: null, loading: id != null };
-  return { body: state.body, error: state.error, status: state.status, loading: false };
+  if (id == null || state.id !== id) return { body: null, error: null, status: null, pending: false, loading: id != null };
+  return { body: state.body, error: state.error, status: state.status, pending: state.pending, loading: false };
 }

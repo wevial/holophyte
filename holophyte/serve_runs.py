@@ -562,6 +562,11 @@ def run_files(target, run_id):
         touched = touched_files(target.path, run.branch, run.mergeSha,
                                 worktree=worktree)
     except RangeError as error:
+        missing_branch = f"branch {run.branch} no longer exists in the repository"
+        if (run.endedAt is None and worktree is not None
+                and not worktree.is_dir() and str(error) == missing_branch):
+            return 409, {"error": f"branch {run.branch} not cut yet",
+                         "run": run.id, "pending": True}
         return 409, {"error": str(error), "run": run.id}
     except subprocess.TimeoutExpired:
         return 504, {"error": f"git did not answer within {GIT_TIMEOUT}s",
