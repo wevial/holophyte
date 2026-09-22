@@ -606,7 +606,7 @@ def read_merge_lock(path):
 
 @contextlib.contextmanager
 def merge_lock(target, run_id, wait=None, poll=None, on_wait=None,
-               extend_wait=None):
+               extend_wait=None, operation="gate"):
     """Hold `target`'s merge lock for the block; raise `MergeLockHeld` if it
     cannot be had within `wait` seconds. `extend_wait(holder, elapsed)` may
     return a positive poll delay to keep waiting past that default bound.
@@ -643,7 +643,7 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None,
                 os.write(fd, stamp.encode())
         except FileExistsError:
             nap = lock_nap(path, monotonic() - started, wait, poll,
-                           extend_wait)
+                           extend_wait, operation)
             if on_wait is not None:
                 on_wait()
             sleep(nap)
