@@ -99,6 +99,7 @@ class RunPhaseTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
+        store.open(self.db, migrate="owner").close()
         from tests.test_store_phase_gate import audit_loop_store
         self.addCleanup(audit_loop_store, self)
         # The `Target` the loop is handed, with the store and the worktrees
@@ -294,7 +295,7 @@ class PhaseWriteTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.conn = store.open(Path(tmp.name) / "store.sqlite3")
+        self.conn = store.open(Path(tmp.name) / "store.sqlite3", migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         project = tickets.ensure_project(self.conn, "team", Path(tmp.name) / "repo")
@@ -362,7 +363,7 @@ class ReleaseTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.conn = store.open(Path(tmp.name) / "store.sqlite3")
+        self.conn = store.open(Path(tmp.name) / "store.sqlite3", migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project = tickets.ensure_project(self.conn, "team", f"{tmp.name}/repo")

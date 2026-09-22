@@ -531,6 +531,11 @@ class SupervisorSpawnTests(StartupCheckTests):
             return None
 
     def start_loop(self, target):
+        import store
+
+        located = holophyte.target.Target.locate(target)
+        located.store_path.parent.mkdir(parents=True, exist_ok=True)
+        store.open(located.store_path, migrate="owner").close()
         printed = io.StringIO()
         with patch.object(holophyte.cli, "LinearProvider", self.EmptyBoard), \
                 contextlib.redirect_stdout(printed):

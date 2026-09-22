@@ -19,7 +19,7 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / 'store.sqlite3'
-        self.conn = store.open(self.path)
+        self.conn = store.open(self.path, migrate="owner")
         self.addCleanup(self.conn.close)
         project = store.ensure_project(self.conn, 'team', '/repos/example')
         ticket = store.mirror_ticket(self.conn, project, 'issue', 'KO-1', 'test')
@@ -82,7 +82,7 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
     def test_newer_schema_beats_through_existing_connection_and_reports_once(self):
         self.bump()
         with self.assertRaises(SystemExit) as caught:
-            store.open(self.path)
+            store.open(self.path, migrate="owner")
         self.assertIsInstance(caught.exception, store.SchemaNewer)
         connections, output = self.three_beats()
         self.assertTrue(all(conn is self.conn for conn in connections))
@@ -90,11 +90,11 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
         self.assertIn(f'version {store.SCHEMA_VERSION + 1} is newer', output)
 
     def test_three_failed_opens_then_recovery_keeps_every_beat(self):
-        opened = store.open(self.path)
+        opened = store.open(self.path, migrate="owner")
         self.addCleanup(opened.close)
         self.bump()
         try:
-            store.open(self.path)
+            store.open(self.path, migrate="owner")
         except store.SchemaNewer as exc:
             failure = exc
         connections, output = self.three_beats(

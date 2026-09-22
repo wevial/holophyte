@@ -102,7 +102,7 @@ class RenderedWindowTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.conn = store.open(str(self.root / "holophyte.db"))
+        self.conn = store.open(str(self.root / "holophyte.db"), migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project = tickets.ensure_project(self.conn, "team-1", self.root / "repo")
@@ -186,7 +186,7 @@ class RenderedWindowTests(unittest.TestCase):
         self.assertEqual(first, second)
         # And identical read back over a connection of its own, so the answer
         # cannot depend on anything this one accumulated.
-        other = store.open(str(self.root / "holophyte.db"))
+        other = store.open(str(self.root / "holophyte.db"), migrate="owner")
         self.addCleanup(other.close)
         self.assertEqual(first, holophyte.findings.render_findings(other))
 
@@ -259,6 +259,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
+        store.open(self.db, migrate="owner").close()
         # The `Target` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
         self.tgt = holophyte.target.Target(
@@ -324,7 +325,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
                          r" \(branch task/ko-131-add-a-thing deleted\)\.\n"
                          r"actual: \d+\.\d min · "
                          r"estimate: 5 min · rounds: 2\n")
-        conn = store.open(str(self.tgt.store_path))
+        conn = store.open(str(self.tgt.store_path), migrate="owner")
         try:
             self.assertEqual(
                 conn.execute("SELECT mergeSha FROM runs"
@@ -354,7 +355,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
 
         # The merge happened: the run is merged in the store and main has
         # the `--no-ff` merge commit on top of the base.
-        conn = store.open(str(self.tgt.store_path))
+        conn = store.open(str(self.tgt.store_path), migrate="owner")
         try:
             self.assertEqual(
                 conn.execute("SELECT outcome FROM runs").fetchall(),
@@ -394,7 +395,7 @@ class MalformedRoundRowTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.conn = store.open(str(self.root / "holophyte.db"))
+        self.conn = store.open(str(self.root / "holophyte.db"), migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         project = tickets.ensure_project(self.conn, "team-1", self.root / "repo")

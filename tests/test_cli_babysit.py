@@ -13,7 +13,6 @@ import store
 import store.tickets
 from holophyte import maintainer_notes
 from holophyte.pr import PrState
-from holophyte.runs import open_store
 from holophyte.target import Target
 from tests.phase_fixture import park_run
 
@@ -34,7 +33,8 @@ class BabysitCliFixture:
         self.target.config_path.write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n'
             '[merge]\nmode = "pr"\napprove = "human"\n')
-        self.conn = open_store(self.target)
+        self.target.store_path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = store.open(self.target.store_path, migrate="owner")
         self.addCleanup(self.conn.close)
         self.project = store.tickets.ensure_project(self.conn, "team-1", self.repo)
         self.ticket = store.tickets.mirror_ticket(

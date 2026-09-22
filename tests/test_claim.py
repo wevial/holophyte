@@ -114,7 +114,7 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
                          'PUBLIC=sentinel-public-value\n'
                          'QUOTED="sentinel quoted value"\n')
         self.assertEqual(mode.read_text().strip(), "600")
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.record_event(conn, 1, "diagnostic", "sentinel-public-value",
                                level="detail", payload="sentinel quoted value")
@@ -409,7 +409,7 @@ class LeftoverWorktreeTests(LoopFixture):
                                " WHERE kind = 'wip_committed'")
         self.assertIn(sha[:12], event)
         self.assertIn("2 changed file(s)", event)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         store.requeue(conn, 1, "budget fired; the WIP commit is the work")
         fake, _ = self.loop(Idle(), APPROVE, provider=StubProvider(a_task()))
@@ -967,7 +967,7 @@ class MergeConflictTests(LoopFixture):
         self.loop(Commit("first cut"), REQUEST_CHANGES,
                   Commit("first fix round 1"), REQUEST_CHANGES,
                   Commit("first fix round 2"), FAIL)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         tickets.walk_ticket(conn, 1, "ready")
         self.loop(Commit("branch edit", path="README.md", body="branch side\n"),
@@ -1100,7 +1100,7 @@ class BoardLeaseLabelTests(LoopFixture):
         board down, so its label is still on the issue -- and, unless told
         otherwise, the requeue that put the ticket back. Returns the run
         id."""
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
@@ -1194,7 +1194,7 @@ class BoardLeaseLabelTests(LoopFixture):
         threads = []
 
         def compete(provider, issue_id):
-            conn = store.open(str(db))
+            conn = store.open(str(db), migrate="owner")
             try:
                 project = tickets.ensure_project(conn, StubProvider.TEAM,
                                                str(target))
@@ -1244,7 +1244,7 @@ class BoardLeaseLabelTests(LoopFixture):
         finds the store naming run 2 as the live one and leaves the label
         on; run 2's own release takes it off."""
         ended = self.seed_ended_run()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
@@ -1282,7 +1282,7 @@ class BoardLeaseLabelTests(LoopFixture):
         during = []
 
         def claim(provider, issue_id):
-            conn = store.open(str(db))
+            conn = store.open(str(db), migrate="owner")
             try:
                 project = tickets.ensure_project(conn, StubProvider.TEAM,
                                                str(target))
@@ -1312,7 +1312,7 @@ class BoardLeaseLabelTests(LoopFixture):
 
         provider = Racing(a_task())
         provider.label_issue("iss-131", "holo:writer-1")
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             (ticket_id,) = conn.execute("SELECT id FROM tickets").fetchone()
             holophyte.board.release_lease_label(self.tgt, conn, ticket_id,
@@ -1477,7 +1477,7 @@ class BoardLeaseLabelTests(LoopFixture):
 
         class Watched(StubProvider):
             def unlabel_issue(self, issue_id, name):
-                conn = store.open(str(db))
+                conn = store.open(str(db), migrate="owner")
                 try:
                     status_at_removal.append(conn.execute(
                         "SELECT status FROM tickets WHERE linearIssueId = ?",

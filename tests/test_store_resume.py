@@ -37,7 +37,7 @@ class ResumeTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "store.sqlite3"
-        self.conn = store.open(self.path)
+        self.conn = store.open(self.path, migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project_id = self.conn.execute(

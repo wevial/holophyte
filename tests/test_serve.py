@@ -235,6 +235,19 @@ class TokenTests(ServeTestCase):
 
 class StatusTests(ServeTestCase):
 
+    def test_status_reads_one_version_newer_without_migrating(self):
+        self.seed()
+        newer = store.SCHEMA_VERSION + 1
+        with sqlite3.connect(self.db) as conn:
+            conn.execute(f"PRAGMA user_version = {newer}")
+        self.start()
+        code, _, body = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["schema_version"], newer)
+        self.assertEqual(body["runs"][0]["id"], self.run)
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], newer)
+
     def test_status_lists_the_live_run_and_the_supervisor(self):
         self.seed()
         self.start()
@@ -289,7 +302,7 @@ class StatusTests(ServeTestCase):
         # KO-263: what the console's floor row draws. A run in `reviewing`
         # with two ended rounds and one strike on file.
         self.seed()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             advance_phase(conn, self.run, "reviewing", now=self.now - MIN)
             for number in (1, 2):
@@ -546,7 +559,7 @@ class TicketTests(ServeTestCase):
 
     def seed_ticket(self):
         self.now = int(time() * 1000)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -622,7 +635,7 @@ class AttentionTests(ServeTestCase):
         30 s ago; a supervisor beating 20 min ago when `stale`, else 5 s."""
         self.now = int(time() * 1000)
         self.asked = self.now - 3 * self.HOUR
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -723,7 +736,7 @@ class AttentionTests(ServeTestCase):
         """KO-10 parked the way `_park_on_pr()` parks: `runs.prUrl` set,
         the ticket asking `PR open: URL` with the reason under it, and
         `pr_seen` recorded as what the park's read saw; the run id."""
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = store.tickets.ensure_project(conn, "team-1", self.target)
             parked = store.tickets.mirror_ticket(
@@ -828,7 +841,7 @@ class AttentionTests(ServeTestCase):
 
     def test_a_requeued_failure_stays_until_a_new_attempt(self):
         self.seed_attention()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.requeue(conn, self.failed_ticket, "operator requeued")
         finally:
@@ -860,7 +873,7 @@ class AttentionTests(ServeTestCase):
                                 "target": str(self.target),
                                 "project": str(self.target)})
 
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             finish_run(conn, self.run, "merged")
         finally:
@@ -891,7 +904,7 @@ class BoardTests(ServeTestCase):
         under a live run, KO-6 merged (KO-3 also names it, so a dependency
         on a merged ticket is no wait)."""
         self.now = int(time() * 1000)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -991,7 +1004,7 @@ class PrUrlTests(ServeTestCase):
         """KO-8 parked `blocked_on_operator` on the pull request; KO-9 parked
         the same way with none. Both parked runs are `lastRunId`."""
         self.now = int(time() * 1000)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -1018,7 +1031,7 @@ class PrUrlTests(ServeTestCase):
     def merge_parked(self):
         """Both parked runs end `merged`, as the babysitter ends one whose PR
         landed."""
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             for run in self.runs.values():
                 finish_run(conn, run, "merged", now=self.now - MIN,

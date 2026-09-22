@@ -149,7 +149,7 @@ class LoopTests(ReviewSessionCases, FixSessionCases, LoopFixture):
     def test_writer_and_container_turns_do_not_record_sessions(self):
         self.configure("[agents]\nimplementer_session = 'session id: ([a-z-]+)'\n")
         self.loop(Commit("seed run"), APPROVE)
-        conn = store.open(self.db)
+        conn = store.open(self.db, migrate="owner")
         self.addCleanup(conn.close)
         run_id = self.read("SELECT id FROM runs")[0][0]
         # The writer may use the implementer CLI but remains out of scope.
@@ -419,7 +419,7 @@ class LoopTests(ReviewSessionCases, FixSessionCases, LoopFixture):
         """The ticket walked back to `ready` with nothing recorded — the
         store's view of a board drag, which forgives nothing — so the next
         offer opens a run that does the work again."""
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         tickets.walk_ticket(conn, 1, "ready")
 
@@ -638,7 +638,7 @@ class LoopTests(ReviewSessionCases, FixSessionCases, LoopFixture):
         """A recorded intervention on the ticket's newest run, then the §3
         walk back to claimable — the in-band unblock, as an operator does it
         through the store API."""
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         ((last_run,),) = self.read("SELECT MAX(id) FROM runs")
         store.record_intervention(
@@ -664,7 +664,7 @@ class LoopTests(ReviewSessionCases, FixSessionCases, LoopFixture):
         """A recorded manual close-out excludes that run from work strikes."""
         self.fail_once()
         self.fail_again()  # second failure parks it
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         ((last_run,),) = self.read("SELECT MAX(id) FROM runs")
         t1 = int(time.time() * 1000)
@@ -912,7 +912,7 @@ class GateConflictImplementerTests(LoopFixture):
         wt = self.worktrees / "ko-131"
         self.git("worktree", "add", "-q", str(wt), branch)
         sha = self.git("rev-parse", branch, cwd=wt).strip()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         project = tickets.ensure_project(conn, StubProvider.TEAM,
                                        str(self.target))
@@ -1134,7 +1134,7 @@ class GateConflictImplementerTests(LoopFixture):
         wt = self.worktrees / "ko-131"
         self.git("worktree", "add", "-q", str(wt), branch)
         sha = self.git("rev-parse", branch, cwd=wt).strip()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         project = tickets.ensure_project(conn, StubProvider.TEAM,
                                        str(self.target))
@@ -1200,7 +1200,7 @@ class TransportRetryTests(LoopFixture):
         self.assertIn("ECONNRESET", reason)
         self.assertIn(BRANCH, self.branches())
         self.assertTrue(fake.turns[0].cwd.exists())
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         ((ticket_id,),) = self.read("SELECT ticketId FROM runs")
         self.assertEqual(store.read.failed_attempts_since(conn, ticket_id, 0), [])
@@ -1211,7 +1211,7 @@ class TransportRetryTests(LoopFixture):
         for message, code in (("AssertionError", 1), ("fetch failed", 0)):
             with self.subTest(message=message):
                 if code == 0:
-                    conn = store.open(str(self.db))
+                    conn = store.open(str(self.db), migrate="owner")
                     self.addCleanup(conn.close)
                     tickets.walk_ticket(conn, 1, "ready")
                 with patch.object(holophyte.loop, "sleep") as nap:

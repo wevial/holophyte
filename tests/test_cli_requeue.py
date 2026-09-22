@@ -27,7 +27,6 @@ import linear_provider
 import store
 import store.read
 import store.tickets
-from holophyte.runs import open_store
 from tests.phase_fixture import park_run
 
 MINUTE = 60 * 1000
@@ -63,7 +62,8 @@ class RequeueCliTests(unittest.TestCase):
         self.repo.mkdir()
         self.target = holophyte.target.Target.locate(self.repo)
         self.with_board()
-        conn = open_store(self.target)
+        self.target.store_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = store.open(self.target.store_path, migrate="owner")
         self.addCleanup(conn.close)
         self.conn = conn
         self.project = store.tickets.ensure_project(conn, "team-1", self.repo)

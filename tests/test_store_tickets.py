@@ -20,7 +20,7 @@ class MirroredBodyTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "store.sqlite3"
-        self.conn = store.open(self.path)
+        self.conn = store.open(self.path, migrate="owner")
         self.addCleanup(self.conn.close)
         self.project = store.tickets.ensure_project(self.conn, "team-1",
                                             "/repos/holophyte")
@@ -87,7 +87,7 @@ class Version10BodyMigrationTests(unittest.TestCase):
         """A store stamped 10 has no `tickets.body`; opening it with this
         build adds the column, stamps version 11, and the ticket it held is
         still there with an empty body."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
@@ -103,7 +103,7 @@ class Version10BodyMigrationTests(unittest.TestCase):
         self.assertNotIn("body", columns)
         self.assertEqual(self.user_version(), 10)
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertGreaterEqual(store.SCHEMA_VERSION, 11)

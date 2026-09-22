@@ -155,7 +155,7 @@ class WorktreeSetupCases:
 
     def test_baseline_evidence_survives_source_redaction(self):
         self.main_output(Commit("candidate"), APPROVE)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         with patch.object(holophyte.redact, "_environment_values", frozenset()):
             holophyte.redact.register_values(["base"])
@@ -170,7 +170,7 @@ class WorktreeSetupCases:
 
     def test_event_payload_redacts_escaped_json_and_plain_text(self):
         self.main_output(Commit("candidate"), APPROVE)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         values = ['sentinel"quote', "sentinel\nnewline", "sentinel\\slash"]
         with patch.object(holophyte.redact, "_environment_values", frozenset()):

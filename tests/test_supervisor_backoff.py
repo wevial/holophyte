@@ -100,7 +100,7 @@ class LaunchBackoffTests(SweepTestCase):
                            io.StringIO())
             probe.assert_not_called()
             start.assert_not_called()
-        reopened = store.open(str(self.db))
+        reopened = store.open(str(self.db), migrate="owner")
         self.addCleanup(reopened.close)
         now = T0 + 61_000
         with patch('holophyte.agents.probe_implementer',
@@ -136,7 +136,7 @@ class LaunchBackoffTests(SweepTestCase):
         """)
         before = self.conn.execute(
             'SELECT id, runId, seq, summary FROM runEvents').fetchall()
-        migrated = store.open(str(self.db))
+        migrated = store.open(str(self.db), migrate="owner")
         self.addCleanup(migrated.close)
         self.assertEqual(migrated.execute(
             'SELECT id, runId, seq, summary FROM runEvents').fetchall(), before)

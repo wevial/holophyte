@@ -9,7 +9,7 @@ from tests.serve_fixture import MIN, ServeTestCase
 class FailedRunCardTests(ServeTestCase):
     def test_attention_names_a_run_that_remains_readable_after_requeue(self):
         self.seed()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.release(conn, self.run, "failed", reason="Verification failed",
                           now=self.now)
@@ -32,7 +32,7 @@ class FailedRunCardTests(ServeTestCase):
         self.assertEqual(detail["run"]["ended_ms"], self.now)
         self.assertEqual(detail["rounds"], [])
 
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             ticket = store.read.run_snapshot(conn, self.run).ticketId
             store.requeue(conn, ticket, "operator requeued")

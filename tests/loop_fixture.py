@@ -199,6 +199,8 @@ class LoopFixture(unittest.TestCase):
         from tests.test_store_phase_gate import audit_loop_store
         self.addCleanup(audit_loop_store, self)
         self.db.parent.mkdir(parents=True)
+        import store
+        store.open(self.db, migrate="owner").close()
         self.tgt = holophyte.target.Target.locate(self.target)
         assert self.tgt.store_path == self.db
         assert self.tgt.worktrees == self.worktrees

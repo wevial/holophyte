@@ -31,7 +31,7 @@ def hold_write_lock(path, seconds, held):
 
     Opens its own connection: sqlite3 refuses one shared across threads.
     """
-    conn = store.open(path)
+    conn = store.open(path, migrate="owner")
     try:
         conn.execute("BEGIN IMMEDIATE")
         held.set()
@@ -46,7 +46,7 @@ class BusyTimeoutTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.path = str(Path(tmp.name) / "holophyte.db")
-        self.reader = store.open(self.path)
+        self.reader = store.open(self.path, migrate="owner")
         self.addCleanup(self.reader.close)
         self.reader.execute("CREATE TABLE probe (n INTEGER)")
         self.reader.commit()
@@ -64,7 +64,7 @@ class BusyTimeoutTests(unittest.TestCase):
         # The hold is longer than nothing but shorter than the wait, so the
         # second writer's only path to success is to block until COMMIT.
         self.start_hold(2)
-        writer = store.open(self.path)
+        writer = store.open(self.path, migrate="owner")
         self.addCleanup(writer.close)
         started = time.monotonic()
         writer.execute("INSERT INTO probe VALUES (1)")
@@ -78,7 +78,7 @@ class BusyTimeoutTests(unittest.TestCase):
     def test_wait_is_bounded(self):
         self.start_hold(2)
         with patch.object(store.schema, "BUSY_TIMEOUT_S", 0.2):
-            writer = store.open(self.path)
+            writer = store.open(self.path, migrate="owner")
         self.addCleanup(writer.close)
         with self.assertRaises(sqlite3.OperationalError) as caught:
             writer.execute("INSERT INTO probe VALUES (1)")
@@ -89,7 +89,7 @@ class BusyTimeoutTests(unittest.TestCase):
             writer.execute("PRAGMA busy_timeout").fetchone(), (200,))
 
     def test_open_sets_the_configured_wait(self):
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
         self.assertEqual(
             conn.execute("PRAGMA busy_timeout").fetchone(),
@@ -109,7 +109,7 @@ class RepointTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.conn = store.open(str(Path(tmp.name) / "store.sqlite3"))
+        self.conn = store.open(str(Path(tmp.name) / "store.sqlite3"), migrate="owner")
         self.addCleanup(self.conn.close)
         self.project = store.tickets.ensure_project(self.conn, "team-1", tmp.name)
         self.ticket = store.tickets.mirror_ticket(
@@ -250,7 +250,7 @@ class FinishedRunsTests(unittest.TestCase):
     def test_mixed_outcomes_page_by_end_then_id_and_filter_before_limiting(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        conn = store.open(str(Path(tmp.name) / "store.sqlite3"))
+        conn = store.open(str(Path(tmp.name) / "store.sqlite3"), migrate="owner")
         self.addCleanup(conn.close)
         project = store.tickets.ensure_project(conn, "team-1", "/repo")
         runs = []

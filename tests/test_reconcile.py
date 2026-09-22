@@ -45,7 +45,7 @@ class SweepDiagnosticsTests(LoopFixture):
 
     def stale_holder(self, minutes_silent=6, strikes=0):
         """A run some other loop claimed and went silent on, lease held."""
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         store.init(conn)
         project = tickets.ensure_project(conn, StubProvider.TEAM,
@@ -140,7 +140,7 @@ class ReconcileTests(LoopFixture):
         """Three open mirrored tickets: KO-1 ready and KO-2 needs_spec, each
         with a run behind it (failed, requeued; KO-2's body then lost its
         criteria on a re-mirror), and KO-3 ready and never run."""
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         project = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
         runs = {}
         for n in (1, 2):
@@ -177,7 +177,7 @@ class ReconcileTests(LoopFixture):
         self.git("commit", "-m", "ticket work", cwd=wt)
         if pushed:
             self.git("push", "origin", branch)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         conn.execute("UPDATE runs SET branch = ? WHERE id = ?",
                      (branch, runs["KO-2"]))
         conn.commit()
@@ -235,7 +235,7 @@ class ReconcileTests(LoopFixture):
                 self.assertIn((run_id, line), self.read(
                     "SELECT runId, summary FROM runEvents"))
                 # Let the next subcase witness the same cancellation transition.
-                conn = store.open(str(self.db))
+                conn = store.open(str(self.db), migrate="owner")
                 conn.execute("UPDATE tickets SET status = 'ready'"
                              " WHERE linearIdentifier = 'KO-2'")
                 conn.commit()
@@ -294,7 +294,7 @@ class ReconcileTests(LoopFixture):
         self.assertEqual(provider.states, [])  # nothing is written to Linear
 
     def test_a_ticket_with_an_active_run_is_left_to_that_run(self):
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         project = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
         ticket = tickets.mirror_ticket(
             conn, project, linear_issue_id="iss-9", linear_identifier="KO-9",
@@ -325,7 +325,7 @@ class ReconcileTests(LoopFixture):
 
         class ClaimsMeanwhile(StubProvider):
             def closed_identifiers(self, identifiers):
-                other = store.open(db)
+                other = store.open(db, migrate="owner")
                 project = tickets.ensure_project(other, team, target)
                 (ticket_id,) = other.execute(
                     "SELECT id FROM tickets WHERE linearIdentifier = 'KO-1'"
@@ -355,7 +355,7 @@ class ReconcileTests(LoopFixture):
         """The provider knows one team; another project's open tickets are
         that project's loop to reconcile."""
         self.seed()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         other = tickets.ensure_project(conn, "another-team", "/elsewhere")
         tickets.mirror_ticket(conn, other, linear_issue_id="iss-x",
                             linear_identifier="XX-1", title="theirs",
@@ -430,7 +430,7 @@ class QueueMirrorTests(LoopFixture):
 
     def test_a_ticket_parked_on_the_operator_is_not_moved_by_the_mirror(self):
         a, b, c = self.queue()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         project = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
         ticket = holophyte.board.mirror_task(conn, project, c)
         tickets.transition(conn, ticket, "blocked_on_deps")
@@ -488,7 +488,7 @@ class RejectedPullRequestTests(MergeModeFixture):
         helpers = test_pullrequest.MergeModePullRequestTests
         helpers.parked_on_pr(self)
         branch, sha = self.read("SELECT branch, candidateSha FROM runs")[0]
-        conn = store.open(self.db)
+        conn = store.open(self.db, migrate="owner")
         self.addCleanup(conn.close)
         ticket = conn.execute("SELECT id FROM tickets").fetchone()[0]
         before = store.read.failed_attempts_since(conn, ticket, 0)
@@ -532,7 +532,7 @@ class ContentWakeTests(MergeModeFixture):
                         'committedDate': H.T1, 'statusCheckRollup':
                         {'state': 'SUCCESS'}}}]}, reviewDecision='APPROVED')
         from holophyte import pr_status, reconcile
-        conn = store.open(self.db)
+        conn = store.open(self.db, migrate="owner")
         self.addCleanup(conn.close)
         with patch.object(pr_status, 'graphql', return_value={
                 'repository': {'pullRequest': dict(node, updatedAt=H.T1)}}):
@@ -569,7 +569,7 @@ class ContentWakeTests(MergeModeFixture):
             if field == 'reviewThreads':
                 item = {'comments': {'nodes': [item]}}
             cases.append(({field: {'nodes': [item]}}, label))
-        conn = store.open(self.db)
+        conn = store.open(self.db, migrate="owner")
         self.addCleanup(conn.close)
         import holophyte.pr_status as ps
         from holophyte.reconcile import _rebabysit
@@ -600,7 +600,7 @@ class ContentWakeTests(MergeModeFixture):
 
         from holophyte.serve import parked_item
         H.parked_with_mark(self, H.T1, 0)
-        conn = store.open(self.db)
+        conn = store.open(self.db, migrate="owner")
         self.addCleanup(conn.close)
         for n, at in enumerate((H.T2, H.T3), 1):
             with self.subTest(pass_number=n):
@@ -641,7 +641,7 @@ class ContentWakeTests(MergeModeFixture):
 
         from holophyte import pr_status, reconcile
         H.parked_with_mark(self, H.T1, 0)
-        conn = store.open(self.db)
+        conn = store.open(self.db, migrate="owner")
         self.addCleanup(conn.close)
         ticket = store.read.blocked_tickets(conn)[0]
         pull = pr_status.parse_pr_url(self.URL)
@@ -672,7 +672,7 @@ class ContentWakeTests(MergeModeFixture):
 
         from holophyte import pr_status, reconcile
         H.parked_with_mark(self, H.T1, 0)
-        conn = store.open(self.db)
+        conn = store.open(self.db, migrate="owner")
         self.addCleanup(conn.close)
         page = {'nodes': [], 'pageInfo': {
             'hasPreviousPage': True, 'startCursor': 'previous'}}

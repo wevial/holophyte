@@ -169,6 +169,7 @@ class WiringClaimTests(unittest.TestCase):
         # The `Target` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
         self.db = Path(tmp.name) / "store.db"
+        store.open(self.db, migrate="owner").close()
         self.worktrees = Path(tmp.name) / "repo.worktrees"
         self.tgt = holophyte.target.Target(
             path=self.target, holo_dir=Path(tmp.name), store_path=self.db,

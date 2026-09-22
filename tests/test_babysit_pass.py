@@ -293,7 +293,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     def rejected_resume_with_stale_approval(self):
         self.resume_rejected_fix()
         import store
-        with closing(store.open(self.tgt.store_path)) as conn:
+        with closing(store.open(self.tgt.store_path, migrate="owner")) as conn:
             # Legacy carried approval metadata must not override a rejection.
             conn.execute("UPDATE runs SET approvedSha = candidateSha WHERE id = 1")
             conn.commit()
@@ -357,7 +357,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
             self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
             out=io.StringIO())
         import store
-        with closing(store.open(self.tgt.store_path)) as conn:
+        with closing(store.open(self.tgt.store_path, migrate="owner")) as conn:
             store.record_intervention(conn, 1, "launch_loop", "resume",
                                       source="supervisor")
         for path in self.api_dir.iterdir():

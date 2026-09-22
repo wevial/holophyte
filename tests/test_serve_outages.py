@@ -12,7 +12,7 @@ from store import launch_backoff  # noqa: E402
 class ActiveOutageTests(ServeTestCase):
     def test_full_history_and_later_windows_preserve_active_outages(self):
         self.seed()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = conn.execute(
                 'SELECT projectId FROM runs WHERE id=?', (self.run,)).fetchone()[0]
@@ -44,7 +44,7 @@ class RouteDownTests(ServeTestCase):
         from store import launch_backoff
 
         self.seed()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = conn.execute(
                 'SELECT projectId FROM runs WHERE id=?', (self.run,)).fetchone()[0]

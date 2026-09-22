@@ -29,7 +29,7 @@ def normalize_contract(value, key=""):
 def contract_answers(case):
     """A reviewed run plus an unestimated run predating host recording."""
     case.seed()
-    with store.open(str(case.db)) as conn:
+    with store.open(str(case.db), migrate="owner") as conn:
         store.record_review_round(
             conn, case.run, 1, "changes_requested", "reviewer",
             started_at=NOW - 20_000, ended_at=NOW - 10_000,

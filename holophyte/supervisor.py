@@ -54,6 +54,7 @@ from holophyte.config_tables import BOARD_ASK_SEC, sweep_config
 from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
 from holophyte.report import format_age, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
+from holophyte.schema_owner import migrate_store
 from holophyte.supervisor_lock import (
     acquire_supervisor_lock,
     release_supervisor_lock,
@@ -837,6 +838,7 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
     previous = {signum: signal.signal(signum, on_signal)
                 for signum in STOP_SIGNALS}
     try:
+        migrate_store(target, provider)
         print(f"[holo2] supervising {target.path} as pid {pid} on"
               f" {host_label(target, socket.gethostname())}: acting sweep"
               f" every {interval}s,"
@@ -860,16 +862,16 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
                       f" ({exc}); {next_step}", file=out)
                 if skipped >= 3:
                     return 1
-            except SystemExit as refused:
-                if NEWER_SCHEMA not in str(refused) or stop.is_set():
-                    raise
-                reexec(f"{refused}; supervisor re-executing")
-                return 0  # only a test's EXEC returns
             else:
                 skipped = 0
             wait(interval)
         print("[holo2] supervisor stopping on signal; lock released",
               file=out)
+    except SystemExit as refused:
+        if NEWER_SCHEMA not in str(refused) or stop.is_set():
+            raise
+        reexec(f"{refused}; supervisor re-executing")
+        return 0  # only a test's EXEC returns
     finally:
         for signum, handler in previous.items():
             signal.signal(signum, handler)

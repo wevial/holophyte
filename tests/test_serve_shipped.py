@@ -62,7 +62,7 @@ class CommitUrlTests(ServeTestCase):
     def seed_merged(self, shas):
         """One merged run per sha, ended a minute apart, oldest first."""
         self.now = int(time() * 1000)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)

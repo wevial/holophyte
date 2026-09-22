@@ -38,7 +38,7 @@ class WorkingTimeTests(SweepTestCase):
         self.conn.execute('PRAGMA user_version = 18')
         self.conn.commit()
         self.conn.close()
-        self.conn = store.open(str(self.db))
+        self.conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(self.conn.close)
         historical = self.snapshot(old)
         self.assertEqual(self.conn.execute('PRAGMA user_version').fetchone()[0],
@@ -243,7 +243,7 @@ class WorkingTimeTests(SweepTestCase):
                 self.assertEqual(effective_work(self.snapshot(run), now[0]), 50)
             settle_work(self.conn, run, now=now[0] + 500)
             self.assertEqual(self.snapshot(run).workingMs, 50)
-            foreign = store.open(str(self.db))
+            foreign = store.open(str(self.db), migrate="owner")
             try:
                 with working(self.conn, run):
                     with self.assertRaises(store.ClaimConflict):
@@ -255,7 +255,7 @@ class WorkingTimeTests(SweepTestCase):
                 now[0] = T0 + 6 * MINUTE
                 supervisor.sweep(self.tgt, self.conn, now[0])
                 now[0] = T0 + 12 * MINUTE
-                other = store.open(str(self.db))
+                other = store.open(str(self.db), migrate="owner")
                 try:
                     with no_network():
                         result = supervisor.sweep(self.tgt, other, now[0], act=True)

@@ -316,7 +316,8 @@ class MediaStartupTests(unittest.TestCase):
                     print("probes reached")
                     return False
 
-                with patch("sys.stdout", out), patch.object(
+                with patch.object(operator, "wait_for_supervisor"), \
+                        patch("sys.stdout", out), patch.object(
                         operator, "startup_routes", side_effect=probe) as probes:
                     self.assertEqual(operator.main(target, None), 1)
                 probes.assert_called_once()

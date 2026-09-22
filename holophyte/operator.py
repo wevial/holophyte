@@ -25,7 +25,7 @@ from holophyte.reconcile import (
     _reconcile_at_startup,
     _reconcile_pull_requests,
 )
-from holophyte.reexec import reexec_self
+from holophyte.reexec import reexec_self, wait_for_supervisor
 from holophyte.report import migration_header, report_lines
 from holophyte.runs import open_store
 from holophyte.startup import banner
@@ -47,6 +47,7 @@ def main(target, provider):
     banner(target)
     reset(target)
     try:
+        wait_for_supervisor(target)
         knobs = loop_config(target)
         if not startup_routes(target, provider, probe_implementer,
                               activate=knobs.workers == 1):

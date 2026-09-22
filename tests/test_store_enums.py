@@ -24,7 +24,7 @@ def enum_checks(conn):
 class StoreEnumTests(unittest.TestCase):
     def test_fresh_constraints_equal_enums_and_previous_schema_verbatim(self):
         with tempfile.TemporaryDirectory() as tmp:
-            conn = store.open(Path(tmp) / 'store.db')
+            conn = store.open(Path(tmp) / 'store.db', migrate="owner")
             self.addCleanup(conn.close)
             actual = enum_checks(conn)
         old = sqlite3.connect(':memory:')

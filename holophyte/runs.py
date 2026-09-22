@@ -1,7 +1,7 @@
 """The store seam: a run's progress as store rows.
 
 Every store call the loop makes goes through one of the five helpers here --
-`open_store()` opens and migrates the store, `set_phase()` is the loop's single
+`open_store()` opens the version-checked store, `set_phase()` is the loop's single
 writer of `runs.phase`, `heartbeat_while()` keeps the run's heartbeat moving
 while the loop waits on an agent, `record_round()` turns a review or
 adjudication reply into a `reviewRounds` row, and `warn_on_run()` lands a
@@ -65,7 +65,7 @@ def review_round_cap(changed_lines, cfg):
 
 
 def open_store(target, path=None):
-    """Open the loop's store, creating and migrating the schema if needed.
+    """Open the store without migrating; the supervisor owns the schema.
 
     The store's directory is made here, on first need: `Target.locate()` only
     derives paths, and a `--report` against a target that has no store says
@@ -74,7 +74,6 @@ def open_store(target, path=None):
     path = Path(path or target.store_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = store.open(str(path))
-    store.init(conn)
     return conn
 
 

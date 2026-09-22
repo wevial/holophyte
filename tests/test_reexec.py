@@ -12,6 +12,27 @@ from tests.loop_fixture import LoopFixture
 
 
 class ReexecTests(LoopFixture):
+    def test_restarted_loop_waits_for_supervisor_stamp(self):
+        import store
+        from holophyte.reexec import wait_for_supervisor
+
+        conn = store.open(self.db)
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION - 1}")
+        conn.close()
+        waits = []
+
+        def stamp(seconds):
+            waits.append(seconds)
+            # The owner is the only actor allowed to advance the version.
+            store.open(self.db, migrate="owner").close()
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            wait_for_supervisor(self.tgt, wait=stamp)
+        self.assertEqual(waits, [1])
+        self.assertIn("waiting for the supervisor", out.getvalue())
+        store.open(self.db).close()
+
     def restart(self, branch='main', dirty='', failure=None, untracked='',
                 workers=None):
         events = []

@@ -718,7 +718,7 @@ class HeartbeatTests(LoopFixture):
             store as it goes, then commits like `Commit`."""
 
             def play(self, cwd, turn):
-                conn = store.open(str(db))
+                conn = store.open(str(db), migrate="owner")
                 try:
                     deadline = time.monotonic() + budget_s * 5 / 3
                     while time.monotonic() < deadline:
@@ -767,7 +767,7 @@ class EndedRunTests(LoopFixture):
 
         class SweptCommit(Commit):
             def play(self, cwd, turn):
-                conn = store.open(str(db))
+                conn = store.open(str(db), migrate="owner")
                 try:
                     (run_id,) = conn.execute("SELECT id FROM runs").fetchone()
                     store.release(conn, run_id, "failed", sweep_reason)

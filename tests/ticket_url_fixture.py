@@ -44,7 +44,7 @@ def assert_schema_url(case):
         conn.execute("PRAGMA user_version = 22")
         conn.commit()
         conn.close()
-        conn = store.open(path)
+        conn = store.open(path, migrate="owner")
         try:
             case.assertIn("url", [r[1] for r in conn.execute(
                 "PRAGMA table_info(tickets)")])
@@ -59,7 +59,7 @@ def assert_schema_url(case):
 def assert_api_url(case):
     case.seed()
     url = "https://linear.app/team/issue/KO-7/ticket"
-    conn = store.open(case.db)
+    conn = store.open(case.db, migrate="owner")
     try:
         project = store.tickets.ensure_project(conn, "team-1", case.target)
         store.tickets.mirror_ticket(
@@ -81,7 +81,7 @@ def assert_api_url(case):
     row = next(t for c in body["columns"] for t in c["tickets"]
                if t["ticket"] == "KO-7")
     case.assertEqual(row["ticket_url"], url)
-    conn = store.open(case.db)
+    conn = store.open(case.db, migrate="owner")
     try:
         finish_run(conn, case.run, "merged", now=case.now)
     finally:

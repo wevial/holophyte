@@ -53,7 +53,7 @@ class AgentTurnEventTests(unittest.TestCase):
             subprocess.run(["git", *args], cwd=self.repo, check=True)
         self.sha = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=self.repo, text=True).strip()
-        self.conn = store.open(self.target.store_path)
+        self.conn = store.open(self.target.store_path, migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         project = store.ensure_project(self.conn, "test", self.repo)

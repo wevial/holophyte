@@ -40,7 +40,7 @@ class InterventionFixture(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.conn = store.open(str(self.root / "store.sqlite3"))
+        self.conn = store.open(str(self.root / "store.sqlite3"), migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project = store.tickets.ensure_project(self.conn, "team-1",
@@ -369,7 +369,7 @@ class RequeueMigrationTests(InterventionFixture):
         self.conn.commit()
         self.conn.close()
         path = str(self.root / "store.sqlite3")
-        conn = store.open(path)
+        conn = store.open(path, migrate="owner")
         self.addCleanup(conn.close)
         # And `open()` on a stamped-2 file runs the ladder itself; a second
         # `init()` is the idempotence check, not what carries it forward.

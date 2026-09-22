@@ -32,7 +32,7 @@ class RunLedgerTests(ServeTestCase):
         last but with the middle one stamped oldest, so the order the
         daemon answers is the store's `at` order and not insertion order."""
         self.now = int(time() * 1000)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -103,7 +103,7 @@ class LedgerWindowTests(ServeTestCase):
         self.t1, self.t2, self.t3 = (started + 5 * MIN, started + 10 * MIN,
                                      started + 20 * MIN)
         with patch("store.schema.time.time", return_value=started / 1000):
-            conn = store.open(str(self.db))
+            conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -201,7 +201,7 @@ class LedgerWaitTests(ServeTestCase):
     whichever is newer; other kinds carry neither field."""
 
     def open_store(self):
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         store.init(conn)
         self.project = store.tickets.ensure_project(conn, "team-1", self.target)
         return conn
@@ -372,7 +372,7 @@ class RunFilesTests(ServeTestCase):
         merged with the merge commit's sha, as the loop does."""
         self.git("merge", "--no-ff", "-q", "-m", "land ko-7", self.branch)
         sha = self.git("rev-parse", "HEAD")
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             finish_run(conn, self.run, "merged", now=self.now,
                           merge_sha=sha)

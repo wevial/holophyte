@@ -124,7 +124,7 @@ class QuestionsTests(unittest.TestCase):
         self.assertEqual(result.reason, "timeout")
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        conn = store.open(Path(tmp.name) / "events.db")
+        conn = store.open(Path(tmp.name) / "events.db", migrate="owner")
         self.addCleanup(conn.close)
         store.init(conn)
         project = store.tickets.ensure_project(conn, "team", "/repos/example")

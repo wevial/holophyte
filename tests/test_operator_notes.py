@@ -40,7 +40,7 @@ class NoteReportTests(ServeTestCase):
         self.seed()
         note = "remove heading\nkeep body\r\nkeep footer\u2028last line"
         author = "maintainer\rseat\u2029operator"
-        with store.open(str(self.db)) as conn:
+        with store.open(str(self.db), migrate="owner") as conn:
             for phase in ("verifying", "reviewing", "merge_gate"):
                 store.set_phase(conn, self.run, phase)
             store.park(conn, self.run, "awaiting_merge_approval",

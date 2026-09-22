@@ -232,5 +232,54 @@ class UnavailableStoreTests(SweepTestCase):
                 self.assertEqual(len(waits), len(outcomes) - bool(expected_code))
 
 
+class MigrationStartupTests(SweepTestCase):
+    def test_startup_migrates_under_merge_lock_once(self):
+        import json
+        from contextlib import contextmanager
+
+        from holophyte.schema_owner import migrate_store
+
+        older = store.SCHEMA_VERSION - 1
+        self.conn.execute(f"PRAGMA user_version = {older}")
+        held = []
+        real_open = store.open
+
+        @contextmanager
+        def lock(*args, **kwargs):
+            held.append(True)
+            try:
+                yield
+            finally:
+                held.pop()
+
+        def opening(*args, **kwargs):
+            self.assertTrue(held, "migration must hold the merge lock")
+            return real_open(*args, **kwargs)
+
+        with patch('holophyte.schema_owner.merge_lock', lock), \
+                patch('holophyte.schema_owner.store.open', opening):
+            migrate_store(self.tgt)
+            migrate_store(self.tgt)
+        row, = self.conn.execute(
+            "SELECT runId, projectId, summary FROM runEvents WHERE kind='migration'")
+        self.assertEqual(row[:2], (None, self.project))
+        self.assertEqual(json.loads(row[2]),
+                         {"from": older, "to": store.SCHEMA_VERSION})
+
+    def test_supervise_calls_owner_before_first_pass(self):
+        older = store.SCHEMA_VERSION - 1
+        self.conn.execute(f"PRAGMA user_version = {older}")
+
+        def first_pass(*args, **kwargs):
+            self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0],
+                             store.SCHEMA_VERSION)
+            raise RuntimeError("stop after startup")
+
+        with patch('holophyte.supervisor.factory_revision', return_value='same'), \
+                patch('holophyte.supervisor.supervise_pass', first_pass):
+            with self.assertRaisesRegex(RuntimeError, "stop after startup"):
+                holophyte.supervisor.supervise(self.tgt, out=io.StringIO())
+
+
 if __name__ == "__main__":
     unittest.main()

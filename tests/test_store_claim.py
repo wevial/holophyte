@@ -36,7 +36,7 @@ class ClaimLeaseTests(unittest.TestCase):
         self.conn.commit()
 
     def open(self):
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
         return conn
 
@@ -121,7 +121,7 @@ class ClaimLeaseTests(unittest.TestCase):
         outcomes = {}
 
         def claim(n):
-            conn = store.open(self.path)
+            conn = store.open(self.path, migrate="owner")
             try:
                 start.wait()
                 outcomes[n] = store.claim(conn, self.project_id, self.ticket_id)
@@ -195,7 +195,7 @@ class ContractSnapshotTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.conn = store.open(Path(tmp.name) / "store.sqlite3")
+        self.conn = store.open(Path(tmp.name) / "store.sqlite3", migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project_id = tickets.ensure_project(self.conn, "team_abc", "/repos/x")

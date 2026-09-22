@@ -41,12 +41,17 @@ class PopulatedStore(unittest.TestCase):
     flight, so `live_runs` has two rows to order.
     """
 
+    def test_readonly_refuses_more_than_one_version_ahead(self):
+        self.conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION + 2}")
+        with self.assertRaises(store.SchemaNewer):
+            read.open_readonly(self.path)
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.path = self.root / "holophyte.db"
-        self.conn = store.open(str(self.path))
+        self.conn = store.open(str(self.path), migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         c = self.conn

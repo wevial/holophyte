@@ -49,7 +49,7 @@ class ServeTestCase(unittest.TestCase):
     def seed(self):
         """One run in `working` beating 30 s ago; a supervisor beating 5 s ago."""
         self.now = int(time() * 1000)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -72,7 +72,7 @@ class ServeTestCase(unittest.TestCase):
         """Three ended runs: merged under estimate, failed over it, one with
         no estimate at all and two review rounds."""
         self.now = int(time() * 1000)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)

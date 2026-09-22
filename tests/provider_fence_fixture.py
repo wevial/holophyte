@@ -14,7 +14,7 @@ class FenceConformanceMixin:
         self.seed("KO-1", verify="echo ok\necho done")
         bare = self.provider.fetch_task("KO-1")
         with tempfile.TemporaryDirectory() as tmp:
-            conn = store.open(Path(tmp) / "store.sqlite3")
+            conn = store.open(Path(tmp) / "store.sqlite3", migrate="owner")
             self.addCleanup(conn.close)
             project = store.ensure_project(conn, "test-team", tmp)
             for tag in ("", "sh", "shell-session extra"):

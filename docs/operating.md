@@ -220,3 +220,14 @@ layout; adjust it before enabling if the factory lives elsewhere. A client
 finds a daemon at the bind address and the target's port from the
 convention, nothing else; splitting the drawer onto a second machine is
 [Across machines](operating/hosts.md).
+
+## Schema upgrades
+
+Pull, then restart the supervisor, then restart everything else in any order.
+The supervisor alone migrates the store, under the merge lock at startup and
+again after its own re-execution, and records a `migration` event with `from`
+and `to` versions. Other writable opens refuse older schemas and name the
+supervisor as the owner. The loop keeps its schema-bump worker drain and waits
+for the supervisor's stamp after re-execution. The read-only daemon can serve
+an adjacent newer schema during this window; `/status` reports `schema_version`
+as read from the store.

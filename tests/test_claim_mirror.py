@@ -56,7 +56,7 @@ class OffBoardMirrorTests(LoopFixture):
     def seed_ready(self, task, run=None):
         """`task` mirrored `ready` with no live run; with `run`, a failed
         run behind it so the ticket has a `lastRunId` the note lands on."""
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                              str(self.target))
@@ -120,7 +120,7 @@ class OffBoardMirrorTests(LoopFixture):
         ends `ready`, owed a loop."""
         self.configure('[report]\nhost_label = "writer-1"\n')
         held = dict(a_task(), labels=["holo:writer-2"])
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                              str(self.target))

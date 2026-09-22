@@ -365,14 +365,14 @@ class SchemaNewer(SystemExit):
 
 
 class SchemaOlder(SystemExit):
-    """A read-only command needs the store's lifecycle owner to migrate it."""
+    """A non-owner needs the supervisor to migrate the store."""
 
     def __init__(self, path, version, expected):
         self.version = version
         super().__init__(
             f"store at {path} is schema {version}; this build expects {expected};"
-            " start the loop or the serve daemon to migrate it, or run the"
-            " command from the build that wrote it")
+            " start the supervisor to migrate it, or run the command from the"
+            " build that wrote it")
 
 
 class _Connection(sqlite3.Connection):
@@ -400,21 +400,26 @@ def _connect_with_version(path):
             time.sleep(2 ** attempt)
 
 
-def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry point open()
+def open(path, *, migrate=False):  # noqa: A001 - the ticket names this entry point open()
     """Open the store at `path` in WAL mode and return the connection.
 
     Refuse a newer `user_version` with `SchemaNewer` (a `SystemExit`) before
-    writing. Migrate older stores with `init()` and create missing indexes.
-    With `migrate=False`, refuse older stores with `SchemaOlder` and skip
-    index creation. Require WAL so supervisor reads can overlap loop writes;
+    writing. Only `migrate="owner"` may initialize or migrate the store.
+    Other callers refuse older stores with `SchemaOlder` before any writes.
+    Require WAL so supervisor reads can overlap loop writes;
     a filesystem that cannot enable it raises rather than silently degrading."""
     # Before anything that writes, including the WAL switch below: a store a
     # newer module stamped is refused without touching it, so the file is
     # still exactly what that newer build left for it to reopen.
+    if migrate != "owner" and not Path(path).exists():
+        raise SchemaOlder(path, 0, SCHEMA_VERSION)
     conn, version = _connect_with_version(path)
     if version > SCHEMA_VERSION:
         conn.close()
         raise SchemaNewer(path, version)
+    if version < SCHEMA_VERSION and migrate != "owner":
+        conn.close()
+        raise SchemaOlder(path, version, SCHEMA_VERSION)
     # Referential integrity is off by default in SQLite and is per-connection,
     # so it has to be asserted on every open, not once at init().
     conn.execute("PRAGMA foreign_keys = ON")
@@ -429,9 +434,7 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
             f"{path}: could not enable WAL mode (journal_mode is {mode!r})"
         )
     try:
-        if not migrate:
-            if version < SCHEMA_VERSION:
-                raise SchemaOlder(path, version, SCHEMA_VERSION)
+        if migrate != "owner":
             return conn
         if version < SCHEMA_VERSION:
             # 0 is every store made before the stamp existed, and a fresh

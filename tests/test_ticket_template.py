@@ -822,7 +822,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_claim_freezes_evidence_and_live_edit_is_drift(self):
         with tempfile.TemporaryDirectory() as tmp:
-            conn = store.open(Path(tmp) / "store.db")
+            conn = store.open(Path(tmp) / "store.db", migrate="owner")
             self.addCleanup(conn.close)
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team", "/repos/test")

@@ -104,6 +104,7 @@ class ReviewRoundRowTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
+        store.open(self.db, migrate="owner").close()
         # The `Target` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
         self.tgt = holophyte.target.Target(
@@ -528,7 +529,7 @@ class RoundWriteTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.conn = store.open(Path(tmp.name) / "store.sqlite3")
+        self.conn = store.open(Path(tmp.name) / "store.sqlite3", migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         project = tickets.ensure_project(self.conn, "team", Path(tmp.name) / "repo")

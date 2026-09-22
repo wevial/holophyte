@@ -92,7 +92,7 @@ class BoardStateMigrationTests(unittest.TestCase):
             conn.execute("PRAGMA user_version = 24")
             conn.commit()
             conn.close()
-            conn = store.open(path)
+            conn = store.open(path, migrate="owner")
             try:
                 self.assertEqual(conn.execute(
                     "SELECT boardState FROM tickets").fetchone(), (None,))
@@ -119,7 +119,7 @@ class ApprovalStampMigrationTests(unittest.TestCase):
             conn.execute("PRAGMA user_version = 25")
             conn.commit()
             conn.close()
-            conn = store.open(path)
+            conn = store.open(path, migrate="owner")
             try:
                 self.assertEqual(conn.execute(
                     "SELECT approvedAt, approvedBy FROM runs").fetchall(),
@@ -137,7 +137,7 @@ class StoreSchemaTests(unittest.TestCase):
         self.path = Path(tmp.name) / "store.sqlite3"
 
     def open(self):
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
         return conn
 
@@ -155,10 +155,50 @@ class StoreSchemaTests(unittest.TestCase):
         self.assertEqual(
             str(caught.exception),
             f"store at {self.path} is schema {older}; this build expects "
-            f"{store.SCHEMA_VERSION}; start the loop or the serve daemon to "
-            "migrate it, or run the command from the build that wrote it")
+            f"{store.SCHEMA_VERSION}; start the supervisor to migrate it, or run "
+            "the command from the build that wrote it")
         self.assertEqual(self.raw().execute("PRAGMA user_version").fetchone(),
                          (older,))
+
+    def test_non_owner_does_not_create_a_missing_store(self):
+        with self.assertRaisesRegex(store.SchemaOlder, "supervisor"):
+            store.open(self.path)
+        self.assertFalse(self.path.exists())
+
+    def test_default_and_boolean_opens_cannot_migrate_or_write(self):
+        conn = sqlite3.connect(self.path)
+        conn.executescript(store.schema.SCHEMA)
+        conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION - 1}")
+        conn.close()
+        before = self.path.read_bytes()
+        for kwargs in ({}, {"migrate": False}, {"migrate": True}):
+            with self.assertRaisesRegex(store.SchemaOlder, "supervisor"):
+                store.open(self.path, **kwargs)
+            self.assertEqual(self.path.read_bytes(), before)
+        conn = store.open(self.path, migrate="owner")
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
+                         store.SCHEMA_VERSION)
+        conn.close()
+
+    def test_supervisor_records_one_project_migration_event(self):
+        import json
+        from types import SimpleNamespace
+
+        from holophyte.schema_owner import migrate_store
+
+        conn = self.open()
+        project = store.ensure_project(conn, "team", self.path.parent)
+        older = store.SCHEMA_VERSION - 1
+        conn.execute(f"PRAGMA user_version = {older}")
+        target = SimpleNamespace(store_path=self.path, path=self.path.parent,
+                                 holo_dir=self.path.parent)
+        migrate_store(target)
+        migrate_store(target)
+        row, = conn.execute(
+            "SELECT runId, projectId, summary FROM runEvents WHERE kind='migration'")
+        self.assertEqual(row[:2], (None, project))
+        self.assertEqual(json.loads(row[2]),
+                         {"from": older, "to": store.SCHEMA_VERSION})
 
     def test_non_migrating_open_refuses_newer_identically(self):
         newer = store.SCHEMA_VERSION + 1
@@ -491,13 +531,13 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.path = Path(tmp.name) / "store.sqlite3"
 
     def test_migration_records_process_once_and_reopen_is_quiet(self):
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         conn.execute("DELETE FROM interventions WHERE action = 'migrate'")
         conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION - 1}")
         conn.commit()
         conn.close()
         before = int(time.time() * 1000)
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         committed = int(time.time() * 1000)
         rows = conn.execute(
             "SELECT runId, source, note, at FROM interventions"
@@ -518,7 +558,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.assertLessEqual(before, at)
         self.assertLessEqual(at, committed)
         conn.close()
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
         store.init(conn)
         self.assertEqual(conn.execute(
@@ -526,7 +566,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         ).fetchone()[0], 1)
 
     def test_migration_evidence_rolls_back_with_failed_stamp_and_without_git(self):
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         conn.execute("DELETE FROM interventions WHERE action = 'migrate'")
         conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION - 1}")
         conn.commit()
@@ -566,7 +606,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         run = store.claim(raw, project, ticket)
         store.record_event(raw, run, "candidate", "preserve this history")
         raw.close()
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
         self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
                          store.SCHEMA_VERSION)
@@ -587,7 +627,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
 
     def current_unstamped_store(self):
         """A store with every current column and `user_version` still 0."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         store.init(conn)
         conn.execute(f"INSERT INTO projects ({A_PROJECT[0]}) VALUES (?, ?, ?, ?)",
                      A_PROJECT[1])
@@ -607,7 +647,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
     def test_a_version_zero_store_is_stamped_on_open_without_data_changes(self):
         before = self.current_unstamped_store()
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
@@ -618,7 +658,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         """A store stamped 3 has no `runs.mergeSha`; opening it with this
         build adds the column, leaves the run it held with a null there,
         and stamps version 4."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         store.init(conn)
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.tickets.mirror_ticket(
@@ -638,7 +678,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.assertNotIn("mergeSha", columns)
         self.assertEqual(self.user_version(), 3)
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 4)
@@ -651,7 +691,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
 
     def test_a_version_4_store_migrates_in_place_and_still_reports(self):
         """Migrate version 4 while retaining its runs and intervention history."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         store.init(conn)
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.tickets.mirror_ticket(
@@ -680,7 +720,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
             raw.execute("SELECT 1 FROM ledger")
         raw.close()
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 6)
@@ -715,7 +755,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         before = self.path.read_bytes()
 
         with self.assertRaises(SystemExit) as caught:
-            store.open(self.path)
+            store.open(self.path, migrate="owner")
 
         message = str(caught.exception)
         self.assertIn(str(newer), message)
@@ -728,7 +768,7 @@ class StoreSchemaVersionTests(unittest.TestCase):
         # index, so asserting "some index covers the column" would pass
         # without the ticket's DDL. Assert the three named indexes exist and
         # each leads on its foreign key.
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         named = {}
@@ -789,7 +829,7 @@ class Version6MigrationTests(unittest.TestCase):
         """A store stamped 6 refuses a 'repoint' row; opening it with this
         build rebuilds the table in place, keeps the 'approve' row it held,
         stamps the current version, and a repoint row then lands."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
@@ -812,7 +852,7 @@ class Version6MigrationTests(unittest.TestCase):
                 ' \'repoint\', 1)', (run_id,))
         raw.close()
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 7)
@@ -841,7 +881,7 @@ class Version9MigrationTests(unittest.TestCase):
         """A store stamped 9 has no `runs.reviewRoundCap`; opening it with
         this build adds the column, leaves the run it held with a null
         there, stamps 10, and the cap then lands on a live run (KO-321)."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
@@ -857,7 +897,7 @@ class Version9MigrationTests(unittest.TestCase):
         self.assertNotIn("reviewRoundCap", columns)
         self.assertEqual(self.user_version(), 9)
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 10)
@@ -896,7 +936,7 @@ class Version10MigrationTests(unittest.TestCase):
         (as 'babysit', the word KO-374 renamed it to), stamps the current
         version, and a reconcile row with the 'linear_completed' trigger
         then lands (KO-329)."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
@@ -919,7 +959,7 @@ class Version10MigrationTests(unittest.TestCase):
                 ' \'reconcile\', 1)', (run_id,))
         raw.close()
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 11)
@@ -955,7 +995,7 @@ class Version11MigrationTests(unittest.TestCase):
 
     def test_a_version_11_store_is_rebuilt_to_accept_the_unit_actions(self):
         """Migrate version 11 while preserving its reconcile intervention."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
@@ -978,7 +1018,7 @@ class Version11MigrationTests(unittest.TestCase):
                 ' \'restart_supervisor\', 1)', (run_id,))
         raw.close()
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 12)
@@ -1017,7 +1057,7 @@ class Version12MigrationTests(unittest.TestCase):
         this build rebuilds the table in place, keeps the 'launch_loop' row
         it held, stamps the current version, and the daemon's config edit
         then lands (KO-356)."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
@@ -1040,7 +1080,7 @@ class Version12MigrationTests(unittest.TestCase):
                 ' \'config_edit\', 1)', (run_id,))
         raw.close()
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 13)
@@ -1077,7 +1117,7 @@ class Version15MigrationTests(unittest.TestCase):
         opening it with this build rebuilds the table in place, rewrites
         every 'shepherd' row to 'babysit' with the rest of the row intact,
         stamps the current version, and a babysit row then lands (KO-374)."""
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
         ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
@@ -1102,7 +1142,7 @@ class Version15MigrationTests(unittest.TestCase):
                 ' \'babysit\', 1)', (run_id,))
         raw.close()
 
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
 
         self.assertGreaterEqual(store.schema.SCHEMA_VERSION, 16)
@@ -1137,7 +1177,7 @@ class OpenRetryTests(unittest.TestCase):
             with patch("store.schema.sqlite3.connect",
                        side_effect=[*failed, connect(path)]) as opening, \
                     patch("store.schema.time.sleep") as sleep:
-                conn = store.open(path)
+                conn = store.open(path, migrate="owner")
             self.addCleanup(conn.close)
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
                              store.schema.SCHEMA_VERSION)
@@ -1159,7 +1199,7 @@ class OpenRetryTests(unittest.TestCase):
                                             if at_connect else None)) as opening, \
                             patch("store.schema.time.sleep") as sleep:
                         with self.assertRaisesRegex(sqlite3.OperationalError, reason):
-                            store.open("unused.db")
+                            store.open("unused.db", migrate="owner")
                     self.assertEqual(opening.call_count, attempts)
                     self.assertEqual(failed.close.call_count,
                                      0 if at_connect else attempts)
@@ -1182,7 +1222,7 @@ class AdmissionMigrationTests(unittest.TestCase):
             conn.execute("PRAGMA user_version = 26")
             conn.commit()
             conn.close()
-            conn = store.open(path)
+            conn = store.open(path, migrate="owner")
             try:
                 self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (28,))
                 self.assertEqual(
@@ -1235,7 +1275,7 @@ class Version26EnumMigrationTests(unittest.TestCase):
                     t for t, _ in store.enums.CONSTRAINED_COLUMNS)}
 
     def test_rows_survive_and_each_enum_still_rejects_invalid_inserts(self):
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
         after = self.rows(conn)
         # Opening adds one truthful migration-evidence row, as every version does.
@@ -1276,7 +1316,7 @@ class Version26EnumMigrationTests(unittest.TestCase):
     def test_failed_rebuild_rolls_back_rows_schema_and_version(self):
         with patch('store.schema._record_migration', side_effect=RuntimeError('stop')):
             with self.assertRaisesRegex(RuntimeError, 'stop'):
-                store.open(self.path)
+                store.open(self.path, migrate="owner")
         conn = sqlite3.connect(self.path)
         self.addCleanup(conn.close)
         self.assertEqual(self.rows(conn), self.before)

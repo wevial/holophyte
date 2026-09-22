@@ -31,7 +31,7 @@ class HeartbeatTests(unittest.TestCase):
         self.run = store.claim(self.conn, project, ticket, now=1_000)
 
     def open(self):
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
         return conn
 

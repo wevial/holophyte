@@ -21,7 +21,7 @@ class FailedAttentionTests(ServeTestCase):
     def setUp(self):
         super().setUp()
         self.seed()
-        self.conn = store.open(str(self.db))
+        self.conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(self.conn.close)
         self.ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
         store.release(self.conn, self.run, "failed", reason="verify red",
@@ -192,7 +192,7 @@ class HeldStatusTests(ServeTestCase):
 
     def test_status_reports_project_hold(self):
         self.seed()
-        conn = store.open(self.db)
+        conn = store.open(self.db, migrate="owner")
         try:
             project = store.ensure_project(conn, "team-1", self.target)
             store.hold(conn, project, "reboot pending")

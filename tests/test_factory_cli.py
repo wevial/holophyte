@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import store
 from holophyte.runs import open_store
+from holophyte.schema_owner import migrate_store
 from tests import test_cli_approve, test_cli_requeue
 
 
@@ -26,7 +27,7 @@ class FactorySchemaCliTests(unittest.TestCase):
         with sqlite3.connect(fixture.target.store_path) as conn:
             return conn.execute("PRAGMA user_version").fetchone()[0]
 
-    def test_read_modes_refuse_older_then_loop_open_migrates(self):
+    def test_read_modes_and_loop_refuse_until_supervisor_migrates(self):
         fixture = self.fixture(test_cli_approve.ApproveCliTests)
         self.stamp_older(fixture)
         factory = Path(__file__).resolve().parents[1] / "factory.py"
@@ -39,21 +40,24 @@ class FactorySchemaCliTests(unittest.TestCase):
                 self.assertIn(
                     f"store at {fixture.target.store_path} is schema "
                     f"{store.SCHEMA_VERSION - 1}; this build expects "
-                    f"{store.SCHEMA_VERSION}; start the loop or the serve daemon",
+                    f"{store.SCHEMA_VERSION}; start the supervisor",
                     result.stderr)
                 self.assertEqual(self.version(fixture), store.SCHEMA_VERSION - 1)
+        with self.assertRaisesRegex(store.SchemaOlder, "supervisor"):
+            open_store(fixture.target)
+        migrate_store(fixture.target)
         open_store(fixture.target).close()
         self.assertEqual(self.version(fixture), store.SCHEMA_VERSION)
 
-    def test_acting_sweep_migrates(self):
+    def test_acting_sweep_refuses_to_migrate(self):
         fixture = self.fixture(test_cli_approve.ApproveCliTests)
         self.stamp_older(fixture)
         with patch("holophyte.sweep_report.review_container_lines", return_value=[]):
-            out, _ = fixture.cli("--sweep", "--act")
-        self.assertIn("no runs in flight", out)
-        self.assertEqual(self.version(fixture), store.SCHEMA_VERSION)
+            with self.assertRaisesRegex(store.SchemaOlder, "supervisor"):
+                fixture.cli("--sweep", "--act")
+        self.assertEqual(self.version(fixture), store.SCHEMA_VERSION - 1)
 
-    def test_write_commands_migrate_and_release_the_ticket(self):
+    def test_write_commands_refuse_until_owner_migrates(self):
         for mode in ("--requeue", "--babysit", "--approve"):
             with self.subTest(mode=mode):
                 cls = (test_cli_requeue.RequeueCliTests if mode == "--requeue"
@@ -64,6 +68,11 @@ class FactorySchemaCliTests(unittest.TestCase):
                 else:
                     fixture.park(pr_url="https://example.test/pull/7")
                 self.stamp_older(fixture)
+                with self.assertRaisesRegex(store.SchemaOlder, "supervisor"):
+                    fixture.cli(mode, "KO-1", "--note", "continue")
+                self.assertEqual(self.version(fixture), store.SCHEMA_VERSION - 1)
+                self.assertEqual(fixture.interventions(), [])
+                migrate_store(fixture.target)
                 fixture.cli(mode, "KO-1", "--note", "continue")
                 self.assertEqual(self.version(fixture), store.SCHEMA_VERSION)
                 action = "operator_note" if mode == "--babysit" else mode[2:]

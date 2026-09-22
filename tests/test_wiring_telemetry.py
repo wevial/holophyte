@@ -121,6 +121,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
+        store.open(self.db, migrate="owner").close()
         # The `Target` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
         self.tgt = holophyte.target.Target(
@@ -204,7 +205,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
         edited after the fact, and an estimate-vs-actual reading that moved
         with them would make finished runs answer for a budget they never had.
         """
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(conn.close)
         store.init(conn)
         project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -243,7 +244,7 @@ class ReportStoreCase(unittest.TestCase):
         self.db = holophyte.target.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
         self.worktrees = self.root / "repo.worktrees"
-        self.conn = store.open(str(self.db))
+        self.conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project = store.tickets.ensure_project(self.conn, "team-1", self.target)

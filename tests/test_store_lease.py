@@ -33,7 +33,7 @@ class TicketLeaseTests(unittest.TestCase):
             for ident in ("KO-1", "KO-2")}
 
     def open(self):
-        conn = store.open(self.path)
+        conn = store.open(self.path, migrate="owner")
         self.addCleanup(conn.close)
         return conn
 

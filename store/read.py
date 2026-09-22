@@ -19,6 +19,9 @@ def open_readonly(path) -> sqlite3.Connection:
     report, sweep, FINDINGS and serve paths open through here instead of
     through the writable opener.
 
+    Older stores and one version newer are readable during supervisor upgrades;
+    a store further ahead refuses before any queries against its tables.
+
     `row_factory` is left unset on purpose: the functions below build their
     rows themselves, column by column, so the tuple shape is the contract.
 
@@ -27,7 +30,12 @@ def open_readonly(path) -> sqlite3.Connection:
     long write holds the file.
     """
     uri = Path(path).resolve().as_uri() + "?mode=ro"
-    return sqlite3.connect(uri, uri=True, timeout=store.schema.BUSY_TIMEOUT_S)
+    conn = sqlite3.connect(uri, uri=True, timeout=store.schema.BUSY_TIMEOUT_S)
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version > store.schema.SCHEMA_VERSION + 1:
+        conn.close()
+        raise store.schema.SchemaNewer(path, version)
+    return conn
 
 
 # --- tickets -----------------------------------------------------------------

@@ -59,7 +59,7 @@ class LiveReportTests(ReportStoreCase):
 
     def test_concurrent_completion_appears_only_in_live_snapshot(self):
         run = self.live_run(454, NOW - 19 * 60_000, "merge_gate", URL)
-        writer = store.open(str(self.db))
+        writer = store.open(str(self.db), migrate="owner")
         self.addCleanup(writer.close)
         read_finished = report.report_rows
 

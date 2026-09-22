@@ -96,7 +96,7 @@ class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
         self.assertEqual(notes[0]["kind"], "operator_note")
         self.assertEqual(notes[0]["note"], "remove the subheader")
         self.assertEqual(notes[0]["event_id"], event_id)
-        with store.open(str(self.tgt.store_path)) as conn:
+        with store.open(str(self.tgt.store_path), migrate="owner") as conn:
             report = "\n".join(holophyte.report.report_lines(conn))
         self.assertIn(f"Run {run_id} round 1: operator_note event {event_id}", report)
         self.assertIn("remove the subheader", report)
@@ -107,7 +107,7 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
         assert_api_url(self)
 
     def expected_rows(self):
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             rows = holophyte.report.report_rows(conn)
         finally:
@@ -126,7 +126,7 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
         return self.column("mergeSha")
 
     def column(self, name):
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             return [value for (value,) in conn.execute(
                 f"SELECT {name} FROM runs WHERE endedAt IS NOT NULL"
@@ -231,7 +231,7 @@ class ShippedTests(ServeTestCase):
         """Seed out-of-id-order merges and a failure with measured work and findings."""
         self.now = int(time() * 1000)
         H = 60 * MIN
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -310,7 +310,7 @@ class ShippedTests(ServeTestCase):
         code, _headers, explicit = self.request("GET", "/shipped?outcome=merged")
         self.assertEqual(code, 200)
         self.assertEqual(explicit, default)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             conn.execute("UPDATE runs SET outcomeReason = ? WHERE id = ?",
                          ("x" * 401, self.runs["KO-2"]))
@@ -380,7 +380,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
     def seed_reviewed(self, cap=None):
         """Seed a merged run with two review rounds and optional round cap."""
         self.now = int(time() * 1000)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
@@ -444,7 +444,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
             1, (finding, mentioned),
             {1: ("ADDRESS", "handle empty tokens"), 2: ("ADDRESS", mentioned.request)},
             "success", "abc123")
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.record_review_round(conn, self.run, 3, "changes_requested",
                                       "github:reviewer",
@@ -474,7 +474,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         raw = "- app.py:7 @review-bot[bot]: <details> -- ADDRESS: analysis</details>"
         finding = dict(path="original.py", line=3, severity="nit", url="https://example.test/thread",
                        message=raw + " -- ADDRESS: the index keeps a forced file")
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.record_review_round(conn, self.run, 3, "changes_requested",
                                       "github:review-bot[bot]", findings=[finding])
@@ -496,7 +496,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.seed_reviewed()
         finding = dict(kind="instruction", path="app.py", line=1, severity="nit",
                        author="coderabbitai", request=comment, message=comment)
-        with store.open(str(self.db)) as conn:
+        with store.open(str(self.db), migrate="owner") as conn:
             store.record_review_round(conn, self.run, 3, "changes_requested",
                                       "github:coderabbitai", findings=[finding])
         self.start()
@@ -538,7 +538,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         legacy = dict(path="app.py", severity="nit", message=(
             "- app.py:2 @github-actions[bot]: Check tokens"
             " -- MENTIONED: ADDRESS: Check tokens"))
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.record_review_round(conn, self.run, 3, "changes_requested",
                                       "github:coderabbitai", findings=[bot, legacy])
@@ -556,7 +556,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertNotEqual(rnd["findings"][0].get("kind"), "instruction")
         self.assertEqual(rnd["findings"][1]["summary"], "Check tokens")
         self.assertEqual(rnd["findings"][1]["author_kind"], "bot")
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             after = conn.execute("SELECT * FROM reviewRounds").fetchall()
             self.assertEqual(after, before)
@@ -600,7 +600,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
     def test_a_no_commit_turns_output_is_among_the_events(self):
         """KO-375: include implementer output in the narrative without its payload."""
         self.seed_reviewed()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.record_event(
                 conn, self.run, "implementer_output",
@@ -625,7 +625,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.seed_reviewed()
         consumed_at = self.now - 26 * MIN
         summary = "operator_note event 4047 drove round 1"
-        with store.open(str(self.db)) as conn:
+        with store.open(str(self.db), migrate="owner") as conn:
             store.record_event(
                 conn, self.run, "operator_note_consumed", summary,
                 level="detail", payload=json.dumps({"event_id": 4047, "round": 1}),
@@ -752,7 +752,7 @@ class ActiveRoutesTests(ServeTestCase):
         target._config = {'agents': {'implementer': 'codex exec',
                                     'implementer_fallback': 'devin -p'}}
         self.addCleanup(reset, target)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             run, = conn.execute('SELECT id FROM runs LIMIT 1').fetchone()
             activate_fallback(target, 'implement', 'quota exhausted', conn, run,
@@ -775,7 +775,7 @@ class ActiveRoutesTests(ServeTestCase):
 class MigrationFeedTests(ServeTestCase):
     def test_now_includes_one_neutral_migration_and_respects_filters(self):
         self.seed()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.record_intervention(conn, self.run, "migrate", "operator note")
         finally:

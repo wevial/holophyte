@@ -342,6 +342,8 @@ class StateDirectoryTests(ConfigTestCase):
         holo = self.tgt.holo_dir
         self.assertFalse(holo.exists())
 
+        from holophyte.schema_owner import migrate_store
+        migrate_store(self.tgt)
         conn = holophyte.runs.open_store(self.tgt)
         self.addCleanup(conn.close)
         lock = holophyte.supervisor_lock.acquire_supervisor_lock(

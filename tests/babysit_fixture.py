@@ -36,7 +36,7 @@ class BabysitHelpers:
         self.fake_route(states=[self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
         older = "The non-blocking observations are FOLLOW_UP, not for this round."
-        with store.open(str(self.tgt.store_path)) as conn:
+        with store.open(str(self.tgt.store_path), migrate="owner") as conn:
             run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
             send_back(conn, run_id, older, "maintainer")
         for path in self.api_dir.iterdir():
@@ -86,7 +86,7 @@ class BabysitHelpers:
             self.assertIn(f"{thread[0]}:{thread[1]}", question)
             self.assertIn(sentence, question)
         newer = "Address both accepted threads now; this supersedes FOLLOW_UP."
-        with store.open(str(self.tgt.store_path)) as conn:
+        with store.open(str(self.tgt.store_path), migrate="owner") as conn:
             send_back(conn, run_id, newer, "maintainer")
         for path in self.api_dir.iterdir():
             path.unlink()
@@ -311,7 +311,7 @@ class ConflictRefusalCases(BabysitHelpers):
         self.assertIn("the reviewer gave no verdict", events[0][0])
         import store
         import store.read
-        with closing(store.open(self.db)) as conn:
+        with closing(store.open(self.db, migrate="owner")) as conn:
             self.assertEqual(store.read.run_snapshot(conn, 1).reviewRoundCount, 3)
             self.assertEqual(store.read.live_runs(
                 conn, ("awaiting_merge_approval",))[0].reviewRoundCount, 3)
@@ -520,7 +520,7 @@ class OperatorNoteCase:
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + config)
         self.fake_route(states=[self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
-        with store.open(str(self.tgt.store_path)) as conn:
+        with store.open(str(self.tgt.store_path), migrate="owner") as conn:
             run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
             note_id = send_back(conn, run_id, note, "maintainer")
         for path in self.api_dir.iterdir():
@@ -549,7 +549,7 @@ class OperatorNoteCase:
             self.assertNotIn("THREAD 3 --", fake.turns[0].goal)
             self.assertTrue(all("remove the subheader" not in str(value)
                                 for _, value in posts))
-        with store.open(str(self.tgt.store_path)) as conn:
+        with store.open(str(self.tgt.store_path), migrate="owner") as conn:
             current = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
             instruction, = notes(conn, current)
             self.assertTrue(instruction["consumed"])

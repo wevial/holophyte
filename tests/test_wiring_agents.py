@@ -36,7 +36,7 @@ class ConfiguredHeartbeatTests(ConfigTestCase):
             "        beats.add(beat)\n"
             "print(len(beats))\n"
             "print('VERDICT: APPROVE')\n")
-        conn = store.open(root / "store.db")
+        conn = store.open(root / "store.db", migrate="owner")
         self.addCleanup(conn.close)
         store.init(conn)
         project = store.tickets.ensure_project(conn, "team", str(root))

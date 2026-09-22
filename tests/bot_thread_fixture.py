@@ -129,7 +129,7 @@ class BotConfigCases:
 class BotFindingCases:
     def test_bot_findings_are_advisory_on_run_detail(self):
         self.seed_reviewed()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.record_event(conn, self.run, "bot_finding",
                                "https://example.test/thread: Consider a rename")

@@ -22,7 +22,6 @@ import holophyte.cli
 import holophyte.target
 import store
 import store.tickets
-from holophyte.runs import open_store
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -44,7 +43,8 @@ class RepointFlagTests(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.target = holophyte.target.Target.locate(self.repo)
-        conn = open_store(self.target)
+        self.target.store_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = store.open(self.target.store_path, migrate="owner")
         self.addCleanup(conn.close)
         self.conn = conn
         self.project = store.tickets.ensure_project(conn, "team-1", self.repo)

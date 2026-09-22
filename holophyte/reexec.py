@@ -92,3 +92,29 @@ def start_loop(unit_name):
     unit = LOOP_UNIT + unit_name
     ok, detail = systemctl_user("start", unit)
     return unit, ok, detail
+
+
+def wait_for_supervisor(target, wait=None):
+    """A restarted loop waits for the owner's stamp before any writable open."""
+    import time
+
+    import store
+    import store.read
+
+    wait = time.sleep if wait is None else wait
+    announced = False
+    while True:
+        version = 0
+        if target.store_path.exists():
+            conn = store.read.open_readonly(target.store_path)
+            try:
+                version = conn.execute("PRAGMA user_version").fetchone()[0]
+            finally:
+                conn.close()
+        if version >= store.SCHEMA_VERSION:
+            return
+        if not announced:
+            print(f"[holo2] schema {version} -> {store.SCHEMA_VERSION}: "
+                  "waiting for the supervisor to migrate the store", flush=True)
+            announced = True
+        wait(1)

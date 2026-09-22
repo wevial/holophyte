@@ -11,7 +11,6 @@ import holophyte.cli
 import store
 import store.tickets
 from holophyte.board import lease_label
-from holophyte.runs import open_store
 from holophyte.target import Target
 
 URL = "https://example.org/project/pull/122"
@@ -28,7 +27,8 @@ class CloseFlagTests(unittest.TestCase):
         self.repo = root / "repo"
         self.repo.mkdir()
         self.target = Target.locate(self.repo)
-        self.conn = open_store(self.target)
+        self.target.store_path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = store.open(self.target.store_path, migrate="owner")
         self.addCleanup(self.conn.close)
         project = store.tickets.ensure_project(self.conn, "team", self.repo)
         self.ticket = store.tickets.mirror_ticket(

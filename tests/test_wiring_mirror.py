@@ -113,6 +113,7 @@ class MirrorPushTests(unittest.TestCase):
             subprocess.run(["git", "config", key, value],
                            cwd=self.target, check=True)
         self.db = root / "repo.holophyte.db"
+        store.open(self.db, migrate="owner").close()
         # The `Target` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
         self.tgt = holophyte.target.Target(

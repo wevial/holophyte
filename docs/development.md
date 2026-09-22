@@ -153,6 +153,9 @@ Each module, one line:
 - `holophyte/reexec.py` — `reexec_self`, the shared self re-exec the loop
   and the supervisor both restart themselves through.
 
+- `holophyte/schema_owner.py` — supervisor startup migration under the merge
+  lock, with a project-owned migration event.
+
 The store is its own package:
 
 - `store/__init__.py` — the v2 durable state store, one WAL-mode SQLite

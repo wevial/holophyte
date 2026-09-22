@@ -71,7 +71,7 @@ class GateConflictRequeueTests(LoopFixture):
         wt = self.worktrees / "ko-131"
         self.git("worktree", "add", "-q", str(wt), branch)
         sha = self.git("rev-parse", branch, cwd=wt).strip()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
@@ -126,7 +126,7 @@ class GateConflictRequeueTests(LoopFixture):
     def test_a_pull_request_park_is_still_refused(self):
         provider = StubProvider(a_task())
         url = "https://github.com/example/repo/pull/7"
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
@@ -647,7 +647,7 @@ class SweptHeartbeatTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "store.sqlite3"
-        self.conn = store.open(self.path)
+        self.conn = store.open(self.path, migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         project = tickets.ensure_project(self.conn, "team_abc", "/repos/x")
@@ -668,7 +668,7 @@ class SweptHeartbeatTests(unittest.TestCase):
         with self.assertRaises(holophyte.runs.RunSwept) as caught:
             with holophyte.loop.heartbeat_while(self.conn, self.run, 0.05,
                                                 on_swept=on_swept):
-                other = store.open(self.path)
+                other = store.open(self.path, migrate="owner")
                 try:
                     store.release(other, self.run, "failed", reason)
                 finally:
@@ -692,7 +692,7 @@ class SweptHeartbeatTests(unittest.TestCase):
         with self.assertRaises(holophyte.runs.RunSwept) as caught:
             with holophyte.loop.heartbeat_while(self.conn, self.run, 60,
                                                 on_swept=calls.append):
-                other = store.open(self.path)
+                other = store.open(self.path, migrate="owner")
                 try:
                     store.release(other, self.run, "failed", reason)
                 finally:
@@ -727,7 +727,7 @@ class SweptTurnTests(LoopFixture):
             def play(self, cwd, turn):
                 proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
                 fake.turns[-1].on_start(proc)
-                conn = store.open(str(db))
+                conn = store.open(str(db), migrate="owner")
                 try:
                     (run_id,) = conn.execute("SELECT id FROM runs").fetchone()
                     # The fake agent has spent an hour of work.
@@ -798,7 +798,7 @@ class SweptTurnTests(LoopFixture):
 
 class ImplementerProbeTests(LoopFixture):
     def assert_unclaimed_route_down(self):
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM runs").fetchone(), (0,))
             event, = conn.execute(

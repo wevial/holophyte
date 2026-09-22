@@ -67,7 +67,7 @@ class SweepTestCase(unittest.TestCase):
         # FINDINGS.md into whichever target it names, so it is this test's
         # repository and never the one this suite is running in.
         self.tgt = holophyte.target.Target.locate(self.target)
-        self.conn = store.open(str(self.db))
+        self.conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.projects = 1

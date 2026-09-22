@@ -51,7 +51,7 @@ class LiveRunFilesTests(ServeTestCase):
         # As the loop cuts it: detached at main, then the task branch.
         self.git("worktree", "add", "-q", "--detach", str(self.wt), "main")
         self.git("checkout", "-q", "-b", self.BRANCH, cwd=self.wt)
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.set_branch(conn, self.run, self.BRANCH)
         finally:

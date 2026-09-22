@@ -312,9 +312,6 @@ class SuperviseTests(SweepTestCase):
         """A signal that lands during the refused pass ends the loop; the
         refusal is re-raised as before rather than exec-ed past."""
         execs = []
-        self.conn.execute(
-            f"PRAGMA user_version = {store.SCHEMA_VERSION + 1}")
-        self.conn.commit()
 
         def refuse_then_stop(*args, **kwargs):
             os.kill(os.getpid(), signal.SIGTERM)

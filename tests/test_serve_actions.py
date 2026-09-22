@@ -50,10 +50,10 @@ class ActionsTests(UnitActionCases, ServeTestCase):
             return self.request("POST", "/actions/send-back", self.BEARER,
                                 body={"run": self.run, "note": note,
                                       "author": "maintainer"})
-        with store.open(str(self.db)) as conn:
+        with store.open(str(self.db), migrate="owner") as conn:
             before = conn.execute("SELECT COUNT(*) FROM runEvents").fetchone()
         self.assertFalse(send("remove the subheader")[2].get("ok", False))
-        with store.open(str(self.db)) as conn:
+        with store.open(str(self.db), migrate="owner") as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM runEvents").fetchone(),
                              before)
             for phase in ("verifying", "reviewing", "merge_gate"):
@@ -63,13 +63,13 @@ class ActionsTests(UnitActionCases, ServeTestCase):
             store.tickets.transition(conn, 1, "blocked_on_operator")
             before = conn.execute("SELECT COUNT(*) FROM runEvents").fetchone()
         self.assertFalse(send("   ")[2].get("ok", False))
-        with store.open(str(self.db)) as conn:
+        with store.open(str(self.db), migrate="owner") as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM runEvents").fetchone(),
                              before)
         code, _, result = send("remove the subheader")
         self.assertEqual(code, 200)
         self.assertTrue(result["ok"], result)
-        with store.open(str(self.db)) as conn:
+        with store.open(str(self.db), migrate="owner") as conn:
             import json
             guidance, = conn.execute(
                 "SELECT guidance FROM interventions"
@@ -191,7 +191,7 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         record-before-acting means the unit is left alone: `ok: false`
         naming why, `systemctl` never called. A target with no store is the
         same answer."""
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             store.init(conn)
         finally:
@@ -273,7 +273,7 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         # The CLI's `--requeue` refuses to pick one of two tickets named
         # alike; the route must refuse the same way, and neither may move.
         self.seed_ended()
-        conn = store.open(str(self.db))
+        conn = store.open(str(self.db), migrate="owner")
         try:
             project = store.tickets.ensure_project(conn, "team-1", self.target)
             twin = store.tickets.mirror_ticket(
