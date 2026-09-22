@@ -37,6 +37,9 @@ EXPECTED = [
     "contract_drift",
     "contract_snapshot",
     "ensure_project",
+    "register_project",  # KO-586: explicit project registration and admission.
+    "list_projects",
+    "set_admission",
     "findings_fingerprint",
     "findings_overlap",
     "heartbeat",

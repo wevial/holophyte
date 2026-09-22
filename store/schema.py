@@ -335,8 +335,9 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 27 generates every enum CHECK from store.enums (KO-579).
 # Version 28 adds project admission holds and their interventions (KO-578).
 # Version 29 records typed run failure kinds with prefix backfill (KO-584).
-# Version 30 types run park reasons and backfills legacy questions (KO-583).
-SCHEMA_VERSION = 30
+# Version 30 adds disabled project admission and registration (KO-586).
+# Version 31 types run park reasons and backfills legacy questions (KO-583).
+SCHEMA_VERSION = 31
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -627,15 +628,15 @@ def init(conn):
         if version < 29:
             from .failure_kinds import backfill
             backfill(conn)
-        if version < 30:
+        if version < 31:
             conn.execute("UPDATE runs SET parkKind = (SELECT CASE"
                          " WHEN blockedQuestion GLOB 'PR open:*' THEN 'pull_request'"
                          " WHEN blockedQuestion GLOB 'rejected:*'"
                          " THEN 'pull_request_closed'"
                          " ELSE 'question' END FROM tickets t"
                          " WHERE t.lastRunId = runs.id"
-                         " AND t.status = 'blocked_on_operator')")
-        if version < 28:
+                         " AND t.status = 'blocked_on_operator')"
+                         " WHERE parkKind IS NULL")
             _rebuild_enum_tables(conn)
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the
@@ -656,14 +657,16 @@ def init(conn):
 def _rebuild_enum_tables(conn):
     """Copy constrained tables through the generated DDL in init's transaction."""
     for table in dict.fromkeys(table for table, _ in _enums.CONSTRAINED_COLUMNS):
+        # The dedicated widening step already installs the current intervention
+        # DDL and translates historical actions; do not copy its history twice.
+        if table == "interventions":
+            continue
         indexes = conn.execute(
             "SELECT sql FROM sqlite_master WHERE tbl_name = ?"
             " AND type IN ('index', 'trigger') AND sql IS NOT NULL", (table,)
         ).fetchall()
-        schema = _INTERVENTIONS_DDL if table == "interventions" else SCHEMA
-        ddl = schema.split(f"CREATE TABLE IF NOT EXISTS {table} (", 1)[1]
-        ddl = (ddl.rstrip().removesuffix(")") if table == "interventions"
-               else ddl.split(");", 1)[0])
+        ddl = SCHEMA.split(f"CREATE TABLE IF NOT EXISTS {table} (", 1)[1]
+        ddl = ddl.split(");", 1)[0]
         conn.execute(f"CREATE TABLE {table}_enum_new (" + ddl + ")")
         columns = ", ".join(f'"{row[1]}"' for row in conn.execute(
             f"PRAGMA table_info({table})"))
@@ -732,7 +735,8 @@ def _widen_interventions_action(conn):
            for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
                          "'restart_supervisor'", "'launch_loop'",
                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
-                         "'migrate'", "'hold'", "'release_hold'")):
+                         "'migrate'", "'hold'", "'release_hold'",
+                         "'register_project'", "'disable'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
