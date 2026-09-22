@@ -8,6 +8,11 @@ from holophyte.config_tables import merge_config
 
 
 class MentionAccountCases:
+    def test_private_operator_note_is_exempt_from_mention_accounts(self):
+        self.operator_note_pass(
+            False, 'mention_accounts = ["github-maintainer"]\n',
+            note="@holophyte fix: remove the subheader")
+
     def test_marked_mention_is_fixed_without_judgment_and_resolved(self):
         self.mentioned_thread_is_fixed(("reviewer", "User"))
 

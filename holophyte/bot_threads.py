@@ -11,6 +11,8 @@ def route_bot_threads(target, conn, run_id, beat_s, pull, state, merge):
     """Note advisory bot findings; human follow-ups make them human threads."""
     if merge.mention_accounts and not (state.merged or state.closed):
         for thread in state.threads:
+            if maintainer_notes.is_note(thread):
+                continue
             if refused(thread, merge.mention_handle, merge.mention_accounts):
                 refuse(target, pull, thread, conn, run_id, beat_s)
     if merge.bot_threads != "advisory" or state.merged or state.closed:
