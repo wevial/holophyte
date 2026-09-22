@@ -553,6 +553,8 @@ Use TOML literal strings for custom patterns, for example
 | `ui_paths` | Default: `[]` | List of non-empty repository-relative globs without `..`; set with ui_capture to identify changes needing visual evidence. |
 | `ui_capture_dir` | Default: `"e2e/capture"` | Directory named in the implementer brief for ticket capture scripts. |
 | `ui_capture` | Default: `""` | Command string with shell-style quoting but no shell evaluation; set with ui_paths to capture evidence non-interactively. |
+| `capture_env_source` | Default: absent | Source dotenv path for the capture command only, with `~` expanded; relative paths resolve beside config.toml. Requires `capture_env_allow`. |
+| `capture_env_allow` | Default: absent | List of names matching `[A-Za-z_][A-Za-z0-9_]*`; requires `capture_env_source`. Missing names refuse startup, naming the variable. Exactly these values are added to the `ui_capture` command's environment, on the host and in a container; they are never written to the worktree and never reach agent turns or verify commands. Source values are redacted from output. |
 | `media_repo` | Default: `""` (target repository) | Empty string or GitHub `owner/name`; set a separate repository to keep evidence out of the target's git storage. |
 | `media_bucket` | Default: Absent (git publishing) | Table described under [merge.media_bucket](#mergemedia_bucket) below; set to publish evidence in S3-compatible object storage instead. |
 | `media_max_file_mb` | Default: `10` MB | Finite positive number; change the largest permitted individual evidence file. |
@@ -754,10 +756,18 @@ one per line. With capture configured, the implementer is told to add or update
 a script under `ui_capture_dir`, producing `01-slug.png`, `02-slug.png`, etc.
 in state order, plus a recording when the states describe a flow. The command
 receives `HOLOPHYTE_TICKET` and, only when states are listed,
-`HOLOPHYTE_EVIDENCE_STATES` joined with newlines. The target's own harness
+`HOLOPHYTE_EVIDENCE_STATES` joined with newlines, plus any
+`capture_env_allow` values. The target's own harness
 selects and runs that ticket's script. Numbered images receive state captions;
 missing images are marked "not captured" in the PR and reviewer prompt.
 Tickets without the section keep the default capture.
+
+`capture_env_source` and `capture_env_allow` supply credentials the capture
+needs and the implementer does not, such as a server's API keys. They keep
+those values out of the implementer's `.env`, environment and prompt, not out
+of reach: with `implementer_isolation = "none"` the implementer runs as the
+same host user and could read the source file, and the capture command runs
+spec code the candidate wrote, which sees the values while it runs.
 
 MB means 1,048,576 bytes: oversized files are omitted, then
 videos are dropped first to fit the total cap, with each omission listed in

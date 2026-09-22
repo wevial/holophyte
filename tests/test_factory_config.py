@@ -22,6 +22,7 @@ import holophyte.config
 import holophyte.gates
 import holophyte.loop
 import holophyte.operator
+import holophyte.redact
 import holophyte.runs
 import holophyte.supervisor
 import holophyte.supervisor_lock
@@ -78,6 +79,35 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
                     holophyte.config.check_document(target)
                 self.assertIn(message, str(caught.exception))
                 self.assertNotIn("sentinel-config-value", str(caught.exception))
+
+    def test_capture_environment_refusals_and_redaction(self):
+        self.enterContext(patch("holophyte.redact._environment_values", frozenset()))
+        self.locate("")
+        source = self.tgt.config_path.parent / "capture.env"
+        source.write_text("CAPTURE_KEY=sentinel-capture\n")
+        cases = [
+            (f'capture_env_source = "{source}"', "capture_env_allow"),
+            ('capture_env_allow = ["CAPTURE_KEY"]', "capture_env_source"),
+            (f'capture_env_source = "{source}"\ncapture_env_allow = ["MISSING"]',
+             "MISSING"),
+        ]
+        for config, message in cases:
+            with self.subTest(config=config):
+                target = type("Candidate", (), {
+                    "config_path": self.tgt.config_path,
+                    "path": self.tgt.path,
+                    "config": lambda self: {"merge": tomllib.loads(config)},
+                })()
+                with self.assertRaises(SystemExit) as caught:
+                    holophyte.config.check_document(target)
+                self.assertIn(message, str(caught.exception))
+                self.assertNotIn("sentinel-capture", str(caught.exception))
+        self.locate(f'[merge]\ncapture_env_source = "{source}"\n'
+                    'capture_env_allow = ["CAPTURE_KEY"]\n')
+        holophyte.config.check_document(self.tgt)
+        with patch("builtins.print") as printed:
+            holophyte.redact.safe_print("token sentinel-capture here")
+        printed.assert_called_once_with("token [redacted] here")
 
     def test_strip_attribution_rejects_invalid_patterns_at_startup(self):
         for value in ('["["]', '"not a list"', '[1]'):
