@@ -262,6 +262,35 @@ def vacuous_green_report(cmd, cleaned):
             f"[verify]   output:\n{body[-2000:]}")
 
 
+# The module list after `-m unittest`, up to a shell operator, and one
+# `tests.name` token in it with its leading space (KO-597).
+_UNITTEST_ARGS = re.compile(r"-m\s+unittest\b([^;&|\n]*)")
+_TEST_MODULE = re.compile(r"\s+tests\.(\w+)[\w.]*(?=\s|$)")
+
+
+def drop_candidate_modules(command, candidate, main):
+    """Drop unittest modules whose file only the candidate has: main cannot
+    import them, so naming them there can only fail. A line left with no
+    module is dropped rather than run as a bare, discovering `unittest`.
+    Returns the command to run on main and the skipped module names."""
+    lines, skipped = [], []
+    for line in (command or "").splitlines():
+        found = _UNITTEST_ARGS.search(line)
+        args = found.group(1) if found else ""
+        named = list(_TEST_MODULE.finditer(args))
+        gone = [m for m in named
+                if (candidate / "tests" / f"{m.group(1)}.py").exists()
+                and not (main / "tests" / f"{m.group(1)}.py").exists()]
+        skipped += [m.group(0).strip() for m in gone]
+        if gone and len(gone) == len(named):
+            continue
+        for m in reversed(gone):
+            args = args[:m.start()] + args[m.end():]
+        lines.append(line[:found.start(1)] + args + line[found.end(1):]
+                     if gone else line)
+    return ("\n".join(lines) if skipped else command), skipped
+
+
 def contract_report(contracts, cwd):
     """Run the ticket's literal contract checks — each a (relative path,
     expected literal) pair parsed from its `## Contract checks` fence — against
