@@ -174,6 +174,8 @@ The store is its own package:
   project-owned startup evidence before a first claim (KO-466).
 - `store/working.py` — persisted work intervals, finally-safe settlement and
   non-mutating effective-work reads; excludes orchestration waits.
+- `store/writes.py` — named transactional writes for board state, questions,
+  pull request metadata, outcome reasons and board ask timestamps.
 - `store/read.py` — typed read views over the store: one query, one row
   type, no SQL elsewhere.
 
