@@ -130,13 +130,13 @@ class Thread:
     url: str
     outdated: bool = False
     replies: tuple = ()  # `Comment`s after the opening one
-    # The opening comment's `Comment.author_kind`. The babysitter answers a
-    # bot's thread and leaves a person's to the operator; `"unknown"` --
-    # the default, and a deleted account -- is treated as a person's.
+    # Opening author's kind: bots get answers; people go to the operator.
+    # Unknown authors (including deleted accounts) are treated as people.
     author_kind: str = "unknown"
     kind: str = "review"
     classification: str = ""
     request: str = ""
+    intent: str = "unmarked"
 
     @property
     def comments(self):

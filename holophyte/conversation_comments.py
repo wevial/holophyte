@@ -3,11 +3,15 @@ import re
 
 from holophyte.config_tables import merge_config
 from holophyte.pr import Thread
+from holophyte.redact import known_secrets, outbound
 from holophyte.thread_mentions import classify
+
+ASK_REPLY_MARKER = "<!-- holophyte:ask-answered -->"
 
 REPLY_RE = re.compile(
     r"(> \[Request by @[^\n]+\]\([^\n]+\)\n>\n> .*?)"
-    r"\n\n---- Comment by [^\n]+ ----\n\nAddressed in [0-9a-f]{40}: .+",
+    r"\n\n---- Comment by [^\n]+ ----\n\n"
+    rf"(?:Addressed in [0-9a-f]{{40}}: |{re.escape(ASK_REPLY_MARKER)}\n).+",
     re.DOTALL)
 
 
@@ -31,9 +35,10 @@ def conversation_threads(target, pull, node, read_page):
         return
     merge = merge_config(target)
     replies = {_reply_quote(c) for c in comments}
+    secrets = known_secrets(target.config())
     for comment in comments:
         thread = _instruction(comment, pull, merge)
-        if thread and quote_request(thread) not in replies:
+        if thread and outbound(quote_request(thread), secrets) not in replies:
             yield thread
 
 

@@ -83,13 +83,23 @@ Under `[merge] mode = "pr"` (see [Config](config.md)) the reviewer's approval
 is not the last word: the candidate is pushed and opened as a pull request,
 and the repository's own review bots and people leave threads on it. The
 loop answers those the way an operator would by hand -- read, judge, fix,
-reply, wait, repeat -- and every pass is a review round of the run, so
-FINDINGS shows the GitHub rounds beside the Codex ones.
+reply, wait, repeat -- and passes other than ask-only passes are review rounds
+of the run, so FINDINGS shows the GitHub rounds beside the Codex ones.
 
-A human mention of the configured handle in the pull request conversation
-is an instruction too. It bypasses adjudication and is answered by a
-conversation comment quoting the request and naming the fix SHA; there is
-no review thread to resolve. Unmentioned conversation comments are ignored.
+A mention of the configured handle accepts three explicit forms (case and
+surrounding spaces are ignored): `@holophyte ? Can an existing guest be renamed?`
+and `@holophyte ask: Can an existing guest be renamed?` ask for an answer;
+`@holophyte fix: Change the title to Rename Guest` requests a change. A bare
+mention, such as `@holophyte Change the title to Rename Guest`, keeps the
+existing fix behavior. An ask never changes code: the read-only adjudicator
+answers with file and line citations and advice about whether a change is
+warranted. It never commits, pushes, or requests review. A pass containing only
+asks records the replies as instruction events, consumes no review round or
+work strike, and restores the previous park reason.
+
+A human mention in the pull request conversation follows the same forms.
+Its reply quotes the request; there is no review thread to resolve.
+Unmentioned conversation comments are ignored.
 
 A merge under human approval requires an explicit approve recorded on the
 run: `--approve KO-n` records `approvedAt` and `approvedBy`. A `--babysit`
@@ -116,8 +126,9 @@ One pass:
    are about their commit, and the babysitter judges and merges only its own.
 2. **Verdict.** A thread whose latest comment mentions `@holophyte`
    (case-insensitive; configurable with `[merge] mention_handle`) is an
-   instruction. It bypasses adjudication, is fixed using that comment's
-   request, then receives an `Addressed in SHA` reply and is resolved. This
+   instruction. Explicit asks receive read-only answers as described above.
+   Other mentions bypass adjudication, are fixed using that comment's
+   request, then receive an `Addressed in SHA` reply and are resolved. This
    also applies to a bot thread with a human mention reply. Otherwise,
    a thread a person opened -- its opening author is a
    GitHub `User`, or an account GitHub no longer names -- is `HUMAN`,

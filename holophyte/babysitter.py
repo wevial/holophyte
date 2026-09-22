@@ -3,6 +3,7 @@ import json
 import re
 import subprocess
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from time import monotonic, time
 
@@ -22,7 +23,6 @@ from holophyte.babysit_steps import record_step
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
 from holophyte.config_tables import merge_config
-from holophyte.conversation_comments import quote_request
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -42,8 +42,8 @@ from holophyte.review import (
     parse_findings,
 )
 from holophyte.runs import heartbeat_while, record_round
+from holophyte.thread_answers import answer_asks, post
 from holophyte.thread_findings import thread_finding
-from store.instructions import record_instruction_reply
 
 # Quote conventions in brief order, capped per file, so rules aren't guessed.
 CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
@@ -431,6 +431,10 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                             sha, pull, state, reviewed)
         if done is not None:
             return done
+        state = replace(state, threads=answer_asks(
+            target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
+            pull, tuple(thread_mentions.classify(t, merge.mention_handle)
+                        for t in state.threads), ticket, reviewed))
         if state.mergeable == "CONFLICTING":
             # Push origin/main's merge and settle again; UNKNOWN is not conflict.
             sha, pushed_state, reviewed = _merge_origin_main(
@@ -981,20 +985,5 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
 
 
 def _post(target, conn, run_id, beat_s, pull, thread, body, resolve):
-    """Reply and optionally resolve a review thread; record each landed call."""
-    with heartbeat_while(conn, run_id, beat_s):
-        if thread.kind == "conversation":
-            pr.comment_on_pull(target, pull, f"{quote_request(thread)}\n\n{body}")
-        else:
-            pr.reply_thread(target, pull, thread.id, body)
-        if thread.classification == "MENTIONED":
-            record_instruction_reply(conn, run_id, thread.url, "changed", body)
-        if conn is not None and run_id is not None:
-            store.record_event(conn, run_id, "pull_request",
-                               f"replied on thread {thread.url}:"
-                               f" {babysitter.gist(body.splitlines()[-1])}")
-        if resolve and thread.kind != "conversation":
-            pr.resolve_thread(target, pull, thread.id)
-            if conn is not None and run_id is not None:
-                store.record_event(conn, run_id, "pull_request",
-                                   f"resolved thread {thread.url}")
+    """Keep the babysitter reply seam shared with read-only answers."""
+    return post(target, conn, run_id, beat_s, pull, thread, body, resolve)

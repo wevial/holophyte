@@ -8,8 +8,14 @@ def classify(thread, handle):
     pattern = re.compile(r"(?<![\w@-])@" + re.escape(handle) + r"(?![\w-])", re.I)
     latest = thread.comments[-1]
     if handle and pattern.search(latest.body):
+        request = pattern.sub("", latest.body).strip()
+        marker = re.match(r"^(\?|ask\s*:|fix\s*:)\s*", request, re.I)
+        intent = "unmarked"
+        if marker:
+            intent = "fix" if marker[1].lower().startswith("fix") else "ask"
+            request = request[marker.end():].strip()
         return replace(thread, classification="MENTIONED",
-                       request=pattern.sub("", latest.body).strip())
+                       request=request, intent=intent)
     return thread
 
 

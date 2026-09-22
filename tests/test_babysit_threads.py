@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
 import babysit_fixture as cases  # noqa: E402
+from ask_mention_fixture import AskMentionCases  # noqa: E402
 from bot_thread_fixture import BotThreadCases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
@@ -34,8 +35,9 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
-class MergeModeBabysitThreadsTests(cases.OperatorNoteCase, BotThreadCases,
-                                 cases.BabysitHelpers, MergeModeFixture):
+class MergeModeBabysitThreadsTests(AskMentionCases, cases.OperatorNoteCase,
+                                 BotThreadCases, cases.BabysitHelpers,
+                                 MergeModeFixture):
     """Thread judgment, bot policy, operator notes, and fix rounds."""
     def test_answered_no_commit_threads_park_and_accept_corrected_instruction(self):
         self.no_commit_thread_answers("complete")

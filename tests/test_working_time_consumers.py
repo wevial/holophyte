@@ -97,7 +97,8 @@ class WorkingConsumers(SweepTestCase):
             def state(*args):
                 if first[0]:
                     first[0] = False
-                    return pr.PrState(("thread",), "success", "sha")
+                    return pr.PrState((pr.Thread("1", "app.py", 1, "bot",
+                                                "Fix this", "url"),), "success", "sha")
                 check = (
                     ("pending" if clock[0] < 10 else "success")
                     if checks == "alternating"

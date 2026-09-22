@@ -68,6 +68,7 @@ class AgentOutput(str):
         result.command = command
         result.exit_code = None if timed_out else exit_code
         result.timed_out = timed_out
+        result.exit_code = exit_code
         return result
 
 
