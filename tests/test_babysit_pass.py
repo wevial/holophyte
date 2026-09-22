@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 import unittest
 from contextlib import closing
@@ -21,8 +22,10 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
     Commit,
+    FakeAgent,
     Idle,
     Reply,
+    no_agent_processes,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
@@ -31,7 +34,9 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
@@ -254,10 +259,17 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state(checks="PENDING"),
                                 self.pr_state(merged=True)])
-        with patch.object(holophyte.pr, "SLEEP", lambda _: None):
-            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                      provider=self.provider())
-        self.assertIsNone(self.rc)
+        # Through the pool's worker, where the crash escaped (`pool._worker`).
+        fake = FakeAgent(Commit("the scripted work"), APPROVE, Idle(""))
+        with no_agent_processes(), \
+                patch.dict(sys.modules, {"linear_provider": self.provider()}), \
+                patch.object(holophyte.loop, "agent", fake), \
+                patch.object(holophyte.pr, "SLEEP", lambda _: None), \
+                patch.dict(os.environ, {holophyte.pool.WORKER_SLOT_ENV: ""}), \
+                patch.object(sys, "stdout", io.StringIO()), \
+                patch.object(sys, "stderr", io.StringIO()):
+            code = holophyte.pool.worker(self.tgt, self.provider())
+        self.assertEqual(code, holophyte.pool.WORKER_MERGED)
         self.assertEqual(self.read("SELECT phase, outcome, mergeSha FROM runs"),
                          [("done", "merged", self.MERGE_SHA)])
         self.assertEqual(self.read("SELECT status, activeRunId FROM tickets"),
