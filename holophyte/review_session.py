@@ -25,10 +25,10 @@ def record_session(scratch, conn, run_id, role, route, round_number):
 
 
 def first_session(conn, run_id):
-    """Only round one's primary reviewer can supply the resume context."""
+    """Use the last round-one primary session, including a malformed-reply retry."""
     rows = conn.execute(
         "SELECT payload FROM runEvents WHERE runId=? AND kind='agent_session' "
-        "ORDER BY seq", (run_id,))
+        "ORDER BY seq DESC", (run_id,))
     for (payload,) in rows:
         event = json.loads(payload)
         if (event.get('role') == 'review' and event.get('route') == 'primary'
