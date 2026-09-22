@@ -43,6 +43,9 @@ def _startup_sweep(target, conn):
     count one silence twice) or reprinting (which would look like it
     had).
     """
+    from holophyte.admission import lines
+    for line in lines(conn):
+        print(line)
     seen = sweep(target, conn, int(time() * 1000))
     if seen.trips or seen.watched or seen.restarts:
         print("\n".join(sweep_lines(seen, target)))
@@ -77,7 +80,8 @@ def _mirror_queue(target, conn, project, provider):
     waits for the reset `linear_budget_low()` names once rather than
     spending the points to be refused.
     """
-    if linear_budget_low():
+    from holophyte.admission import held_line
+    if held_line(conn, project) or linear_budget_low():
         return None
     mirrored = []
     try:

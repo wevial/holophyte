@@ -110,5 +110,58 @@ class RepointFlagTests(unittest.TestCase):
             .fetchone(), (0,))
 
 
+class HoldFlagTests(unittest.TestCase):
+    setUp = RepointFlagTests.setUp
+    cli = RepointFlagTests.cli
+
+    def test_hold_release_record_before_write_and_refuse_repeat(self):
+        import time
+
+        self.conn.executescript("""
+            CREATE TABLE admissionAudit (state TEXT, action TEXT, note TEXT);
+            CREATE TRIGGER admission_record BEFORE UPDATE OF admission ON projects
+            BEGIN
+                INSERT INTO admissionAudit SELECT OLD.admission, action, note
+                FROM interventions WHERE projectId = OLD.id ORDER BY id DESC LIMIT 1;
+            END;
+        """)
+        before = int(time.time() * 1000)
+        out, _ = self.cli("--hold", "--note", "reboot pending")
+        self.assertIn("held: reboot pending", out)
+        with self.assertRaisesRegex(SystemExit, "already held: reboot pending"):
+            self.cli("--hold", "--note", "different reason")
+        self.cli("--release-hold", "--note", "reboot complete")
+        after = int(time.time() * 1000)
+        rows = self.conn.execute(
+            "SELECT action, note, at FROM interventions "
+            "WHERE action IN ('hold', 'release_hold') ORDER BY id"
+        ).fetchall()
+        self.assertEqual(
+            [(a, n) for a, n, _ in rows],
+            [("hold", "reboot pending"), ("release_hold", "reboot complete")],
+        )
+        self.assertTrue(all(before <= at <= after for _, _, at in rows))
+        self.assertEqual(
+            self.conn.execute("SELECT * FROM admissionAudit").fetchall(),
+            [
+                ("enabled", "hold", "reboot pending"),
+                ("held", "release_hold", "reboot complete"),
+            ],
+        )
+        self.assertEqual(
+            self.conn.execute("SELECT admission, holdNote FROM projects").fetchone(),
+            ("enabled", None),
+        )
+
+    def test_admission_requires_nonempty_note(self):
+        for flag in ("--hold", "--release-hold"):
+            for note in ([], ["--note", " "]):
+                with (
+                    self.subTest(flag=flag, note=note),
+                    self.assertRaises(SystemExit) as raised,
+                ):
+                    self.cli(flag, *note)
+                self.assertEqual(raised.exception.code, 2)
+
 if __name__ == "__main__":
     unittest.main()

@@ -195,6 +195,9 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
     owned = conn is None
     conn = conn if conn is not None else store.open(target.store_path, migrate=act)
     try:
+        from holophyte.admission import lines
+        for line in lines(conn):
+            print(line, file=out)
         for line in debris_lines(target, conn):
             print(line, file=out)
         if now is None:

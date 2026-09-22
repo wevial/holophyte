@@ -10,11 +10,11 @@ from time import monotonic, sleep
 
 import store
 import store.tickets
-from holophyte import pool_handoff
+from holophyte import admission, pool_handoff
 from holophyte.config_tables import loop_config
 from holophyte.findings import commit_findings, refresh_findings
 from holophyte.gates import MergeLockHeld, merge_lock
-from holophyte.reconcile import _reconcile_at_startup, _reconcile_pull_requests
+from holophyte.reconcile import _reconcile_at_startup
 from holophyte.redact import safe_print as print
 from holophyte.reexec import reexec_command
 from holophyte.runs import open_store
@@ -232,11 +232,13 @@ def scheduler(target, provider, knobs):
             # Every tick, timer or exit: a pull request merged on GitHub
             # since the last one ships its parked run (KO-359). The first
             # tick asked at startup, before the mirror was repaired.
-            if not first_tick:
-                _reconcile_pull_requests(target, conn, project, provider)
+            admission.reconcile_tick(target, conn, project, provider, first_tick)
             first_tick = False
+            held = admission.held_line(conn, project)
+            if admission.held_idle(held, pool, conn, project):
+                return 1 if state.broken else 0
             listing = None
-            if state.spawning:
+            if state.spawning and not held:
                 listing = pool_handoff.listing(target, conn, project, provider)
                 if listing is not None:
                     # The claimable count leaves out the tickets the live

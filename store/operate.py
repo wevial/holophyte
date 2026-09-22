@@ -926,3 +926,33 @@ def unreturned_loop_restarts(conn, grace_ms, now=None):
             "UPDATE loopRestarts SET reportedAt = ? WHERE id = ?",
             [(now, row[0]) for row in rows])
         return [(row[0], row[1], row[2], now - row[3]) for row in rows]
+
+
+def hold(conn, project_id, note):
+    """Stop new admission, recording the reason before the project changes."""
+    return _set_admission(conn, project_id, note, "held", "hold")
+
+
+def release_hold(conn, project_id, note):
+    """Enable admission again without changing any ticket or run."""
+    return _set_admission(conn, project_id, note, "enabled", "release_hold")
+
+
+def _set_admission(conn, project_id, note, state, action):
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError("note must be non-empty text")
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT repoPath, admission, holdNote FROM projects WHERE id = ?",
+            (project_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no project {project_id}")
+        if row[1] == state:
+            raise ValueError(f"project {row[0]} already {state}: {row[2] or ''}")
+        intervention = conn.execute(
+            'INSERT INTO interventions (projectId, source, "trigger", action, note, at)'
+            " VALUES (?, 'human', 'manual', ?, ?, ?)",
+            (project_id, action, note, int(time.time() * 1000))).lastrowid
+        conn.execute("UPDATE projects SET admission = ?, holdNote = ? WHERE id = ?",
+                     (state, note if state == "held" else None, project_id))
+        return intervention

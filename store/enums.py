@@ -8,6 +8,11 @@ class AutonomyProfile(str, Enum):
     PRODUCTION = 'production'
 
 
+class ProjectAdmission(str, Enum):
+    ENABLED = 'enabled'
+    HELD = 'held'
+
+
 class TicketStatus(str, Enum):
     NEEDS_SPEC = 'needs_spec'
     READY = 'ready'
@@ -117,6 +122,8 @@ class InterventionAction(str, Enum):
     CONFIG_EDIT = 'config_edit'
     OPERATOR_NOTE = 'operator_note'
     MIGRATE = 'migrate'
+    HOLD = 'hold'
+    RELEASE_HOLD = 'release_hold'
 
 
 # Line breaks are part of the existing sqlite_master SQL contract.
@@ -131,6 +138,7 @@ _WRAPPING = {
 
 CONSTRAINED_COLUMNS = {
     ('projects', 'autonomyProfile'): AutonomyProfile,
+    ('projects', 'admission'): ProjectAdmission,
     ('tickets', 'status'): TicketStatus,
     ('tickets', 'affinity'): Affinity,
     ('runs', 'phase'): RunPhase,
