@@ -162,6 +162,20 @@ test("pull-request controls show loaded values and save their dotted keys togeth
   } }]);
 });
 
+test("a fractional config value renders a number field and saves a JSON number", async () => {
+  const { fetch, puts } = daemon(TEXT, { ...VALUES, merge: { pr_poll_sec: 180.5 } });
+  await open(editable, fetch);
+  const input = field("merge.pr_poll_sec");
+  expect(input.type).toBe("number");
+  expect(input.readOnly).toBe(false);
+  expect(input.value).toBe("180.5");
+  expect(input.step).toBe("any");
+  fireEvent.change(input, { target: { value: "120.5" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await act(settle);
+  expect(puts).toEqual([{ patch: { "merge.pr_poll_sec": 120.5 } }]);
+});
+
 test("PR quiet seconds rejects a fractional edit instead of saving a truncated integer", async () => {
   const { fetch, puts } = daemon(TEXT, { ...VALUES, merge: { pr_quiet_sec: 300 } });
   await open(editable, fetch);
@@ -219,7 +233,7 @@ test("a 400 naming [loop] workers shows the daemon's sentence under the workers 
 });
 
 test("a refusal naming a dotted patch key selects the Fields tab; a refused raw save stays in the raw tab with its draft intact, so the correction keeps every raw edit", async () => {
-  let error = "loop.workers: a patch value is a string, an integer, a boolean or a list of strings, not float";
+  let error = "loop.workers: cannot change an integer to a float";
   const { fetch, puts } = daemon(TEXT, VALUES, () => Response.json({ ok: false, error }, { status: 400 }));
   await open(editable, fetch);
   const dialog = screen.getByRole("dialog");

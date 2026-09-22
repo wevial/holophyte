@@ -61,7 +61,7 @@ function bind(field: Field, values: ConfigValues | null): Bound {
   if (table == null || typeof table !== "object" || !(field.key in table)) return { state: "absent" };
   const value: unknown = table[field.key];
   const fits =
-    field.kind === "number" ? typeof value === "number" && Number.isInteger(value) : field.kind === "lines" ? isLines(value) : typeof value === "string";
+    field.kind === "number" ? typeof value === "number" && Number.isFinite(value) : field.kind === "lines" ? isLines(value) : typeof value === "string";
   return fits ? { state: "bound", value: value as PatchValue } : { state: "unbound", value };
 }
 
@@ -252,18 +252,19 @@ export function SettingsSheet({
       );
     }
     if (field.kind === "number") {
+      const decimal = bound.state === "bound" && typeof bound.value === "number" && !Number.isInteger(bound.value);
       return (
         <input
           {...common}
           type="number"
           min={1}
-          step={1}
+          step={decimal ? "any" : 1}
           readOnly={inert}
           value={typeof value === "number" ? value : ""}
           onChange={(event) => {
             const parsed = Number(event.target.value);
             if (event.target.value === "") edit(field, null);
-            else if (Number.isInteger(parsed)) edit(field, parsed);
+            else if (Number.isFinite(parsed) && (decimal || Number.isInteger(parsed))) edit(field, parsed);
           }}
         />
       );
