@@ -2,16 +2,21 @@
 
 Run: python3 -m unittest discover tests -v
 """
+import io
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.claim  # noqa: E402
+import holophyte.target  # noqa: E402
 import store
+import store.read
 import store.tickets
 import ticket_template as tt  # noqa: E402 - after the sys.path insert above
 
@@ -541,6 +546,42 @@ class GitignoredPathTests(unittest.TestCase):
             holophyte.board.body_problem({"body": text}, self.repo),
             "path is outside the repository in Acceptance criteria #1: "
             "../elsewhere/cli.py")
+
+    def test_a_ticket_on_a_pull_request_is_not_refused_for_its_paths(self):
+        # KO-598: a parked candidate's pull request holds the files its
+        # verify names; main does not, and the claim must not refuse it.
+        text = TRACKED_CRITERION.replace(
+            ".venv/bin/python -m unittest test_orders_export",
+            "ruff check tests/test_counts.py")
+        task = {"id": "KO-598", "issue_id": "iss-598", "title": "Counts",
+                "body": text, "verify": "ruff check tests/test_counts.py",
+                "criteria": ["works"], "budget_min": 5}
+        self.assertIsNotNone(holophyte.board.body_problem(task, self.repo))
+        holo = Path(self.tmp.name) / "holo"
+        target = holophyte.target.Target(
+            path=self.repo, holo_dir=holo, store_path=holo / "store.db",
+            config_path=holo / "config.toml", worktrees=holo / "wt")
+        conn = store.open(Path(self.tmp.name) / "store.db")
+        self.addCleanup(conn.close)
+        store.init(conn)
+        project = store.tickets.ensure_project(conn, "team", str(self.repo))
+        ticket = holophyte.board.mirror_task(conn, project, task)
+        run = store.claim(conn, project, ticket)
+        store.tickets.transition(conn, ticket, "in_flight")
+        store.park(conn, run, "awaiting_merge_approval",
+                   pr_url="https://github.com/o/r/pull/7")
+        store.tickets.transition(conn, ticket, "blocked_on_operator")
+        conn.commit()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            admitted = holophyte.claim._admit_ticket(
+                target, conn, project, None, task, None)
+        self.assertIsNone(admitted)
+        self.assertNotIn("skipped: path does not exist", out.getvalue())
+        self.assertIn("parked on PR https://github.com/o/r/pull/7",
+                      out.getvalue())
+        self.assertEqual(store.read.ticket_by_id(conn, ticket).status,
+                         "blocked_on_operator")
 
 
 class PathCandidateTests(unittest.TestCase):
