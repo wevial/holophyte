@@ -4,8 +4,23 @@ from time import time
 
 import store
 import store.read
-from holophyte.gates import merge_lock
+from holophyte.gates import MergeLockHeld, merge_lock
 from store.launch_backoff import event
+
+
+def wait_for_migration(target, provider, stop, out):
+    """Retry lock contention at startup; a long merge must not kill the owner."""
+    while not stop.is_set():
+        try:
+            migrate_store(target, provider)
+        except MergeLockHeld as exc:
+            # Each acquisition already polls for the full lock wait. Preserve
+            # the holder (including unknown/stale holders for --sweep --act)
+            # and keep the detached supervisor alive to migrate on release.
+            print(f"[holo2] supervisor waiting for merge lock before migration:"
+                  f" {exc}; retrying", file=out, flush=True)
+        else:
+            return
 
 
 def migrate_store(target, provider=None):

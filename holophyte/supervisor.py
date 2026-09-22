@@ -54,7 +54,7 @@ from holophyte.config_tables import BOARD_ASK_SEC, sweep_config
 from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
 from holophyte.report import format_age, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
-from holophyte.schema_owner import migrate_store
+from holophyte.schema_owner import wait_for_migration
 from holophyte.supervisor_lock import (
     acquire_supervisor_lock,
     release_supervisor_lock,
@@ -838,7 +838,7 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
     previous = {signum: signal.signal(signum, on_signal)
                 for signum in STOP_SIGNALS}
     try:
-        migrate_store(target, provider)
+        wait_for_migration(target, provider, stop, out)
         print(f"[holo2] supervising {target.path} as pid {pid} on"
               f" {host_label(target, socket.gethostname())}: acting sweep"
               f" every {interval}s,"

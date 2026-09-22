@@ -233,6 +233,74 @@ class UnavailableStoreTests(SweepTestCase):
 
 
 class MigrationStartupTests(SweepTestCase):
+    def test_startup_waits_through_long_merge_before_migrating(self):
+        import json
+
+        older = store.SCHEMA_VERSION - 1
+        self.conn.execute(f"PRAGMA user_version = {older}")
+        clock = [0]
+        out = io.StringIO()
+        holder = holophyte.gates.merge_lock(self.tgt, None)
+        path = holder.__enter__()
+        self.addCleanup(holder.__exit__, None, None, None)
+        stamp = path.read_text()
+
+        def sleep(_seconds):
+            self.assertEqual(path.read_text(), stamp)
+            self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0],
+                             older)
+            self.assertEqual(self.conn.execute(
+                "SELECT count(*) FROM runEvents WHERE kind='migration'"
+            ).fetchone()[0], 0)
+            clock[0] += 181
+            if clock[0] > 360:
+                holder.__exit__(None, None, None)
+
+        def first_pass(*args, **kwargs):
+            self.assertGreater(clock[0], 360)
+            self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0],
+                             store.SCHEMA_VERSION)
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+        with patch('holophyte.gates.monotonic', side_effect=lambda: clock[0]), \
+                patch('holophyte.gates.sleep', side_effect=sleep), \
+                patch('holophyte.supervisor.factory_revision', return_value='same'), \
+                patch('holophyte.supervisor.supervise_pass',
+                      side_effect=first_pass) as run:
+            self.assertEqual(holophyte.supervisor.supervise(self.tgt, out=out), 0)
+        run.assert_called_once()
+        self.assertIn("waiting for merge lock before migration", out.getvalue())
+        row, = self.conn.execute(
+            "SELECT runId, projectId, summary FROM runEvents WHERE kind='migration'")
+        self.assertEqual(row[:2], (None, self.project))
+        self.assertEqual(json.loads(row[2]),
+                         {"from": older, "to": store.SCHEMA_VERSION})
+        self.assertFalse(path.exists())
+
+    def test_stop_during_migration_contention_preserves_store_and_holder(self):
+        older = store.SCHEMA_VERSION - 1
+        self.conn.execute(f"PRAGMA user_version = {older}")
+        clock = [0]
+
+        def sleep(_seconds):
+            clock[0] += 181
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+        with holophyte.gates.merge_lock(self.tgt, None) as path:
+            stamp = path.read_text()
+            with patch('holophyte.gates.monotonic', side_effect=lambda: clock[0]), \
+                    patch('holophyte.gates.sleep', side_effect=sleep), \
+                    patch('holophyte.supervisor.factory_revision',
+                          return_value='same'), \
+                    patch('holophyte.supervisor.supervise_pass') as run:
+                self.assertEqual(holophyte.supervisor.supervise(
+                    self.tgt, out=io.StringIO()), 0)
+            run.assert_not_called()
+            self.assertEqual(path.read_text(), stamp)
+        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], older)
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 0)
+
     def test_startup_migrates_under_merge_lock_once(self):
         import json
         from contextlib import contextmanager
