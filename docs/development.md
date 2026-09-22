@@ -166,6 +166,8 @@ The store is its own package:
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
   connection (`open`/`init`/`transaction`), re-exported from the package.
+- `store/project_paths.py` — canonical project identity reads that require operator
+  repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3
   `TICKET_TRANSITIONS` table and `transition()`/`walk_ticket()`,
   `mirror_ticket`, §2's `pickable()`/`pickable_tickets()` and the Mermaid

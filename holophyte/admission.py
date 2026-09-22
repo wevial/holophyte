@@ -2,6 +2,7 @@
 import store
 from holophyte.config_tables import board_config
 from holophyte.runs import open_store
+from store.project_paths import canonical_projects
 
 
 def held_line(conn, project):
@@ -23,17 +24,20 @@ def state(conn, target):
     # A read-only daemon may start before the writer migrates admission in v28.
     if conn.execute("PRAGMA user_version").fetchone()[0] < 28:
         return "enabled", None
-    row = conn.execute("SELECT admission, holdNote FROM projects "
-                       "WHERE repoPath IN (?, ?)",
-                       (str(target.path), str(target.path.resolve()))).fetchone()
+    paths = canonical_projects(conn)
+    project = next((key for key, path in paths.items()
+                    if path == str(target.path.resolve())), None)
+    row = conn.execute("SELECT admission, holdNote FROM projects WHERE id = ?",
+                       (project,)).fetchone()
     return row or ("enabled", None)
 
 
 def change(target, holding, note):
     conn = open_store(target)
     try:
-        row = conn.execute("SELECT id FROM projects WHERE repoPath = ?",
-                           (str(target.path),)).fetchone()
+        paths = canonical_projects(conn)
+        row = next(((key,) for key, path in paths.items()
+                    if path == str(target.path.resolve())), None)
         if row is None:
             settings = board_config(target)
             if settings is None:

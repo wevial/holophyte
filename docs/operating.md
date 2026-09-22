@@ -226,7 +226,15 @@ convention, nothing else; splitting the drawer onto a second machine is
 `python3 factory.py project add PATH` validates a repository root and its
 existing `[board]` configuration, then registers it without starting a run.
 A second add refuses and names the existing row. Configuration remains in its
-existing per-project file; registration does not move it.
+existing per-project file; registration does not move it. New registrations,
+including implicit loop registration, store canonical absolute repository paths.
+If a legacy row has a relative path, registration and admission checks refuse
+with its project ID and a request for operator repair. Its original base is not
+stored: verify the original repository location and repair the row to its
+canonical absolute path through the operator protocol before retrying. Do not
+interpret it relative to the current working directory. This refusal applies
+across the store because the ambiguous row could identify any target.
+`project list` remains available to inspect the rows.
 
 From the repository directory, use `python3 factory.py project list` to print
 name, path, admission, note and newest run, ordered by name and path. All project
