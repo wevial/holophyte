@@ -23,6 +23,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Reply,
 )
 from loop_fixture import BRANCH, MergeModeFixture  # noqa: E402
+from mention_accounts_fixture import MentionAccountCases  # noqa: E402
 from triage_mention_fixture import TriageMentionCases  # noqa: E402
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
@@ -31,7 +32,8 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
 
-class MergeModeBabysitThreadsTests(TriageMentionCases, AskMentionCases,
+class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
+                                 AskMentionCases,
                                  cases.OperatorNoteCase,
                                  BotThreadCases, cases.BabysitHelpers,
                                  MergeModeFixture):
@@ -59,32 +61,6 @@ class MergeModeBabysitThreadsTests(TriageMentionCases, AskMentionCases,
 
     def test_bot_conversation_mentions_and_unmentioned_humans_are_ignored(self):
         self.bot_conversation_mentions_and_unmentioned_humans_are_ignored()
-
-    def test_marked_mention_is_fixed_without_judgment_and_resolved(self):
-        self.mentioned_thread_is_fixed(("reviewer", "User"))
-
-    def test_advisory_bot_with_human_mention_is_an_instruction(self):
-        self.mentioned_thread_is_fixed(("review-bot", "Bot"))
-
-    def mentioned_thread_is_fixed(self, opener):
-        self.configure('[merge]\nmode = "pr"\nbot_threads = "advisory"\n')
-        thread = ("src/app.py", 30, opener, "Which token?",
-                  ((("operator", "User"),
-                    "@HoLoPhYtE fix: drop guestTokenId and use the path tokenId"),))
-        self.fake_route(states=[self.pr_state([thread]), self.pr_state()])
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                            Commit("fix: use path token"), APPROVE, Idle(""),
-                            provider=self.provider())
-        self.assertNotIn("adjudicate", fake.roles)
-        self.assertEqual(fake.roles[:4],
-                         ["implement", "review", "implement", "implement"])
-        goal = fake.turns[3].goal
-        self.assertIn("Instruction from @operator on the pull request:", goal)
-        self.assertIn("drop guestTokenId and use the path tokenId", goal)
-        replies = [data for kind, data in self.api_calls() if kind == "reply"]
-        self.assertEqual(len(replies), 1)
-        self.assertIn("Addressed in ", replies[0]["body"])
-        self.assertIn(("resolve", {"thread": "PRRT_1"}), self.api_calls())
 
     def test_two_instructions_are_stored_with_posted_outcomes(self):
         self.configure('[merge]\nmode = "pr"\n')

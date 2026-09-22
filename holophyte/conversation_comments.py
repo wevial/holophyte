@@ -4,14 +4,15 @@ import re
 from holophyte.config_tables import merge_config
 from holophyte.pr import Thread
 from holophyte.redact import known_secrets, outbound
-from holophyte.thread_mentions import classify
+from holophyte.thread_mentions import REFUSAL, classify, refuse, refused
 
 ASK_REPLY_MARKER = "<!-- holophyte:ask-answered -->"
 
 REPLY_RE = re.compile(
     r"(> \[Request by @[^\n]+\]\([^\n]+\)\n>\n> .*?)"
     r"\n\n---- Comment by [^\n]+ ----\n\n"
-    rf"(?:Addressed in [0-9a-f]{{40}}: |{re.escape(ASK_REPLY_MARKER)}\n).+",
+    rf"(?:Addressed in [0-9a-f]{{40}}: .+|{re.escape(ASK_REPLY_MARKER)}\n.+|"
+    rf"{re.escape(REFUSAL)})",
     re.DOTALL)
 
 
@@ -39,7 +40,10 @@ def conversation_threads(target, pull, node, read_page):
     for comment in comments:
         thread = _instruction(comment, pull, merge)
         if thread and outbound(quote_request(thread), secrets) not in replies:
-            yield thread
+            if refused(thread, merge.mention_handle, merge.mention_accounts):
+                refuse(target, pull, thread)
+            else:
+                yield thread
 
 
 def _instruction(comment, pull, merge):
@@ -53,8 +57,12 @@ def _instruction(comment, pull, merge):
     thread = classify(Thread(
         id=comment.get("id") or "", path="", line=None, author=login,
         body=comment.get("body") or "", url=comment.get("url") or pull.url,
-        author_kind="user", kind="conversation"), merge.mention_handle)
-    return thread if thread.classification == "MENTIONED" else None
+        author_kind="user", kind="conversation"),
+        merge.mention_handle, merge.mention_accounts)
+    if (thread.classification == "MENTIONED"
+            or refused(thread, merge.mention_handle, merge.mention_accounts)):
+        return thread
+    return None
 
 
 def quote_request(thread):

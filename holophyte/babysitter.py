@@ -433,8 +433,7 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
             return done
         state = replace(state, threads=answer_asks(
             target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
-            pull, tuple(thread_mentions.classify(t, merge.mention_handle)
-                        for t in state.threads), ticket, reviewed))
+            pull, thread_mentions.classified(state.threads, merge), ticket, reviewed))
         if state.mergeable == "CONFLICTING":
             # Push origin/main's merge and settle again; UNKNOWN is not conflict.
             sha, pushed_state, reviewed = _merge_origin_main(
@@ -761,8 +760,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     from holophyte.pullrequest import _park_human, _park_on_pr
     merge = merge_config(target)
     record_step(conn, run_id, "threads")
-    threads = tuple(thread_mentions.classify(t, merge.mention_handle)
-                    for t in state.threads)
+    threads = thread_mentions.classified(state.threads, merge)
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     round_started = int(time() * 1000)
     # Park unmentioned human threads unless human_threads = "act".
