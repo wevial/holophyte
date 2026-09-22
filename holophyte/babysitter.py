@@ -36,6 +36,7 @@ from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
 from holophyte.review import (
     _review_reply,
+    covering_scope,
     criteria_brief,
     criteria_findings,
     evidence_brief,
@@ -603,13 +604,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             f"{review_refs(run_id)[0]} as the frozen base and {review_refs(run_id)[1]} "
             "as the candidate in this repo against the ticket below. The "
-            + (f"candidate was approved at {reviewed[:12]} and has since "
-               "been moved by fix commits answering review threads on "
-               if reviewed else
-               "candidate has been moved by fix commits answering review "
-               "threads, and the last review of it asked for changes, on ")
-            + f"{pull.url}; nobody independent has judged those commits, so "
-            "read the whole candidate, the fixes included. The ticket is "
+            + covering_scope(wt, reviewed, sha, pull.url)
+            + "The ticket is "
             "the contract, acceptance criteria included: a candidate that "
             "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
             f"{ticket}\n\n"
@@ -624,7 +620,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             base_sha, sha, conn, run_id, run_agent=agent)
     record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out, started_at=round_started, criteria=criteria,
-                 root=wt, prior_reply=first_reply)
+                 root=wt, prior_reply=first_reply,
+                 approved_range=(reviewed, sha) if reviewed else None)
     if decision == "MALFORMED":
         reason = "the reviewer gave no verdict after one reminder"
         if conn is not None and run_id is not None:
@@ -633,7 +630,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                     pull, reason, ())
     # The same gate as a review round's: a criterion left not met or
     # unwitnessed is a blocker whatever the verdict line says.
-    unwitnessed = criteria_findings(verdict, criteria, wt)
+    unwitnessed = criteria_findings(
+        verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None)
     if unwitnessed:
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed by the review of the fix; treating as "

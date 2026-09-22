@@ -44,3 +44,13 @@ class WitnessResolutionTests(unittest.TestCase):
         (note,) = self.missing("test_nope")
         self.assertIn("fallback", note)
         self.assertIn("test_nope", note)
+
+
+class VerificationBriefTests(unittest.TestCase):
+    def test_only_passed_verification_discourages_duplicate_suite(self):
+        from holophyte.loop import _verify_brief
+        for ok in (True, False):
+            with self.subTest(ok=ok):
+                brief = _verify_brief("python3 -m unittest", ok, "check output")
+                self.assertEqual("do not run the full suite again" in brief, ok)
+                self.assertIn("check output", brief)
