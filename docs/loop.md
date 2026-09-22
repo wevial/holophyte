@@ -378,6 +378,7 @@ stateDiagram-v2
     awaiting_merge_approval --> killed
     awaiting_merge_approval --> rejected
     blocked_on_operator --> working
+    claimed --> awaiting_merge_approval
     claimed --> failed
     claimed --> killed
     claimed --> merge_gate
@@ -391,13 +392,21 @@ stateDiagram-v2
     merge_gate --> killed
     merge_gate --> merging
     merge_gate --> rejected
+    merge_gate --> verifying
+    merging --> awaiting_merge_approval
+    merging --> blocked_on_operator
     merging --> done
     merging --> failed
     merging --> killed
+    merging --> merge_gate
+    merging --> verifying
     reviewing --> addressing
+    reviewing --> awaiting_merge_approval
     reviewing --> failed
     reviewing --> killed
     reviewing --> merge_gate
+    reviewing --> verifying
+    verifying --> awaiting_merge_approval
     verifying --> failed
     verifying --> killed
     verifying --> reviewing

@@ -184,21 +184,29 @@ RUN_PHASE_TRANSITIONS = {
     # gate -- nothing to implement or review, the candidate already was.
     RunPhase.CLAIMED.value: frozenset({
         RunPhase.WORKING.value, RunPhase.MERGE_GATE.value,
+        # _sync_branch_from_origin parks a diverged carried PR before the gate.
+        RunPhase.AWAITING_MERGE_APPROVAL.value,
         RunPhase.FAILED.value, RunPhase.KILLED.value}),
     RunPhase.WORKING.value: frozenset({
         RunPhase.VERIFYING.value, RunPhase.FAILED.value,
         RunPhase.KILLED.value}),
     RunPhase.VERIFYING.value: frozenset({
         RunPhase.REVIEWING.value, RunPhase.FAILED.value,
+        # _review_fix parks verification results for human approval.
+        RunPhase.AWAITING_MERGE_APPROVAL.value,
         RunPhase.KILLED.value}),
     RunPhase.REVIEWING.value: frozenset({
         RunPhase.ADDRESSING.value, RunPhase.MERGE_GATE.value,
+        # _review_fix retries one rejected fix, or parks its review verdict.
+        RunPhase.VERIFYING.value, RunPhase.AWAITING_MERGE_APPROVAL.value,
         RunPhase.FAILED.value, RunPhase.KILLED.value}),
     RunPhase.ADDRESSING.value: frozenset({
         RunPhase.VERIFYING.value, RunPhase.FAILED.value,
         RunPhase.KILLED.value}),
     RunPhase.MERGE_GATE.value: frozenset({
         RunPhase.MERGING.value,
+        # The babysitter verifies each new fix before its covering review.
+        RunPhase.VERIFYING.value,
         RunPhase.AWAITING_MERGE_APPROVAL.value, RunPhase.FAILED.value,
         RunPhase.KILLED.value, RunPhase.REJECTED.value}),
     # `awaiting_merge_approval -> done` is the pull request a person merged
@@ -211,6 +219,12 @@ RUN_PHASE_TRANSITIONS = {
         RunPhase.FAILED.value, RunPhase.KILLED.value, RunPhase.REJECTED.value}),
     RunPhase.MERGING.value: frozenset({
         RunPhase.DONE.value, RunPhase.FAILED.value,
+        # A refused PR merge retries conflict fixes and the merge gate.
+        RunPhase.VERIFYING.value, RunPhase.MERGE_GATE.value,
+        # _merge_pr parks a GitHub merge refusal on the open PR.
+        RunPhase.AWAITING_MERGE_APPROVAL.value,
+        # _run_after parks when a post-merge command fails.
+        RunPhase.BLOCKED_ON_OPERATOR.value,
         RunPhase.KILLED.value}),
     RunPhase.SQUASHING.value: frozenset(),
     RunPhase.DONE.value: frozenset(),
