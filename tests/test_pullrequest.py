@@ -624,6 +624,66 @@ class MergeModePullRequestTests(MergeModeFixture):
         edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
         self.assertEqual(edits, [f"gh pr edit {self.URL} --body-file -"] * 2)
 
+    def captured_pr(self, exit_code=0):
+        """Evidence at A; the capture logs its sha, then fails or writes one."""
+        self.captures = (script := self.db.parent / "capture.py").with_name("log")
+        script.write_text(
+            "import subprocess, sys\nfrom pathlib import Path\nhead = subprocess"
+            ".check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()\n"
+            f"open({str(self.captures)!r}, 'a').write(head + '\\n')\n"
+            f"if {exit_code}: raise SystemExit({exit_code})\n"
+            "Path(sys.argv[1], head[:12] + '.png').write_bytes(b'png')\n")
+        self.configure('[merge]\nmode = "pr"\nui_paths = ["console/**"]\n'
+                       f'ui_capture = "{sys.executable} {script}"\n')
+        self.fake_route()
+        self.enterContext(patch.object(holophyte.pr_media, "repo_is_private",
+                                       return_value=False))
+        self.git("checkout", "-qb", BRANCH)
+        a = self.commit_file("console/app.txt")[:12]
+        self.old_evidence = (f"## Evidence\n\nCaptured at {a}\n\n"
+                             f"![screen](https://example/{a}.png)")
+        self.pr_body.write_text(holophyte.pr_media.append(holophyte.pr.pr_body_written(
+            "Old.", "KO-131", None), self.old_evidence))
+        return a
+
+    def commit_file(self, path):
+        (self.target / path).parent.mkdir(exist_ok=True)
+        (self.target / path).write_text(f"{path} at {monotonic()}\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", path)
+        return self.git("rev-parse", "HEAD").strip()
+
+    def test_a_fix_round_touching_ui_paths_replaces_the_evidence(self):
+        a = self.captured_pr()
+        b = self.commit_file("console/app.txt")
+        self.refresh(("TITLE: Ignored\nNew description.", False))
+        body = self.pr_body.read_text()
+        self.assertEqual(self.captures.read_text().split(), [b])
+        self.assertEqual(body.count("## Evidence"), 1)
+        self.assertIn(f"## Evidence\n\nCaptured at {b[:12]}\n\n", body)
+        self.assertIn(f"/pr-media/KO-131/{b[:12]}.png)", body)
+        self.assertNotIn(a, body)
+
+    def test_a_fix_round_outside_ui_paths_keeps_the_evidence(self):
+        self.captured_pr()
+        self.commit_file("README.md")
+        self.refresh(("TITLE: Ignored\nNew description.", False))
+        body = self.pr_body.read_text()
+        self.assertFalse(self.captures.exists())
+        self.assertEqual(holophyte.pr.split_pr_body(body)[2].rstrip(),
+                         self.old_evidence)
+
+    def test_a_failed_recapture_keeps_the_old_evidence_marked_stale(self):
+        a = self.captured_pr(exit_code=3)
+        b = self.commit_file("console/app.txt")
+        self.refresh(("TITLE: Ignored\nNew description.", False))
+        evidence = holophyte.pr.split_pr_body(self.pr_body.read_text())[2]
+        self.assertEqual(self.captures.read_text().split(), [b])
+        notice, _, rest = evidence.removeprefix("## Evidence\n\n").partition("\n\n")
+        self.assertEqual(f"## Evidence\n\n{rest}".rstrip(), self.old_evidence)
+        for part in (a, b[:12], "failed (exit 3)"):
+            self.assertIn(part, notice)
+
     def test_refresh_refusal_leaves_body_untouched(self):
         self.configure('[merge]\nmode = "pr"\npr_changes_log = true\n')
         self.fake_route()
