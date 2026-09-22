@@ -233,6 +233,47 @@ class UnavailableStoreTests(SweepTestCase):
 
 
 class MigrationStartupTests(SweepTestCase):
+    def test_owner_stamp_while_waiting_does_not_record_another_migration(self):
+        from contextlib import contextmanager
+
+        from holophyte.schema_owner import migrate_store
+
+        self.conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION - 1}")
+
+        @contextmanager
+        def lock(*args, **kwargs):
+            # Another supervisor finishes before this one acquires the lock.
+            self.conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION}")
+            with holophyte.gates.merge_lock(*args, **kwargs):
+                yield
+
+        with patch('holophyte.schema_owner.merge_lock', lock):
+            migrate_store(self.tgt)
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 0)
+
+    def test_current_store_reaches_sweep_despite_stale_merge_lock(self):
+        run_id = self.a_run(phase="merge_gate")
+        store.release(self.conn, run_id, "failed", "died at the gate",
+                      now=T0 + MINUTE)
+        path = holophyte.gates.merge_lock_path(self.tgt)
+        path.write_text(f"{run_id} {T0 / 1000:.3f}\n")
+
+        def first_pass(*args, **kwargs):
+            holophyte.supervisor.sweep(
+                self.tgt, self.conn, T0 + 2 * MINUTE, act=True)
+            self.assertFalse(path.exists())
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+        with patch('holophyte.merge_lock.lock_nap',
+                   side_effect=AssertionError("startup waited on a stale lock")), \
+                patch('holophyte.supervisor.factory_revision', return_value='same'), \
+                patch('holophyte.supervisor.supervise_pass', first_pass):
+            self.assertEqual(holophyte.supervisor.supervise(
+                self.tgt, out=io.StringIO()), 0)
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 0)
+
     def test_startup_waits_through_long_merge_before_migrating(self):
         import json
 

@@ -193,7 +193,7 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
         return
     print("\n".join(review_container_lines(act)), file=out)
     owned = conn is None
-    conn = conn if conn is not None else store.open(target.store_path, migrate=act)
+    conn = conn if conn is not None else store.open(target.store_path)
     try:
         from holophyte.admission import lines
         for line in lines(conn):

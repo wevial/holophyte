@@ -231,7 +231,7 @@ def report(target, conn=None, out=None, now=None):
     claimed, no worktree is cut and no provider is imported -- which is what
     makes it safe to run against the store of a loop that is still working.
 
-    An older store is refused until the loop or serve daemon migrates it.
+    An older store is refused until the supervisor migrates it.
     A target with no store at all is not created for the sake of an empty
     table; it is reported.
 

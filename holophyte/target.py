@@ -87,8 +87,8 @@ def adopt_legacy_state(target, destination, out=None):
     directory holding it: an operator who writes `config.toml` at the new
     address first -- which the README tells them to do -- creates that
     directory without adopting anything, and gating on the directory would
-    leave the legacy history for the empty store `open_store()` writes a
-    moment later to shadow. So adoption runs whenever `destination` has no
+    leave the legacy history for a fresh store the supervisor initializes
+    later to shadow. So adoption runs whenever `destination` has no
     store, merging into the directory if it is already there, and a file
     already sitting at a landing address stops the whole move rather than
     being overwritten. Once the store has moved, whatever else is lying
