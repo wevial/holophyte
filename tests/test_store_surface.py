@@ -237,7 +237,8 @@ class StoreSurfaceTests(unittest.TestCase):
         for module, expected in ((store, EXPECTED),
                                  (store.schema, EXPECTED_SCHEMA),
                                  # KO-457: persisted work boundaries and live read.
-                                 (store.working, ["effective_work", "settle_work",
+                                 (store.working, ["agent_work", "effective_work",
+                                                  "settle_work", "verify_work",
                                                   "working"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
