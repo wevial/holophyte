@@ -168,7 +168,7 @@ def claim(conn, project_id, ticket_id, now=None):
     conn.execute("BEGIN IMMEDIATE")
     try:
         if conn.execute("SELECT admission FROM projects WHERE id = ?",
-                        (project_id,)).fetchone() == ("held",):
+                        (project_id,)).fetchone() in (("held",), ("disabled",)):
             conn.commit()
             return None
         # A ticket row that does not exist matches nothing here and is
@@ -983,11 +983,14 @@ from .tickets import (  # noqa: E402,F401 - re-export after `_json_list`
     IllegalTransition,
     Pickability,
     ensure_project,
+    list_projects,
     mirror_ticket,
     pickable,
     pickable_tickets,
+    register_project,
     render_state_graph,
     render_state_graph_section,
+    set_admission,
     transition,
     walk_ticket,
 )

@@ -10,6 +10,20 @@ from tests import test_pool
 class PoolHoldTests(test_pool.LoopFixture):
     run_scheduler = test_pool.PoolTests.run_scheduler
 
+    def test_disabled_loop_does_not_claim(self):
+        provider = test_pool.StubProvider(test_pool.a_task(1))
+        conn = holophyte.runs.open_store(self.tgt)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, provider.team, self.target)
+        store.set_admission(conn, project, "disabled", "retired")
+        with patch.object(provider, "ready_issues",
+                          wraps=provider.ready_issues) as ready:
+            pool = self.run_scheduler(1, provider, [])
+        ready.assert_not_called()
+        self.assertEqual(pool.spawned, [])
+        self.assertIn("disabled: retired", self.out)
+        self.assertEqual(conn.execute("SELECT count(*) FROM runs").fetchone(), (0,))
+
     def test_hold_drains_workers_and_acknowledges_return_with_exit_status(self):
         for exit_code, expected in ((holophyte.pool.WORKER_MERGED, 0),
                                     (holophyte.pool.WORKER_FAILED, 0),

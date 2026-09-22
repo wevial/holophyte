@@ -11,6 +11,7 @@ class AutonomyProfile(str, Enum):
 class ProjectAdmission(str, Enum):
     ENABLED = 'enabled'
     HELD = 'held'
+    DISABLED = 'disabled'
 
 
 class TicketStatus(str, Enum):
@@ -136,6 +137,8 @@ class InterventionAction(str, Enum):
     MIGRATE = 'migrate'
     HOLD = 'hold'
     RELEASE_HOLD = 'release_hold'
+    REGISTER_PROJECT = 'register_project'
+    DISABLE = 'disable'
 
 
 # Line breaks are part of the existing sqlite_master SQL contract.

@@ -228,6 +228,8 @@ def status(target, now=None, started_ms=None):
         beat = store.read.supervisor_beat(conn)
         from holophyte.admission import state
         admission, hold_note = state(conn, target)
+        if admission == "disabled":
+            runs = []
         schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
     finally:
         conn.close()

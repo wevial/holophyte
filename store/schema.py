@@ -334,7 +334,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 27 generates every enum CHECK from store.enums (KO-579).
 # Version 28 adds project admission holds and their interventions (KO-578).
 # Version 29 records typed run failure kinds with prefix backfill (KO-584).
-SCHEMA_VERSION = 29
+# Version 30 adds disabled project admission and registration (KO-586).
+SCHEMA_VERSION = 30
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -623,7 +624,7 @@ def init(conn):
         if version < 29:
             from .failure_kinds import backfill
             backfill(conn)
-        if version < 28:
+        if version < 30:
             _rebuild_enum_tables(conn)
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the
@@ -720,7 +721,8 @@ def _widen_interventions_action(conn):
            for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
                          "'restart_supervisor'", "'launch_loop'",
                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
-                         "'migrate'", "'hold'", "'release_hold'")):
+                         "'migrate'", "'hold'", "'release_hold'",
+                         "'register_project'", "'disable'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —

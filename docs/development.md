@@ -9,6 +9,7 @@ The `holophyte/` package is the factory; `factory.py` is its entry point.
 Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
+- `holophyte/cli_project.py` — project registration, listing and admission commands.
 - `holophyte/cli.py` — the argument parser and mode dispatch: `--report`,
   `--requeue`, `--approve`, `--babysit`, `--repoint`, `--file-ticket`,
   `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
