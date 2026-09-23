@@ -38,11 +38,16 @@ def command_secrets(target):
 
 def safe_command(target, command):
     """Public route identifier: executable only, never command arguments.
-    A table-form route is named by its harness."""
+    A table-form route is named by its harness.
+
+    Known credentials redact substrings of the name; an argument value only
+    the whole name, so `high` does not eat `codex-astra-high`."""
     command = route_text(command)
     if not command:
         return command
-    return redact_prose(shlex.split(command)[0], command_secrets(target))
+    secrets = known_secrets(target.config())
+    name = redact_prose(shlex.split(command)[0], secrets)
+    return REDACTED if name in command_secrets(target) - secrets else name
 
 
 def route_prose(target, text):
