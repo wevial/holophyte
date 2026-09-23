@@ -157,6 +157,23 @@ def _list_items(body):
     return out
 
 
+def _list_item_blocks(body):
+    """Every list entry in the section with its continuation lines, which
+    `_list_items()` drops: a wrapped line, or an indented one after a blank
+    line. A nested entry is an entry of its own."""
+    out, blank = [], False
+    for line in body.splitlines():
+        m = LIST_ITEM_RE.match(line.strip())
+        if m:
+            out.append(m.group(1))
+        elif out and line.strip() and (not blank or line[:1].isspace()):
+            out[-1] += "\n" + line.strip()
+        elif out and line.strip():
+            out.append(None)  # a paragraph after the list ends the last entry
+        blank = not line.strip()
+    return [_clean(item) for item in out if item is not None]
+
+
 def _evidence_states(body):
     states = []
     for line in COMMENT_RE.sub("", body).splitlines():

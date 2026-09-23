@@ -123,7 +123,8 @@ def _missing_symbols(repo, t, declarations):
     item naming no file main holds (none, only new ones, or only missing
     ones, which `_missing_files()` reports) is not checked."""
     reasons, texts = [], {}
-    for i, item in enumerate(t.notes, 1):
+    notes = t.sections.get("Implementation notes", "")
+    for i, item in enumerate(ticket_template._list_item_blocks(notes), 1):
         paths = []
         for _, path in ticket_template._prose_paths(item):
             normalized = str(Path(path))
@@ -146,30 +147,30 @@ def _missing_symbols(repo, t, declarations):
 
 def _unmerged_dependencies(t, conn, provider):
     """One reason per `Depends on:` ticket that is not merged: the store's
-    mirror says `merged`, or else the board answers `completed`. A board
-    that cannot be asked refuses nothing on its silence."""
+    mirror says `merged`, or else the board answers `completed` -- over an
+    `abandoned` mirror too. A board that cannot be asked gives no evidence,
+    so every dependency the store does not hold merged is refused."""
     status = {}
     for dep in t.depends_on or []:
         mirror = (store.read.ticket_by_identifier(conn, dep)
                   if conn is not None else None)
         status[dep] = mirror.status if mirror is not None else None
-    open_deps = [d for d, s in status.items() if s not in ("merged", "abandoned")]
-    closed = {}
-    if open_deps and provider is not None:
+    unmerged = [d for d, s in status.items() if s != "merged"]
+    closed, unasked = {}, ""
+    if unmerged and provider is not None:
         try:
-            closed = provider.closed_identifiers(open_deps)
+            closed = provider.closed_identifiers(unmerged)
         except Exception as e:  # any transport failure: the board was not asked
-            print(f"[holo2] could not ask the board whether {', '.join(open_deps)}"
-                  f" merged ({e}); the dependency check is skipped")
-            return []
+            unasked = f" (the board could not be asked: {e})"
     reasons = []
-    for dep, state in status.items():
+    for dep in unmerged:
         answer = closed.get(dep)
-        if state == "merged" or answer == "completed":
+        if answer == "completed":
             continue
-        verdict = ("canceled" if state == "abandoned" or answer == "canceled"
-                   else "not merged")
-        reasons.append(f"`{dep}` (named in Depends on) is {verdict}")
+        canceled = answer == "canceled" or (answer is None
+                                            and status[dep] == "abandoned")
+        verdict = "canceled" if canceled else "not merged"
+        reasons.append(f"`{dep}` (named in Depends on) is {verdict}{unasked}")
     return reasons
 
 

@@ -77,6 +77,13 @@ class CommentRaises(StubProvider):
         raise RuntimeError("linear is down")
 
 
+class BoardUnreachable(StubProvider):
+    """A board whose closed-issue query fails, as Linear unreachable would."""
+
+    def closed_identifiers(self, identifiers):
+        raise RuntimeError("linear is down")
+
+
 class ClaimFreshnessTests(LoopFixture):
 
     def runs_by_ticket(self):
@@ -199,6 +206,19 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
         self.assertIn(CLAIM, comments[0])
         self.assertIn("KO-131 skipped", out)
 
+    def test_a_function_on_a_wrapped_line_of_the_item_is_checked(self):
+        self.commit_claim_to_main()
+        body = notes_body(f"In `{CLAIM}`, change the admission\n"
+                          "  where `removed_function()` refuses.")
+        provider = StubProvider(dict(a_task(1), body=body), a_task(2))
+
+        self.main_output(Commit("second ticket"), APPROVE, provider=provider)
+
+        self.assertEqual(self.runs_by_ticket(), [("KO-132",)])
+        comments = self.stale_comments(provider)
+        self.assertEqual(len(comments), 1)
+        self.assertIn("`removed_function()`", comments[0])
+
     def test_a_function_and_a_class_main_holds_are_claimed(self):
         self.commit_claim_to_main()
         body = notes_body(f"Change `Claimer` and `claim.admit_ticket()` in"
@@ -231,6 +251,18 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
         self.assertIn("`KO-900` (named in Depends on) is not merged",
                       comments[0])
 
+    def test_a_dependency_the_board_cannot_be_asked_about_is_parked(self):
+        provider = BoardUnreachable(
+            dict(a_task(1), body=depends_body("KO-900")), a_task(2))
+
+        self.main_output(Commit("second ticket"), APPROVE, provider=provider)
+
+        self.assertEqual(self.runs_by_ticket(), [("KO-132",)])
+        comments = self.stale_comments(provider)
+        self.assertEqual(len(comments), 1)
+        self.assertIn("`KO-900` (named in Depends on) is not merged",
+                      comments[0])
+
     def test_a_dependency_the_board_completed_is_claimed(self):
         provider = StubProvider(dict(a_task(1), body=depends_body("KO-900")))
         provider.closed = {"KO-900": "completed"}
@@ -239,15 +271,27 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
 
         self.assert_claimed_without_comment(provider)
 
-    def test_a_dependency_the_store_holds_merged_is_claimed(self):
-        provider = StubProvider(dict(a_task(1), body=depends_body("KO-900")))
+    def mirror_dependency(self, provider, status):
         conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
         dependency = holophyte.board.mirror_task(
             conn, project_id, dict(a_task(), id="KO-900", issue_id="iss-900"))
-        store.walk_ticket(conn, dependency, "merged")
+        store.walk_ticket(conn, dependency, status)
         conn.commit()
+
+    def test_a_dependency_the_board_completed_over_an_abandoned_mirror_is_claimed(self):
+        provider = StubProvider(dict(a_task(1), body=depends_body("KO-900")))
+        provider.closed = {"KO-900": "completed"}
+        self.mirror_dependency(provider, "abandoned")
+
+        self.loop(Commit("the change"), APPROVE, provider=provider)
+
+        self.assert_claimed_without_comment(provider)
+
+    def test_a_dependency_the_store_holds_merged_is_claimed(self):
+        provider = StubProvider(dict(a_task(1), body=depends_body("KO-900")))
+        self.mirror_dependency(provider, "merged")
 
         self.loop(Commit("the change"), APPROVE, provider=provider)
 
