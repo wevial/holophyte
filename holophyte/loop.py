@@ -27,13 +27,11 @@ import review_runner
 import store
 import store.read
 import ticket_template
-from holophyte import board, failure_reason, pr_status
+from holophyte import board, failure_reason, pr_status, reproduce
 from holophyte import run as run_state
 from holophyte.agents import agent, record_session, review_refs, transport_failure
 from holophyte.babysitter import _babysit
-from holophyte.board import (
-    ledger,
-)
+from holophyte.board import ledger
 from holophyte.claim import (
     _cut_worktree,
     _setup_worktree,
@@ -41,9 +39,7 @@ from holophyte.claim import (
     conflict_brief,
     merge_conflicts,
 )
-from holophyte.config import (
-    budget_scale,
-)
+from holophyte.config import budget_scale
 from holophyte.config_tables import (
     loop_config,
     merge_config,
@@ -63,6 +59,7 @@ from holophyte.gates import (
     record_unreviewed_verification,
     run_verify,
     sh,
+    verify_timed_out,
     with_baseline,
 )
 from holophyte.gates import (
@@ -76,8 +73,9 @@ from holophyte.merge_gate import (
 )
 from holophyte.pr_media import implementer_brief as _capture_brief
 from holophyte.pullrequest import (
-    _open_pr,
     _park_on_pr,
+    _prepare_pr,
+    _push_and_open,
 )
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
@@ -99,7 +97,7 @@ from holophyte.runs import (
 from holophyte.stop import Aborted, boundary, continuation, stop_if_requested
 from store.working import agent_work
 
-# The paths a run works against, plus the config they carry, are a `Target`
+# The paths a run works against, plus the config they carry, are a `Project`
 # (below): built once by `cli()` from the command line and passed to every
 # function that needs one, so the derivation lives in one place and the
 # command line is the only thing that chooses a target. Importing this module
@@ -108,10 +106,10 @@ from store.working import agent_work
 # chooses no target at all.
 
 
-def run_task(target, task, conn=None, run_id=None, provider=None):
+def run_task(project, task, conn=None, run_id=None, provider=None):
     """Pass the claimed Run through the stages, stopping if the store ended it.
 
-    Accept a Run as `target`, or the historical target/task call. Claimed tasks
+    Accept a Run as `project`, or the historical target/task call. Claimed tasks
     carry `_run`; direct storeless calls construct the same value here.
 
     An illegal phase edge fails as infrastructure, preserving the worktree.
@@ -132,9 +130,9 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     the ender said so.
     """
     try:
-        run = target if isinstance(target, run_state.Run) else task.get("_run")
+        run = project if isinstance(project, run_state.Run) else task.get("_run")
         run = run or claimed_run(
-            target, task, conn, run_id, provider, clock=monotonic)
+            project, task, conn, run_id, provider, clock=monotonic)
         return _run_stages(run, task)
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused
@@ -142,7 +140,7 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
         if ended.outcome == "paused" or isinstance(ended, Aborted):
             ticket_id = store.read.run_snapshot(run.conn, run.run_id).ticketId
             board.mirror_push(run.conn, ticket_id, run.provider)
-            board.release_lease_label(run.target, run.conn, ticket_id,
+            board.release_lease_label(run.project, run.conn, ticket_id,
                                       run.provider, run.run_id)
             return SWEPT
         print(f"[holo2] run {ended.run_id} was ended by the supervisor"
@@ -184,7 +182,7 @@ def _run_stages(run, task):
     merge gate, the merge -- each a plain function over the same values this
     frame threads, in the order they ran when this was one function (KO-211).
     """
-    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
     task_id, issue_id, started = run.task_id, run.issue_id, run.started
     verify_cmd, budget_min = task.get("verify"), task["budget_min"]
     contracts = task.get("contracts")
@@ -210,21 +208,21 @@ def _run_stages(run, task):
         return _resume_at_merge_gate(
             run, carried, verify_cmd, contracts, body,
             criteria, issue_url=issue_url)
-    fresh = _cut_worktree(target, conn, run_id, provider, task_id, task,
+    fresh = _cut_worktree(project, conn, run_id, provider, task_id, task,
                           branch, wt)
 
     # Every wait below -- setup, agent turn, verify -- runs under
     # `heartbeat_while()`, beating at half the supervisor's stale threshold
     # so a slow agent is never read as a dead loop (KO-212, run 39). Half,
     # so one late beat is still inside the threshold.
-    beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-    _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
+    beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+    _setup_worktree(project, conn, run_id, provider, task_id, task, branch, wt,
                     fresh, beat_s)
 
     # The review base is main, not the HEAD reuse entered on: preserved
     # commits were never approved, so the reviewer must see them inside the
     # diff. Identical on a fresh cut, where HEAD is main.
-    base_sha = sh(["git", "rev-parse", "main"], target.path)
+    base_sha = sh(["git", "rev-parse", "main"], project.path)
     # Where this run started, WIP commit and preserved commits included. The
     # no-commit gate below compares against this rather than main, so carried
     # leftovers cannot stand in for the implementer's own progress.
@@ -240,24 +238,39 @@ def _run_stages(run, task):
     # the implementer as the opening of its brief; empty on every other cut.
     conflicts = merge_conflicts(wt)
     resume = continuation(conn, run_id)
-    sha = start_sha if resume and resume["phase"] != "working" else _implement(
-                     target, conn, run_id, task_id, task, branch, wt, fresh,
-                     beat_s, start_sha, ticket, verify_cmd, budget_min,
-                     conflicts=conflicts)
+    # A bug ticket first commits a failing test; one verify passes on is the
+    # not-reproduced route, with no implement turn (KO-659).
+    test = None if resume or conflicts else reproduce.first_turn(
+        project, conn, run_id, provider, task_id, wt, beat_s, start_sha, ticket,
+        body, verify_cmd, budget_min)
+    if resume and resume["phase"] != "working":
+        sha, unreproduced = start_sha, reproduce.routed(resume)
+    elif test and not test.failing:
+        sha, unreproduced = test.sha, True
+    else:
+        # Not fresh once the test commit exists, so a turn adding nothing
+        # keeps it rather than discarding the branch.
+        sha, unreproduced = _implement(
+            project, conn, run_id, task_id, task, branch, wt, fresh and not test,
+            beat_s, test.sha if test else start_sha, ticket, verify_cmd,
+            budget_min, conflicts=conflicts,
+            opening=test.opening() if test else "")
 
     # 2. review rounds, up to the cap the candidate's size earns it. Verify
     # runs before each review and its result goes into the brief; every
     # round that is not a clean approval — the last one included — gets a
     # fix round, because a last-round blocker is the cheapest fix in the
     # loop and used to need a human to close it out.
-    cap = _review_cap(target, conn, run_id, provider, task_id, wt)
-    sha, rnd, approved = _review_rounds(
-        target, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
+    # A declared not-reproduced defect gets an evidence check for round 1.
+    cap = _review_cap(project, conn, run_id, provider, task_id, wt)
+    sha, rnd, approved = (reproduce.review_rounds if unreproduced else _review_rounds)(
+        project, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
         sha, ticket, verify_cmd, contracts, criteria, budget_min, cap, resume=resume)
     if not approved:
-        _terminal_adjudication(target, conn, run_id, provider, task_id, task,
+        _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                                branch, wt, beat_s, base_sha, sha, ticket,
-                               verify_cmd, contracts, cap, criteria, resume=resume)
+                               verify_cmd, contracts, max(cap, rnd), criteria,
+                               resume=resume)
 
     # 4. pre-merge verify (catches fix-round regressions), then merge. Both
     # happen under `merge_gate`: §4's gate node is the one edge out of a
@@ -265,31 +278,44 @@ def _run_stages(run, task):
     # asks. Under the `personal` autonomy profile the human half is a no-op,
     # so the run passes through the node rather than around it and a failed
     # pre-merge verify is a run stopped at the gate.
-    merge = merge_config(target)
+    merge = merge_config(project)
     # The gate and the merge run under the target's merge lock, so two runs
     # reaching it together take turns and each merges the `main` the other
     # left (KO-342). Under `mode = "pr"` the candidate leaves the machine
     # instead of landing on main: pushed, opened as a pull request, and
     # babysat -- its threads answered, its checks awaited -- until it
     # merges through the PR's own API or parks for the operator. `approve`
-    # is read there: the PR is what the human's answer is about. The lock
-    # covers the push-and-open and not the babysitter, which waits on a
-    # remote for as long as it takes.
-    with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
-                    beat_s):
-        ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
+    # is read there: the PR is what the human's answer is about. There the
+    # lock covers the push-and-open alone: the verify, the drift check and
+    # the PR text run in the task's own worktree and share nothing another
+    # run's gate touches (KO-644), and the babysitter waits on a remote for
+    # as long as it takes.
+    if merge.mode == "pr":
+        ok, sha = _merge_gate(project, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,
                               contracts, ticket, budget_min,
-                              sync_main=merge.mode != "pr")
-        if merge.mode == "pr":
-            url = _open_pr(target, conn, run_id, task_id, task, branch, body,
-                           beat_s, wt, started, budget_min, issue_url)
-            sha = sh(["git", "rev-parse", branch], wt)
-        elif merge.approve == "human":
-            # The human half of the gate, when the target asks for one: the
-            # candidate is approved and verified, and a person says "merge".
-            _park_for_approval(conn, run_id, provider, task_id, branch, sha)
-        else:
+                              sync_main=False)
+        title, text = _prepare_pr(project, conn, run_id, task_id, task, branch,
+                                  body, beat_s, wt, started, budget_min,
+                                  issue_url)
+        with _gate_lock(project, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            url = _push_and_open(project, conn, run_id, branch, title, text,
+                                 beat_s)
+        sha = sh(["git", "rev-parse", branch], wt)
+    else:
+        with _gate_lock(project, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            ok, sha = _merge_gate(project, conn, run_id, provider, task_id,
+                                  issue_id, branch, wt, beat_s, sha,
+                                  verify_cmd, contracts, ticket,
+                                  budget_min)
+            if merge.approve == "human":
+                # The human half of the gate, when the target asks for one:
+                # the candidate is approved and verified, and a person says
+                # "merge".
+                _park_for_approval(conn, run_id, provider, task_id, branch,
+                                   sha)
             return run_state.land(replace(run, sha=sha, rnd=rnd), ok)
     run = replace(run, sha=sha, rnd=rnd, pr_url=url)
     run = _babysit(run, beat_s, ticket, verify_cmd, contracts, criteria,
@@ -306,7 +332,7 @@ def _approved_candidate(conn, run_id):
     return store.read.approved_candidate(conn, ticket_id, run_id)
 
 
-def _sync_branch_from_origin(target, conn, run_id, provider, task_id,
+def _sync_branch_from_origin(project, conn, run_id, provider, task_id,
                              branch, wt, url=None, reviewed=None,
                              diverged=None):
     """Fast-forward the worktree and `branch` to what `origin` holds for
@@ -356,7 +382,7 @@ def _sync_branch_from_origin(target, conn, run_id, provider, task_id,
         if pull is None:
             raise RunFailure(f"cannot read a pull request off {url!r};"
                              f" branch {branch} preserved at {sha[:12]}")
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     f"the local branch {branch} at {sha[:12]} and origin's at"
                     f" {remote[:12]} diverged; neither fast-forwards to the"
                     " other, so nothing was fetched into the worktree and"
@@ -399,18 +425,18 @@ def _candidate_drift(wt, branch, approved):
     return None
 
 
-def _scale_note(target, budget_min):
+def _scale_note(project, budget_min):
     """The ` (45 min at scale 1.5)` a budget line carries when the
     target's `[agents] budget_scale` stretches the ticket's estimate for
     the implementer harness -- nothing when the scale is 1, so the line
     is byte-identical to the one it always was."""
-    scale = budget_scale(target)
+    scale = budget_scale(project)
     if scale == 1:
         return ""
     return f" ({budget_min * scale:g} min at scale {scale:g})"
 
 
-def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *,
+def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
            role="implement", argv=None):
     """Run one turn under its scaled wall-clock budget.
 
@@ -424,14 +450,14 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *,
     kill = GroupKill()
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-            output = agent(target, role, goal, wt,
-                          timeout=budget_min * budget_scale(target) * 60,
+            output = agent(project, role, goal, wt,
+                          timeout=budget_min * budget_scale(project) * 60,
                           on_start=kill.arm, conn=conn, run_id=run_id,
                           **({"argv": argv} if argv is not None else {}))
             timed_out = False
     except subprocess.TimeoutExpired as expired:
         print(f"[holo2] task exceeded {budget_min} min budget"
-              f"{_scale_note(target, budget_min)}")
+              f"{_scale_note(project, budget_min)}")
         partial = expired.output or ""
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", "replace")
@@ -440,7 +466,7 @@ def _timed(target, conn, run_id, beat_s, wt, budget_min, goal, *,
               " output before the budget fired:\n"
               + (partial[-2000:] or "(no output before the budget fired)"))
         output, timed_out = partial, True
-    record_session(target, conn, run_id, session_role, output)
+    record_session(project, conn, run_id, session_role, output)
     return output, timed_out
 
 
@@ -462,7 +488,7 @@ def _open_findings(conn, run_id):
     return "; ".join(items) if items else "none on record"
 
 
-def _check_run_cap(target, conn, run_id, budget_min, sha):
+def _check_run_cap(project, conn, run_id, budget_min, sha):
     """Refuse dispatch when agent work plus the scaled turn exceeds the cap.
 
     The ceiling remains timeBoxMs × budget_scale × run_cap. Preserve candidate
@@ -472,8 +498,8 @@ def _check_run_cap(target, conn, run_id, budget_min, sha):
     run = store.read.run_snapshot(conn, run_id)
     if run is None or not run.timeBoxMs or not budget_min:
         return
-    scale = budget_scale(target)
-    cap = sweep_config(target).run_cap
+    scale = budget_scale(project)
+    cap = sweep_config(project).run_cap
     box_ms = run.timeBoxMs * scale
     spent_ms = agent_work(run, int(time() * 1000))
     if spent_ms is None:
@@ -507,19 +533,19 @@ def _record_implementer_output(conn, run_id, out, secrets=()):
                        level="detail", payload=text[-OUTPUT_TAIL:])
 
 
-def _transport_timed(target, conn, run_id, beat_s, wt, budget_min, goal):
+def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal):
     """Retry transport loss once, sharing the original turn's wall-clock cap."""
-    scale = budget_scale(target)
+    scale = budget_scale(project)
     deadline = retry_clock() + budget_min * scale * 60
     remaining = budget_min
     for attempt in range(2):
-        out, timed_out = _timed(target, conn, run_id, beat_s, wt,
+        out, timed_out = _timed(project, conn, run_id, beat_s, wt,
                                 remaining, goal)
         signature = transport_failure(getattr(out, "exit_code", 0), out)
         if timed_out or signature is None:
             return out, timed_out
         _record_implementer_output(conn, run_id, out,
-                                   known_secrets(target.config()))
+                                   known_secrets(project.config()))
         reason = f"implementer transport failure ({signature})"
         if attempt:
             raise InfraFailure(f"{reason} after retry; branch preserved")
@@ -534,26 +560,28 @@ def _transport_timed(target, conn, run_id, beat_s, wt, budget_min, goal):
             raise InfraFailure(f"{reason}; retry budget exhausted; branch preserved")
 
 
-def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
-               start_sha, ticket, verify_cmd, budget_min, conflicts=()):
-    """Implement the ticket and return its SHA; open with reuse conflicts."""
+def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
+               start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening=""):
+    """Implement the ticket, opening with reuse conflicts and `opening`; return
+    its SHA and whether the reply declared the defect not reproduced (KO-657)."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}\n\nThe full unit suite runs "
                 f"as a pull request check; do not run it in the worktree. Run "
                 f"only the commands listed above." if verify_cmd else "")
     # A reclaimed run can already be old; refuse a turn that would exceed
     # its remaining budget.
-    _check_run_cap(target, conn, run_id, budget_min, start_sha)
+    _check_run_cap(project, conn, run_id, budget_min, start_sha)
     out, timed_out = _transport_timed(
-        target, conn, run_id, beat_s, wt, budget_min,
-        conflict_brief(branch, conflicts)
+        project, conn, run_id, beat_s, wt, budget_min,
+        conflict_brief(branch, conflicts) + opening
         + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
         "The ticket above is the contract, acceptance criteria "
         "included; the task is done only when they hold. Commit your "
         "work with a clear message. Stay strictly on-scope; do not "
         "expand the task. Commit messages carry no tool attribution or co-author "
-        "lines for an AI." + _capture_brief(target, ticket))
-    stop_if_requested(conn, run_id, "verifying")
+        "lines for an AI." + _capture_brief(project, ticket, task_id)
+        + reproduce.BRIEF)
+    boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate
     # an earlier run left behind. An implementer handed finished work
@@ -582,11 +610,11 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         lock = Path(wt, sh(["git", "rev-parse", "--git-path",
                             "index.lock"], cwd=wt))
         lock.unlink(missing_ok=True)
-        unstage_environment(target, wt)
-        dirty = sh(["git", "status", "--porcelain", "-uall", *paths(target)],
+        unstage_environment(project, wt)
+        dirty = sh(["git", "status", "--porcelain", "-uall", *paths(project)],
                    cwd=wt).splitlines()
         if dirty:
-            stage_work(target, wt)
+            stage_work(project, wt)
             # The identity is chosen as the reuse WIP commit's is: the
             # target's configured one, the factory's pins when it has none.
             sh(["git", *factory_identity(wt), "commit", "-q", "-m",
@@ -603,10 +631,10 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         # What the turn said is the only evidence left once the worktree
         # goes; it is on the run before the discard, whatever the exit code.
         _record_implementer_output(conn, run_id, out,
-                                   known_secrets(target.config()))
+                                   known_secrets(project.config()))
         if fresh:
-            sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
-            sh(["git", "branch", "-D", branch], target.path)
+            sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
+            sh(["git", "branch", "-D", branch], project.path)
             raise RunFailure("implementer made no commits; the empty branch"
                              " and worktree were discarded",
                              "budget" if timed_out else "no_commits")
@@ -626,9 +654,9 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         # not "no work": destroying the commits here would repeat the
         # incident this path exists to prevent.
         raise RunFailure(f"implementer exceeded the {budget_min} min budget"
-                         f"{_scale_note(target, budget_min)}; work kept on "
+                         f"{_scale_note(project, budget_min)}; work kept on "
                          f"{branch} at {head[:12]}", "budget")
-    return sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    return sh(["git", "rev-parse", "HEAD"], cwd=wt), reproduce.declared(out)
 
 
 def _verify_brief(verify_cmd, ok, out):
@@ -637,10 +665,10 @@ def _verify_brief(verify_cmd, ok, out):
                 for row in getattr(out, "results", []))
     if not verify_cmd and not count:
         return ""
-    return (f"The ticket's verification commands and the target's baseline "
+    return (f"The ticket's verification commands and the project's baseline "
             f"({count} commands) were run and "
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n"
-            + ("The ticket's checks and the target's baseline passed at this "
+            + ("The ticket's checks and the project's baseline passed at this "
                "commit; the full suite runs as a pull request check. Do not run "
                "the full suite, run only focused tests needed to check a "
                "specific concern.\n" if ok else ""))
@@ -656,10 +684,10 @@ def _changed_lines(wt):
     return total
 
 
-def _review_cap(target, conn, run_id, provider, task_id, wt):
+def _review_cap(project, conn, run_id, provider, task_id, wt):
     """Measure and record the review cap from candidate size and configuration."""
     lines = _changed_lines(wt)
-    cap = review_round_cap(lines, loop_config(target))
+    cap = review_round_cap(lines, loop_config(project))
     print(f"[holo2] review cap {cap} for {lines} changed lines")
     if conn is not None and run_id is not None:
         store.set_review_round_cap(conn, run_id, cap)
@@ -668,7 +696,7 @@ def _review_cap(target, conn, run_id, provider, task_id, wt):
     return cap
 
 
-def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
+def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
                    budget_min, cap, resume=None):
     """Verify, review and fix up to `cap` rounds; return sha, round, approval."""
@@ -693,8 +721,8 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
             with heartbeat_while(conn, run_id, beat_s):
                 ok, out = run_verify(verify_cmd, wt, contracts, conn=conn,
                                      run_id=run_id,
-                                 target=target)
-                ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                                 project=project)
+                ok, out = with_baseline(project, wt, verify_cmd, ok, out,
                                        conn, run_id)
             if ok:
                 print(f"[holo2] verify ok before round {rnd}")
@@ -709,7 +737,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
             round_started = int(time() * 1000)
             scope = scope_files(wt, ticket, base_sha, sha)
             with heartbeat_while(conn, run_id, beat_s):
-                verdict, decision, first_reply = _review_reply(target,
+                verdict, decision, first_reply = _review_reply(project,
                     f"You are a READ-ONLY code reviewer. Review commit {sha} using "
                     f"{review_refs(run_id)[0]} as the frozen base and "
                     f"{review_refs(run_id)[1]} as the candidate "
@@ -720,7 +748,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                     + _verify_brief(verify_cmd, ok, out)
                     + criteria_brief(criteria)
                     + scope_brief(wt, ticket, base_sha, sha)
-                    + evidence_brief(target, wt, task_id,
+                    + evidence_brief(project, wt, task_id,
                                      ticket_template.parse(ticket).evidence_states)
                     + "Do not modify anything. End your reply with exactly one "
                     "line:\n"
@@ -728,7 +756,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                     "If REQUEST_CHANGES, list only concrete blockers.", wt,
                     base_sha, sha, conn, run_id, run_agent=agent, review_round=rnd)
             # Store even the round that ends the loop.
-            record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
+            record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
                          ok, out,
                          started_at=round_started, criteria=criteria, root=wt,
                          prior_reply=first_reply, scope=scope)
@@ -749,16 +777,31 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                        f"Round {rnd}: APPROVE\nReviewer verdict:\n{verdict}",
                        provider)
                 return sha, rnd, True
+            if (not ok and not unwitnessed and decision == "APPROVE"
+                    and verify_timed_out(out)):
+                # A fix turn cannot shorten a command the ticket requires:
+                # with nothing to address it would only fail as no progress.
+                head = str(out).splitlines()[0].removeprefix("[verify] FAILED: ")
+                print(f"[holo2] round {rnd}: {head} and the review approved; "
+                      f"no fix round. Leaving branch {branch} at {sha}.")
+                ledger(conn, run_id, task_id, "round",
+                       f"Round {rnd}: APPROVE, but the verify timed out; no fix "
+                       f"round, branch {branch} preserved at {sha}\n\n{out}",
+                       provider)
+                raise RunFailure(failure_reason.verify(
+                    out, verify_cmd, f"{head} and the review approved, so no "
+                    f"fix round was run; branch {branch} preserved at "
+                    f"{sha[:12]}"))
 
         # Refuse a fix turn if the run has no budget left.
-        _check_run_cap(target, conn, run_id, budget_min, sha)
+        _check_run_cap(project, conn, run_id, budget_min, sha)
         boundary(conn, run_id, "addressing", rnd=rnd, ok=ok,
                  out=str(out), verdict=verdict)
         pending = {}
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
         from holophyte.fix_session import fix_turn
         fixes, timed_out = fix_turn(
-            target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
+            project, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
             timed=_timed, check_cap=_check_run_cap)
         boundary(conn, run_id, "verifying", rnd=rnd + 1)
         ledger(conn, run_id, task_id, "round",
@@ -776,7 +819,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
     return sha, rnd, False
 
 
-def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
+def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                            branch, wt, beat_s, base_sha, sha, ticket,
                            verify_cmd, contracts, cap, criteria=(), resume=None):
     """3b. Terminal adjudication: all `cap` review rounds and their fixes
@@ -793,8 +836,8 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
         with heartbeat_while(conn, run_id, beat_s):
             ok, out = run_verify(verify_cmd, wt, contracts, conn=conn,
                                          run_id=run_id,
-                                 target=target)
-            ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                                 project=project)
+            ok, out = with_baseline(project, wt, verify_cmd, ok, out,
                                    conn, run_id)
     boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
              ok=ok, out=str(out), reply=pending.get("reply"))
@@ -817,7 +860,7 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
     else:
         round_started = int(time() * 1000)
         with heartbeat_while(conn, run_id, beat_s):
-            reply = agent(target, "adjudicate",
+            reply = agent(project, "adjudicate",
                 f"You are a READ-ONLY final adjudicator. Judge commit {sha} "
                 f"using {review_refs(run_id)[0]} as the frozen base and "
                 f"{review_refs(run_id)[1]} as the candidate "
@@ -841,7 +884,7 @@ def _terminal_adjudication(target, conn, run_id, provider, task_id, task,
         # The adjudication is a round of the run like the reviews before it —
         # numbered after them, so the run's rounds read in the order they
         # happened.
-        record_round(target, conn, run_id, cap + 1, "adjudicate", reply,
+        record_round(project, conn, run_id, cap + 1, "adjudicate", reply,
                      verify_cmd, ok, out, started_at=round_started)
     try:
         decision = review_runner.terminal_verdict(

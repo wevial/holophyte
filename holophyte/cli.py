@@ -8,7 +8,7 @@
 `--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
 loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
-`holophyte.supervisor`, `holophyte.status` and `holophyte.serve`; the `Target`
+`holophyte.supervisor`, `holophyte.status` and `holophyte.serve`; the `Project`
 is built once from the command line and handed down, and the board
 (`LinearProvider`) is built here and never reached for by name below.
 Importing this module locates no target, reads no config and touches no
@@ -43,6 +43,7 @@ from holophyte.operator import (
     requeue,
 )
 from holophyte.pool import worker
+from holophyte.project import Project
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.startup import eager_import
 from holophyte.status import status_report
@@ -50,7 +51,6 @@ from holophyte.store_import import dry_run
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
-from holophyte.target import Target
 from provider import LinearProvider
 
 # The entry point the loop's spawned supervisor is started through: the
@@ -188,7 +188,8 @@ def _legacy_cli(argv):
     # one machine. A missing target is an argparse error, the same way a
     # mistyped flag is.
     parser.add_argument(
-        "target", help="repository the loop works in")
+        "target", metavar="project",
+        help="repository the loop works in")
     # The read-only modes, exclusive of each other: each one prints its table
     # and exits, so a command line naming both is a mistake argparse should
     # answer rather than a silent choice between them.
@@ -207,7 +208,7 @@ def _legacy_cli(argv):
                         " pull request and close it; the branch is kept")
     modes.add_argument(
         "--report", action="store_true",
-        help="print the target store's estimate-vs-actual table and exit; "
+        help="print the project store's estimate-vs-actual table and exit; "
              "reads only -- claims no ticket, cuts no worktree, calls nobody")
     # The one writing mode among them, and the only write it makes: the
     # ladder's rung-3 pair (`record_intervention` then `walk_ticket`) as a
@@ -219,9 +220,9 @@ def _legacy_cli(argv):
              "a 'requeue' intervention on that run carrying --note and walks "
              "the ticket to ready and clears its question in one transaction; "
              "accepts in_flight or blocked_on_operator after a failed or "
-             "rejected run; refuses live runs and other states or outcomes; "
-             "for parked candidates use --approve or --babysit, for parked "
-             "pull requests use --babysit; refusals write nothing")
+             "rejected run, or a not_reproduced park (ended abandoned, no "
+             "strike); refuses live runs, other states or outcomes and other "
+             "parks (use --approve or --babysit); refusals write nothing")
     # The operator's answer to `merge?`: the same rung-3 pair as `--requeue`
     # for a ticket parked by `[merge] approve = "human"`, so the loop's next
     # claim takes the preserved candidate straight to the merge gate.
@@ -279,8 +280,8 @@ def _legacy_cli(argv):
     # checked step rather than the thing the loop discovers at claim time.
     modes.add_argument(
         "--file-ticket", metavar="TICKET.md",
-        help="validate the ticket file against the target, create it as an "
-             "issue in the target's [board] project with its title, body, "
+        help="validate the ticket file against the project, create it as an "
+             "issue in the project's board with its title, body, "
              "estimate, state and Depends-on relations, read the stored body "
              "back and validate that; exits 1 with the problem and nothing "
              "created when the file is invalid, 2 with the identifier and "
@@ -294,7 +295,7 @@ def _legacy_cli(argv):
     # built on this report, so the mode runs only with `--dry-run` said.
     modes.add_argument(
         "--import-store", metavar="PATH",
-        help="with --dry-run: open the store at PATH and the target's own "
+        help="with --dry-run: open the store at PATH and the project's own "
              "store read-only and print, per table, the rows an import "
              "would move, their id range, the offset a remap would add and "
              "a sha256 of the rows; refuses stores at different schema "
@@ -310,7 +311,7 @@ def _legacy_cli(argv):
         "--supervise", action="store_true",
         help="run the acting sweep on an interval ([supervisor] "
              "sweep_interval_sec, default %ds) until SIGINT/SIGTERM, as the "
-             "target's one supervisor: a second one for the same target "
+             "project's one supervisor: a second one for the same project "
              "exits naming the first" % SUPERVISE_INTERVAL_SEC)
     # The port is required and a bare one binds loopback: the only default
     # interface is the one that publishes nothing, and a read daemon on any
@@ -319,10 +320,10 @@ def _legacy_cli(argv):
     # failure later.
     modes.add_argument(
         "--serve", metavar=ADDRESS_SHAPE, type=serve_address,
-        help="answer GET /status and GET /runs as JSON on %s, read-only, "
-             "until SIGINT/SIGTERM; a read-only connection per request, "
-             "a bearer token from [serve] token_file beyond loopback, and "
-             "writes nothing" % ADDRESS_SHAPE)
+        help="serve the JSON routes and the console on %s until SIGINT/SIGTERM; reads "
+             "the store by default, and writes only through two opt-ins: [serve] "
+             "actions (POST /actions/...) and [serve] config_edit (PUT /config); a "
+             "bearer token from [serve] token_file beyond loopback" % ADDRESS_SHAPE)
     # Internal: the child the scheduler spawns under `[loop] workers > 1`.
     # One ticket, claim to close, exit with the run's status; the scheduler
     # has already run the startup checks, the sweep and the supervisor spawn
@@ -392,7 +393,7 @@ def _legacy_cli(argv):
     # A dry run writes nothing, and adopting legacy state moves files: it
     # locates the target without adopting, so a store still in a legacy
     # layout is reported absent rather than moved.
-    target = Target.locate(args.target, adopt=args.import_store is None)
+    target = Project.locate(args.target, adopt=args.import_store is None)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.

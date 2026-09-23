@@ -44,11 +44,18 @@ export const OPEN_PR = "Open PR";
  *  (components/RowActions.tsx). */
 export const RESUME = "Resume";
 
+/** The `stale_run` row's two aborts: reason boxes posting to
+ *  `/actions/abort` with `close` false, or true to close the run's pull
+ *  request too (components/RowActions.tsx); the second only on a run with
+ *  a pull request. */
+export const ABORT = "Abort";
+export const ABORT_CLOSE = "Abort and close";
+
 const ACTIONS: Record<Kind, string[]> = {
   blocked: ["Answer", "Requeue"],
   pr_open: [OPEN_PR],
   paused: [RESUME],
-  stale_run: ["Kill run", "Requeue"],
+  stale_run: [ABORT, "Requeue"],
   failed: ["Requeue", "Mark needs_spec"],
   supervisor: ["Restart supervisor"],
   unreachable: [],
@@ -364,6 +371,7 @@ export function describe(
       const phase = str(item.phase) ?? "unknown";
       return {
         ...base,
+        actions: str(item.pr_url) ? [ABORT, ABORT_CLOSE, "Requeue"] : base.actions,
         body: `No heartbeat for ${formatSpan(age)} while ${phase}${overTimeBox(item, context.runs)}`,
         meta: joinMeta(runLabel(item), str(item.phase)),
       };

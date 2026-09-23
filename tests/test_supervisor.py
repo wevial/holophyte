@@ -53,10 +53,10 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
         store.set_admission(self.conn, 1, "disabled", "retired")
         out = io.StringIO()
         with patch.object(holophyte.supervisor, "acquire_supervisor_lock") as lock:
-            holophyte.supervisor.supervise(self.tgt, out=out)
+            holophyte.supervisor.supervise(self.project, out=out)
             with (contextlib.chdir(self.target),
-                  patch.object(self.tgt, "path", Path("."))):
-                holophyte.supervisor.supervise(self.tgt, out=out)
+                  patch.object(self.project, "path", Path("."))):
+                holophyte.supervisor.supervise(self.project, out=out)
         lock.assert_not_called()
         self.assertIn("disabled: retired", out.getvalue())
 
@@ -70,7 +70,7 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
     def sweep_at_46(self, run_id):
         at = T0 + 46 * MINUTE
         self.heartbeat_at(run_id, at)
-        return holophyte.supervisor.sweep(self.tgt, self.conn, at).trips
+        return holophyte.supervisor.sweep(self.project, self.conn, at).trips
 
     def test_a_fix_round_after_a_review_is_not_swept_as_overtime(self):
         run_id = self.a_run(active_work=True, budget_min=30, phase="addressing")
@@ -102,7 +102,7 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
 
         at = T0 + 140 * MINUTE  # past 3 turns × 30 × 1.5 = 135, inside 4 turns
         self.heartbeat_at(run_id, at)
-        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, at).trips
+        trip, = holophyte.supervisor.sweep(self.project, self.conn, at).trips
 
         self.assertEqual(trip.condition, "time_box")
         self.assertIn(f"× {1 + holophyte.supervisor.MAX_ROUNDS} turns",
@@ -121,7 +121,7 @@ class MergeLockSweepTests(SweepTestCase):
         self.addCleanup(build.stop)
 
     def lock_for(self, run_id):
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         path.write_text(f"{run_id} {T0 / 1000:.3f}\n")
         return path
 
@@ -160,8 +160,8 @@ class MergeLockSweepTests(SweepTestCase):
         run_id = self.a_run(phase="merge_gate")
         store.release(self.conn, run_id, "failed", "judged dead early",
                       now=T0 + MINUTE)
-        path = holophyte.gates.merge_lock_path(self.tgt)
-        with holophyte.gates.merge_lock(self.tgt, run_id):
+        path = holophyte.gates.merge_lock_path(self.project)
+        with holophyte.gates.merge_lock(self.project, run_id):
             stamp = path.read_text()
             acted = self.run_sweep(T0 + 2 * MINUTE, "--act")
             self.assertEqual(path.read_text(), stamp)
@@ -189,7 +189,7 @@ class MergeLockSweepTests(SweepTestCase):
             target=lambda: lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act")))
 
         def gate():
-            with holophyte.gates.merge_lock(self.tgt, live, wait=10, poll=0.01):
+            with holophyte.gates.merge_lock(self.project, live, wait=10, poll=0.01):
                 entered.set()
                 lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act"))
         gating = threading.Thread(target=gate)
@@ -234,7 +234,7 @@ class UnavailableStoreTests(SweepTestCase):
                         patch.object(holophyte.supervisor, "factory_revision",
                                      return_value="unchanged"):
                     code = holophyte.supervisor.supervise(
-                        self.tgt, interval=7, wait=wait, out=out)
+                        self.project, interval=7, wait=wait, out=out)
                 self.assertEqual(code, expected_code)
                 self.assertEqual(run_pass.call_count, len(outcomes))
                 lines = [line for line in out.getvalue().splitlines()

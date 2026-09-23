@@ -31,8 +31,8 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
 # from `factory`'s slug rule: an expectation computed by the code under test
@@ -189,33 +189,33 @@ class LoopFixture(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
         self.base = self.git("rev-parse", "main").strip()
 
-        # Where `Target.locate(self.target)` will look: the target's directory
+        # Where `Project.locate(self.target)` will look: the target's directory
         # under a HOLOPHYTE_HOME of this test's own, never the operator's real
         # one.
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.target.state_dir(self.target) / "store.db"
+        self.db = holophyte.project.state_dir(self.target) / "store.db"
         from tests.test_store_phase_gate import audit_loop_store
         self.addCleanup(audit_loop_store, self)
         self.db.parent.mkdir(parents=True)
-        self.tgt = holophyte.target.Target.locate(self.target)
-        assert self.tgt.store_path == self.db
-        assert self.tgt.worktrees == self.worktrees
+        self.project = holophyte.project.Project.locate(self.target)
+        assert self.project.store_path == self.db
+        assert self.project.worktrees == self.worktrees
 
     def git(self, *args, cwd=None):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
                               check=True, capture_output=True, text=True).stdout
 
     def configure(self, toml):
-        """Give the fixture target a config file and a `Target` that reads it.
+        """Give the fixture target a config file and a `Project` that reads it.
 
-        Through `Target.locate()` rather than a hand-set `config_path`, so a
+        Through `Project.locate()` rather than a hand-set `config_path`, so a
         test that set the config by hand could pass with the file unwired.
-        A fresh value, too: a `Target` parses its config once.
+        A fresh value, too: a `Project` parses its config once.
         """
         (self.db.parent / "config.toml").write_text(toml)
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.project = holophyte.project.Project.locate(self.target)
 
     def loop(self, *script, provider=None, fake=None):
         """Run `main()` over the queued tasks with the script answering agents.
@@ -232,7 +232,7 @@ class LoopFixture(unittest.TestCase):
         with no_agent_processes() as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
                 with patch.object(holophyte.loop, "agent", fake):
-                    self.rc = holophyte.operator.main(self.tgt, provider)
+                    self.rc = holophyte.operator.main(self.project, provider)
         return fake, guard
 
     def main_output(self, *script, provider=None):
@@ -484,8 +484,9 @@ class MergeModeFixture(LoopFixture):
         `comments` (each a `comments_page()`), the open step's
         `pullRequests(headRefName:)` lookup (KO-407) one open pull request
         at `open_pr` -- none without it -- and the reconcile's pull-status
-        read (KO-359) an open pull request; the check-runs and
-        branch-rules reads answer no runs and no rules, and a job's log
+        read (KO-359) an open pull request; the check-runs, branch-rules
+        and branch reads answer no runs, no rules and no protection
+        (KO-652), and a job's log
         read answers `self.job_log`'s text -- a failed call without it.
         A conversation comment answers its id (the body's number); a label
         call or a comment delete is witnessed by `recorded()`, a label
@@ -565,6 +566,7 @@ class MergeModeFixture(LoopFixture):
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
             '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            '    */branches/*) echo \'{}\'; exit 0;;\n'
             '    *"--method PATCH repos/example/repo/pulls/"*) cat >/dev/null;'
             f' [ {close_exit} -eq 0 ] || {{ echo "HTTP 422 refused" >&2;'
             f' exit {close_exit}; }}; echo \'{{"state":"closed"}}\'; exit 0;;\n'

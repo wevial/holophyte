@@ -52,7 +52,7 @@ worktree and merged only after mechanical verification and independent review.
   (the writer host, the operator seat), never machine names or personal paths.
 - The store is the run record: `runs`/`reviewRounds` are the execution
   evidence, read through the console or `--report`. This repository keeps no
-  `FINDINGS.md`; a target opts into that rendered window with
+  `FINDINGS.md`; a project opts into that rendered window with
   `[report] findings = "repo"`, and even then the rows are the record — do not
   hand-edit the rendered window or drop rows to make a run appear clean.
 - Model/harness routing is an explicit factory policy: live-probe the exact

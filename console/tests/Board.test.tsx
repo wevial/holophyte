@@ -15,7 +15,6 @@ const MIN = 60_000;
 /** Three live runs against a 30 m box: at 50 %, 75 % and 110 %, the last
  *  two with strikes. */
 const status: Status = {
-  target: "/srv/dev/writer",
   project: "/srv/dev/writer",
   host: "writer",
   now,

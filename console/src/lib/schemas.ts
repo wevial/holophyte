@@ -19,8 +19,10 @@ export const runSchema = z.looseObject({
   started_ms: z.number().optional(), round: z.number().optional(), strikes: z.number().optional(),
 });
 
+// A daemon from before 2026-09-05 names its path only `target`; without
+// `project` its status is a contract error, the signal to upgrade it.
 export const statusSchema = z.looseObject({
-  target: z.string(), project: z.string().optional(), schema_version: z.number().optional(),
+  project: z.string(), schema_version: z.number().optional(),
   host: z.string(), now: z.number(),
   admission: z.string().optional(), hold_note: z.string().nullable().optional(),
   daemon: z.looseObject({ started_ms: z.number(), pid: z.number() }).optional(),
@@ -28,6 +30,7 @@ export const statusSchema = z.looseObject({
   active_routes: z.record(z.string(), z.looseObject({
     command: z.string().nullable(), fallback: z.string().optional(),
   })).optional(),
+  route_labels: z.record(z.string(), z.string().nullable()).optional(),
   supervisor: supervisorSchema,
   thresholds: z.looseObject({ heartbeat_stale_ms: z.number(), strikes: z.number() }),
   actions: z.boolean().optional(), config_edit: z.boolean().optional(),

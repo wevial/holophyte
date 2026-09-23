@@ -56,7 +56,7 @@ from holophyte.config import (
     setup_timeout,
     worktree_environment,
 )
-from holophyte.config_tables import sweep_config
+from holophyte.config_tables import merge_config, sweep_config
 from holophyte.environment_git import (
     environment_temporary_directory,
     exclude_environment,
@@ -72,11 +72,11 @@ from holophyte.gates import (
     run_verify,
     sh,
 )
+from holophyte.project import worktree_path
 from holophyte.redact import redact_values
 from holophyte.redact import safe_print as print
 from holophyte.run import Run
 from holophyte.runs import heartbeat_while, set_phase
-from holophyte.target import worktree_path
 
 
 def timeout_report(cmd, expired):
@@ -95,9 +95,9 @@ def timeout_report(cmd, expired):
             + (out or "(no output before the timeout)"))
 
 
-def write_worktree_environment(target, wt):
+def write_worktree_environment(project, wt):
     """Replace .env atomically, never following an existing symlink or hardlink."""
-    values = worktree_environment(target)
+    values = worktree_environment(project)
     if values is None:
         return
     exclude_environment(wt)
@@ -114,7 +114,40 @@ def write_worktree_environment(target, wt):
             os.unlink(temporary)
 
 
-def run_worktree_setup(target, wt, conn=None, run_id=None):
+def write_capture_ignore(project, wt):
+    """Make a local `ui_capture_dir` ignore itself: unlike `info/exclude`,
+    its `.gitignore` travels into a container turn's clone.
+
+    A checkout can carry tracked symlinks, so no component of the path is
+    followed: a symlinked directory or `.gitignore` is refused, and the file
+    is replaced rather than written through, which also spares a hardlink."""
+    cfg = merge_config(project)
+    if not cfg.ui_capture_local:
+        return
+    root = Path(wt).resolve()
+    directory = root
+    for part in Path(cfg.ui_capture_dir).parts:
+        directory = directory / part
+        if directory.is_symlink():
+            raise OSError(f"{directory.relative_to(root)} is a symlink")
+        directory.mkdir(exist_ok=True)
+    ignore = directory / ".gitignore"
+    if ignore.is_symlink():
+        raise OSError(f"{ignore.relative_to(root)} is a symlink")
+    if not directory.resolve().is_relative_to(root):
+        raise OSError(f"{cfg.ui_capture_dir} resolves outside the worktree")
+    fd, temporary = tempfile.mkstemp(prefix=".gitignore-", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o644)
+            stream.write("*\n")
+        os.replace(temporary, ignore)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def run_worktree_setup(project, wt, conn=None, run_id=None):
     """Run the target's setup commands in the fresh worktree `wt`.
 
     Returns `(ok, report)` using `run_verify()` and `setup_timeout_sec`.
@@ -124,13 +157,17 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
     no phase, so an absent table leaves the run byte-identical to today's.
     """
     try:
-        write_worktree_environment(target, wt)
+        write_worktree_environment(project, wt)
     except (SystemExit, InfraFailure) as error:
         return False, redact_values(str(error))
     except OSError:
         return False, "[holo2] worktree environment file could not be written"
-    commands = setup_commands(target)
-    timeout = setup_timeout(target)
+    try:
+        write_capture_ignore(project, wt)
+    except (SystemExit, OSError) as error:
+        return False, f"[holo2] local capture directory not prepared: {error}"
+    commands = setup_commands(project)
+    timeout = setup_timeout(project)
     if commands:
         set_phase(conn, run_id, "working",
                   f"worktree setup: {len(commands)} command(s) in {wt}")
@@ -154,7 +191,7 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
     return True, ""
 
 
-def reuse_leftover(target, wt, branch, conn=None, run_id=None,
+def reuse_leftover(project, wt, branch, conn=None, run_id=None,
                    provider=None, task_id=None, sync_origin=True):
     """Ready leftover worktree `wt` for a new run on `branch`; (ok, reason).
     Preserved work survives. Refuse unregistered directories; commit
@@ -180,9 +217,9 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     unreviewed commits. Targets without `origin` skip this step.
     """
     from holophyte.loop import _sync_branch_from_origin
-    sh(["git", "worktree", "prune"], target.path)
+    sh(["git", "worktree", "prune"], project.path)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
-                       cwd=target.path, capture_output=True, text=True)
+                       cwd=project.path, capture_output=True, text=True)
     # Exact resolved paths, not a substring test: slugs are truncated titles,
     # so a registered `.../add-a-thing-later` must not vouch for an
     # unregistered `.../add-a-thing` — and git prints resolved paths, so a
@@ -194,8 +231,8 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
         return False, (f"leftover directory {wt} exists but is not a"
                        " registered worktree; a human moves it aside or"
                        " removes it before this ticket is run again")
-    unstage_environment(target, wt)
-    dirty = sh(["git", "status", "--porcelain", *paths(target)], cwd=wt)
+    unstage_environment(project, wt)
+    dirty = sh(["git", "status", "--porcelain", *paths(project)], cwd=wt)
 
     def is_ancestor(a, b):
         return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
@@ -217,7 +254,7 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     # `-B branch main` does.
     sh(["git", "checkout", "-B", branch], cwd=wt)
     if dirty:
-        stage_work(target, wt)
+        stage_work(project, wt)
         # The configured identity when the target has one, the factory's
         # pinned one otherwise so a target with no committer configured
         # cannot raise here; the message says the commit is the factory's.
@@ -227,10 +264,10 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
         print(f"[holo2] preserved uncommitted leftovers as a WIP commit"
               f" on {branch}")
     if (sync_origin
-            and "origin" in sh(["git", "remote"], target.path).splitlines()):
+            and "origin" in sh(["git", "remote"], project.path).splitlines()):
         try:
             _sync_branch_from_origin(
-                target, conn, run_id, provider, task_id, branch, wt,
+                project, conn, run_id, provider, task_id, branch, wt,
                 diverged=("branch {branch} diverged from origin: local"
                           " {local}, remote {remote}; reconcile by hand"))
         except RunFailure as e:
@@ -306,7 +343,7 @@ def conflict_brief(branch, conflicts):
             " merge unresolved fails.\n\n")
 
 
-def _resolve_merge_conflict(target, conn, run_id, branch, wt, sha, conflicts,
+def _resolve_merge_conflict(project, conn, run_id, branch, wt, sha, conflicts,
                             ticket, beat_s, budget_min):
     """The conflict-resolution turn `reuse_leftover()` hands the
     implementer at claim time, run from the merge gate's mid-merge
@@ -329,7 +366,7 @@ def _resolve_merge_conflict(target, conn, run_id, branch, wt, sha, conflicts,
     paths = ", ".join(conflicts)
     set_phase(conn, run_id, "merge_gate",
               f"implementer resolving the merge conflict on {paths}")
-    _, timed_out = _timed(target, conn, run_id, beat_s, wt, budget_min,
+    _, timed_out = _timed(project, conn, run_id, beat_s, wt, budget_min,
                           f"The merge gate merged main into the candidate"
                           f" branch {branch} and the merge stopped on"
                           f" conflicts in: {paths}. The ticket's work is"
@@ -358,7 +395,7 @@ def _resolve_merge_conflict(target, conn, run_id, branch, wt, sha, conflicts,
     return head, None
 
 
-def _refresh_main(target, run_id=None, conn=None):
+def _refresh_main(project, run_id=None, conn=None):
     """Fetch `origin` and fast-forward the checkout's `main` when
     `origin/main` is ahead, so every branch is cut from everything already
     on `main` anywhere (KO-378). Three cases after the fetch: `origin/main`
@@ -373,38 +410,38 @@ def _refresh_main(target, run_id=None, conn=None):
     the merge lock, so a fast-forward and a `--no-ff` merge never
     interleave.
     """
-    if "origin" not in sh(["git", "remote"], target.path).splitlines():
+    if "origin" not in sh(["git", "remote"], project.path).splitlines():
         return
 
     def is_ancestor(a, b):
         return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
-                              cwd=target.path, capture_output=True).returncode == 0
+                              cwd=project.path, capture_output=True).returncode == 0
 
-    beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-    with target.locks.merge(conn, run_id, beat_s,
+    beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+    with project.locks.merge(conn, run_id, beat_s,
                             operation="fetch before the cut", wait_phase="working"):
-        fr = subprocess.run(["git", "fetch", "origin"], cwd=target.path,
+        fr = subprocess.run(["git", "fetch", "origin"], cwd=project.path,
                             capture_output=True, text=True)
         if fr.returncode != 0:
             raise InfraFailure("git fetch origin failed before the cut:"
                                f" {fr.stderr.strip() or fr.stdout.strip()}")
         if subprocess.run(["git", "rev-parse", "--verify", "-q", "origin/main"],
-                          cwd=target.path, capture_output=True).returncode != 0:
+                          cwd=project.path, capture_output=True).returncode != 0:
             return  # a remote with no `main` yet: nothing to compare against
-        local = sh(["git", "rev-parse", "main"], target.path)
-        remote = sh(["git", "rev-parse", "origin/main"], target.path)
+        local = sh(["git", "rev-parse", "main"], project.path)
+        remote = sh(["git", "rev-parse", "origin/main"], project.path)
         if is_ancestor("origin/main", "main"):
             return
         if is_ancestor("main", "origin/main"):
             # `merge --ff-only` moves the checked-out branch; a checkout
             # sitting elsewhere gets its `main` ref moved directly, the
             # ancestry just proved it a fast-forward.
-            head = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], target.path)
+            head = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], project.path)
             if head == "main":
-                sh(["git", "merge", "--ff-only", "origin/main"], target.path)
+                sh(["git", "merge", "--ff-only", "origin/main"], project.path)
             else:
                 sh(["git", "update-ref", "refs/heads/main", remote, local],
-                   target.path)
+                   project.path)
             print(f"[holo2] main fast-forwarded to origin/main:"
                   f" {local[:12]} -> {remote[:12]}")
             return
@@ -415,7 +452,7 @@ def _refresh_main(target, run_id=None, conn=None):
                        " again")
 
 
-def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
+def _cut_worktree(project, conn, run_id, provider, task_id, task, branch, wt):
     """The worktree phase: cut `branch` at `wt`, or reuse the leftover there.
 
     Returns whether the worktree is fresh -- holds nothing beyond main -- so
@@ -433,7 +470,7 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
     if wt.exists():
         # leftover from a previous failed run — reuse it so preserved work
         # survives; the branch check below still gates on commits.
-        ok, why = reuse_leftover(target, wt, branch, conn=conn,
+        ok, why = reuse_leftover(project, wt, branch, conn=conn,
                                  run_id=run_id, provider=provider,
                                  task_id=task_id)
         if not ok:
@@ -445,14 +482,14 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
         # empty reuse was reset to main and reads as a fresh cut, so the
         # close-outs must neither claim preservation over nothing nor
         # keep an empty leftover alive forever.
-        return (not sh(["git", "status", "--porcelain", *paths(target)], cwd=wt)
+        return (not sh(["git", "status", "--porcelain", *paths(project)], cwd=wt)
                 and sh(["git", "rev-parse", "HEAD"], cwd=wt)
-                == sh(["git", "rev-parse", "main"], target.path))
+                == sh(["git", "rev-parse", "main"], project.path))
     # The mirror leftover: the branch exists but its directory does not
     # (a FAIL close-out preserves both). `checkout -b` would die on it and
     # deleting it could destroy preserved commits — so the run fails
     # cleanly, the same answer as the unregistered directory.
-    if sh(["git", "branch", "--list", branch], target.path):
+    if sh(["git", "branch", "--list", branch], project.path):
         why = (f"branch {branch} already exists with no worktree; a"
                " human moves it aside or deletes it before this ticket"
                " is run again")
@@ -460,13 +497,13 @@ def _cut_worktree(target, conn, run_id, provider, task_id, task, branch, wt):
                f"FAILED to cut a fresh worktree for: {task}\n"
                f"{why}\nNothing was deleted.", provider)
         raise RunFailure(f"cannot cut a fresh worktree: {why}")
-    _refresh_main(target, run_id, conn)
-    sh(["git", "worktree", "add", "--detach", str(wt), "main"], target.path)
+    _refresh_main(project, run_id, conn)
+    sh(["git", "worktree", "add", "--detach", str(wt), "main"], project.path)
     sh(["git", "checkout", "-b", branch], cwd=wt)
     return True
 
 
-def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
+def _setup_worktree(project, conn, run_id, provider, task_id, task, branch, wt,
                     fresh, beat_s):
     """The setup phase: the target's `[worktree] setup` table, run in `wt`.
 
@@ -481,7 +518,7 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
     preserved work and is left exactly as found.
     """
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_worktree_setup(target, wt, conn, run_id)
+        ok, out = run_worktree_setup(project, wt, conn, run_id)
     if ok:
         return
     print(out)
@@ -492,8 +529,8 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
                f"FAILED worktree setup for: {task}\nNo agent ran;"
                f" branch {branch} holds nothing and is"
                f" discarded.\n\n{out}", provider)
-        sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
-        sh(["git", "branch", "-D", branch], target.path)
+        sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
+        sh(["git", "branch", "-D", branch], project.path)
         raise InfraFailure("worktree setup failed; no agent ran and the"
                            " empty branch was discarded")
     ledger(conn, run_id, task_id, "failure",
@@ -505,11 +542,11 @@ def _setup_worktree(target, conn, run_id, provider, task_id, task, branch, wt,
                        " their work")
 
 
-def _retirement_remote_tip(target, branch):
+def _retirement_remote_tip(project, branch):
     """Read and fetch the current remote tip, distinguishing absence from failure."""
     remote = subprocess.run(
         ["git", "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}"],
-        cwd=target.path, capture_output=True, text=True, timeout=60)
+        cwd=project.path, capture_output=True, text=True, timeout=60)
     if remote.returncode == 2:
         return None
     if remote.returncode:
@@ -518,29 +555,29 @@ def _retirement_remote_tip(target, branch):
     tip = remote.stdout.split()[0]
     fetched = subprocess.run(
         ["git", "fetch", "--no-tags", "--no-write-fetch-head", "origin", tip],
-        cwd=target.path, capture_output=True, text=True, timeout=60)
+        cwd=project.path, capture_output=True, text=True, timeout=60)
     if fetched.returncode:
         raise RuntimeError("remote verification failed (git fetch): "
                            + fetched.stderr.strip())
     return tip
 
 
-def retire_worktree(target, branch):
+def retire_worktree(project, branch):
     """Remove a clean, backed-up task checkout; return a refusal or None.
 
     Keep the branch. A remote read must succeed before its tip is trusted;
     stale remote-tracking refs are not evidence that work is still backed up.
     """
-    from holophyte.target import worktree_path
+    from holophyte.project import worktree_path
 
-    wt = worktree_path(target, branch)
-    if wt.resolve() == target.worktrees.resolve() or wt.is_symlink():
+    wt = worktree_path(project, branch)
+    if wt.resolve() == project.worktrees.resolve() or wt.is_symlink():
         return "worktree is not a task checkout"
-    if not wt.resolve().is_relative_to(target.worktrees.resolve()):
-        return "worktree is outside the target's worktrees directory"
+    if not wt.resolve().is_relative_to(project.worktrees.resolve()):
+        return "worktree is outside the project's worktrees directory"
     try:
         if not wt.exists():
-            sh(["git", "worktree", "prune"], target.path)
+            sh(["git", "worktree", "prune"], project.path)
             return None
         if sh(["git", "status", "--porcelain", "--untracked-files=all"], wt).strip():
             return "uncommitted work"
@@ -550,20 +587,20 @@ def retire_worktree(target, branch):
         def reachable(ref):
             return subprocess.run(
                 ["git", "merge-base", "--is-ancestor", head, ref],
-                cwd=target.path, capture_output=True).returncode == 0
+                cwd=project.path, capture_output=True).returncode == 0
         backed_up = reachable("refs/heads/main")
         if not backed_up:
-            tip = _retirement_remote_tip(target, branch)
+            tip = _retirement_remote_tip(project, branch)
             backed_up = tip is not None and reachable(tip)
         if not backed_up:
             return "commits exist nowhere else (not confirmed on remote branch or main)"
-        sh(["git", "worktree", "remove", str(wt)], target.path)
+        sh(["git", "worktree", "remove", str(wt)], project.path)
     except (RuntimeError, OSError, subprocess.SubprocessError) as error:
         return f"worktree retirement refused: {error}"
     return None
 
 
-def _park_unlisted(conn, project, listed):
+def _park_unlisted(conn, project_id, listed):
     """Walk each `ready` mirror row the board's ready listing no longer
     names to `blocked_on_deps`; one printed line names them (KO-425).
 
@@ -587,7 +624,7 @@ def _park_unlisted(conn, project, listed):
         return
     listed = set(listed)
     waiting = []
-    for ticket_id, _ in store.read.ready_tickets(conn, project):
+    for ticket_id, _ in store.read.ready_tickets(conn, project_id):
         with store.transaction(conn):
             # The listing and the `ready_tickets()` read are snapshots;
             # the row is re-read and re-judged under the write lock, so a
@@ -609,7 +646,7 @@ def _park_unlisted(conn, project, listed):
               f" column; waiting on the board: {', '.join(waiting)}")
 
 
-def _claim_next(target, conn, project, provider, order, skip, seen):
+def _claim_next(project, conn, project_id, provider, order, skip, seen):
     """Walk the board's queue to the first ticket this process may run and
     lease it. Returns `(task, ticket_id, run_id)`: `task` None when the
     queue is exhausted, `run_id` None when the claim said stop for a human
@@ -619,20 +656,20 @@ def _claim_next(target, conn, project, provider, order, skip, seen):
     the mirror first (`_park_unlisted()`, KO-425)."""
     from holophyte.admission import held_line
     while True:
-        line = held_line(conn, project)
+        line = held_line(conn, project_id)
         if line:
             print(line)
             return None, None, None
         task = provider.claim_next(skip=skip, order=order)
         if not task:
-            _park_unlisted(conn, project,
+            _park_unlisted(conn, project_id,
                            getattr(provider, "last_listing", None))
             return None, None, None
-        ticket_id = _admit_ticket(target, conn, project, provider, task, seen)
+        ticket_id = _admit_ticket(project, conn, project_id, provider, task, seen)
         if ticket_id is None:
             skip.add(task["id"])
             continue
-        run_id = _claim_run(target, conn, project, provider, task, ticket_id,
+        run_id = _claim_run(project, conn, project_id, provider, task, ticket_id,
                             seen)
         if run_id is HELD:
             # Another loop on this target took the ticket between the
@@ -643,7 +680,7 @@ def _claim_next(target, conn, project, provider, order, skip, seen):
         if run_id is not None:
             # Carry the value through the existing provider-task dispatch seam;
             # do not mutate the provider's task or rebuild the run at each phase.
-            task = dict(task, _run=claimed_run(target, task, conn, run_id, provider))
+            task = dict(task, _run=claimed_run(project, task, conn, run_id, provider))
         return task, ticket_id, run_id
 
 
@@ -683,7 +720,7 @@ def skip_line(identifier, strikes, pr_url, question, park_kind=None):
     return f"{identifier} is parked for a human; skipping it"
 
 
-def _admit_ticket(target, conn, project, provider, task, seen):
+def _admit_ticket(project, conn, project_id, provider, task, seen):
     """The questions asked of a ticket before the lease and before any run
     row exists. Returns the mirrored ticket id, or None for a ticket this
     pass refuses -- `main()` skips it and takes the next one.
@@ -710,17 +747,17 @@ def _admit_ticket(target, conn, project, provider, task, seen):
     # this repository gitignores is refused here too (KO-222) -- unless
     # the last run is on a pull request, whose candidate holds the paths
     # main lacks (KO-598, KO-655).
-    problem = body_problem(task, target.path,
-                           on_pull_request=_on_pull_request(conn, project, task))
+    problem = body_problem(task, project.path,
+                           on_pull_request=_on_pull_request(conn, project_id, task))
     if problem:
-        mirror_task(conn, project, task, specced=False)
+        mirror_task(conn, project_id, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")
         return None
     # The mirror also walks a `blocked_on_deps` row the board lists again
     # back to `ready` (KO-425), so the gates below judge it like any
     # other; a `blocked_on_operator` park is a human's and falls through
     # to `escalate()`'s skip.
-    ticket_id = mirror_task(conn, project, task)
+    ticket_id = mirror_task(conn, project_id, task)
     # The lease is per ticket (KO-341): a ticket another live run holds
     # is that run's, and the answer is the next candidate, not a stop.
     # Asked before `pickable()` so the refusal reads as the lease it is
@@ -738,7 +775,7 @@ def _admit_ticket(target, conn, project, provider, task, seen):
     # label is not asked: the store just said no live run holds the
     # ticket, so one is stale, and `_lease_on_board()` takes it off once
     # the store lease is held.
-    others = foreign_lease_holders(task.get("labels"), lease_host(target))
+    others = foreign_lease_holders(task.get("labels"), lease_host(project))
     if others:
         print(f"[holo2] {task['id']} is leased by {others[0]} on the board;"
               " skipping it")
@@ -785,13 +822,13 @@ def _admit_ticket(target, conn, project, provider, task, seen):
     return ticket_id
 
 
-def _on_pull_request(conn, project, task):
+def _on_pull_request(conn, project_id, task):
     """Whether the mirrored ticket's last run holds a pull request URL.
     Asked before the mirror, so a ticket never mirrored is not on one."""
     row = conn.execute(
         "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
         " WHERE t.linearIssueId = ? AND t.projectId = ?",
-        (mirror_key(task), project)).fetchone()
+        (mirror_key(task), project_id)).fetchone()
     return bool(row and row[0])
 
 
@@ -823,7 +860,7 @@ def _refuse_claim(conn, task, run_id, reason):
     return None
 
 
-def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
+def _lease_on_board(project, conn, provider, task, ticket_id, run_id):
     """The board half of the claim (KO-351), under the store lease run
     `run_id` just took: take off a stale label of this writer's, add the
     label, read the issue's labels back, decide. Returns True when the
@@ -854,8 +891,8 @@ def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
       and the loop takes the next ticket.
     - The read-back shows no other writer: the claim stands.
     """
-    issue_id, label = task["issue_id"], lease_label(target)
-    if lease_host(target) in lease_holders(task.get("labels")):
+    issue_id, label = task["issue_id"], lease_label(project)
+    if lease_host(project) in lease_holders(task.get("labels")):
         print(f"[holo2] {task['id']} carries this writer's lease label {label}"
               " with no live run; removing the stale label and claiming")
         drop_lease_label(conn, ticket_id, provider, issue_id, label)
@@ -866,7 +903,7 @@ def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
         drop_lease_label(conn, ticket_id, provider, issue_id, label)
         return _refuse_claim(conn, task, run_id, "the board did not take the"
                              f" lease label {label} ({e}); no work started")
-    others = foreign_lease_holders(have, lease_host(target))
+    others = foreign_lease_holders(have, lease_host(project))
     if others:
         drop_lease_label(conn, ticket_id, provider, issue_id, label)
         store.release(conn, run_id, "failed",
@@ -878,7 +915,7 @@ def _lease_on_board(target, conn, provider, task, ticket_id, run_id):
     return True
 
 
-def _claim_run(target, conn, project, provider, task, ticket_id, seen):
+def _claim_run(project, conn, project_id, provider, task, ticket_id, seen):
     """The lease, the board's lease label and the `ready -> in_flight`
     move. Returns the claimed run id, `HELD` when another run or another
     writer took the ticket first, or None when the loop must stop rather
@@ -887,9 +924,9 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
     # a close-out reads the store and strips its board label under the
     # same turn, so no claim can land between the look and the removal
     # and have its fresh label stripped.
-    with lease_turn(target):
+    with lease_turn(project):
         try:
-            run_id = store.claim(conn, project, ticket_id)
+            run_id = store.claim(conn, project_id, ticket_id)
         except store.ClaimConflict as e:
             # Before any branch or worktree exists: another loop on this
             # target won the ticket, so this one moves on to the next.
@@ -899,7 +936,7 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
         # before the run is anything another writer could collide with.
         if run_id is None:
             return None
-        leased = _lease_on_board(target, conn, provider, task, ticket_id,
+        leased = _lease_on_board(project, conn, provider, task, ticket_id,
                                  run_id)
     if leased is not True:
         return leased
@@ -925,7 +962,7 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
         store.release(conn, run_id, "failed", str(refused),
                       outcome_class=outcome_class_of(refused),
                       failure_kind=refused.failure_kind)
-        release_lease_label(target, conn, ticket_id, provider, run_id)
+        release_lease_label(project, conn, ticket_id, provider, run_id)
         # This refusal is a failed run, but an `infra` one: no work
         # started, so it does not count towards parking the ticket.
         # The threshold is still checked for the `work` failures
@@ -939,13 +976,13 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
     return run_id
 
 
-def claimed_run(target, task, conn=None, run_id=None, provider=None, *,
+def claimed_run(project, task, conn=None, run_id=None, provider=None, *,
                 clock=monotonic):
     """Name a run once, including direct callers without a store claim."""
     ident = re.sub(r"[^a-z0-9]+", "-", task["id"].lower()).strip("-")
     slug = re.sub(r"[^a-z0-9]+", "-", task["title"].lower())[:30].strip("-")
-    branch = f"{branch_prefix(target)}/{ident}-{slug}"
+    branch = f"{branch_prefix(project)}/{ident}-{slug}"
     row = store.read.run_snapshot(conn, run_id) if conn is not None else None
-    return Run(target, conn, run_id, provider, task["id"], mirror_key(task),
-               task["title"], branch, worktree_path(target, branch),
+    return Run(project, conn, run_id, provider, task["id"], mirror_key(task),
+               task["title"], branch, worktree_path(project, branch),
                task["budget_min"], clock(), row.startedAt if row else None, clock=clock)

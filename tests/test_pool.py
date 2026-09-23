@@ -25,6 +25,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     no_agent_processes,
 )
+from heartbeat_fixture import LOADED_MS, patch_beats  # noqa: E402
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     TICK,
     FakePool,
@@ -73,10 +74,10 @@ class GateConflictRequeueTests(LoopFixture):
         sha = self.git("rev-parse", branch, cwd=wt).strip()
         conn = store.open(str(self.db))
         try:
-            project = tickets.ensure_project(conn, StubProvider.TEAM,
+            project_id = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
-            ticket = holophyte.board.mirror_task(conn, project, a_task())
-            run_id = store.claim(conn, project, ticket)
+            ticket = holophyte.board.mirror_task(conn, project_id, a_task())
+            run_id = store.claim(conn, project_id, ticket)
             tickets.transition(conn, ticket, "in_flight")
             store.set_branch(conn, run_id, branch)
             # The conflict goes to the implementer first now (KO-404);
@@ -84,10 +85,10 @@ class GateConflictRequeueTests(LoopFixture):
             with patch.object(holophyte.loop, "agent", FakeAgent(Idle())):
                 with self.assertRaises(holophyte.gates.RunFailure) as failed:
                     holophyte.merge_gate._sync_main_into_branch(
-                        self.tgt, conn, run_id, provider, "KO-131", branch,
+                        self.project, conn, run_id, provider, "KO-131", branch,
                         wt, sha, 60, "add a thing", 5)
             holophyte.board.close_out_failure(
-                self.tgt, conn, run_id, ticket, reason=str(failed.exception),
+                self.project, conn, run_id, ticket, reason=str(failed.exception),
                 provider=provider, refresh=False)
         finally:
             conn.close()
@@ -105,7 +106,7 @@ class GateConflictRequeueTests(LoopFixture):
             "SELECT outcomeReason FROM runs WHERE outcome = 'failed'")[0][0])
 
         out = io.StringIO()
-        holophyte.operator.requeue(self.tgt, "KO-131",
+        holophyte.operator.requeue(self.project, "KO-131",
                                "resolved README.md on the branch", out)
 
         self.assertEqual(out.getvalue().strip(),
@@ -128,10 +129,10 @@ class GateConflictRequeueTests(LoopFixture):
         url = "https://github.com/example/repo/pull/7"
         conn = store.open(str(self.db))
         try:
-            project = tickets.ensure_project(conn, StubProvider.TEAM,
+            project_id = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
-            ticket = holophyte.board.mirror_task(conn, project, a_task())
-            run_id = store.claim(conn, project, ticket)
+            ticket = holophyte.board.mirror_task(conn, project_id, a_task())
+            run_id = store.claim(conn, project_id, ticket)
             tickets.transition(conn, ticket, "in_flight")
             park_run(conn, run_id, "awaiting_merge_approval",
                        pr_url=url, candidate_sha="a" * 40)
@@ -141,7 +142,7 @@ class GateConflictRequeueTests(LoopFixture):
             conn.close()
 
         with self.assertRaises(SystemExit) as refused:
-            holophyte.operator.requeue(self.tgt, "KO-131", "why not",
+            holophyte.operator.requeue(self.project, "KO-131", "why not",
                                    io.StringIO())
 
         self.assertEqual(
@@ -173,7 +174,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
                 patch.object(sys, "orig_argv",
                              ["python3", "-u", "factory.py", str(self.target)]), \
                 patch.object(sys, "stdout", out):
-            self.rc = holophyte.operator.main(self.tgt, provider)
+            self.rc = holophyte.operator.main(self.project, provider)
         self.out = out.getvalue()
         return pool
 
@@ -215,14 +216,14 @@ class PoolTests(PoolRestartCases, LoopFixture):
     def test_a_timer_tick_with_a_slot_free_spawns_for_a_ticket_filed_since(self):
         """A timer tick fills a free slot with newly ready work."""
         provider = StubProvider(a_task(1))
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, provider.team, self.target)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
 
         def filed_one():
             # Worker 1 holds ticket 1; ticket 2 arrives on the board.
-            store.claim(conn, project,
-                        holophyte.board.mirror_task(conn, project, a_task(1)))
+            store.claim(conn, project_id,
+                        holophyte.board.mirror_task(conn, project_id, a_task(1)))
             conn.commit()
             provider.queue.append(a_task(2))
 
@@ -269,16 +270,16 @@ class PoolTests(PoolRestartCases, LoopFixture):
     def test_the_pool_refills_while_live_workers_hold_their_leases(self):
         """Live leases do not prevent free slots from being refilled."""
         provider = StubProvider(*(a_task(n) for n in range(1, 6)))
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, provider.team, self.target)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
 
         def first_exit():
             # Worker 1 merged ticket 1; workers 2 and 3 hold tickets 2 and 3.
             provider.queue.pop(0)
             for n in (2, 3):
-                store.claim(conn, project,
-                            holophyte.board.mirror_task(conn, project, a_task(n)))
+                store.claim(conn, project_id,
+                            holophyte.board.mirror_task(conn, project_id, a_task(n)))
             conn.commit()
 
         pool = self.run_scheduler(3, provider, [
@@ -297,11 +298,11 @@ class PoolTests(PoolRestartCases, LoopFixture):
         """Two ready tickets, one already held by a live run on this
         target: one worker, not two."""
         provider = StubProvider(a_task(1), a_task(2))
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, provider.team, self.target)
-        ticket = holophyte.board.mirror_task(conn, project, a_task(1))
-        store.claim(conn, project, ticket)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+        ticket = holophyte.board.mirror_task(conn, project_id, a_task(1))
+        store.claim(conn, project_id, ticket)
 
         pool = self.run_scheduler(3, provider, [
             (holophyte.pool.WORKER_MERGED, provider.queue.clear),
@@ -313,10 +314,10 @@ class PoolTests(PoolRestartCases, LoopFixture):
     def test_the_claimable_count_is_one_store_read_per_tick(self):
         """Count claimable tickets with one store read per tick."""
         provider = StubProvider(*(a_task(n) for n in range(1, 6)))
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, provider.team, self.target)
-        ids = [holophyte.board.mirror_task(conn, project, a_task(n))
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+        ids = [holophyte.board.mirror_task(conn, project_id, a_task(n))
                for n in range(1, 6)]
         for ticket in ids[2:]:
             conn.execute("UPDATE tickets SET dependsOn = ? WHERE id = ?",
@@ -326,7 +327,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
         conn.set_trace_callback(statements.append)
         self.addCleanup(conn.set_trace_callback, None)
 
-        counted = holophyte.pool._claimable(conn, project, provider.queue)
+        counted = holophyte.pool._claimable(conn, project_id, provider.queue)
 
         # Two claimable: the first two; the other three wait on the first.
         self.assertEqual(counted, 2)
@@ -337,11 +338,11 @@ class PoolTests(PoolRestartCases, LoopFixture):
         merged: one worker, not two. The count asks the store's own
         `pickable()`, dependencies included, not status and lease alone."""
         provider = StubProvider(a_task(1), a_task(2))
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, provider.team, self.target)
-        holophyte.board.mirror_task(conn, project, a_task(1))
-        second = holophyte.board.mirror_task(conn, project, a_task(2))
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+        holophyte.board.mirror_task(conn, project_id, a_task(1))
+        second = holophyte.board.mirror_task(conn, project_id, a_task(2))
         conn.execute("UPDATE tickets SET dependsOn = ? WHERE id = ?",
                      (json.dumps([a_task(1)["issue_id"]]), second))
         conn.commit()
@@ -450,7 +451,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
         self.assertEqual(self.rc, 0)
         self.assertIn("[holo2] worker 1 failed (exit 1)", self.out)
         self.assertIn("Linear has no ready tickets. done.", self.out)
-        handoff = json.loads(self.tgt.store_path.with_name("pool.json").read_text())
+        handoff = json.loads(self.project.store_path.with_name("pool.json").read_text())
         self.assertNotIn("failed", handoff)
         self.assertNotIn("broken", handoff)
 
@@ -464,7 +465,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
                 self.assertEqual(self.rc, 1)
 
     def test_an_old_handoff_failure_does_not_poison_idle_drain(self):
-        path = self.tgt.store_path.with_name("pool.json")
+        path = self.project.store_path.with_name("pool.json")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"parent": os.getpid(), "failed": True,
                                     "workers": []}))
@@ -513,7 +514,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
         self.git("remote", "add", "origin", str(origin))
         self.git("fetch", "-q", "origin", "main")
 
-        self.assertEqual(holophyte.pool_handoff.fetched_schema(self.tgt), (41, 40))
+        self.assertEqual(holophyte.pool_handoff.fetched_schema(self.project), (41, 40))
 
 
 
@@ -528,7 +529,7 @@ class WorkerTests(LoopFixture):
                 patch.object(holophyte.loop, "agent", fake), \
                 patch.dict(os.environ, {holophyte.pool.WORKER_SLOT_ENV: "2"}), \
                 patch.object(sys, "stdout", out):
-            rc = holophyte.pool.worker(self.tgt, provider)
+            rc = holophyte.pool.worker(self.project, provider)
         return rc, out.getvalue()
 
     def test_worker_checks_budget_before_claiming(self):
@@ -574,7 +575,7 @@ class WorkerTests(LoopFixture):
                 patch.object(sys, "stdout", io.StringIO()), \
                 patch.object(sys, "stderr", err):
             try:
-                holophyte.pool.worker(self.tgt, provider)
+                holophyte.pool.worker(self.project, provider)
             except RuntimeError:
                 # What the interpreter does with an exception that reaches
                 # the top of a `--worker` process.
@@ -605,7 +606,7 @@ class WorkerTests(LoopFixture):
         the file is written and `git commit` runs."""
         self.configure('[report]\nfindings = "repo"\n')
         provider = StubProvider(a_task(1))
-        lock = holophyte.gates.merge_lock_path(self.tgt)
+        lock = holophyte.gates.merge_lock_path(self.project)
         held = []
 
         def commit_under_lock(target, message):
@@ -630,7 +631,7 @@ class WorkerTests(LoopFixture):
         the checkout at that moment (the review of KO-343)."""
         self.configure('[report]\nfindings = "repo"\n')
         provider = StubProvider(a_task(1))
-        lock = holophyte.gates.merge_lock_path(self.tgt)
+        lock = holophyte.gates.merge_lock_path(self.project)
         held = []
         real = holophyte.findings.refresh_findings
 
@@ -646,8 +647,22 @@ class WorkerTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         # Rendered once, with the lock held, and released after.
         self.assertEqual(held, [True])
-        self.assertIn("KO-131", (self.tgt.path / "FINDINGS.md").read_text())
+        self.assertIn("KO-131", (self.project.path / "FINDINGS.md").read_text())
         self.assertFalse(lock.exists())
+
+    def test_a_worker_with_findings_off_skips_the_merge_lock(self):
+        """With no FINDINGS.md to write, a sibling's merge lock does not
+        hold this worker's slot at close-out (KO-645)."""
+        provider = StubProvider(a_task(1))
+        lock = holophyte.gates.merge_lock_path(self.project)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("7 0\n")
+
+        with patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0):
+            rc, out = self.worker(Refuse(), provider=provider)
+
+        self.assertEqual(rc, holophyte.pool.WORKER_FAILED)
+        self.assertNotIn("FINDINGS.md left", out)
 
     def test_a_worker_with_nothing_to_claim_exits_idle(self):
         sha = subprocess.check_output(
@@ -730,11 +745,17 @@ class SweptHeartbeatTests(unittest.TestCase):
 class SweptTurnTests(LoopFixture):
     """A swept turn stops its worker and preserves the candidate."""
 
-    def test_a_swept_run_kills_its_turn_writes_nothing_more_and_moves_on(self):
-        # A 600 ms stale threshold gives a 300 ms beat to detect the sweep.
-        self.configure("[supervisor]\nheartbeat_stale_min = 0.01\n")
-        knobs = holophyte.config_tables.sweep_config(self.tgt)
-        db, tgt = self.db, self.tgt
+    def swept_turn(self, delay_ms=0, silent=False):
+        """Run a turn that sweeps its own run, each beat `delay_ms` late or
+        `silent`; return what the turn saw, the output, agent and provider."""
+        # A 3 s stale threshold gives a 1.5 s beat to detect the sweep, and a
+        # beat 400 ms late on a busy runner still lands well inside the wait
+        # below of two thresholds (KO-674).
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n")
+        patch_beats(self, delay_ms, silent)
+        knobs = holophyte.config_tables.sweep_config(self.project)
+        wait_s = knobs.heartbeat_stale_ms * 2 / 1000
+        db, project = self.db, self.project
         seen = {}
         fake = FakeAgent()
 
@@ -752,7 +773,7 @@ class SweptTurnTests(LoopFixture):
                     conn.execute("UPDATE runs SET workingMs = 3600000")
                     conn.commit()
                     result = holophyte.supervisor.sweep(
-                        tgt, conn, int(time.time() * 1000) + 3_600_000,
+                        project, conn, int(time.time() * 1000) + 3_600_000,
                         act=True, knobs=knobs)
                     seen["trips"] = [t.condition for t in result.trips]
                     seen["row"] = conn.execute(
@@ -767,7 +788,7 @@ class SweptTurnTests(LoopFixture):
                 finally:
                     conn.close()
                 try:
-                    proc.wait(timeout=20)
+                    proc.wait(timeout=wait_s)
                     seen["returncode"] = proc.returncode
                 except subprocess.TimeoutExpired:
                     # The loop never killed it: end it here so the test
@@ -781,16 +802,22 @@ class SweptTurnTests(LoopFixture):
         out = io.StringIO()
         with patch.object(sys, "stdout", out):
             self.loop(provider=provider, fake=fake)
-        out = out.getvalue()
+        return seen, out.getvalue(), fake, provider
+
+    def assert_turn_killed(self, seen, out):
+        # The turn's process was killed, not left to finish its 30 seconds.
+        self.assertEqual(seen["returncode"], -signal.SIGKILL)
+        self.assertIn("[holo2] run 1 was ended by the supervisor"
+                      f" ({seen['row'][1]}); stopping this turn", out)
+
+    def test_a_swept_run_kills_its_turn_writes_nothing_more_and_moves_on(self):
+        seen, out, fake, provider = self.swept_turn()
         # The sweep tripped the time box and ended the run.
         self.assertEqual(seen["trips"], ["time_box"])
         self.assertEqual(seen["row"][0], "failed")
         self.assertIn("swept by the supervisor", seen["row"][1])
         self.assertIsNotNone(seen["row"][2])
-        # The turn's process was killed, not left to finish its 30 seconds.
-        self.assertEqual(seen["returncode"], -signal.SIGKILL)
-        self.assertIn("[holo2] run 1 was ended by the supervisor"
-                      f" ({seen['row'][1]}); stopping this turn", out)
+        self.assert_turn_killed(seen, out)
         # Nothing more was written to the swept run: its row and its
         # streams are as the sweep left them.
         self.assertEqual(
@@ -812,6 +839,17 @@ class SweptTurnTests(LoopFixture):
                          [(1, "failed"), (2, "merged")])
         self.assertIn("the next work", self.subjects())
         self.assertIsNone(self.rc)
+
+    def test_beats_each_late_on_a_loaded_runner_still_kill_the_turn(self):
+        seen, out, _, _ = self.swept_turn(delay_ms=LOADED_MS)
+        self.assert_turn_killed(seen, out)
+        self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
+                         [(1, "failed"), (2, "merged")])
+
+    def test_a_silent_heartbeat_under_the_swept_turn_fails_the_check(self):
+        seen, out, _, _ = self.swept_turn(silent=True)
+        with self.assertRaises(AssertionError):
+            self.assert_turn_killed(seen, out)
 
 
 class ImplementerProbeTests(LoopFixture):

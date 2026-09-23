@@ -16,7 +16,7 @@ Python 3.11+ and Git on the host, Docker for the reviewer container, and
 the daemon needs it to edit a config in place and exits naming it when it
 is missing. Bun is needed
 only to build the console (`bun --cwd=console run build`); see
-[Development](docs/development.md). Per-target settings go in
+[Development](docs/development.md). Per-project settings go in
 `~/.holophyte/<slug>/config.toml`; see [Config](docs/config.md).
 
 ## Usage
@@ -30,7 +30,7 @@ python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails th
 python3 factory.py /path/to/repo --status [--json] # projects, live and parked runs, ready count, locks
 python3 factory.py --import-store PATH --dry-run /path/to/repo # what importing another store would move; writes nothing
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
-python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback, the console at /; HOST:PORT to bind elsewhere
+python3 factory.py --serve 7710 /path/to/repo         # JSON daemon on loopback, the console at /; reads, and writes only with [serve] actions or config_edit; HOST:PORT to bind elsewhere
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
 python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run parked for merge approval
 python3 factory.py --babysit KO-n [--note TEXT] /path/to/repo # look at a parked run's pull request again
@@ -43,9 +43,10 @@ python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # recor
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
+python3 factory.py project add|list|enable|hold|disable [--store PATH] # register projects and change their admission
 ```
 
-`--file-ticket` validates the file against the target, creates the issue,
+`--file-ticket` validates the file against the project, creates the issue,
 reads the stored body back and validates that again, so a transfer that
 rewrites the body is caught. With `--update KO-n` it replaces that issue's
 title, description and estimate from the file instead of creating one, with
@@ -57,9 +58,11 @@ naming any blocker it added with a `+`, or exits 1 with the problem and nothing
 changed when the file is invalid and 2 with the identifier and the problem
 when the stored body is.
 
-`--report`, `--status`, `--sweep`, `--import-store --dry-run` and `--serve`
-read the store and call nobody; the loop and `--supervise` need a `[board]`
-table. `--help` is safe: the command line is parsed, not indexed.
+`--report`, `--status`, `--sweep` and `--import-store --dry-run` read the
+store and call nobody; `--serve` reads it too, and writes only through its
+two opt-ins, `[serve] actions` and `config_edit`
+([The daemon's actions](docs/reference/daemon.md)); the loop and
+`--supervise` need a `[board]` table. `--help` is safe: the command line is parsed, not indexed.
 
 ## Read next
 

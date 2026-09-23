@@ -137,7 +137,7 @@ class AskMentionCases:
                 self.comment(2, ("writer", "User"), body))
             review["isResolved"] = any(k == "resolve" for k, _ in calls)
             node["mergeable"] = "MERGEABLE"
-        operator.babysit_ticket(self.tgt, "KO-131", operator.BABYSIT_DEFAULT_NOTE,
+        operator.babysit_ticket(self.project, "KO-131", operator.BABYSIT_DEFAULT_NOTE,
                                 out=io.StringIO())
         self.serve(state)
         again, _ = self.loop(provider=self.provider())

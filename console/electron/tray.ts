@@ -41,9 +41,9 @@ export function trayImageFile(level: Level): string | null {
 }
 
 /** One poll's answer for one path on one daemon. A 401 is not a failure to
- *  reach the daemon: it is up and wants the token `console.json` does not
- *  carry for it. Any other non-2xx keeps its status (a 404 on `/attention`
- *  is a daemon older than the path; a 503 is a target with no store yet)
+ *  reach the daemon: it is up and wants a token `console.json` does not
+ *  carry for it, or carries out of date. Any other non-2xx keeps its status (a 404 on `/attention`
+ *  is a daemon older than the path; a 503 is a project with no store yet)
  *  and its JSON body when there was one. */
 export type FetchResult<T> =
   | { ok: true; body: T }
@@ -58,7 +58,6 @@ export type Run = {
 };
 export type Status = {
   project?: string;
-  target?: string;
   host?: string;
   now?: number;
   error?: string;
@@ -88,6 +87,9 @@ export type SummaryOptions = {
   /** `/runs` answers for the idle daemons, keyed by address, so the idle
    *  line can name the last merge as the drawer does. */
   runs?: Record<string, FetchResult<Runs>>;
+  /** The `token_files` path whose token each address was sent, keyed by
+   *  address: a 401 there names the file as out of date. */
+  tokenFiles?: Record<string, string>;
   state?: MenuState;
   actions?: MenuActions;
 };
@@ -128,7 +130,7 @@ function cut(text: unknown, limit: number): string {
 /** What the tray calls a daemon: the last path segment of its project,
  *  the address before `/status` has named one. */
 export function projectName(address: string, status: Status | null): string {
-  const project = status?.project ?? status?.target;
+  const project = status?.project;
   if (!project) return address;
   const segments = project.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? project;
@@ -214,14 +216,24 @@ function attentionError(answer: FetchResult<Attention> | undefined): string | nu
   return answer.error || "unreachable";
 }
 
+/** The row for a daemon that refused the token read from `file`: the
+ *  file is what the operator must replace, so the row names it. */
+function staleTokenRow(address: string, file: string): Row {
+  return { label: `token file ${file} is out of date for ${address}`, level: "attention" };
+}
+
 /** The "needs you" rows for one reachable daemon and the level they carry. */
 function attentionRows(
   name: string,
   status: Status,
   answer: FetchResult<Attention> | undefined,
+  stale: Row | null,
 ): { rows: Row[]; level: Level } {
   if (answer?.ok && Array.isArray(answer.body?.items)) return daemonRows(name, answer.body);
   const local = localRows(name, status);
+  if (stale !== null && answer?.ok === false && answer.kind === "unauthorized") {
+    return { rows: [stale, ...local.rows], level: worse(local.level, stale.level) };
+  }
   const why = attentionError(answer);
   if (why === null) return local;
   const row: Row = { label: `${name} · /attention failed: ${cut(why, REASON_CHARS)}`, level: "bad" };
@@ -251,14 +263,15 @@ function idleText(status: Status, runs: FetchResult<Runs> | undefined): string {
 
 /** One reachable daemon's project line: `NAME · PHASE KO-n · hb AGE` per
  *  live run, or the idle text; a 503 (no store yet) shows the daemon's own
- *  `error` text. */
+ *  `error` text; a 401 to a token read from a file is the `stale` row. */
 function projectLine(
   name: string,
   status: FetchResult<Status>,
   runs: FetchResult<Runs> | undefined,
+  stale: Row | null,
 ): Row {
   if (!status.ok) {
-    if (status.kind === "unauthorized") return { label: `${name} · needs token`, level: "attention" };
+    if (status.kind === "unauthorized") return stale ?? { label: `${name} · needs token`, level: "attention" };
     if (status.kind === "unreachable") return { label: `${name} · unreachable`, level: "bad" };
     const body = status.body as Status | undefined;
     return { label: `${name} · ${body?.error ?? `HTTP ${status.status}`}`, level: "attention" };
@@ -303,7 +316,9 @@ export function buildSummary(
   for (const address of peers) {
     const status = statuses[address] ?? { ok: false, kind: "unreachable", error: "not polled" };
     const name = projectName(address, status.ok ? status.body : null);
-    const line = projectLine(name, status, options.runs?.[address]);
+    const file = options.tokenFiles?.[address];
+    const stale = file === undefined ? null : staleTokenRow(address, file);
+    const line = projectLine(name, status, options.runs?.[address], stale);
     projects.push(line);
     level = worse(level, line.level);
     if (!status.ok) continue;
@@ -312,7 +327,7 @@ export function buildSummary(
       attention?.ok && attention.body.now === undefined
         ? { ...attention, body: { ...attention.body, now } }
         : attention;
-    const got = attentionRows(name, status.body, withNow);
+    const got = attentionRows(name, status.body, withNow, stale);
     needsYou.push(...got.rows);
     level = worse(level, got.level);
   }
@@ -337,12 +352,17 @@ export type PollAnswerLike = {
   statuses: Record<string, FetchResult<Status>>;
   attentions: Record<string, FetchResult<Attention>>;
   runs: Record<string, FetchResult<Runs>>;
+  tokenFiles?: Record<string, string>;
 };
 
 export function summarizeAnswer(
   answer: PollAnswerLike,
   now: number,
-  options: Omit<SummaryOptions, "runs"> = {},
+  options: Omit<SummaryOptions, "runs" | "tokenFiles"> = {},
 ): Summary {
-  return buildSummary(answer.peers, answer.statuses, answer.attentions, now, { ...options, runs: answer.runs });
+  return buildSummary(answer.peers, answer.statuses, answer.attentions, now, {
+    ...options,
+    runs: answer.runs,
+    tokenFiles: answer.tokenFiles,
+  });
 }

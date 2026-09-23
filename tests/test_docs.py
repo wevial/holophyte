@@ -12,6 +12,7 @@ Run: python3 -m unittest discover -s tests -p 'test_docs*' -v
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -176,8 +177,76 @@ class UsageTests(unittest.TestCase):
         missing = [opt for opt in parser_option_strings()
                    if opt not in block.group(1)]
         self.assertEqual(missing, [])
+        self.assertIn("factory.py project", block.group(1))
         for name in TOPIC_DOCS:
             self.assertIn(f"docs/{name}.md", text)
+
+
+def section(text, title):
+    """The body under the `## title` heading, up to the next `## `."""
+    return text.split(f"\n## {title}\n", 1)[1].split("\n## ", 1)[0]
+
+
+class CliReferenceTests(unittest.TestCase):
+    """KO-626: `docs/reference/cli.md` has a row for every mode the parser
+    registers and every `project` verb the real entry point lists."""
+
+    PAGE = DOCS / "reference" / "cli.md"
+
+    def test_names_every_option_and_project_verb(self):
+        text = self.PAGE.read_text()
+        # Exact option tokens from the tables' Invocation cells only, so a
+        # mention in the prose, or `--close` inside `--close-pr`, is no row.
+        cells = " ".join(re.split(r"(?<!\\)\|", line)[1]
+                         for line in text.splitlines()
+                         if line.startswith("| `"))
+        invoked = set(re.findall(r"--[a-z][\w-]*", cells))
+        missing = [opt for opt in parser_option_strings()
+                   if opt not in invoked]
+        self.assertEqual(missing, [], "flags with no row on the page")
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "factory.py"), "project", "--help"],
+            capture_output=True, text=True, cwd=ROOT)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        choices = re.search(r"\{([\w,]+)\}", result.stdout)
+        self.assertIsNotNone(choices, result.stdout)
+        verbs = choices.group(1).split(",")
+        self.assertIn("add", verbs)
+        self.assertEqual([v for v in verbs if f"`project {v} " not in cells],
+                         [], "project verbs with no row on the page")
+        self.assertIn("--store", invoked)
+
+    def test_failure_lines_board_needs_and_exit_codes(self):
+        text = self.PAGE.read_text()
+        for mode in ("`--report PROJECT`", "`--sweep PROJECT`"):
+            (row,) = [line for line in text.splitlines()
+                      if line.startswith(f"| {mode}")]
+            self.assertIn("`failures KIND: N`", row)
+        board = section(text, "Startup checks").split("need a `[board]`")[0]
+        for mode in ("`--close`", "`--worker`"):
+            self.assertIn(mode, board)
+        (exit_1,) = [line for line in text.splitlines()
+                     if line.startswith("| 1 |")]
+        for refusal in ("pause", "resume", "close-out", "hold", "`project`"):
+            self.assertIn(refusal, exit_1)
+
+
+class OperatingIntroTests(unittest.TestCase):
+    """KO-626: the pause section is about pausing; the merge-gate, re-point
+    and send-back notes that once followed the intro have their own heading."""
+
+    def test_pause_section_holds_only_pausing(self):
+        text = (DOCS / "operating.md").read_text()
+        pause = section(text, "Pause one run at its next safe point")
+        self.assertNotIn("--repoint", pause)
+        homes = [title for title in headings(text, 2)
+                 if "merge gate conflict" in section(text, title)]
+        self.assertEqual(len(homes), 1, homes)
+        notes = section(text, homes[0])
+        for flag in ("--repoint", "--babysit"):
+            self.assertIn(flag, notes)
+        self.assertNotIn("--pause", notes)
+        self.assertNotIn("--abort", notes)
 
 
 class PullRequestTemplateTests(unittest.TestCase):
@@ -217,6 +286,67 @@ class BabysitterTests(unittest.TestCase):
                          r"\*\*Babysitter\.\*\*")
 
 
+class ProjectWordTests(unittest.TestCase):
+    """KO-618: the manual calls the repository the factory works on a
+    project, as `factory.py project add` and the store's `projects` table
+    do. Mermaid node names follow the code; `docs/design/` holds dated
+    records. The code type and its module left the old word in KO-619, and
+    the daemon's JSON alias key in KO-634, which retired their exceptions
+    here."""
+
+    maxDiff = None
+    OLD_WORD = re.compile(r"\btargets?\b", re.IGNORECASE)
+    PERMITTED = re.compile(r"```mermaid\n.*?```", re.DOTALL)
+
+    def test_the_old_word_is_gone_outside_the_design_notes(self):
+        found = []
+        for path in [README, ROOT / "AGENTS.md", *DOCS.rglob("*.md")]:
+            if DOCS / "design" in path.parents:
+                continue
+            # Blank a permitted span but keep its newlines, so line
+            # numbers still point into the file.
+            text = self.PERMITTED.sub(
+                lambda m: "\n" * m.group(0).count("\n"), path.read_text())
+            for number, line in enumerate(text.splitlines(), 1):
+                if self.OLD_WORD.search(line):
+                    found.append(f"{path.relative_to(ROOT)}:{number}: {line}")
+        self.assertEqual(found, [])
+
+    def test_the_glossary_defines_project_and_the_board_as_linear(self):
+        text = (DOCS / "reference" / "glossary.md").read_text()
+        self.assertRegex(text, r"\*\*Project\.\*\*")
+        self.assertNotRegex(
+            text, re.compile(r"\*\*target\.\*\*", re.IGNORECASE))
+        board = re.search(r"\*\*Board\.\*\*(.*?)\n\n", text, re.DOTALL)
+        self.assertIsNotNone(board, "glossary has no Board entry")
+        self.assertIn("Linear project", board.group(1))
+
+    def test_the_cli_page_takes_a_project(self):
+        text = (DOCS / "reference" / "cli.md").read_text()
+        self.assertIn("`python3 factory.py [MODE] PROJECT`", text)
+        modes = re.search(r"\| Invocation \| Does \| Touches \|\n"
+                          r"\| --- \| --- \| --- \|\n((?:\|.*\n)+)", text)
+        self.assertIsNotNone(modes, "cli.md has no mode table")
+        rows = modes.group(1).splitlines()
+        self.assertTrue(rows)
+        wrong = [row.split(" | ")[0] for row in rows
+                 if not row.split(" | ")[0].endswith(" PROJECT`")]
+        self.assertEqual(wrong, [])
+
+    def test_the_http_page_names_project_the_repository_key(self):
+        text = re.sub(r"\s+", " ",
+                      (DOCS / "reference" / "http.md").read_text())
+        for route in ("/status", "/attention"):
+            section = text.split(f"## `GET {route}`", 1)[1].split(" ## ", 1)[0]
+            self.assertIn('"project": "/path/to/repo"', section, route)
+            self.assertRegex(section, r"`project` is the (?:project path|"
+                             r"repository the daemon serves)", route)
+        (no_store,) = [row for row in text.split(" | ")
+                       if "no store yet" in row]
+        self.assertRegex(no_store, r"`project`, the repository the daemon"
+                         r" serves")
+
+
 class ArchitectureTruthTests(unittest.TestCase):
     """KO-593: the architecture pages say what the store and the daemon do.
     The schema version is read from the constant, so a bump that leaves the
@@ -253,6 +383,67 @@ class ArchitectureTruthTests(unittest.TestCase):
         self.assertIn("bearer token", unit)
         self.assertIn("[serve] token_file", unit)
         self.assertNotIn("no authentication", unit)
+
+
+class DaemonWritesTests(unittest.TestCase):
+    """KO-627: `--serve` reads by default and writes through two opt-ins,
+    `[serve] actions` and `[serve] config_edit`, so neither `--help` nor the
+    manual calls it read-only. `docs/design/` holds dated records and
+    `docs/architecture/` is ArchitectureTruthTests' (KO-593)."""
+
+    # What the pages said before the action endpoints and `PUT /config`.
+    RETIRED = ("read-only JSON daemon", "read-only HTTP daemon",
+               "A read-only daemon", "The daemon is read-only",
+               "serving its state read-only")
+
+    def test_no_page_calls_the_daemon_read_only(self):
+        # A phrase may wrap, so its words match across any whitespace; the
+        # hit is reported at the line it starts on.
+        patterns = [re.compile(r"\s+".join(map(re.escape, phrase.split())))
+                    for phrase in self.RETIRED]
+        found = []
+        for path in [README, *DOCS.rglob("*.md")]:
+            if {DOCS / "design", DOCS / "architecture"} & set(path.parents):
+                continue
+            text = path.read_text()
+            found += [f"{path.relative_to(ROOT)}:"
+                      f"{text.count(chr(10), 0, hit.start()) + 1}: "
+                      f"{' '.join(hit.group(0).split())}"
+                      for pattern in patterns
+                      for hit in pattern.finditer(text)]
+        self.assertEqual(found, [])
+
+    def test_help_names_the_actions_opt_in(self):
+        # A wide COLUMNS keeps argparse from wrapping an entry mid-phrase.
+        help_text = subprocess.run(
+            [sys.executable, "factory.py", "--help"], cwd=ROOT,
+            env={**os.environ, "COLUMNS": "1000"}, capture_output=True,
+            text=True, check=True).stdout
+        entry = re.search(r"^  --serve .*?(?=^  -)", help_text,
+                          re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(entry, help_text)
+        serve = " ".join(entry.group(0).split())
+        self.assertNotIn("writes nothing", serve)
+        self.assertNotIn("read-only", serve)
+        self.assertIn("[serve] actions", serve)
+
+    def test_cli_row_and_http_opening_link_the_writing_routes(self):
+        cli = (DOCS / "reference" / "cli.md").read_text()
+        row = re.search(r"^\| `--serve PORT PROJECT` \|.*$", cli, re.MULTILINE)
+        self.assertIsNotNone(row, "cli.md has no --serve row")
+        http = (DOCS / "reference" / "http.md").read_text()
+        opening = http.split("\n## ", 1)[0]
+        for name, text in (("cli.md", row.group(0)), ("http.md", opening)):
+            text = " ".join(text.split())
+            self.assertIn("](daemon.md)", text, name)
+            self.assertIn("POST /actions/", text, name)
+            self.assertIn("PUT /config", text, name)
+
+    def test_http_preflight_names_the_methods_serve_sends(self):
+        auth = section((DOCS / "reference" / "http.md").read_text(),
+                       "Authentication")
+        self.assertIn("`Access-Control-Allow-Methods: GET, POST, PUT`",
+                      " ".join(auth.split()))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,9 @@
 
 Opt in with `HOLOPHYTE_LIVE_HARNESS=claude` (an implementer turn and its
 resume) or `HOLOPHYTE_LIVE_HARNESS=codex` or `devin` (two review rounds
-through `holophyte.agents.agent()`) on a host with that CLI signed in on PATH;
+through `holophyte.agents.agent()`, and for `codex` an implementer turn through
+the loop's `_timed()` and its resume) on a host with that CLI signed in on
+PATH;
 without the variable the tests skip, and with it set but no binary on PATH
 the test fails. Kept out of the ticket's verify block: the reviewer's
 container carries no agent credentials.
@@ -17,10 +19,13 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 import holophyte.agents
-import holophyte.target
+import holophyte.fix_session
+import holophyte.loop
+import holophyte.project
 import store
 from holophyte import harness
 
@@ -51,7 +56,7 @@ class LiveHarnessTests(unittest.TestCase):
         binary = shutil.which(adapter.name)
         self.assertIsNotNone(binary, f"HOLOPHYTE_LIVE_HARNESS={LIVE} but no "
                              f"{adapter.name!r} on PATH")
-        seat = harness.Seat(adapter, binary, {})
+        seat = harness.Seat(adapter, binary, {}, "implementer")
         word = "holo" + secrets.token_hex(3)
         with tempfile.TemporaryDirectory(prefix="holophyte-live-") as scratch:
             turn = seat.turn(f"Remember this word: {word}. Reply with: noted")
@@ -97,7 +102,7 @@ class LiveReviewTests(unittest.TestCase):
             (holo / "config.toml").write_text(
                 '[agents.reviewer]\n' + REVIEW_TABLES[LIVE]
                 + '[loop]\nreview_session = "resume"\n')
-            target = holophyte.target.Target(
+            target = holophyte.project.Project(
                 path=repo, holo_dir=holo, store_path=holo / "store.db",
                 config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
             conn = store.open(target.store_path)
@@ -127,6 +132,59 @@ class LiveReviewTests(unittest.TestCase):
         self.assertIn(candidate, first)
         self.assertIn(word, second.lower())
         self.assertEqual(status, "")
+
+
+@unittest.skipUnless(LIVE == "codex",
+                     "set HOLOPHYTE_LIVE_HARNESS=codex for a live implementer turn")
+class LiveCodexImplementerTests(unittest.TestCase):
+    def test_turn_writes_the_file_and_the_resume_remembers_the_word(self):
+        self.assertIsNotNone(shutil.which("codex"), "HOLOPHYTE_LIVE_HARNESS=codex "
+                             "but no 'codex' on PATH")
+        word = "holo" + secrets.token_hex(3)
+        with tempfile.TemporaryDirectory(prefix="holophyte-live-") as scratch:
+            root = Path(scratch)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            holo = root / "holo"
+            holo.mkdir()
+            (holo / "config.toml").write_text(
+                '[agents.implementer]\nharness = "codex"\neffort = "low"\n')
+            target = holophyte.project.Project(
+                path=repo, holo_dir=holo, store_path=holo / "store.db",
+                config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
+            conn = store.open(target.store_path)
+            self.addCleanup(conn.close)
+            store.init(conn)
+            project = store.ensure_project(conn, "live", repo)
+            ticket = store.mirror_ticket(conn, project, "KO-624", "KO-624", "live",
+                                         acceptance_criteria=["implement"],
+                                         verification_commands=["true"])
+            run = store.claim(conn, project, ticket)
+            output, timed_out = holophyte.loop._timed(
+                target, conn, run, 60, repo, TURN_TIMEOUT / 60,
+                "Write the text ok to a new file note.txt in the current "
+                f"directory. Also remember this word: {word}, but do not write "
+                "it to any file. Reply with: done")
+            print(f"turn ({output.command}):\n{output}")
+            self.assertFalse(timed_out)
+            self.assertEqual(output.exit_code, 0, output)
+            note = (repo / "note.txt").read_text().strip()
+            (session,) = conn.execute("SELECT providerSessionId FROM runs "
+                                      "WHERE id = ?", (run,)).fetchone()
+            argv, reason = holophyte.fix_session.resume_argv(target, conn, run)
+            self.assertIsNone(reason)
+            print(f"resume: {['codex', *argv[1:]]}")
+            result = subprocess.run(
+                argv + ["What word did I ask you to remember? Reply with the "
+                        "word only."], cwd=repo, capture_output=True, text=True,
+                timeout=TURN_TIMEOUT, stdin=subprocess.DEVNULL)
+            self.assertEqual(result.returncode, 0,
+                             f"{result.stdout}\n{result.stderr}")
+        print(f"answer: {result.stdout.strip()}")
+        self.assertEqual(note, "ok")
+        self.assertEqual(str(uuid.UUID(session)), session)
+        self.assertIn(word, result.stdout.lower())
 
 
 if __name__ == "__main__":

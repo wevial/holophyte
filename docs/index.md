@@ -56,11 +56,13 @@ commands, sends the diff and the ticket to an independent reviewer inside a
 hardened container, gives the implementer at most two fix rounds, asks a
 terminal adjudicator for a PASS or FAIL, and merges with `--no-ff`. A
 separate supervisor sweeps the store for runs that died and frees their
-leases. A read-only daemon serves the store's state as JSON, and a
+leases. A daemon serves the store's state as JSON; it reads by default
+and writes only through two opt-ins, `[serve] actions` and `config_edit`
+([The daemon's actions](reference/daemon.md)). A
 menu-bar drawer answers "what should I look at next?" from it. The same
 daemon serves the console at `/`: a browser view of the floor, the ledger
 and each run's detail, built from `console/` with Bun. All of it
-runs on one machine; a second machine is optional. The factory dogfoods itself: it is the target most of its own
+runs on one machine; a second machine is optional. The factory dogfoods itself: it is the project most of its own
 tickets run against, and it re-executes itself after merging its own code.
 
 ## Where things are
@@ -68,23 +70,23 @@ tickets run against, and it re-executes itself after merging its own code.
 | Surface | Lives in | Read more |
 | --- | --- | --- |
 | The loop, supervisor, daemon, operator commands | `holophyte/` package, `factory.py` entry point | [Processes](architecture/processes.md) |
-| Durable state | one SQLite file per target under `~/.holophyte/<slug>/` | [Store and state](architecture/data.md) |
+| Durable state | one SQLite file per project under `~/.holophyte/<slug>/` | [Store and state](architecture/data.md) |
 | The board | a Linear project, one-way mirror of the store | [Tickets as contracts](operating/tickets.md) |
 | The review boundary | a read-only Docker container running Codex | [Reviewing](reviewing.md) |
 | Machines | one, by default; a second for the drawer or the operator is a page of its own | [Across machines](operating/hosts.md) |
-| Evidence | the store's `runs`/`reviewRounds`, read through the console or `--report`; a target may opt into a rendered `FINDINGS.md` | [Store and state](architecture/data.md#findings) |
+| Evidence | the store's `runs`/`reviewRounds`, read through the console or `--report`; a project may opt into a rendered `FINDINGS.md` | [Store and state](architecture/data.md#findings) |
 
 ## Install and run
 
 Python 3.11+ and Git on the host, Docker for the reviewer container,
 `LINEAR_API_KEY` in the environment or a `.env` beside
-`linear_provider.py`, and `ruff` as the one developer tool. Per-target
+`linear_provider.py`, and `ruff` as the one developer tool. Per-project
 settings go in `~/.holophyte/<slug>/config.toml`.
 
 ```
 python3 factory.py /path/to/repo                  # run the loop
 python3 factory.py --supervise /path/to/repo      # keep it honest
-python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback
+python3 factory.py --serve 7710 /path/to/repo         # JSON daemon on loopback; writes only with [serve] actions or config_edit
 ```
 
 The full mode list is in the [CLI reference](reference/cli.md); every

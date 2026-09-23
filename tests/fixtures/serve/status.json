@@ -1,7 +1,6 @@
 {
-  "target": "/repo",
   "project": "/repo",
-  "schema_version": 35,
+  "schema_version": 36,
   "admission": "enabled",
   "hold_note": null,
   "active_routes": {
@@ -17,6 +16,13 @@
     "writer": {
       "command": null
     }
+  },
+  "route_labels": {
+    "implementer": "claude opus",
+    "reviewer": "codex gpt-5.6-sol",
+    "reviewer_fallback": null,
+    "adjudicator": "codex gpt-5.6-sol",
+    "writer": "claude opus"
   },
   "workers_on_previous_build": 0,
   "host": "writer",

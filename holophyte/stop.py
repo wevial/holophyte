@@ -5,10 +5,13 @@ from contextvars import ContextVar
 from dataclasses import asdict
 
 import store
-from holophyte.target import Target, worktree_path
+from holophyte.project import Project, worktree_path
 from store.schema import _transaction
 
 _checkpoint = ContextVar("pause_checkpoint", default=None)
+# State every later checkpoint of one run carries, whichever boundary saved
+# it: the review route a not-reproduced declaration took (KO-657).
+_route = ContextVar("pause_route", default=None)
 
 # The intervention actions that end a run now; `abort_close` also closes the
 # run's pull request once the abort is finished (KO-611).
@@ -30,7 +33,7 @@ def stop_if_requested(conn, run_id, phase):
     if action in ABORTS:
         end_aborted(conn, run_id)
     stopped_at, phase = phase, "merge_gate" if pr_url else phase
-    target = Target.locate(repo)
+    target = Project.locate(repo)
     sha = preserve(target, branch) if branch else None
     with _transaction(conn):
         ended, outcome, reason = conn.execute(
@@ -40,6 +43,9 @@ def stop_if_requested(conn, run_id, phase):
             raise store.RunEnded(run_id, outcome, reason)
         saved = _checkpoint.get()
         state = saved[3] if saved and saved[:3] == (conn, run_id, phase) else {}
+        route = _route.get()
+        if route and route[:2] == (conn, run_id):
+            state = {**route[2], **state}
         store.record_event(conn, run_id, "pause_checkpoint",
                            f"continuation at {phase}", level="detail",
                            payload=json.dumps(state))
@@ -82,7 +88,7 @@ def end_aborted(conn, run_id):
             " JOIN tickets t ON t.id = r.ticketId"
             " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
             (run_id,)).fetchone()
-    target = Target.locate(repo)
+    target = Project.locate(repo)
     sha = preserve(target, branch, "abort") if branch else None
     if sha and pr_url:
         try:
@@ -156,6 +162,11 @@ def boundary(conn, run_id, phase, **state):
     stop_if_requested(conn, run_id, phase)
 
 
+def keep_route(conn, run_id, **state):
+    """Carry `state` in every checkpoint this run saves from now on."""
+    _route.set((conn, run_id, state))
+
+
 def continuation(conn, run_id):
     """Read a prior paused run released by --resume, without consuming it."""
     if conn is None:
@@ -220,11 +231,8 @@ def resume_paused(target, conn, ticket_id, note):
 
 
 def abort_command(target, identifier, note, *, provider, close=False):
-    """CLI adapter: record the abort (`close`: and the pull request's close),
-    then end the run here when no worker can still touch its tree, and
-    project the park to the board as the worker path does; otherwise a live
-    worker ends it at its next heartbeat."""
-    from holophyte import board
+    """CLI adapter: `abort_run()` on the ticket's latest run, printing
+    whether it ended here or waits for its worker's next heartbeat."""
     from holophyte.operator import _operator_store, _ticket_by_identifier
     conn = _operator_store(target)
     try:
@@ -233,23 +241,39 @@ def abort_command(target, identifier, note, *, provider, close=False):
                                  " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         if run_id is None:
             raise ValueError(f"{identifier} has no run to abort")
-        store.abort(conn, run_id, note, close=close)
-        if not worker_gone(conn, run_id):
+        if not abort_run(target, conn, run_id, note, provider=provider,
+                         close=close):
             print(f"[holo2] {identifier}: abort requested; run {run_id} ends"
                   " at its worker's next heartbeat (this host cannot confirm"
                   " that worker gone; a silent one is the sweep's)")
             return
-        try:
-            end_aborted(conn, run_id)
-        except Aborted:
-            board.mirror_push(conn, ticket_id, provider)
-            board.release_lease_label(target, conn, ticket_id, provider, run_id)
         print(f"[holo2] {identifier}: run {run_id} had no live worker;"
               " ended abandoned and parked")
     except ValueError as refused:
         raise SystemExit(f"[holo2] {refused}") from None
     finally:
         conn.close()
+
+
+def abort_run(target, conn, run_id, note, *, provider, close=False):
+    """Record the abort (`close`: and the pull request's close), then end
+    the run here when no worker can still touch its tree, and project the
+    park to the board as the worker path does; True when it ended here,
+    False when a live worker ends it at its next heartbeat. `--abort` and
+    `POST /actions/abort` both call this (KO-612); ValueError, before any
+    write, when the store refuses the abort."""
+    from holophyte import board
+    store.abort(conn, run_id, note, close=close)
+    if not worker_gone(conn, run_id):
+        return False
+    try:
+        end_aborted(conn, run_id)
+    except Aborted:
+        (ticket_id,) = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
+                                    (run_id,)).fetchone()
+        board.mirror_push(conn, ticket_id, provider)
+        board.release_lease_label(target, conn, ticket_id, provider, run_id)
+    return True
 
 
 def worker_gone(conn, run_id):

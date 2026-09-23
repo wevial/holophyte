@@ -74,6 +74,49 @@ test("the selected project keeps only its daemon's card", () => {
   expect(document.querySelector("[data-subtitle]")!.textContent).toBe("1 host · 1 daemon on :7710");
 });
 
+test("a host's Agents table has a row per project and a column per seat, harness and model per cell", () => {
+  const writer = {
+    ...working,
+    route_labels: {
+      implementer: "claude-implement opus", reviewer: "codex-review gpt-6-astra", reviewer_fallback: "devin-review",
+      adjudicator: "codex-adjudicate", writer: "claude-implement opus-4",
+    },
+  };
+  const relos = {
+    ...working,
+    project: "/srv/dev/relos",
+    route_labels: { implementer: "claude sonnet", reviewer: "codex gpt-6-astra", reviewer_fallback: null, adjudicator: null, writer: "claude sonnet" },
+  };
+  render(<Hosts hosts={[hostOf(writer, NO_ATTENTION), hostOf(relos, NO_ATTENTION, "http://writer:7711")]} project="all" now={0} />);
+  const table = screen.getByRole("table", { name: "writer agents" });
+  const [head, ...rows] = within(table).getAllByRole("row");
+  expect(within(head!).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+    "Project", "Implementer", "Reviewer", "Adjudicator", "Writer",
+  ]);
+  const cells = rows.map((row) => [
+    within(row).getByRole("rowheader").textContent,
+    ...within(row).getAllByRole("cell").map((cell) => cell.textContent),
+  ]);
+  expect(cells).toEqual([
+    ["writer", "Claude Opus", "Codex GPT-6 Astrafallback Devin", "Codex", "Claude Opus-4"],
+    ["relos", "Claude Sonnet", "Codex GPT-6 Astra", "—", "same as implementer"],
+  ]);
+  expect(table.querySelectorAll("[data-fallback]").length).toBe(1);
+  expect(screen.getAllByRole("table")).toHaveLength(1);
+});
+
+test("a host with no Agents table keeps its cards out of the next host's group", () => {
+  const labelled = {
+    ...second,
+    route_labels: { implementer: "claude sonnet", reviewer: "codex gpt-6-astra", reviewer_fallback: null, adjudicator: null, writer: "claude sonnet" },
+  };
+  render(<Hosts hosts={[hostOf(working, NO_ATTENTION), hostOf(labelled, NO_ATTENTION, "http://writer-2:7710")]} project="all" now={0} />);
+  const group = (name: string) => screen.getByRole("article", { name }).closest("[data-host-group]")!;
+  expect(group("writer")).not.toBe(group("writer-2"));
+  expect(within(group("writer") as HTMLElement).queryByRole("table")).toBeNull();
+  expect(within(group("writer-2") as HTMLElement).getByRole("table", { name: "writer-2 agents" })).toBeTruthy();
+});
+
 test("a daemon that answered 401 gets the Token field in its card and the key glyph in the rail, with no unreachable styling", () => {
   const asking = { ...hostOf(working, NO_ATTENTION, "http://writer:7710", 1_000), status: null, project: null, seen_ms: null, needs_token: true };
   render(<Hosts hosts={[asking]} project="all" now={1_000} />);
@@ -343,4 +386,60 @@ test("a stored token the header cannot carry degrades to needs token: every peer
   expect(screen.queryByRole("alert")).toBeNull();
   expect(document.body.textContent).not.toContain("poll failed");
   expect(localStorage.length).toBe(0);
+});
+
+test("a daemon that refuses the saved token reads saved token rejected in the rail, through the bare polls after it; one with no saved token keeps the key glyph", async () => {
+  // The desktop app seeded writer's token from a file older than the
+  // daemon's rotation; writer-2 was never given one.
+  const ORIGIN = "http://writer:7710";
+  const daemon: Fetch = (url) => {
+    if (url.endsWith("/peers")) return Promise.resolve(Response.json({ self: "writer:7710", peers: ["writer-2:7710"] }));
+    return Promise.resolve(Response.json({}, { status: 401 }));
+  };
+  storeToken("writer:7710", "before-rotation");
+  const { deps, firePoll } = fakeDeps(tokenedFetch(daemon));
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  const entry = (address: string) => screen.getByRole("region", { name: "Hosts" }).querySelector<HTMLElement>(`[data-host="${address}"]`)!;
+
+  const expectRows = () => {
+    expect(entry("writer:7710").textContent).toContain("saved token rejected");
+    expect(within(entry("writer:7710")).queryByRole("img", { name: "needs token" })).toBeNull();
+    expect(entry("writer-2:7710").textContent).not.toContain("saved token rejected");
+    expect(within(entry("writer-2:7710")).getByRole("img", { name: "needs token" }).textContent).toBe(KEY_GLYPH);
+  };
+  expectRows();
+
+  // The refused token was forgotten, so this poll goes out bare.
+  await act(async () => {
+    firePoll();
+    await settle();
+  });
+  expect(localStorage.length).toBe(0);
+  expectRows();
+});
+
+test("token_sent follows the request, not storage: a token forgotten mid-request still reads rejected, one saved mid-request does not", async () => {
+  const ORIGIN = "http://writer:7710";
+  const held: (() => void)[] = [];
+  const daemon: Fetch = (url) => {
+    if (url.endsWith("/peers")) return Promise.resolve(Response.json({ self: "writer:7710", peers: ["writer-2:7710"] }));
+    return new Promise((resolve) => held.push(() => resolve(Response.json({}, { status: 401 }))));
+  };
+  storeToken("writer:7710", "sent-then-forgotten");
+  const { deps } = fakeDeps(tokenedFetch(daemon));
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  // Both daemons' requests are out: writer's with its bearer, writer-2's bare.
+  expect(held.length).toBe(4);
+  localStorage.clear();
+  storeToken("writer-2:7710", "saved-after-sending");
+  await act(async () => {
+    for (const release of held) release();
+    await settle();
+  });
+  const entry = (address: string) => screen.getByRole("region", { name: "Hosts" }).querySelector<HTMLElement>(`[data-host="${address}"]`)!;
+  expect(entry("writer:7710").textContent).toContain("saved token rejected");
+  expect(entry("writer-2:7710").textContent).not.toContain("saved token rejected");
+  expect(within(entry("writer-2:7710")).getByRole("img", { name: "needs token" }).textContent).toBe(KEY_GLYPH);
 });

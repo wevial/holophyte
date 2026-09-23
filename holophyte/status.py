@@ -101,7 +101,7 @@ def _lock_line(name, holder, key):
 
 def render(snap):
     """The snapshot as the lines `--status` prints."""
-    lines = [f"target {snap['target']} (schema {snap['schema_version']})"]
+    lines = [f"project {snap['target']} (schema {snap['schema_version']})"]
     for project in snap["projects"]:
         note = f": {project['hold_note']}" if project["hold_note"] else ""
         lines.append(f"project {project['path']} {project['admission']}{note}")

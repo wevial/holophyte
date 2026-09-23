@@ -11,8 +11,8 @@ from loop_fixture import FakePool, StubProvider, a_task
 import holophyte.operator
 import holophyte.pool
 import holophyte.pool_handoff
+import holophyte.project
 import holophyte.serve_runs
-import holophyte.target
 import store.schema
 
 
@@ -63,16 +63,16 @@ class PoolRestartCases:
                 patch.object(holophyte.pool, "WAIT", fake.wait), \
                 patch.object(holophyte.operator, "EXEC", lambda *a: execs.append(a)), \
                 patch.object(holophyte.operator, "self_hosted", return_value=True):
-            holophyte.operator.main(self.tgt, provider)
+            holophyte.operator.main(self.project, provider)
         update.assert_called_once()
         self.assertEqual(len(execs), 1)
         self.assertEqual(fake.alive, [5002, 5003, 5004])
-        handoff = json.loads(self.tgt.store_path.with_name("pool.json").read_text())
+        handoff = json.loads(self.project.store_path.with_name("pool.json").read_text())
         self.assertEqual([w["pid"] for w in handoff["workers"]], fake.alive)
         observed, counts = [], []
 
         def observe_count():
-            counts.append(holophyte.serve_runs.workers_on_previous_build(self.tgt))
+            counts.append(holophyte.serve_runs.workers_on_previous_build(self.project))
 
         def first_exit():
             observed.append(len(fake.spawned))
@@ -92,11 +92,11 @@ class PoolRestartCases:
                 patch.object(holophyte.pool, "reexec_command",
                              return_value=("/new/python",
                                            ["/new/python", "factory.py"])):
-            holophyte.operator.main(self.tgt, provider)
+            holophyte.operator.main(self.project, provider)
         self.assertEqual(observed, [4])
         self.assertEqual(counts, [3, 2, 1, 0])
         self.assertEqual(fake.spawned[-1], ["/new/python", "factory.py", "--worker"])
-        handoff = json.loads(self.tgt.store_path.with_name("pool.json").read_text())
+        handoff = json.loads(self.project.store_path.with_name("pool.json").read_text())
         self.assertEqual(handoff["workers"], [])
 
 
@@ -145,7 +145,7 @@ class PoolRestartCases:
         handed = []
 
         def read_handoff():
-            handoff = self.tgt.store_path.with_name("pool.json").read_text()
+            handoff = self.project.store_path.with_name("pool.json").read_text()
             handed.extend(json.loads(handoff)["workers"])
 
         pool, events = self.self_merge_under(version, version - 1, read_handoff)
@@ -191,11 +191,11 @@ class PoolRestartCases:
                   f" sys.exit(int(os.environ['{holophyte.pool.WORKER_SLOT_ENV}']))")
         with patch.object(sys, "orig_argv", [sys.executable, "-c", script]), \
                 patch.object(sys, "stdout", io.StringIO()):
-            first = holophyte.pool._spawn_worker(self.tgt, 1)
+            first = holophyte.pool._spawn_worker(self.project, 1)
             children[first.pid] = first
             # Exited but unreaped when the second is spawned.
             os.waitid(os.P_PID, first.pid, os.WEXITED | os.WNOWAIT)
-            second = holophyte.pool._spawn_worker(self.tgt, 2)
+            second = holophyte.pool._spawn_worker(self.project, 2)
             children[second.pid] = second
             reaped = {}
             for _ in range(2):
@@ -210,7 +210,7 @@ class PreviousBuildCases:
     def test_previous_build_count_clears_when_inherited_child_is_reaped(self):
         self.seed()
         self.start()
-        target = holophyte.target.Target.locate(self.target)
+        target = holophyte.project.Project.locate(self.target)
         child = subprocess.Popen([sys.executable, "-c",
                                   "import sys; sys.stdin.read()"],
                                  stdin=subprocess.PIPE)

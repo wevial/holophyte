@@ -28,6 +28,11 @@ export interface HostRecord {
   /** The last poll answered 401: the daemon is up but wants its serve
    *  token, which the Hosts card asks for. Never set beside `error`. */
   needs_token: boolean;
+  /** Beside `needs_token`: a 401 answered a request that carried a saved
+   *  token, so the token is wrong rather than missing. Kept through the
+   *  bare 401s after it (the page forgets a refused token) until a good
+   *  answer. */
+  token_rejected?: boolean;
   contract_error?: boolean;
 }
 
@@ -72,11 +77,20 @@ export function baseOf(address: string): string {
 /** One poll's answer for one address. */
 export type PollResult =
   | { address: string; base: string; ok: true; status: Status; attention: Attention }
-  | { address: string; base: string; ok: false; error: string; status?: number; contract_error?: boolean };
+  | {
+      address: string;
+      base: string;
+      ok: false;
+      error: string;
+      status?: number;
+      contract_error?: boolean;
+      /** The request that failed carried a saved bearer token. */
+      token_sent?: boolean;
+    };
 
 /** The project a host serves, from its last good `/status`. */
 export function hostProject(status: Status | null): string | null {
-  return status ? (status.project ?? status.target) : null;
+  return status ? status.project : null;
 }
 
 /** Fold one poll's results into the host list, in the results' order. A
@@ -84,7 +98,8 @@ export function hostProject(status: Status | null): string | null {
  *  `/attention` beside the new error, so the rail can say "unreachable ·
  *  last seen 40s ago"; an address seen for the first time that fails is a
  *  record with no answer yet. A 401 is not a failure to reach the daemon:
- *  the record is marked `needs_token` with no error. */
+ *  the record is marked `needs_token` with no error, and `token_rejected`
+ *  when the request carried a saved token. */
 export function mergeHosts(previous: HostRecord[], results: PollResult[], now: number): HostRecord[] {
   const byAddress = new Map(previous.map((host) => [host.address, host]));
   return results.map((result) => {
@@ -101,6 +116,7 @@ export function mergeHosts(previous: HostRecord[], results: PollResult[], now: n
         seen_ms: now,
         error: null,
         needs_token: false,
+        token_rejected: false,
       };
     }
     const needsToken = result.status === 401;
@@ -115,6 +131,7 @@ export function mergeHosts(previous: HostRecord[], results: PollResult[], now: n
       seen_ms: before?.seen_ms ?? null,
       error: needsToken ? null : result.error,
       needs_token: needsToken,
+      token_rejected: needsToken && (result.token_sent === true || before?.token_rejected === true),
       contract_error: result.contract_error,
     };
   });

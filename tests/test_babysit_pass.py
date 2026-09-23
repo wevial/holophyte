@@ -58,7 +58,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         from holophyte.stop import command
         preserved = self.git("rev-parse", BRANCH).strip()
         self.serve(self.pr_state())
-        command(self.tgt, "KO-131", None, resume=True)
+        command(self.project, "KO-131", None, resume=True)
         # Only a covering review and PR text remain; a fix replay fails the script.
         self.loop(APPROVE, Idle(''), provider=self.provider())
         self.assertEqual(self.pushed()[-1][1], preserved)
@@ -269,7 +269,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                 patch.dict(os.environ, {holophyte.pool.WORKER_SLOT_ENV: ""}), \
                 patch.object(sys, "stdout", io.StringIO()), \
                 patch.object(sys, "stderr", io.StringIO()):
-            code = holophyte.pool.worker(self.tgt, self.provider())
+            code = holophyte.pool.worker(self.project, self.provider())
         self.assertEqual(code, holophyte.pool.WORKER_MERGED)
         self.assertEqual(self.read("SELECT phase, outcome, mergeSha FROM runs"),
                          [("done", "merged", self.MERGE_SHA)])
@@ -283,12 +283,12 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(moves[-1], ["merge_gate", "done"])
         import store
         with closing(store.open(self.db)) as conn:
-            project = conn.execute("SELECT id FROM projects").fetchone()[0]
+            project_id = conn.execute("SELECT id FROM projects").fetchone()[0]
             ticket = store.tickets.mirror_ticket(
-                conn, project, linear_issue_id="issue-replay",
+                conn, project_id, linear_issue_id="issue-replay",
                 linear_identifier="KO-9653", title="replay",
                 acceptance_criteria=["Given a replay, then it is legal"])
-            run = store.claim(conn, project, ticket)
+            run = store.claim(conn, project_id, ticket)
             for old, new in moves:
                 self.assertEqual(store.set_phase(conn, run, new), old)
 
@@ -375,7 +375,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         for path in self.api_dir.iterdir():
             path.unlink()
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            self.project, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
             out=io.StringIO())
 
         fake, _ = self.loop(provider=self.provider())
@@ -391,7 +391,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     def rejected_resume_with_stale_approval(self):
         self.resume_rejected_fix()
         import store
-        with closing(store.open(self.tgt.store_path)) as conn:
+        with closing(store.open(self.project.store_path)) as conn:
             # Legacy carried approval metadata must not override a rejection.
             conn.execute("UPDATE runs SET approvedSha = candidateSha WHERE id = 1")
             conn.commit()
@@ -437,7 +437,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                   Reply("THREAD 1: ADDRESS -- a real crash"), Commit("thread fix"),
                   REQUEST_CHANGES, provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
-        holophyte.operator.approve(self.tgt, "KO-131", "accept this candidate",
+        holophyte.operator.approve(self.project, "KO-131", "accept this candidate",
                                    out=io.StringIO())
         out = self.main_output(provider=self.provider())
         self.assertEqual(self.last_fake.roles, [])
@@ -451,10 +451,10 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            self.project, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
             out=io.StringIO())
         import store
-        with closing(store.open(self.tgt.store_path)) as conn:
+        with closing(store.open(self.project.store_path)) as conn:
             store.record_intervention(conn, 1, "launch_loop", "resume",
                                       source="supervisor")
         for path in self.api_dir.iterdir():
@@ -488,6 +488,151 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("awaiting_merge_approval", None)])
         self.assertIn(self.DEFECT[3], self.question())
+
+
+    def required_checks_github(self, reports_after_retrigger=False,
+                               protection=False):
+        """Main requires "vercel" and "unit" -- by ruleset, or by branch
+        protection alone; only "unit" reports on the candidate, and
+        "vercel" too on a later head when asked."""
+        heads = []
+        required = ["vercel", "unit"]
+
+        def rest(target, pull, method, path, payload=None):
+            if "rules/branches/" in path:
+                return [] if protection else [
+                    {"type": "required_status_checks", "parameters": {
+                        "required_status_checks": [
+                            {"context": c} for c in required]}}]
+            if path.endswith("/branches/main"):
+                return {"name": "main", "protected": protection,
+                        "protection": {"enabled": protection,
+                                       "required_status_checks": {
+                                           "contexts": required
+                                           if protection else []}}}
+            head = path.split("/commits/")[1].split("/")[0]
+            heads.append(head)
+            names = ["unit"] + (["vercel"] if reports_after_retrigger
+                                and head != heads[0] else [])
+            return {"total_count": len(names), "check_runs": [
+                {"name": n, "status": "completed", "conclusion": "success"}
+                for n in names]}
+        return patch.object(holophyte.pr_status, "rest", rest)
+
+    def wait_on_missing_check(self, config, reports_after_retrigger=False,
+                              protection=False, work=None,
+                              babysit_again=False):
+        self.configure('[merge]\nmode = "pr"\nmissing_check_sec = 120\n' + config)
+        self.fake_route(states=[self.pr_state()])
+        naps = []
+        with self.required_checks_github(reports_after_retrigger,
+                                         protection), \
+                patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)):
+            self.loop(work or Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+            if babysit_again:
+                holophyte.operator.babysit_ticket(
+                    self.project, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+                    out=io.StringIO())
+                self.loop(provider=self.provider())
+        tip = self.pushed()[-1][1]
+        return tip, self.git("log", "-1", "--format=%s", tip).strip()
+
+    def retriggers(self):
+        return self.read("SELECT summary FROM runEvents WHERE kind ="
+                         " 'pull_request' AND summary LIKE '%empty commit%'")
+
+    def test_a_missing_required_check_is_retriggered_once_and_the_wait_goes_on(self):
+        tip, subject = self.wait_on_missing_check(
+            "retrigger_missing_checks = true\n", reports_after_retrigger=True)
+        candidate, _ = [sha for _, sha in self.pushed()]
+        self.assertEqual(subject, "Retrigger missing checks: vercel")
+        self.assertEqual(self.git("rev-parse", f"{tip}^").strip(), candidate)
+        self.assertEqual(self.git("rev-parse", f"{tip}^{{tree}}").strip(),
+                         self.git("rev-parse", f"{candidate}^{{tree}}").strip())
+        ((event,),) = self.retriggers()
+        self.assertIn("vercel", event)
+        self.assertNotIn("unit", event)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [tip])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_check_still_missing_after_its_retrigger_parks_naming_it(self):
+        tip, subject = self.wait_on_missing_check(
+            "retrigger_missing_checks = true\n")
+        self.assertEqual(len(self.pushed()), 2)
+        self.assertEqual(subject, "Retrigger missing checks: vercel")
+        self.assertEqual(self.read("SELECT candidateSha FROM runs"), [(tip,)])
+        self.assertEqual(len(self.retriggers()), 1)
+        self.assertIn("required checks never reported on the head commit:"
+                      " vercel", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_a_babysit_resumed_on_a_parked_retrigger_does_not_push_another(self):
+        tip, _ = self.wait_on_missing_check(
+            "retrigger_missing_checks = true\n", babysit_again=True)
+        self.assertEqual(len(self.pushed()), 2)
+        self.assertEqual(len(self.retriggers()), 1)
+        self.assertEqual(self.read("SELECT candidateSha FROM runs"
+                                   " ORDER BY id DESC LIMIT 1"), [(tip,)])
+        self.assertIn("required checks never reported on the head commit:"
+                      " vercel", self.question())
+
+    def test_a_retrigger_commits_on_a_target_with_no_git_identity(self):
+        fixture = self
+
+        class CommitThenForgetIdentity(Commit):
+            def play(self, cwd, turn):
+                done = super().play(cwd, turn)
+                fixture.git("config", "--unset", "user.name")
+                fixture.git("config", "--unset", "user.email")
+                fixture.git("config", "user.useConfigOnly", "true")
+                return done
+
+        with patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull,
+                                     "GIT_CONFIG_NOSYSTEM": "1"}):
+            tip, subject = self.wait_on_missing_check(
+                "retrigger_missing_checks = true\n",
+                work=CommitThenForgetIdentity("the scripted work"))
+        self.assertEqual(subject, "Retrigger missing checks: vercel")
+        self.assertEqual(self.git("log", "-1", "--format=%ae", tip).strip(),
+                         "holophyte@factory.invalid")
+        self.assertEqual(len(self.retriggers()), 1)
+
+    def test_a_missing_required_check_parks_without_a_retrigger_when_off(self):
+        _, subject = self.wait_on_missing_check("")
+        self.assertEqual(len(self.pushed()), 1)
+        self.assertEqual(subject, "the scripted work")
+        self.assertEqual(self.retriggers(), [])
+        self.assertIn("required checks never reported on the head commit:"
+                      " vercel", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_a_check_only_branch_protection_requires_is_retriggered_too(self):
+        tip, subject = self.wait_on_missing_check(
+            "retrigger_missing_checks = true\n", protection=True)
+        self.assertEqual(len(self.pushed()), 2)
+        self.assertEqual(subject, "Retrigger missing checks: vercel")
+        self.assertEqual(len(self.retriggers()), 1)
+        self.assertIn("required checks never reported on the head commit:"
+                      " vercel", self.question())
+
+    def test_pending_checks_with_none_required_wait_as_before(self):
+        self.configure('[merge]\nmode = "pr"\nmissing_check_sec = 30\n'
+                       'retrigger_missing_checks = true\n')
+        self.fake_route(states=[self.pr_state(checks="PENDING")] * 4
+                        + [self.pr_state()])
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S] * 4)
+        self.assertEqual(len(self.pushed()), 1)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
 
 if __name__ == "__main__":

@@ -429,7 +429,7 @@ class AbortedReviewTests(unittest.TestCase):
         import threading
 
         import holophyte.agents
-        import holophyte.target
+        import holophyte.project
         import store
         import store.tickets
         from holophyte.stop import Aborted
@@ -437,11 +437,11 @@ class AbortedReviewTests(unittest.TestCase):
         (self.root / "auth.json").write_text("{}")
         env = dict(self.env, HOLOPHYTE_HOME=str(self.root / "home"))
         with patch.dict(os.environ, env):
-            target = holophyte.target.Target.locate(self.root / "repo")
+            target = holophyte.project.Project.locate(self.root / "repo")
             target.store_path.parent.mkdir(parents=True)
             (target.store_path.parent / "config.toml").write_text(
                 "[supervisor]\nheartbeat_stale_min = 0.05\n")
-            target = holophyte.target.Target.locate(self.root / "repo")
+            target = holophyte.project.Project.locate(self.root / "repo")
             conn = store.open(str(target.store_path))
             self.addCleanup(conn.close)
             project = store.tickets.ensure_project(conn, "team", target.path)

@@ -52,10 +52,11 @@ def cite_commits(wt, sha, fixed, addressed, sh):
         return fixed
     messages = sh(["git", "log", "--format=%B", f"{sha}..{fixed}"], cwd=wt)
     missing = [ref for ref in refs
-               if re.search(rf"{re.escape(ref)}(?!\d)", messages) is None]
+               if re.search(rf"{re.escape(ref)}(?!\d)", messages,
+                            re.IGNORECASE) is None]
     if missing:
         message = sh(["git", "log", "-1", "--format=%B"], cwd=wt)
-        sh(["git", "commit", "--amend", "-m",
+        sh(["git", "commit", "--amend", "--allow-empty", "-m",
             message + "\n\n" + "\n".join(missing)], cwd=wt)
         return sh(["git", "rev-parse", "HEAD"], cwd=wt)
     return fixed

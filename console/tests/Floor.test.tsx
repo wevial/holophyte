@@ -54,6 +54,17 @@ test("working.json extended with the daemon fields renders one live block and ru
   expect(row!.querySelector("[data-strike]")).toBeNull();
 });
 
+test("a status with route_labels draws no route line on the project card", () => {
+  const labels = {
+    implementer: "claude-implement opus", reviewer: "codex gpt-6-astra", reviewer_fallback: null,
+    adjudicator: "codex gpt-6-astra", writer: "claude-implement opus",
+  };
+  render(<Floor daemons={on({ ...extended, route_labels: labels })} project="all" expandedRun={null} onToggleRun={noop} />);
+  const block = screen.getByRole("region", { name: "writer" });
+  expect(block.querySelector("[data-route-line]")).toBeNull();
+  expect(block.textContent).not.toContain("codex gpt-6-astra");
+});
+
 test("strike 2/3 is red, 1/3 amber, 0 absent", () => {
   const at = (strikes: number) => {
     cleanup();

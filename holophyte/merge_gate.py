@@ -4,10 +4,12 @@
 (`_sync_main_into_branch()`, with a conflict handed to the implementer
 first and otherwise parked on `GATE_CONFLICT_QUESTION`), the pre-merge
 verify, the drift check -- run under `_gate_lock()`, the loop's take on
-`merge_lock()`. `_park_for_approval()` stops a verified candidate for a
-human under `[merge] approve = "human"`; `_resume_at_merge_gate()` is the
-run that carries the approved candidate back through the gate; `_merge()`
-is the `--no-ff` merge onto main and its one self-resolved conflict.
+`merge_lock()`, in local mode; in pull-request mode the lock covers the
+push-and-open alone (KO-644). `_park_for_approval()` stops a verified
+candidate for a human under `[merge] approve = "human"`;
+`_resume_at_merge_gate()` is the run that carries the approved candidate
+back through the gate; `_merge()` is the `--no-ff` merge onto main and its
+one self-resolved conflict.
 `_run_stages()` in `holophyte.loop` and `land()` in `holophyte.run` call in;
 back-references into the loop are deferred imports inside function bodies.
 
@@ -34,8 +36,9 @@ from holophyte.gates import (
     sh,
     with_baseline,
 )
-from holophyte.pullrequest import _open_pr, _resume_on_pr
+from holophyte.pullrequest import _prepare_pr, _push_and_open, _resume_on_pr
 from holophyte.redact import safe_print as print
+from holophyte.reproduce import tests_only_line
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 from holophyte.stop import stop_if_requested
 
@@ -84,7 +87,7 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
     `claimed -> merge_gate` directly, the one edge §4 draws for this path,
     with the carried run named on the stream.
     """
-    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
     task_id, issue_id, task = run.task_id, run.issue_id, run.task
     branch, wt, started, budget_min = run.branch, run.wt, run.started, run.budget_min
     from holophyte.loop import _candidate_drift
@@ -92,7 +95,7 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
     # worktree stands from the run's first moment, and the files panel reads
     # `runs.branch` to find it whichever way the resume goes (KO-304).
     store.set_branch(conn, run_id, branch)
-    merge = merge_config(target)
+    merge = merge_config(project)
     if merge.mode == "pr" and carried.pr_url is not None:
         return _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria)
     if not carried.approved and not carried.paused:
@@ -115,7 +118,7 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
                " again.", provider)
         raise RunFailure(f"approved candidate on {branch} is not what was"
                          f" approved: {why}")
-    ok, why = reuse_leftover(target, wt, branch, conn=conn, run_id=run_id,
+    ok, why = reuse_leftover(project, wt, branch, conn=conn, run_id=run_id,
                              provider=provider, task_id=task_id,
                              sync_origin=False)
     if not ok:
@@ -126,7 +129,7 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
         raise RunFailure(f"cannot reuse the approved candidate's worktree:"
                          f" {why}")
     sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    if sha == sh(["git", "rev-parse", "main"], target.path):
+    if sha == sh(["git", "rev-parse", "main"], project.path):
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to merge the approved candidate"
                f" for: {task}\n{branch} holds nothing"
@@ -140,35 +143,48 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
                        " no implementer or reviewer runs")
     print(f"[holo2] {task_id}: approved candidate {branch} at {sha[:12]}"
           f" from run {carried.run_id}; skipping to the merge gate")
-    beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-    with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
-                    beat_s):
-        ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
+    beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+    ticket = f"{task}\n\n{body}" if body else task
+    # Under `mode = "pr"` the lock covers the push-and-open alone, as in
+    # `_run_stages()` (KO-644).
+    if merge.mode == "pr":
+        ok, sha = _merge_gate(project, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,
-                              contracts, f"{task}\n\n{body}" if body else task,
-                              budget_min, sync_main=merge.mode != "pr")
-        if merge.mode == "pr":
-            url = _open_pr(target, conn, run_id, task_id, task, branch, body,
-                           beat_s, wt, started, budget_min, issue_url)
-            sha = sh(["git", "rev-parse", branch], wt)
-        else:
+                              contracts, ticket, budget_min, sync_main=False)
+        # An approved `not_reproduced` park lands tests only; the PR says
+        # so first, whatever the ticket's title reports (KO-658).
+        title, text = _prepare_pr(project, conn, run_id, task_id, task, branch,
+                                  body, beat_s, wt, started, budget_min,
+                                  issue_url,
+                                  lead=tests_only_line(conn, carried.run_id))
+        with _gate_lock(project, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            url = _push_and_open(project, conn, run_id, branch, title, text,
+                                 beat_s)
+        sha = sh(["git", "rev-parse", branch], wt)
+    else:
+        with _gate_lock(project, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            ok, sha = _merge_gate(project, conn, run_id, provider, task_id,
+                                  issue_id, branch, wt, beat_s, sha,
+                                  verify_cmd, contracts, ticket, budget_min)
             if carried.paused and merge.approve == "human":
                 _park_for_approval(conn, run_id, provider, task_id, branch, sha)
             return run_state.land(replace(run, sha=sha), ok)
     run = replace(run, sha=sha, pr_url=url)
-    run = _babysit(run, beat_s, f"{task}\n\n{body}" if body else task,
-                   verify_cmd, contracts, criteria, reviewed=sha, verified=sha)
+    run = _babysit(run, beat_s, ticket, verify_cmd, contracts, criteria,
+                   reviewed=sha, verified=sha)
     return run_state.land(run, True)
 
 
 @contextlib.contextmanager
-def _gate_lock(target, conn, run_id, provider, task_id, branch, sha, beat_s):
+def _gate_lock(project, conn, run_id, provider, task_id, branch, sha, beat_s):
     """`merge_lock()` as the loop takes it: the run heartbeats through the
     wait, and a wait that runs out parks the ticket naming the holder before
     the `MergeLockHeld` ends the run (an infra failure: no strike spent,
     branch and worktree untouched)."""
     try:
-        with target.locks.merge(conn, run_id, beat_s):
+        with project.locks.merge(conn, run_id, beat_s):
             yield
     except MergeLockHeld as e:
         _park_at_gate(conn, run_id, provider, task_id, branch, sha,
@@ -246,7 +262,7 @@ def _merge_ref(wt, ref):
     return "conflicted", conflicted
 
 
-def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
+def _sync_main_into_branch(project, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, ticket, budget_min, ref="main"):
     """Merge `ref` into the branch in its worktree, so the gate verifies
     and merges the candidate as it will sit on today's `main`. `ref` is
@@ -276,7 +292,7 @@ def _sync_main_into_branch(target, conn, run_id, provider, task_id, branch,
         failure_kind = "unclassified"
         if detail:
             merged, failure_kind = _resolve_merge_conflict(
-                target, conn, run_id, branch, wt, sha, detail, ticket,
+                project, conn, run_id, branch, wt, sha, detail, ticket,
                 beat_s, budget_min)
             if merged is not None:
                 note = (f"gate conflict on {', '.join(detail)}"
@@ -323,23 +339,24 @@ def merge_conflict_goal(branch, pull, conflicts):
             " rebase, no force-push.")
 
 
-def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
+def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
                 beat_s, sha, verify_cmd, contracts, ticket, budget_min,
                 sync_main=True):
     """The `merge_gate` phase: `main` merged into the branch (unless
     `sync_main` is off -- PR mode, where the merge is the remote's), the
     pre-merge verify on the result, then the drift check. Returns the
     verify's `ok`, for the merged ledger line, and the branch's sha as the
-    gate leaves it. The caller holds the merge lock."""
+    gate leaves it. In local mode the caller holds the merge lock; in PR
+    mode it runs unlocked, as the babysitter's does."""
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
     if sync_main:
-        sha = _sync_main_into_branch(target, conn, run_id, provider, task_id,
+        sha = _sync_main_into_branch(project, conn, run_id, provider, task_id,
                                      branch, wt, sha, beat_s, ticket,
                                      budget_min)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id,
-                             target=target)
-        ok, out = with_baseline(target, wt, verify_cmd, ok, out,
+                             project=project)
+        ok, out = with_baseline(project, wt, verify_cmd, ok, out,
                                conn, run_id, before_merge=True)
     stop_if_requested(conn, run_id, "merge_gate")
     if not ok:
@@ -415,44 +432,44 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
                       f" at {sha[:12]}")
 
 
-def _merge(target, conn, run_id, provider, task_id, task, branch, wt, sha):
+def _merge(project, conn, run_id, provider, task_id, task, branch, wt, sha):
     """The `merging` phase: the `--no-ff` merge of `branch` into main, its
     one self-resolved conflict, and the post-merge cleanup. Returns the full
     sha of the merge commit main now sits on."""
     from holophyte.commit_hygiene import strip_attribution
 
-    strip_attribution(target, wt, branch)
+    strip_attribution(project, wt, branch)
     sha = sh(["git", "rev-parse", branch], wt)
-    checked = refuse_environment_history(target, branch, action="merge")
+    checked = refuse_environment_history(project, branch, action="merge")
     # Commit a FINDINGS.md window left dirty by an earlier failed run before
     # merging. Normally a no-op: runs no longer write this file mid-flight.
-    commit_findings(target, f"FINDINGS: {task_id} review records")
+    commit_findings(project, f"FINDINGS: {task_id} review records")
 
     # `squashing` is skipped, not faked: this merge is --no-ff and rewrites
     # no history, so the run goes merging -> done and the phase §4 puts
     # between them names an activity that never happens here.
     set_phase(conn, run_id, "merging", f"--no-ff merge of {branch} into main")
     mr = subprocess.run(["git", "merge", "--no-ff", checked, "-m",
-                         f"Merge {branch}: {task}"], cwd=target.path,
+                         f"Merge {branch}: {task}"], cwd=project.path,
                         capture_output=True, text=True)
     if mr.returncode != 0:
-        _resolve_no_ff_conflict(target, conn, run_id, provider, task_id,
+        _resolve_no_ff_conflict(project, conn, run_id, provider, task_id,
                                 branch, sha)
     # The merge has landed: main's HEAD is the merge commit, read now before
     # the cleanup below and before anything else moves main. The branch
     # holds nothing main does not, so the worktree's stray untracked files
     # are not preserved work — and a cleanup refusal must not re-classify
     # merged work as a failed run.
-    merge_sha = sh(["git", "rev-parse", "HEAD"], target.path)
+    merge_sha = sh(["git", "rev-parse", "HEAD"], project.path)
     try:
-        sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
-        sh(["git", "branch", "-d", branch], target.path)
+        sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
+        sh(["git", "branch", "-d", branch], project.path)
     except RuntimeError as e:
         print(f"[holo2] post-merge cleanup left debris: {e}")
     return merge_sha
 
 
-def _resolve_no_ff_conflict(target, conn, run_id, provider, task_id, branch,
+def _resolve_no_ff_conflict(project, conn, run_id, provider, task_id, branch,
                             sha):
     """A failed `--no-ff` merge: resolve it if FINDINGS.md alone conflicted,
     otherwise abort it and fail the run with main restored."""
@@ -462,14 +479,14 @@ def _resolve_no_ff_conflict(target, conn, run_id, provider, task_id, branch,
     # the file, and would then "resolve" a conflict nobody looked at.
     conflicted = sorted(
         p for p in subprocess.run(
-            ["git", "diff", "--name-only", "--diff-filter=U"], cwd=target.path,
+            ["git", "diff", "--name-only", "--diff-filter=U"], cwd=project.path,
             capture_output=True, text=True).stdout.splitlines() if p.strip())
     if conflicted == ["FINDINGS.md"]:
         # conflict limited to FINDINGS.md — prefer the branch side (fuller log)
         subprocess.run(["git", "checkout", "--theirs", "FINDINGS.md"],
-                       cwd=target.path, capture_output=True, text=True)
-        sh(["git", "add", "FINDINGS.md"], target.path)
-        sh(["git", "commit", "--no-edit"], target.path)
+                       cwd=project.path, capture_output=True, text=True)
+        sh(["git", "add", "FINDINGS.md"], project.path)
+        sh(["git", "commit", "--no-edit"], project.path)
         return
     # Anything else is a human's merge to make. An `assert` here was
     # both stripped under `python -O` and, when it did fire, left main
@@ -478,9 +495,9 @@ def _resolve_no_ff_conflict(target, conn, run_id, provider, task_id, branch,
     # point it was before the attempt, and fail the run through the
     # same close-out every other refusal at this gate uses — branch
     # and worktree preserved.
-    subprocess.run(["git", "merge", "--abort"], cwd=target.path,
+    subprocess.run(["git", "merge", "--abort"], cwd=project.path,
                    capture_output=True, text=True)
-    dirty = subprocess.run(["git", "status", "--porcelain"], cwd=target.path,
+    dirty = subprocess.run(["git", "status", "--porcelain"], cwd=project.path,
                            capture_output=True, text=True).stdout.strip()
     paths = ", ".join(conflicted) or "(no unmerged paths reported)"
     why = (f"merge of {branch} into main conflicted on: {paths};"

@@ -155,7 +155,6 @@ test("the newest round's findings are cards pilled must, must, should, nit with 
   const actions = Array.from(document.querySelectorAll("footer button")) as HTMLButtonElement[];
   const buttons = actions.map((button) => [button.textContent, button.disabled]);
   expect(buttons).toEqual([
-    ["Kill run", true],
     ["Requeue ticket", true],
   ]);
 });
@@ -525,6 +524,9 @@ test("only the newest round's fold is open and an older round's header opens it"
     },
   ];
   await mount(FAILED, T + 25 * MINUTE, undefined, entries);
+  // Round 1 reads "fixed" until its ledger row lands, which can be a tick
+  // after mount() returns; wait for the header the ledger decides.
+  await screen.findByRole("button", { name: /Round 1 · 1 finding · declined/ });
   const folds = Array.from(document.querySelectorAll("[data-round-fold]")) as HTMLElement[];
   // Newest first on the page: round 2, then round 1.
   expect(folds.map((fold) => fold.getAttribute("data-round-fold"))).toEqual(["2", "1"]);
@@ -539,8 +541,8 @@ test("only the newest round's fold is open and an older round's header opens it"
   // declined, with the implementer's line under the body.
   expect(within(folds[1]!).queryAllByRole("listitem").length).toBe(0);
   fireEvent.click(buttons[1]!);
+  const card = await within(folds[1]!).findByRole("listitem");
   expect(buttons[1]!.getAttribute("aria-expanded")).toBe("true");
-  const card = within(folds[1]!).getByRole("listitem");
   expect(card.querySelector("[data-fate]")!.textContent).toBe("declined");
   expect(card.querySelector("[data-fate-sentence]")!.textContent).toBe(
     "DECLINE old.py — superseded by the rewrite",
@@ -796,7 +798,8 @@ test("Turns lists recorded sessions and opens rendered transcript entries in a p
   const fetch: Fetch = async url => {
     requested.push(url);
     if (url.endsWith("/turns")) return Response.json({ turns: [
-      { id: 4, role: "implement", route: "primary", seconds: 12, session_id: "session-one" },
+      { id: 4, role: "implement", label: "claude-implement opus", route: "primary", seconds: 12, session_id: "session-one" },
+      { id: 5, role: "adjudicate", label: null, route: "primary", seconds: 3, session_id: null },
     ] });
     if (url.endsWith("/turns/4/transcript")) return Response.json({ entries: [
       { speaker: "user", text: "Check the project." },
@@ -809,7 +812,9 @@ test("Turns lists recorded sessions and opens rendered transcript entries in a p
   render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
   await screen.findByRole("link", { name: "Open transcript" });
   const turns = screen.getByRole("region", { name: "Turns" });
-  expect(turns.textContent).toContain("implement · primary · 12.0 s · session-one");
+  const rows = within(turns).getAllByRole("listitem").map(row => row.textContent);
+  expect(rows[0]).toContain("implement · claude-implement opus · primary · 12.0 s · session-one");
+  expect(rows[1]).toContain("adjudicate · label unknown · primary · 3.0 s");
   expect(requested.some(url => url.endsWith("/transcript"))).toBe(false);
   fireEvent.click(within(turns).getByRole("link", { name: "Open transcript" }));
   const panel = screen.getByRole("region", { name: "Transcript" });
@@ -821,6 +826,16 @@ test("Turns lists recorded sessions and opens rendered transcript entries in a p
   expect(screen.queryByRole("region", { name: "Transcript" })).toBeNull();
 });
 
+test("Turns from an older daemon without labels still render their rows", async () => {
+  const fetch: Fetch = async url => url.endsWith("/turns")
+    ? Response.json({ turns: [{ id: 6, role: "implement", route: "fallback", seconds: 7, session_id: null }] })
+    : answering(DETAIL)(url);
+  render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
+  const turns = await screen.findByRole("region", { name: "Turns" });
+  await within(turns).findByText("implement · label unknown · fallback · 7.0 s · no session recorded");
+  expect(within(turns).queryByRole("alert")).toBeNull();
+});
+
 test("an unavailable transcript explains the missing file or opt-in inside the panel", async () => {
   const fetch: Fetch = async url => url.endsWith("/turns")
     ? Response.json({ turns: [{ id: 8, role: "review", route: "primary", seconds: 4, session_id: "review-session" }] })
@@ -830,4 +845,22 @@ test("an unavailable transcript explains the missing file or opt-in inside the p
   fireEvent.click(screen.getByRole("link", { name: "Open transcript" }));
   const alert = await within(screen.getByRole("region", { name: "Transcript" })).findByRole("alert");
   expect(alert.textContent).toContain("Transcript unavailable");
+});
+
+test("the header shows the implementer and reviewer the run's turns used as chips, and no reviewer for a run never reviewed", async () => {
+  const header = async (turns: object[]) => {
+    cleanup();
+    const fetch: Fetch = async url => url.endsWith("/turns") ? Response.json({ turns }) : answering(DETAIL)(url);
+    render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
+    const card = await screen.findByRole("article", { name: "run 91" });
+    await within(screen.getByRole("region", { name: "Turns" })).findAllByRole("listitem");
+    return card.querySelector("header")!;
+  };
+  const chips = (header: Element) => [...header.querySelectorAll("[data-seat]")].map((chip) => chip.textContent);
+  const implement = { id: 1, role: "implement", label: "claude-implement opus", route: "primary", seconds: 40, session_id: null };
+  const review = { id: 2, role: "review", label: "codex-review gpt-6-astra", route: "primary", seconds: 9, session_id: null };
+  expect(chips(await header([implement, review]))).toEqual(["Implementer Claude · Opus", "Reviewer Codex · GPT-6 Astra"]);
+  const unreviewed = await header([implement]);
+  expect(chips(unreviewed)).toEqual(["Implementer Claude · Opus"]);
+  expect(unreviewed.textContent).not.toContain("Reviewer");
 });

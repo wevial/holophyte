@@ -42,14 +42,14 @@ class LaunchBackoffTests(SweepTestCase):
         with patch.dict(os.environ, {"PATH": f"{self.root}:{os.environ['PATH']}"}):
             now = T0
             for interval in (60, 120, 240):
-                start_loop_for(self.tgt, self.conn, [(None, None)], now, out)
+                start_loop_for(self.project, self.conn, [(None, None)], now, out)
                 until, reason = self.conn.execute(
                     'SELECT launchBackoffUntil, launchBackoffReason FROM projects'
                 ).fetchone()
                 self.assertEqual(until - now, interval * 1000)
                 self.assertIn("You've hit your usage limit", reason)
                 before = out.getvalue()
-                start_loop_for(self.tgt, self.conn, [(None, None)], now + 1, out)
+                start_loop_for(self.project, self.conn, [(None, None)], now + 1, out)
                 self.assertEqual(out.getvalue(), before)
                 now = until
             self.assertEqual(len(out.getvalue().splitlines()), 3)
@@ -66,7 +66,7 @@ class LaunchBackoffTests(SweepTestCase):
             self.assertEqual(self.conn.execute(
                 "SELECT COUNT(*) FROM runEvents WHERE kind='route_down'"
             ).fetchone()[0], 1)
-            start_loop_for(self.tgt, self.conn, [(None, None)], now, out)
+            start_loop_for(self.project, self.conn, [(None, None)], now, out)
             self.assertEqual(starts(), ["--user start holophyte-loop@repo"])
             self.assertEqual(self.conn.execute(
                 'SELECT launchBackoffUntil, launchBackoffReason FROM projects'
@@ -80,7 +80,7 @@ class LaunchBackoffTests(SweepTestCase):
                    return_value=ProbeResult(['fake-probe'], 0, 'ready', 90)), \
                 patch('holophyte.supervisor.start_loop',
                       return_value=('loop', True, '')) as start:
-            start_loop_for(self.tgt, self.conn, [(None, None)], T0, io.StringIO())
+            start_loop_for(self.project, self.conn, [(None, None)], T0, io.StringIO())
         start.assert_called_once()
         self.assertEqual(self.conn.execute(
             'SELECT launchBackoffUntil FROM projects').fetchone(), (None,))
@@ -92,11 +92,11 @@ class LaunchBackoffTests(SweepTestCase):
         import store
         from store import launch_backoff
 
-        launch_backoff.failure(self.conn, self.project, 'fake-probe: quota',
+        launch_backoff.failure(self.conn, self.project_id, 'fake-probe: quota',
                                T0, pending=True)
         with patch('holophyte.agents.probe_implementer') as probe, \
                 patch('holophyte.supervisor.start_loop') as start:
-            start_loop_for(self.tgt, self.conn, [(None, None)], T0 + 1000,
+            start_loop_for(self.project, self.conn, [(None, None)], T0 + 1000,
                            io.StringIO())
             probe.assert_not_called()
             start.assert_not_called()
@@ -107,9 +107,9 @@ class LaunchBackoffTests(SweepTestCase):
                    return_value=ProbeResult(['fake-probe'], 1, 'quota', 90)), \
                 patch('holophyte.supervisor.start_loop') as start:
             for interval in (120, 240, 480, 960, 1800, 1800):
-                start_loop_for(self.tgt, reopened, [(None, None)], now,
+                start_loop_for(self.project, reopened, [(None, None)], now,
                                io.StringIO())
-                state = launch_backoff.current(reopened, self.project)
+                state = launch_backoff.current(reopened, self.project_id)
                 self.assertEqual(state['until'], now + interval * 1000)
                 self.assertEqual(state['since'], T0)
                 now = state['until']
@@ -140,10 +140,10 @@ class LaunchBackoffTests(SweepTestCase):
         self.addCleanup(migrated.close)
         self.assertEqual(migrated.execute(
             'SELECT id, runId, seq, summary FROM runEvents').fetchall(), before)
-        launch_backoff.failure(migrated, self.project, 'fake-probe: quota', T0)
+        launch_backoff.failure(migrated, self.project_id, 'fake-probe: quota', T0)
         self.assertEqual(migrated.execute(
             "SELECT runId, projectId FROM runEvents WHERE kind='route_down'"
-        ).fetchall(), [(None, self.project)])
+        ).fetchall(), [(None, self.project_id)])
         self.assertEqual(migrated.execute(
             'SELECT id FROM runs').fetchall(), [(run,)])
         self.assertEqual(migrated.execute('PRAGMA foreign_key_check').fetchall(), [])
@@ -155,14 +155,14 @@ class LaunchBackoffTests(SweepTestCase):
         from holophyte.serve_runs import route_down_rows
         from store import launch_backoff
 
-        launch_backoff.failure(self.conn, self.project, 'quota exhausted', T0)
+        launch_backoff.failure(self.conn, self.project_id, 'quota exhausted', T0)
         with contextlib.redirect_stdout(io.StringIO()), \
                 patch('holophyte.operator.probe_implementer',
                    return_value=ProbeResult(['fake-probe'], 0, 'ready', 90)), \
                 patch('holophyte.operator._serial', return_value=0):
             self.assertEqual(operator.main(
-                self.tgt, SimpleNamespace(team='team-1')), 0)
-        self.assertIsNone(launch_backoff.current(self.conn, self.project))
+                self.project, SimpleNamespace(team='team-1')), 0)
+        self.assertIsNone(launch_backoff.current(self.conn, self.project_id))
         self.assertEqual(route_down_rows(self.conn), [])
 
     def test_unclaimed_ticket_and_board_fallback_use_their_own_project(self):
@@ -172,9 +172,9 @@ class LaunchBackoffTests(SweepTestCase):
         from holophyte.supervisor import reconcile_parked_pull_requests
         from store import launch_backoff
 
-        project = store.ensure_project(self.conn, 'team-2', self.target)
+        project_id = store.ensure_project(self.conn, 'team-2', self.target)
         ticket = store.mirror_ticket(
-            self.conn, project, linear_issue_id='unclaimed',
+            self.conn, project_id, linear_issue_id='unclaimed',
             linear_identifier='KO-2', title='unclaimed',
             acceptance_criteria=['Given work, then it is done'],
             verification_commands=['echo ok'])
@@ -186,18 +186,18 @@ class LaunchBackoffTests(SweepTestCase):
                 patch('holophyte.supervisor.linear_budget_low', return_value=False), \
                 patch('holophyte.supervisor.board_ready', return_value=1) as board:
             reconcile_parked_pull_requests(
-                self.tgt, self.conn, T0, provider, io.StringIO())
+                self.project, self.conn, T0, provider, io.StringIO())
             board.assert_not_called()
-            self.assertIsNone(launch_backoff.current(self.conn, self.project))
-            self.assertIsNotNone(launch_backoff.current(self.conn, project))
-            launch_backoff.clear(self.conn, project)
+            self.assertIsNone(launch_backoff.current(self.conn, self.project_id))
+            self.assertIsNotNone(launch_backoff.current(self.conn, project_id))
+            launch_backoff.clear(self.conn, project_id)
             store.transition(self.conn, ticket, 'blocked_on_deps')
             reconcile_parked_pull_requests(
-                self.tgt, self.conn, T0 + 1000, provider, io.StringIO())
+                self.project, self.conn, T0 + 1000, provider, io.StringIO())
             board.assert_called_once()
             start.assert_not_called()
-            self.assertIsNone(launch_backoff.current(self.conn, self.project))
-            self.assertIsNotNone(launch_backoff.current(self.conn, project))
+            self.assertIsNone(launch_backoff.current(self.conn, self.project_id))
+            self.assertIsNotNone(launch_backoff.current(self.conn, project_id))
 
     def test_probe_credentials_are_redacted_in_output_and_store(self):
         from types import SimpleNamespace
@@ -210,7 +210,7 @@ class LaunchBackoffTests(SweepTestCase):
         for startup in (True, False):
             for code, output in ((1, f'quota exhausted: {secret}'), (0, 'ready')):
                 with self.subTest(startup=startup, code=code):
-                    launch_backoff.clear(self.conn, self.project)
+                    launch_backoff.clear(self.conn, self.project_id)
                     probe = ProbeResult(['fake-probe', secret], code, output, 90)
                     out = io.StringIO()
                     with contextlib.redirect_stdout(out), \
@@ -222,12 +222,13 @@ class LaunchBackoffTests(SweepTestCase):
                             patch('holophyte.supervisor.start_loop',
                                   return_value=('loop', True, '')):
                         if startup:
-                            operator.main(self.tgt, SimpleNamespace(team='team-1'))
+                            operator.main(self.project, SimpleNamespace(team='team-1'))
                         else:
-                            start_loop_for(self.tgt, self.conn, [(None, None)], T0, out)
+                            start_loop_for(self.project, self.conn, [(None, None)], T0,
+                                           out)
                     evidence = out.getvalue() + str(self.conn.execute(
                         'SELECT summary FROM runEvents').fetchall()) + str(
-                        launch_backoff.current(self.conn, self.project))
+                        launch_backoff.current(self.conn, self.project_id))
                     self.assertNotIn(secret, evidence)
                     if code:
                         self.assertIn('quota exhausted', evidence)

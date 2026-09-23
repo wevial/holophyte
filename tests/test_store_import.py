@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli
-import holophyte.target
+import holophyte.project
 import store
 import store.read
 import store.tickets
@@ -54,7 +54,7 @@ class ImportStoreDryRunTests(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.dest = holophyte.target.state_dir(self.target) / "store.db"
+        self.dest = holophyte.project.state_dir(self.target) / "store.db"
         self.dest.parent.mkdir(parents=True)
         self.source = root / "other.db"
         # Closed before the command runs, so each file is whole on disk and

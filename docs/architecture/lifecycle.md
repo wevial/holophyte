@@ -58,24 +58,24 @@ sequenceDiagram
 
 The operator writes `TICKET.md` in the
 [template](../operating/tickets.md), validates it with
-`ticket_template.py FILE --repo TARGET`, and files it with
-`factory.py TARGET --file-ticket FILE --priority high`. The command
-validates again, creates the issue in the target's `[board]` project,
-reads the stored body back and validates that, so a transfer that rewrote
-the body is caught before the loop ever sees it. Edits go the same way with
-`--update KO-n`.
+`ticket_template.py FILE --repo PROJECT`, and files it with
+`factory.py PROJECT --file-ticket FILE --priority high`. The command
+validates again, creates the issue in the Linear project the project's
+`[board]` names, reads the stored body back and validates that, so a
+transfer that rewrote the body is caught before the loop ever sees it.
+Edits go the same way with `--update KO-n`.
 
 Trace: nothing in the store yet; the issue in Linear, in Todo.
 
 ### 1. Claim
 
-`linear_provider.claim_next()` lists the project's non-terminal, unblocked
+`linear_provider.claim_next()` lists the board's non-terminal, unblocked
 issues (Linear `blocks` relations are the only machine-checked
 dependencies), orders them by `[loop] order` (identifier or priority), and
 returns the first the store will accept. `board.mirror_task()` upserts the
 ticket row with a **contract snapshot**: title, criteria, verify commands,
 estimate. `body_problem()` runs the validator against the live body with
-the target repository; a body that fails is mirrored as `needs_spec` and
+the project repository; a body that fails is mirrored as `needs_spec` and
 skipped. `store.claim()` opens the run row and takes the project lease in
 one `BEGIN IMMEDIATE`.
 
@@ -172,12 +172,12 @@ PR mode is checked first, and `approve` is then read against the PR.
 Both paths are described in the [loop](../loop.md) page.
 
 Trace: `runs.outcome = merged`, `tickets.status = merged`, a merge commit
-whose message names the ticket, and a fresh `FINDINGS.md` in a target that
+whose message names the ticket, and a fresh `FINDINGS.md` in a project that
 opted in with `[report] findings = "repo"`.
 
 ### 8. After the merge
 
-If the target is the factory itself, `reexec.reexec_self()` replaces the
+If the project is the factory itself, `reexec.reexec_self()` replaces the
 loop process with a fresh `factory.py` from the merged code and records a
 `loopRestarts` row; the supervisor notices the checkout's HEAD moved on its
 next pass and re-execs too. The daemon does not; it is stateless and the

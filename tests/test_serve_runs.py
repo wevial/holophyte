@@ -41,13 +41,13 @@ class LivePullRequestTests(MergeModeFixture):
         observed = []
 
         def open_and_observe(target, conn, run_id, *args, **kwargs):
-            url = holophyte.pullrequest._open_pr(
+            url = holophyte.pullrequest._push_and_open(
                 target, conn, run_id, *args, **kwargs)
             observed.append(holophyte.serve_runs.run_detail(
                 target, str(run_id)))
             return url
 
-        with patch.object(holophyte.loop, "_open_pr", open_and_observe):
+        with patch.object(holophyte.loop, "_push_and_open", open_and_observe):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
 
@@ -65,13 +65,13 @@ class LivePullRequestTests(MergeModeFixture):
         self.loop(Commit("candidate"), APPROVE, Idle(""),
                   provider=self.provider())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         observed = []
         babysit = holophyte.pullrequest.babysitter._babysit
 
         def observe_resume(run, *args, **kwargs):
             observed.append(holophyte.serve_runs.run_detail(
-                run.target, str(run.run_id)))
+                run.project, str(run.run_id)))
             return babysit(run, *args, **kwargs)
 
         with patch.object(holophyte.pullrequest.babysitter, "_babysit",
@@ -91,14 +91,14 @@ class LivePullRequestTests(MergeModeFixture):
 class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
     def test_consuming_round_lists_private_note_and_report_cites_event(self):
         run_id, event_id = self.operator_note_pass(False)
-        code, body = holophyte.serve_runs.run_detail(self.tgt, str(run_id))
+        code, body = holophyte.serve_runs.run_detail(self.project, str(run_id))
         self.assertEqual(code, 200)
         notes = [n for r in body["rounds"] for n in r["operator_notes"]]
         self.assertEqual(len(notes), 1)
         self.assertEqual(notes[0]["kind"], "operator_note")
         self.assertEqual(notes[0]["note"], "remove the subheader")
         self.assertEqual(notes[0]["event_id"], event_id)
-        with store.open(str(self.tgt.store_path)) as conn:
+        with store.open(str(self.project.store_path)) as conn:
             report = "\n".join(holophyte.report.report_lines(conn))
         self.assertIn(f"Run {run_id} round 1: operator_note event {event_id}", report)
         self.assertIn("remove the subheader", report)
@@ -773,9 +773,9 @@ class ActiveRoutesTests(ServeTestCase):
     def test_status_shows_only_live_fallbacks_and_resets_to_primary(self):
         from holophyte.agent_routes import reset
         from holophyte.agents import ProbeResult, activate_fallback
-        from holophyte.target import Target
+        from holophyte.project import Project
         self.seed()
-        target = Target.locate(self.target)
+        target = Project.locate(self.target)
         target._config = {'agents': {'implementer': 'codex exec',
                                     'implementer_fallback': 'devin -p'}}
         self.addCleanup(reset, target)
@@ -786,7 +786,7 @@ class ActiveRoutesTests(ServeTestCase):
                               probe=ProbeResult(['devin', '-p'], 0, 'ready', 90))
         finally:
             conn.close()
-        # The daemon constructs its own Target, proving the indicator is not
+        # The daemon constructs its own Project, proving the indicator is not
         # accidentally reading the loop's in-memory route map.
         self.start()
         code, _, body = self.request('GET', '/status')
@@ -799,6 +799,37 @@ class ActiveRoutesTests(ServeTestCase):
         self.assertNotIn('fallback', body['active_routes']['implementer'])
 
 
+class RouteLabelsTests(ServeTestCase):
+    def labels(self, agents):
+        self.seed()
+        self.start(f"[agents]\n{agents}")
+        code, _, body = self.request('GET', '/status')
+        self.assertEqual(code, 200)
+        return body['route_labels']
+
+    def test_unset_seats_show_the_routes_the_loop_dispatches(self):
+        self.assertEqual(self.labels(
+            'implementer = "claude-implement --model opus"\n'
+            'review_model = "gpt-6-astra"\n'), {
+                "implementer": "claude-implement opus",
+                "reviewer": "codex gpt-6-astra",
+                "reviewer_fallback": None,
+                "adjudicator": "codex gpt-6-astra",
+                "writer": "claude-implement opus"})
+
+    def test_configured_seats_show_their_command_and_model(self):
+        self.assertEqual(self.labels(
+            'reviewer = "codex-review -m gpt-6-astra"\n'
+            'reviewer_fallback = "devin --model swe-1"\n'
+            'adjudicator = "codex-adjudicate --model gpt-6-astra"\n'
+            'writer = "claude-write --model sonnet"\n'), {
+                "implementer": "claude opus",
+                "reviewer": "codex-review gpt-6-astra",
+                "reviewer_fallback": "devin swe-1",
+                "adjudicator": "codex-adjudicate gpt-6-astra",
+                "writer": "claude-write sonnet"})
+
+
 class MigrationFeedTests(ServeTestCase):
     def test_now_includes_one_neutral_migration_and_respects_filters(self):
         self.seed()
@@ -807,7 +838,7 @@ class MigrationFeedTests(ServeTestCase):
             store.record_intervention(conn, self.run, "migrate", "operator note")
         finally:
             conn.close()
-        target = holophyte.target.Target.locate(self.target)
+        target = holophyte.project.Project.locate(self.target)
         status, body = holophyte.serve_runs.ledger(target, "since=0")
         self.assertEqual(status, 200)
         rows = [r for r in body["entries"] if r.get("action") == "migrate"]
@@ -847,13 +878,13 @@ class FailurePayloadTests(MergeModeFixture):
         self.assertEqual(facts['command'], command)
         self.assertEqual(facts['exit_status'], 3)
         self.assertEqual(facts['last_output_line'], 'boom')
-        code, body = holophyte.serve_runs.shipped(self.tgt, 'outcome=all')
+        code, body = holophyte.serve_runs.shipped(self.project, 'outcome=all')
         self.assertEqual(code, 200)
         self.assertEqual(body['rows'][0]['outcome_reason'], reason)
         self.assertIsInstance(body['rows'][0]['outcome_reason'], str)
         self.assertIn('command 2', reason)
         self.assertIn('exit 3; boom', reason)
-        code, body = holophyte.serve.attention(self.tgt)
+        code, body = holophyte.serve.attention(self.project)
         self.assertEqual(code, 200)
         (card,) = [item for item in body['items'] if item['kind'] == 'failed']
         self.assertEqual(card['reason'], reason)
@@ -887,6 +918,29 @@ class TurnTests(TranscriptCase):
                                            ('implement', 'fallback', 30, 'third')])
         url = f"{path}/{rows[0]['id']}/transcript"
         self.assertEqual(self.request('GET', url)[0], 404)
+
+    def test_every_role_carries_its_recorded_label(self):
+        self.seed()
+        recorded = [('implement', 'primary', 'claude-implement opus', 10),
+                    ('review', 'primary', 'codex gpt-6-astra', 20),
+                    ('adjudicate', 'primary', 'codex gpt-6-astra', 30),
+                    ('write', 'fallback', 'claude-implement opus', 40),
+                    ('review', 'primary', None, 50)]
+        with store.open(str(self.db)) as conn:
+            for role, route, label, seconds in recorded:
+                payload = dict(role=role, route=route, seconds=seconds)
+                if label is not None:
+                    payload['label'] = label
+                store.record_event(conn, self.run, 'agent_turn', 'ended',
+                                   level="detail", payload=json.dumps(payload))
+        self.start()
+        rows = self.request('GET', f'/runs/{self.run}/turns')[2]['turns']
+        self.assertEqual([r['id'] for r in rows], sorted(r['id'] for r in rows))
+        self.assertEqual([(r['role'], r['route'], r['label'], r['seconds'])
+                          for r in rows],
+                         [(role, route, label, seconds)
+                          for role, route, label, seconds in recorded])
+        self.assertEqual({r['session_id'] for r in rows}, {None})
 
     def test_no_turns_is_an_empty_list(self):
         self.seed()

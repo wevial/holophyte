@@ -3,8 +3,10 @@ import { useState } from "react";
 import { useRunDetail } from "../hooks/useRunDetail";
 import { useRunFiles, type RunFilesState } from "../hooks/useRunFiles";
 import { useRunLedger } from "../hooks/useRunLedger";
+import { useRunTurns, type RunTurnsBody } from "../hooks/useRunTurns";
 import { FATE_LABEL, findingsHistory, openFindings, severityCounts, type Fate, type RoundHistory } from "../lib/findings";
 import { formatClock, formatSettled, formatSpan } from "../lib/format";
+import { routeText } from "../lib/routes";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel, roundLabel } from "../lib/runs";
@@ -33,10 +35,37 @@ export function roundLine(body: RunDetailBody): string {
   return `Review ${reviews} of ${max}${other ? ` · ${other} other rounds` : ""} · ${phaseLabel(body.run.phase, body.run.pr_url)}`;
 }
 
+const SEATS = [["implement", "Implementer"], ["review", "Reviewer"]] as const;
+
+type Seat = { seat: string; routes: string };
+
+/** The run's implementer and reviewer: per seat, the harness and model of
+ *  each route its turns used ("Claude · Opus"), a seat it never used left
+ *  out. */
+function seatRoutes(turns: RunTurnsBody["turns"]): Seat[] {
+  return SEATS.flatMap(([role, seat]) => {
+    const labels = new Set(turns.filter((turn) => turn.role === role).map((turn) => turn.label));
+    const routes = [...labels].map((label) => (label == null ? "label unknown" : routeText(label)));
+    return routes.length === 0 ? [] : [{ seat, routes: routes.join(", ") }];
+  });
+}
+
+/** A seat chip in the header: the seat word muted, its route in the body
+ *  colour. */
+function SeatChip({ seat, routes }: Seat) {
+  return (
+    <span data-seat={seat} className="rounded-chip border border-chip-border px-2 py-[2px] text-[12px]">
+      <span className="text-muted">{seat}</span> <span className="text-body">{routes}</span>
+    </span>
+  );
+}
+
 /** The expanded run's card: header line, round timeline, the newest
  *  round's open findings and the run log from `/runs/N`, the files touched
- *  from `/runs/N/files`; both read on expand and again each poll. Given
- *  its `daemon`, a live run with no `stopRequested` has Pause in the footer. */
+ *  from `/runs/N/files`, and the turns from `/runs/N/turns`, whose models
+ *  the header names per seat; each read on expand and again each poll. Given
+ *  its `daemon`, a live run has Abort in the footer, Abort and close too
+ *  when it has a pull request, and Pause when it has no `stopRequested`. */
 export function RunDetail({
   base,
   id,
@@ -61,6 +90,7 @@ export function RunDetail({
 }) {
   const { detail, error, loading } = useRunDetail(base, id, polls, deps);
   const files = useRunFiles(base, id, polls, deps);
+  const turns = useRunTurns(base, id, polls, deps);
   // The ledger is only read for a finished run's findings history; a live
   // run fetches none.
   const ledger = useRunLedger(base, detail?.run.ended_ms != null ? id : null, polls, deps);
@@ -72,9 +102,9 @@ export function RunDetail({
           {error}
         </p>
       )}
-      {detail && <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs}
-        pauseDaemon={stopRequested ? undefined : daemon} />}
-      {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} polls={polls} deps={deps} />}
+      {detail && <Card body={detail} files={files} ledger={ledger} seats={seatRoutes(turns.body?.turns ?? [])}
+        now={now} sinceMs={sinceMs} daemon={daemon} pauseDaemon={stopRequested ? undefined : daemon} />}
+      {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} turns={turns} deps={deps} />}
     </div>
   );
 }
@@ -83,15 +113,19 @@ function Card({
   body,
   files,
   ledger,
+  seats,
   now,
   sinceMs,
+  daemon,
   pauseDaemon,
 }: {
   body: RunDetailBody;
   files: RunFilesState;
   ledger: LedgerRow[];
+  seats: Seat[];
   now: number;
   sinceMs: number;
+  daemon?: RowDaemon;
   pauseDaemon?: RowDaemon;
 }) {
   const { run } = body;
@@ -114,6 +148,7 @@ function Card({
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <TicketLink ticket={run.ticket} ticket_url={run.ticket_url} />
         <span className="text-[13px] font-semibold text-ink">{roundLine(body)}</span>
+        {seats.map((chip) => <SeatChip key={chip.seat} {...chip} />)}
         <span data-started className="text-[12px] text-muted">
           started {formatClock(run.started_ms)}
           {run.host ? ` · ${run.host}` : ""}
@@ -190,7 +225,8 @@ function Card({
         <FilesTouched files={files.files} error={files.error} status={files.status} pending={files.pending} loading={files.loading} />
       </div>
       <footer className="mt-3 flex gap-2">
-        <ActionButton>Kill run</ActionButton>
+        {daemon && !finished && <ReasonAction daemon={daemon} route="/actions/abort" body={{ run: run.id, close: false }} label="Abort" />}
+        {daemon && !finished && run.pr_url && <ReasonAction daemon={daemon} route="/actions/abort" body={{ run: run.id, close: true }} label="Abort and close" />}
         <ActionButton>Requeue ticket</ActionButton>
         {pauseDaemon && !finished && <ReasonAction daemon={pauseDaemon} route="/actions/pause" body={{ run: run.id }} label="Pause" />}
       </footer>

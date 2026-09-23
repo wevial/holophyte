@@ -1,15 +1,20 @@
 # Operating
 
-Supervising a target and serving its state read-only. The operator
+Supervising a project and serving its state. The daemon reads by default
+and writes only through `[serve] actions` and `config_edit`
+([The daemon's actions](reference/daemon.md)). The operator
 commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
-[--update KO-n]`, `--approve KO-n`, `--babysit KO-n` and
-`--repoint KO-n SHA`) are described by `factory.py --help`, and the
+[--update KO-n]`, `--approve KO-n`, `--babysit KO-n`,
+`--repoint KO-n SHA`, `--pause KO-n`, `--resume KO-n`, `--abort KO-n
+[--close-pr]`, `--close KO-n --landed URL`, `--hold`, `--release-hold` and
+`factory.py project add|list|enable|hold|disable`) are described by
+`factory.py --help` and the [CLI reference](reference/cli.md), and the
 escalation ladder they sit on in the [runbook](operating/runbook.md). Back
 to the [README](index.md).
 
 ## Pause one run at its next safe point
 
-`factory.py TARGET --pause KO-n --note "reboot writer"` records an intervention
+`factory.py PROJECT --pause KO-n --note "reboot writer"` records an intervention
 and marks that run in one transaction. The current turn continues; `/status`
 reports `stop_requested` with the note, and the console run card shows
 “Pause requested” until the stop takes effect. An ended run refuses the request
@@ -25,12 +30,12 @@ request note. Babysit fixes stop before their push or thread replies; resuming
 an open PR finishes a saved fix step (including its pending push and replies)
 before returning through the gate to read current checks and threads.
 
-`factory.py TARGET --resume KO-n --note TEXT` uses the store resume path,
+`factory.py PROJECT --resume KO-n --note TEXT` uses the store resume path,
 recording the note on the resume intervention, and returns the ticket to
 ready (`POST /actions/resume` on the daemon is the same call). The next claim reuses the worktree and continues from the
 recorded boundary. Implementation is skipped when it already finished; review
 continuations retain the verification result and findings they need. A pause
-does not grant merge approval: targets requiring a human still require it.
+does not grant merge approval: projects requiring a human still require it.
 
 This change migrates the store from schema 31 to 32, adding `runs.stopRequested`
 and the `paused` outcome/phase and `pause` intervention action. A pending pause
@@ -39,7 +44,7 @@ requires a writer running this build to reach a boundary.
 
 ## Abort one run now
 
-`factory.py TARGET --abort KO-n --note "host going down"` ends a run
+`factory.py PROJECT --abort KO-n --note "host going down"` ends a run
 immediately, and records before it acts: one transaction writes the `abort`
 intervention and marks the run (the same `runs.stopRequested` a pause uses;
 an abort supersedes a pending pause). `/status` reports `stop_action: "abort"`
@@ -57,7 +62,7 @@ pushes the branch. Last, it ends the run `abandoned` with the note and parks
 the ticket `blocked_on_operator` with the note as its question. When the run
 has no live worker, the command does the same itself, minus the kill, and
 moves the board issue to the parked state and takes the lease label off, as
-the worker does; so a target with no `[board]` table exits naming the key.
+the worker does; so a project with no `[board]` table exits naming the key.
 No live worker means the run is parked awaiting merge approval, or, on the
 host that claimed it, the process recorded at claim (`runs.workerPid`) no
 longer exists. A stale heartbeat alone is not enough: a slow worker, a run
@@ -84,6 +89,8 @@ does not undo the abort: it is a `warning` run event and a printed line. The
 reconcile leaves the closed pull request alone, since the run is no longer
 parked on it. `--close-pr` without `--abort` is refused. The `abort_close`
 action is schema version 35 (KO-611).
+
+## Requeue, re-point or send back a parked ticket
 
 A ticket parked `blocked_on_operator` by a merge gate conflict -- the gate's
 merge of `main` into the branch conflicted, the run failed and the branch
@@ -121,22 +128,22 @@ python3 factory.py --supervise /path/to/repo
 
 Running it by hand is optional: the loop starts one itself. At startup,
 after its config and route checks and before its first claim, the loop reads
-the target's `supervisor.lock`, and when no live pid holds it spawns
-`factory.py --supervise` for the same target in its own session, with stdout
+the project's `supervisor.lock`, and when no live pid holds it spawns
+`factory.py --supervise` for the same project in its own session, with stdout
 and stderr appended to `supervisor.log` in the state directory, and prints
-`[holo2] started a supervisor for TARGET as pid N`; when a live supervisor
+`[holo2] started a supervisor for PROJECT as pid N`; when a live supervisor
 already holds the lock it prints `[holo2] supervisor pid N is watching
-TARGET` and carries on. The spawned supervisor outlives the loop on purpose
+PROJECT` and carries on. The spawned supervisor outlives the loop on purpose
 and takes the lock itself, so two loops starting at once resolve at the lock
 like two `--supervise`s. `[loop] spawn_supervisor = false` turns the spawn
 off for an operator whose service manager runs the supervisor
 ([Config](config.md)).
 
 It runs until SIGINT or SIGTERM, finishing the pass in hand and exiting
-clean. One supervisor per target: the first takes
-`supervisor.lock` in the target's state directory (beside the store) with an
+clean. One supervisor per project: the first takes
+`supervisor.lock` in the project's state directory (beside the store) with an
 exclusive create and writes its pid into it; a second `--supervise` for the
-same target exits non-zero naming that pid. A lock whose pid is dead is a
+same project exits non-zero naming that pid. A lock whose pid is dead is a
 supervisor that was killed without the chance to clean up, and is reclaimed
 on the next start; reclaims take turns under an flock on the sidecar
 `supervisor.lock.reclaim` beside it, which is left in place. A lock
@@ -146,7 +153,7 @@ which file to look at.
 Each pass bumps the process's row in the store's `supervisorHeartbeats`
 table, so whether the watcher is still watching is a query rather than a
 `ps`. Each pass also reconciles parked pull requests whenever no loop is
-live on the target: a run parked on its pull request (`[merge] mode =
+live on the project: a run parked on its pull request (`[merge] mode =
 "pr"`) is closed out as merged, with the merge commit's sha, within one
 sweep interval of a person merging it on GitHub, exactly as the loop's own
 pass would have done had it still been running; while a loop's heartbeat
@@ -159,7 +166,7 @@ ticket filed while the loop was down -- the way the console's
 launch-loop action does,
 `systemctl --user start holophyte-loop@NAME` with `[serve] name`, and
 prints that it did. "No loop live" is no fresh heartbeat and nobody
-holding the target's `lease.lock` turn. The attempt is recorded on the
+holding the project's `lease.lock` turn. The attempt is recorded on the
 ticket's newest run when it has one (a `launch_loop_attempt` event)
 before `systemctl` is
 asked, and a start it took is recorded after as a `launch_loop`
@@ -192,9 +199,11 @@ the factory ships the invocation and nothing around it.
 
 ## Serving
 
-`--serve PORT` runs a read-only HTTP daemon for one target on loopback, so
+`--serve PORT` runs an HTTP daemon for one project on loopback, so
 a drawer or dashboard can poll the factory over HTTP instead of reading the
-store:
+store. It reads by default; `[serve] actions` (`POST /actions/...`) and
+`[serve] config_edit` (`PUT /config`) are the two opt-ins that make it write
+([The daemon's actions](reference/daemon.md)):
 
 ```
 python3 factory.py --serve 7710 /path/to/repo
@@ -209,19 +218,19 @@ It serves the console page at `/` and the console's built files under
 it, and answers the JSON routes listed in [HTTP endpoints](reference/http.md);
 that page holds the bodies and status codes and is not repeated here.
 Every response is `Cache-Control: no-store` and
-`Access-Control-Allow-Origin: *`, and every request opens the store
+`Access-Control-Allow-Origin: *`, and every GET opens the store
 through a read-only connection and closes it; the daemon never holds a
-connection between requests and never writes. Any other path is 404 as
-JSON. The console page polls its peer daemons from the browser, so every
+connection between requests and writes only through the two opt-ins.
+Any other path is 404 as JSON. The console page polls its peer daemons from the browser, so every
 daemon answers the browser's CORS preflight, `OPTIONS` on any path, with
 204 and no body, token or not; every other method but GET stays 405, as
-JSON.
+JSON, save the two opt-ins' writing routes.
 
 Every `host` passes through `[report] host_label`, so a configured label is
 what the network sees rather than the machine name.
 
 The run record is the store, read through the console or `--report`; no
-target renders it into a `FINDINGS.md` unless its config says
+project renders it into a `FINDINGS.md` unless its config says
 `[report] findings = "repo"` ([Configuration](config.md)).
 
 On loopback the boundary is the bind address and nothing else: the
@@ -243,9 +252,9 @@ on.
 ## Serving standing
 
 A daemon started by hand in a tmux session ends silently at the next reboot,
-and the drawer then reads the target as "attention needed".
+and the drawer then reads the project as "attention needed".
 `deploy/holophyte-serve@.service` is a systemd user unit template that keeps
-one daemon per target standing: the instance name is the target slug, the
+one daemon per project standing: the instance name is the project slug, the
 unit restarts on failure, and an enabled unit comes back after a reboot or a
 supervisor re-exec, provided the operator's user manager itself starts at boot
 (lingering, below). It runs `factory.py` from the factory checkout named in
@@ -256,7 +265,7 @@ The unit reads three keys from `~/.holophyte/SLUG/serve.env`:
 
 | Key | Value |
 | --- | --- |
-| `HOLOPHYTE_TARGET` | the target repository path |
+| `HOLOPHYTE_TARGET` | the project repository path |
 | `HOLOPHYTE_SERVE_ADDRESS` | `127.0.0.1` (what `--serve PORT` binds), or the host's private-network address |
 | `HOLOPHYTE_SERVE_PORT` | the port from the convention below |
 
@@ -264,8 +273,8 @@ The address is `127.0.0.1` on one machine, or the host's address on the
 private network a remote drawer uses; never the wildcard address (see
 "Serving" above for what an open bind publishes).
 
-**Port convention:** 7710 for the first target on a host, counting up by one
-per further target, so a client config is two lines per target: a host
+**Port convention:** 7710 for the first project on a host, counting up by one
+per further project, so a client config is two lines per project: a host
 serving `holophyte` and `lotuspod` has them on 7710 and 7711.
 
 An example `~/.holophyte/holophyte/serve.env`:
@@ -276,7 +285,7 @@ HOLOPHYTE_SERVE_ADDRESS=127.0.0.1
 HOLOPHYTE_SERVE_PORT=7710
 ```
 
-Install and enable, one instance per target:
+Install and enable, one instance per project:
 
 ```
 sudo loginctl enable-linger "$USER"
@@ -295,7 +304,7 @@ manager at boot; run it once per host, and check with
 
 The unit's `WorkingDirectory` is `%h`-relative and names one checkout
 layout; adjust it before enabling if the factory lives elsewhere. A client
-finds a daemon at the bind address and the target's port from the
+finds a daemon at the bind address and the project's port from the
 convention, nothing else; splitting the drawer onto a second machine is
 [Across machines](operating/hosts.md).
 
@@ -311,7 +320,7 @@ with its project ID and a request for operator repair. Its original base is not
 stored: verify the original repository location and repair the row to its
 canonical absolute path through the operator protocol before retrying. Do not
 interpret it relative to the current working directory. This refusal applies
-across the store because the ambiguous row could identify any target.
+across the store because the ambiguous row could identify any project.
 `project list` remains available to inspect the rows.
 
 From the repository directory, use `python3 factory.py project list` to print

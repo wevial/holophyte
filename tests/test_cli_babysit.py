@@ -13,8 +13,8 @@ import store
 import store.tickets
 from holophyte import maintainer_notes
 from holophyte.pr import PrState
+from holophyte.project import Project
 from holophyte.runs import open_store
-from holophyte.target import Target
 from tests.phase_fixture import park_run
 
 
@@ -29,21 +29,21 @@ class BabysitCliFixture:
         env = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(Path(tmp.name) / "home")})
         env.start()
         self.addCleanup(env.stop)
-        self.target = Target.locate(self.repo)
+        self.target = Project.locate(self.repo)
         self.target.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.target.config_path.write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n'
             '[merge]\nmode = "pr"\napprove = "human"\n')
         self.conn = open_store(self.target)
         self.addCleanup(self.conn.close)
-        self.project = store.tickets.ensure_project(self.conn, "team-1", self.repo)
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1", self.repo)
         self.ticket = store.tickets.mirror_ticket(
-            self.conn, self.project, linear_issue_id="issue-1",
+            self.conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["The button has readable padding"],
             verification_commands=["echo ok"], time_box_ms=25 * 60 * 1000)
         store.tickets.transition(self.conn, self.ticket, "in_flight")
-        self.run = store.claim(self.conn, self.project, self.ticket)
+        self.run = store.claim(self.conn, self.project_id, self.ticket)
         park_run(self.conn, self.run, "awaiting_merge_approval", "merge?",
                    pr_url=self.URL, candidate_sha="a" * 40)
         store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
@@ -57,7 +57,7 @@ class BabysitCliFixture:
 
     def pending(self):
         store.tickets.transition(self.conn, self.ticket, "in_flight")
-        resumed = store.claim(self.conn, self.project, self.ticket)
+        resumed = store.claim(self.conn, self.project_id, self.ticket)
         return maintainer_notes.pending_state(
             self.conn, resumed, PrState((), "success", "a" * 40), self.URL)
 

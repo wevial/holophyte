@@ -1,6 +1,6 @@
 """Per-table config keys, defaults and validated readers.
 
-The key sets are registered in config.KNOWN_KEYS; readers take a Target and
+The key sets are registered in config.KNOWN_KEYS; readers take a Project and
 refuse invalid values with the table, key and constraint. Importing runs no
 host checks. The loop and daemon share these readers (KO-397).
 """
@@ -89,7 +89,7 @@ SweepConfig = collections.namedtuple(
      "board_ask_ms"))
 
 
-def sweep_config(target):
+def sweep_config(project):
     """The target's sweep thresholds: `[supervisor]` over the defaults.
 
     Every key is optional and an absent table is the module constants exactly.
@@ -109,10 +109,10 @@ def sweep_config(target):
     Keys the table names that this version does not know are refused by
     `check_config_keys()`, which startup runs beside this.
     """
-    table = target.config().get("supervisor", {})
+    table = project.config().get("supervisor", {})
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [supervisor] must be a table, got "
+            f"[holo2] {project.config_path}: [supervisor] must be a table, got "
             f"{type(table).__name__}")
     values = {}
     for key, default in SUPERVISOR_KEYS.items():
@@ -135,7 +135,7 @@ def sweep_config(target):
             constraint, ok = "a finite positive number", number and value > 0
         if not ok:
             raise SystemExit(
-                f"[holo2] {target.config_path}: [supervisor] {key} must be "
+                f"[holo2] {project.config_path}: [supervisor] {key} must be "
                 f"{constraint}, got {value!r}")
         values[key] = value
     return SweepConfig(
@@ -211,7 +211,7 @@ LOOP_INTEGER_FLOORS = {
 LoopConfig = collections.namedtuple("LoopConfig", LOOP_KEYS)
 
 
-def loop_config(target):
+def loop_config(project):
     """The target's `[loop]` knobs over the defaults.
 
     Checked at startup beside `sweep_config()`, the same way: an absent
@@ -232,36 +232,36 @@ def loop_config(target):
     threshold. Keys this version does not know are refused by
     `check_config_keys()`.
     """
-    table = target.config().get("loop", {})
+    table = project.config().get("loop", {})
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [loop] must be a table, got "
+            f"[holo2] {project.config_path}: [loop] must be a table, got "
             f"{type(table).__name__}")
     values = {}
     for key, default in LOOP_KEYS.items():
         value = table.get(key, default)
         if isinstance(default, bool) and not isinstance(value, bool):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [loop] {key} must be a boolean "
+                f"[holo2] {project.config_path}: [loop] {key} must be a boolean "
                 f"(true or false), got {value!r}")
         choices = {"order": LOOP_ORDERS, **dict.fromkeys(
             ("fix_session", "review_session"), ("fresh", "resume", "alternate"))}
         if key in choices and value not in choices[key]:
             allowed = " or ".join(f'"{o}"' for o in choices[key])
             raise SystemExit(
-                f"[holo2] {target.config_path}: [loop] {key} must be one of "
+                f"[holo2] {project.config_path}: [loop] {key} must be one of "
                 f"{allowed}, got {value!r}")
         floor = LOOP_INTEGER_FLOORS.get(key)
         if floor is not None and (isinstance(value, bool)
                                   or not isinstance(value, int)
                                   or value < floor):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [loop] {key} must be an "
+                f"[holo2] {project.config_path}: [loop] {key} must be an "
                 f"integer of at least {floor}, got {value!r}")
         values[key] = value
     if values["review_rounds_max"] < values["review_rounds"]:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [loop] review_rounds_max must be "
+            f"[holo2] {project.config_path}: [loop] review_rounds_max must be "
             f"at least review_rounds ({values['review_rounds']}), got "
             f"{values['review_rounds_max']!r}")
     return LoopConfig(**values)
@@ -286,7 +286,7 @@ BOARD_KEYS = {
 BoardConfig = collections.namedtuple("BoardConfig", BOARD_KEYS)
 
 
-def board_config(target):
+def board_config(project):
     """The target's `[board]`, or `None` when the table is absent.
 
     A present table has to carry `project_id` and `team` as non-empty
@@ -300,12 +300,12 @@ def board_config(target):
     Nothing is read from the environment. Keys this version does not know
     are refused by `check_config_keys()`.
     """
-    table = target.config().get("board")
+    table = project.config().get("board")
     if table is None:
         return None
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [board] must be a table, got "
+            f"[holo2] {project.config_path}: [board] must be a table, got "
             f"{type(table).__name__}")
     values = {"label": None}  # the one optional key; absent is no filter
     for key in BOARD_KEYS:
@@ -314,17 +314,20 @@ def board_config(target):
             continue
         if not isinstance(value, str) or not value:
             raise SystemExit(
-                f"[holo2] {target.config_path}: [board] {key} must be a "
+                f"[holo2] {project.config_path}: [board] {key} must be a "
                 f"non-empty string, got {value!r}")
         values[key] = value
     return BoardConfig(**values)
 
 
 # `approve = "auto"` merges a green, approved candidate; `"human"` parks it
-# awaiting operator approval. `mode = "local"` merges into local main;
-# `"pr"` pushes the task branch to origin and opens a PR for bots and CI.
-# The factory never pushes main. `pr_rounds` (at least 1) caps babysit passes
-# before parking the PR on its unresolved threads for the operator.
+# awaiting operator approval. `review_fixes = true` (KO-663, default false)
+# puts fix commits pushed after the release under `"human"` to the covering
+# review the auto path runs before the run parks. `mode = "local"` merges
+# into local main; `"pr"` pushes the task branch to origin and opens a PR for
+# bots and CI. The factory never pushes main. `pr_rounds` (at least 1) caps
+# babysit passes before parking the PR on its unresolved threads for the
+# operator.
 #
 # `pr_merge_method` is the `merge_method` the babysitter sends GitHub's merge
 # API when it lands a green, quiet pull request under `mode = "pr"`:
@@ -344,6 +347,10 @@ def board_config(target):
 # `pr_quiet_sec`: quiet since GitHub updatedAt before merging (default 300;
 # 0 merges as soon as green). `check_wait_sec`: positive pending/quiet wait
 # cap, default pr.CHECK_WAIT_S (1800), independently set per target (KO-477).
+# `missing_check_sec`: how long a check main requires may report nothing on
+# the head before the wait stops for it (default 600); with
+# `retrigger_missing_checks = true` one empty commit per candidate wakes it
+# first, otherwise the run parks naming the checks (KO-652).
 #
 # Pull request titles and bodies are always written by one implementer turn
 # from the diff, ticket and repository conventions. `pr_style` supplies
@@ -379,8 +386,10 @@ MERGE_KEYS = {
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
-    "pr_style": "", "pr_changes_log": False,
+    "missing_check_sec": 600, "retrigger_missing_checks": False,
+    "pr_style": "", "pr_changes_log": False, "review_fixes": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
+    "ui_capture_local": False,
     "media_repo": "",
     "media_bucket": None, "media_max_file_mb": 10, "media_max_total_mb": 20,
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
@@ -398,38 +407,48 @@ MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
 MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
 PR_POLL_FLOOR = 10
 MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
-                    "pr_quiet_sec": 0, "check_wait_sec": 1}
+                    "pr_quiet_sec": 0, "check_wait_sec": 1,
+                    "missing_check_sec": 1}
 
 
-def merge_config(target):
+def merge_config(project):
     """Validate merge settings at startup; refusals name the config and key."""
     from holophyte.pr import CHECK_WAIT_S  # Deferred: pr also reads config.
-    table = target.config().get("merge", {})
+    table = project.config().get("merge", {})
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [merge] must be a table, got "
+            f"[holo2] {project.config_path}: [merge] must be a table, got "
             f"{type(table).__name__}")
     if "pr_text" in table:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [merge] pr_text was retired:"
+            f"[holo2] {project.config_path}: [merge] pr_text was retired:"
             " pull request bodies are always written")
     values = {}
     defaults = dict(MERGE_KEYS, check_wait_sec=CHECK_WAIT_S)
     values["strip_attribution"] = _attribution_patterns(
-        target, table.get("strip_attribution", defaults.pop("strip_attribution")))
+        project, table.get("strip_attribution", defaults.pop("strip_attribution")))
     values["pr_changes_log"] = _merge_boolean(
-        target, "pr_changes_log",
+        project, "pr_changes_log",
         table.get("pr_changes_log", defaults.pop("pr_changes_log")))
+    values["review_fixes"] = _merge_boolean(
+        project, "review_fixes",
+        table.get("review_fixes", defaults.pop("review_fixes")))
+    values["retrigger_missing_checks"] = _merge_boolean(
+        project, "retrigger_missing_checks", table.get(
+            "retrigger_missing_checks", defaults.pop("retrigger_missing_checks")))
+    values["ui_capture_local"] = _merge_boolean(
+        project, "ui_capture_local",
+        table.get("ui_capture_local", defaults.pop("ui_capture_local")))
     for key, default in defaults.items():
         value = table.get(key, default)
         if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):
-            values[key] = _media_setting(target, key, value)
+            values[key] = _media_setting(project, key, value)
             continue
         if key in MERGE_INT_FLOORS:
             if isinstance(value, bool) or not isinstance(value, int) \
                     or value < MERGE_INT_FLOORS[key]:
                 raise SystemExit(
-                    f"[holo2] {target.config_path}: [merge] {key} must be an"
+                    f"[holo2] {project.config_path}: [merge] {key} must be an"
                     f" integer of at least {MERGE_INT_FLOORS[key]},"
                     f" got {value!r}")
             values[key] = value
@@ -438,7 +457,7 @@ def merge_config(target):
                    "ui_capture_dir", "media_repo"):
             if not isinstance(value, str):
                 raise SystemExit(
-                    f"[holo2] {target.config_path}: [merge] {key} must be a"
+                    f"[holo2] {project.config_path}: [merge] {key} must be a"
                     " string" + (" in owner/name form" if key == "media_repo" else "")
                     + f", got {value!r}")
             values[key] = value
@@ -448,29 +467,29 @@ def merge_config(target):
             if not isinstance(value, (list, tuple)) \
                     or not all(isinstance(cmd, str) for cmd in value):
                 raise SystemExit(
-                    f"[holo2] {target.config_path}: [merge] {key} must be a"
+                    f"[holo2] {project.config_path}: [merge] {key} must be a"
                     f" list of strings, got {value!r}")
             values[key] = tuple(value)
             continue
         if value not in MERGE_VALUES[key]:
             allowed = " or ".join(f'"{o}"' for o in MERGE_VALUES[key])
             raise SystemExit(
-                f"[holo2] {target.config_path}: [merge] {key} must be one of "
+                f"[holo2] {project.config_path}: [merge] {key} must be one of "
                 f"{allowed}, got {value!r}")
         values[key] = value
-    _validate_ui(target, values)
+    _validate_ui(project, values)
     return MergeConfig(**values)
 
 
-def _merge_boolean(target, key, value):
+def _merge_boolean(project, key, value):
     if not isinstance(value, bool):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [merge] {key} must be a"
+            f"[holo2] {project.config_path}: [merge] {key} must be a"
             f" boolean, got {value!r}")
     return value
 
 
-def _attribution_patterns(target, value):
+def _attribution_patterns(project, value):
     error = None
     if not isinstance(value, (list, tuple)) or not all(
             isinstance(p, str) for p in value):
@@ -482,12 +501,12 @@ def _attribution_patterns(target, value):
         except re.error as exc:
             error = f"invalid regular expression: {exc}"
     if error:
-        raise SystemExit(f"[holo2] {target.config_path}: "
+        raise SystemExit(f"[holo2] {project.config_path}: "
                          f"[merge] strip_attribution {error}")
     return tuple(value)
 
 
-def _media_setting(target, key, value):
+def _media_setting(project, key, value):
     from holophyte.media_store import validate_bucket
     try:
         if key == "media_bucket":
@@ -497,15 +516,15 @@ def _media_setting(target, key, value):
             raise ValueError(f"{key} must be a positive finite number of MB")
         return value
     except ValueError as error:
-        raise SystemExit(f"{target.config_path}: [merge] {error}") from None
+        raise SystemExit(f"{project.config_path}: [merge] {error}") from None
 
 
-def _validate_ui(target, values):
+def _validate_ui(project, values):
     import shlex
     from pathlib import PurePosixPath
     if values["media_repo"] and not re.fullmatch(
         r"[A-Za-z0-9][A-Za-z0-9-]*/(?!\.\.?$)[A-Za-z0-9_.-]+", values["media_repo"]):
-        raise SystemExit(f"{target.config_path}: [merge] media_repo"
+        raise SystemExit(f"{project.config_path}: [merge] media_repo"
                          " must be in owner/name form")
     paths, command = values["ui_paths"], values["ui_capture"]
     if bool(paths) != bool(command.strip()):
@@ -513,6 +532,14 @@ def _validate_ui(target, values):
     if any(not p.strip() or PurePosixPath(p).is_absolute()
            or ".." in PurePosixPath(p).parts for p in paths):
         raise SystemExit("[merge] ui_paths must be non-empty repository-relative globs")
+    directory = PurePosixPath(values["ui_capture_dir"])
+    if values["ui_capture_local"] and (
+            directory.is_absolute() or not directory.parts
+            or ".." in directory.parts):
+        raise SystemExit(
+            f"{project.config_path}: [merge] ui_capture_local needs ui_capture_dir"
+            " to be a repository-relative directory without `..`, got"
+            f" {values['ui_capture_dir']!r}")
     try:
         args = shlex.split(command)
     except ValueError as error:
@@ -549,7 +576,7 @@ ReportConfig = collections.namedtuple("ReportConfig",
                                       ("host_label", "findings"))
 
 
-def report_config(target):
+def report_config(project):
     """The target's `[report]` knobs over the defaults.
 
     Checked at startup beside `loop_config()`, the same way: an absent table
@@ -562,23 +589,23 @@ def report_config(target):
     `[loop]` value. Keys this version does not know are refused by
     `check_config_keys()`.
     """
-    table = target.config().get("report", {})
+    table = project.config().get("report", {})
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [report] must be a table, got "
+            f"[holo2] {project.config_path}: [report] must be a table, got "
             f"{type(table).__name__}")
     values = {}
     for key, default in REPORT_KEYS.items():
         value = table.get(key, default)
         if value is not None and not (isinstance(value, str) and value.strip()):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [report] {key} must be a "
+                f"[holo2] {project.config_path}: [report] {key} must be a "
                 f"non-empty string, got {value!r}")
         values[key] = value
     if values["findings"] not in FINDINGS_MODES:
         allowed = ", ".join(FINDINGS_MODES)
         raise SystemExit(
-            f"[holo2] {target.config_path}: [report] findings must be one of "
+            f"[holo2] {project.config_path}: [report] findings must be one of "
             f"{allowed}, got {values['findings']!r}")
     return ReportConfig(**values)
 
@@ -612,24 +639,24 @@ def split_address(text):
 VerifyConfig = collections.namedtuple("VerifyConfig", "always before_merge timeout_sec")
 
 
-def verify_config(target):
+def verify_config(project):
     """Validate baseline command shapes at startup; execute them only at gates."""
     from holophyte.config import VERIFY_TIMEOUT, config_table
 
-    table = config_table(target, "verify")
+    table = config_table(project, "verify")
     commands = {}
     for tier in ("always", "before_merge"):
         value = table.get(tier, [])
         if not isinstance(value, list) or any(
                 not isinstance(cmd, str) or not cmd.strip() for cmd in value):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [verify] {tier} must be a "
+                f"[holo2] {project.config_path}: [verify] {tier} must be a "
                 "list of non-empty command strings")
         commands[tier] = value
     timeout = table.get("timeout_sec", VERIFY_TIMEOUT)
     if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
             or not math.isfinite(timeout) or timeout <= 0):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [verify] timeout_sec must be a "
+            f"[holo2] {project.config_path}: [verify] timeout_sec must be a "
             "finite positive number of seconds")
     return VerifyConfig(**commands, timeout_sec=timeout)

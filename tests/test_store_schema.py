@@ -1466,7 +1466,7 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "store.sqlite3"
         conn = store.open(self.path)
-        self.project = store.tickets.ensure_project(conn, "team-1", "/repos/h")
+        self.project_id = store.tickets.ensure_project(conn, "team-1", "/repos/h")
         conn.commit()
         conn.close()
 
@@ -1506,9 +1506,9 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
         self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone(), (1,))
         ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id="issue-1",
+            conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="ticket 1")
-        run_id = store.claim(conn, self.project, ticket, now=1_700_000_000_000)
+        run_id = store.claim(conn, self.project_id, ticket, now=1_700_000_000_000)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM runs WHERE id = ?",
                                       (run_id,)).fetchone(), (1,))
 
@@ -1531,6 +1531,58 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
         self.assertEqual(self.parent_of(conn, "eventNotes", "eventId"),
                          ["runEvents"])
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    @staticmethod
+    def run_row(conn, run_id):
+        cursor = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,))
+        names = [column[0] for column in cursor.description]
+        return dict(zip(names, cursor.fetchone()))
+
+    def test_an_older_store_admits_the_not_reproduced_park(self):
+        """KO-657: the enum rebuild widens `runs.parkKind`, keeping the row.
+
+        A store stamped 35 -- the version just below 36, the last whose
+        CHECK lacked the value -- and an older one stamped 33 both open at
+        this build's version."""
+        for version in (33, 35):
+            with self.subTest(version=version):
+                path = self.path.with_name(f"v{version}.sqlite3")
+                conn = store.open(path)
+                project = store.tickets.ensure_project(conn, "team-1", "/r")
+                ticket = store.tickets.mirror_ticket(
+                    conn, project, linear_issue_id="issue-1",
+                    linear_identifier="KO-1", title="ticket 1")
+                run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+                for phase in ("working", "verifying", "reviewing"):
+                    store.set_phase(conn, run_id, phase)
+                store.park(conn, run_id, "awaiting_merge_approval", "merge?",
+                           candidate_sha="a" * 40)
+                before = self.run_row(conn, run_id)
+                (ddl,) = conn.execute("SELECT sql FROM sqlite_master"
+                                      " WHERE name = 'runs'").fetchone()
+                conn.close()
+                narrowed = ddl.replace(", 'not_reproduced'", "")
+                self.assertNotIn("'not_reproduced'", narrowed)
+                old = narrowed.replace('CREATE TABLE "runs" (',
+                                       "CREATE TABLE runs_old (", 1)
+                self.assertNotEqual(old, narrowed)
+                raw = sqlite3.connect(path)
+                raw.executescript(f"{old};\nINSERT INTO runs_old SELECT * FROM runs;\n"
+                                  "DROP TABLE runs;\n"
+                                  "ALTER TABLE runs_old RENAME TO runs;\n"
+                                  f"PRAGMA user_version = {version:d};\n")
+                raw.close()
+
+                conn = store.open(path)
+                self.addCleanup(conn.close)
+
+                self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                                 (store.schema.SCHEMA_VERSION,))
+                self.assertEqual(self.run_row(conn, run_id), before)
+                conn.execute("UPDATE runs SET parkKind = 'not_reproduced'"
+                             " WHERE id = ?", (run_id,))
+                self.assertEqual(self.run_row(conn, run_id)["parkKind"],
+                                 "not_reproduced")
 
     def test_open_refuses_a_schema_referencing_a_missing_table(self):
         raw = sqlite3.connect(self.path)

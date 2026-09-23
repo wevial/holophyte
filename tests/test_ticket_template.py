@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.claim  # noqa: E402
-import holophyte.target  # noqa: E402
+import holophyte.project  # noqa: E402
 import store
 import store.read
 import store.tickets
@@ -212,6 +212,16 @@ class ValidateTests(unittest.TestCase):
         self.assert_problems_contain(
             FILLED_WITH_CONTRACTS.replace("config/tunnel.yml: 8622\n", ""),
             "no 'relative/path: expected literal' declarations")
+
+    def test_reproduce_section_is_optional_but_never_empty(self):
+        section = ("## Reproduce\n\n1. Open /orders.csv with two orders.\n\n"
+                   "Seen on: the preview deployment at commit abc1234.\n\n")
+        filled = FILLED.replace("## In scope", section + "## In scope")
+        self.assertEqual(tt.validate(tt.parse(filled)), [])
+        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+        empty = FILLED.replace("## In scope", "## Reproduce\n\n## In scope")
+        self.assertTrue(any("Reproduce" in problem for problem in
+                            tt.validate(tt.parse(empty))))
 
     def test_linear_normalized_body_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(LINEAR_NORMALIZED)), [])
@@ -558,7 +568,7 @@ class GitignoredPathTests(unittest.TestCase):
                 "criteria": ["works"], "budget_min": 5}
         self.assertIsNotNone(holophyte.board.body_problem(task, self.repo))
         holo = Path(self.tmp.name) / "holo"
-        target = holophyte.target.Target(
+        target = holophyte.project.Project(
             path=self.repo, holo_dir=holo, store_path=holo / "store.db",
             config_path=holo / "config.toml", worktrees=holo / "wt")
         conn = store.open(Path(self.tmp.name) / "store.db")

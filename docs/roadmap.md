@@ -21,7 +21,7 @@ check.
 
 Give configurable behavior an address before building on top of it.
 
-- Per-target config file: `~/.holophyte/SLUG/config.toml`, in the target's
+- Per-project config file: `~/.holophyte/SLUG/config.toml`, in the project's
   state directory (with `store.db` and `supervisor.lock`; the worktrees
   directory stays a sibling of the repository).
   Parsed with stdlib `tomllib`. **Absent file = current behavior.**
@@ -51,16 +51,16 @@ Give configurable behavior an address before building on top of it.
   liveness, crash-safe resume ordering) — see `tmp/mine-*.md` reports and
   the published mining artifacts on Lotuspod.
 
-### Phase 3 — Harder targets, then a second consumer
+### Phase 3 — Harder projects, then a second consumer
 
-- Next target: **Croton** (`croton-mcp`, Go) — a genuinely complex project
+- Next project: **Croton** (`croton-mcp`, Go) — a genuinely complex one
   (different toolchain, bridge dependency, security posture) but still
   ours. Deliberately NOT Relos yet; Croton surfaces portability gaps
   without a coworker watching.
 - **Before any Croton implementation work**: an audit pass (Claude Code)
   over implementation, coding style, testing, and conventions — to learn
   what assumptions are load-bearing and what is set in stone. Audit
-  output feeds the target's factory config and first tickets.
+  output feeds the project's factory config and first tickets.
 - Relos comes after Croton proves the substrate. Fork-vs-contribute
   resolves itself: if Relos needs fit in a `.toml`, nothing to fork —
   Relos is just a config. Only mechanism gaps reopen the question.

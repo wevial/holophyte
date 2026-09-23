@@ -13,7 +13,7 @@ afterEach(cleanup);
 /** A daemon on `host` serving `project` at `port`, with `runs` runs. */
 const daemon = (host: string, port: number, project: string, runs = 0): HostRecord =>
   hostOf(
-    { ...working, host, target: project, project, runs: working.runs.slice(0, runs) },
+    { ...working, host, project, runs: working.runs.slice(0, runs) },
     NO_ATTENTION,
     `http://${host}:${port}`,
   );

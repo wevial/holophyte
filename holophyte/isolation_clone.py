@@ -11,7 +11,7 @@ from holophyte.environment_git import protected, refuse_environment_history
 from holophyte.gates import InfraFailure
 from holophyte.isolation_git import copy_merge_state, git, head, import_objects
 from holophyte.isolation_return import locked_return
-from holophyte.target import state_dir
+from holophyte.project import state_dir
 
 
 def stage_files(source, destination, excluded):
@@ -42,10 +42,10 @@ def replace_files(staged, destination, excluded, finish):
     backup = Path(tempfile.mkdtemp(prefix=".backup-", dir=destination))
     moves = []
     try:
-        for source, target in ((destination, backup), (staged, destination)):
+        for source, project in ((destination, backup), (staged, destination)):
             for path in source.iterdir():
                 if path.name not in excluded and path not in (staged, backup):
-                    replacement = target / path.name
+                    replacement = project / path.name
                     path.rename(replacement)
                     moves.append((path, replacement))
         finish()
@@ -80,7 +80,7 @@ def copy_files(source, destination, protect, finish=lambda: None):
             raise InfraFailure(f"cannot replace working files: {error}") from error
 
 
-def return_turn(worktree, clone, root, old, target, merge_state):
+def return_turn(worktree, clone, root, old, project, merge_state):
     # Never run Git against the untrusted clone: upload-pack also reads config.
     # Build a bare transport containing only validated objects and its HEAD.
     transport = root / "return.git"
@@ -107,28 +107,28 @@ def return_turn(worktree, clone, root, old, target, merge_state):
         raise InfraFailure(
             "container history is not a fast-forward; refusing fetch back"
         ) from error
-    if target is not None:
+    if project is not None:
         refuse_environment_history(
-            target, sha, action="import container commits", commit=sha
+            project, sha, action="import container commits", commit=sha
         )
     if git(worktree, "rev-parse", "HEAD") != old:
         raise InfraFailure(
             "task branch changed during container turn; refusing fast-forward"
         )
     with locked_return(worktree, root, old, sha) as finish:
-        copy_files(clone, worktree, target is not None and protected(target), finish)
+        copy_files(clone, worktree, project is not None and protected(project), finish)
         if sha != old:
             for path in merge_state:
                 path.unlink(missing_ok=True)
 
 
 @contextlib.contextmanager
-def turn_clone(worktree, target=None):
+def turn_clone(worktree, project=None):
     worktree = Path(worktree).resolve()
     common = Path(
         git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
     )
-    state = state_dir(target.path if target is not None else common.parent)
+    state = state_dir(project.path if project is not None else common.parent)
     state.mkdir(parents=True, exist_ok=True)
     old = git(worktree, "rev-parse", "HEAD")
     env = {"GIT_CONFIG_COUNT": "3"}
@@ -163,12 +163,12 @@ def turn_clone(worktree, target=None):
         if index.exists():
             shutil.copyfile(index, clone / ".git/index")
         merge_state = copy_merge_state(worktree, clone)
-        copy_files(worktree, clone, target is not None and protected(target))
+        copy_files(worktree, clone, project is not None and protected(project))
         try:
             yield clone, env
         except subprocess.TimeoutExpired:
             # The runner has stopped: preserve its work for the loop's WIP path.
-            return_turn(worktree, clone, root, old, target, merge_state)
+            return_turn(worktree, clone, root, old, project, merge_state)
             raise
         else:
-            return_turn(worktree, clone, root, old, target, merge_state)
+            return_turn(worktree, clone, root, old, project, merge_state)

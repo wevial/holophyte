@@ -1,9 +1,10 @@
 import { describe, expect, mock, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import * as electronStub from "./electron-stub.ts";
-import { pollAll, readTokens } from "../poll.ts";
+import { pollAll, readTokenSources, readTokens } from "../poll.ts";
 import { type Attention, type FetchResult, type Status, buildSummary, summarizeAnswer, trayImageFile } from "../tray.ts";
 
 // The stub has to answer "electron" before main.ts links, so main.ts is
@@ -13,7 +14,6 @@ mock.module("electron", () => electronStub);
 // The wire shapes from docs/reference/http.md.
 const NOW = 1788450534491;
 const STATUS: Status = {
-  target: "/srv/dev/holophyte",
   project: "/srv/dev/holophyte",
   host: "writer-1",
   now: NOW,
@@ -133,11 +133,36 @@ describe("pollAll with tokens from console.json", () => {
     const answer = await pollAll("http://127.0.0.1:7710/", tokens, { fetch: fakeFetch });
     const { items } = buildSummary(answer.peers, answer.statuses, answer.attentions, NOW);
 
-    expect(labels(items)).toContain("writer-3:7710 · needs token");
     expect(seen["writer-2:7710/status"]).toBe("Bearer s3cret");
     expect(seen["writer-2:7710/attention"]).toBe("Bearer s3cret");
     expect(seen["127.0.0.1:7710/status"]).toBeUndefined();
     expect(seen["writer-3:7710/status"]).toBeUndefined();
+  });
+
+  test("a 401 to a token read from token_files names the file as out of date; a 401 with no file keeps the generic line", async () => {
+    const fakeFetch = async (url: string, init: { headers: Record<string, string> }): Promise<Response> => {
+      const { host, pathname } = new URL(url);
+      if (pathname === "/peers") return Response.json({ self: "127.0.0.1:7710", peers: ["writer-2:7713", "writer-3:7710"] });
+      // The writer host rotated writer-2's token; the copy on this machine did not follow.
+      if (host === "writer-2:7713" && init.headers.authorization !== "Bearer rotated") return new Response("{}", { status: 401 });
+      if (host === "writer-3:7710") return new Response("{}", { status: 401 });
+      if (pathname === "/status") return Response.json({ ...STATUS, host });
+      return Response.json(QUIET);
+    };
+    const { tokens, files } = readTokenSources(
+      JSON.stringify({ token_files: { "writer-2:7713": "~/.config/holophyte/writer-2.token" } }),
+      "/cfg",
+      () => "before-rotation\n",
+    );
+    const answer = await pollAll("http://127.0.0.1:7710/", tokens, { fetch: fakeFetch, tokenFiles: files });
+    const { items, level } = summarizeAnswer(answer, NOW);
+    const file = path.join(os.homedir(), ".config/holophyte/writer-2.token");
+
+    expect(labels(items)).toContain(`token file ${file} is out of date for writer-2:7713`);
+    expect(labels(items).filter((label) => label?.includes("writer-2:7713"))).toHaveLength(1);
+    expect(labels(items).some((label) => label?.includes("HTTP 401"))).toBe(false);
+    expect(labels(items).filter((label) => label?.includes("writer-3:7710"))).toEqual(["writer-3:7710 · needs token"]);
+    expect(level).toBe("attention");
   });
 
   test("an idle daemon's /runs reaches the summary: the line names the last merge and its age", async () => {

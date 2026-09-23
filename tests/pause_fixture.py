@@ -90,7 +90,7 @@ class PauseFailureCases:
             self.loop(Commit(), REQUEST_CHANGES, Commit(), REQUEST_CHANGES, Commit())
         self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
                          [("paused", "reviewing")])
-        command(self.tgt, "KO-131", None, resume=True)
+        command(self.project, "KO-131", None, resume=True)
         with patch.object(holophyte.loop, "run_verify") as verify_again:
             self.loop()
         verify_again.assert_not_called()

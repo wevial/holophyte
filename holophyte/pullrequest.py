@@ -34,7 +34,7 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
     babysitter is told no sha is verified (`verified=None`) and runs the
     merge gate -- the ticket's verify commands, then the drift check --
     on the candidate before the merge API is called."""
-    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
     task_id, task, branch, wt = run.task_id, run.task, run.branch, run.wt
     from holophyte.loop import _sync_branch_from_origin
 
@@ -52,7 +52,7 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
                provider)
         raise RunFailure(f"worktree of {branch} holds uncommitted changes;"
                          f" not babysitting {url}")
-    sha = _sync_branch_from_origin(target, conn, run_id, provider, task_id,
+    sha = _sync_branch_from_origin(project, conn, run_id, provider, task_id,
                                    branch, wt, url, reviewed)
     with store.transaction(conn):
         store.set_pull_request(conn, run_id, url, carried.sha)
@@ -63,10 +63,10 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
                               else " for another babysit pass"))
     print(f"[holo2] {task_id}: candidate {branch} is open as {url};"
           " babysitting it")
-    beat_s = sweep_config(target).heartbeat_stale_ms / 2000
+    beat_s = sweep_config(project).heartbeat_stale_ms / 2000
     set_phase(conn, run_id, "merge_gate", f"babysitting {url}")
     sha, pushed = resume_babysit_fix(
-        target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
+        project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
         pr_status.parse_pr_url(url), f"{task}\n\n{body}" if body else task,
         verify_cmd, contracts, run.budget_min, carried)
     run = replace(run, sha=sha, pr_url=url)
@@ -109,7 +109,7 @@ def _pr_template(wt):
     return ""
 
 
-def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
+def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
                      beat_s, wt, started, budget_min, issue_url, *, refresh=None):
     """One writer turn explains the candidate in a PR title and body.
     Return `(title, body)`, using a Summary stub when the reply is unusable
@@ -146,7 +146,7 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
         " a link to the ticket -- the loop appends one. Do not edit, commit"
         " or run anything: answer with the text only.",
     ]
-    if merge_config(target).ui_paths:
+    if merge_config(project).ui_paths:
         parts.append("The loop appends captured Evidence after this turn. Do not"
                      " describe screenshots you have not seen or add an"
                      " Evidence section.")
@@ -154,9 +154,9 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
     if template:
         parts.append("Pull request template, fill its sections:\n\n"
                      + template)
-    style = merge_config(target).pr_style.strip()
+    style = merge_config(project).pr_style.strip()
     if style:
-        parts.append(f"Style instructions from the target's configuration:"
+        parts.append(f"Style instructions from the project's configuration:"
                      f"\n{style}")
     for name, text in babysitter.conventions(wt):
         parts.append(f"The repository's {name}:\n\n{text}")
@@ -173,7 +173,7 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
             " will be ignored. Do not include Linear, Evidence, or appended bot"
             " blocks. Follow the same prose rules above.",
         ])
-        if merge_config(target).pr_changes_log:
+        if merge_config(project).pr_changes_log:
             parts.append("Under `## Changes since first review`, give one bullet for"
                          " this fix: what changed in behaviour, one line only."
                          " Omit earlier rounds; the loop preserves them.")
@@ -186,7 +186,7 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
         store.record_event(conn, run_id, "pull_request",
                            f"writing the pull request text for {branch}"
                            " from the diff")
-    reply, timed_out = _timed(target, conn, run_id, beat_s, wt, minutes,
+    reply, timed_out = _timed(project, conn, run_id, beat_s, wt, minutes,
                               goal, role="write")
     stop_if_requested(conn, run_id, "merge_gate")
     parsed = None if timed_out else pr.parse_pr_text(reply)
@@ -219,7 +219,7 @@ def _without_changes(text):
     return text[:match.start()] + text[match.end():], lines
 
 
-def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
+def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
                     beat_s, wt, budget_min, pull, answered, *, sha=None):
     """One bounded writing turn after approval; refusal never overwrites prose.
     A fix round whose change touches `[merge] ui_paths` since the sha the
@@ -228,39 +228,39 @@ def refresh_pr_text(target, conn, run_id, task_id, task, branch, ticket,
         return
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
-        current = pr.rest(target, pull, "GET", endpoint)["body"] or ""
+        current = pr.rest(project, pull, "GET", endpoint)["body"] or ""
     own, _, evidence, _ = pr.split_pr_body(current)
     with heartbeat_while(conn, run_id, beat_s):
         section = pr_media.refresh(
-            target, wt, task_id, evidence,
+            project, wt, task_id, evidence,
             evidence_states=ticket_template.parse(ticket).evidence_states,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
-    text = _refreshed_prose(target, conn, run_id, task_id, task, branch, ticket,
+    text = _refreshed_prose(project, conn, run_id, task_id, task, branch, ticket,
                             beat_s, wt, budget_min, own, answered)
     if text is None and section is None:
         return
     with heartbeat_while(conn, run_id, beat_s):
-        body = pr.rest(target, pull, "GET", endpoint)["body"] or ""
+        body = pr.rest(project, pull, "GET", endpoint)["body"] or ""
         if text is not None:
             body = pr.replace_pr_text(body, text)
         if section is not None:
             body = pr.replace_pr_evidence(body, section)
-        pr.edit_pr_body(target, pull, body)
+        pr.edit_pr_body(project, pull, body)
     if text is not None and sha and conn is not None and run_id is not None:
         store.record_event(conn, run_id, "pr_text_sha", sha)
 
 
-def _refreshed_prose(target, conn, run_id, task_id, task, branch, ticket,
+def _refreshed_prose(project, conn, run_id, task_id, task, branch, ticket,
                      beat_s, wt, budget_min, own, answered):
     """The rewritten description with its maintained history, or None when
     the writing turn is refused."""
     written = _written_pr_text(
-        target, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
+        project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
         monotonic(), budget_min or PR_TEXT_BUDGET_MIN, None,
         refresh=(own, answered))
     if written is None:
         return None
-    log_changes = merge_config(target).pr_changes_log
+    log_changes = merge_config(project).pr_changes_log
     description, changes = _without_changes(written[1])
     if (not description.strip() or (log_changes and
             (len(changes) != 1 or not changes[0][2:].strip()))):
@@ -275,32 +275,44 @@ def _refreshed_prose(target, conn, run_id, task_id, task, branch, ticket,
     return text
 
 
-def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
-             wt, started, budget_min, issue_url=None):
-    """`[merge] mode = "pr"`: push the approved candidate and open its pull
-    request; return the PR's URL.
+def _prepare_pr(project, conn, run_id, task_id, task, branch, body, beat_s,
+                wt, started, budget_min, issue_url=None, lead=None):
+    """`[merge] mode = "pr"`, the half of opening the pull request that
+    needs no lock: capture the evidence and write the PR text, falling back
+    to a stub on failure. `lead`, when given, is the loop's own first line
+    of the body, ahead of the written text (KO-658). Returns the
+    `(title, text)` `_push_and_open()` opens the pull request with
+    (KO-644)."""
+    with heartbeat_while(conn, run_id, beat_s):
+        evidence = pr_media.prepare(
+            project, wt, task_id,
+            evidence_states=ticket_template.parse(body).evidence_states,
+            record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
+    title, text = _written_pr_text(project, conn, run_id, task_id, task,
+                                   branch, body, beat_s, wt, started,
+                                   budget_min, issue_url)
+    if lead:
+        text = f"{lead}\n\n{text}"
+    return title, pr_media.append(text, evidence)
 
-    `git push origin BRANCH`, then the PR with its written title and body,
-    so a PR never names a branch the remote does not hold. Either
-    refusing is `InfraFailure` out of `holophyte.pr`: the route gave out,
-    not the ticket, so no strike is spent and the branch and worktree stay
-    exactly as after a refused merge. Nothing touches main.
+
+def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
+    """`[merge] mode = "pr"`: push the approved candidate and open its pull
+    request with `title` and `text`; return the PR's URL. The caller holds
+    the merge lock: the push runs in the target checkout, whose refs a
+    claim's fetch moves under the same lock.
+
+    `git push origin BRANCH`, then the PR, so a PR never names a branch the
+    remote does not hold. Either refusing is `InfraFailure` out of
+    `holophyte.pr`: the route gave out, not the ticket, so no strike is
+    spent and the branch and worktree stay exactly as after a refused
+    merge. Nothing touches main.
 
     Adopt an existing PR on this branch, then babysit as usual (KO-407).
-    Before pushing, write the PR text, falling back to a stub on failure.
 
     Remote calls run under `heartbeat_while()`: a slow push is not a dead
     loop to sweep before its URL is recorded (KO-259 review round 1).
     """
-    with heartbeat_while(conn, run_id, beat_s):
-        evidence = pr_media.prepare(
-            target, wt, task_id,
-            evidence_states=ticket_template.parse(body).evidence_states,
-            record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
-    title, text = _written_pr_text(target, conn, run_id, task_id, task,
-                                   branch, body, beat_s, wt, started,
-                                   budget_min, issue_url)
-    text = pr_media.append(text, evidence)
     # Still the `merge_gate` phase: the push and the create are the mode's
     # way out of the gate, named on the stream rather than as a phase move.
     if conn is not None and run_id is not None:
@@ -309,14 +321,14 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
                            " pull request")
     adopted = False
     with heartbeat_while(conn, run_id, beat_s):
-        pr.push_branch(target, branch)
+        pr.push_branch(project, branch)
         print(f"[holo2] pushed {branch} to {pr.REMOTE}")
         # A branch already open as a pull request is adopted, not opened
         # again: `gh pr create` refuses with one still open, which is how
         # a requeued run used to fail after doing everything right.
-        url = pr.open_pull_request(target, branch)
+        url = pr.open_pull_request(project, branch)
         if url is None:
-            url = pr.create_pull_request(target, branch, title, text)
+            url = pr.create_pull_request(project, branch, title, text)
             print(f"[holo2] pull request open: {url}")
         else:
             adopted = True
@@ -335,17 +347,17 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
     return url
 
 
-def _park_human(target, conn, run_id, provider, task_id, branch, sha, pull,
+def _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
                 human, listed, reviewed):
     """Park the run on the threads the pass found `HUMAN`, each quoted in
     the ticket's question, with `listed` as the open threads."""
     quoted = "\n\n".join(babysitter.quoted(t) for _, t, _ in human)
-    _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+    _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                 "a thread needs a human's answer; nothing was posted on"
                 f" it:\n{quoted}", listed, reviewed=reviewed, park_kind="thread")
 
 
-def _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
+def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
               pull, reviewed=None, retry_conflicts=False):
     """Merge the pinned candidate, clean up, and return its merge sha.
     Park on refusal unless the babysitter opts into raising 405 conflicts;
@@ -354,12 +366,12 @@ def _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
               " pull request API")
     try:
         with heartbeat_while(conn, run_id, beat_s):
-            merge_sha = pr.merge_pull_request(target, pull, sha)
+            merge_sha = pr.merge_pull_request(project, pull, sha)
     except pr.MergeRefused as refused:
         if (retry_conflicts and "405" in str(refused)
                 and "merge conflicts" in str(refused).lower()):
             raise
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     f"GitHub refused the merge: {refused}", (),
                     reviewed=reviewed)
     print(f"[holo2] merged {pull.url} as {merge_sha[:12]}")
@@ -367,8 +379,8 @@ def _merge_pr(target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
     # here would make the writer host's checkout the loop's business. The
     # worktree and the local branch hold nothing the PR does not.
     try:
-        sh(["git", "worktree", "remove", "--force", str(wt)], target.path)
-        sh(["git", "branch", "-D", branch], target.path)
+        sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
+        sh(["git", "branch", "-D", branch], project.path)
     except RuntimeError as e:
         print(f"[holo2] post-merge cleanup left debris: {e}")
     return merge_sha
@@ -388,7 +400,7 @@ def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,
     return merge_sha
 
 
-def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                 why, threads, reviewed=None, park_kind="pull_request"):
     """Park the run on its pull request: the ticket asks `PR open: URL`
     with `why` and the open `threads` listed, `store.park()` writes
@@ -416,7 +428,7 @@ def _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                    f"{babysitter.gist(why)}; {branch} at {short} is open as"
                    f" {pull.url} ([merge] mode = \"pr\")",
                    candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed,
-                   pr_seen=_pr_seen(target, pull, conn, run_id), park_kind=park_kind)
+                   pr_seen=_pr_seen(project, pull, conn, run_id), park_kind=park_kind)
     print(f"[holo2] parked on {pull.url}: {babysitter.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"

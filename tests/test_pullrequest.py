@@ -36,6 +36,12 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     Reply,
 )
+from heartbeat_fixture import (  # noqa: E402 - after the sys.path insert above
+    LOADED_MS,
+    SAMPLE_MS,
+    heartbeat_sampler,
+    patch_beats,
+)
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
     TICK,
@@ -77,7 +83,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
         self.assertEqual(len(edits), 1)
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         fake, _ = self.loop(provider=self.provider())
         self.assertEqual(fake.roles, [])
         self.assertEqual(self.pr_body.read_text(), body)
@@ -100,27 +106,29 @@ class MergeModePullRequestTests(MergeModeFixture):
                             provider=provider)
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         calls = self.recorded()
-        # The seventh is the park reading the pull request once more, after
+        # The eighth is the park reading the pull request once more, after
         # the pass's own writes, for the activity mark it records (KO-362);
-        # the eighth is the pass after the park asking GitHub whether the
+        # the ninth is the pass after the park asking GitHub whether the
         # parked pull request has been merged (KO-359).
-        self.assertEqual(len(calls), 8, calls)
-        self.assertEqual(calls[6:], ["gh api --hostname github.com --method"
+        self.assertEqual(len(calls), 9, calls)
+        self.assertEqual(calls[7:], ["gh api --hostname github.com --method"
                                      " POST graphql --input -"] * 2)
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
         # Between the push and the create, the open step's lookup of an
         # open pull request on the branch (KO-407) -- answered none here.
         self.assertEqual(calls[1], "gh api --hostname github.com --method"
                                    " POST graphql --input -")
-        # Beside the state query: the head's check runs and main's rules,
-        # so a rollup that says success before the checks have reported is
-        # not read as green.
+        # Beside the state query: the head's check runs, main's rules and
+        # main's protection (KO-652), so a rollup that says success before
+        # the checks have reported is not read as green.
         tip = self.git("rev-parse", BRANCH).strip()
-        self.assertEqual(calls[4:6], [
+        self.assertEqual(calls[4:7], [
             "gh api --hostname github.com --method GET"
             f" repos/example/repo/commits/{tip}/check-runs?per_page=100",
             "gh api --hostname github.com --method GET"
-            " repos/example/repo/rules/branches/main"])
+            " repos/example/repo/rules/branches/main",
+            "gh api --hostname github.com --method GET"
+            " repos/example/repo/branches/main"])
         # Pin the repository to the push destination, not gh's default.
         self.assertEqual(
             calls[2],
@@ -160,19 +168,81 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.fake_route()
         observed = []
         def open_and_observe(*args, **kwargs):
-            url = holophyte.pullrequest._open_pr(*args, **kwargs)
+            url = holophyte.pullrequest._push_and_open(*args, **kwargs)
             observed.append((url, self.read(
                 "SELECT phase, endedAt, prUrl FROM runs"), self.read(
                 "SELECT summary FROM runEvents WHERE kind = 'pull_request'"
                 " ORDER BY seq")))
             return url
-        with patch.object(holophyte.loop, "_open_pr", open_and_observe):
+        with patch.object(holophyte.loop, "_push_and_open", open_and_observe):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
         (url, rows, events), = observed
         self.assertEqual(url, self.URL)
         self.assertEqual(rows, [("merge_gate", None, url)])
         self.assertEqual(events[-1], (f"pull request open: {url}",))
+
+    def lock_witness(self):
+        """A log, and the shell line that appends whether the merge lock
+        file exists at the moment it runs, for the verify and the push."""
+        log = self.db.parent / "lock.log"
+        path = holophyte.gates.merge_lock_path(self.project)
+        return log, lambda who: (
+            f"if [ -e {shlex.quote(str(path))} ]; then echo {who} locked;"
+            f" else echo {who} free; fi >> {shlex.quote(str(log))}")
+
+    def test_the_gate_verifies_unlocked_and_pushes_under_the_lock(self):
+        """KO-644: the pre-merge verify shares nothing another run's gate
+        touches, so it runs with no lock held; the push, which moves refs
+        in the target checkout, runs under it."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        log, witness = self.lock_witness()
+        self.fake_route(push_sh=f"  {witness('push')}")
+        gate = holophyte.loop._merge_gate
+
+        def reexeced(*args, **kwargs):
+            # A re-exec'd run cites no pass (KO-646), so the gate's runs.
+            holophyte.gates._PASSES.clear()
+            return gate(*args, **kwargs)
+
+        with patch.object(holophyte.loop, "_merge_gate", reexeced):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=StubProvider(dict(a_task(), body=self.BODY,
+                                                 verify=witness("verify"))))
+        # The review round's verify, then the gate's, then the push.
+        self.assertEqual(log.read_text().splitlines(),
+                         ["verify free", "verify free", "push locked"])
+        self.assertEqual(self.read("SELECT prUrl FROM runs"), [(self.URL,)])
+
+    def test_a_held_lock_parks_after_the_verify_and_before_the_push(self):
+        """A lock another run holds past the wait still parks the run on
+        it, now with the gate's verify run and passed -- a failed one
+        parks on its own question -- and nothing pushed."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        log, witness = self.lock_witness()
+        self.fake_route(push_sh=f"  {witness('push')}")
+        gate = holophyte.loop._merge_gate
+
+        def taken_by_run_7(*args, **kwargs):
+            # Run 7 takes the lock as this run enters the gate; the claim's
+            # own fetch, under the same lock, is long done.
+            holophyte.gates.merge_lock_path(self.project).write_text("7 0\n")
+            holophyte.gates._PASSES.clear()  # as after a re-exec (KO-646)
+            return gate(*args, **kwargs)
+
+        with (patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0),
+              patch.object(holophyte.loop, "_merge_gate", taken_by_run_7)):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=StubProvider(dict(a_task(), body=self.BODY,
+                                                 verify=witness("verify"))))
+        # The review round's verify, then the gate's with run 7's lock
+        # held; no push.
+        self.assertEqual(log.read_text().splitlines(),
+                         ["verify free", "verify locked"])
+        self.assertFalse(any(c.startswith("git push") for c in self.recorded()))
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("merge_lock",)])
+        self.assertTrue(self.question().startswith("merge lock: merge lock"))
 
     def test_an_open_pull_request_on_the_branch_is_adopted_not_created(self):
         """KO-407: a run resumed on a branch its failed predecessor left
@@ -366,13 +436,13 @@ class MergeModePullRequestTests(MergeModeFixture):
                 self.configure(config + '[merge]\npr_style = "Use plain prose."\n')
                 with patch.object(holophyte.loop, "agent", agents.agent):
                     title, body = holophyte.pullrequest._written_pr_text(
-                        self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                        self.project, None, None, "KO-131", "add a thing", BRANCH,
                         self.BODY, 60, self.target, monotonic(), 5, None)
                     with patch.object(holophyte.pr, "rest",
                                       return_value={"body": body}), \
                             patch.object(holophyte.pr, "edit_pr_body") as edit:
                         holophyte.pullrequest.refresh_pr_text(
-                            self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                            self.project, None, None, "KO-131", "add a thing", BRANCH,
                             self.BODY, 60, self.target, 5, pull,
                             "ADDRESS: replace correlated subquery")
                 self.assertEqual(title, "Faster search")
@@ -408,7 +478,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                     agents, "run_capped", side_effect=bounded), patch(
                     "sys.stdout", new_callable=io.StringIO) as out:
                 result = holophyte.pullrequest._written_pr_text(
-                    self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                    self.project, None, None, "KO-131", "add a thing", BRANCH,
                     self.BODY, 60, self.target, monotonic(), 5, None)
                 self.assertIn("could not be written", result[1])
                 self.assertEqual(out.getvalue().count("written PR text refused"), 1)
@@ -519,7 +589,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                               "The two forms now ask.\n"))
         with patch.object(holophyte.loop, "agent", turn):
             holophyte.pullrequest._written_pr_text(
-                self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                self.project, None, None, "KO-131", "add a thing", BRANCH,
                 self.BODY.strip(), 60, wt, monotonic(), 5,
                 "https://linear.app/example/issue/KO-131/add-a-thing")
         filled = turn.turns[0].goal
@@ -536,7 +606,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                           side_effect=answer if callable(answer) else
                           lambda *args, **kwargs: answer) as turn:
             holophyte.pullrequest.refresh_pr_text(
-                self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                self.project, None, None, "KO-131", "add a thing", BRANCH,
                 self.BODY, 60, self.target, 5,
                 holophyte.pr_status.parse_pr_url(self.URL), answered)
         return turn.call_args.args[-1]
@@ -723,28 +793,17 @@ class MergeModePullRequestTests(MergeModeFixture):
             self.read("SELECT phase, outcome, mergeSha FROM runs"),
             [("done", "merged", self.MERGE_SHA)])
 
-    def test_a_slow_push_keeps_the_run_heartbeating(self):
-        """The push and the create block for as long as the remote takes,
-        outside any agent turn or verify: a push longer than the stale
-        budget was a `stale_heartbeat` trip for the supervisor, which could
-        fail the run before its URL was recorded. The fake push here samples
-        the run's `lastHeartbeat` from the store while it takes longer than
-        the whole stale budget; the beat must move under it."""
+    def slow_push(self, delay_ms=0, silent=False):
+        """Park a run whose push samples its heartbeat for longer than the
+        stale budget, each beat `delay_ms` late or `silent`."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
                        "[supervisor]\nheartbeat_stale_min = 0.01\n")
-        knobs = holophyte.config_tables.sweep_config(self.tgt)
+        patch_beats(self, delay_ms, silent)
+        knobs = holophyte.config_tables.sweep_config(self.project)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
         samples = self.db.parent / "heartbeats.log"
-        sampler = (
-            "import sqlite3, sys, time\n"
-            f"deadline = time.monotonic() + {budget_s * 5 / 3}\n"
-            f"conn = sqlite3.connect({str(self.db)!r})\n"
-            "while time.monotonic() < deadline:\n"
-            "    time.sleep(0.2)\n"
-            "    row = conn.execute('SELECT phase, lastHeartbeat FROM runs')"
-            ".fetchone()\n"
-            f"    open({str(samples)!r}, 'a').write('%s %s\\n' % row)\n")
-        self.fake_route(push_sh=f"  {sys.executable} -c {shlex.quote(sampler)}")
+        sampler = heartbeat_sampler(self.db, samples, budget_s * 5 / 3)
+        self.fake_route(push_sh=f"  {sampler}")
 
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
@@ -752,14 +811,34 @@ class MergeModePullRequestTests(MergeModeFixture):
         seen = [line.split() for line in samples.read_text().splitlines()]
         self.assertGreaterEqual(len(seen), 4, seen)
         self.assertEqual({phase for phase, _ in seen}, {"merge_gate"})
-        beats = [int(beat) for _, beat in seen]
-        self.assertGreater(beats[-1], beats[0])
-        # No gap between beats reached the stale threshold.
-        self.assertLess(max(b - a for a, b in zip(beats, beats[1:])),
-                        knobs.heartbeat_stale_ms)
         self.assertEqual(
             self.read("SELECT phase, outcome, prUrl FROM runs"),
             [("awaiting_merge_approval", None, self.URL)])
+        return [int(beat) for _, beat in seen], knobs.heartbeat_stale_ms
+
+    def assert_kept_beating(self, beats, stale_ms):
+        self.assertGreater(beats[-1], beats[0])
+        # No gap between beats reached the stale threshold, give or take a
+        # sample and 500 ms of a busy runner's scheduling (KO-674).
+        self.assertLess(max(b - a for a, b in zip(beats, beats[1:])),
+                        stale_ms + SAMPLE_MS + 500)
+
+    def test_a_slow_push_keeps_the_run_heartbeating(self):
+        """The push and the create block for as long as the remote takes,
+        outside any agent turn or verify: a push longer than the stale
+        budget was a `stale_heartbeat` trip for the supervisor, which could
+        fail the run before its URL was recorded. The fake push here samples
+        the run's `lastHeartbeat` from the store while it takes longer than
+        the whole stale budget; the beat must move under it."""
+        self.assert_kept_beating(*self.slow_push())
+
+    def test_a_slow_push_on_a_loaded_runner_keeps_the_run_heartbeating(self):
+        self.assert_kept_beating(*self.slow_push(delay_ms=LOADED_MS))
+
+    def test_a_silent_heartbeat_under_a_slow_push_fails_the_check(self):
+        beats = self.slow_push(silent=True)
+        with self.assertRaises(AssertionError):
+            self.assert_kept_beating(*beats)
 
     def test_a_green_quiet_pr_under_auto_merges_through_the_api(self):
         """Acceptance: zero unresolved threads and green checks with
@@ -834,7 +913,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.git("config", "user.email", "person@example.invalid", cwd=clone)
         self.git("config", "user.name", "A Person", cwd=clone)
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         return approved, bare, clone
 
     def publish(self, clone, bare, force=False):
@@ -950,7 +1029,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.calls.unlink()
         for path in self.api_dir.iterdir():
             path.unlink()
-        holophyte.operator.approve(self.tgt, "KO-131", "looks fine",
+        holophyte.operator.approve(self.project, "KO-131", "looks fine",
                                out=io.StringIO())
 
         fake, guard = self.loop(provider=self.provider())
@@ -981,7 +1060,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
 
         fake, _ = self.loop(provider=self.provider())
 
@@ -1370,7 +1449,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         with patch.object(holophyte.pool, "SPAWN", pool.spawn), \
                 patch.object(holophyte.pool, "WAIT", pool.wait), \
                 patch.object(sys, "stdout", out):
-            rc = holophyte.operator.main(self.tgt, provider)
+            rc = holophyte.operator.main(self.project, provider)
         self.assertEqual(rc, 0)
         self.assertEqual(len(asked), 2)
         self.assertEqual(pool.timeouts, [30, 30])

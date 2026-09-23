@@ -147,10 +147,10 @@ class OffBoardMirrorTests(LoopFixture):
         ran it and the relisted ticket stayed parked (the KO-425 review's
         reproduction)."""
         provider = StubProvider(a_task(1))
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, provider.team, self.target)
-        ticket = holophyte.board.mirror_task(conn, project, a_task(1))
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+        ticket = holophyte.board.mirror_task(conn, project_id, a_task(1))
         tickets.transition(conn, ticket, "blocked_on_deps")
         conn.commit()
 
@@ -168,7 +168,7 @@ class OffBoardMirrorTests(LoopFixture):
                              ["python3", "-u", "factory.py",
                               str(self.target)]), \
                 patch.object(sys, "stdout", io.StringIO()):
-            self.rc = holophyte.operator.main(self.tgt, provider)
+            self.rc = holophyte.operator.main(self.project, provider)
 
         # One worker for the relisted ticket; without the mirror-path
         # recovery the count was zero and nothing spawned.
