@@ -12,6 +12,7 @@ from holophyte import (
     babysitter,
     failure_reason,
     maintainer_notes,
+    merge_queue,
     pr,
     pr_status,
     thread_mentions,
@@ -20,7 +21,7 @@ from holophyte.agents import agent_route, review_refs
 from holophyte.babysit_steps import record_step
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
-from holophyte.check_fix import check_fix_brief, fix_checks_or_park  # noqa: F401
+from holophyte.check_fix import CheckFix, fix_checks_or_park
 from holophyte.config_tables import merge_config
 from holophyte.gates import (
     InfraFailure,
@@ -34,6 +35,7 @@ from holophyte.gates import (
 )
 from holophyte.main_checkout import detached_main
 from holophyte.missing_checks import Retrigger, unreported
+from holophyte.plain_text import readable
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
@@ -262,10 +264,10 @@ def open_threads_question(pull, why, threads):
 
 
 def quoted(thread):
-    """A thread quoted whole, follow-ups included, for the parked question."""
-    body = "\n".join(f"> {line}" for line in conversation(thread)
-                     .splitlines()) or "> (empty)"
-    return f"{where(thread)} by @{thread.author} ({thread.url}):\n{body}"
+    """A thread whole, follow-ups included, as plain text for the question."""
+    body = "\n\n".join([readable(thread.body)] + [
+        f"@{c.author} replied:\n{readable(c.body)}" for c in thread.replies])
+    return f"{where(thread)} by @{thread.author} ({thread.url}):\n{body or '(empty)'}"
 
 
 def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
@@ -449,7 +451,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         project, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
-    check_fixed = False  # One check fix per babysit: a red check cannot loop.
+    check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
     for pass_no in range(1, merge.pr_rounds + 1):
         stop_if_requested(conn, run_id, "merge_gate")
         retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
@@ -479,10 +481,9 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                                   branch, wt, sha, beat_s, pull, state, rnd,
                                   pass_no, model, ticket, verify_cmd,
                                   contracts, budget_min, reviewed=reviewed)
-            if sha != state.head_sha:
-                pushed_state = _just_pushed_state(
-                    project, conn, run_id, provider, task_id, branch, sha,
-                    beat_s, pull, reviewed)
+            pushed_state = (_just_pushed_state(
+                project, conn, run_id, provider, task_id, branch, sha,
+                beat_s, pull, reviewed) if sha != state.head_sha else None)
             continue
         reply = babysitter.round_reply(pull, pass_no, (), {}, state.checks, sha)
         record_round(project, conn, run_id, rnd, "review", reply, None, True,
@@ -494,8 +495,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         if state.checks != "success":  # Parks unless one fix is due.
             sha, pushed_state = fix_checks_or_park(
                 replace(run, sha=sha), beat_s, pull, state, ticket, verify_cmd,
-                contracts, pass_no, reviewed, check_fixed)
-            check_fixed = True
+                contracts, pass_no, reviewed, check_fix)
             continue  # Settle the pushed fix; its review comes before merge.
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
@@ -516,11 +516,18 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             released, reviewed, approved = reviewed, sha, False
         if merge.approve == "auto" or approved:
             try:
-                merge_sha = _verified_merge(project, conn, run_id, provider, task_id,
-                                       issue_id, branch, wt, sha, beat_s, pull,
-                                       reviewed, verified, verify_cmd, contracts,
-                                       ticket, budget_min, merge.approve == "auto")
+                merge_sha = merge_queue.verified_merge(
+                    project, conn, run_id, provider, task_id, issue_id, branch,
+                    wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
+                    contracts, ticket, budget_min, merge.approve == "auto")
                 return replace(run, sha=sha, merge_sha=merge_sha)
+            except merge_queue.QueueRemoved as removed:  # Red merge group.
+                sha, pushed_state = fix_checks_or_park(
+                    replace(run, sha=sha), beat_s, pull, replace(
+                        state, checks="failure", failed_checks=removed.failed),
+                    ticket, verify_cmd, contracts, pass_no, reviewed,
+                    check_fix, removed.group)
+                continue
             except pr.MergeRefused as refused:
                 verified = sha
                 sha, pushed_state, reviewed = _merge_origin_main(
@@ -541,20 +548,6 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
     _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
                 " babysitter stops here", state.threads, reviewed=reviewed)
-
-
-def _verified_merge(project, conn, run_id, provider, task_id, issue_id, branch,
-                    wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
-                    contracts, ticket, budget_min, retry_conflicts):
-    """Gate a changed candidate before attempting the PR merge."""
-    from holophyte.merge_gate import _merge_gate
-    from holophyte.pullrequest import _merge_pr
-    if sha != verified:
-        _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch,
-                    wt, beat_s, sha, verify_cmd, contracts, ticket, budget_min,
-                    sync_main=False)
-    return _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha,
-                     beat_s, pull, reviewed=reviewed, retry_conflicts=retry_conflicts)
 
 
 def _fixes_reviewed(merge):
@@ -759,13 +752,13 @@ def _quiet_left(state, quiet_ms, refresh=None):
 
 def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
                      task_id, branch, sha, reviewed, refresh=None,
-                     retrigger=None):
+                     retrigger=None, deadline=None):
     from holophyte.pullrequest import _park_on_pr
     try:
         state = state or pr_status.pr_state(project, pull)
         state = maintainer_notes.pending_state(conn, run_id, state, pull.url)
         return _settled_state(project, conn, run_id, beat_s, pull, state,
-                              refresh, retrigger)
+                              refresh, retrigger, deadline)
     except WaitExpired as expired:
         if retrigger is not None:  # Park the head the retrigger pushed.
             sha, reviewed = retrigger.sha, retrigger.reviewed
@@ -778,13 +771,13 @@ class WaitExpired(Exception):
 
 
 def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None,
-                   retrigger=None):
+                   retrigger=None, deadline=None):
     """Bound pending/quiet waiting with one deadline; return threads promptly.
     A required check with no report for `missing_check_sec` is retriggered
     once (`Retrigger`) or ends the wait naming it."""
     merge = merge_config(project)
     quiet_ms = merge.pr_quiet_sec * 1000
-    deadline = monotonic() + merge.check_wait_sec
+    deadline = deadline or monotonic() + merge.check_wait_sec
     absent = {}
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(project, pull)
@@ -894,6 +887,11 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
             t.author_kind == "bot" for _, t, _ in by_verdict["HUMAN"])):
         _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
                     by_verdict["HUMAN"], threads, reviewed)
+    thread_mentions.acknowledge(
+        project, conn, run_id, pull,
+        [t for _, t, _ in by_verdict["ADDRESS"]
+         if t.classification == "MENTIONED" and not maintainer_notes.is_note(t)],
+        merge)
     if by_verdict["ADDRESS"]:
         sha = _fix_threads(project, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],

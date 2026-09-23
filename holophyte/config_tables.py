@@ -184,6 +184,8 @@ def sweep_config(project):
 # alone let a ticket filed while the pool was busy wait for the next exit
 # with slots idle; with a slot free the wait times out after this long and
 # the listing is run again. A full pool waits on exits alone.
+# `critic_after_hours`: a ticket filed longer ago than this is put to the
+# `[agents.critic]` seat before it is claimed (KO-715); `0` asks of every one.
 LOOP_KEYS = {
     "stop_on_failure": True,
     "order": "identifier",
@@ -194,6 +196,7 @@ LOOP_KEYS = {
     "workers": 1, "tick_sec": 120,
     "fix_session": "fresh",
     "review_session": "fresh",
+    "critic_after_hours": 12,
 }
 LOOP_ORDERS = ("identifier", "priority")
 # The keys that must be integers, and the least each may be: a run with no
@@ -207,6 +210,7 @@ LOOP_INTEGER_FLOORS = {
     "review_rounds_max": 1,
     "workers": 1,
     "tick_sec": 10,
+    "critic_after_hours": 0,
 }
 LoopConfig = collections.namedtuple("LoopConfig", LOOP_KEYS)
 

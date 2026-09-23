@@ -15,6 +15,7 @@ from holophyte.pr import (
     _comment_url,
     _count,
     _short,
+    acknowledged,
     graphql,
     rest,
 )
@@ -38,6 +39,8 @@ RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
                    "startup_failure", "error"}
 # The app whose check runs are Actions jobs, with a log to read.
 ACTIONS_APP = "github-actions"
+# An Actions job's link, `https://HOST/OWNER/NAME/actions/runs/RUN/job/JOB`.
+WORKFLOW_RUN_RE = re.compile(r"/actions/runs/(\d+)/job/\d+")
 # Page size for the check-runs and rollup-context reads.
 CHECK_RUNS_PAGE = 100
 
@@ -60,7 +63,8 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
       comments(first: 100, after: $commentsAfter) {
         pageInfo { hasNextPage endCursor }
-        nodes { id author { login __typename } body url }
+        nodes { id author { login __typename } body url
+                reactionGroups { content viewerHasReacted } }
       }
       reviewThreads(first: %d, after: $after) {
         pageInfo { hasNextPage endCursor }
@@ -68,7 +72,8 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
           id isResolved isOutdated path line
           comments(first: %d) {
             pageInfo { hasNextPage endCursor }
-            nodes { author { login __typename } body url }
+            nodes { id author { login __typename } body url
+                    reactionGroups { content viewerHasReacted } }
           }
         }
       }
@@ -81,7 +86,8 @@ query($thread: ID!, $after: String) {
     ... on PullRequestReviewThread {
       comments(first: %d, after: $after) {
         pageInfo { hasNextPage endCursor }
-        nodes { author { login __typename } body url }
+        nodes { id author { login __typename } body url
+                reactionGroups { content viewerHasReacted } }
       }
     }
   }
@@ -235,7 +241,8 @@ def pr_state(target, pull):
                 line=t.get("line"), author=first.author, body=first.body,
                 url=_comment_url(t) or pull.url,
                 outdated=bool(t.get("isOutdated")), replies=tuple(rest),
-                author_kind=first.author_kind)
+                author_kind=first.author_kind, node_id=first.node_id,
+                acknowledged=first.acknowledged)
             if not t.get("isResolved") or _reopened(target, thread):
                 threads.append(thread)
         info = page.get("pageInfo") or {}
@@ -411,7 +418,8 @@ def _comment_nodes(page):
         author = c.get("author") or {}
         comments.append(Comment(
             author=author.get("login") or "unknown", body=c.get("body") or "",
-            author_kind=AUTHOR_KINDS.get(author.get("__typename"), "unknown")))
+            author_kind=AUTHOR_KINDS.get(author.get("__typename"), "unknown"),
+            node_id=c.get("id") or "", acknowledged=acknowledged(c)))
     return comments
 
 
@@ -476,19 +484,23 @@ def _state_of(node, threads, runs, required):
 class FailedCheck:
     """A check run on the head commit whose conclusion is red. `job_id` is
     the GitHub Actions job whose log `pr.job_log()` reads; None for a check
-    run another app made or a commit status, which have no such log."""
+    run another app made or a commit status, which have no such log.
+    `workflow_run_id` is the Actions workflow run in `url`
+    (`.../actions/runs/RUN/job/JOB`), None for a URL without one."""
 
     name: str
     conclusion: str
     url: str
     job_id: int | None = None
+    workflow_run_id: int | None = None
 
 
 def _failed_checks(runs):
     """A `FailedCheck` for each red row of `runs`."""
     return tuple(FailedCheck(name=r.get("name") or "",
                              conclusion=r["conclusion"],
-                             url=r.get("html_url") or "", job_id=_job_id(r))
+                             url=r.get("html_url") or "", job_id=_job_id(r),
+                             workflow_run_id=_workflow_run_id(r))
                  for r in (runs or ()) if isinstance(r, dict)
                  and r.get("conclusion") in RED_CONCLUSIONS)
 
@@ -513,6 +525,12 @@ def _job_id(run):
         return None
     job = run.get("id")
     return job if isinstance(job, int) and not isinstance(job, bool) else None
+
+
+def _workflow_run_id(run):
+    """The workflow run in a check run's `html_url`; None without one."""
+    match = WORKFLOW_RUN_RE.search(run.get("html_url") or "")
+    return int(match[1]) if match else None
 
 
 def _closed_by(node):

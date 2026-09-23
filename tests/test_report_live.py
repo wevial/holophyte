@@ -23,6 +23,10 @@ FINISHED = (
     "  writer\n"
     "1 runs · mean ratio 0.20 · median ratio 0.20"
 )
+# KO-705: the toil lines close the live block; KO-1 merged in 2023, outside
+# both windows of the wall clock.
+NO_TOIL = ["toil 24h: 0 human interventions, 0 merged",
+           "toil 7d: 0 human interventions, 0 merged"]
 
 
 class LiveReportTests(ReportStoreCase):
@@ -90,7 +94,8 @@ class LiveReportTests(ReportStoreCase):
             lines = report.report_lines(self.conn)
         self.assertEqual(lines[0], "in flight:")
         self.assertTrue(lines[1].startswith("KO-454  merge_gate"))
-        self.assertEqual("\n".join(lines[3:]), FINISHED)
+        self.assertEqual(lines[3:5], NO_TOIL)
+        self.assertEqual("\n".join(lines[5:]), FINISHED)
         self.assertFalse(self.conn.in_transaction)
         following = report.report_lines(self.conn)
         self.assertEqual(following[0], "in flight: none")
@@ -132,7 +137,11 @@ class LiveReportTests(ReportStoreCase):
         with patch("holophyte.report.time.time", return_value=NOW / 1000):
             lines = report.report_lines(self.conn)
             self.assertEqual(lines[:3], expected)
-            self.assertEqual("\n".join(lines[3:]), FINISHED)
+            # At NOW, KO-1's merge is inside both windows.
+            self.assertEqual(lines[3:5], [
+                f"toil {window}: 0 human interventions, 1 merged, 0.00 per"
+                " merge" for window in ("24h", "7d")])
+            self.assertEqual("\n".join(lines[5:]), FINISHED)
             out = io.StringIO()
             with patch.object(sys, "stdout", out):
                 holophyte.cli.cli(["--report", str(self.target)])
@@ -140,7 +149,8 @@ class LiveReportTests(ReportStoreCase):
 
     def test_no_unfinished_runs(self):
         self.assertEqual(report.report_lines(self.conn),
-                         ["in flight: none", "", *FINISHED.splitlines()])
+                         ["in flight: none", "", *NO_TOIL,
+                          *FINISHED.splitlines()])
 
     def test_actual_is_split_into_agent_and_verify_columns(self):
         self.completed_run(2, 5, 10, 0, "merged")

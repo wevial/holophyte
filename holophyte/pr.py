@@ -76,6 +76,14 @@ RESOLVE_MUTATION = """
 mutation($thread: ID!) {
   resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } }
 }"""
+# The acknowledgement a mention taken up gets (KO-679): 👀 on the comment,
+# an issue comment or a review comment alike, by its node id.
+REACT_MUTATION = """
+mutation($subject: ID!) {
+  addReaction(input: {subjectId: $subject, content: EYES}) {
+    reaction { content }
+  }
+}"""
 # The one read `_push_and_open` makes between the push and `gh pr create`
 # (KO-407): is the branch already the head of an open pull request? A run
 # resumed on a branch its failed predecessor opened as a PR adopts that PR;
@@ -112,11 +120,15 @@ class PullRequest:
 
 @dataclass(frozen=True)
 class Comment:
-    """Comment text and author, whose kind is user, bot, or unknown."""
+    """Comment text and author, whose kind is user, bot, or unknown.
+    `node_id` is its GraphQL id; `acknowledged` whether the route's account
+    has already reacted to it with EYES."""
 
     author: str
     body: str
     author_kind: str = "unknown"
+    node_id: str = ""
+    acknowledged: bool = False
 
 
 @dataclass(frozen=True)
@@ -138,11 +150,14 @@ class Thread:
     request: str = ""
     intent: str = "unmarked"
     triage: dict | None = None
+    node_id: str = ""  # the opening comment's, as `Comment.node_id`
+    acknowledged: bool = False
 
     @property
     def comments(self):
         """The complete conversation, oldest first, with account kinds."""
-        return (Comment(self.author, self.body, self.author_kind),) + self.replies
+        return (Comment(self.author, self.body, self.author_kind, self.node_id,
+                        self.acknowledged),) + self.replies
 
 
 @dataclass(frozen=True)
@@ -554,6 +569,19 @@ def _comment_url(node):
     nodes = (node.get("comments") or {}).get("nodes") or ()
     first = next((c for c in nodes if isinstance(c, dict)), None)
     return first.get("url") if first else None
+
+
+def acknowledged(node):
+    """Whether comment `node`'s `reactionGroups` say the route's account
+    already reacted with EYES."""
+    groups = node.get("reactionGroups") if isinstance(node, dict) else None
+    return any(isinstance(g, dict) and g.get("content") == "EYES"
+               and g.get("viewerHasReacted") is True for g in groups or ())
+
+
+def react_eyes(target, pull, node_id):
+    """React EYES to comment `node_id`, as the account the route posts as."""
+    graphql(target, pull, REACT_MUTATION, {"subject": node_id})
 
 
 def reply_thread(target, pull, thread_id, body):

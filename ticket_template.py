@@ -67,6 +67,18 @@ MAX_CRITERIA = 5
 MAX_IN_SCOPE = 3
 # Marks a validate() entry as guidance rather than a rejection.
 ADVISORY_PREFIX = "advisory: "
+# The advisories `--file-ticket` refuses (KO-708), by the stable text after
+# ADVISORY_PREFIX; the claim still takes a body carrying them.
+WHOLE_SUITE_ADVISORY = "verify command discovers the whole unit suite"
+SCHEMA_VERSION_ADVISORY = "literal schema version"
+FILING_REFUSED = tuple(ADVISORY_PREFIX + a for a in (WHOLE_SUITE_ADVISORY,
+                                                     SCHEMA_VERSION_ADVISORY))
+# A literal schema version: "schema version 12", "SCHEMA_VERSION to 12",
+# "SCHEMA_VERSION = 12". It goes stale once another ticket bumps the schema
+# first; "one above main's SCHEMA_VERSION" is the house wording and passes.
+SCHEMA_VERSION_RE = re.compile(
+    r"\b(?i:schema version)\s+`?\d"
+    r"|\bSCHEMA_VERSION`?(?:\s+to\s+|\s*=\s*)`?\d")
 # Connectives that usually mean a "What:" line describes two deliverables.
 # Advisory only: "read and write the cache" is one deliverable, so a human
 # decides — the caps above are what actually gate.
@@ -574,12 +586,22 @@ def _discovers_whole_suite(tokens):
 
 def _suite_advisories(t):
     """Name focused test modules; the pull request check runs the suite."""
-    return [f"{ADVISORY_PREFIX}verify command discovers the whole unit suite; "
+    return [f"{ADVISORY_PREFIX}{WHOLE_SUITE_ADVISORY}; "
             f"name the focused test modules (discover -s tests -p "
             f"'test_x.py') — the full suite runs as a pull request check: "
             f"{cmd}"
             for cmd in t.verify_commands
             if any(_discovers_whole_suite(c) for c in _shell_commands(cmd))]
+
+
+def _schema_version_advisories(t):
+    """Name the version relative to main's; a literal one goes stale."""
+    return [f"{ADVISORY_PREFIX}{SCHEMA_VERSION_ADVISORY} in '{section}'; "
+            f"say 'one above main's SCHEMA_VERSION' — another ticket may bump "
+            f"the schema first: {line.strip()}"
+            for section, body in t.sections.items()
+            for line in COMMENT_RE.sub("", body).splitlines()
+            if SCHEMA_VERSION_RE.search(line)]
 
 
 def _discover_pattern(tokens):
@@ -845,6 +867,7 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
     p.extend(_blank_template_problems(t))
     p.extend(_fence_advisories(t))
     p.extend(_suite_advisories(t))
+    p.extend(_schema_version_advisories(t))
     p.extend(_operator_witness_advisories(t))
     if repo is not None:
         p.extend(_gitignored_path_problems(t, repo))
@@ -858,6 +881,18 @@ def blocking(problems):
     Advisories are guidance about scope shape, not template violations, so a
     caller gating on validity filters them out and still shows them."""
     return [pr for pr in problems if not pr.startswith(ADVISORY_PREFIX)]
+
+
+def filing_refusals(problems):
+    """The entries of a validate() result that filing a ticket refuses.
+
+    The blocking ones plus the whole-suite and literal-schema-version
+    advisories: those are cheapest to fix before the ticket reaches the
+    queue, while the claim keeps them advisory so a body filed before
+    KO-708 is still claimed."""
+    return [pr for pr in problems
+            if not pr.startswith(ADVISORY_PREFIX)
+            or pr.startswith(FILING_REFUSED)]
 
 
 USAGE = "usage: python3 ticket_template.py [--repo PATH] TICKET.md [...]"

@@ -125,7 +125,7 @@ from holophyte.config_tables import (
 )
 from holophyte.pr_status import PR_URL_RE
 from holophyte.reexec import reexec_self
-from holophyte.report import host_label
+from holophyte.report import host_label, toil_status
 from holophyte.serve_actions import (
     ACTIONS,
     ACTIONS_PREFIX,
@@ -242,7 +242,7 @@ def status(project, now=None, started_ms=None):
     Runs include title, phase, round, heartbeat age and sweep strikes. The scaled
     time box and thresholds agree with the loop's budget checks. `project` is the
     repository path; `actions` and `config_edit` advertise authenticated daemon
-    mutations."""
+    mutations; `toil` is the report's human interventions per merge."""
     now = int(time() * 1000) if now is None else now
     started_ms = now if started_ms is None else started_ms
     if not project.store_path.exists():
@@ -259,6 +259,7 @@ def status(project, now=None, started_ms=None):
         if admission == "disabled":
             runs = []
         schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
+        toil = toil_status(conn, now)
     finally:
         conn.close()
     knobs = sweep_config(project)
@@ -279,12 +280,11 @@ def status(project, now=None, started_ms=None):
         "route_labels": route_labels(project),
         "workers_on_previous_build": workers_on_previous_build(project),
         "host": host_label(project, socket.gethostname()),
-        "now": now,
+        "now": now, "toil": toil,
         "daemon": {"started_ms": started_ms, "pid": os.getpid()},
         "supervisor": supervisor_view(project, beat, now, knobs),
         "thresholds": {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
-                       "strikes": knobs.stale_strikes,
-                       "run_cap": knobs.run_cap},
+                       "strikes": knobs.stale_strikes, "run_cap": knobs.run_cap},
         "actions": serve_config(project).actions,
         "config_edit": serve_config(project).config_edit,
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,

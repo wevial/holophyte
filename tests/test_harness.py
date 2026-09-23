@@ -1,6 +1,6 @@
 """Table-form roles: the adapter's argv, its session and its resume -- a
-claude or codex implementer, and codex and devin reviewers in a throwaway
-candidate checkout.
+claude or codex implementer, and codex, cursor and devin reviewers in a
+throwaway candidate checkout.
 
 Run: python3 -m unittest tests.test_harness -v
 """
@@ -16,7 +16,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.agents
+import holophyte.config
 import holophyte.fix_session
+import holophyte.harness
 import holophyte.loop
 import holophyte.project
 import store
@@ -148,10 +150,10 @@ OPTIONS = ["-m", "gpt-5.6-luna", "-c", "model_reasoning_effort=low",
            "--dangerously-bypass-approvals-and-sandbox"]
 
 
-class CandidateCheckoutCase(unittest.TestCase):
-    """A run with a base and a candidate commit and a fake `HARNESS` on PATH
-    running `FAKE`, under `CONFIG`."""
-    HARNESS = FAKE = CONFIG = None
+class TableReviewCase(unittest.TestCase):
+    """A repository with a base and a candidate commit, and a fake review
+    harness `BINARY` running `FAKE` on PATH under `CONFIG`."""
+    BINARY = FAKE = CONFIG = None
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -173,7 +175,7 @@ class CandidateCheckoutCase(unittest.TestCase):
             worktrees=root / "repo.worktrees")
         bin_dir = root / "bin"
         bin_dir.mkdir()
-        fake = bin_dir / self.HARNESS
+        fake = bin_dir / self.BINARY
         fake.write_text(f"#!{sys.executable}\n{self.FAKE}")
         fake.chmod(0o755)
         self.calls = root / "calls.jsonl"
@@ -187,7 +189,7 @@ class CandidateCheckoutCase(unittest.TestCase):
         store.init(self.conn)
         project = store.ensure_project(self.conn, "test", self.repo)
         ticket = store.mirror_ticket(self.conn, project, "KO-614", "KO-614",
-                                     self.HARNESS, acceptance_criteria=["review"],
+                                     self.BINARY, acceptance_criteria=["review"],
                                      verification_commands=["true"])
         self.run = store.claim(self.conn, project, ticket)
 
@@ -217,8 +219,8 @@ class CandidateCheckoutCase(unittest.TestCase):
                          [f"worktree {self.repo.resolve()}"])
 
 
-class CodexTableTests(CandidateCheckoutCase):
-    HARNESS, FAKE, CONFIG = "codex", FAKE_CODEX, CODEX_CONFIG
+class CodexTableTests(TableReviewCase):
+    BINARY, FAKE, CONFIG = "codex", FAKE_CODEX, CODEX_CONFIG
 
     def assert_fresh_turn_in_a_candidate_checkout(self, call, goal):
         self.assertEqual(call["argv"], ["exec", *OPTIONS, goal])
@@ -268,6 +270,62 @@ class CodexTableTests(CandidateCheckoutCase):
                          [None, None, "no rollout found"])
 
 
+# The fake cursor-agent: records its argv, its cwd's HEAD and whether the
+# factory asked it to resume.
+FAKE_CURSOR = """
+import json, os, subprocess, sys
+head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                      text=True).stdout.strip()
+with open(os.environ["FAKE_HARNESS_CALLS"], "a") as calls:
+    calls.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(),
+                            "head": head, "resume":
+                            os.environ.get("HOLOPHYTE_REVIEW_RESUME")}) + "\\n")
+print("APPROVE")
+"""
+
+
+class CursorTableTests(TableReviewCase):
+    BINARY, FAKE = "cursor-agent", FAKE_CURSOR
+    CONFIG = ('[agents.reviewer]\nharness = "cursor"\nmodel = "gpt-5"\n'
+              '[loop]\nreview_session = "resume"\n')
+
+    def test_review_table_runs_cursor_agent_in_a_candidate_checkout(self):
+        self.dispatch("review", "review the candidate")
+        [call] = self.received()
+        self.assertEqual(call["argv"], ["-p", "--model", "gpt-5", "--force",
+                                        "--trust", "review the candidate"])
+        self.assert_in_a_candidate_checkout(call)
+
+    def test_round_two_runs_fresh_because_cursor_cannot_resume(self):
+        self.dispatch("review", "first look")
+        self.dispatch("review", "second look", review_round=2)
+        first, second = self.received()
+        self.assertEqual(second["argv"], first["argv"][:-1] + ["second look"])
+        self.assertIsNone(second["resume"])
+        self.assert_in_a_candidate_checkout(second)
+        self.assertEqual(self.events("review_session"),
+                         [{"arm": "resume", "requested": False,
+                           "reason": "harness cannot resume"}])
+
+    def test_both_alternate_arms_record_that_cursor_cannot_resume(self):
+        (self.holo / "config.toml").write_text(
+            self.CONFIG.replace('"resume"', '"alternate"'))
+        project = store.ensure_project(self.conn, "test", self.repo)
+        ticket = store.mirror_ticket(self.conn, project, "KO-616", "KO-616",
+                                     "cursor", acceptance_criteria=["review"],
+                                     verification_commands=["true"])
+        # `alternate` assigns odd run ids to resume and even ones to fresh.
+        runs = {"resume": self.run, "fresh": store.claim(self.conn, project, ticket)}
+        self.assertEqual({arm: run % 2 for arm, run in runs.items()},
+                         {"resume": 1, "fresh": 0})
+        for self.run in runs.values():
+            self.dispatch("review", "second look", review_round=2)
+        self.assertEqual([call["resume"] for call in self.received()], [None, None])
+        self.assertEqual(self.events("review_session"),
+                         [{"arm": arm, "requested": False,
+                           "reason": "harness cannot resume"} for arm in runs])
+
+
 # The fake devin: records every call with its cwd's HEAD, and answers
 # `list --format json` with the one session Devin keeps per directory.
 FAKE_DEVIN = """
@@ -290,8 +348,8 @@ DEVIN_OPTIONS = ["--model", "opus", "--permission-mode", "dangerous",
                  "--respect-workspace-trust", "false"]
 
 
-class DevinTableTests(CandidateCheckoutCase):
-    HARNESS, FAKE, CONFIG = "devin", FAKE_DEVIN, DEVIN_CONFIG
+class DevinTableTests(TableReviewCase):
+    BINARY, FAKE, CONFIG = "devin", FAKE_DEVIN, DEVIN_CONFIG
 
     def test_a_first_round_runs_in_a_candidate_checkout_and_lists_its_session(self):
         self.dispatch("review", "review the candidate")
@@ -377,6 +435,47 @@ class CodexImplementerTests(ClaudeTableTests):
         [(payload,)] = self.conn.execute(
             "SELECT payload FROM runEvents WHERE kind = 'fix_session'").fetchall()
         self.assertEqual(json.loads(payload), {"arm": "resume", "resumed": True})
+
+
+
+class CriticTableTests(unittest.TestCase):
+    """`[agents.critic]`: table-only, Codex with the critic's own defaults."""
+
+    def target(self, config):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "config.toml").write_text(config)
+        return holophyte.project.Project(
+            path=root, holo_dir=root, store_path=root / "store.db",
+            config_path=root / "config.toml", worktrees=root / "worktrees")
+
+    def turn(self, config):
+        return holophyte.harness.critic_seat(self.target(config)).turn("GOAL")
+
+    def test_critic_turn_defaults_to_codex_luna_medium_and_takes_overrides(self):
+        bypass = ["--dangerously-bypass-approvals-and-sandbox", "GOAL"]
+        self.assertEqual(self.turn("[agents.critic]\n"), [
+            "codex", "exec", "-m", "gpt-6-luna",
+            "-c", "model_reasoning_effort=medium", *bypass])
+        self.assertEqual(self.turn(
+            '[agents.critic]\nmodel = "gpt-6-astra"\neffort = "high"\n'), [
+            "codex", "exec", "-m", "gpt-6-astra",
+            "-c", "model_reasoning_effort=high", *bypass])
+
+    def test_critic_refusals_name_the_table_and_the_problem(self):
+        for config, message in (
+            ('[agents.critic]\nharness = "claude"\n',
+             r"\[agents\.critic\] harness: 'claude' supports implementer, "
+             r"not critic"),
+            ('[agents.critic]\neffort = "max"\n',
+             r"\[agents\.critic\] effort must be one of .*'max'"),
+            ('[agents]\ncritic = "codex exec"\n',
+             r"no command-string form; write it as the \[agents\.critic\]"),
+        ):
+            with self.subTest(config=config):
+                with self.assertRaisesRegex(SystemExit, message):
+                    holophyte.config.check_document(self.target(config))
 
 
 if __name__ == "__main__":

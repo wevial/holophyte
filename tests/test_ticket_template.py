@@ -919,6 +919,36 @@ class SuiteAdvisoryTests(unittest.TestCase):
             "python3 -m unittest tests.test_board"), [])
 
 
+def with_note(note):
+    return FILLED.replace("- Endpoint lives beside the other order routes.",
+                          f"- {note}")
+
+
+class SchemaVersionAdvisoryTests(unittest.TestCase):
+    """KO-708: a literal schema version goes stale once another ticket bumps
+    the schema first; filing refuses it, the claim only advises."""
+
+    def test_each_literal_shape_is_advised_naming_its_line(self):
+        for note in ("The store moves to schema version 12 with the column.",
+                     "Bump `SCHEMA_VERSION` to 12 with the migration.",
+                     "Set SCHEMA_VERSION = 12 beside the migration."):
+            with self.subTest(note=note):
+                problems = tt.validate(tt.parse(with_note(note)))
+                self.assertEqual(len(problems), 1, problems)
+                self.assertTrue(problems[0].startswith(tt.ADVISORY_PREFIX))
+                self.assertIn(note, problems[0])
+        self.assertEqual(tt.validate(tt.parse(with_note(
+            "The migration is one above main's SCHEMA_VERSION."))), [])
+
+    def test_the_claim_still_takes_a_body_whose_only_problems_filing_refuses(self):
+        body = with_note("Set SCHEMA_VERSION = 12.").replace(
+            ".venv/bin/python -m unittest test_orders_export",
+            "python3 -m unittest discover -s tests")
+        problems = tt.validate(tt.parse(body))
+        self.assertEqual(len(tt.filing_refusals(problems)), 2, problems)
+        self.assertIsNone(holophyte.board.body_problem({"body": body}))
+
+
 class EvidenceTests(unittest.TestCase):
     def body(self, states):
         return FILLED.replace("## Implementation notes",

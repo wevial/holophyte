@@ -5,6 +5,7 @@ import io
 import json
 import sys
 import unittest
+from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
 
@@ -33,6 +34,19 @@ import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 from holophyte.maintainer_notes import cite_commits  # noqa: E402
+from holophyte.thread_mentions import REFUSAL  # noqa: E402
+
+
+@dataclass
+class SeesCalls(Commit):
+    """A fix turn that notes the GitHub calls already made when it began."""
+
+    fixture: object = None
+    seen: list = field(default_factory=list)
+
+    def play(self, cwd, turn):
+        self.seen.extend(kind for kind, _ in self.fixture.api_calls())
+        return super().play(cwd, turn)
 
 
 class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
@@ -198,6 +212,97 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "reply", "resolve"])
         self.assertIn("needs a human's answer", self.question())
+
+    def with_node_ids(self, state, eyes=()):
+        """`state` with each review comment's GraphQL id, `C_` and its URL's
+        number, and the route's own EYES reaction on the ids in `eyes`."""
+        pull = state["data"]["repository"]["pullRequest"]
+        for t in pull["reviewThreads"]["nodes"]:
+            for c in t["comments"]["nodes"]:
+                c["id"] = "C_" + c["url"].rsplit("_r", 1)[1]
+                if c["id"] in eyes:
+                    c["reactionGroups"] = [
+                        {"content": "THUMBS_UP", "viewerHasReacted": True},
+                        {"content": "EYES", "viewerHasReacted": True}]
+        return state
+
+    def reactions(self):
+        """The subject of each `addReaction` sent, asserting it was EYES."""
+        subjects = []
+        for path in sorted(self.api_dir.iterdir(), key=lambda p: int(p.stem)):
+            body = json.loads(path.read_text())
+            if "addReaction" in body.get("query", ""):
+                self.assertIn("content: EYES", body["query"])
+                subjects.append(body["variables"]["subject"])
+        return subjects
+
+    def mention_fixed(self, thread, eyes=(), refuse_reactions=False, config=""):
+        self.configure('[merge]\nmode = "pr"\n' + config)
+        self.fake_route(states=[self.with_node_ids(self.pr_state([thread]), eyes),
+                                self.pr_state()],
+                        refuse_reactions=refuse_reactions)
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Commit("fix: use path token"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertTrue(any("use the path tokenId" in t.goal for t in fake.turns))
+        replies = [data for kind, data in self.api_calls() if kind == "reply"]
+        self.assertEqual(len(replies), 1)
+        self.assertIn("Addressed in ", replies[0]["body"])
+        return self.reactions()
+
+    def test_a_conversation_mention_is_acknowledged_once_before_its_fix(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        state = self.conversation_state(("operator", "User"),
+                                        "@holophyte fix: move the button")
+        self.resume_with_conversation(state, self.pr_state())
+        fix = SeesCalls("fix: move button", fixture=self)
+        fake, _ = self.loop(fix, Idle(""), provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "implement"])
+        self.assertEqual(self.reactions(), ["IC_1"])
+        self.assertEqual(fix.seen, ["state", "react"])
+
+    def test_a_review_mention_in_a_later_reply_is_acknowledged_on_it(self):
+        thread = ("src/app.py", 30, ("reviewer", "User"), "Which token?",
+                  ((("reviewer", "User"), "The guest one, @holophyte?"),
+                   (("operator", "User"),
+                    "@holophyte fix: use the path tokenId")))
+        self.assertEqual(self.mention_fixed(thread), ["C_1_2"])
+
+    def test_a_mention_the_factory_already_acknowledged_is_not_reacted_to(self):
+        thread = ("src/app.py", 30, ("reviewer", "User"), "Which token?",
+                  ((("reviewer", "User"), "The guest one?"),
+                   (("operator", "User"),
+                    "@holophyte fix: use the path tokenId")))
+        self.assertEqual(self.mention_fixed(thread, eyes=("C_1_2",)), [])
+
+    def test_a_configured_bot_s_mention_gets_no_reaction(self):
+        thread = ("src/app.py", 30, ("service", "User"),
+                  "@holophyte fix: use the path tokenId")
+        self.assertEqual(self.mention_fixed(
+            thread, config='bot_logins = ["service"]\n'), [])
+
+    def test_a_refused_reaction_is_a_run_event_and_the_fix_still_runs(self):
+        thread = ("src/app.py", 30, ("operator", "User"),
+                  "@holophyte fix: use the path tokenId")
+        self.assertEqual(self.mention_fixed(thread, refuse_reactions=True),
+                         ["C_1"])
+        (summary,), = self.read("SELECT summary FROM runEvents"
+                                " WHERE summary LIKE '%EYES reaction%'")
+        self.assertIn(f"{self.URL}#discussion_r1", summary)
+        self.assertIn("reaction refused", summary)
+
+    def test_a_mention_from_an_unlisted_account_gets_no_reaction(self):
+        self.configure('[merge]\nmode = "pr"\nmention_accounts = ["operator"]\n')
+        thread = ("src/app.py", 30, ("stranger", "User"),
+                  "@holophyte fix: change tokens")
+        self.fake_route(states=[self.with_node_ids(self.pr_state([thread]))])
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  provider=self.provider())
+        replies = [data["body"] for kind, data in self.api_calls()
+                   if kind == "reply"]
+        self.assertTrue(replies)
+        self.assertTrue(all(REFUSAL in body for body in replies))
+        self.assertEqual(self.reactions(), [])
 
     def declined_thread(self, author, config=""):
         self.configure('[merge]\nmode = "pr"\n' + config)
@@ -752,8 +857,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertLess(goal.index(self.DEFECT[3]), goal.index(follow_up))
         self.assertIn("@ko", goal)
         question = self.question()
-        self.assertIn(f"> {self.DEFECT[3]}", question)
-        self.assertIn(f"> {follow_up}", question)
+        self.assertIn(self.DEFECT[3], question)
+        self.assertIn(follow_up, question)
         self.assertIn("@ko", question)
 
     def test_a_thread_with_a_second_page_of_comments_is_read_to_the_end(self):
@@ -811,7 +916,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         question = self.question()
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
-        self.assertIn(f"> {asks[3]}", question)
+        self.assertIn(asks[3], question)
         self.assertIn("src/app.py:30 by @ko", question)
         self.assertEqual(
             self.read("SELECT verdict, reviewerModel FROM reviewRounds"
@@ -859,7 +964,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         question = self.question()
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
-        self.assertIn(f"> {person[3]}", question)
+        self.assertIn(person[3], question)
         self.assertIn("src/app.py:30 by @wevial", question)
 
     def test_under_act_a_person_s_address_is_fixed_replied_and_left_open(self):
@@ -947,7 +1052,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         question = self.question()
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
-        self.assertIn(f"> {person[3]}", question)
+        self.assertIn(person[3], question)
         self.assertIn("src/app.py:30 by @wevial", question)
         self.assertNotIn(self.DEFECT[3], question)
 
@@ -972,8 +1077,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         question = self.question()
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
-        self.assertIn(f"> {asks[3]}", question)
-        self.assertNotIn(f"> {self.DEFECT[3]}", question)
+        self.assertIn(asks[3], question)
+        self.assertNotIn("src/app.py:10 by @review-bot", question)
 
 
 class OperatorNoteCitationTests(LoopFixture):
@@ -1006,6 +1111,57 @@ class OperatorNoteCitationTests(LoopFixture):
         result = cite_commits(self.target, self.base, fixed, self.ADDRESSED, self.sh)
         self.assertEqual(result, fixed)
         self.assertEqual(self.git("rev-parse", "HEAD").strip(), fixed)
+
+
+class ParkQuestionQuoteTests(unittest.TestCase):
+    """`babysitter.quoted()`: a bot's thread reads as plain text in the park."""
+    URL = "https://github.com/OWNER/NAME/pull/235#discussion_r9"
+    # The shape of Greptile's P1 thread on pull request 235 (KO-714, run 624).
+    GREPTILE = (
+        '<a href="#"><img alt="P1" src="https://greptile-static-assets.s3'
+        '.amazonaws.com/badges/p1.svg" align="top"></a> **Queue entry is'
+        ' read before the merge settles**\n\n'
+        "`merge_queue.py:116` reads the entry once; a dequeued pull request"
+        " is then reported as merged.\n\n"
+        "<details><summary>Prompt To Fix With AI</summary>\n\n"
+        "`````markdown\nThis is a comment left during a code review.\n"
+        "Path: holophyte/merge_queue.py\nLine: 116\n\n"
+        "> Queue entry is read before the merge settles\n`````\n\n"
+        "</details>\n\n")
+
+    def quote(self, body):
+        from holophyte import babysitter
+        return babysitter.quoted(holophyte.pr.Thread(
+            "1", "holophyte/merge_queue.py", 116, "greptile-apps[bot]", body,
+            self.URL, author_kind="bot"))
+
+    def test_a_greptile_comment_reads_as_its_badge_title_and_paragraph(self):
+        text = self.quote(self.GREPTILE)
+        self.assertIn("P1", text)
+        self.assertIn("Queue entry is read before the merge settles", text)
+        self.assertIn("reads the entry once; a dequeued pull request", text)
+        self.assertNotRegex(text, r"<[a-zA-Z/][^>]*>")
+        self.assertNotIn("details", text)
+        self.assertNotIn("Prompt To Fix With AI", text)
+        self.assertNotIn("This is a comment left during a code review", text)
+        self.assertEqual([line for line in text.splitlines()
+                          if line.lstrip().startswith(">")], [])
+
+    def test_a_line_break_keeps_the_words_on_either_side_apart(self):
+        text = self.quote("First<br>Second<br/>Third")
+        self.assertEqual(text.split("\n", 1)[1].split(), ["First", "Second", "Third"])
+
+    def test_block_tags_keep_their_texts_on_separate_lines(self):
+        text = self.quote("<p>First</p><p>Second</p><ul><li>one</li><li>two</li></ul>")
+        self.assertEqual([line for line in text.splitlines()[1:] if line.strip()],
+                         ["First", "Second", "one", "two"])
+
+    def test_a_long_comment_is_cut_to_600_characters_under_its_url(self):
+        text = self.quote("x" * 900)
+        header, body = text.split("\n", 1)
+        self.assertIn(self.URL, header)
+        self.assertEqual(len(body), 600)
+        self.assertTrue(body.endswith("…"))
 
 
 if __name__ == "__main__":

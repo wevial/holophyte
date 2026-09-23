@@ -1,29 +1,36 @@
 """Live: a harness adapter's turn and resume argv against the real CLI.
 
 Opt in with `HOLOPHYTE_LIVE_HARNESS=claude` (an implementer turn and its
-resume) or `HOLOPHYTE_LIVE_HARNESS=codex` or `devin` (two review rounds
-through `holophyte.agents.agent()`, and for `codex` an implementer turn through
-the loop's `_timed()` and its resume) on a host with that CLI signed in on
-PATH;
-without the variable the tests skip, and with it set but no binary on PATH
-the test fails. Kept out of the ticket's verify block: the reviewer's
-container carries no agent credentials.
+resume), `HOLOPHYTE_LIVE_HARNESS=codex` or `devin` (two review rounds
+through `holophyte.agents.agent()`, and for `codex` an implementer turn
+through the loop's `_timed()` and its resume) or
+`HOLOPHYTE_LIVE_HARNESS=cursor` (one review round; `HOLOPHYTE_LIVE_MODEL`
+picks its model, `grok-4.7-high` by default) or
+`HOLOPHYTE_LIVE_HARNESS=critic` (the default `[agents.critic]` seat, `codex`, asked
+whether a small ticket is still relevant) on a host
+with that CLI signed in on PATH; without the variable the tests skip, and
+with it set but no binary on PATH the test fails. Kept out of the ticket's
+verify block: the reviewer's container carries no agent credentials.
 
 Run: HOLOPHYTE_LIVE_HARNESS=claude python3 -m unittest tests.test_harness_live
      HOLOPHYTE_LIVE_HARNESS=codex python3 -m unittest tests.test_harness_live
      HOLOPHYTE_LIVE_HARNESS=devin python3 -m unittest tests.test_harness_live
+     HOLOPHYTE_LIVE_HARNESS=cursor python3 -m unittest tests.test_harness_live
+     HOLOPHYTE_LIVE_HARNESS=critic python3 -m unittest tests.test_harness_live
 """
 import os
 import secrets
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
 
 import holophyte.agents
 import holophyte.fix_session
+import holophyte.freshness
 import holophyte.loop
 import holophyte.project
 import store
@@ -31,14 +38,14 @@ from holophyte import harness
 
 LIVE = os.environ.get("HOLOPHYTE_LIVE_HARNESS")
 TURN_TIMEOUT = 300
-# The `[agents.reviewer]` table each review harness's live rounds run under.
-REVIEW_TABLES = {
-    "codex": 'harness = "codex"\neffort = "low"\n',
-    "devin": 'harness = "devin"\nmodel = "swe-2-max"\n',
-}
+# The review harnesses, which run through `agent()` rather than the
+# implementer's turn-and-resume case.
+REVIEW_HARNESSES = ("codex", "cursor", "devin")
+# The seat, not a harness, that `HOLOPHYTE_LIVE_HARNESS=critic` asks for.
+CRITIC = "critic"
 
 
-@unittest.skipUnless(LIVE and LIVE not in REVIEW_TABLES,
+@unittest.skipUnless(LIVE and LIVE not in (*REVIEW_HARNESSES, CRITIC),
                      "set HOLOPHYTE_LIVE_HARNESS=claude for a live turn")
 class LiveHarnessTests(unittest.TestCase):
     def run_turn(self, argv, cwd):
@@ -71,67 +78,98 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertIn(word, answer.lower())
 
 
-@unittest.skipUnless(LIVE in REVIEW_TABLES,
-                     "set HOLOPHYTE_LIVE_HARNESS=codex or devin for live review "
-                     "rounds")
-class LiveReviewTests(unittest.TestCase):
-    def git(self, repo, *args):
+class LiveReviewCase(unittest.TestCase):
+    """A temporary repository whose candidate differs from its base, checked
+    out at the base, and a run to review it under `CONFIG`."""
+    CONFIG = None
+
+    def git(self, *args):
         return subprocess.check_output(
             ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
-             *args], cwd=repo, text=True).strip()
+             *args], cwd=self.repo, text=True).strip()
+
+    def setUp(self):
+        binary = harness.ADAPTERS[LIVE].binary
+        self.assertIsNotNone(shutil.which(binary), f"HOLOPHYTE_LIVE_HARNESS={LIVE} "
+                             f"but no {binary!r} on PATH")
+        scratch = tempfile.TemporaryDirectory(prefix="holophyte-live-")
+        self.addCleanup(scratch.cleanup)
+        root = Path(scratch.name)
+        self.repo = root / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q")
+        (self.repo / "notes.txt").write_text("base\n")
+        self.git("add", "notes.txt")
+        self.git("commit", "-qm", "base")
+        self.base = self.git("rev-parse", "HEAD")
+        (self.repo / "notes.txt").write_text("candidate\n")
+        self.git("commit", "-qam", "candidate")
+        self.candidate = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", self.base)
+        holo = root / "holo"
+        holo.mkdir()
+        (holo / "config.toml").write_text(self.CONFIG)
+        self.target = holophyte.project.Project(
+            path=self.repo, holo_dir=holo, store_path=holo / "store.db",
+            config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
+        self.conn = store.open(self.target.store_path)
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        project = store.ensure_project(self.conn, "live", self.repo)
+        ticket = store.mirror_ticket(self.conn, project, "KO-614", "KO-614", "live",
+                                     acceptance_criteria=["review"],
+                                     verification_commands=["true"])
+        self.run_id = store.claim(self.conn, project, ticket)
+
+    def review(self, goal, review_round):
+        output = holophyte.agents.agent(
+            self.target, "review", goal, self.repo, base_sha=self.base,
+            candidate_sha=self.candidate, timeout=TURN_TIMEOUT, conn=self.conn,
+            run_id=self.run_id, review_round=review_round)
+        print(f"round {review_round} ({output.command}):\n{output}")
+        self.assertEqual(output.exit_code, 0, output)
+        return output
+
+
+HEAD_GOAL = ("Run `git rev-parse HEAD` in the current checkout and reply with "
+             "the full commit id it prints.")
+
+
+# The `[agents.reviewer]` table each resuming review harness's live rounds
+# run under; devin's model is the one its account still has quota for.
+RESUMING_REVIEW_TABLES = {
+    "codex": 'harness = "codex"\neffort = "low"\n',
+    "devin": 'harness = "devin"\nmodel = "swe-2-max"\n',
+}
+
+
+@unittest.skipUnless(LIVE in RESUMING_REVIEW_TABLES,
+                     "set HOLOPHYTE_LIVE_HARNESS=codex or devin for live review "
+                     "rounds")
+class LiveResumingReviewTests(LiveReviewCase):
+    CONFIG = ('[agents.reviewer]\n' + RESUMING_REVIEW_TABLES.get(LIVE, "")
+              + '[loop]\nreview_session = "resume"\n')
 
     def test_rounds_see_the_candidate_and_resume_the_session(self):
-        self.assertIsNotNone(shutil.which(LIVE), f"HOLOPHYTE_LIVE_HARNESS={LIVE} "
-                             f"but no {LIVE!r} on PATH")
         word = "holo" + secrets.token_hex(3)
-        with tempfile.TemporaryDirectory(prefix="holophyte-live-") as scratch:
-            root = Path(scratch)
-            repo = root / "repo"
-            repo.mkdir()
-            self.git(repo, "init", "-q")
-            (repo / "notes.txt").write_text("base\n")
-            self.git(repo, "add", "notes.txt")
-            self.git(repo, "commit", "-qm", "base")
-            base = self.git(repo, "rev-parse", "HEAD")
-            (repo / "notes.txt").write_text("candidate\n")
-            self.git(repo, "commit", "-qam", "candidate")
-            candidate = self.git(repo, "rev-parse", "HEAD")
-            self.git(repo, "checkout", "-q", base)
-            holo = root / "holo"
-            holo.mkdir()
-            (holo / "config.toml").write_text(
-                '[agents.reviewer]\n' + REVIEW_TABLES[LIVE]
-                + '[loop]\nreview_session = "resume"\n')
-            target = holophyte.project.Project(
-                path=repo, holo_dir=holo, store_path=holo / "store.db",
-                config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
-            conn = store.open(target.store_path)
-            self.addCleanup(conn.close)
-            store.init(conn)
-            project = store.ensure_project(conn, "live", repo)
-            ticket = store.mirror_ticket(conn, project, "KO-614", "KO-614", "live",
-                                         acceptance_criteria=["review"],
-                                         verification_commands=["true"])
-            run = store.claim(conn, project, ticket)
-
-            def review(goal, review_round):
-                output = holophyte.agents.agent(
-                    target, "review", goal, repo, base_sha=base,
-                    candidate_sha=candidate, timeout=TURN_TIMEOUT, conn=conn,
-                    run_id=run, review_round=review_round)
-                print(f"round {review_round} ({output.command}):\n{output}")
-                self.assertEqual(output.exit_code, 0, output)
-                return output
-
-            first = review(
-                "Run `git rev-parse HEAD` in the current checkout and reply with "
-                f"the full commit id it prints. Remember this word: {word}.", 1)
-            second = review("What word did I ask you to remember? Reply with "
-                            "the word only.", 2)
-            status = self.git(repo, "status", "--porcelain")
-        self.assertIn(candidate, first)
+        first = self.review(f"{HEAD_GOAL} Remember this word: {word}.", 1)
+        second = self.review("What word did I ask you to remember? Reply with "
+                             "the word only.", 2)
+        self.assertIn(self.candidate, first)
         self.assertIn(word, second.lower())
-        self.assertEqual(status, "")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+
+@unittest.skipUnless(LIVE == "cursor",
+                     "set HOLOPHYTE_LIVE_HARNESS=cursor for a live review round")
+class LiveCursorReviewTests(LiveReviewCase):
+    CONFIG = ('[agents.reviewer]\nharness = "cursor"\nmodel = "'
+              + os.environ.get("HOLOPHYTE_LIVE_MODEL", "grok-4.7-high") + '"\n')
+
+    def test_a_round_sees_the_candidate_and_leaves_the_repository_clean(self):
+        output = self.review(HEAD_GOAL, 1)
+        self.assertIn(self.candidate, output)
+        self.assertEqual(self.git("status", "--porcelain"), "")
 
 
 @unittest.skipUnless(LIVE == "codex",
@@ -185,6 +223,52 @@ class LiveCodexImplementerTests(unittest.TestCase):
         self.assertEqual(note, "ok")
         self.assertEqual(str(uuid.UUID(session)), session)
         self.assertIn(word, result.stdout.lower())
+
+
+# A small ticket against the scratch repository's one file.
+CRITIC_BODY = """\
+# Say hello in notes.txt
+
+## Summary
+
+`notes.txt` says hello.
+
+## Acceptance criteria
+
+- [ ] Given `notes.txt`, when it is read, then it says hello
+"""
+
+
+@unittest.skipUnless(LIVE == CRITIC,
+                     "set HOLOPHYTE_LIVE_HARNESS=critic for a live critic turn")
+class LiveCriticTests(unittest.TestCase):
+    def test_the_default_critic_ends_with_a_freshness_line(self):
+        self.assertIsNotNone(shutil.which("codex"), "HOLOPHYTE_LIVE_HARNESS=critic "
+                             "but no 'codex' on PATH")
+        with tempfile.TemporaryDirectory(prefix="holophyte-live-") as scratch:
+            root = Path(scratch)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / "notes.txt").write_text("base\n")
+            for args in (("init", "-q", "-b", "main"), ("add", "notes.txt"),
+                         ("commit", "-qm", "base")):
+                subprocess.run(["git", "-c", "user.name=Test", "-c",
+                                "user.email=test@example.invalid", *args],
+                               cwd=repo, check=True)
+            holo = root / "holo"
+            holo.mkdir()
+            (holo / "config.toml").write_text("[agents.critic]\n")
+            target = holophyte.project.Project(
+                path=repo, holo_dir=holo, store_path=holo / "store.db",
+                config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
+            conn = store.open(target.store_path)
+            self.addCleanup(conn.close)
+            store.init(conn)
+            task = {"id": "KO-715", "title": "Say hello in notes.txt",
+                    "body": CRITIC_BODY, "filed_at": int(time.time() * 1000)}
+            output = holophyte.freshness.ask_critic(conn, target, task)
+        print(f"critic:\n{output}")
+        self.assertIsNotNone(holophyte.freshness.parse_freshness(output), output)
 
 
 if __name__ == "__main__":

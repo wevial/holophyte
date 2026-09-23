@@ -41,10 +41,7 @@ SPEC = importlib.util.spec_from_file_location("holophyte_factory", ROOT / "facto
 from bot_thread_fixture import BotConfigCases  # noqa: E402
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 from fix_session_fixture import FixSessionConfigCases  # noqa: E402
-from procs import (  # noqa: E402 - after the sys.path insert above
-    KillWatch,
-    assert_no_escaped_child,
-)
+from procs import KillWatch, assert_no_escaped_child  # noqa: E402
 from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
 
@@ -73,8 +70,12 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
              r"\[agents\.reviewer\] effort"),
             ('[agents]\nreview_model = "m"\n[agents.reviewer]\nharness = "codex"\n',
              r"\[agents\] review_model"),
+            ('[agents.reviewer]\nharness = "cursor"\n',
+             r"\[agents\.reviewer\] model is required"),
+            ('[agents.adjudicator]\nharness = "cursor"\nmodel = "m"\n'
+             'effort = "high"\n', r"\[agents\.adjudicator\] effort: harness"),
             ('[agents.reviewer]\nharness = "devin"\n',
-             r"\[agents\.reviewer\] model: required"),
+             r"\[agents\.reviewer\] model is required"),
             ('[agents.adjudicator]\nharness = "devin"\nmodel = "opus"\n'
              'effort = "high"\n', r"\[agents\.adjudicator\] effort: harness 'devin'"),
         ):
@@ -614,8 +615,7 @@ class AgentCommandTests(ConfigTestCase):
             self.WORKTREE, 1800,
         )
         # The reviewer still goes through the hardened container, not argv.
-        self.assertEqual(run_review.call_args.kwargs["profile"],
-                         "codex-sol-medium")
+        self.assertEqual(run_review.call_args.kwargs["profile"], "codex-sol-medium")
 
     def test_an_implementer_override_replaces_the_argv(self):
         self.locate('[agents]\n'

@@ -34,6 +34,10 @@ those writing routes. A project with no store answers 503.
   "workers_on_previous_build": 0,
   "host": "writer-1",
   "now": 1788450534491,
+  "toil": {"24h": {"interventions": 3, "merged": 2, "per_merge": 1.5,
+                   "by_action": {"requeue": 2, "babysit": 1}},
+           "7d": {"interventions": 4, "merged": 3, "per_merge": 1.3333333333333333,
+                  "by_action": {"requeue": 2, "approve": 1, "babysit": 1}}},
   "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2, "run_cap": 3.0},
@@ -101,7 +105,14 @@ a seat left unset in `[agents]`; while a running loop has switched the seat
 to its fallback, `command` is the fallback's and the entry also carries
 `fallback`, naming it. `workers_on_previous_build` counts the workers a
 restarted loop inherited from the build it replaced and still owns, 0
-when there are none. Every `host` passes through `[report] host_label`.
+when there are none. `toil` is the operator's hand work per merge over
+the last `24h` and the last `7d` before `now`, the same windows as
+`--report`'s `toil` lines: `interventions` counts the interventions with
+source `human` in the window, project-level ones such as a `hold`
+included; `merged` counts the runs that ended merged in it; `per_merge` is
+their ratio, null when `merged` is 0; `by_action` counts the interventions
+by action, most frequent first, ties by name.
+Every `host` passes through `[report] host_label`.
 
 ## `GET /runs?limit=N`
 
