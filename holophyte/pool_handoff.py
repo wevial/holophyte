@@ -39,24 +39,40 @@ def next_slot(pool):
     return max((slot for slot, _ in pool.values()), default=0) + 1
 
 
-def fetched_schema(target):
-    """Read the arriving constant without importing or migrating its store.
+# The arriving schema's two literals the restart decision reads.
+SCHEMA_LITERALS = ("SCHEMA_VERSION", "READABLE_FROM")
 
-    An unreadable/unknown version conservatively keeps the existing drain.
+
+def fetched_schema(target):
+    """Read the arriving `(SCHEMA_VERSION, READABLE_FROM)` without importing
+    or migrating its store.
+
+    Each is a literal, or for `READABLE_FROM` the name of the other; one
+    that is missing or unreadable is None, which conservatively keeps the
+    existing drain.
     """
     from holophyte.operator import sh
 
+    found = {}
     try:
         tree = ast.parse(sh(["git", "show", "origin/main:store/schema.py"],
                             factory_checkout()))
-        for node in tree.body:
-            if isinstance(node, ast.Assign) and any(
-                    isinstance(name, ast.Name) and name.id == "SCHEMA_VERSION"
-                    for name in node.targets):
-                return ast.literal_eval(node.value)
     except (OSError, RuntimeError, SyntaxError, ValueError):
-        pass
-    return None
+        return None, None
+    for node in tree.body:
+        for name in (node.targets if isinstance(node, ast.Assign) else ()):
+            if isinstance(name, ast.Name) and name.id in SCHEMA_LITERALS:
+                found[name.id] = _literal(node.value, found)
+    return found.get("SCHEMA_VERSION"), found.get("READABLE_FROM")
+
+
+def _literal(value, found):
+    if isinstance(value, ast.Name):  # `READABLE_FROM = SCHEMA_VERSION`
+        return found.get(value.id)
+    try:
+        return ast.literal_eval(value)
+    except (SyntaxError, TypeError, ValueError):
+        return None
 
 
 def prepare_restart(state, target, pool):
@@ -105,10 +121,18 @@ def _prepare_reexec(target, worker_pids):
     can_ff = _fetch_main(target)
     if not can_ff:
         return False, False
-    version = fetched_schema(target)
-    schema_moves = version != SCHEMA_VERSION
+    version, floor = fetched_schema(target)
+    # Additive: the live workers of this build can still open the store the
+    # arriving build migrates, so they are handed to it rather than drained.
+    additive = (isinstance(version, int) and isinstance(floor, int)
+                and version > SCHEMA_VERSION >= floor)
+    schema_moves = version != SCHEMA_VERSION and not additive
     arriving = sh(["git", "rev-parse", "--short", "origin/main"], factory_checkout())
-    if schema_moves:
+    if additive:
+        decision = (f"schema {SCHEMA_VERSION} -> {version} is additive"
+                    f" (readable from {floor}); fast-forwarding to {arriving}"
+                    f" under {len(worker_pids)} live worker(s)")
+    elif schema_moves:
         decision = (f"schema {SCHEMA_VERSION} -> {version}; draining"
                     f" {len(worker_pids)} worker(s) before fast-forward to {arriving}")
     else:
@@ -138,10 +162,14 @@ def _fetch_main(target):
 
 
 def _ff_main(target):
-    """Best effort: a diverged checkout still executes the disk build."""
+    """Best effort: a diverged checkout still executes the disk build.
+
+    Returns whether the checkout now holds origin/main."""
     from holophyte.operator import sh
 
     try:
         sh(["git", "merge", "--ff-only", "origin/main"], factory_checkout())
     except (RuntimeError, OSError) as exc:
         _checkout_refused(exc)
+        return False
+    return True

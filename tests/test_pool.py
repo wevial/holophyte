@@ -497,6 +497,24 @@ class PoolTests(PoolRestartCases, LoopFixture):
         self.assertIn("linear unreachable", self.out)
         self.assertEqual(self.rc, 0)
 
+    def test_the_fetched_schema_is_read_through_real_git(self):
+        """Both literals of `origin/main:store/schema.py`, fetched from a
+        real remote into the factory checkout, with no fake `sh`."""
+        origin = self.target.with_name("factory-origin")
+        self.git("clone", "-q", str(self.target), str(origin))
+        schema = origin / "store" / "schema.py"
+        schema.parent.mkdir()
+        schema.write_text("# An additive bump.\nSCHEMA_VERSION = 41\n"
+                          "READABLE_FROM = 40\n")
+        self.git("add", ".", cwd=origin)
+        self.git("-c", "user.email=factory@example.invalid",
+                 "-c", "user.name=Factory Test",
+                 "commit", "-qm", "bump the schema", cwd=origin)
+        self.git("remote", "add", "origin", str(origin))
+        self.git("fetch", "-q", "origin", "main")
+
+        self.assertEqual(holophyte.pool_handoff.fetched_schema(self.tgt), (41, 40))
+
 
 
 class WorkerTests(LoopFixture):
