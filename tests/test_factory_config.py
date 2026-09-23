@@ -69,6 +69,10 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
             (table + '[harnesses]\nclaude = "bin/claude"\n', r"\[harnesses\] claude"),
             ("[agents]\nimplementer_session = 'id: (.+)'\n" + table,
              r"\[agents\] implementer_session"),
+            ('[agents.reviewer]\nharness = "codex"\neffort = "max"\n',
+             r"\[agents\.reviewer\] effort"),
+            ('[agents]\nreview_model = "m"\n[agents.reviewer]\nharness = "codex"\n',
+             r"\[agents\] review_model"),
         ):
             with self.subTest(config=config):
                 self.locate(config)

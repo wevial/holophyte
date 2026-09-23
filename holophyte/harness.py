@@ -5,7 +5,8 @@ optional `model` and `effort` -- names an adapter here instead of carrying a
 command string. The adapter owns what a wrapper script on the writer host
 used to: the argv of a turn, the session id that turn runs under (chosen
 before launch, so the factory records it at dispatch rather than reading it
-back out of the output) and the argv that resumes it. The binary is the
+back out of the output -- or, for a review harness that chooses its own,
+read from the banner it prints) and the argv that resumes it. The binary is the
 harness's own name, looked up on PATH at launch, unless the top-level
 `[harnesses]` table names an absolute path for it.
 
@@ -16,8 +17,12 @@ the target readers below (`check_target()`, `seat()`, `agent_session()`)
 import its tables inside the call.
 """
 import os
+import re
+import shlex
 import uuid
 from dataclasses import dataclass
+
+import review_runner
 
 # The `[agents]` roles that may be written as a table at all, and the keys
 # such a table holds. Every other `[agents]` command stays a string.
@@ -32,6 +37,7 @@ class Claude:
     """
     name = "claude"
     roles = frozenset({"implementer"})
+    efforts = None
 
     def turn(self, binary, options):
         return [binary, "-p", "--session-id", str(uuid.uuid4()),
@@ -52,7 +58,44 @@ class Claude:
                 "--effort", options.get("effort", IMPL_EFFORT)]
 
 
-ADAPTERS = {adapter.name: adapter for adapter in (Claude(),)}
+class Codex:
+    """`codex exec` for the review roles, with Codex's own sandbox bypassed.
+
+    The read-only sandbox cannot start under a systemd user unit with
+    PrivateTmp, so the factory runs the turn in a throwaway detached
+    checkout of the candidate (`agents.table_review()`) and that checkout is
+    the write boundary. `resume` takes no `-C`, which is why the caller sets
+    the process cwd rather than the argv naming it. Codex chooses the
+    session id itself and prints it in its `session id:` banner, which
+    `reported_session()` reads back out of the output.
+    """
+    name = "codex"
+    roles = frozenset({"reviewer", "adjudicator"})
+    # `REVIEW_EFFORTS`, read at its source: `holophyte.config` imports this
+    # module at load.
+    efforts = review_runner.EFFORTS
+    BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
+
+    def turn(self, binary, options):
+        return [binary, "exec", *self.route(options)]
+
+    def resume(self, binary, options, session):
+        return [binary, "exec", "resume", *self.route(options), session]
+
+    def reported_session(self, output):
+        match = self.BANNER.search(output)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def route(options):
+        from holophyte.config import REVIEW_EFFORT, REVIEW_MODEL
+        effort = options.get("effort", REVIEW_EFFORT)
+        return ["-m", options.get("model", REVIEW_MODEL),
+                "-c", f"model_reasoning_effort={effort}",
+                "--dangerously-bypass-approvals-and-sandbox"]
+
+
+ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex())}
 
 
 @dataclass(frozen=True)
@@ -78,6 +121,17 @@ class Seat:
         """The argv that resumes `session`; the caller appends the prompt."""
         return self.adapter.resume(self.binary, self.options, session)
 
+    def reported_session(self, output):
+        """The session id a finished turn printed, for an adapter whose
+        harness chooses it; None when the output names none."""
+        return self.adapter.reported_session(output)
+
+    def named(self, argv):
+        """`argv` as a record names it: the harness first, not a
+        `[harnesses]` path -- the outage signatures match on the route's
+        name -- and the prompt left off."""
+        return shlex.join([self.name, *argv[1:-1]])
+
 
 def parse_role(where, key, table):
     """The adapter `[agents.KEY]` names, or a startup error naming the key.
@@ -85,8 +139,9 @@ def parse_role(where, key, table):
     `where` prefixes every refusal (the config path). Refused: a table for a
     key outside `TABLE_ROLES`, a key outside `TABLE_KEYS`, a harness with no
     adapter, a harness whose `roles` do not hold `key` -- the message names
-    the roles it does serve -- and a `model` or `effort` that is not a
-    non-empty string.
+    the roles it does serve -- a `model` or `effort` that is not a
+    non-empty string, and an `effort` outside the adapter's `efforts` when
+    it declares them.
     """
     if key not in TABLE_ROLES:
         raise SystemExit(
@@ -113,6 +168,11 @@ def parse_role(where, key, table):
             raise SystemExit(
                 f"{where}: [agents.{key}] {option} must be a non-empty string, "
                 f"got {value!r}")
+    effort = table.get("effort")
+    if adapter.efforts and effort is not None and effort not in adapter.efforts:
+        raise SystemExit(
+            f"{where}: [agents.{key}] effort must be one of "
+            f"{', '.join(adapter.efforts)}, got {effort!r}")
     return adapter
 
 
