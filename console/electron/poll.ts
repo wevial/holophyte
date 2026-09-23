@@ -11,8 +11,9 @@
  * as `token_files: { "HOST:PORT": "/path" }`, the latter the same files
  * the drawer's `[[daemon]] token_file` names and the daemon's `[serve]
  * token_file` holds, read once per poll and never shown. The tray never
- * prompts: a daemon whose token is missing or wrong is a "needs token"
- * line until the file is fixed.
+ * prompts: a daemon whose token is missing is a "needs token" line, and
+ * one that refuses a token read from a file names that file as out of
+ * date, until the file is fixed.
  */
 import { readFileSync } from "node:fs";
 import os from "node:os";
@@ -30,6 +31,9 @@ export type PollAnswer = {
   statuses: Record<string, FetchResult<Status>>;
   attentions: Record<string, FetchResult<Attention>>;
   runs: Record<string, FetchResult<Runs>>;
+  /** The `token_files` path whose token each address was sent, for the
+   *  addresses whose bearer came from a file. */
+  tokenFiles: Record<string, string>;
 };
 
 type FetchLike = (url: string, init: { headers: Record<string, string>; signal: AbortSignal }) => Promise<Response>;
@@ -39,7 +43,15 @@ export type PollDeps = {
   timeoutMs?: number;
   /** Reads a token file; the default is the file system. */
   readFile?: (file: string) => string;
+  /** Where each bearer in `tokens` came from, as `readTokenSources`
+   *  returns it: an address sent a token from one of these files is
+   *  recorded in the answer's `tokenFiles`. */
+  tokenFiles?: Record<string, string>;
 };
+
+/** The bearers per address and, for those read from `token_files`, the
+ *  resolved path each came from. */
+export type TokenSources = { tokens: Record<string, string>; files: Record<string, string> };
 
 /** The bearer per address from `console.json`'s text. `tokens` wins over
  *  `token_files` for the same address; a path in `token_files` may start
@@ -51,21 +63,34 @@ export function readTokens(
   baseDir: string,
   readFile: (file: string) => string = (file) => readFileSync(file, "utf8"),
 ): Record<string, string> {
-  if (fileText === null) return {};
+  return readTokenSources(fileText, baseDir, readFile).tokens;
+}
+
+/** `readTokens`, with the path each file-read token came from beside it,
+ *  so a 401 can name the file to replace. An address whose inline token
+ *  wins has no file. */
+export function readTokenSources(
+  fileText: string | null,
+  baseDir: string,
+  readFile: (file: string) => string = (file) => readFileSync(file, "utf8"),
+): TokenSources {
+  const out: TokenSources = { tokens: {}, files: {} };
+  if (fileText === null) return out;
   let data: unknown;
   try {
     data = JSON.parse(fileText);
   } catch {
-    return {};
+    return out;
   }
-  if (data === null || typeof data !== "object") return {};
+  if (data === null || typeof data !== "object") return out;
   const { tokens, token_files } = data as { tokens?: unknown; token_files?: unknown };
-  const out: Record<string, string> = {};
   if (token_files !== null && typeof token_files === "object") {
     for (const [address, file] of Object.entries(token_files as Record<string, unknown>)) {
       if (typeof file !== "string") continue;
+      const resolved = expandPath(file, baseDir);
       try {
-        out[address] = readFile(expandPath(file, baseDir)).trim();
+        out.tokens[address] = readFile(resolved).trim();
+        out.files[address] = resolved;
       } catch {
         // No token for this address; its line says so.
       }
@@ -73,7 +98,9 @@ export function readTokens(
   }
   if (tokens !== null && typeof tokens === "object") {
     for (const [address, token] of Object.entries(tokens as Record<string, unknown>)) {
-      if (typeof token === "string") out[address] = token;
+      if (typeof token !== "string") continue;
+      out.tokens[address] = token;
+      delete out.files[address];
     }
   }
   return out;
@@ -157,10 +184,13 @@ export async function pollAll(
   const origin = new URL(consoleUrl).origin;
   const peers = await fetchJson<PeersBody>(fetchImpl, `${origin}/peers`, undefined, timeoutMs);
   const daemons = peerAddresses(consoleUrl, peers);
-  const answer: PollAnswer = { peers: daemons.map((d) => d.address), statuses: {}, attentions: {}, runs: {} };
+  const answer: PollAnswer = { peers: daemons.map((d) => d.address), statuses: {}, attentions: {}, runs: {}, tokenFiles: {} };
   await Promise.all(
     daemons.map(async ({ address, base }) => {
-      const token = tokens[address] ?? tokens[addressOf(base)];
+      const key = tokens[address] !== undefined ? address : addressOf(base);
+      const token = tokens[key];
+      const file = token === undefined ? undefined : deps.tokenFiles?.[key];
+      if (file !== undefined) answer.tokenFiles[address] = file;
       const get = <T>(p: string) => fetchJson<T>(fetchImpl, `${base}${p}`, token, timeoutMs);
       const status = await get<Status>("/status");
       answer.statuses[address] = status;

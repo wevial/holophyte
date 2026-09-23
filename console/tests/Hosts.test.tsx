@@ -344,3 +344,34 @@ test("a stored token the header cannot carry degrades to needs token: every peer
   expect(document.body.textContent).not.toContain("poll failed");
   expect(localStorage.length).toBe(0);
 });
+
+test("a daemon that refuses the saved token reads saved token rejected in the rail, through the bare polls after it; one with no saved token keeps the key glyph", async () => {
+  // The desktop app seeded writer's token from a file older than the
+  // daemon's rotation; writer-2 was never given one.
+  const ORIGIN = "http://writer:7710";
+  const daemon: Fetch = (url) => {
+    if (url.endsWith("/peers")) return Promise.resolve(Response.json({ self: "writer:7710", peers: ["writer-2:7710"] }));
+    return Promise.resolve(Response.json({}, { status: 401 }));
+  };
+  storeToken("writer:7710", "before-rotation");
+  const { deps, firePoll } = fakeDeps(tokenedFetch(daemon));
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  const entry = (address: string) => screen.getByRole("region", { name: "Hosts" }).querySelector<HTMLElement>(`[data-host="${address}"]`)!;
+
+  const expectRows = () => {
+    expect(entry("writer:7710").textContent).toContain("saved token rejected");
+    expect(within(entry("writer:7710")).queryByRole("img", { name: "needs token" })).toBeNull();
+    expect(entry("writer-2:7710").textContent).not.toContain("saved token rejected");
+    expect(within(entry("writer-2:7710")).getByRole("img", { name: "needs token" }).textContent).toBe(KEY_GLYPH);
+  };
+  expectRows();
+
+  // The refused token was forgotten, so this poll goes out bare.
+  await act(async () => {
+    firePoll();
+    await settle();
+  });
+  expect(localStorage.length).toBe(0);
+  expectRows();
+});
