@@ -462,12 +462,16 @@ class Toil:
 def toil_since(conn, since_ms):
     """Human interventions at or after `since_ms`, by action, and the runs
     merged in the same window. A project-level row (no `runId`, such as a
-    `hold`) counts: it is human work on the project all the same."""
+    `hold`) counts: it is human work on the project all the same. A read-only
+    daemon may open a store its writer has not migrated, with no
+    `interventions` table yet: no interventions, then."""
     rows = conn.execute(
         'SELECT "action", COUNT(*) FROM interventions'
         " WHERE source = 'human' AND at >= ?"
         ' GROUP BY "action" ORDER BY COUNT(*) DESC, "action"',
-        (since_ms,)).fetchall()
+        (since_ms,)).fetchall() if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = 'interventions'"
+        ).fetchone() else []
     merged = conn.execute(
         "SELECT COUNT(*) FROM runs WHERE outcome = 'merged' AND endedAt >= ?",
         (since_ms,)).fetchone()[0]

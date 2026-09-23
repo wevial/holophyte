@@ -22,14 +22,14 @@ class ToilTests(ServeTestCase):
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = store.tickets.ensure_project(
+        self.project_id = store.tickets.ensure_project(
             self.conn, "team-1", self.target)
 
     def run_of(self, n, started, merged=None):
         ticket = store.tickets.mirror_ticket(
-            self.conn, self.project, linear_issue_id=f"issue-{n}",
+            self.conn, self.project_id, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}")
-        run = store.claim(self.conn, self.project, ticket, now=started)
+        run = store.claim(self.conn, self.project_id, ticket, now=started)
         if merged is not None:
             finish_run(self.conn, run, "merged", now=merged)
         return run
