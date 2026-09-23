@@ -12,3 +12,8 @@ test("a route label reads as its harness and model, wrapper suffix dropped and g
     { harness: "my-tool", model: "X" },
   ]);
 });
+
+test("a command named after an Object property reads as itself, not the inherited value", () => {
+  expect(routeParts("__proto__ x")).toEqual({ harness: "__proto__", model: "X" });
+  expect(routeParts("constructor-review")).toEqual({ harness: "constructor", model: "" });
+});

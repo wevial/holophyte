@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import type { ProjectChoice } from "../lib/attention";
 import { groupByHost, hostName, visibleHosts, type HostRecord } from "../lib/hosts";
 import { HostAgents, HostPanel } from "./HostPanel";
@@ -15,7 +14,9 @@ export function hostsSubtitle(hosts: HostRecord[]): string {
 }
 
 /** The Hosts view: one card per daemon in view, two to a row, each host's
- *  daemons followed by its Agents table across the row. */
+ *  daemons followed by its Agents table across the row, the host's group
+ *  spanning full rows so a host with no table never shares a row with the
+ *  next. */
 export function Hosts({ hosts, project, now }: { hosts: HostRecord[]; project: ProjectChoice; now: number }) {
   const shown = visibleHosts(hosts, project);
   return (
@@ -33,12 +34,12 @@ export function Hosts({ hosts, project, now }: { hosts: HostRecord[]; project: P
       ) : (
         <div className="mt-4 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-4">
           {groupByHost(shown).map((group) => (
-            <Fragment key={group.label}>
+            <div key={group.label} data-host-group={group.label} className="col-span-2 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-4">
               {group.hosts.map((host) => (
                 <HostPanel key={host.address} host={host} now={now} />
               ))}
               <HostAgents label={group.label} hosts={group.hosts} />
-            </Fragment>
+            </div>
           ))}
         </div>
       )}

@@ -5,7 +5,12 @@ export interface RouteParts {
   model: string;
 }
 
-const HARNESSES: Record<string, string> = { claude: "Claude", codex: "Codex", devin: "Devin", cursor: "Cursor" };
+const HARNESSES = new Map([
+  ["claude", "Claude"],
+  ["codex", "Codex"],
+  ["devin", "Devin"],
+  ["cursor", "Cursor"],
+]);
 
 /** A model word title-cased part by part, `gpt` as GPT, a part that is a
  *  version number kept hyphenated to the one before it: "gpt-6-astra" is
@@ -26,7 +31,7 @@ function modelWord(word: string): string {
 export function routeParts(label: string): RouteParts {
   const [command = "", ...rest] = label.trim().split(/\s+/);
   const word = command.replace(/-(implement|review|adjudicate)$/, "");
-  return { harness: HARNESSES[word] ?? word, model: rest.map(modelWord).join(" ") };
+  return { harness: HARNESSES.get(word) ?? word, model: rest.map(modelWord).join(" ") };
 }
 
 /** "Claude · Opus", or the harness alone when the label names no model. */

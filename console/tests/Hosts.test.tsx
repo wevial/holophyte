@@ -105,6 +105,18 @@ test("a host's Agents table has a row per project and a column per seat, harness
   expect(screen.getAllByRole("table")).toHaveLength(1);
 });
 
+test("a host with no Agents table keeps its cards out of the next host's group", () => {
+  const labelled = {
+    ...second,
+    route_labels: { implementer: "claude sonnet", reviewer: "codex gpt-6-astra", reviewer_fallback: null, adjudicator: null, writer: "claude sonnet" },
+  };
+  render(<Hosts hosts={[hostOf(working, NO_ATTENTION), hostOf(labelled, NO_ATTENTION, "http://writer-2:7710")]} project="all" now={0} />);
+  const group = (name: string) => screen.getByRole("article", { name }).closest("[data-host-group]")!;
+  expect(group("writer")).not.toBe(group("writer-2"));
+  expect(within(group("writer") as HTMLElement).queryByRole("table")).toBeNull();
+  expect(within(group("writer-2") as HTMLElement).getByRole("table", { name: "writer-2 agents" })).toBeTruthy();
+});
+
 test("a daemon that answered 401 gets the Token field in its card and the key glyph in the rail, with no unreachable styling", () => {
   const asking = { ...hostOf(working, NO_ATTENTION, "http://writer:7710", 1_000), status: null, project: null, seen_ms: null, needs_token: true };
   render(<Hosts hosts={[asking]} project="all" now={1_000} />);
