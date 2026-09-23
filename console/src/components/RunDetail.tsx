@@ -6,6 +6,7 @@ import { useRunLedger } from "../hooks/useRunLedger";
 import { useRunTurns, type RunTurnsBody } from "../hooks/useRunTurns";
 import { FATE_LABEL, findingsHistory, openFindings, severityCounts, type Fate, type RoundHistory } from "../lib/findings";
 import { formatClock, formatSettled, formatSpan } from "../lib/format";
+import { routeText } from "../lib/routes";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel, roundLabel } from "../lib/runs";
@@ -36,13 +37,27 @@ export function roundLine(body: RunDetailBody): string {
 
 const SEATS = [["implement", "Implementer"], ["review", "Reviewer"]] as const;
 
-/** "Implementer claude opus · Reviewer codex astra": the models the run's
- *  turns used in each seat, a seat it never used left out. */
-function seatLine(turns: RunTurnsBody["turns"]): string {
+type Seat = { seat: string; routes: string };
+
+/** The run's implementer and reviewer: per seat, the harness and model of
+ *  each route its turns used ("Claude · Opus"), a seat it never used left
+ *  out. */
+function seatRoutes(turns: RunTurnsBody["turns"]): Seat[] {
   return SEATS.flatMap(([role, seat]) => {
-    const labels = new Set(turns.filter((turn) => turn.role === role).map((turn) => turn.label ?? "label unknown"));
-    return labels.size === 0 ? [] : [`${seat} ${[...labels].join(", ")}`];
-  }).join(" · ");
+    const labels = new Set(turns.filter((turn) => turn.role === role).map((turn) => turn.label));
+    const routes = [...labels].map((label) => (label == null ? "label unknown" : routeText(label)));
+    return routes.length === 0 ? [] : [{ seat, routes: routes.join(", ") }];
+  });
+}
+
+/** A seat chip in the header: the seat word muted, its route in the body
+ *  colour. */
+function SeatChip({ seat, routes }: Seat) {
+  return (
+    <span data-seat={seat} className="rounded-chip border border-chip-border px-2 py-[2px] text-[12px]">
+      <span className="text-muted">{seat}</span> <span className="text-body">{routes}</span>
+    </span>
+  );
 }
 
 /** The expanded run's card: header line, round timeline, the newest
@@ -87,7 +102,7 @@ export function RunDetail({
           {error}
         </p>
       )}
-      {detail && <Card body={detail} files={files} ledger={ledger} seats={seatLine(turns.body?.turns ?? [])}
+      {detail && <Card body={detail} files={files} ledger={ledger} seats={seatRoutes(turns.body?.turns ?? [])}
         now={now} sinceMs={sinceMs} daemon={daemon} pauseDaemon={stopRequested ? undefined : daemon} />}
       {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} turns={turns} deps={deps} />}
     </div>
@@ -107,7 +122,7 @@ function Card({
   body: RunDetailBody;
   files: RunFilesState;
   ledger: LedgerRow[];
-  seats: string;
+  seats: Seat[];
   now: number;
   sinceMs: number;
   daemon?: RowDaemon;
@@ -133,7 +148,7 @@ function Card({
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <TicketLink ticket={run.ticket} ticket_url={run.ticket_url} />
         <span className="text-[13px] font-semibold text-ink">{roundLine(body)}</span>
-        {seats && <span data-seats className="text-[12px] text-muted">{seats}</span>}
+        {seats.map((chip) => <SeatChip key={chip.seat} {...chip} />)}
         <span data-started className="text-[12px] text-muted">
           started {formatClock(run.started_ms)}
           {run.host ? ` · ${run.host}` : ""}

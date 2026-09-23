@@ -3,6 +3,7 @@ import { CHIP_LABELS, KINDS, countsByKind, type Kind } from "../lib/attention";
 import { isSupervisorStale, projectName } from "../lib/derive";
 import { age } from "../lib/format";
 import { addressOf, hostName, hostTone, runCounts, type HostRecord } from "../lib/hosts";
+import { routeParts, routeText } from "../lib/routes";
 import { forgetToken, storeToken, tokenFor } from "../lib/token";
 import { ActionButton } from "./ActionButton";
 import { TOKEN_REJECTED } from "./HostRow";
@@ -94,8 +95,8 @@ function TokenField({ host, onStored }: { host: HostRecord; onStored: () => void
 }
 
 /** One daemon's card in the Hosts view: the dot, name and address, the
- *  daemon, supervisor and runs cells, its project row with a line per
- *  configured seat under it, and the two operator actions, rendered
+ *  daemon, supervisor and runs cells, its project row, and the two
+ *  operator actions, rendered
  *  disabled until writes arrive. An unreachable daemon
  *  says so in the header, with its last good answer's age, in place of the
  *  three cells; one that answered 401 gets the token field there instead.
@@ -135,11 +136,6 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
         .filter((part): part is string => part != null)
         .join(" · ")
     : "";
-  // Each configured seat from the daemon's `route_labels`, in the order it
-  // sends them; a seat with no route is left out.
-  const routes = Object.entries(status?.route_labels ?? {}).filter(
-    (entry): entry is [string, string] => entry[1] != null,
-  );
   const summary = [status ? plural(status.runs.length, "run") : null, ...attentionSummary(host)]
     .filter((part): part is string => part != null)
     .join(" · ");
@@ -217,15 +213,6 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
               {summary}
             </span>
           </div>
-          {routes.length > 0 && (
-            <ul aria-label={`${projectName(host.project)} routes`} className="mt-1 font-mono text-[12px] text-muted">
-              {routes.map(([seat, label]) => (
-                <li key={seat}>
-                  {seat.replace("_", " ")} {label}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
       <footer className="mt-4 flex gap-2">
@@ -233,5 +220,88 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
         <ActionButton>Open daemon log</ActionButton>
       </footer>
     </article>
+  );
+}
+
+const SEATS = [
+  ["implementer", "Implementer"],
+  ["reviewer", "Reviewer"],
+  ["adjudicator", "Adjudicator"],
+  ["writer", "Writer"],
+] as const;
+
+const HEADING = "text-[11px] font-semibold uppercase tracking-[.08em] text-faint";
+
+/** One route as its harness in the body colour with the model muted
+ *  beside it; an em dash for a seat with no route. */
+function Route({ label }: { label: string | null | undefined }) {
+  if (label == null) return <span className="text-muted">—</span>;
+  const { harness, model } = routeParts(label);
+  return (
+    <span>
+      <span className="text-body">{harness}</span>
+      {model && <> <span className="text-muted">{model}</span></>}
+    </span>
+  );
+}
+
+/** A seat's cell: its route, the reviewer's fallback on a muted second
+ *  line, and a writer that follows the implementer said as much. */
+function SeatCell({ seat, labels }: { seat: (typeof SEATS)[number][0]; labels: Record<string, string | null> }) {
+  const label = labels[seat];
+  if (seat === "writer" && label != null && label === labels.implementer) {
+    return <span className="text-muted">same as implementer</span>;
+  }
+  const fallback = seat === "reviewer" ? labels.reviewer_fallback : null;
+  return (
+    <>
+      <Route label={label} />
+      {fallback != null && (
+        <span data-fallback className="block text-[12px] text-muted">
+          fallback {routeText(fallback)}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** One host's Agents table: a row per project its daemons serve, by name,
+ *  and a column per seat, from each daemon's last good `route_labels`. A
+ *  daemon that never sent them has no row; a host with no rows, no table. */
+export function HostAgents({ label, hosts }: { label: string; hosts: HostRecord[] }) {
+  const rows = hosts.flatMap((host) =>
+    host.project != null && host.status?.route_labels ? [{ host, project: host.project, labels: host.status.route_labels }] : [],
+  );
+  if (rows.length === 0) return null;
+  return (
+    <section className="col-span-2 rounded-[10px] border border-line bg-card px-[18px] py-3 shadow-card">
+      <p className={HEADING}>Agents · {label}</p>
+      <table aria-label={`${label} agents`} className="mt-1.5 w-full text-left text-[13px]">
+        <thead>
+          <tr>
+            <th scope="col" className={`py-1.5 pr-3 ${HEADING}`}>Project</th>
+            {SEATS.map(([seat, heading]) => (
+              <th key={seat} scope="col" className={`py-1.5 pr-3 ${HEADING}`}>
+                {heading}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ host, project, labels }) => (
+            <tr key={host.address} className="border-t border-line-faint align-top">
+              <th scope="row" className="py-2 pr-3 font-semibold text-ink">
+                {projectName(project)}
+              </th>
+              {SEATS.map(([seat]) => (
+                <td key={seat} data-seat={seat} className="py-2 pr-3">
+                  <SeatCell seat={seat} labels={labels} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }

@@ -74,16 +74,47 @@ test("the selected project keeps only its daemon's card", () => {
   expect(document.querySelector("[data-subtitle]")!.textContent).toBe("1 host · 1 daemon on :7710");
 });
 
-test("each project on a host lists its configured seats, seat first, omitting a seat with no route", () => {
-  const route_labels = { implementer: "claude-implement opus", reviewer: "codex gpt-6-astra", writer: null };
-  render(<Hosts hosts={[hostOf({ ...working, route_labels }, NO_ATTENTION)]} project="all" now={0} />);
-  const card = screen.getByRole("article", { name: "writer" });
-  const seats = within(card).getByRole("list", { name: "writer routes" });
-  expect(within(seats).getAllByRole("listitem").map((line) => line.textContent)).toEqual([
-    "implementer claude-implement opus",
-    "reviewer codex gpt-6-astra",
+test("a host's Agents table has a row per project and a column per seat, harness and model per cell", () => {
+  const writer = {
+    ...working,
+    route_labels: {
+      implementer: "claude-implement opus", reviewer: "codex-review gpt-6-astra", reviewer_fallback: "devin-review",
+      adjudicator: "codex-adjudicate", writer: "claude-implement opus-4",
+    },
+  };
+  const relos = {
+    ...working,
+    project: "/srv/dev/relos",
+    route_labels: { implementer: "claude sonnet", reviewer: "codex gpt-6-astra", reviewer_fallback: null, adjudicator: null, writer: "claude sonnet" },
+  };
+  render(<Hosts hosts={[hostOf(writer, NO_ATTENTION), hostOf(relos, NO_ATTENTION, "http://writer:7711")]} project="all" now={0} />);
+  const table = screen.getByRole("table", { name: "writer agents" });
+  const [head, ...rows] = within(table).getAllByRole("row");
+  expect(within(head!).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+    "Project", "Implementer", "Reviewer", "Adjudicator", "Writer",
   ]);
-  expect(seats.textContent).not.toContain("writer");
+  const cells = rows.map((row) => [
+    within(row).getByRole("rowheader").textContent,
+    ...within(row).getAllByRole("cell").map((cell) => cell.textContent),
+  ]);
+  expect(cells).toEqual([
+    ["writer", "Claude Opus", "Codex GPT-6 Astrafallback Devin", "Codex", "Claude Opus-4"],
+    ["relos", "Claude Sonnet", "Codex GPT-6 Astra", "—", "same as implementer"],
+  ]);
+  expect(table.querySelectorAll("[data-fallback]").length).toBe(1);
+  expect(screen.getAllByRole("table")).toHaveLength(1);
+});
+
+test("a host with no Agents table keeps its cards out of the next host's group", () => {
+  const labelled = {
+    ...second,
+    route_labels: { implementer: "claude sonnet", reviewer: "codex gpt-6-astra", reviewer_fallback: null, adjudicator: null, writer: "claude sonnet" },
+  };
+  render(<Hosts hosts={[hostOf(working, NO_ATTENTION), hostOf(labelled, NO_ATTENTION, "http://writer-2:7710")]} project="all" now={0} />);
+  const group = (name: string) => screen.getByRole("article", { name }).closest("[data-host-group]")!;
+  expect(group("writer")).not.toBe(group("writer-2"));
+  expect(within(group("writer") as HTMLElement).queryByRole("table")).toBeNull();
+  expect(within(group("writer-2") as HTMLElement).getByRole("table", { name: "writer-2 agents" })).toBeTruthy();
 });
 
 test("a daemon that answered 401 gets the Token field in its card and the key glyph in the rail, with no unreachable styling", () => {
