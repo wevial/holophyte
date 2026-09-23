@@ -479,8 +479,12 @@ scheme or any other value is 401 with the body `{}` and no store access,
 and nothing about the attempt is logged. `GET /`, the console's files
 under it and `GET /peers` are served without the header, so the page can
 load and learn where its peers are before it has a token to present. A
-daemon bound to loopback never asks: `--serve 7710` answers every route
-open, token file or not.
+daemon bound to loopback never asks on the read routes: `--serve 7710`
+answers them open, token file or not. The opt-in routes are the
+exception: `[serve] actions` or `[serve] config_edit` needs
+`[serve] token_file` on every bind, loopback included (the daemon
+refuses to start without it), and `POST /actions/...`, `GET /config` and
+`PUT /config` answer only to the bearer.
 
 A page served by one daemon polls the others from the browser, and a
 cross-origin GET carrying `Authorization` is not a simple request, nor
