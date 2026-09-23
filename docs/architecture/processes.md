@@ -1,13 +1,13 @@
 # Processes
 
-Six kinds of process touch a target. Three are long-lived and live beside
+Six kinds of process touch a project. Three are long-lived and live beside
 the store; two are spawned per run; one polls the daemon over HTTP.
 
 ## The loop
 
 `python3 factory.py /path/to/repo`
 
-One process per target. Claims, works and closes out one ticket at a time,
+One process per project. Claims, works and closes out one ticket at a time,
 then claims the next; exits when the board has no ready ticket, when a run
 fails (`[loop] stop_on_failure`, the default), or when it merges a change to
 the factory itself, in which case it re-executes `factory.py` from the new
@@ -30,7 +30,7 @@ stops cleanly instead of advancing a corpse.
 
 `python3 factory.py --supervise /path/to/repo`
 
-One per target, enforced by `supervisor.lock` in the state directory. Every
+One per project, enforced by `supervisor.lock` in the state directory. Every
 `[supervisor] sweep_interval_sec` (60 s) it runs an acting sweep: every
 live run is sighted; a heartbeat older than `heartbeat_stale_min` counts a
 strike, and `stale_strikes` consecutive strikes end the run; a run past its
@@ -54,7 +54,7 @@ gets, and never touches a worktree.
 
 `python3 factory.py --serve 7710 /path/to/repo` (loopback; `HOST:PORT` to bind elsewhere)
 
-One per target, as a systemd user unit (`holophyte-serve@SLUG`). A
+One per project, as a systemd user unit (`holophyte-serve@SLUG`). A
 `ThreadingHTTPServer` bound to the one address given, loopback when only
 a port is; every request opens
 the store read-only, answers, closes. Its read routes go through
@@ -90,9 +90,9 @@ loop. The same image and prompt shape serve the terminal adjudicator.
 
 `contrib/swiftbar/holophyte.10s.py`, run by SwiftBar on the operator's
 Mac every ten seconds. Reads `~/.holophyte/drawer.toml` for one daemon per
-target, fetches each daemon's JSON with a two-second timeout, and prints a
+project, fetches each daemon's JSON with a two-second timeout, and prints a
 menu: a "needs you" section when anything needs the operator, then one
-block per target. The glyph is the two-leaf mark; a green, amber or red dot
+block per project. The glyph is the two-leaf mark; a green, amber or red dot
 inside it is the worst level across daemons. It has no state and no write
 path.
 

@@ -3,7 +3,7 @@
 `--serve` is a read daemon: every `GET` route in [HTTP endpoints](http.md)
 opens the store read-only and closes it. Two opt-ins make it also an
 operator's hand on the writer host: `actions`, below, and `config_edit`,
-[the target's configuration](#the-targets-configuration-get-config-and-put-config).
+[the project's configuration](#the-projects-configuration-get-config-and-put-config).
 With
 
 ```toml
@@ -41,8 +41,8 @@ does not run.
 
 Runs `systemctl --user restart holophyte-supervise@NAME`, where `NAME` is
 `[serve] name`: the instance the deploy unit templates are enabled under
-(the target slug, see [Supervising and serving](../operating.md)), the
-target directory's name when the key is absent. `systemctl` gets 20 s to
+(the project slug, see [Supervising and serving](../operating.md)), the
+project directory's name when the key is absent. `systemctl` gets 20 s to
 answer. A non-zero exit is `ok: false` with its stderr in `detail`; an
 absent `systemctl` or one that outlives the cap is `ok: false` saying so.
 The reply also carries `unit`, the instance addressed, and `recorded`, the
@@ -51,7 +51,7 @@ run the intervention landed on (below).
 The record is a human `restart_supervisor` intervention on the store's
 newest run, its narrative naming the unit and the route: interventions are
 keyed by run, and a supervisor restart is about the runs it watches over.
-A target with no store, or a store with no run yet, has nothing to record
+A project with no store, or a store with no run yet, has nothing to record
 against and the unit is left alone: `ok: false` saying so, `recorded`
 null, `systemctl` not called. No body is read.
 
@@ -67,7 +67,7 @@ Everything else is as `restart-supervisor`, the intervention a
 Body: a JSON object with `ticket` (required, the Linear identifier, `KO-n`)
 and `note` (optional, why the ticket goes back in the queue; a fixed note
 saying it came from the console when absent). The daemon does exactly what
-`factory.py TARGET --requeue KO-n --note TEXT` does: the store's one
+`factory.py PROJECT --requeue KO-n --note TEXT` does: the store's one
 `requeue` transaction, a `requeue` interventions row carrying the note on
 the failed run and the ticket walked to `ready`. The reply carries
 `ticket` and, on success, `run`, the failed run it was requeued after.
@@ -76,9 +76,9 @@ A `ticket` the store never mirrored, or one the store refuses to requeue
 (a live run, a ticket not `in_flight`, a last run that did not fail), is
 200 with `ok: false` and the refusal in `detail`; nothing is written. A
 body that is not a JSON object, or one with no `ticket`, is 400 naming it.
-A target with no store is 503.
+A project with no store is 503.
 
-## The target's configuration: `GET /config` and `PUT /config`
+## The project's configuration: `GET /config` and `PUT /config`
 
 A second opt-in, separate from `actions`:
 
@@ -87,7 +87,7 @@ A second opt-in, separate from `actions`:
 config_edit = true
 ```
 
-opens the target's own `config.toml` -- the file the loop reads at
+opens the project's own `config.toml` -- the file the loop reads at
 startup, [Configuration](../config.md) -- to the console, behind the same
 bearer token on every bind, loopback included, so `config_edit = true`
 needs `[serve] token_file` as `actions` does and a bind without it exits
@@ -113,7 +113,7 @@ it left in place. A table whose own name ends so (`[extra.api_key]`,
 `api_key.value = ...`, `api_key = { ... }`) is a secret whole: every
 value under it is replaced, whichever way the table is written. The daemon checks its own work against the parsed
 document and answers 500 rather than serve a text in which a secret is
-still readable. A target with no file yet has `text` `""`. `values` is the same redacted
+still readable. A project with no file yet has `text` `""`. `values` is the same redacted
 text parsed with `tomllib`, as JSON: a quoted table name or a triple-quoted
 string is an ordinary key or value here, so a client reads settings from
 `values` and never parses TOML itself; null when the text does not parse. `applies` says when a change takes effect: the loop reads
@@ -141,7 +141,7 @@ refuses is 400:
 
 and nothing is written. An accepted document is recorded first, a human
 `config_edit` interventions row on the store's newest run naming the file
-and the backup (a target with no store or no run has nothing to record
+and the backup (a project with no store or no run has nothing to record
 against and is 503, the file untouched); then the previous text is copied
 to `config.toml.bak-STAMP` beside the file, `STAMP` the UTC time to the
 second (`-2`, `-3` when that second already has one), and the new text
@@ -232,4 +232,4 @@ parked candidate today.
 | 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
 | 404 | `[serve] actions` is not `true`, or the action is not one of the three; `/config` without `[serve] config_edit = true` |
 | 405 | `POST` on any path outside `/actions/`; `PUT` on any path but `/config` |
-| 503 | `requeue` against a target with no store yet; `PUT /config` with no store or no run to record against |
+| 503 | `requeue` against a project with no store yet; `PUT /config` with no store or no run to record against |

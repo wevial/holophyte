@@ -41,7 +41,7 @@ hand; the factory never pushes.
 ### A run failed and the ticket needs to go back in the queue
 
 ```
-python3 factory.py TARGET --requeue KO-n --note "why: contract fixed / infra outage / …"
+python3 factory.py PROJECT --requeue KO-n --note "why: contract fixed / infra outage / …"
 # then relaunch the loop
 ```
 
@@ -53,7 +53,7 @@ rerun reuses the preserved branch.
 ### A run is parked awaiting merge approval
 
 ```
-python3 factory.py TARGET --approve KO-n --note "looked at the diff; merge"
+python3 factory.py PROJECT --approve KO-n --note "looked at the diff; merge"
 # then relaunch the loop
 ```
 
@@ -76,7 +76,7 @@ through the store API.
 ### A run is parked on its pull request and the PR has moved
 
 ```
-python3 factory.py TARGET --babysit KO-n --note "new review thread; look at the PR again"
+python3 factory.py PROJECT --babysit KO-n --note "new review thread; look at the PR again"
 # then relaunch the loop
 ```
 
@@ -97,8 +97,8 @@ merged -- is named and nothing is written.
 ```
 # in the preserved worktree, after main was rewritten (a filtered history, say)
 git rebase --onto main OLD_BASE KO-n-branch          # the same commits, new tips
-python3 factory.py TARGET --repoint KO-n $(git rev-parse HEAD) --note "rebased onto the filtered main; same commits"
-python3 factory.py TARGET --approve KO-n --note "looked at the diff; merge"
+python3 factory.py PROJECT --repoint KO-n $(git rev-parse HEAD) --note "rebased onto the filtered main; same commits"
+python3 factory.py PROJECT --approve KO-n --note "looked at the diff; merge"
 ```
 
 The approval holds the branch to the sha the park recorded, so a branch
@@ -129,7 +129,7 @@ The loop refuses to reuse it and says so. In the worktree:
 ```
 git merge --no-ff main        # resolve, keep the branch's intent
 git commit -q -m "KO-n: merge main (why)"
-python3 factory.py TARGET --requeue KO-n --note "merged main into the preserved branch by hand"
+python3 factory.py PROJECT --requeue KO-n --note "merged main into the preserved branch by hand"
 ```
 
 ### The loop died mid-review
@@ -140,16 +140,16 @@ killed harder, `--sweep` lists strays under `review containers` and
 
 ### Two loops on one host claimed the same ticket
 
-Each target's `[board]` table names its own project; a target without one
-refuses to start. If it happens anyway, kill the wrong loop, release its
-run as `failed` with `outcome_class="infra"`, remove its worktree and
-branch, and record the kill.
+Each project's `[board]` table names its own Linear project; a project
+without one refuses to start. If it happens anyway, kill the wrong loop,
+release its run as `failed` with `outcome_class="infra"`, remove its
+worktree and branch, and record the kill.
 
 ### A ticket was skipped as `needs_spec`
 
 The loop prints the first validator problem. Common causes: an unfilled
 `<placeholder>` (any angle-bracket token outside a link is one, HTML tags
-included), a criterion naming a path the target gitignores, a section
+included), a criterion naming a path the project gitignores, a section
 after `## Open questions` (it must read exactly `- None`), a bold key that
 Linear rewrote. Fix the file, `--file-ticket FILE --update KO-n`, relaunch.
 
@@ -176,13 +176,13 @@ merge waits.
 ## Reading the state
 
 ```
-python3 factory.py TARGET --report          # estimate vs actual per run, supervisor liveness
-python3 factory.py TARGET --sweep           # what would trip, without acting
+python3 factory.py PROJECT --report          # estimate vs actual per run, supervisor liveness
+python3 factory.py PROJECT --sweep           # what would trip, without acting
 curl -s -H "Authorization: Bearer $(cat TOKEN_FILE)" http://WRITER:7710/status | python3 -m json.tool
 curl -s -H "Authorization: Bearer $(cat TOKEN_FILE)" http://WRITER:7710/runs?limit=5
 ```
 
-`TOKEN_FILE` is your copy of that target's `[serve] token_file`; a daemon
+`TOKEN_FILE` is your copy of that project's `[serve] token_file`; a daemon
 bound beyond loopback answers 401 to a bare request (see [Across
 machines](hosts.md#what-listens-where)). The drawer on the operator's Mac
 and the console in a browser show the same through the daemons; a
@@ -191,6 +191,6 @@ coloured dot on the glyph means something in "needs you".
 ## Close the loop afterwards
 
 Reconcile every touched surface before ending an incident: store status,
-board status, `FINDINGS.md` where a target renders one, branches and
+board status, `FINDINGS.md` where a project renders one, branches and
 stashes. File one ticket per gap
 the incident revealed; every recipe above started as one.
