@@ -13,9 +13,10 @@ after the cap.
 operator now. Computed from stale heartbeats, stale supervisors, blocked
 tickets and recent failures.
 
-**Board.** The Linear project a project claims from, named by the project's
-`[board]` table; a Linear project is always written "Linear project" or
-"board", never bare "project". Status flows one way, store to board.
+**Board.** The Linear project, or board, a project claims from, named by
+the project's `[board]` table; a Linear project is always written "Linear
+project" or "board", never bare "project". Status flows one way, store to
+board.
 
 **Candidate.** The commit under review: the worktree's HEAD, exported
 read-only for the reviewer.
