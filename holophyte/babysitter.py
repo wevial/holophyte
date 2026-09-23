@@ -12,6 +12,7 @@ from holophyte import (
     babysitter,
     failure_reason,
     maintainer_notes,
+    merge_queue,
     pr,
     pr_status,
     thread_mentions,
@@ -479,10 +480,9 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                                   branch, wt, sha, beat_s, pull, state, rnd,
                                   pass_no, model, ticket, verify_cmd,
                                   contracts, budget_min, reviewed=reviewed)
-            if sha != state.head_sha:
-                pushed_state = _just_pushed_state(
-                    project, conn, run_id, provider, task_id, branch, sha,
-                    beat_s, pull, reviewed)
+            pushed_state = (_just_pushed_state(
+                project, conn, run_id, provider, task_id, branch, sha,
+                beat_s, pull, reviewed) if sha != state.head_sha else None)
             continue
         reply = babysitter.round_reply(pull, pass_no, (), {}, state.checks, sha)
         record_round(project, conn, run_id, rnd, "review", reply, None, True,
@@ -515,11 +515,18 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             released, reviewed, approved = reviewed, sha, False
         if merge.approve == "auto" or approved:
             try:
-                merge_sha = _verified_merge(project, conn, run_id, provider, task_id,
-                                       issue_id, branch, wt, sha, beat_s, pull,
-                                       reviewed, verified, verify_cmd, contracts,
-                                       ticket, budget_min, merge.approve == "auto")
+                merge_sha = merge_queue.verified_merge(
+                    project, conn, run_id, provider, task_id, issue_id, branch,
+                    wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
+                    contracts, ticket, budget_min, merge.approve == "auto")
                 return replace(run, sha=sha, merge_sha=merge_sha)
+            except merge_queue.QueueRemoved as removed:  # Red merge group.
+                sha, pushed_state = fix_checks_or_park(
+                    replace(run, sha=sha), beat_s, pull, replace(
+                        state, checks="failure", failed_checks=removed.failed),
+                    ticket, verify_cmd, contracts, pass_no, reviewed,
+                    check_fix, removed.group)
+                continue
             except pr.MergeRefused as refused:
                 verified = sha
                 sha, pushed_state, reviewed = _merge_origin_main(
@@ -540,20 +547,6 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
     _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                 f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
                 " babysitter stops here", state.threads, reviewed=reviewed)
-
-
-def _verified_merge(project, conn, run_id, provider, task_id, issue_id, branch,
-                    wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
-                    contracts, ticket, budget_min, retry_conflicts):
-    """Gate a changed candidate before attempting the PR merge."""
-    from holophyte.merge_gate import _merge_gate
-    from holophyte.pullrequest import _merge_pr
-    if sha != verified:
-        _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch,
-                    wt, beat_s, sha, verify_cmd, contracts, ticket, budget_min,
-                    sync_main=False)
-    return _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha,
-                     beat_s, pull, reviewed=reviewed, retry_conflicts=retry_conflicts)
 
 
 def _fixes_reviewed(merge):

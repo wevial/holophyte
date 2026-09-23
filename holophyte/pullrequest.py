@@ -372,6 +372,9 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
                          if merge_queue.merge_queue_required(project, pull)
                          else pr.merge_pull_request(project, pull, sha))
     except merge_queue.QueueLeft as left:
+        removed = merge_queue.red_group(project, conn, run_id, pull, left)
+        if removed is not None:
+            raise removed from None  # The babysit's check fix turn's.
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     str(left), (), reviewed=reviewed)
     except pr.MergeRefused as refused:
