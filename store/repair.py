@@ -92,8 +92,15 @@ def repair_references(conn, dry_run=True):
     the schema cookie, and run `integrity_check` and `foreign_key_check`
     over the whole store. Anything unclean raises `sqlite3.DatabaseError`
     and rolls the whole transaction back, intervention included.
+
+    The rewrite owns its transaction: inside the caller's, the backup would
+    wait forever on that transaction's own write lock, and the rollback
+    above would not be this call's to make, so it raises `ValueError`.
     """
     from .operate import record_project_intervention
+    if not dry_run and conn.in_transaction:
+        raise ValueError("repair_references(dry_run=False) runs its own"
+                         " transaction; commit or roll back the open one first")
     found = _dangling(conn)
     fixes = [ref for ref in found if ref[3] is not None]
     if dry_run or not fixes:

@@ -9,7 +9,10 @@ Run: HOLOPHYTE_HOME=$(mktemp -d) python3 -m unittest tests.test_store_repair
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -110,6 +113,31 @@ class RepairReferencesTests(unittest.TestCase):
         self.assertEqual(self.schema(conn), schema)
         self.assertEqual(self.interventions(conn), rows)
         self.assertEqual(conn.execute("PRAGMA writable_schema").fetchone(), (0,))
+
+    def test_a_repair_inside_an_open_transaction_is_refused_promptly(self):
+        # The backup cannot progress past the caller's own write transaction,
+        # so this call once hung holding the writer lock: run it in a child
+        # with a deadline, and the suite fails instead of hanging with it.
+        self.break_interventions(self.raw())
+        child = (
+            "import sqlite3, sys, store\n"
+            "conn = sqlite3.connect(sys.argv[1])\n"
+            "with store.transaction(conn):\n"
+            "    store.record_project_intervention(conn, 'migrate', 'first')\n"
+            "    try:\n"
+            "        store.repair_references(conn, dry_run=False)\n"
+            "    except ValueError as exc:\n"
+            "        print('refused:', exc)\n")
+        root = Path(__file__).resolve().parents[1]
+
+        result = subprocess.run(
+            [sys.executable, "-c", child, str(self.path)], cwd=root,
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "PYTHONPATH": str(root)})
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("refused: repair_references", result.stdout)
+        self.assertEqual(store.repair_references(self.raw()), [DANGLING])
 
     def test_only_the_reference_clause_is_rewritten(self):
         conn = self.raw()
