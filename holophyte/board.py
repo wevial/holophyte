@@ -227,7 +227,7 @@ def task_contract(task):
             ticket_template.parse(task.get("body") or "").evidence_states)
 
 
-def body_problem(task, repo=None):
+def body_problem(task, repo=None, on_pull_request=False):
     """The first template violation in the offered ticket's body, or None.
 
     The claim-time contract gate. `ticket_template.validate()` is what a
@@ -250,10 +250,17 @@ def body_problem(task, repo=None):
     `repo` is the target repository's path; with it the validator also
     refuses a body naming a path that repository gitignores, which the
     reviewer's export of the candidate can never contain.
+
+    `on_pull_request` says the ticket's last run holds a pull request URL:
+    its candidate is already on that pull request, where the paths main
+    lacks live, so the repository checks are skipped entirely (KO-598) and
+    only a first claim is refused for them (KO-655).
     """
     body = task.get("body")
     if body is None:
         return None
+    if on_pull_request:
+        repo = None
     problems = ticket_template.blocking(
         ticket_template.validate(ticket_template.parse(body), repo=repo))
     return problems[0] if problems else None

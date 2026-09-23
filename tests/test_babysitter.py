@@ -543,6 +543,78 @@ class ConflictingPullRequestTests(MergeModeFixture):
         self.assertIn(f"main is red at {moved}", self.question())
         self.assertEqual(calls[1][0], shared)
 
+    def carry_candidate(self, command, setup=None, installed=True,
+                        carry=("deps",)):
+        """KO-643: a candidate adding THING.md, a target carrying the
+        ignored `deps` directory, the task worktree holding it when
+        `installed`, and a main moved on by MOVED.md. Returns the task
+        worktree and the moved main."""
+        self.parked_on_a_nit(Commit("candidate", path="THING.md"))
+        common = Path(self.git("rev-parse", "--path-format=absolute",
+                               "--git-common-dir").strip())
+        (common / "info").mkdir(exist_ok=True)
+        with open(common / "info" / "exclude", "a") as exclude:
+            exclude.write("deps\n")
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       f"[worktree]\ncarry = {json.dumps(list(carry))}\n"
+                       + (f"setup = {json.dumps(setup)}\n" if setup else ""))
+        self.provider = lambda: StubProvider(
+            dict(a_task(), body=self.BODY, verify=command))
+        wt = self.worktrees / "ko-131-add-a-thing"
+        if installed:
+            (wt / "deps").mkdir()
+            (wt / "deps" / "package.txt").write_text("installed\n")
+        moved = self.remote_main("MOVED.md", "main moved\n")
+        self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
+        return wt, moved
+
+    def prepared(self):
+        return [event for (event,) in self.read(
+            "SELECT summary FROM runEvents WHERE runId = 2"
+            " AND summary LIKE 'main-side verify%prepared%'")]
+
+    def test_a_carried_directory_makes_a_green_main_baseline(self):
+        command = "test -d deps && test -e FIXED.md -o ! -e THING.md"
+        wt, moved = self.carry_candidate(command)
+        fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
+        self.assertEqual(fake.roles[0], "implement")
+        self.assertIn(f"main at {moved} passes", fake.turns[0].goal)
+        self.assertIn("carried deps", " ".join(self.prepared()))
+        # The link is gone with the checkout; the worktree's copy is not.
+        self.assertEqual((wt / "deps" / "package.txt").read_text(), "installed\n")
+
+    def test_a_carry_the_worktree_lacks_runs_setup_on_main_first(self):
+        command = "test -d deps && test -e FIXED.md -o ! -e THING.md"
+        _, moved = self.carry_candidate(command, setup=["mkdir deps"],
+                                        installed=False)
+        fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
+        self.assertEqual(fake.roles[0], "implement")
+        self.assertIn(f"main at {moved} passes", fake.turns[0].goal)
+        (event,) = self.prepared()
+        self.assertIn("ran setup for deps: mkdir deps", event)
+        self.assertNotIn("FAILED", event)
+
+    def test_setup_replacing_a_carried_link_still_cleans_up(self):
+        """Review finding: setup that swaps a carried link for a directory
+        must not turn the checkout's cleanup into a crash."""
+        command = "test -d deps && test -e FIXED.md -o ! -e THING.md"
+        wt, moved = self.carry_candidate(
+            command, setup=["rm -rf deps && mkdir -p deps other-deps"],
+            carry=("deps", "other-deps"))
+        fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
+        self.assertIn(f"main at {moved} passes", fake.turns[0].goal)
+        self.assertNotIn("--detach", self.git("worktree", "list", "--porcelain"))
+        self.assertEqual((wt / "deps" / "package.txt").read_text(), "installed\n")
+
+    def test_a_true_red_main_with_the_directory_carried_still_parks(self):
+        command = "test -d deps && test ! -e MOVED.md"
+        _, moved = self.carry_candidate(command)
+        fake, _ = self.resume()
+        self.assertEqual(fake.roles, [])
+        self.assertIn(f"main is red at {moved}; verify command: {command}",
+                      self.question())
+        self.assertIn("carried deps", " ".join(self.prepared()))
+
     def test_a_tree_conflict_goes_to_the_implementer_then_parks(self):
         """KO-377: `origin/main` conflicts with the branch in the tree.
         The pass invokes one implementer turn with the conflicting paths

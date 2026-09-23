@@ -100,6 +100,8 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
             'QUOTED="sentinel quoted value"\n'
             "AUTH_KEY=sentinel-auth-value\nDB_KEY=sentinel-db-value\n"
             "OTHER=sentinel-other-value\n")
+        capture = self.target.parent / "capture.env"
+        capture.write_text("CAPTURE_KEY=sentinel-capture\n")
         seen = self.target.parent / "seen.env"
         mode = self.target.parent / "seen.mode"
         self.configure(
@@ -107,12 +109,16 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
             'env_allow = ["PUBLIC", "QUOTED"]\n'
             f'setup = ["cp .env {seen}; '
             f'(stat -c %a .env 2>/dev/null || stat -f %Lp .env) > {mode}; '
-            f'echo sentinel-public-value", "cat {source}; exit 3"]\n')
+            f'echo sentinel-public-value", "cat {source}; exit 3"]\n'
+            f'[merge]\ncapture_env_source = "{capture}"\n'
+            'capture_env_allow = ["CAPTURE_KEY"]\n')
         provider = StubProvider(a_task())
         out = self.main_output(provider=provider)
         self.assertEqual(seen.read_text(),
                          'PUBLIC=sentinel-public-value\n'
                          'QUOTED="sentinel quoted value"\n')
+        self.assertNotIn("CAPTURE_KEY", seen.read_text())
+        self.assertNotIn("sentinel-capture", seen.read_text())
         self.assertEqual(mode.read_text().strip(), "600")
         conn = store.open(str(self.db))
         try:

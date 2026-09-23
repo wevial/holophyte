@@ -17,6 +17,7 @@ from urllib.parse import quote
 
 import ticket_template
 from holophyte import isolation, media_store, pr
+from holophyte.config import capture_environment
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
@@ -86,6 +87,8 @@ def _capture(command, wt, output, task_id, states, *, target=None):
         env = dict(isolation.environment(target) or {})
     else:
         env = dict(os.environ)
+    if target is not None:
+        env.update(capture_environment(target) or {})
     env['HOLOPHYTE_TICKET'] = task_id
     env.pop("HOLOPHYTE_EVIDENCE_STATES", None)
     if states:

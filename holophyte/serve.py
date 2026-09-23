@@ -45,6 +45,10 @@ constant time before any store is opened; a non-loopback bind without the
 key is a startup error naming it. `/`, the console's files and `/peers`
 stay open so the page can load and learn where its peers are. A loopback
 bind ignores the key for its reads. The token is never printed or logged.
+`[serve] machine_token_file` (KO-647) names a second file, held to the
+same rules and read wherever `token_file` is: one token for every daemon
+on the machine, accepted beside the project's own on every route that
+demands a bearer, so a single project can still be shared without it.
 
 `[serve] actions = true` (KO-348) is the one exception to read-only: it
 opens four `POST /actions/...` routes behind the token, each a legal
@@ -157,6 +161,7 @@ LOOPBACK = "127.0.0.1"
 # tailnet address or the wildcard included, needs `[serve] token_file`.
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "127.1"})
 TOKEN_KEY = "[serve] token_file"
+MACHINE_TOKEN_KEY = "[serve] machine_token_file"
 # Bits the token file must not carry: anyone but its owner reading it.
 TOKEN_FORBIDDEN_MODE = stat.S_IRWXG | stat.S_IRWXO
 # The paths the token does not guard: the console page and what it needs
@@ -475,34 +480,46 @@ def is_loopback(host):
     return packed[0] == 127
 
 
-def load_token(path):
+def load_token(path, key=TOKEN_KEY):
     """The token file's contents, whitespace-stripped; SystemExit otherwise.
 
     The file must exist, be a regular file, carry something, and be
     readable by its owner alone: a group- or world-readable token is one
     the daemon refuses to serve behind, and the refusal names the mode so
-    the operator can see the bit to drop. The token itself is never
-    printed.
+    the operator can see the bit to drop. `key` is the config key the
+    refusal names. The token itself is never printed.
     """
     path = Path(path)
     try:
         info = path.stat()
     except OSError as error:
-        raise SystemExit(f"[holo2] {TOKEN_KEY}: {path}: {error.strerror}")
+        raise SystemExit(f"[holo2] {key}: {path}: {error.strerror}")
     if not stat.S_ISREG(info.st_mode):
-        raise SystemExit(f"[holo2] {TOKEN_KEY}: {path} is not a regular file")
+        raise SystemExit(f"[holo2] {key}: {path} is not a regular file")
     if info.st_mode & TOKEN_FORBIDDEN_MODE:
         raise SystemExit(
-            f"[holo2] {TOKEN_KEY}: {path} is mode {stat.S_IMODE(info.st_mode):04o};"
+            f"[holo2] {key}: {path} is mode {stat.S_IMODE(info.st_mode):04o};"
             " it must not be group- or world-readable (chmod 600)")
     token = path.read_text().strip()
     if not token:
-        raise SystemExit(f"[holo2] {TOKEN_KEY}: {path} is empty")
+        raise SystemExit(f"[holo2] {key}: {path} is empty")
     return token
 
 
+def load_tokens(knobs):
+    """The bearer values the daemon accepts: the project's `token_file`
+    and, when set, the machine's `machine_token_file`, each held to
+    `load_token()`'s rules. The caller has already required `token_file`.
+    """
+    tokens = (load_token(knobs.token_file),)
+    if knobs.machine_token_file is not None:
+        tokens += (load_token(knobs.machine_token_file, MACHINE_TOKEN_KEY),)
+    return tokens
+
+
 def resolve_token(target, host):
-    """The token `--serve` on `host` needs, or None when the bind is loopback.
+    """The tokens `--serve` on `host` accepts, or None when the bind is
+    loopback.
 
     A non-loopback bind with no `[serve] token_file` configured exits
     naming the key: the bind address stops being the boundary the moment
@@ -512,22 +529,22 @@ def resolve_token(target, host):
     """
     if is_loopback(host):
         return None
-    token_file = serve_config(target).token_file
-    if token_file is None:
+    knobs = serve_config(target)
+    if knobs.token_file is None:
         raise SystemExit(
             f"[holo2] {target.config_path}: --serve {host} binds beyond"
             f" loopback, which needs {TOKEN_KEY} = \"PATH\" naming a"
             " file whose contents every request presents as"
             " `Authorization: Bearer ...`")
-    return load_token(token_file)
+    return load_tokens(knobs)
 
 
 def resolve_action_token(target, knobs, token):
-    """The token `POST /actions/...` and the `/config` routes demand, or
+    """The tokens `POST /actions/...` and the `/config` routes accept, or
     None when neither `[serve] actions` nor `[serve] config_edit` is on.
 
     `token` is what `resolve_token()` gave the bind: on a non-loopback bind
-    it is already the file's contents and the write routes share it. A
+    it is already the files' contents and the write routes share them. A
     loopback bind has none, and the write routes do not inherit its
     openness -- the bind address guards reads, not a hand on the units or
     the config -- so the file is read for them alone, and either opt-in
@@ -546,20 +563,25 @@ def resolve_action_token(target, knobs, token):
             f" needs {TOKEN_KEY} = \"PATH\" on every bind, loopback"
             " included: the routes it opens answer only to"
             " `Authorization: Bearer ...`")
-    return load_token(knobs.token_file)
+    return load_tokens(knobs)
 
 
-def authorized(header, token):
-    """Whether `header` is exactly `Bearer TOKEN`, compared in constant time.
+def authorized(header, tokens):
+    """Whether `header` is exactly `Bearer TOKEN` for one of `tokens`, each
+    compared in constant time.
 
     Any other scheme, a missing header, a wrong or a truncated value are
     all one answer, so the check leaks nothing about how close the guess
-    came.
+    came; every token is compared whichever matches, so neither does it
+    tell which one did.
     """
     scheme, _, value = (header or "").partition(" ")
     if scheme != "Bearer":
         return False
-    return hmac.compare_digest(value.strip().encode(), token.encode())
+    presented = value.strip().encode()
+    matches = [hmac.compare_digest(presented, token.encode())
+               for token in tokens]
+    return any(matches)
 
 
 def static_file(console_dir, path):
@@ -840,10 +862,10 @@ class StatusServer(ThreadingHTTPServer):
     `[serve] name`, read once at bind too: whether `POST /actions/...`
     answers and which unit instance it addresses; `config_edit` is `[serve]
     config_edit`, whether the `/config` routes answer; `action_token` is the
-    bearer value those routes demand on every bind, resolved at bind from
-    `[serve] token_file` when the read `token` is None, so a loopback
-    daemon with actions on exits at bind without the key rather than
-    answering them open."""
+    bearer values those routes accept on every bind, resolved at bind from
+    `[serve] token_file` (and `machine_token_file`) when the read `token`
+    is None, so a loopback daemon with actions on exits at bind without
+    the key rather than answering them open."""
 
     daemon_threads = True
 
@@ -870,7 +892,7 @@ def make_server(target, host, port, console_dir=CONSOLE_DIR, token=None):
     `server.server_address`. The caller runs `serve_forever()` and closes it.
     `console_dir` is where `/` is served from -- the repository's own
     `console/dist/` unless a test points it elsewhere. `token`, when given,
-    is the bearer value every JSON route demands; `serve()` resolves it
+    is the tuple of bearer values every JSON route accepts; `serve()` resolves it
     from the bind address and the config through `resolve_token()`.
     """
     return StatusServer(target, (host, port), console_dir, token)

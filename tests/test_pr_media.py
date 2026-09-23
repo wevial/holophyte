@@ -114,6 +114,10 @@ class MediaTests(unittest.TestCase):
         from holophyte import isolation
         from holophyte.target import state_dir
         self.config['agents'] = {'implementer_isolation': 'container'}
+        capture_source = self.root / 'capture.env'
+        capture_source.write_text('CAPTURE_KEY=sentinel-capture\nOTHER=sentinel-other\n')
+        self.config['merge'].update(capture_env_source=str(capture_source),
+                                    capture_env_allow=['CAPTURE_KEY'])
         self.candidate()
         worktree = self.root / 'task'
         self.git('worktree', 'add', '-qb', 'task', str(worktree))
@@ -139,6 +143,10 @@ class MediaTests(unittest.TestCase):
             self.assertEqual(env['HOLOPHYTE_TICKET'], 'KO-530')
             self.assertEqual(env['HOLOPHYTE_EVIDENCE_STATES'], '\n'.join(states))
             self.assertNotIn('MEDIA_SECRET', env)
+            self.assertIn('--env=CAPTURE_KEY', argv)
+            self.assertNotIn('sentinel-capture', ' '.join(argv))
+            self.assertEqual(env['CAPTURE_KEY'], 'sentinel-capture')
+            self.assertNotIn('OTHER', env)
             host_image = self.repo / relative_output / '01-dialog.png'
             self.assertEqual(self.git('check-ignore', str(host_image)),
                              str(host_image))
@@ -156,6 +164,7 @@ class MediaTests(unittest.TestCase):
             section = pr_media.prepare(self.target, self.repo, 'KO-530',
                                        evidence_states=states)
         run.assert_called_once()
+        self.assertNotIn('CAPTURE_KEY', isolation.environment(self.target))
         self.assertIn('Dialog open — captured', section)
         self.assertEqual(subprocess.check_output(
             ['git', '--git-dir', str(self.remote), 'show',
@@ -233,6 +242,28 @@ class MediaTests(unittest.TestCase):
                 stdin=subprocess.DEVNULL, stdout=ANY, stderr=ANY,
                 start_new_session=True)
             popen.return_value.wait.assert_called_once_with(timeout=300)
+
+    def test_host_capture_adds_only_allowed_capture_environment(self):
+        from unittest.mock import ANY
+        source = self.root / 'capture.env'
+        source.write_text('CAPTURE_KEY=sentinel-capture\nOTHER=sentinel-other\n')
+        self.config['merge'].update(capture_env_source=str(source),
+                                    capture_env_allow=['CAPTURE_KEY'])
+        with (patch.dict(os.environ),
+              patch.object(pr_media.subprocess, 'Popen') as popen):
+            os.environ.pop('CAPTURE_KEY', None)
+            os.environ.pop('OTHER', None)
+            popen.return_value.wait.return_value = 0
+            error = pr_media._capture('python3 capture.py', self.repo, self.root,
+                                      'KO-530', [], target=self.target)
+            self.assertNotIn('CAPTURE_KEY', os.environ)
+            popen.assert_called_once_with(
+                ['python3', 'capture.py', str(self.root)], cwd=self.repo,
+                env=dict(os.environ, CAPTURE_KEY='sentinel-capture',
+                         HOLOPHYTE_TICKET='KO-530'),
+                stdin=subprocess.DEVNULL, stdout=ANY, stderr=ANY,
+                start_new_session=True)
+        self.assertEqual(error, '')
 
     def test_ticket_states_reach_capture_and_review(self):
         from holophyte.review import evidence_brief
