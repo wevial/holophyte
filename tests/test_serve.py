@@ -32,6 +32,7 @@ import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.schema  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.serve_config import TOMLKIT_MISSING  # noqa: E402
 from tests.phase_fixture import advance_phase, finish_run, park_run
@@ -1100,6 +1101,41 @@ class PrUrlTests(ServeTestCase):
         self.assertEqual(set(by_ticket), {"KO-8", "KO-9"})
         self.assertEqual(by_ticket["KO-8"]["pr_url"], self.PR_URL)
         self.assertIsNone(by_ticket["KO-9"]["pr_url"])
+
+
+class ActionFailureTests(ServeTestCase):
+    """KO-649: an action handler that raises is a 500 JSON answer the
+    console can read, not a dropped connection it calls "Failed to fetch"."""
+
+    def send_back_raising(self, failure):
+        """`(status, headers, body, stderr)` of a send-back raising `failure`."""
+        self.seed()
+        token = self.root / "serve.token"
+        token.write_text(TokenTests.TOKEN + "\n")
+        token.chmod(0o600)
+        self.start(f'[serve]\ntoken_file = "{token}"\nactions = true\n')
+        out = io.StringIO()
+        with contextlib.redirect_stderr(out), patch.object(
+                holophyte.serve, "send_back_action", side_effect=failure):
+            return (*self.request("POST", "/actions/send-back", TokenTests.BEARER,
+                                  {"run": self.run}), out.getvalue())
+
+    def test_a_raising_handler_answers_500_json_and_the_daemon_serves_on(self):
+        # The 2026-09-22 incident: a `SystemExit` subclass, not an Exception.
+        code, headers, body, logged = self.send_back_raising(
+            store.schema.SchemaNewer("store.db", 99))
+        self.assertEqual((code, headers["Access-Control-Allow-Origin"]), (500, "*"))
+        self.assertIn("SchemaNewer: store.db: store schema version 99", body["error"])
+        self.assertEqual(logged.count("Traceback"), 1, logged)
+        self.assertEqual(self.request("GET", "/status")[0], 200)
+
+    def test_a_registered_secret_in_the_message_is_redacted(self):
+        self.enterContext(patch("holophyte.redact._environment_values", frozenset()))
+        holophyte.redact.register_values(["ko649-registered-secret"])
+        _, _, body, logged = self.send_back_raising(
+            RuntimeError("could not open with ko649-registered-secret"))
+        self.assertEqual(body["error"], "RuntimeError: could not open with [redacted]")
+        self.assertNotIn("ko649-registered-secret", self.raw_body + logged)
 
 
 class ParseAddressTests(unittest.TestCase):

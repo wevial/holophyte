@@ -15,9 +15,12 @@ lives with them in `holophyte.serve_runs`, so the import runs one way;
 from __future__ import annotations
 
 import json
+import sys
+import traceback
 
 import store.read
 from holophyte.config import serve_config
+from holophyte.redact import known_secrets, outbound
 from holophyte.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.runs import open_store
 from holophyte.serve_runs import no_store
@@ -192,3 +195,21 @@ def send_back_action(target, run_id, note, author):
         conn.close()
     return 200, {"ok": True, "run": run_id, "event_id": event_id,
                  "detail": f"Sent back with operator_note event {event_id}"}
+
+
+def action_failure(target, action, failure):
+    """The 500 for an action handler that raised `failure` (KO-649), its
+    traceback logged once. `SystemExit` counts: the store's `SchemaNewer`
+    is one, and unanswered it closed the connection, which the console
+    could only call "Failed to fetch". The `error` names the exception's
+    type and message; it and the log are redacted as other outbound text
+    is, with registered values alone when the config is what failed."""
+    try:
+        secrets = known_secrets(target.config())
+    except (Exception, SystemExit):
+        secrets = known_secrets(None)
+    print(outbound(f"[holo2] action {action} failed:\n"
+                   + traceback.format_exc(), secrets),
+          file=sys.stderr, end="")
+    return 500, {"error": outbound(
+        f"{type(failure).__name__}: {failure}", secrets)}
