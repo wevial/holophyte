@@ -107,10 +107,10 @@ class ServeTestCase(unittest.TestCase):
         An absent console build under the temporary root is the default."""
         if config is not None:
             (self.db.parent / "config.toml").write_text(config)
-        self.tgt = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.project.Project.locate(self.target)
         console_dir = console_dir or self.root / "console" / "dist"
-        token = holophyte.serve.resolve_token(self.tgt, host)
-        server = holophyte.serve.make_server(self.tgt, host, 0,
+        token = holophyte.serve.resolve_token(self.project, host)
+        server = holophyte.serve.make_server(self.project, host, 0,
                                              console_dir=console_dir,
                                              token=token)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

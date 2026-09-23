@@ -136,11 +136,11 @@ class TokenTests(ServeTestCase):
 
     def test_a_non_loopback_bind_without_a_token_file_is_a_startup_error(self):
         self.seed()
-        tgt = holophyte.project.Project.locate(self.target)
+        project = holophyte.project.Project.locate(self.target)
         for address in ("0.0.0.0:0", "[::]:0", "10.0.0.1:0"):
             with self.subTest(address=address), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.serve.serve(tgt, address, out=io.StringIO())
+                holophyte.serve.serve(project, address, out=io.StringIO())
             self.assertIn("[serve] token_file", str(raised.exception))
             self.assertNotEqual(raised.exception.code, 0)
 
@@ -219,10 +219,10 @@ class TokenTests(ServeTestCase):
         self.seed()
         for mode in (0o640, 0o604, 0o644):
             path = self.token_file(mode)
-            tgt = self.configured(path)
+            project = self.configured(path)
             with self.subTest(mode=oct(mode)), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.serve.serve(tgt, "0.0.0.0:0", out=io.StringIO())
+                holophyte.serve.serve(project, "0.0.0.0:0", out=io.StringIO())
             message = str(raised.exception)
             self.assertIn(f"{mode:04o}", message)
             self.assertIn(str(path), message)
@@ -231,10 +231,10 @@ class TokenTests(ServeTestCase):
     def test_a_missing_or_empty_token_file_is_refused_naming_it(self):
         self.seed()
         for path in (self.root / "absent.token", self.token_file(text="  \n")):
-            tgt = self.configured(path)
+            project = self.configured(path)
             with self.subTest(path=path.name), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.serve.serve(tgt, "0.0.0.0:0", out=io.StringIO())
+                holophyte.serve.serve(project, "0.0.0.0:0", out=io.StringIO())
             self.assertIn(str(path), str(raised.exception))
 
     MACHINE_TOKEN = "machine-wide-token-value"
@@ -302,7 +302,7 @@ class StatusTests(ServeTestCase):
         self.assertTrue(
             5 * SEC <= supervisor["heartbeat_age_ms"] < 5 * SEC + SLACK,
             supervisor)
-        knobs = holophyte.config_tables.sweep_config(self.tgt)
+        knobs = holophyte.config_tables.sweep_config(self.project)
         self.assertEqual(body["thresholds"],
                          {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                           "strikes": knobs.stale_strikes,
@@ -1406,7 +1406,7 @@ class FollowsCodeTests(ServeTestCase):
         a SIGTERM stops it; `(printed, events)` where `events` holds "EXEC"
         once the seam was called."""
         self.seed()
-        tgt = holophyte.project.Project.locate(self.target)
+        project = holophyte.project.Project.locate(self.target)
         out = io.StringIO()
         self.events = []
         returned = threading.Event()
@@ -1428,7 +1428,7 @@ class FollowsCodeTests(ServeTestCase):
                              lambda *_: self.events.append("EXEC")), \
                 patch.object(sys, "orig_argv", ["python3", "factory.py"]):
             try:
-                code = holophyte.serve.serve(tgt, "127.0.0.1:0", out=out,
+                code = holophyte.serve.serve(project, "127.0.0.1:0", out=out,
                                              interval=self.INTERVAL)
             finally:
                 returned.set()

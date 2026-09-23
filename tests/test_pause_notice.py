@@ -55,7 +55,7 @@ class PauseNoticeTests(MergeModeFixture):
         self.assertIsNotNone(comment_id)
 
         before = len(self.github())
-        command(self.tgt, "KO-131", None, resume=True)
+        command(self.project, "KO-131", None, resume=True)
         after = self.github()[before:]
         self.assertEqual(len(after), 2, after)
         self.assertIn("--method DELETE repos/example/repo/issues/comments/"
@@ -75,7 +75,7 @@ class PauseNoticeTests(MergeModeFixture):
         self.loop(PauseEdit(self.db))
         self.assertEqual(self.read("SELECT outcome, prUrl FROM runs"),
                          [("paused", None)])
-        command(self.tgt, "KO-131", None, resume=True)
+        command(self.project, "KO-131", None, resume=True)
         self.assertEqual(self.github(), [])
         self.assertEqual(self.notices(), [])
 

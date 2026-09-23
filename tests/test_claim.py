@@ -58,7 +58,7 @@ class BabysitClaimTests(MergeModeFixture):
         candidate = self.git("rev-parse", BRANCH).strip()
         self.assertIn("PR open:", self.question())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         self.assertEqual(self.read("SELECT blockedQuestion FROM tickets"), [(None,)])
         observed = []
         set_phase = holophyte.pullrequest.set_phase
@@ -164,7 +164,7 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
         (wt / ".env").symlink_to(source)
         self.configure(f'[worktree]\nenv_source = "{source}"\n'
                        'env_allow = ["PUBLIC"]\n')
-        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
         self.assertFalse((wt / ".env").is_symlink())
         self.assertEqual((wt / ".env").stat().st_mode & 0o777, 0o600)
         (wt / ".env").write_text("checkout changes\n")
@@ -175,7 +175,7 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
         self.git("worktree", "add", "-b", "capture-local", str(wt), "main")
         self.configure('[merge]\nui_capture_dir = ".holophyte-capture"\n'
                        "ui_capture_local = true\n")
-        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
         spec = wt / ".holophyte-capture" / "KO-7.capture.ts"
         spec.write_text("test('capture', () => {});\n")
         (wt / "work.txt").write_text("the ticket's change\n")
@@ -200,7 +200,7 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
                 self.git("worktree", "add", "--detach", str(wt), "main")
                 (wt / link).parent.mkdir(parents=True, exist_ok=True)
                 (wt / link).symlink_to(points_at)
-                ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
+                ok, report = holophyte.claim.run_worktree_setup(self.project, wt)
                 self.assertFalse(ok)
                 self.assertIn("symlink", report)
                 self.assertEqual(sorted(p.name for p in outside.iterdir()),
@@ -211,7 +211,7 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
         wt = self.target.parent / "capture-kept"
         self.git("worktree", "add", "--detach", str(wt), "main")
         self.configure('[merge]\nui_capture_dir = ".holophyte-capture"\n')
-        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
         self.assertFalse((wt / ".holophyte-capture").exists())
 
     def test_without_environment_keys_setup_writes_no_environment(self):
@@ -349,7 +349,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.loop(Commit(), PauseReply(self.db, REQUEST_CHANGES))
         self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
                          [("paused", "addressing")])
-        command(self.tgt, "KO-131", None, resume=True)
+        command(self.project, "KO-131", None, resume=True)
         fake, _ = self.loop(Commit("address recorded findings"), APPROVE)
         self.assertIn("scripted change is incomplete", fake.turns[0].goal)
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
@@ -363,7 +363,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.loop(Commit(), PauseReply(self.db, APPROVE))
         self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
                          [("paused", "merge_gate")])
-        command(self.tgt, "KO-131", None, resume=True)
+        command(self.project, "KO-131", None, resume=True)
         self.loop()  # No new agent turn, and no merge approval granted by resume.
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("blocked_on_operator",)])
@@ -377,7 +377,7 @@ class LeftoverWorktreeTests(LoopFixture):
         self.loop(PauseEdit(self.db))
         wt = self.worktrees / "ko-131-add-a-thing"
         original = wt.stat().st_ino
-        command(self.tgt, "KO-131", None, resume=True)
+        command(self.project, "KO-131", None, resume=True)
         # An APPROVE-only script fails if another implement turn is dispatched.
         cut = holophyte.claim._cut_worktree
         def reuse(*args, **kwargs):
@@ -412,7 +412,7 @@ class LeftoverWorktreeTests(LoopFixture):
                 self.git("worktree", "add", "--detach", str(wt), "main")
                 if own_ignore:
                     (wt / ".gitignore").write_text("/.env\n")
-                holophyte.claim.write_worktree_environment(self.tgt, wt)
+                holophyte.claim.write_worktree_environment(self.project, wt)
                 self.assertTrue((wt / ".env").is_file())
                 rule = ".gitignore" if own_ignore else "info/exclude"
                 self.assertIn(rule, self.git("check-ignore", "-v", ".env", cwd=wt))
@@ -420,7 +420,7 @@ class LeftoverWorktreeTests(LoopFixture):
                 if forced:
                     self.git("add", "-f", ".env", cwd=wt)
                     self.assertIn(".env", self.git("ls-files", cwd=wt).splitlines())
-                holophyte.environment_git.stage_work(self.tgt, wt)
+                holophyte.environment_git.stage_work(self.project, wt)
                 staged = self.git("diff", "--cached", "--name-only", cwd=wt)
                 self.assertIn("source.py", staged.splitlines())
                 self.assertNotIn(".env", staged.splitlines())
@@ -445,7 +445,7 @@ class LeftoverWorktreeTests(LoopFixture):
         """A reclaimed WIP candidate still needs independent approval."""
         wt = self.leftover()
         self.environment()
-        holophyte.claim.write_worktree_environment(self.tgt, wt)
+        holophyte.claim.write_worktree_environment(self.project, wt)
         (wt / "debris.bin").write_text("build junk\n")
 
         fake, _ = self.loop(Idle(), REQUEST_CHANGES, Idle())
@@ -462,7 +462,7 @@ class LeftoverWorktreeTests(LoopFixture):
         """An unignored environment alone is still an empty reclaimed checkout."""
         wt = self.leftover()
         self.environment()
-        holophyte.claim.write_worktree_environment(self.tgt, wt)
+        holophyte.claim.write_worktree_environment(self.project, wt)
         exclude = wt / _git(wt, "rev-parse", "--git-path", "info/exclude")
         exclude.write_text("")
         self.assertEqual(self.git("status", "--porcelain", cwd=wt).strip(), "?? .env")
@@ -1290,7 +1290,7 @@ class BoardLeaseLabelTests(LoopFixture):
         sibling loop's would be: the witness is that the provider saw no
         call from it at all."""
         self.seed_ended_run()
-        db, target, tgt = self.db, self.target, self.tgt
+        db, target, project = self.db, self.target, self.project
         seen = type("Seen", (), {"trips": (), "watched": ()})()
         competitor = []
         threads = []
@@ -1298,13 +1298,13 @@ class BoardLeaseLabelTests(LoopFixture):
         def compete(provider, issue_id):
             conn = store.open(str(db))
             try:
-                project = tickets.ensure_project(conn, StubProvider.TEAM,
+                project_id = tickets.ensure_project(conn, StubProvider.TEAM,
                                                str(target))
                 (ticket_id,) = conn.execute(
                     "SELECT id FROM tickets WHERE linearIssueId = ?",
                     (issue_id,)).fetchone()
                 competitor.append(holophyte.claim._claim_run(
-                    tgt, conn, project, provider, a_task(), ticket_id, seen))
+                    project, conn, project_id, provider, a_task(), ticket_id, seen))
             finally:
                 conn.close()
 
@@ -1348,19 +1348,19 @@ class BoardLeaseLabelTests(LoopFixture):
         ended = self.seed_ended_run()
         conn = store.open(str(self.db))
         try:
-            project = tickets.ensure_project(conn, StubProvider.TEAM,
+            project_id = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
             (ticket_id,) = conn.execute("SELECT id FROM tickets").fetchone()
-            live = store.claim(conn, project, ticket_id)
+            live = store.claim(conn, project_id, ticket_id)
             conn.commit()
             provider = StubProvider(a_task())
             provider.label_issue("iss-131", "holo:writer-1")
 
-            holophyte.board.release_lease_label(self.tgt, conn, ticket_id,
+            holophyte.board.release_lease_label(self.project, conn, ticket_id,
                                                 provider, ended)
             self.assertEqual(provider.labels["iss-131"], ["holo:writer-1"])
 
-            holophyte.board.release_lease_label(self.tgt, conn, ticket_id,
+            holophyte.board.release_lease_label(self.project, conn, ticket_id,
                                                 provider, live)
             self.assertEqual(provider.labels["iss-131"], [])
         finally:
@@ -1377,7 +1377,7 @@ class BoardLeaseLabelTests(LoopFixture):
         live run, and the fresh claim's label is written after the removal
         and stays on the board."""
         ended = self.seed_ended_run()
-        db, target, tgt = self.db, self.target, self.tgt
+        db, target, project = self.db, self.target, self.project
         seen = type("Seen", (), {"trips": (), "watched": ()})()
         claimed = []
         threads = []
@@ -1386,13 +1386,13 @@ class BoardLeaseLabelTests(LoopFixture):
         def claim(provider, issue_id):
             conn = store.open(str(db))
             try:
-                project = tickets.ensure_project(conn, StubProvider.TEAM,
+                project_id = tickets.ensure_project(conn, StubProvider.TEAM,
                                                str(target))
                 (ticket_id,) = conn.execute(
                     "SELECT id FROM tickets WHERE linearIssueId = ?",
                     (issue_id,)).fetchone()
                 claimed.append(holophyte.claim._claim_run(
-                    tgt, conn, project, provider, a_task(), ticket_id, seen))
+                    project, conn, project_id, provider, a_task(), ticket_id, seen))
             finally:
                 conn.close()
 
@@ -1417,7 +1417,7 @@ class BoardLeaseLabelTests(LoopFixture):
         conn = store.open(str(self.db))
         try:
             (ticket_id,) = conn.execute("SELECT id FROM tickets").fetchone()
-            holophyte.board.release_lease_label(self.tgt, conn, ticket_id,
+            holophyte.board.release_lease_label(self.project, conn, ticket_id,
                                                 provider, ended)
         finally:
             conn.close()
@@ -1590,7 +1590,7 @@ class BoardLeaseLabelTests(LoopFixture):
 
         provider = self.labelled(Watched, ["other", self.label()])
         out = io.StringIO()
-        holophyte.operator.requeue(self.tgt, "KO-131", "board back", out,
+        holophyte.operator.requeue(self.project, "KO-131", "board back", out,
                                provider=provider)
 
         self.assertEqual(out.getvalue().strip(),
@@ -1628,7 +1628,7 @@ class FactoryCommitIdentityTests(unittest.TestCase):
         self.git("init", "-q", "-b", "main")
         (self.repo / "README.md").write_text("base\n")
         self.setup_commit("base")
-        self.tgt = holophyte.project.Project(
+        self.project = holophyte.project.Project(
             path=self.repo, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=root / "wts")
         self.branch = "task/ko-656"
@@ -1657,7 +1657,7 @@ class FactoryCommitIdentityTests(unittest.TestCase):
         self.setup_commit("preserved work", cwd=self.wt)
         (self.repo / "new.txt").write_text("newer main\n")
         self.setup_commit("main moved on")
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt,
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt,
                                                  self.branch)
         self.assertTrue(ok, why)
         self.assertEqual(self.git("rev-list", "--parents", "-n", "1", "HEAD",
@@ -1682,7 +1682,7 @@ class FactoryCommitIdentityTests(unittest.TestCase):
         self.git("config", "user.email", "operator@example.com")
         (self.wt / "dirty.txt").write_text("uncommitted\n")
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt,
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt,
                                                  self.branch)
 
         self.assertTrue(ok, why)

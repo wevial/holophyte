@@ -65,7 +65,7 @@ class LivePullRequestTests(MergeModeFixture):
         self.loop(Commit("candidate"), APPROVE, Idle(""),
                   provider=self.provider())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         observed = []
         babysit = holophyte.pullrequest.babysitter._babysit
 
@@ -91,14 +91,14 @@ class LivePullRequestTests(MergeModeFixture):
 class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
     def test_consuming_round_lists_private_note_and_report_cites_event(self):
         run_id, event_id = self.operator_note_pass(False)
-        code, body = holophyte.serve_runs.run_detail(self.tgt, str(run_id))
+        code, body = holophyte.serve_runs.run_detail(self.project, str(run_id))
         self.assertEqual(code, 200)
         notes = [n for r in body["rounds"] for n in r["operator_notes"]]
         self.assertEqual(len(notes), 1)
         self.assertEqual(notes[0]["kind"], "operator_note")
         self.assertEqual(notes[0]["note"], "remove the subheader")
         self.assertEqual(notes[0]["event_id"], event_id)
-        with store.open(str(self.tgt.store_path)) as conn:
+        with store.open(str(self.project.store_path)) as conn:
             report = "\n".join(holophyte.report.report_lines(conn))
         self.assertIn(f"Run {run_id} round 1: operator_note event {event_id}", report)
         self.assertIn("remove the subheader", report)
@@ -878,13 +878,13 @@ class FailurePayloadTests(MergeModeFixture):
         self.assertEqual(facts['command'], command)
         self.assertEqual(facts['exit_status'], 3)
         self.assertEqual(facts['last_output_line'], 'boom')
-        code, body = holophyte.serve_runs.shipped(self.tgt, 'outcome=all')
+        code, body = holophyte.serve_runs.shipped(self.project, 'outcome=all')
         self.assertEqual(code, 200)
         self.assertEqual(body['rows'][0]['outcome_reason'], reason)
         self.assertIsInstance(body['rows'][0]['outcome_reason'], str)
         self.assertIn('command 2', reason)
         self.assertIn('exit 3; boom', reason)
-        code, body = holophyte.serve.attention(self.tgt)
+        code, body = holophyte.serve.attention(self.project)
         self.assertEqual(code, 200)
         (card,) = [item for item in body['items'] if item['kind'] == 'failed']
         self.assertEqual(card['reason'], reason)

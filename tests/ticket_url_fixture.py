@@ -17,13 +17,13 @@ def assert_mirror_url(case):
     task = {"id": "KO-1", "issue_id": "issue-1", "title": "ticket",
             "body": "", "budget_min": 25,
             "url": "https://linear.app/team/issue/KO-1/original"}
-    ticket_id = mirror_task(case.conn, case.project, task)
+    ticket_id = mirror_task(case.conn, case.project_id, task)
     case.assertEqual(case.conn.execute(
         "SELECT url FROM tickets WHERE id = ?", (ticket_id,)
     ).fetchone(), (task["url"],))
     for url in ("https://linear.app/team/issue/KO-1/renamed", None):
         task["url"] = url
-        case.assertEqual(mirror_task(case.conn, case.project, task), ticket_id)
+        case.assertEqual(mirror_task(case.conn, case.project_id, task), ticket_id)
         case.assertEqual(case.conn.execute(
             "SELECT url FROM tickets WHERE id = ?", (ticket_id,)
         ).fetchone(), (url,))

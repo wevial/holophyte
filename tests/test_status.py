@@ -43,7 +43,7 @@ class StatusTests(SweepTestCase):
                  "asked the operator", now=T0 + MINUTE)
         for n in (101, 102):
             store.tickets.mirror_ticket(
-                self.conn, self.project, linear_issue_id=f"issue-{n}",
+                self.conn, self.project_id, linear_issue_id=f"issue-{n}",
                 linear_identifier=f"KO-{n}", title=f"ticket {n}",
                 acceptance_criteria=["Given it, then it is done"],
                 verification_commands=["echo ok"])
@@ -92,11 +92,11 @@ class StatusTests(SweepTestCase):
     def test_locks_name_merge_holder_and_stale_supervisor(self):
         dead = subprocess.Popen([sys.executable, "-c", ""])
         dead.wait()
-        supervisor_lock_path(self.tgt).write_text(f"host-a {dead.pid} {T0}\n")
-        merge_lock_path(self.tgt).write_text(f"{self.live} {T0 / 1000}\n")
+        supervisor_lock_path(self.project).write_text(f"host-a {dead.pid} {T0}\n")
+        merge_lock_path(self.project).write_text(f"{self.live} {T0 / 1000}\n")
         conn = store.read.open_readonly(self.db)
         self.addCleanup(conn.close)
-        snap = holophyte.status.snapshot(self.tgt, conn, now=T0)
+        snap = holophyte.status.snapshot(self.project, conn, now=T0)
         self.assertEqual(snap["merge_lock"], {"run": self.live, "stale": False})
         self.assertEqual(snap["supervisor_lock"],
                          {"pid": dead.pid, "stale": True})

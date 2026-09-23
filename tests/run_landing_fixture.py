@@ -53,7 +53,7 @@ def landing_path(case, mode):
             script.append(Idle(''))
         case.loop(*script, provider=case.provider())
         if mode == 'approved':
-            holophyte.operator.approve(case.tgt, 'KO-131', 'ok', out=io.StringIO())
+            holophyte.operator.approve(case.project, 'KO-131', 'ok', out=io.StringIO())
             case.loop(provider=case.provider())
     case.assertEqual(len(landed), 1)
     run = landed[0]

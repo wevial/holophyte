@@ -30,7 +30,7 @@ class RepairReferencesTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "store.sqlite3"
         conn = store.open(self.path)
-        self.project = store.tickets.ensure_project(conn, "team", "/repo")
+        self.project_id = store.tickets.ensure_project(conn, "team", "/repo")
         conn.close()
 
     def raw(self):
@@ -81,7 +81,7 @@ class RepairReferencesTests(unittest.TestCase):
             "PRAGMA foreign_key_list(runs)") if row[3] == "stopRequested"],
             ["interventions"])
         ((run, project, action, note),) = self.interventions(conn)[len(rows):]
-        self.assertEqual((run, project, action), (None, self.project, "migrate"))
+        self.assertEqual((run, project, action), (None, self.project_id, "migrate"))
         self.assertTrue(Path(json.loads(note)["backup"]).is_file())
         self.assertEqual(conn.execute("PRAGMA integrity_check").fetchall(),
                          [("ok",)])
@@ -91,9 +91,9 @@ class RepairReferencesTests(unittest.TestCase):
         self.addCleanup(reopened.close)
         self.assertEqual(reopened.execute("PRAGMA foreign_keys").fetchone(), (1,))
         ticket = store.tickets.mirror_ticket(
-            reopened, self.project, linear_issue_id="issue-1",
+            reopened, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="ticket 1")
-        run_id = store.claim(reopened, self.project, ticket,
+        run_id = store.claim(reopened, self.project_id, ticket,
                              now=1_700_000_000_000)
         self.assertEqual(reopened.execute(
             "SELECT COUNT(*) FROM runs WHERE id = ?", (run_id,)).fetchone(), (1,))
@@ -178,7 +178,7 @@ class RecordProjectInterventionTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.conn = store.open(Path(tmp.name) / "store.sqlite3")
         self.addCleanup(self.conn.close)
-        self.project = store.tickets.ensure_project(self.conn, "team", "/repo")
+        self.project_id = store.tickets.ensure_project(self.conn, "team", "/repo")
 
     def test_records_one_row_with_no_run_and_the_project(self):
         before = self.conn.execute(
@@ -189,7 +189,7 @@ class RecordProjectInterventionTests(unittest.TestCase):
         self.assertEqual(self.conn.execute(
             'SELECT runId, projectId, "action", note FROM interventions'
             " ORDER BY id DESC LIMIT 1").fetchone(),
-            (None, self.project, "migrate", "note"))
+            (None, self.project_id, "migrate", "note"))
         self.assertEqual(self.conn.execute(
             "SELECT COUNT(*) FROM interventions").fetchone()[0], before + 1)
 

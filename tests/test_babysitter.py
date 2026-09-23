@@ -365,7 +365,7 @@ class ConflictingPullRequestTests(MergeModeFixture):
         """`--babysit` the parked run and drive it through the harness,
         faked GitHub serving whatever `serve()` last laid down."""
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         return self.loop(*script, provider=self.provider())
 
     def test_a_conflicting_pull_request_merges_origin_main_in(self):

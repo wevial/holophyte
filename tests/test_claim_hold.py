@@ -19,26 +19,27 @@ class ClaimHoldTests(SweepTestCase):
         store.release(self.conn, run, "failed", "retry")
         provider = Mock()
         provider.claim_next.return_value = {"id": "KO-2"}
-        store.hold(self.conn, self.project, "reboot pending")
+        store.hold(self.conn, self.project_id, "reboot pending")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            _startup_sweep(self.tgt, self.conn)
+            _startup_sweep(self.project, self.conn)
             self.assertIn("held: reboot pending", out.getvalue())
-            _reconcile_at_startup(self.tgt, self.conn, self.project, provider)
-            _mirror_queue(self.tgt, self.conn, self.project, provider)
+            _reconcile_at_startup(self.project, self.conn, self.project_id, provider)
+            _mirror_queue(self.project, self.conn, self.project_id, provider)
             result = _claim_next(
-                self.tgt, self.conn, self.project, provider, "identifier", set(), None
+                self.project, self.conn, self.project_id, provider, "identifier",
+                set(), None
             )
         self.assertEqual(result, (None, None, None))
         self.assertEqual(provider.mock_calls, [])
         self.assertIn(str(self.target), out.getvalue())
         self.assertIn("held: reboot pending", out.getvalue())
-        self.assertIsNone(store.claim(self.conn, self.project, ticket))
+        self.assertIsNone(store.claim(self.conn, self.project_id, ticket))
         self.assertEqual(
             self.conn.execute("SELECT COUNT(*) FROM runs").fetchone(), (1,)
         )
-        store.release_hold(self.conn, self.project, "reboot complete")
-        self.assertIsNotNone(store.claim(self.conn, self.project, ticket))
+        store.release_hold(self.conn, self.project_id, "reboot complete")
+        self.assertIsNotNone(store.claim(self.conn, self.project_id, ticket))
 
     def test_failed_project_update_rolls_back_intervention(self):
         self.conn.executescript("""
@@ -46,10 +47,10 @@ class ClaimHoldTests(SweepTestCase):
             BEGIN SELECT RAISE(ABORT, 'write refused'); END;
         """)
         with self.assertRaisesRegex(sqlite3.IntegrityError, 'write refused'):
-            store.hold(self.conn, self.project, 'reboot pending')
+            store.hold(self.conn, self.project_id, 'reboot pending')
         self.assertEqual(self.conn.execute(
             "SELECT admission FROM projects WHERE id = ?",
-            (self.project,)).fetchone(), ('enabled',))
+            (self.project_id,)).fetchone(), ('enabled',))
         self.assertEqual(self.conn.execute(
             "SELECT COUNT(*) FROM interventions WHERE action = 'hold'"
         ).fetchone(), (0,))

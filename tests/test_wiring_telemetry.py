@@ -124,7 +124,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
         self.db = root / "repo.holophyte.db"
         # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.project.Project(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -162,7 +162,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
                           "then the run row carries its timing"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.tgt, provider)
+                holophyte.operator.main(self.project, provider)
         return provider
 
     def test_close_out_stamps_the_run_row_and_the_window_reads_it_back(self):
@@ -173,7 +173,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
         file that says a run took two rounds while the row says four is the
         drift this ticket exists to remove.
         """
-        self.tgt.config_path.write_text('[report]\nfindings = "repo"\n')
+        self.project.config_path.write_text('[report]\nfindings = "repo"\n')
         self.loop("- factory.py:1: name the estimate\nVERDICT: REQUEST_CHANGES",
                   "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "VERDICT: APPROVE")
@@ -247,15 +247,15 @@ class ReportStoreCase(unittest.TestCase):
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = store.tickets.ensure_project(self.conn, "team-1", self.target)
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1", self.target)
 
     def completed_run(self, n, actual_min, estimate_min, rounds, outcome):
         ticket = store.tickets.mirror_ticket(
-            self.conn, self.project, linear_issue_id=f"issue-{n}",
+            self.conn, self.project_id, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}",
             time_box_ms=estimate_min and estimate_min * 60 * 1000)
         at = 1_700_000_000_000 + n * 3_600_000
-        run_id = store.claim(self.conn, self.project, ticket, now=at)
+        run_id = store.claim(self.conn, self.project_id, ticket, now=at)
         for number in range(1, rounds + 1):
             store.record_review_round(self.conn, run_id, number, "pass",
                                       "codex-sol-medium", started_at=at)
@@ -413,7 +413,7 @@ class HostLabelTests(ReportStoreCase):
         super().setUp()
         (self.db.parent / "config.toml").write_text(
             f'[report]\nhost_label = "{self.LABEL}"\n')
-        self.tgt = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.project.Project.locate(self.target)
 
     def test_the_report_and_findings_show_the_label_and_never_the_hostname(self):
         self.three_runs()

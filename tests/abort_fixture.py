@@ -48,7 +48,7 @@ class AbortTurnCases:
         # A 3 s stale threshold beats every 1.5 s.
         self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n")
         beat_s = holophyte.config_tables.sweep_config(
-            self.tgt).heartbeat_stale_ms / 2000
+            self.project).heartbeat_stale_ms / 2000
         db, seen, fake = self.db, {}, FakeAgent()
 
         class SleepUntilAborted(AbortEdit):
@@ -105,7 +105,7 @@ class AbortTurnCases:
         self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n[agents]\n"
                        "reviewer = \"sh -c 'sleep 30 & exec sleep 30'\"\n")
         beat_s = holophyte.config_tables.sweep_config(
-            self.tgt).heartbeat_stale_ms / 2000
+            self.project).heartbeat_stale_ms / 2000
         implementer, seen, real = FakeAgent(Commit("work")), {}, agents.run_capped
 
         def run_capped(cmd, cwd, timeout, on_start=None, **kwargs):
