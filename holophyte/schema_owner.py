@@ -64,31 +64,61 @@ def _ended(path, run_id):
     return "ended" if row[0] is not None else None
 
 
-def take_stale_lock(target, out):
-    """Remove a merge lock the sweep would call stale; return what was taken.
+# The holder a migration's merge lock names in place of a run: the owner has
+# no run, and `read_merge_lock()` reads this word as "names no run", so the
+# gate and the sweep treat it as they treat any unnamed lock.
+MIGRATION_HOLDER = "migration"
 
-    The rule is `merge_lock_lines()`'s: a lock naming a run that has ended,
-    or that the store does not know, is stale; a lock naming no run, or a
-    live run, is left alone. `--sweep --act` cannot clear it for an older
-    store, which only this owner may open, so the owner applies the rule
-    itself -- through the same `remove_dead_merge_lock()`, which refuses a
-    lock whose creating process still holds its flock. The line is printed
-    before the removal and the takeover rides in the migration event."""
-    path = merge_lock_path(target)
+
+def _stale_holder(target, path):
+    """`(run_id, why)` for a lock this owner may take, or None to leave it.
+
+    A lock naming a run is judged by the sweep's rule (`_ended()`); one the
+    migration itself wrote names no run, so it is judged by its process
+    alone -- `remove_dead_merge_lock()`'s flock probe. Any other unnamed
+    lock is left alone, as the sweep leaves it."""
+    try:
+        first = path.read_text().split()[:1]
+    except FileNotFoundError:
+        return None
+    if first == [MIGRATION_HOLDER]:
+        return None, "owner exited"
     holder = read_merge_lock(path)
     if holder is None or holder[0] is None:
         return None
-    run_id = holder[0]
-    why = _ended(target.store_path, run_id)
-    if why is None:
+    why = _ended(target.store_path, holder[0])
+    return None if why is None else (holder[0], why)
+
+
+def take_stale_lock(target, out):
+    """Remove a merge lock no live holder can still use; return what was taken.
+
+    The rule is `merge_lock_lines()`'s: a lock naming a run that has ended,
+    or that the store does not know, is stale; a lock naming a live run is
+    left alone. `--sweep --act` cannot clear it for an older store, which
+    only this owner may open, so the owner applies the rule itself. A lock
+    an earlier migration left when its supervisor died mid-migration is
+    taken too: nothing but a migrator writes it, and the sweep never clears
+    an unnamed lock. Both go through `remove_dead_merge_lock()`, which
+    refuses a lock whose creating process still holds its flock. The line
+    is printed before the removal and the takeover rides in the migration
+    event."""
+    path = merge_lock_path(target)
+    stale = _stale_holder(target, path)
+    if stale is None:
         return None
+    run_id, why = stale
+    what = (f"left by a migration whose {why}" if run_id is None
+            else f"run {run_id} {why}")
     print(f"[holo2] supervisor taking over stale merge lock before migration:"
-          f" run {run_id} {why}", file=out, flush=True)
+          f" {what}", file=out, flush=True)
     outcome = remove_dead_merge_lock(path)
     if outcome != "removed":
-        print(f"[holo2] stale merge lock of run {run_id} not taken: {outcome}",
+        print(f"[holo2] stale merge lock ({what}) not taken: {outcome}",
               file=out, flush=True)
         return None
+    if run_id is None:
+        return {"holder": MIGRATION_HOLDER, "why": why}
     return {"run": run_id, "why": why}
 
 
@@ -99,7 +129,7 @@ def migrate_store(target, out=None):
         return
     target.store_path.parent.mkdir(parents=True, exist_ok=True)
     taken = take_stale_lock(target, out)
-    with merge_lock(target, None, operation="migration"):
+    with merge_lock(target, MIGRATION_HOLDER, operation="migration"):
         # Another owner may have stamped the store while we waited.
         version = migration_version(target.store_path)
         if version == store.SCHEMA_VERSION:

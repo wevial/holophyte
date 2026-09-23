@@ -353,7 +353,8 @@ and `to` versions in the migration's own transaction. A disabled project's
 supervisor still migrates, then exits without sweeping or dispatching, so
 `project enable` can open the store. A merge lock naming a run that has
 ended is taken over under the sweep's stale-lock rule, since `--sweep --act`
-cannot open an older store; the takeover is printed and carried in the
+cannot open an older store, and so is the lock a supervisor killed
+mid-migration leaves behind; the takeover is printed and carried in the
 `migration` event as `staleLock`. A lock whose process still holds it is
 waited out. Initializing a fresh store creates no project row: `project add
 PATH` still registers it after the supervisor has started. Other writable opens refuse older schemas

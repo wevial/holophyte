@@ -345,6 +345,58 @@ class MigrationStartupTests(SweepTestCase):
             "from": older, "to": store.SCHEMA_VERSION,
             "staleLock": {"run": run_id, "why": "ended"}})
 
+    def test_restart_takes_over_lock_of_migrator_killed_mid_migration(self):
+        """A supervisor killed at its writable open, after taking the merge
+        lock, leaves a lock naming no run; the restart must take it over."""
+        import json
+        import subprocess
+
+        older = store.SCHEMA_VERSION - 1
+        self.conn.execute(f"PRAGMA user_version = {older}")
+        crash = ("import os, signal, sys\n"
+                 "sys.path.insert(0, sys.argv[1])\n"
+                 "import holophyte.project, holophyte.schema_owner as owner\n"
+                 "owner.store.open = lambda *a, **k: os.kill(os.getpid(),"
+                 " signal.SIGKILL)\n"
+                 "owner.migrate_store(holophyte.project.Project.locate(sys.argv[2]))\n")
+        died = subprocess.run(
+            [sys.executable, "-c", crash, str(Path(__file__).resolve().parents[1]),
+             str(self.target)], capture_output=True, text=True)
+        self.assertEqual(died.returncode, -signal.SIGKILL, died.stderr)
+        path = holophyte.gates.merge_lock_path(self.project)
+        self.assertTrue(path.exists(), "the killed migrator left no lock")
+        out = io.StringIO()
+
+        def first_pass(*args, **kwargs):
+            self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0],
+                             store.SCHEMA_VERSION)
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+        with patch('holophyte.merge_lock.lock_nap',
+                   side_effect=AssertionError("restart waited on a dead lock")), \
+                patch('holophyte.supervisor.factory_revision', return_value='same'), \
+                patch('holophyte.supervisor.supervise_pass', first_pass):
+            self.assertEqual(holophyte.supervisor.supervise(self.project, out=out), 0)
+        self.assertFalse(path.exists())
+        self.assertIn("taking over stale merge lock before migration: left by a"
+                      " migration whose owner exited", out.getvalue())
+        summary, = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE kind='migration'").fetchone()
+        self.assertEqual(json.loads(summary), {
+            "from": older, "to": store.SCHEMA_VERSION,
+            "staleLock": {"holder": "migration", "why": "owner exited"}})
+
+    def test_live_migrators_lock_is_not_taken(self):
+        from holophyte.schema_owner import MIGRATION_HOLDER, take_stale_lock
+
+        with holophyte.gates.merge_lock(self.project, MIGRATION_HOLDER,
+                                        operation="migration") as path:
+            stamp = path.read_text()
+            out = io.StringIO()
+            self.assertIsNone(take_stale_lock(self.project, out))
+            self.assertEqual(path.read_text(), stamp)
+        self.assertIn("not taken: in_use", out.getvalue())
+
     def test_ended_run_lock_held_by_a_live_process_is_not_taken(self):
         run_id = self.a_run(phase="merge_gate")
         store.release(self.conn, run_id, "failed", "died at the gate",
