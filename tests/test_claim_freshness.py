@@ -229,6 +229,17 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
 
         self.assert_claimed_without_comment(provider)
 
+    def test_a_paragraph_after_the_notes_list_is_no_item(self):
+        self.commit_claim_to_main()
+        body = notes_body(f"Change `Claimer` and `admit_ticket()` in `{CLAIM}`."
+                          "\n\nBackground for the implementer:\n"
+                          "Keep the existing behavior.")
+        provider = StubProvider(dict(a_task(1), body=body))
+
+        self.loop(Commit("the change"), APPROVE, provider=provider)
+
+        self.assert_claimed_without_comment(provider)
+
     def test_a_function_declared_new_is_not_checked(self):
         self.commit_claim_to_main()
         body = notes_body(f"Beside `admit_ticket()` in `{CLAIM}`, add a new"
