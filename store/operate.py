@@ -185,8 +185,8 @@ class RequeueRefused(Exception):
     """A requeue `requeue()` will not do; nothing was written.
 
     The ticket does not exist, still has a live run, is neither `in_flight`
-    nor `blocked_on_operator` after a failed or rejected run, or its last
-    run did not end `failed` or `rejected` -- each is
+    nor `blocked_on_operator` after a failed, rejected or aborted run, or
+    its last run did not end `failed`, `rejected` or aborted -- each is
     the same answer to the operator: this is not a failed ticket waiting
     to go back in the queue, so the message names which and the command
     line exits on it.
@@ -218,7 +218,10 @@ def requeue(conn, ticket_id, note, now=None):
     sessions wrote.
 
     A ticket parked `blocked_on_operator` after a failed or rejected run
-    is admitted too (KO-497), unless its run awaits merge approval. Clear
+    is admitted too (KO-497), unless its run awaits merge approval, and so
+    is one `--abort` parked: its run ended `abandoned` carrying an `abort`
+    or `abort_close` intervention (KO-719); an `abandoned` run without one
+    is refused as not aborted. Clear
     its question in the same transaction as the intervention and walk.
     Candidates and pull requests still awaiting approval name the operator
     command that applies instead -- except a `not_reproduced` park (KO-658),
@@ -250,7 +253,8 @@ def requeue(conn, ticket_id, note, now=None):
         run = (conn.execute("SELECT outcome, phase, prUrl, parkKind FROM runs"
                             " WHERE id = ?", (last_run_id,)).fetchone()
                if last_run_id is not None else None)
-        unreproduced = _requeue_admits(identifier, status, last_run_id, run)
+        unreproduced = _requeue_admits(identifier, status, last_run_id, run,
+                                       _aborted(conn, last_run_id))
         record_intervention(conn, last_run_id, "requeue", note, now=now)
         if unreproduced:
             release(conn, last_run_id, "abandoned",
@@ -263,11 +267,21 @@ def requeue(conn, ticket_id, note, now=None):
     return last_run_id
 
 
-def _requeue_admits(identifier, status, last_run_id, run):
+def _aborted(conn, run_id):
+    """Whether an operator's `abort` or `abort_close` was recorded on the run
+    (KO-719): an `abandoned` run that carries one ended by `--abort`."""
+    return run_id is not None and conn.execute(
+        'SELECT 1 FROM interventions WHERE runId = ? AND "action" IN (?, ?)',
+        (run_id, _enums.InterventionAction.ABORT.value,
+         _enums.InterventionAction.ABORT_CLOSE.value)).fetchone() is not None
+
+
+def _requeue_admits(identifier, status, last_run_id, run, aborted):
     """`requeue()`'s refusals, before any write: raise `RequeueRefused`
     naming the reason, or return whether the admitted run is a
     `not_reproduced` park still to be ended. `run` is the newest run's
-    `(outcome, phase, prUrl, parkKind)`, None when the ticket has none."""
+    `(outcome, phase, prUrl, parkKind)`, None when the ticket has none;
+    `aborted` admits an `abandoned` one as `failed` (KO-719)."""
     parked = status == "blocked_on_operator"
     if parked and run is not None and run[1] == "awaiting_merge_approval":
         if run[3] == _enums.ParkKind.NOT_REPRODUCED.value:
@@ -275,17 +289,22 @@ def _requeue_admits(identifier, status, last_run_id, run):
         command = "--babysit" if run[2] else "--approve or --babysit"
         raise RequeueRefused(
             f"{identifier} is parked awaiting merge approval; use {command}")
+    if run is not None and run[0] == "abandoned" and not aborted:
+        raise RequeueRefused(
+            f"{identifier}: run {last_run_id} ended abandoned but was not"
+            " aborted; nothing to requeue")
+    ended = ("failed", "rejected", "abandoned")
     if status != "in_flight" and not (
-            parked and run is not None and run[0] in ("failed", "rejected")):
+            parked and run is not None and run[0] in ended):
         raise RequeueRefused(
             f"{identifier} is {status}, not in_flight; nothing to requeue")
     if run is None:
         raise RequeueRefused(
             f"{identifier} has no ended run to requeue after")
-    if run[0] not in ("failed", "rejected"):
+    if run[0] not in ended:
         raise RequeueRefused(
             f"{identifier}: run {last_run_id} ended {run[0]},"
-            " not failed or rejected; nothing to requeue")
+            " not failed, rejected or aborted; nothing to requeue")
     return False
 
 
