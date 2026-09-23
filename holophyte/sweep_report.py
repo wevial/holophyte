@@ -67,10 +67,10 @@ SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence", "host")
 
 # Printed under a table with trips in it wherever the reader is an operator
 # who did not ask for a sweep (startup, a refused claim): the table says what
-# is wrong, this says what to type. `{target}` is filled at the print site so
-# the line is copy-pasteable for a non-default target.
+# is wrong, this says what to type. `{project}` is filled at the print site so
+# the line is copy-pasteable for a non-default project.
 SWEEP_HINT = ("[holo2] tripped runs are failed by"
-              " `factory.py {target} --sweep --act`;"
+              " `factory.py {project} --sweep --act`;"
               " a bare --sweep re-checks first")
 
 

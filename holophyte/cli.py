@@ -179,7 +179,8 @@ def _legacy_cli(argv):
     # one machine. A missing target is an argparse error, the same way a
     # mistyped flag is.
     parser.add_argument(
-        "target", help="repository the loop works in")
+        "target", metavar="project",
+        help="repository the loop works in")
     # The read-only modes, exclusive of each other: each one prints its table
     # and exits, so a command line naming both is a mistake argparse should
     # answer rather than a silent choice between them.
@@ -194,7 +195,7 @@ def _legacy_cli(argv):
                        " ticket; requires --note")
     modes.add_argument(
         "--report", action="store_true",
-        help="print the target store's estimate-vs-actual table and exit; "
+        help="print the project store's estimate-vs-actual table and exit; "
              "reads only -- claims no ticket, cuts no worktree, calls nobody")
     # The one writing mode among them, and the only write it makes: the
     # ladder's rung-3 pair (`record_intervention` then `walk_ticket`) as a
@@ -266,8 +267,8 @@ def _legacy_cli(argv):
     # checked step rather than the thing the loop discovers at claim time.
     modes.add_argument(
         "--file-ticket", metavar="TICKET.md",
-        help="validate the ticket file against the target, create it as an "
-             "issue in the target's [board] project with its title, body, "
+        help="validate the ticket file against the project, create it as an "
+             "issue in the project's board with its title, body, "
              "estimate, state and Depends-on relations, read the stored body "
              "back and validate that; exits 1 with the problem and nothing "
              "created when the file is invalid, 2 with the identifier and "
@@ -281,7 +282,7 @@ def _legacy_cli(argv):
     # built on this report, so the mode runs only with `--dry-run` said.
     modes.add_argument(
         "--import-store", metavar="PATH",
-        help="with --dry-run: open the store at PATH and the target's own "
+        help="with --dry-run: open the store at PATH and the project's own "
              "store read-only and print, per table, the rows an import "
              "would move, their id range, the offset a remap would add and "
              "a sha256 of the rows; refuses stores at different schema "
@@ -290,7 +291,7 @@ def _legacy_cli(argv):
         "--supervise", action="store_true",
         help="run the acting sweep on an interval ([supervisor] "
              "sweep_interval_sec, default %ds) until SIGINT/SIGTERM, as the "
-             "target's one supervisor: a second one for the same target "
+             "project's one supervisor: a second one for the same project "
              "exits naming the first" % SUPERVISE_INTERVAL_SEC)
     # The port is required and a bare one binds loopback: the only default
     # interface is the one that publishes nothing, and a read daemon on any

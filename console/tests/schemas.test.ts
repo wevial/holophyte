@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { ContractError, fetchJson, pollOnce } from "../src/lib/poll";
+import { groupByProject } from "../src/lib/runs";
 import { runDetailSchema, statusSchema } from "../src/lib/schemas";
 import status from "../../tests/fixtures/serve/status.json";
 import detail from "../../tests/fixtures/serve/run-detail.json";
@@ -8,6 +9,16 @@ import unestimatedDetail from "../../tests/fixtures/serve/run-detail-unestimated
 test("both shared daemon fixtures parse, including newer nested fields", () => {
   expect<unknown>(statusSchema.parse(status)).toEqual(status);
   expect<unknown>(runDetailSchema.parse(detail)).toEqual(detail);
+});
+
+test("a status naming only its project parses and groups under that path", () => {
+  const { target: _alias, ...body } = { ...status, project: "/srv/dev/relos" };
+  const parsed = statusSchema.parse(body);
+  expect(parsed.target).toBeUndefined();
+  expect(groupByProject([{ base: "http://writer:7710", status: parsed }]).map((group) => group.path))
+    .toEqual(["/srv/dev/relos"]);
+  const { project: _project, ...neither } = body;
+  expect(statusSchema.safeParse(neither).success).toBe(false);
 });
 
 test("unestimated legacy run detail parses at the fetch boundary", async () => {

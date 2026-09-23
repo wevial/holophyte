@@ -237,11 +237,11 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         adopt.assert_not_called()
         self.assertEqual(sorted(home.iterdir()), [])
 
-    def test_a_missing_target_is_a_usage_error_that_touches_nothing(self):
-        # No default target: a bare `factory.py` used to name one operator's
+    def test_a_missing_project_is_a_usage_error_that_touches_nothing(self):
+        # No default project: a bare `factory.py` used to name one operator's
         # checkout, a path that exists on one machine. Now it is an argparse
         # error -- usage on stderr, a non-zero exit -- and, like `--help`, it
-        # is answered before a target is located or the home is touched.
+        # is answered before a project is located or the home is touched.
         home = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, home)
         stderr = io.StringIO()
@@ -256,7 +256,8 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
 
         self.assertNotEqual(raised.exception.code, 0)
         self.assertIn("usage:", stderr.getvalue())
-        self.assertIn("target", stderr.getvalue())
+        self.assertRegex(stderr.getvalue(), r"required: project\b")
+        self.assertNotRegex(stderr.getvalue(), r"(?i)\btarget\b")
         locate.assert_not_called()
         adopt.assert_not_called()
         self.assertEqual(sorted(home.iterdir()), [])

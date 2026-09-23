@@ -74,6 +74,7 @@ def no_store(target):
     return {"error": "no store",
             "detail": f"{target.path} has no store yet; nothing has run"
                       " against it on this host",
+            "project": str(target.path),
             "target": str(target.path)}
 
 

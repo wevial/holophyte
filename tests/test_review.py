@@ -106,7 +106,7 @@ class VerificationBriefTests(unittest.TestCase):
         for ok in (True, False):
             with self.subTest(ok=ok):
                 brief = _verify_brief("python3 -m unittest", ok, "check output")
-                self.assertEqual("checks and the target's baseline passed at "
+                self.assertEqual("checks and the project's baseline passed at "
                                  "this commit" in brief, ok)
                 self.assertEqual("full suite runs as a pull request check"
                                  in brief, ok)

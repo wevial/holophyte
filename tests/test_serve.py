@@ -435,6 +435,9 @@ class StatusTests(ServeTestCase):
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertIn("no store", body["error"])
         self.assertIn(str(self.target), body["detail"])
+        # KO-617: the body names the project; `target` stays as an alias.
+        self.assertEqual(body["project"], str(self.target))
+        self.assertEqual(body["target"], str(self.target))
         self.assertFalse(self.db.exists())
 
     def test_an_unknown_path_is_404_and_any_other_method_is_405(self):
