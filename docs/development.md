@@ -184,6 +184,9 @@ Each module, one line:
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round
   text, the parked question, and the passes that drive them.
+- `holophyte/plain_text.py` — a review comment as plain text for a parked
+  question (KO-717): HTML reduced to its text, an `img` to its `alt`,
+  `details` blocks and quote markers dropped, and a 600-character cap.
 - `holophyte/missing_checks.py` — required checks that never reported on
   a pull request's head: the one empty-commit retrigger per candidate under
   `[merge] retrigger_missing_checks`, and the park naming them (KO-652).
