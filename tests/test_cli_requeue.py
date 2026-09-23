@@ -6,7 +6,8 @@ is the wiring: the identifier resolves in the target's store, the requeued
 line is printed, a refusal is a non-zero exit naming the reason with nothing
 written, a target with no `[board]` table exits naming the key before the
 store is touched, and a `--requeue` with no `--note` never reaches the store
-at all.
+at all. The claim that follows a requeue opens its implement prompt with
+the note and the failed run's last unresolved findings (KO-718).
 
 Run: python3 -m unittest discover -s tests -p 'test_cli_*' -v
 """
@@ -23,11 +24,14 @@ from unittest.mock import patch
 import holophyte.board
 import holophyte.cli
 import holophyte.project
+import holophyte.stop
 import linear_provider
 import store
 import store.read
 import store.tickets
 from holophyte.runs import open_store
+from tests.fake_agent import APPROVE, Commit
+from tests.loop_fixture import LoopFixture, StubProvider, a_task
 from tests.phase_fixture import park_run
 
 MINUTE = 60 * 1000
@@ -195,6 +199,44 @@ class RequeueCliTests(unittest.TestCase):
         self.assertEqual(self.board.unlabelled[0][0], "issue-1")
         self.assertIn("lock released", store.read.ledger(self.conn, self.run)[-1].text)
 
+    def test_requeue_walks_an_aborted_ticket_to_ready_and_clears_its_question(self):
+        """KO-719: `--abort` ends the run `abandoned` and parks the ticket
+        with the note as its question; `--requeue` is the way back."""
+        store.abort(self.conn, self.run, "claimed before the body was fixed",
+                    now=T0 + MINUTE)
+        with self.assertRaises(holophyte.stop.Aborted):
+            holophyte.stop.end_aborted(self.conn, self.run)
+        self.assertEqual(self.conn.execute(
+            "SELECT status, blockedQuestion FROM tickets WHERE id = ?",
+            (self.ticket,)).fetchone(),
+            ("blocked_on_operator", "claimed before the body was fixed"))
+
+        out, _ = self.cli("--requeue", "KO-1", "--note", "body corrected")
+
+        self.assertEqual(out.strip(), f"[holo2] KO-1 requeued after run {self.run}")
+        self.assertEqual(self.conn.execute(
+            "SELECT status, blockedQuestion FROM tickets WHERE id = ?",
+            (self.ticket,)).fetchone(), ("ready", None))
+        self.assertEqual(self.interventions(),
+                         [(self.run, "abort"), (self.run, "requeue")])
+        self.assertIn("body corrected",
+                      store.read.ledger(self.conn, self.run)[-1].text)
+
+    def test_requeue_refuses_an_abandoned_run_that_was_not_aborted(self):
+        store.release(self.conn, self.run, "abandoned", "canceled on the board",
+                      now=T0 + MINUTE)
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+        self.conn.commit()
+        before = list(self.conn.iterdump())
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "retry")
+
+        self.assertIn("not aborted", str(raised.exception))
+        self.assertNotEqual(raised.exception.code, 0)
+        self.assertEqual(list(self.conn.iterdump()), before)
+        self.assertEqual(StubBoard.instance.unlabelled, [])
+
     def test_requeue_refuses_parked_candidates_and_pull_requests_without_writes(self):
         # Only a `not_reproduced` park is admitted (KO-658); a merge question
         # still names the command that answers it.
@@ -271,6 +313,94 @@ class RequeueCliTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as raised:
             self.cli("--report", "--note", "stray")
         self.assertEqual(raised.exception.code, 2)
+
+
+class RequeuedClaimTests(LoopFixture):
+    """KO-718: the claim after a requeue opens the implement prompt with the
+    operator's note and the failed run's last unresolved findings; the fake
+    implementer records the prompt the loop hands it."""
+
+    def fail_a_run(self, *rounds, note=None):
+        """KO-131's first run, failed after `rounds` of (verdict, messages),
+        then requeued with `note` when one is given; return the run id."""
+        conn = open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = store.tickets.ensure_project(
+            conn, StubProvider.TEAM, self.target)
+        ticket = holophyte.board.mirror_task(conn, project_id, a_task())
+        run = store.claim(conn, project_id, ticket, now=T0)
+        store.tickets.transition(conn, ticket, "in_flight")
+        for n, (verdict, messages) in enumerate(rounds, 1):
+            store.record_review_round(
+                conn, run, n, verdict, "reviewer-model",
+                findings=[{"path": f"app{i}.py", "severity": "p1",
+                           "message": m} for i, m in enumerate(messages)],
+                started_at=T0, ended_at=T0 + MINUTE)
+        store.release(conn, run, "failed", "review rejected", now=T0 + MINUTE)
+        if note is not None:
+            store.requeue(conn, ticket, note, now=T0 + 2 * MINUTE)
+        conn.commit()
+        return run
+
+    def implement_prompt(self):
+        fake, _ = self.loop(Commit("the thing", path="app.txt"), APPROVE)
+        self.assertEqual(fake.roles[0], "implement")
+        return fake.turns[0].goal
+
+    def test_the_note_and_last_findings_open_the_prompt_before_the_ticket(self):
+        run = self.fail_a_run(
+            ("changes_requested", ["an earlier round's finding"]),
+            ("changes_requested", ["the parser crashes on empty input",
+                                   "the test mirrors the implementation"]),
+            note="fix the parser crash")
+
+        prompt = self.implement_prompt()
+
+        ticket_at = prompt.index("Implement this task in this repo:")
+        for text in (f"(run {run})", "fix the parser crash",
+                     "the parser crashes on empty input",
+                     "the test mirrors the implementation", "round 2"):
+            self.assertIn(text, prompt[:ticket_at])
+        self.assertNotIn("an earlier round's finding", prompt)
+
+    def test_a_first_claim_gets_no_block(self):
+        self.assertNotIn("previous attempt", self.implement_prompt())
+
+    def test_a_requeue_with_no_review_rounds_gets_the_note_alone(self):
+        run = self.fail_a_run(note="fix the parser crash")
+
+        prompt = self.implement_prompt()
+
+        opening = prompt[:prompt.index("Implement this task in this repo:")]
+        self.assertIn(f"Context from the previous attempt (run {run})", opening)
+        self.assertIn("fix the parser crash", opening)
+        self.assertNotIn("findings", opening)
+
+    def test_unreadable_stored_findings_still_let_the_note_through(self):
+        run = self.fail_a_run(("changes_requested", ["lost"]),
+                              note="fix the parser crash")
+        conn = open_store(self.project)
+        self.addCleanup(conn.close)
+        conn.execute("UPDATE reviewRounds SET findings = '{not json'"
+                     " WHERE runId = ?", (run,))
+        conn.commit()
+
+        opening = self.implement_prompt().split(
+            "Implement this task in this repo:")[0]
+
+        self.assertIn(f"Context from the previous attempt (run {run})", opening)
+        self.assertIn("fix the parser crash", opening)
+
+    def test_findings_past_the_cap_are_cut_and_say_so(self):
+        long = ["x" * 1000, "y" * 1000]
+        self.fail_a_run(("changes_requested", long), note="retry")
+
+        prompt = self.implement_prompt()
+
+        self.assertIn("findings cut to 1,500 characters", prompt)
+        self.assertIn("x" * 1000, prompt)
+        self.assertIn("y" * 490, prompt)
+        self.assertNotIn("y" * 500, prompt)
 
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@ import review_runner
 import store
 import store.read
 import ticket_template
-from holophyte import board, failure_reason, pr_status, reproduce
+from holophyte import board, failure_reason, maintainer_notes, pr_status, reproduce
 from holophyte import run as run_state
 from holophyte.agents import agent, record_session, review_refs, transport_failure
 from holophyte.babysitter import _babysit
@@ -249,12 +249,15 @@ def _run_stages(run, task):
         sha, unreproduced = test.sha, True
     else:
         # Not fresh once the test commit exists, so a turn adding nothing
-        # keeps it rather than discarding the branch.
+        # keeps it rather than discarding the branch. A claim after a
+        # requeue opens with the operator's note and the failed run's last
+        # findings (KO-718).
         sha, unreproduced = _implement(
             project, conn, run_id, task_id, task, branch, wt, fresh and not test,
             beat_s, test.sha if test else start_sha, ticket, verify_cmd,
             budget_min, conflicts=conflicts,
-            opening=test.opening() if test else "")
+            opening=maintainer_notes.requeue_context(conn, run_id)
+            + (test.opening() if test else ""))
 
     # 2. review rounds, up to the cap the candidate's size earns it. Verify
     # runs before each review and its result goes into the brief; every

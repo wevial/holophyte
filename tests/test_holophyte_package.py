@@ -85,12 +85,12 @@ DEFINED = {
         "publish_review_refs",
     ],
     _module("findings"): [
-        "_document",
         "_entry",
         "_gist",
         "_ms",
         "_stamp",
         "commit_findings",
+        "decode_findings",
         "finding_line",
         "findings_entries",
         "findings_off",
