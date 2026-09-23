@@ -55,12 +55,12 @@ def prepare_environment(target, env, conn, run_id, role, route, round_number):
         return
     arm = select_arm(mode, run_id)
     session = None
-    if arm == 'fresh':
+    if route == 'primary' and not resumable(target):
+        reason = 'harness cannot resume'
+    elif arm == 'fresh':
         reason = 'fresh arm'
     elif route == 'fallback':
         reason = 'fallback reviewer route'
-    elif not resumable(target):
-        reason = 'harness cannot resume'
     else:
         session = first_session(conn, run_id)
         reason = None if session else 'no recorded session'

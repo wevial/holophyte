@@ -304,6 +304,24 @@ class CursorTableTests(TableReviewCase):
                          [{"arm": "resume", "requested": False,
                            "reason": "harness cannot resume"}])
 
+    def test_both_alternate_arms_record_that_cursor_cannot_resume(self):
+        (self.holo / "config.toml").write_text(
+            self.CONFIG.replace('"resume"', '"alternate"'))
+        project = store.ensure_project(self.conn, "test", self.repo)
+        ticket = store.mirror_ticket(self.conn, project, "KO-616", "KO-616",
+                                     "cursor", acceptance_criteria=["review"],
+                                     verification_commands=["true"])
+        # `alternate` assigns odd run ids to resume and even ones to fresh.
+        runs = {"resume": self.run, "fresh": store.claim(self.conn, project, ticket)}
+        self.assertEqual({arm: run % 2 for arm, run in runs.items()},
+                         {"resume": 1, "fresh": 0})
+        for self.run in runs.values():
+            self.dispatch("review", "second look", review_round=2)
+        self.assertEqual([call["resume"] for call in self.received()], [None, None])
+        self.assertEqual(self.events("review_session"),
+                         [{"arm": arm, "requested": False,
+                           "reason": "harness cannot resume"} for arm in runs])
+
 
 if __name__ == "__main__":
     unittest.main()
