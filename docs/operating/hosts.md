@@ -7,7 +7,7 @@ for the day the pieces are split across two machines: it names the two
 roles, the private network between them, and the port convention.
 
 Two roles, one private network. The **writer host** runs the loops, the
-supervisors and the serve daemons for its targets and holds their stores.
+supervisors and the serve daemons for its projects and holds their stores.
 The **operator seat** is where tickets are written and filed, `main` is
 pushed from, and the drawer lives. They talk over a private network (a
 Tailscale tailnet, a VPN, a LAN you trust) and nothing else. The code
@@ -42,7 +42,7 @@ flowchart LR
 
 | Surface | Bound to | Reachable by | Authentication |
 | --- | --- | --- | --- |
-| serve daemons | the host's private-network address, one port per target from 7710 | every member of that network | a bearer token per target (`[serve] token_file`); `/`, its files and `/peers` open |
+| serve daemons | the host's private-network address, one port per project from 7710 | every member of that network | a bearer token per project (`[serve] token_file`); `/`, its files and `/peers` open |
 | ssh | the host | the private network (and whatever else the host allows) | keys |
 | loop, supervisor, stores | local processes and files | the host only | filesystem |
 | Linear, Codex, origin | outbound only | n/a | API key, Codex login, deploy key |
@@ -50,13 +50,13 @@ flowchart LR
 A daemon bound beyond loopback refuses to start without `[serve]
 token_file`, and once up answers 401 to every JSON request but `/peers`
 that does not carry the file's contents as `Authorization: Bearer`. Write
-one token per target on the writer host, owner-readable only:
+one token per project on the writer host, owner-readable only:
 
 ```sh
 umask 077 && head -c 32 /dev/urandom | base64 > ~/.holophyte/SLUG/serve.token
 ```
 
-and name it in the target's config (`[serve] token_file = "PATH"`) before
+and name it in the project's config (`[serve] token_file = "PATH"`) before
 restarting the unit; a unit restarted without it fails to start by design.
 Still bind the private network's address rather than the wildcard: the
 token is the second boundary, not a reason to drop the first.
@@ -64,15 +64,15 @@ token is the second boundary, not a reason to drop the first.
 ## Standing daemons
 
 `deploy/holophyte-serve@.service` is a systemd user unit template, one
-instance per target slug, reading `~/.holophyte/SLUG/serve.env` for the
-target path, the bind address and the port. On the writer host the bind
+instance per project slug, reading `~/.holophyte/SLUG/serve.env` for the
+project path, the bind address and the port. On the writer host the bind
 address is its private-network address rather than `127.0.0.1`. Enable
 lingering once per host so the user manager starts at boot; then
 `systemctl --user enable --now holophyte-serve@SLUG`. The unit restarts on
 failure and is restarted by hand after a merge that touches the daemon's
 code. Details in [Serving standing](../operating.md#serving-standing).
 
-Each host runs three units per target, all from `deploy/` and all reading
+Each host runs three units per project, all from `deploy/` and all reading
 the same `~/.holophyte/SLUG/serve.env`: `holophyte-serve@SLUG` (the read
 daemon), `holophyte-supervise@SLUG` (the supervisor, `Restart=on-failure`,
 enabled with `systemctl --user enable --now holophyte-supervise@SLUG`) and
@@ -85,8 +85,8 @@ dead tmux server no longer takes the supervisors down with it.
 
 `contrib/swiftbar/holophyte.10s.py` runs under SwiftBar on the operator
 seat, a Mac. Its config, `~/.holophyte/drawer.toml`, names one daemon per
-target; `HOST` is the writer host's name or address on the private
-network, and `token_file` a copy of that target's token on this seat,
+project; `HOST` is the writer host's name or address on the private
+network, and `token_file` a copy of that project's token on this seat,
 read on each poll and sent as `Authorization: Bearer` (a relative path
 is taken against the config's directory; a daemon without one is polled
 bare, and answers 401 if it wanted one):
@@ -138,12 +138,12 @@ fan-out is in [Configuration](../config.md); the protocol in
 ## Adding a writer host
 
 Federation is more nodes: install the factory on another machine of the
-private network, give each target there a `[board]` table and a serve unit
+private network, give each project there a `[board]` table and a serve unit
 on the next free port with its own token file, add a `[[daemon]]`
-block per target, token and all, to the drawer's config, and name the new
+block per project, token and all, to the drawer's config, and name the new
 daemons in `[console] daemons` on the daemon that serves the console. No
 hub, no relay, no shared store. Two hosts must never
-write the same store; one target is served by exactly one host.
+write the same store; one project is served by exactly one host.
 
 ## Where a tailnet could carry more
 

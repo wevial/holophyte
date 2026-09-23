@@ -217,6 +217,65 @@ class BabysitterTests(unittest.TestCase):
                          r"\*\*Babysitter\.\*\*")
 
 
+class ProjectWordTests(unittest.TestCase):
+    """KO-618: the manual calls the repository the factory works on a
+    project, as `factory.py project add` and the store's `projects` table
+    do. Mermaid node names follow the code, and the code type `Target`, its
+    module and the JSON alias key `target` keep the old word until later
+    tickets rename them; `docs/design/` holds dated records."""
+
+    maxDiff = None
+    OLD_WORD = re.compile(r"\btargets?\b", re.IGNORECASE)
+    PERMITTED = re.compile(
+        r"```mermaid\n.*?```|`Target`|`target`|\"target\""
+        r"|`holophyte/target\.py`", re.DOTALL)
+
+    def test_the_old_word_is_gone_outside_the_design_notes(self):
+        found = []
+        for path in [README, ROOT / "AGENTS.md", *DOCS.rglob("*.md")]:
+            if DOCS / "design" in path.parents:
+                continue
+            # Blank a permitted span but keep its newlines, so line
+            # numbers still point into the file.
+            text = self.PERMITTED.sub(
+                lambda m: "\n" * m.group(0).count("\n"), path.read_text())
+            for number, line in enumerate(text.splitlines(), 1):
+                if self.OLD_WORD.search(line):
+                    found.append(f"{path.relative_to(ROOT)}:{number}: {line}")
+        self.assertEqual(found, [])
+
+    def test_the_glossary_defines_project_and_the_board_as_linear(self):
+        text = (DOCS / "reference" / "glossary.md").read_text()
+        self.assertRegex(text, r"\*\*Project\.\*\*")
+        self.assertNotRegex(text, r"\*\*Target\.\*\*")
+        board = re.search(r"\*\*Board\.\*\*(.*?)\n\n", text, re.DOTALL)
+        self.assertIsNotNone(board, "glossary has no Board entry")
+        self.assertIn("Linear project", board.group(1))
+
+    def test_the_cli_page_takes_a_project(self):
+        text = (DOCS / "reference" / "cli.md").read_text()
+        self.assertIn("`python3 factory.py [MODE] PROJECT`", text)
+        modes = re.search(r"\| Invocation \| Does \| Touches \|\n"
+                          r"\| --- \| --- \| --- \|\n((?:\|.*\n)+)", text)
+        self.assertIsNotNone(modes, "cli.md has no mode table")
+        rows = modes.group(1).splitlines()
+        self.assertTrue(rows)
+        wrong = [row.split(" | ")[0] for row in rows
+                 if not row.split(" | ")[0].endswith(" PROJECT`")]
+        self.assertEqual(wrong, [])
+
+    def test_the_http_page_names_project_the_key_and_target_its_alias(self):
+        text = re.sub(r"\s+", " ",
+                      (DOCS / "reference" / "http.md").read_text())
+        for route in ("/status", "/attention"):
+            section = text.split(f"## `GET {route}`", 1)[1].split(" ## ", 1)[0]
+            self.assertIn('"project": "/path/to/repo"', section, route)
+            self.assertRegex(section, r"`project` is the (?:project path|"
+                             r"repository the daemon serves)", route)
+            self.assertRegex(section, r"`target` (?:is )?(?:its |a )?"
+                             r"deprecated alias[^.]*same value", route)
+
+
 class ArchitectureTruthTests(unittest.TestCase):
     """KO-593: the architecture pages say what the store and the daemon do.
     The schema version is read from the constant, so a bump that leaves the

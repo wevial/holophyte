@@ -19,10 +19,10 @@ Implementation notes; Estimate & dependencies (`Estimate: N min · Depends
 on: KO-n` or `none`, 30 minutes at most); Open questions (exactly
 `- None` to be claimable).
 
-Validate before filing, against the target repository:
+Validate before filing, against the project repository:
 
 ```
-python3 ticket_template.py TICKET.md --repo /path/to/target
+python3 ticket_template.py TICKET.md --repo /path/to/project
 ```
 
 Blockers make the ticket INVALID and the loop skips it as `needs_spec`.
@@ -35,7 +35,7 @@ Advisories print and let it through.
 | Unfilled placeholder: any `<…>` or `{{…}}` outside a markdown link | KO-165 was claimed with template placeholders in its title and criteria and merged anyway. HTML tags count; write "the `main` element", not `<main>`. HTML comments in a draft's "Open questions" section are stripped before validation, so the template's guidance comment there is not a placeholder; a comment in any other section is refused like any other tag. |
 | More than three in-scope items, five criteria, or 30 minutes | KO-110 was a 180-minute blob. Small tickets converge; big ones burn rounds. |
 | A non-relative path in a verify command | KO-111 `cd`'d to an absolute path and verified the wrong tree. |
-| A path a criterion names that the target repository gitignores | KO-166 named a rendered file under a gitignored `artifacts/`; the reviewer's export cannot contain it and the implementer force-tracked it. |
+| A path a criterion names that the project repository gitignores | KO-166 named a rendered file under a gitignored `artifacts/`; the reviewer's export cannot contain it and the implementer force-tracked it. |
 | A `Depends on` that is not a ticket id or `none` | dependencies are machine-checked through Linear `blocks` relations |
 | Open questions not exactly `- None` | an open question is not a frozen contract |
 
@@ -74,11 +74,11 @@ verdict line says. So:
 ## Filing and editing
 
 ```
-python3 factory.py TARGET --file-ticket TICKET.md --priority high [--state Todo|Backlog]
-python3 factory.py TARGET --file-ticket TICKET.md --update KO-n
+python3 factory.py PROJECT --file-ticket TICKET.md --priority high [--state Todo|Backlog]
+python3 factory.py PROJECT --file-ticket TICKET.md --update KO-n
 ```
 
-Both validate the file against the target, act on Linear, read the stored
+Both validate the file against the project, act on Linear, read the stored
 body back and validate that again, so a transfer that rewrites bold or
 autolinks an example identifier is caught at filing time rather than at
 claim time. Exit 1 means nothing was changed; exit 2 means the issue exists
@@ -95,7 +95,7 @@ High ticket run first.
 Every run leaves a comment on its ticket: the rounds, their findings, the
 adjudications (`ADDRESS`, `FOLLOW_UP`, `DECLINE`), and any operator step
 taken after the merge with its time. The store holds the rows;
-`FINDINGS.md`, in a target that opts in, renders the window; the ledger is
+`FINDINGS.md`, in a project that opts in, renders the window; the ledger is
 the narrative. A contract
 revision is recorded there too, with what was wrong and why, so a rerun's
 reviewer can read the history.
