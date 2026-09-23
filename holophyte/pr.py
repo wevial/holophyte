@@ -146,18 +146,6 @@ class Thread:
 
 
 @dataclass(frozen=True)
-class FailedCheck:
-    """A check run on the head commit whose conclusion is red. `job_id` is
-    the GitHub Actions job whose log `job_log()` reads; None for a check
-    run another app made or a commit status, which have no such log."""
-
-    name: str
-    conclusion: str
-    url: str
-    job_id: int | None = None
-
-
-@dataclass(frozen=True)
 class PrState:
     """The pull request as one `pr_state()` read saw it. `mergeable` is
     GitHub's answer: MERGEABLE, CONFLICTING or UNKNOWN -- and UNKNOWN is

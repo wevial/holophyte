@@ -9,7 +9,6 @@ from holophyte.conversation_comments import conversation_threads
 from holophyte.gates import InfraFailure
 from holophyte.pr import (
     Comment,
-    FailedCheck,
     PrState,
     PullRequest,
     Thread,
@@ -451,6 +450,18 @@ def _state_of(node, threads, runs, required):
                                           and r.get("name")
                                           and r.get("status") != "completed"),
                    failed_checks=_failed_checks(runs))
+
+
+@dataclass(frozen=True)
+class FailedCheck:
+    """A check run on the head commit whose conclusion is red. `job_id` is
+    the GitHub Actions job whose log `pr.job_log()` reads; None for a check
+    run another app made or a commit status, which have no such log."""
+
+    name: str
+    conclusion: str
+    url: str
+    job_id: int | None = None
 
 
 def _failed_checks(runs):

@@ -146,6 +146,8 @@ Each module, one line:
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round
   text, the parked question, and the passes that drive them.
+- `holophyte/check_fix.py` — a red check's one fix turn per babysit: the
+  brief with each failed Actions job's log tail, and the park otherwise.
 - `holophyte/main_checkout.py` — the detached main checkout the babysit
   pass verifies main in, given the task worktree's `[worktree] carry`
   directories, or its `[worktree] setup`, first.

@@ -20,6 +20,7 @@ from holophyte.agents import agent_route, review_refs
 from holophyte.babysit_steps import record_step
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
+from holophyte.check_fix import check_fix_brief, fix_checks_or_park  # noqa: F401
 from holophyte.config_tables import merge_config
 from holophyte.gates import (
     InfraFailure,
@@ -34,7 +35,6 @@ from holophyte.gates import (
 from holophyte.main_checkout import detached_main
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
-from holophyte.redact import known_secrets, outbound, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review import (
     _review_reply,
@@ -66,8 +66,6 @@ SUMMARY_LINE_RE = re.compile(
     re.IGNORECASE | re.MULTILINE)
 COMMENT_HEADER = "---- Comment by {model} ----"
 GIST_CHARS = 200
-# How much of a failed check's job log the check fix brief carries.
-LOG_TAIL_LINES = 80
 
 
 def gist(text, limit=GIST_CHARS):
@@ -212,24 +210,6 @@ def fix_brief(pull, addressed, ticket):
         "Fix each one on this branch and commit; keep the ticket's verify "
         "commands passing. Then end your reply with one line per thread, "
         "in this form:\nTHREAD n: one sentence saying what changed")
-
-
-def check_fix_brief(pull, failed, logs, ticket):
-    """Fix goal for red checks: each `FailedCheck` of `failed` with its
-    conclusion, link and the tail of its job log (`logs`, in the same
-    order; None for a log that could not be read)."""
-    listing = "\n\n".join(
-        f"CHECK {check.name} -- {check.conclusion}: {check.url}\n"
-        + ("log unavailable" if log is None
-           else "\n".join(log.splitlines()[-LOG_TAIL_LINES:]))
-        for check, log in zip(failed, logs))
-    return (
-        f"Checks on pull request {pull.url} failed on the head commit. The"
-        " ticket you are held to, acceptance criteria included:\n\n"
-        f"{ticket}\n\nFailed checks, each with the last {LOG_TAIL_LINES}"
-        f" lines of its job log:\n\n{listing}\n\n"
-        "Fix the failures on this branch and commit; keep the ticket's"
-        " verify commands passing. This is one implementer fix turn.")
 
 
 def parse_summaries(output):
@@ -507,15 +487,11 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         ledger(conn, run_id, task_id, "round",
                f"Babysit pass {pass_no} over {pull.url}: no unresolved"
                f" threads, checks {state.checks}", provider)
-        if state.checks != "success":
-            sha = _fix_checks_or_park(
-                target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
-                pull, state, ticket, verify_cmd, contracts, budget_min, pass_no,
-                reviewed, check_fixed)
+        if state.checks != "success":  # Parks unless one fix is due.
+            sha, pushed_state = fix_checks_or_park(
+                replace(run, sha=sha), beat_s, pull, state, ticket, verify_cmd,
+                contracts, pass_no, reviewed, check_fixed)
             check_fixed = True
-            pushed_state = _just_pushed_state(
-                target, conn, run_id, provider, task_id, branch, sha,
-                beat_s, pull, reviewed)
             continue  # Settle the pushed fix; its review comes before merge.
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
@@ -969,38 +945,6 @@ def _verdicts_by_kind(threads, judged, parsed):
     return verdicts
 
 
-def _fix_checks_or_park(target, conn, run_id, provider, task_id, branch, wt,
-                        sha, beat_s, pull, state, ticket, verify_cmd, contracts,
-                        budget_min, pass_no, reviewed, check_fixed):
-    """One fix turn for red Actions checks, their log tails in the goal;
-    the fix is verified and pushed for `_review_fix()` to cover. Park on
-    the checks instead after this babysit's check fix, or when a red check
-    is not an Actions job, whose log there is none to read."""
-    from holophyte.pullrequest import _park_on_pr
-    why = f"checks {state.checks} on the head commit"
-    failed = state.failed_checks
-    if (check_fixed or not failed
-            or any(check.job_id is None for check in failed)):
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                    why, (), reviewed=reviewed)
-    stop_if_requested(conn, run_id, "merge_gate")
-    logs = []
-    with heartbeat_while(conn, run_id, beat_s):
-        for check in failed:
-            try:
-                logs.append(pr.job_log(target, pull, check.job_id))
-            except InfraFailure:
-                logs.append(None)
-    print(f"[holo2] checks failed on {pull.url}"
-          f" ({', '.join(check.name for check in failed)}); one fix turn")
-    return _fix_threads(target, conn, run_id, provider, task_id, branch, wt,
-                        sha, beat_s, pull, (), None, ticket, verify_cmd,
-                        contracts, budget_min, pass_no, review_follows=True,
-                        goal=babysitter.check_fix_brief(pull, failed, logs,
-                                                        ticket),
-                        no_commit_why=why, reviewed=reviewed)
-
-
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
@@ -1011,6 +955,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         _transport_timed,
     )
     from holophyte.pullrequest import _park_on_pr
+    from holophyte.redact import known_secrets, outbound, redact_prose
     if resume_step is None:
         record_step(conn, run_id, "fix")
         maintainer_notes.start_fix(conn, run_id, addressed)
@@ -1037,8 +982,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         why = outbound(why, known_secrets(target.config()))
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull, why, (),
                     park_kind="fix_declined")
-    if no_commit_why and fixed == sha and not timed_out:
-        # A check the implementer cannot fix is the maintainer's to look at.
+    if no_commit_why and fixed == sha and not timed_out:  # Maintainer's to see.
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     no_commit_why, (), reviewed=reviewed)
     if timed_out or fixed == sha:
