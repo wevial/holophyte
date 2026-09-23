@@ -116,11 +116,6 @@ class LiveRunFilesTests(ServeTestCase):
         self.assertIn(self.BRANCH, body["error"])
 
 
-if __name__ == "__main__":
-    import unittest
-    unittest.main()
-
-
 class PendingRunFilesTests(ServeTestCase):
     BRANCH = "task/ko-7-ticket-7"
 
@@ -147,3 +142,8 @@ class PendingRunFilesTests(ServeTestCase):
         self.assertEqual(body, {
             "error": f"branch {self.BRANCH} no longer exists in the repository",
             "run": self.run})
+
+
+if __name__ == "__main__":
+    import unittest
+    unittest.main()
