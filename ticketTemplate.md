@@ -63,6 +63,9 @@ Rules:
   project's venv (holophyte-bugs.md #5). A command that needs the project
   venv must activate it first (`. .venv/bin/activate && ...`) or use the
   venv's interpreter path (`.venv/bin/python -m ...`).
+- Name the focused test modules (`python3 -m unittest discover -s tests -p
+  'test_x.py'` works for every module), never the whole suite: the pull
+  request's checks run it.
 ```
 
 ## Contract checks

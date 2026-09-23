@@ -100,12 +100,17 @@ class NonPythonWitnessTests(unittest.TestCase):
 
 
 class VerificationBriefTests(unittest.TestCase):
-    def test_only_passed_verification_discourages_duplicate_suite(self):
+    def test_passed_verification_says_what_ran_and_where_the_suite_runs(self):
+        # KO-641: the factory runs the ticket's checks, not the full suite.
         from holophyte.loop import _verify_brief
         for ok in (True, False):
             with self.subTest(ok=ok):
                 brief = _verify_brief("python3 -m unittest", ok, "check output")
-                self.assertEqual("do not run the full suite again" in brief, ok)
+                self.assertEqual("checks and the target's baseline passed at "
+                                 "this commit" in brief, ok)
+                self.assertEqual("full suite runs as a pull request check"
+                                 in brief, ok)
+                self.assertNotIn("run by the factory", brief)
                 self.assertIn("check output", brief)
 
 

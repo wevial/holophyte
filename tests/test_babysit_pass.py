@@ -163,16 +163,17 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         approved, candidate = [sha for _, sha in self.pushed()]
         for text in (approved, candidate, f"{approved}..{candidate}",
                      "first fix", "second fix", "fix.txt", "2 files changed",
-                     "Review this range", "do not run the full suite again"):
+                     "Review this range", "full suite runs as a pull request check"):
             self.assertIn(text, covering.goal)
         self.assertNotIn("read the whole candidate", covering.goal)
         self.assertNotIn("Review this range", fake.turns[1].goal)
-        self.assertIn("do not run the full suite again", fake.turns[1].goal)
+        self.assertIn("full suite runs as a pull request check", fake.turns[1].goal)
+        self.assertIn("echo ok\n\nThe full unit suite runs as a pull request check;"
+                      " do not run it in the worktree.", fake.turns[0].goal)
         self.assertEqual(bool([v for k, v in self.api_calls() if k == "merge"]),
                          not touch_test)
-        self.assertEqual(self.read("SELECT verdict FROM reviewRounds "
-                                   "ORDER BY id")[-1][0],
-                         "changes_requested" if touch_test else "pass")
+        self.assertEqual(self.read("SELECT verdict FROM reviewRounds ORDER BY id")[-1],
+                         ("changes_requested" if touch_test else "pass",))
 
     def test_fix_push_head_catches_up(self):
         self.fix_push_head_propagation(False)
@@ -443,7 +444,6 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertIn("verify ok before merge", out)
         self.assertEqual([v["sha"] for kind, v in self.api_calls()
                           if kind == "merge"], [candidate])
-
 
     def test_human_resume_after_launch_loop_waits_without_merging(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')

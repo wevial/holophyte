@@ -536,21 +536,44 @@ def _shell_commands(command):
     return commands + [current]
 
 
-def _unittest_modules(tokens):
+def _unittest_args(tokens):
+    """The arguments after the first `-m unittest`; None without one."""
     for i in range(len(tokens) - 1):
-        if tokens[i:i + 2] != ["-m", "unittest"]:
+        if tokens[i:i + 2] == ["-m", "unittest"]:
+            return tokens[i + 2:]
+    return None
+
+
+def _unittest_modules(tokens):
+    args = iter(_unittest_args(tokens) or ())
+    for arg in args:
+        if arg == "discover":
+            return
+        if arg in ("-k", "--locals"):
+            if arg == "-k":
+                next(args, None)
             continue
-        args = iter(tokens[i + 2:])
-        for arg in args:
-            if arg == "discover":
-                return
-            if arg in ("-k", "--locals"):
-                if arg == "-k":
-                    next(args, None)
-                continue
-            if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", arg):
-                yield arg
-        return
+        if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", arg):
+            yield arg
+
+
+def _discovers_whole_suite(tokens):
+    """`-m unittest discover` with no `-p`/`--pattern` narrowing it."""
+    args = _unittest_args(tokens) or []
+    if "discover" not in args:
+        return False
+    return not any(arg.startswith(("-p", "--pattern"))
+                   for arg in args[args.index("discover") + 1:])
+
+
+def _suite_advisories(t):
+    """Name focused test modules; the pull request check runs the suite."""
+    return [f"{ADVISORY_PREFIX}verify command discovers the whole unit suite; "
+            f"name the focused test modules (discover -s tests -p "
+            f"'test_x.py') — the full suite runs as a pull request check: "
+            f"{cmd}"
+            for cmd in t.verify_commands
+            if any(_discovers_whole_suite(c) for c in _shell_commands(cmd))]
 
 
 def _module_available(repo, module, declarations):
@@ -768,6 +791,7 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
                      f".venv/bin/{token} if the project has one): {cmd}")
     p.extend(_blank_template_problems(t))
     p.extend(_fence_advisories(t))
+    p.extend(_suite_advisories(t))
     p.extend(_operator_witness_advisories(t))
     if repo is not None:
         p.extend(_gitignored_path_problems(t, repo))

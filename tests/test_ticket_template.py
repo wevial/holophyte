@@ -836,6 +836,36 @@ class InterpreterAdvisoryTests(unittest.TestCase):
         self.assertEqual(
             len(self.advisories("python3 -m build && . .venv/bin/activate")), 1)
 
+class SuiteAdvisoryTests(unittest.TestCase):
+    """KO-641: the pull request check runs the whole suite, not the ticket."""
+
+    def run_cli(self, *commands):
+        with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
+            f.write(FILLED.replace(
+                ".venv/bin/python -m unittest test_orders_export",
+                "\n".join(commands)))
+            f.flush()
+            r = subprocess.run(
+                [sys.executable, str(ROOT / "ticket_template.py"), f.name],
+                capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("OK", r.stdout)
+        return [line for line in r.stdout.splitlines()
+                if "pull request check" in line]
+
+    def test_whole_suite_discover_is_advised_naming_the_line(self):
+        line = "HOLOPHYTE_HOME=$(mktemp -d) python3 -m unittest discover -s tests"
+        (advisory,) = self.run_cli(line)
+        self.assertIn(tt.ADVISORY_PREFIX, advisory)
+        self.assertIn(line, advisory)
+        self.assertIn("full suite runs as a pull request check", advisory)
+
+    def test_focused_modules_are_not_advised(self):
+        self.assertEqual(self.run_cli(
+            "python3 -m unittest discover -s tests -p 'test_serve.py'",
+            "python3 -m unittest tests.test_board"), [])
+
+
 class EvidenceTests(unittest.TestCase):
     def body(self, states):
         return FILLED.replace("## Implementation notes",
