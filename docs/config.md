@@ -175,7 +175,7 @@ on a re-review under `[loop] review_session = "resume"` or `"alternate"` no
 ```toml
 [agents.reviewer]
 harness = "cursor"
-model   = "gpt-5"   # required; passed to --model
+model   = "grok-4.7-high"   # required; passed to --model
 ```
 
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,

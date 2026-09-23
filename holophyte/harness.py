@@ -141,12 +141,14 @@ class Cursor(Adapter):
     """`cursor-agent` in print mode for the review roles; it cannot resume.
 
     The flags are the ones `cursor-agent --help` lists for CLI version
-    2026.09.10-fd3934a on the writer host:
+    2026.09.18-9a7762b on the writer host:
 
     - `-p` / `--print`: non-interactive print mode, "for scripts or
       non-interactive use", with access to all tools including shell;
     - `--model <model>`: the model -- required here, since the CLI's own
-      default is whatever its account settings say today;
+      default is whatever its account settings say today; the maintainer's
+      choice for the reviewer is `grok-4.7-high`, the example the docs give
+      and the live test's default;
     - `-f` / `--force`: "force allow commands unless explicitly denied", so
       print mode runs `git` without an approval prompt; `--trust` beside
       it "trusts the current workspace without prompting", and every turn

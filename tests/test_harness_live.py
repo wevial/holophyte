@@ -4,7 +4,7 @@ Opt in with `HOLOPHYTE_LIVE_HARNESS=claude` (an implementer turn and its
 resume), `HOLOPHYTE_LIVE_HARNESS=codex` (two review rounds through
 `holophyte.agents.agent()`, and an implementer turn through the loop's
 `_timed()` and its resume) or `HOLOPHYTE_LIVE_HARNESS=cursor` (one review
-round; `HOLOPHYTE_LIVE_MODEL` picks its model, `auto` by default) on a host
+round; `HOLOPHYTE_LIVE_MODEL` picks its model, `grok-4.7-high` by default) on a host
 with that CLI signed in on PATH; without the variable the tests skip, and
 with it set but no binary on PATH the test fails. Kept out of the ticket's
 verify block: the reviewer's container carries no agent credentials.
@@ -146,7 +146,7 @@ class LiveCodexReviewTests(LiveReviewCase):
                      "set HOLOPHYTE_LIVE_HARNESS=cursor for a live review round")
 class LiveCursorReviewTests(LiveReviewCase):
     CONFIG = ('[agents.reviewer]\nharness = "cursor"\nmodel = "'
-              + os.environ.get("HOLOPHYTE_LIVE_MODEL", "auto") + '"\n')
+              + os.environ.get("HOLOPHYTE_LIVE_MODEL", "grok-4.7-high") + '"\n')
 
     def test_a_round_sees_the_candidate_and_leaves_the_repository_clean(self):
         output = self.review(HEAD_GOAL, 1)
