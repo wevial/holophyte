@@ -265,11 +265,11 @@ class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route()
         self.job_log.write_text(log)
-        heads = []
+        heads, n = [], iter(range(42, 10**4))  # A rerun makes new jobs.
         def check_runs(target, pull, sha):
             heads.extend([sha] if sha not in heads else [])
             green = until_fixed and sha != heads[0]
-            return [dict(run, conclusion="success") if green else run]
+            return [dict(run, conclusion="success") if green else dict(run, id=next(n))]
         self.enterContext(patch("holophyte.pr_status._check_runs_of", check_runs))
 
     def assert_parked_on_checks(self):

@@ -13,33 +13,39 @@ import babysit_fixture as cases  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture, StubProvider, a_task  # noqa: E402
 
+import holophyte.pr  # noqa: E402 - after the sys.path insert above
+
 RERUN = "repos/example/repo/actions/runs/77/rerun-failed-jobs"
+JOB = "https://github.com/example/repo/actions/runs/77/job/"
 
 
 class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
     """A flake goes green on its rerun and keeps the fix turn unspent."""
     UNIT = {"name": "unit", "status": "completed", "conclusion": "failure",
-            "html_url": "https://github.com/example/repo/actions/runs/77/job/42",
-            "id": 42, "app": {"slug": "github-actions"}}
+            "html_url": JOB + "42", "id": 42, "app": {"slug": "github-actions"}}
+    # GitHub runs a rerun's jobs as new jobs of the same workflow run.
+    RERUN_RED = dict(UNIT, html_url=JOB + "43", id=43)
+    QUEUED = dict(RERUN_RED, status="queued", conclusion=None)
+    GREEN = dict(RERUN_RED, conclusion="success")
 
-    def red_check(self, *, green_after_rerun=False, green_after_fix=False,
-                  refuse_rerun=False):
-        """`UNIT` red on the candidate; green once a rerun was sent (queued
-        on the first read after it) or on a later head, as asked."""
-        self.configure('[merge]\nmode = "pr"\n')
+    def red_check(self, *after_rerun, green_after_fix=False, refuse_rerun=False,
+                  config=""):
+        """`UNIT` red on the candidate; once a rerun was sent, the rows of
+        `after_rerun` read in order, the last for good (the rerun's own red
+        job without them); green on a later head when `green_after_fix`."""
+        self.configure('[merge]\nmode = "pr"\n' + config)
         self.fake_route(refuse_rerun=refuse_rerun)
         self.job_log.write_text("FAIL: test_x (tests.test_y.Case.test_x)")
-        heads, reads = [], []
+        self.naps = []
+        self.enterContext(patch.object(holophyte.pr, "SLEEP", self.naps.append))
+        heads, served = [], list(after_rerun or [self.RERUN_RED])
         def check_runs(target, pull, sha):
             heads.extend([sha] if sha not in heads else [])
-            if green_after_rerun and self.reruns():
-                reads.append(sha)
-                return [dict(self.UNIT, status="queued", conclusion=None)
-                        if len(reads) == 1 else
-                        dict(self.UNIT, conclusion="success")]
             if green_after_fix and sha != heads[0]:
-                return [dict(self.UNIT, conclusion="success")]
-            return [self.UNIT]
+                return [self.GREEN]
+            if not self.reruns():
+                return [self.UNIT]
+            return [served.pop(0) if len(served) > 1 else served[0]]
         self.enterContext(patch("holophyte.pr_status._check_runs_of", check_runs))
 
     def reruns(self):
@@ -49,20 +55,45 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         return [summary for (summary,) in self.read(
             f"SELECT summary FROM runEvents WHERE kind = '{kind}' ORDER BY id")]
 
+    def assert_merged_without_a_fix_turn(self, fake):
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        candidate = self.pushed()[-1][1]
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [candidate])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
     def test_a_check_green_on_its_rerun_merges_without_a_fix_turn(self):
-        self.red_check(green_after_rerun=True)
+        self.red_check(self.QUEUED, self.GREEN)
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=self.provider())
-        self.assertEqual(fake.roles, ["implement", "review", "implement"])
         (rerun,) = self.reruns()
         self.assertIn("--method POST " + RERUN, rerun)
         (event,) = self.events("check_rerun")
         self.assertIn("unit", event)
         self.assertIn("77", event)
-        candidate = self.pushed()[-1][1]
-        self.assertEqual([v["sha"] for kind, v in self.api_calls()
-                          if kind == "merge"], [candidate])
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assert_merged_without_a_fix_turn(fake)
+
+    def test_a_red_read_from_before_the_rerun_is_read_again(self):
+        # Review finding: the first read after the POST still showed the
+        # rerun job's old failure, and the fix turn was spent on it.
+        self.red_check(self.UNIT, self.QUEUED, self.GREEN)
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertEqual(len(self.reruns()), 1)
+        self.assert_merged_without_a_fix_turn(fake)
+
+    def test_a_rerun_that_never_reports_parks_at_the_check_wait_deadline(self):
+        # Review finding: a fixed nap before the settle overran the deadline.
+        self.red_check(self.UNIT, config="check_wait_sec = 60\n")
+        clock = {"side_effect": lambda: sum(self.naps)}
+        with patch("holophyte.babysitter.monotonic", **clock), \
+                patch("holophyte.check_fix.monotonic", **clock):
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                                provider=self.provider())
+        self.assertEqual(sum(self.naps), 60)
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        self.assertIn("the rerun of unit did not report within 60s",
+                      self.question())
 
     def test_a_check_still_red_after_its_rerun_gets_the_fix_turn(self):
         self.red_check(green_after_fix=True)

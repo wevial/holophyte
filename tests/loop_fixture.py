@@ -31,7 +31,6 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
 
@@ -496,8 +495,7 @@ class MergeModeFixture(LoopFixture):
         call refused when `refuse_labels` (KO-608). An `addReaction`
         mutation answers an empty success, or fails when `refuse_reactions`
         (KO-679). A workflow run's `rerun-failed-jobs` `POST` answers an
-        empty success, or fails when `refuse_rerun` (KO-707); the nap
-        after a rerun (`pr.SLEEP`) is skipped.
+        empty success, or fails when `refuse_rerun` (KO-707).
         `push_exit` and `push_sh` control push failure and an optional
         delay; a pull request's REST close (`PATCH`, KO-611) answers
         closed, or fails with `close_exit`. A push
@@ -629,7 +627,6 @@ class MergeModeFixture(LoopFixture):
                              {"PATH": f"{bindir}:{os.environ['PATH']}"})
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.enterContext(patch.object(holophyte.pr, "SLEEP", lambda s: None))
 
     def recorded(self):
         return (self.calls.read_text().splitlines()

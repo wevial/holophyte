@@ -758,13 +758,13 @@ def _quiet_left(state, quiet_ms, refresh=None):
 
 def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
                      task_id, branch, sha, reviewed, refresh=None,
-                     retrigger=None):
+                     retrigger=None, deadline=None):
     from holophyte.pullrequest import _park_on_pr
     try:
         state = state or pr_status.pr_state(project, pull)
         state = maintainer_notes.pending_state(conn, run_id, state, pull.url)
         return _settled_state(project, conn, run_id, beat_s, pull, state,
-                              refresh, retrigger)
+                              refresh, retrigger, deadline)
     except WaitExpired as expired:
         if retrigger is not None:  # Park the head the retrigger pushed.
             sha, reviewed = retrigger.sha, retrigger.reviewed
@@ -777,13 +777,13 @@ class WaitExpired(Exception):
 
 
 def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None,
-                   retrigger=None):
+                   retrigger=None, deadline=None):
     """Bound pending/quiet waiting with one deadline; return threads promptly.
     A required check with no report for `missing_check_sec` is retriggered
     once (`Retrigger`) or ends the wait naming it."""
     merge = merge_config(project)
     quiet_ms = merge.pr_quiet_sec * 1000
-    deadline = monotonic() + merge.check_wait_sec
+    deadline = deadline or monotonic() + merge.check_wait_sec
     absent = {}
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(project, pull)

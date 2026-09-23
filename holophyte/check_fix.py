@@ -7,9 +7,11 @@ implement turn with their log tails, verified, pushed and left for
 jobs are rerun once per babysit (KO-707): a flake that goes green costs no
 fix turn."""
 from dataclasses import dataclass
+from time import monotonic
 
 import store
 from holophyte import pr
+from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure
 from holophyte.pr_head import _just_pushed_state
 from holophyte.redact import safe_print as print
@@ -113,9 +115,8 @@ def _park_unless_fixable(run, pull, state, reviewed, check_fix):
 
 def _rerun_and_settle(run, beat_s, pull, state, reviewed):
     """The PR settled after rerunning the failed jobs of each workflow run
-    red in `state` once, waiting on the rerun as on any pending check;
-    `state` itself when a rerun call fails."""
-    from holophyte.babysitter import _settled_or_park
+    red in `state` once (`_rerun_result()`); `state` itself when a rerun
+    call fails."""
     failed = state.failed_checks
     runs = tuple(dict.fromkeys(check.workflow_run_id for check in failed))
     names = ", ".join(check.name for check in failed)
@@ -130,15 +131,41 @@ def _rerun_and_settle(run, beat_s, pull, state, reviewed):
         with heartbeat_while(run.conn, run.run_id, beat_s):
             for workflow_run_id in runs:
                 rerun_failed_jobs(run.project, pull, workflow_run_id)
-            # GitHub queues the rerun's jobs a moment after it answers.
-            pr.SLEEP(pr.CHECK_POLL_S)
     except InfraFailure as refused:
         warn_on_run(run.conn, run.run_id,
                     f"check rerun of {names} failed: {refused}")
         return state
-    return _settled_or_park(run.project, run.conn, run.run_id, beat_s, pull,
-                            None, run.provider, run.task_id, run.branch,
-                            run.sha, reviewed)
+    return _rerun_result(run, beat_s, pull, reviewed, names,
+                         {check.job_id for check in failed})
+
+
+def _rerun_result(run, beat_s, pull, reviewed, names, rerun_jobs):
+    """The PR settled on the rerun's own result. GitHub gives a rerun new
+    jobs a moment after it answers, so a red that is still one of
+    `rerun_jobs` predates the rerun and is read again after a poll. Every
+    wait here shares one `[merge] check_wait_sec` deadline, and parks the
+    PR when it runs out."""
+    from holophyte.babysitter import _settled_or_park
+    from holophyte.pullrequest import _park_on_pr
+    wait = merge_config(run.project).check_wait_sec
+    deadline = monotonic() + wait
+    while True:
+        state = _settled_or_park(run.project, run.conn, run.run_id, beat_s,
+                                 pull, None, run.provider, run.task_id,
+                                 run.branch, run.sha, reviewed,
+                                 deadline=deadline)
+        stale = {check.job_id for check in state.failed_checks} & rerun_jobs
+        if not (_red(state, run.sha) and stale):
+            return state
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            _park_on_pr(run.project, run.conn, run.run_id, run.provider,
+                        run.task_id, run.branch, run.sha, pull,
+                        f"the rerun of {names} did not report within"
+                        f" {wait}s on the pull request", (), reviewed=reviewed)
+        stop_if_requested(run.conn, run.run_id, "merge_gate")
+        with heartbeat_while(run.conn, run.run_id, beat_s):
+            pr.SLEEP(min(pr.CHECK_POLL_S, remaining))
 
 
 def _red(state, sha):
