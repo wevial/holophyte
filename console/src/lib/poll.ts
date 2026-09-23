@@ -25,11 +25,25 @@ export interface PollDeps {
   timer: Timer;
 }
 
+/** The answers to requests `tokenedFetch` sent with a bearer header. */
+const bearerAnswers = new WeakSet<Response>();
+
+/** Whether the request `response` answers carried a bearer token, as it
+ *  went out: storage may have changed while it was in flight. */
+export function carriedToken(response: Response): boolean {
+  return bearerAnswers.has(response);
+}
+
 /** `inner` with the stored bearer token for each request's address added
  *  through `withToken`, so every JSON request of the page carries the
  *  token the daemon at that address was given. */
 export function tokenedFetch(inner: Fetch): Fetch {
-  return (url, init) => inner(url, withToken(addressOf(url), init));
+  return async (url, init) => {
+    const sent = withToken(addressOf(url), init);
+    const response = await inner(url, sent);
+    if (new Headers(sent?.headers).has("authorization")) bearerAnswers.add(response);
+    return response;
+  };
 }
 
 export const defaultPollDeps: PollDeps = {
@@ -47,11 +61,13 @@ export interface PollAnswer {
 }
 
 /** A non-2xx answer, carrying its status so a 401 can be told apart from
- *  a daemon that is down. */
+ *  a daemon that is down, and whether the request carried a bearer so a
+ *  refused token can be told apart from a missing one. */
 export class AnswerError extends Error {
   constructor(
     url: string,
     readonly status: number,
+    readonly tokenSent = false,
   ) {
     super(`${url} answered ${status}`);
     this.name = "AnswerError";
@@ -78,7 +94,7 @@ export async function fetchJson<T>(fetchImpl: Fetch, url: string, schema?: z.Zod
     }
     throw failure;
   }
-  if (!response.ok) throw new AnswerError(url, response.status);
+  if (!response.ok) throw new AnswerError(url, response.status, carriedToken(response));
   const body: unknown = await response.json();
   // Endpoints outside the status/run-detail contract retain their existing types.
   if (!schema) return body as T;

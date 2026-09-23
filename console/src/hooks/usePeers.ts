@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { addressOf, mergeHosts, oldestPoll, peerAddresses, type HostRecord, type PeersBody, type PollResult } from "../lib/hosts";
-import { forgetToken, tokenFor } from "../lib/token";
+import { forgetToken } from "../lib/token";
 import {
   AnswerError,
   ContractError,
@@ -60,9 +60,7 @@ export async function pollPeers(
                 ok: false,
                 error: message(failure),
                 status: failure.status,
-                // `withToken` forgets a token it cannot send, so one still
-                // stored when the answer comes back rode the request.
-                token_sent: tokenFor(addressOf(base)) != null,
+                token_sent: failure.tokenSent,
               }
             : { address, base, ok: false, error: message(failure), contract_error: failure instanceof ContractError },
       );

@@ -375,3 +375,28 @@ test("a daemon that refuses the saved token reads saved token rejected in the ra
   expect(localStorage.length).toBe(0);
   expectRows();
 });
+
+test("token_sent follows the request, not storage: a token forgotten mid-request still reads rejected, one saved mid-request does not", async () => {
+  const ORIGIN = "http://writer:7710";
+  const held: (() => void)[] = [];
+  const daemon: Fetch = (url) => {
+    if (url.endsWith("/peers")) return Promise.resolve(Response.json({ self: "writer:7710", peers: ["writer-2:7710"] }));
+    return new Promise((resolve) => held.push(() => resolve(Response.json({}, { status: 401 }))));
+  };
+  storeToken("writer:7710", "sent-then-forgotten");
+  const { deps } = fakeDeps(tokenedFetch(daemon));
+  render(<App base={ORIGIN} pollDeps={deps} />);
+  await act(settle);
+  // Both daemons' requests are out: writer's with its bearer, writer-2's bare.
+  expect(held.length).toBe(4);
+  localStorage.clear();
+  storeToken("writer-2:7710", "saved-after-sending");
+  await act(async () => {
+    for (const release of held) release();
+    await settle();
+  });
+  const entry = (address: string) => screen.getByRole("region", { name: "Hosts" }).querySelector<HTMLElement>(`[data-host="${address}"]`)!;
+  expect(entry("writer:7710").textContent).toContain("saved token rejected");
+  expect(entry("writer-2:7710").textContent).not.toContain("saved token rejected");
+  expect(within(entry("writer-2:7710")).getByRole("img", { name: "needs token" }).textContent).toBe(KEY_GLYPH);
+});
