@@ -1492,13 +1492,13 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
         (ddl,) = raw.execute("SELECT sql FROM sqlite_master"
                              " WHERE name = 'interventions'").fetchone()
         raw.close()
-        self.assertIn("'abort'", ddl)
-        narrowed = ddl.replace(", 'abort'", "").replace("'abort', ", "")
-        self.assertNotIn("'abort'", narrowed)
+        self.assertIn("'abort_close'", ddl)
+        narrowed = ddl.replace(", 'abort_close'", "")
+        self.assertNotIn("'abort_close'", narrowed)
 
         conn = self.rebuild_on_open("DROP TABLE interventions", narrowed)
 
-        self.assertIn("'abort'", conn.execute(
+        self.assertIn("'abort_close'", conn.execute(
             "SELECT sql FROM sqlite_master WHERE name = 'interventions'"
         ).fetchone()[0])
         self.assertEqual(self.parent_of(conn, "runs", "stopRequested"),
