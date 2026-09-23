@@ -321,10 +321,13 @@ def board_config(target):
 
 
 # `approve = "auto"` merges a green, approved candidate; `"human"` parks it
-# awaiting operator approval. `mode = "local"` merges into local main;
-# `"pr"` pushes the task branch to origin and opens a PR for bots and CI.
-# The factory never pushes main. `pr_rounds` (at least 1) caps babysit passes
-# before parking the PR on its unresolved threads for the operator.
+# awaiting operator approval. `review_fixes = true` (KO-663, default false)
+# puts fix commits pushed after the release under `"human"` to the covering
+# review the auto path runs before the run parks. `mode = "local"` merges
+# into local main; `"pr"` pushes the task branch to origin and opens a PR for
+# bots and CI. The factory never pushes main. `pr_rounds` (at least 1) caps
+# babysit passes before parking the PR on its unresolved threads for the
+# operator.
 #
 # `pr_merge_method` is the `merge_method` the babysitter sends GitHub's merge
 # API when it lands a green, quiet pull request under `mode = "pr"`:
@@ -379,7 +382,7 @@ MERGE_KEYS = {
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
-    "pr_style": "", "pr_changes_log": False,
+    "pr_style": "", "pr_changes_log": False, "review_fixes": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
     "media_repo": "",
     "media_bucket": None, "media_max_file_mb": 10, "media_max_total_mb": 20,
@@ -420,6 +423,9 @@ def merge_config(target):
     values["pr_changes_log"] = _merge_boolean(
         target, "pr_changes_log",
         table.get("pr_changes_log", defaults.pop("pr_changes_log")))
+    values["review_fixes"] = _merge_boolean(
+        target, "review_fixes",
+        table.get("review_fixes", defaults.pop("review_fixes")))
     for key, default in defaults.items():
         value = table.get(key, default)
         if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):

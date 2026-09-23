@@ -399,7 +399,7 @@ def _verify_main_refresh(target, conn, run_id, provider, task_id, branch, wt,
     return _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                         beat_s, pull, (), None, ticket, command, contracts,
                         budget_min, _next_round(conn, run_id),
-                        review_follows=merge_config(target).approve == "auto",
+                        review_follows=_fixes_reviewed(merge_config(target)),
                         goal=goal)
 
 
@@ -495,6 +495,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             continue  # Settle the pushed fix; its review comes before merge.
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
+        released = sha
         if sha != reviewed:
             fixed = _review_fix(target, conn, run_id, provider, task_id, branch, wt,
                                 sha, reviewed, beat_s, pull, ticket, verify_cmd,
@@ -507,7 +508,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                     beat_s, pull, reviewed)
                 continue  # Settle the pushed fix's checks and threads first.
             # Keep verified behind: the reviewed fix still needs the merge gate.
-            reviewed = sha
+            # An `--approve` covered the release, not these reviewed fixes.
+            released, reviewed, approved = reviewed, sha, False
         if merge.approve == "auto" or approved:
             try:
                 merge_sha = _verified_merge(target, conn, run_id, provider, task_id,
@@ -524,8 +526,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                     verify_cmd=verify_cmd, contracts=contracts, ticket=ticket)
                 continue
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                    "ready to merge; waiting for a human to say merge"
-                    " ([merge] approve = \"human\")", (), reviewed=reviewed)
+                    _ready(released, sha), (), reviewed=reviewed)
     state = _settled_or_park(
         target, conn, run_id, beat_s, pull, pushed_state, provider,
         task_id, branch, sha, reviewed, refresh)
@@ -550,6 +551,12 @@ def _verified_merge(target, conn, run_id, provider, task_id, issue_id, branch,
                      beat_s, pull, reviewed=reviewed, retry_conflicts=retry_conflicts)
 
 
+def _fixes_reviewed(merge):
+    """Whether a covering review follows a fix: always under automatic
+    approval, and under human approval once `review_fixes` opts in."""
+    return merge.approve == "auto" or merge.review_fixes
+
+
 def _moved(sha, reviewed):
     """Why the candidate at `sha` needs an independent look: it sits past
     the sha the last judgement covered, or nothing on record covers it."""
@@ -559,6 +566,17 @@ def _moved(sha, reviewed):
                 " none)")
     return (f"the fix rounds moved the candidate from {reviewed[:12]} to"
             f" {sha[:12]}; the release covered {reviewed[:12]}")
+
+
+def _ready(released, sha):
+    """The human park's reason, naming what a covering review of fix
+    commits since the release at `released` approved (KO-663)."""
+    covered = ""
+    if released != sha:
+        covered = (f"fix commits since {released[:12]} reviewed at {sha[:12]}; "
+                   if released else f"the candidate reviewed at {sha[:12]}; ")
+    return (f"ready to merge; {covered}waiting for a human to say merge"
+            " ([merge] approve = \"human\")")
 
 
 def _fix_answers(conn, run_id, rnd, fix_note):
@@ -595,7 +613,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
     stop_if_requested(conn, run_id, "merge_gate")
-    auto = merge_config(target).approve == "auto"
+    merge = merge_config(target)
+    auto = merge.approve == "auto"
     if not ok:
         # Park under either mode so `--babysit --note` can send a fix (KO-666).
         record_unreviewed_verification(conn, run_id, out)
@@ -611,7 +630,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
                     pull, reason, (),
                     reviewed=reviewed)
-    if not auto:
+    if not _fixes_reviewed(merge):
         recovered = _fix_answers(conn, run_id, _next_round(conn, run_id), fix_note)
         answered = "\n".join(part for part in (fix_context, recovered) if part)
         if not answered:
@@ -855,7 +874,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
                            model, ticket, verify_cmd, contracts, budget_min,
                            pass_no,
-                           review_follows=merge_config(target).approve == "auto")
+                           review_follows=_fixes_reviewed(merge_config(target)))
     declined_open = _decline_threads(target, conn, run_id, beat_s, pull,
                                      by_verdict["DECLINE"], model)
     left_open = declined_open + tuple(

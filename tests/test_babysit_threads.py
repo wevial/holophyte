@@ -359,6 +359,52 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual(self.read("SELECT phase, candidateSha FROM runs"),
                          [("awaiting_merge_approval", fixed)])
 
+    def test_human_review_fixes_reviews_the_fix_range_before_parking(self):
+        """KO-663: `review_fixes` puts the fix range to a covering review,
+        and the park names what that review covered."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'review_fixes = true\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        fake, _ = self.loop(
+            Commit("the scripted work"), APPROVE, Idle(""),
+            Reply("THREAD 1: ADDRESS -- a real crash"),
+            Commit("fix: default load()"), APPROVE, Idle(""),
+            provider=self.provider())
+
+        self.assertEqual(fake.roles.count("review"), 2)
+        released = fake.turns[1].candidate_sha
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertIn(f"{released}..{fixed}", fake.turns[5].goal)
+        self.assertIn(f"ready to merge; fix commits since {released[:12]}"
+                      f" reviewed at {fixed[:12]}; waiting for a human to say"
+                      ' merge ([merge] approve = "human")', self.question())
+        self.assertEqual(
+            self.read("SELECT phase, candidateSha, approvedSha FROM runs"),
+            [("awaiting_merge_approval", fixed, fixed)])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_human_review_fixes_rejection_parks_without_approval(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'review_fixes = true\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        fake, _ = self.loop(
+            Commit("the scripted work"), APPROVE, Idle(""),
+            Reply("THREAD 1: ADDRESS -- a real crash"),
+            Commit("fix: default load()"), REQUEST_CHANGES,
+            provider=self.provider())
+
+        self.assertEqual(fake.roles.count("review"), 2)
+        fixed = self.git("rev-parse", BRANCH).strip()
+        question = self.question()
+        self.assertIn(f"the review of the fix at {fixed[:12]} asked for"
+                      " changes", question)
+        self.assertIn("scripted change is incomplete", question)
+        self.assertEqual(
+            self.read("SELECT phase, candidateSha, approvedSha FROM runs"),
+            [("awaiting_merge_approval", fixed, None)])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        self.assertFalse([c for c in self.recorded() if "pr merge" in c])
+
     def test_fix_verify_failure_redacts_environment_from_print_and_outcome(self):
         source = self.target.parent / "source.env"
         source.write_bytes(b"PUBLIC=sentinel-fix-value\r\n")
