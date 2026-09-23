@@ -954,9 +954,8 @@ class OperatorNoteCitationTests(LoopFixture):
         self.git("commit", "-q", "-m", "Fix per Operator_note event 7")
         fixed = self.git("rev-parse", "HEAD").strip()
 
-        self.assertEqual(
-            cite_commits(self.target, self.base, fixed, self.ADDRESSED, self.sh),
-            fixed)
+        result = cite_commits(self.target, self.base, fixed, self.ADDRESSED, self.sh)
+        self.assertEqual(result, fixed)
         self.assertEqual(self.git("rev-parse", "HEAD").strip(), fixed)
 
 
