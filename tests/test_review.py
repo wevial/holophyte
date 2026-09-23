@@ -240,7 +240,7 @@ class ScopeQuestionTests(unittest.TestCase):
                 patch.object(loop, "run_verify", return_value=(True, "ok")))
             with self.assertRaises(Captured):
                 loop._review_rounds(
-                    target=Mock(config=Mock(return_value={})), conn=None,
+                    project=Mock(config=Mock(return_value={})), conn=None,
                     run_id=602, provider=None,
                     task_id=1, branch="task", wt=self.root, beat_s=1,
                     base_sha=self.base, sha=sha, ticket=self.TICKET,

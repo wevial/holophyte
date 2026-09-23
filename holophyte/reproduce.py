@@ -202,7 +202,7 @@ def _verify(frame, rnd):
     with heartbeat_while(frame.conn, frame.run_id, frame.beat_s):
         ok, out = run_verify(frame.verify_cmd, frame.wt, frame.contracts,
                              conn=frame.conn, run_id=frame.run_id,
-                             target=frame.target)
+                             project=frame.target)
         ok, out = with_baseline(frame.target, frame.wt, frame.verify_cmd, ok,
                                 out, frame.conn, frame.run_id)
     print(f"[holo2] verify {'ok' if ok else 'FAILED'} before round {rnd}")
