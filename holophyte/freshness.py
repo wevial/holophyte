@@ -8,9 +8,12 @@ ref, through git, not the checkout's working tree, which may be on
 another branch -- for every file the body names in a code span in its
 acceptance criteria and implementation notes, skipping the ones the body
 declares new. `park_stale()` is the refusal: the mirror lands in
-`needs_spec`, the board issue gets one comment and moves to Backlog,
-which the ready listing does not read, so the ticket is not offered
-again until its maintainer moves it back.
+`needs_spec`, the board issue gets one comment, a `stale` label and a
+move to Backlog, which the ready listing does not read, so the ticket is
+not offered again until its maintainer moves it back. The label is the
+visible mark (KO-716): the claim skips an issue carrying it, so a ticket
+dragged back to Todo unfixed is not checked again, and the maintainer
+takes it off once the body is fixed.
 
 The landmarks can all be there and the ticket still overtaken: a merge
 since filing did the work, or moved the design on (KO-715). A ticket
@@ -40,6 +43,7 @@ from holophyte.redact import safe_print as print
 
 STALE_HEADING = "Not claimed: this ticket is out of date with main"
 BACKLOG_STATE = "Backlog"
+STALE_LABEL = "stale"
 HOUR_MS = 3600 * 1000
 # The critic's cap, in seconds: a turn is about half a minute.
 CRITIC_TIMEOUT = 300
@@ -131,12 +135,25 @@ def stale_comment(reasons):
             " what main holds now, then move the issue back to Todo.")
 
 
+def skip_labelled_stale(conn, project_id, task):
+    """Skip an issue carrying the `stale` label (KO-716), the maintainer's
+    mark that the body is still out of date: mirror it `needs_spec` and
+    print why, without asking main again or commenting a second time.
+    Returns whether the issue was skipped."""
+    if STALE_LABEL not in (task.get("labels") or []):
+        return False
+    mirror_task(conn, project_id, task, specced=False)
+    print(f"[holo2] {task['id']} skipped: labelled {STALE_LABEL};"
+          " fix the body and remove the label")
+    return True
+
+
 def park_stale(project, conn, project_id, provider, task, reasons, why=None,
                admitted=False):
-    """Refuse a stale ticket: mirror it `needs_spec`, comment once, move the
-    issue to Backlog, print the skip line, which `why` words when the
-    reasons are not missing files. A board call that fails is a warning;
-    the ticket is skipped either way and the loop goes on.
+    """Refuse a stale ticket: mirror it `needs_spec`, comment once, label
+    the issue `stale`, move it to Backlog, print the skip line, which `why`
+    words when the reasons are not missing files. A board call that fails
+    is a warning; the ticket is skipped either way and the loop goes on.
 
     Serialized with the claim (KO-715): the row is re-read and the mirror
     written under the claim's `lease_turn()`, so no sibling loop's
@@ -164,6 +181,11 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
     except Exception as e:
         warn(conn, ticket_id, f"stale-ticket comment failed for {task['id']}"
                               f" ({e}); the board is not told why")
+    try:
+        provider.label_issue(issue_id, STALE_LABEL)
+    except Exception as e:
+        warn(conn, ticket_id, f"stale label failed for {task['id']} ({e});"
+                              " the board carries no mark")
     try:
         provider.set_state(issue_id, BACKLOG_STATE)
     except Exception as e:
