@@ -1532,6 +1532,50 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
                          ["runEvents"])
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
 
+    @staticmethod
+    def run_row(conn, run_id):
+        cursor = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,))
+        names = [column[0] for column in cursor.description]
+        return dict(zip(names, cursor.fetchone()))
+
+    def test_a_version_35_store_admits_the_not_reproduced_park(self):
+        """KO-657: the enum rebuild widens `runs.parkKind`, keeping the row."""
+        conn = store.open(self.path)
+        ticket = store.tickets.mirror_ticket(
+            conn, self.project, linear_issue_id="issue-1",
+            linear_identifier="KO-1", title="ticket 1")
+        run_id = store.claim(conn, self.project, ticket, now=1_700_000_000_000)
+        for phase in ("working", "verifying", "reviewing"):
+            store.set_phase(conn, run_id, phase)
+        store.park(conn, run_id, "awaiting_merge_approval", "merge?",
+                   candidate_sha="a" * 40)
+        before = self.run_row(conn, run_id)
+        (ddl,) = conn.execute("SELECT sql FROM sqlite_master"
+                              " WHERE name = 'runs'").fetchone()
+        conn.close()
+        narrowed = ddl.replace(", 'not_reproduced'", "")
+        self.assertNotIn("'not_reproduced'", narrowed)
+        v35 = narrowed.replace('CREATE TABLE "runs" (', "CREATE TABLE runs_v35 (", 1)
+        self.assertNotEqual(v35, narrowed)
+        raw = sqlite3.connect(self.path)
+        # Stamped 35 outright, not `SCHEMA_VERSION - 1`: that is the version
+        # whose CHECK lacked the value.
+        raw.executescript(f"{v35};\nINSERT INTO runs_v35 SELECT * FROM runs;\n"
+                          "DROP TABLE runs;\n"
+                          "ALTER TABLE runs_v35 RENAME TO runs;\n"
+                          "PRAGMA user_version = 35;\n")
+        raw.close()
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                         (store.schema.SCHEMA_VERSION,))
+        self.assertEqual(self.run_row(conn, run_id), before)
+        conn.execute("UPDATE runs SET parkKind = 'not_reproduced' WHERE id = ?",
+                     (run_id,))
+        self.assertEqual(self.run_row(conn, run_id)["parkKind"], "not_reproduced")
+
     def test_open_refuses_a_schema_referencing_a_missing_table(self):
         raw = sqlite3.connect(self.path)
         # Not WAL, so the switch open() would make is a header write too.
