@@ -761,8 +761,7 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
         return None
     if skip_labelled_stale(conn, project_id, task):
         return None
-    stale = [] if pr else stale_reasons(project.path, task.get("body"),
-                                        conn, provider)
+    stale = [] if pr else stale_reasons(project.path, task.get("body"), conn, provider)
     if stale:
         park_stale(project, conn, project_id, provider, task, stale)
         return None
