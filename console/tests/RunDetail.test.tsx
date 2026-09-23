@@ -255,6 +255,13 @@ test("a finished run's box figure freezes at its end while a live run's keeps co
   expect(document.querySelector("[data-box]")!.textContent).toBe("10m 02s over the working box · wall 40m 02s");
 });
 
+test("the box figure reads the agent clock, not verify, when the daemon serves it", async () => {
+  await mount({ ...DETAIL, run: { ...DETAIL.run, time_box_ms: 20 * MINUTE, working_ms: 25 * MINUTE, agent_ms: 12 * MINUTE, verify_ms: 13 * MINUTE, verify_started_ms: null } }, T + 25 * MINUTE);
+  const box = document.querySelector("[data-box]")!;
+  expect(box.textContent).toBe("8m 00s left in working box · wall 25m 00s");
+  expect(box.getAttribute("data-box")).toBe("left");
+});
+
 test("past the box the header reads 10m 00s over the box in the bad tone and the segments fill the bar", async () => {
   await mount({ ...DETAIL, run: { ...DETAIL.run, working_ms: 40 * MINUTE } }, T + 40 * MINUTE);
   const box = document.querySelector("[data-box]")!;

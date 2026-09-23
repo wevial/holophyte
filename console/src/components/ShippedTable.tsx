@@ -118,7 +118,8 @@ function Row({
   polls: number;
   deps?: { fetch: Fetch };
 }) {
-  const measured = row.working_ms != null;
+  const agent = row.agent_ms != null;
+  const measured = agent || row.working_ms != null;
   const wallMin = row.wall_min ?? (row.ended_ms - row.started_ms) / 60_000;
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // Only keys aimed at the row itself toggle it: Enter on the focused sha
@@ -151,9 +152,9 @@ function Row({
         <span className="font-mono text-[13px] text-body">{row.rounds}</span>
         <span className="font-mono text-[13px] text-body">{row.findings}</span>
         <span className="flex min-h-[52px] flex-col">
-          <span className="flex flex-col" title={measured ? "working time against the box" : "wall time against the box (run predates the working clock)"}>
-            <span className="font-mono text-[11px] text-muted">{measured ? "working" : "wall"}</span>
-            <ActualVsBox actualMin={measured ? (row.actual_min ?? row.working_ms! / 60_000) : wallMin} estimateMin={row.estimate_min} />
+          <span className="flex flex-col" title={agent ? "agent time against the box" : measured ? "working time against the box" : "wall time against the box (run predates the working clock)"}>
+            <span className="font-mono text-[11px] text-muted">{agent ? "agent" : measured ? "working" : "wall"}</span>
+            <ActualVsBox actualMin={agent ? row.agent_ms! / 60_000 : measured ? (row.actual_min ?? row.working_ms! / 60_000) : wallMin} estimateMin={row.estimate_min} />
           </span>
           {measured && <span className="font-mono text-[11px] text-muted">wall {formatDuration(wallMin * 60_000)}</span>}
         </span>

@@ -13,6 +13,8 @@ export const runSchema = z.looseObject({
   ticket_url: z.string().nullable().optional(), pr_url: z.string().nullable().optional(),
   heartbeat_age_ms: z.number(), elapsed_ms: z.number(),
   working_ms: z.number().nullable().optional(), work_started_ms: z.number().nullable().optional(),
+  agent_ms: z.number().nullable().optional(), verify_ms: z.number().nullable().optional(),
+  verify_started_ms: z.number().nullable().optional(),
   time_box_ms: z.number().nullable(), host: z.string().nullable(), title: z.string().nullable().optional(),
   started_ms: z.number().optional(), round: z.number().optional(), strikes: z.number().optional(),
 });
@@ -68,6 +70,8 @@ export const runDetailSchema = z.looseObject({
     title: z.string().nullable().optional(), phase: z.string(), attempt: z.number().optional(),
     started_ms: z.number(), ended_ms: z.number().nullable(), elapsed_ms: z.number().optional(),
     working_ms: z.number().nullable().optional(), work_started_ms: z.number().nullable().optional(),
+    agent_ms: z.number().nullable().optional(), verify_ms: z.number().nullable().optional(),
+    verify_started_ms: z.number().nullable().optional(),
     outcome: z.string().nullable().optional(), time_box_ms: z.number().nullable(),
     branch: z.string().nullable().optional(), host: z.string().nullable(),
     heartbeat_age_ms: z.number().nullable().optional(), merge_sha: z.string().nullable().optional(),

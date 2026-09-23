@@ -26,6 +26,15 @@ test("the time-box clause joins /status.runs on the run id and appears only past
   );
 });
 
+test("the time-box clause reads the agent clock when the daemon serves it", () => {
+  const item = { kind: "stale_run", level: "attention", run: 91, ticket: "KO-232", phase: "reviewing", heartbeat_age_ms: 421000 };
+  const base = { ...allKinds.status.runs[0]!, time_box_ms: 1800000, working_ms: 2100000 };
+  expect(describe(item, thresholds, { runs: [{ ...base, agent_ms: 1200000 }] }).body).toBe("No heartbeat for 7m 01s while reviewing");
+  expect(describe(item, thresholds, { runs: [{ ...base, agent_ms: 1800000 + 754000 }] }).body).toBe(
+    "No heartbeat for 7m 01s while reviewing and 12m 34s over its 30m time box",
+  );
+});
+
 test("newer-daemon fields show only when present", () => {
   const now = 1756900000000;
   const plain = describe({ kind: "blocked", level: "attention", ticket: "KO-240", question: "Which?" }, thresholds, { now });
