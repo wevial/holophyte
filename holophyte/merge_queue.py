@@ -72,16 +72,19 @@ def land_through_queue(target, conn, run_id, pull, sha):
                           {"owner": pull.owner, "name": pull.name,
                            "number": pull.number}
                           )["repository"]["pullRequest"]
-        if node.get("merged"):
-            return node["mergeCommit"]["oid"]
-        if not node.get("isInMergeQueue"):
+        # A merge can read before GitHub names its commit; read it again.
+        oid = (node.get("mergeCommit") or {}).get("oid")
+        if node.get("merged") and oid:
+            return oid
+        if not node.get("merged") and not node.get("isInMergeQueue"):
             raise QueueLeft("the pull request was removed from the merge queue"
                             f" unmerged (state {node.get('state')})")
+        where = ("merged without a named merge commit" if node.get("merged")
+                 else "still in the merge queue")
         remaining = deadline - monotonic()
         if remaining <= 0:
-            raise QueueLeft("the pull request was still in the merge queue after"
+            raise QueueLeft(f"the pull request was {where} after"
                             f" [merge] check_wait_sec = {wait_s}s")
-        print(f"[holo2] {pull.url} is in the merge queue; waiting"
-              f" {pr.CHECK_POLL_S}s")
+        print(f"[holo2] {pull.url} is {where}; waiting {pr.CHECK_POLL_S}s")
         stop_if_requested(conn, run_id, "merge_gate")
         pr.SLEEP(min(pr.CHECK_POLL_S, remaining))

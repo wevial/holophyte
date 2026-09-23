@@ -19,11 +19,12 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 QUEUE_SHA = "c0ffee" * 6 + "c0ff"
 
 
-def queue_read(queued=True, merged=False):
-    """The queue read's answer as GitHub gives it."""
+def queue_read(queued=True, merged=False, commit=True):
+    """The queue read's answer as GitHub gives it; `commit=False` is a merge
+    read before GitHub has named the merge commit."""
     return {"data": {"repository": {"pullRequest": {
         "state": "MERGED" if merged else "OPEN", "merged": merged,
-        "mergeCommit": {"oid": QUEUE_SHA} if merged else None,
+        "mergeCommit": {"oid": QUEUE_SHA} if merged and commit else None,
         "isInMergeQueue": queued}}}}
 
 
@@ -51,6 +52,14 @@ class MergeQueueTests(MergeModeFixture):
         enqueues = [v for kind, v in self.api_calls() if kind == "enqueue"]
         self.assertEqual(enqueues, [{"pull": "PR_1", "sha": pushed}])
         self.assertEqual(self.rest_merges(), [])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", QUEUE_SHA)])
+
+    def test_a_merge_read_before_its_merge_commit_is_named_is_read_again(self):
+        naps = self.land([queue_read(queued=False, merged=True, commit=False),
+                          queue_read(queued=False, merged=True)])
+
+        self.assertEqual(len(naps), 1)
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", QUEUE_SHA)])
 
