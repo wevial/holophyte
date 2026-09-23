@@ -66,7 +66,7 @@ from holophyte.environment_git import (
     stage_work,
     unstage_environment,
 )
-from holophyte.freshness import park_stale, stale_reasons
+from holophyte.freshness import carry_warning, critic_admits, park_stale, stale_reasons
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -683,6 +683,7 @@ def _claim_next(project, conn, project_id, provider, order, skip, seen):
             # Carry the value through the existing provider-task dispatch seam;
             # do not mutate the provider's task or rebuild the run at each phase.
             task = dict(task, _run=claimed_run(project, task, conn, run_id, provider))
+            carry_warning(conn, run_id, task)
         return task, ticket_id, run_id
 
 
@@ -825,6 +826,8 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
         print(f"[holo2] {task['id']} is {status} in the store,"
               f" not claimable ({verdict.reason}); skipping it")
         mirror_push(conn, ticket_id, provider)
+        return None
+    if not (pr or critic_admits(project, conn, project_id, provider, task)):
         return None
     return ticket_id
 

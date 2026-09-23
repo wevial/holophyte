@@ -351,6 +351,7 @@ supplies the binary; review roles run on the host and keep their path.
 | `review_session` | Default: `"fresh"` | `fresh`, `resume`, or `alternate`; alternate requests reviewer resume on odd run ids, fresh on even run ids. |
 | `fix_session` | Default: `"fresh"` | `fresh`, `resume`, or `alternate`; alternate resumes odd run ids and starts even run ids fresh. |
 | `tick_sec` | Default: `120` seconds | Integer at least 10; change how soon a pool with spare slots notices new work. |
+| `critic_after_hours` | Default: `12` hours | Integer at least 0; a ticket filed longer ago than this, or one whose named files changed on `main` since it was filed, is put to `[agents.critic]` before it is claimed. Lower it to ask sooner; 0 asks of every ticket. Without a critic seat it does nothing. |
 
 Configured reviewer wrappers may write their session id to
 `$HOLOPHYTE_REVIEW_SCRATCH/session` before exiting. The file must contain an
@@ -393,6 +394,9 @@ workers = 1                  # 3: up to three tickets worked at once
 # How often, in seconds, the scheduler recounts the queue while fewer than
 # `workers` are running. Optional; the default is two minutes.
 tick_sec = 120
+# How old a ticket may be before the critic seat is asked whether it is still
+# relevant. Optional; the default is twelve hours.
+critic_after_hours = 12
 ```
 
 By default one failed run ends the process after its close-out, with a nonzero

@@ -4,7 +4,9 @@ Opt in with `HOLOPHYTE_LIVE_HARNESS=claude` (an implementer turn and its
 resume), `HOLOPHYTE_LIVE_HARNESS=codex` (two review rounds through
 `holophyte.agents.agent()`, and an implementer turn through the loop's
 `_timed()` and its resume) or `HOLOPHYTE_LIVE_HARNESS=cursor` (one review
-round; `HOLOPHYTE_LIVE_MODEL` picks its model, `grok-4.7-high` by default) on a host
+round; `HOLOPHYTE_LIVE_MODEL` picks its model, `grok-4.7-high` by default) or
+`HOLOPHYTE_LIVE_HARNESS=critic` (the default `[agents.critic]` seat, `codex`, asked
+whether a small ticket is still relevant) on a host
 with that CLI signed in on PATH; without the variable the tests skip, and
 with it set but no binary on PATH the test fails. Kept out of the ticket's
 verify block: the reviewer's container carries no agent credentials.
@@ -12,18 +14,21 @@ verify block: the reviewer's container carries no agent credentials.
 Run: HOLOPHYTE_LIVE_HARNESS=claude python3 -m unittest tests.test_harness_live
      HOLOPHYTE_LIVE_HARNESS=codex python3 -m unittest tests.test_harness_live
      HOLOPHYTE_LIVE_HARNESS=cursor python3 -m unittest tests.test_harness_live
+     HOLOPHYTE_LIVE_HARNESS=critic python3 -m unittest tests.test_harness_live
 """
 import os
 import secrets
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
 
 import holophyte.agents
 import holophyte.fix_session
+import holophyte.freshness
 import holophyte.loop
 import holophyte.project
 import store
@@ -34,9 +39,11 @@ TURN_TIMEOUT = 300
 # The review harnesses, which run through `agent()` rather than the
 # implementer's turn-and-resume case.
 REVIEW_HARNESSES = ("codex", "cursor")
+# The seat, not a harness, that `HOLOPHYTE_LIVE_HARNESS=critic` asks for.
+CRITIC = "critic"
 
 
-@unittest.skipUnless(LIVE and LIVE not in REVIEW_HARNESSES,
+@unittest.skipUnless(LIVE and LIVE not in (*REVIEW_HARNESSES, CRITIC),
                      "set HOLOPHYTE_LIVE_HARNESS=claude for a live turn")
 class LiveHarnessTests(unittest.TestCase):
     def run_turn(self, argv, cwd):
@@ -205,6 +212,52 @@ class LiveCodexImplementerTests(unittest.TestCase):
         self.assertEqual(note, "ok")
         self.assertEqual(str(uuid.UUID(session)), session)
         self.assertIn(word, result.stdout.lower())
+
+
+# A small ticket against the scratch repository's one file.
+CRITIC_BODY = """\
+# Say hello in notes.txt
+
+## Summary
+
+`notes.txt` says hello.
+
+## Acceptance criteria
+
+- [ ] Given `notes.txt`, when it is read, then it says hello
+"""
+
+
+@unittest.skipUnless(LIVE == CRITIC,
+                     "set HOLOPHYTE_LIVE_HARNESS=critic for a live critic turn")
+class LiveCriticTests(unittest.TestCase):
+    def test_the_default_critic_ends_with_a_freshness_line(self):
+        self.assertIsNotNone(shutil.which("codex"), "HOLOPHYTE_LIVE_HARNESS=critic "
+                             "but no 'codex' on PATH")
+        with tempfile.TemporaryDirectory(prefix="holophyte-live-") as scratch:
+            root = Path(scratch)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / "notes.txt").write_text("base\n")
+            for args in (("init", "-q", "-b", "main"), ("add", "notes.txt"),
+                         ("commit", "-qm", "base")):
+                subprocess.run(["git", "-c", "user.name=Test", "-c",
+                                "user.email=test@example.invalid", *args],
+                               cwd=repo, check=True)
+            holo = root / "holo"
+            holo.mkdir()
+            (holo / "config.toml").write_text("[agents.critic]\n")
+            target = holophyte.project.Project(
+                path=repo, holo_dir=holo, store_path=holo / "store.db",
+                config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
+            conn = store.open(target.store_path)
+            self.addCleanup(conn.close)
+            store.init(conn)
+            task = {"id": "KO-715", "title": "Say hello in notes.txt",
+                    "body": CRITIC_BODY, "filed_at": int(time.time() * 1000)}
+            output = holophyte.freshness.ask_critic(conn, target, task)
+        print(f"critic:\n{output}")
+        self.assertIsNotNone(holophyte.freshness.parse_freshness(output), output)
 
 
 if __name__ == "__main__":

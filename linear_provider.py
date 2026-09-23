@@ -231,7 +231,7 @@ query($project: String!, $after: String) {
     ) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        identifier id url title description updatedAt
+        identifier id url title description updatedAt createdAt
         estimate priority
         labels { nodes { id name } }
         state { type name }
@@ -326,6 +326,10 @@ def parse_task(issue):
     reads it for another writer's `holo:` lease label (KO-351) and nothing
     else does; the store never mirrors it.
 
+    `filed_at` is the issue's `createdAt` in epoch milliseconds, or None for
+    a query that did not ask (`ISSUE_QUERY`): the claim reads it to decide
+    whether the critic is asked about the ticket (KO-715).
+
     `criteria` is the "Acceptance criteria" section's items, checked ones
     included: the mirror routes a ticket carrying both criteria and a verify
     command to `ready` and everything else to `needs_spec` (state-model §2),
@@ -348,7 +352,8 @@ def parse_task(issue):
             "priority": issue.get("priority"),
             "url": issue.get("url"),
             "board_state": (issue.get("state") or {}).get("name"),
-            "labels": label_names(issue)}
+            "labels": label_names(issue),
+            "filed_at": filed_at(issue)}
 
 
 ISSUE_QUERY = """
@@ -411,6 +416,16 @@ def set_state(issue_id, state_name, team):
     if not data["issueUpdate"]["success"]:
         raise RuntimeError(
             f"Linear refused to move issue {issue_id} to {state_name!r}")
+
+
+def filed_at(issue):
+    """The issue's `createdAt` in epoch milliseconds, None when the query
+    did not ask for it."""
+    created = issue.get("createdAt")
+    if not created:
+        return None
+    return int(datetime.fromisoformat(created.replace("Z", "+00:00"))
+               .timestamp() * 1000)
 
 
 def label_names(issue):

@@ -366,6 +366,18 @@ def writer_turn(project, goal, cwd, timeout, on_start):
     return AgentOutput(output.strip(), shlex.join(cmd[:-1]), exit_code=code)
 
 
+def critic_turn(project, goal, cwd, timeout):
+    """One `[agents.critic]` turn in `cwd`, a `critic_workspace()`, under
+    `timeout` seconds (`PROBE_TIMEOUT` when None); a turn that reaches the
+    cap raises `subprocess.TimeoutExpired`. No fallback: the critic is
+    advice, and its caller claims anyway when it fails (KO-715)."""
+    seat = critic_seat(project)
+    argv = seat.turn(outbound(goal, known_secrets(project.config())))
+    code, output = run_capped(argv, cwd, PROBE_TIMEOUT if timeout is None
+                              else timeout)
+    return AgentOutput(output.strip(), seat.named(argv), exit_code=code)
+
+
 def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
           review_round=None):
@@ -379,6 +391,9 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             return recorded_turn(project, requested_role, role, conn, run_id,
                                  lambda: writer_turn(
                                      project, goal, cwd, timeout, on_start))
+        if role == "critic":
+            return recorded_turn(project, requested_role, role, conn, run_id,
+                                 lambda: critic_turn(project, goal, cwd, timeout))
         record_pending_switch(project, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,
