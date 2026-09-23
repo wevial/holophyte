@@ -444,32 +444,36 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
     """Run one turn under its scaled wall-clock budget.
 
     Return `(output, timed_out)`; retain output and reap children on timeout.
-    The sweep hook kills the same group if the run is swept."""
+    The sweep hook kills the same group if the run is swept, and the
+    session question asked after the turn stays inside the same heartbeat
+    and hook."""
     # The sweep's hook: a beat that finds the run ended kills the turn's
     # whole process group, the same kill the budget sends, and the block
     # raises `RunSwept` for `run_task()` once the turn has stopped.
     # Preserve the requested role for turn attribution; agent() owns routing.
     session_role = role
     kill = GroupKill()
-    try:
-        with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
+    with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
+        try:
             output = agent(project, role, goal, wt,
-                          timeout=budget_min * budget_scale(project) * 60,
-                          on_start=kill.arm, conn=conn, run_id=run_id,
-                          **({"argv": argv} if argv is not None else {}))
+                           timeout=budget_min * budget_scale(project) * 60,
+                           on_start=kill.arm, conn=conn, run_id=run_id,
+                           **({"argv": argv} if argv is not None else {}))
             timed_out = False
-    except subprocess.TimeoutExpired as expired:
-        print(f"[holo2] task exceeded {budget_min} min budget"
-              f"{_scale_note(project, budget_min)}")
-        partial = expired.output or ""
-        if isinstance(partial, bytes):
-            partial = partial.decode("utf-8", "replace")
-        partial = partial.strip()
-        print(f"[holo2] {'writer' if role == 'write' else 'implementer'}"
-              " output before the budget fired:\n"
-              + (partial[-2000:] or "(no output before the budget fired)"))
-        output, timed_out = partial, True
-    record_session(project, conn, run_id, session_role, output, wt)
+        except subprocess.TimeoutExpired as expired:
+            print(f"[holo2] task exceeded {budget_min} min budget"
+                  f"{_scale_note(project, budget_min)}")
+            partial = expired.output or ""
+            if isinstance(partial, bytes):
+                partial = partial.decode("utf-8", "replace")
+            partial = partial.strip()
+            print(f"[holo2] {'writer' if role == 'write' else 'implementer'}"
+                  " output before the budget fired:\n"
+                  + (partial[-2000:] or "(no output before the budget fired)"))
+            output, timed_out = partial, True
+        if not kill.wanted:
+            record_session(project, conn, run_id, session_role, output, wt,
+                           on_start=kill.arm)
     return output, timed_out
 
 

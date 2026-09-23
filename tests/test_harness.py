@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -467,7 +468,8 @@ class CodexImplementerTests(ClaudeTableTests):
 
 # The fake devin implementer: records its argv and cwd, sleeps past the
 # budget when the prompt asks it to, and answers `list --format json` with
-# one session -- or, when told to, fails it.
+# one session -- or, when told to, fails it, stalls it, or lists a second
+# session as new as the first.
 FAKE_DEVIN_IMPLEMENTER = """
 import json, os, sys, time
 with open(os.environ["FAKE_HARNESS_CALLS"], "a") as calls:
@@ -476,8 +478,14 @@ if sys.argv[1:] == ["list", "--format", "json"]:
     if os.environ.get("FAKE_LIST_FAILS"):
         print("Error: not signed in", file=sys.stderr)
         sys.exit(1)
-    print(json.dumps([{"id": "brisk-heron", "working_directory": os.getcwd(),
-                       "last_activity_at": 1790199962, "title": "implement"}]))
+    if os.environ.get("FAKE_LIST_STALLS"):
+        time.sleep(30)
+    listed = [{"id": "brisk-heron", "working_directory": os.getcwd(),
+               "last_activity_at": 1790199962, "title": "implement"}]
+    if os.environ.get("FAKE_LIST_TIES"):
+        listed.append({"id": "quiet-egret", "working_directory": os.getcwd(),
+                       "last_activity_at": 1790199962, "title": "fix"})
+    print(json.dumps(listed))
     sys.exit(0)
 print("fake devin ran")
 sys.stdout.flush()
@@ -531,6 +539,36 @@ class DevinImplementerTests(ClaudeTableTests):
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM runEvents WHERE kind = 'agent_session'"
         ).fetchone(), (0,))
+        self.assertIsNone(self.session())
+
+    def test_sessions_tied_for_newest_record_nothing(self):
+        with patch.dict(os.environ, {"FAKE_LIST_TIES": "1"}):
+            self.implement("implement the thing")
+        self.assert_turn_then_list("implement the thing")
+        self.assertIsNone(self.session())
+
+    def test_a_run_swept_while_its_session_is_listed_kills_the_list(self):
+        real = holophyte.agents.run_capped
+
+        def run_capped(cmd, cwd, timeout, on_start=None, **kwargs):
+            def started(proc):
+                on_start(proc)
+                if cmd[1:] == LIST:
+                    other = store.open(self.target.store_path)
+                    try:
+                        store.release(other, self.run, "failed", "swept")
+                    finally:
+                        other.close()
+            return real(cmd, cwd, timeout, on_start=started, **kwargs)
+
+        began = time.monotonic()
+        with patch.dict(os.environ, {"FAKE_LIST_STALLS": "1"}), \
+                patch.object(holophyte.agents, "run_capped", run_capped), \
+                self.assertRaises(holophyte.runs.RunSwept):
+            holophyte.loop._timed(self.target, self.conn, self.run, 0.05,
+                                  self.repo, 1, "implement the thing")
+        self.assertLess(time.monotonic() - began, 20)
+        self.assert_turn_then_list("implement the thing")
         self.assertIsNone(self.session())
 
     def test_fix_turn_resumes_the_recorded_session(self):

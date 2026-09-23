@@ -154,14 +154,14 @@ class Devin(Adapter):
     checkout holds only this turn's session: a resumed one moves to the
     directory it was resumed in. A task worktree can hold more than one --
     a fix round that started fresh leaves a second -- so the implementer's
-    is the newest listed. A review turn's question goes through the turn's
-    own runner, so it is held to what is left of the turn's cap and killed
-    by the sweep that would kill the turn; an implementer's has
-    `LIST_TIMEOUT` of its own. The implementer's argv ends in `-p --`, so a
-    prompt that starts with `-` is not read as a flag. The factory has no
-    Devin model to default to, so `model` is required -- the maintainer's
-    choice for the reviewer is `swe-2-high`, the live test's model -- and
-    the CLI has no effort flag.
+    is the newest listed. Either question goes through the turn's own
+    runner, so it is killed by the sweep that would kill the turn; a review
+    turn's is held to what is left of the turn's cap, an implementer's to
+    `LIST_TIMEOUT` of its own inside the turn's heartbeat. The
+    implementer's argv ends in `-p --`, so a prompt that starts with `-` is
+    not read as a flag. The factory has no Devin model to default to, so
+    `model` is required -- the maintainer's choice for the reviewer is
+    `swe-2-high`, the live test's model -- and the CLI has no effort flag.
     """
     name = "devin"
     roles = frozenset({"implementer", "reviewer", "adjudicator"})
@@ -190,9 +190,9 @@ class Devin(Adapter):
     def reported_session(self, binary, output, role, run):
         """The session `devin list` shows in the turn's directory -- the
         one a review checkout holds, the newest `last_activity_at` in a
-        task worktree -- None for any other answer -- a guess could resume
-        someone else's conversation -- and for a turn with no `run` to ask
-        it through."""
+        task worktree -- None for any other answer, two sessions tied for
+        newest included -- a guess could resume someone else's
+        conversation -- and for a turn with no `run` to ask it through."""
         if run is None:
             return None
         try:
@@ -204,10 +204,12 @@ class Devin(Adapter):
         if code != 0 or not isinstance(sessions, list):
             return None
         if role == "implementer":
-            sessions = sorted((entry for entry in sessions
-                               if isinstance(entry, dict) and isinstance(
-                                   entry.get("last_activity_at"), int)),
-                              key=lambda entry: -entry["last_activity_at"])[:1]
+            dated = [entry for entry in sessions if isinstance(entry, dict)
+                     and isinstance(entry.get("last_activity_at"), int)]
+            newest = max((entry["last_activity_at"] for entry in dated),
+                         default=None)
+            sessions = [entry for entry in dated
+                        if entry["last_activity_at"] == newest]
         if len(sessions) != 1 or not isinstance(sessions[0], dict):
             return None
         session = sessions[0].get("id")

@@ -190,10 +190,11 @@ as `devin --respect-workspace-trust false --permission-mode dangerous --model
 M -p -- PROMPT`; the `--` keeps a prompt that starts with `-` from being read
 as a flag. Devin prints no session id, so after every implement and fix turn,
 a timed-out one included, `devin list --format json` in the task worktree
-(under its own 60-second cap) supplies it: the session with the newest
+(under its own 60-second cap, inside the turn's heartbeat and killed by
+the sweep that would kill the turn) supplies it: the session with the newest
 `last_activity_at`, since a worktree holds a second session once a fix round
-started fresh. A list that fails, times out or names no session records
-nothing and leaves the turn as it was. A fix round under `[loop] fix_session
+started fresh. A list that fails, times out, names no session or ties two
+sessions for newest records nothing and leaves the turn as it was. A fix round under `[loop] fix_session
 = "resume"` runs `devin --respect-workspace-trust false --permission-mode
 dangerous --model M -r ID -p -- PROMPT`. `model` is required and `effort`
 refused, as for the reviewer.

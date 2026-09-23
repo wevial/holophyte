@@ -317,13 +317,16 @@ def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
         sh(["git", "update-ref", name, sha], cwd=repo)
 
 
-def record_session(project, conn, run_id, role, output, cwd=None):
+def record_session(project, conn, run_id, role, output, cwd=None,
+                   on_start=None):
     """Persist host implementer session handles from completed or capped turns.
 
     A table implementer's adapter reads the id its harness printed (none for
     one whose id was recorded at dispatch), or asks the harness in `cwd`,
-    the task worktree, for one that prints none; a command string's is read
-    with the `implementer_session` regex."""
+    the task worktree, for one that prints none -- a question armed through
+    `on_start`, the turn's `GroupKill.arm`, so the sweep that would kill the
+    turn kills it too; a command string's is read with the
+    `implementer_session` regex."""
     import store
     from holophyte.config import implementer_session
 
@@ -336,6 +339,7 @@ def record_session(project, conn, run_id, role, output, cwd=None):
     if seat is not None:
         session = seat.reported_session(output, None if cwd is None else (
             lambda argv, timeout: run_capped(argv, cwd, timeout,
+                                             on_start=on_start,
                                              stderr=subprocess.DEVNULL)))
     else:
         pattern = implementer_session(project)
