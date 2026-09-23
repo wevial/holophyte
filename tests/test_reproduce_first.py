@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -40,6 +41,19 @@ BUG_BODY = VALID_BODY.replace(
 REPRODUCE = Commit("test: reproduce the thing", path="repro.txt")
 PASSES = Reply("The test runs the thing the way the ticket reports and only"
                " tests changed.\nVERDICT: PASS")
+
+
+@dataclass
+class Scribble:
+    """A reproduce turn that writes a half-done test and never commits it."""
+
+    path: str = "half-done.txt"
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        (cwd / self.path).write_text("unfinished\n")
+        return "Ran out of time before committing."
 
 
 def bug_task(verify=VERIFY):
@@ -88,6 +102,15 @@ class ReproduceFirstTests(LoopFixture):
             "SELECT text FROM ledger WHERE kind = 'note'")]
         self.assertTrue(any("No reproduction was committed" in text
                             for text in notes), notes)
+
+    def test_a_reproduce_turn_s_uncommitted_edits_do_not_reach_the_fix(self):
+        self.run_bug(Scribble(),
+                     Commit("fix the thing", path="app.txt", body="fixed\n"),
+                     APPROVE, verify="grep -q fixed app.txt")
+
+        self.assertIn("app.txt", self.git("ls-tree", "--name-only", "main"))
+        self.assertNotIn(Scribble.path,
+                         self.git("ls-tree", "--name-only", "main"))
 
 
 if __name__ == "__main__":

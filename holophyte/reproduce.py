@@ -30,6 +30,8 @@ ticket's verify runs at that commit. A failure is a `reproduced` event and a
 `Reproduction` whose `opening()` leads the implement turn built on it; a pass
 sends the test commit straight to `review_rounds()` above, with no implement
 turn; no commit is a ledger note and the implement turn as before (KO-659).
+Whatever the turn leaves uncommitted is discarded either way, so neither the
+verify nor the implement turn sees a half-written test or fix.
 
 The loop's `agent`, `_timed`, `_check_run_cap`, `_verify_brief` and
 `_review_rounds` are read off `holophyte.loop` at call time, so a test that
@@ -37,6 +39,7 @@ patches the loop's `agent` answers these turns too.
 """
 import json
 from dataclasses import dataclass, fields, replace
+from pathlib import Path
 from time import time
 
 import review_runner
@@ -46,6 +49,7 @@ import ticket_template
 from holophyte import failure_reason
 from holophyte.agents import review_refs
 from holophyte.board import block_ticket, ledger
+from holophyte.environment_git import paths, unstage_environment
 from holophyte.gates import MergeParked, RunFailure, run_verify, sh, with_baseline
 from holophyte.redact import safe_print as print
 from holophyte.review import raw_finding
@@ -134,10 +138,12 @@ def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
         "the fix is a later turn's. Commit messages carry no tool attribution"
         " or co-author lines for an AI.")
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    _discard_leftovers(target, wt)
     if head == start_sha:
         ledger(conn, run_id, task_id, "note",
                "No reproduction was committed: the reproduce turn added no "
-               "commit, so the implement turn starts from the ticket alone.",
+               "commit, so the implement turn starts from the ticket alone "
+               "on a tree with the turn's uncommitted edits discarded.",
                provider)
         return None
     with heartbeat_while(conn, run_id, beat_s):
@@ -154,6 +160,20 @@ def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
                            payload=json.dumps({"sha": head, "command": failing,
                                                "output": str(out)[-2000:]}))
     return Reproduction(head, failing)
+
+
+def _discard_leftovers(target, wt):
+    """Drop what the reproduce turn left uncommitted, so the verify at its
+    commit and the implement turn after it see its commit alone. Only a
+    commit is a reproduction; a half-written test or fix is not kept. The
+    protected `.env` is unstaged first and excluded from the clean, and an
+    `index.lock` a budget kill left behind can only be the dead turn's."""
+    lock = Path(wt, sh(["git", "rev-parse", "--git-path", "index.lock"],
+                       cwd=wt))
+    lock.unlink(missing_ok=True)
+    unstage_environment(target, wt)
+    sh(["git", "reset", "-q", "--hard", "HEAD"], cwd=wt)
+    sh(["git", "clean", "-fdq", *paths(target)], cwd=wt)
 
 
 def routed(resume):
