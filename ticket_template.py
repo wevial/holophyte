@@ -553,6 +553,26 @@ def _unittest_modules(tokens):
         return
 
 
+def _discover_patterns(tokens):
+    """The -p pattern of a `unittest discover` command mapped to its -s start
+    directory joined with it: the pattern names a file there, not at the
+    repository root."""
+    for i in range(len(tokens) - 2):
+        if tokens[i:i + 3] != ["-m", "unittest", "discover"]:
+            continue
+        start, pattern = ".", None
+        args = iter(tokens[i + 3:])
+        for arg in args:
+            name, eq, value = arg.partition("=")
+            if name in ("-s", "--start-directory"):
+                start = value if eq else next(args, start)
+            elif name in ("-p", "--pattern"):
+                pattern = value if eq else next(args, None)
+        if pattern:
+            yield pattern, str(Path(start) / pattern)
+        return
+
+
 def _module_available(repo, module, declarations):
     # unittest also accepts package names and qualified class/method names.
     parts = module.split(".")
@@ -586,7 +606,10 @@ def _repository_problems(t, repo):
         for path in dict.fromkeys(path for _, path in _prose_paths(text)):
             problems.append(_path_problem(repo, path, declarations, label))
     for command in t.verify_commands:
+        patterns = dict(pair for tokens in _shell_commands(command)
+                        for pair in _discover_patterns(tokens))
         for path in _repo_paths(command):
+            path = patterns.get(path, path)
             problems.append(_path_problem(repo, path, declarations,
                                           "verify command", prefix=""))
         for tokens in _shell_commands(command):

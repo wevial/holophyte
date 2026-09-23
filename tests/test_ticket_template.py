@@ -584,6 +584,39 @@ class GitignoredPathTests(unittest.TestCase):
                          "blocked_on_operator")
 
 
+class DiscoverPatternTests(unittest.TestCase):
+    """KO-667: `discover -s tests -p NAME.py` names a module inside `tests`,
+    not a file at the repository root."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        (self.repo / "tests").mkdir()
+
+    def missing(self, pattern, note="- Endpoint lives beside the other order routes."):
+        text = FILLED.replace(
+            ".venv/bin/python -m unittest test_orders_export",
+            f".venv/bin/python -m unittest discover -s tests -p '{pattern}'"
+        ).replace("- Endpoint lives beside the other order routes.", note)
+        return [p for p in tt.validate(tt.parse(text), repo=self.repo)
+                if "does not exist" in p]
+
+    def test_a_pattern_declared_new_under_the_start_directory_passes(self):
+        self.assertEqual(self.missing(
+            "test_example.py", "- Add a new test file `tests/test_example.py`."), [])
+
+    def test_a_missing_pattern_is_named_under_the_start_directory(self):
+        self.assertEqual(self.missing("test_example.py"), [
+            "path does not exist in verify command: tests/test_example.py"])
+        (self.repo / "tests/test_example.py").touch()
+        self.assertEqual(self.missing("test_example.py"), [])
+
+    def test_a_glob_pattern_is_not_a_path(self):
+        self.assertEqual(self.missing("test_babysit*"), [])
+
+
 class PathCandidateTests(unittest.TestCase):
     def test_code_spans_links_and_prose_yield_relative_paths_only(self):
         text = ("Given `artifacts/report.html` and [cli.py](http://cli.py) "
