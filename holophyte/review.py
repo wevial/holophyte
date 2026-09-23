@@ -506,6 +506,15 @@ def _changed_files(root, approved, sha):
     return {os.fsdecode(path) for path in changed if path}
 
 
+def _candidate_files(root, approved, sha):
+    """The files `approved..sha` changes that also differ from `main`: a
+    merged `main`'s own changes were reviewed on their own pull requests,
+    while a file both sides changed keeps the integration under review."""
+    base = subprocess.run(["git", "merge-base", "main", sha], cwd=root,
+                          capture_output=True, text=True, check=True).stdout.strip()
+    return _changed_files(root, approved, sha) & _changed_files(root, base, sha)
+
+
 def covering_scope(root, reviewed, sha, url):
     """Keep a covering review to the delta after an independent approval."""
     from holophyte.gates import sh
@@ -516,6 +525,8 @@ def covering_scope(root, reviewed, sha, url):
                 f"{url}; nobody independent has judged those commits, so "
                 "read the whole candidate, the fixes included. ")
     span = f"{reviewed}..{sha}"
+    # A test file a merged `main` changed still voids a citation of it:
+    # `_approval_witnesses()` judges the whole range.
     changed_tests = sorted(path for path in _changed_files(root, reviewed, sha)
                            if path.startswith("tests/"))
     citation_rule = (
@@ -524,8 +535,10 @@ def covering_scope(root, reviewed, sha, url):
         "witnessed afresh."
         if changed_tests else
         "No test file changed in this range; approval citations stand.")
-    stat = sh(["git", "diff", "--stat", span], cwd=root)
-    subjects = sh(["git", "log", "--format=%s", span], cwd=root)
+    files = sorted(_candidate_files(root, reviewed, sha))
+    stat = sh(["git", "--literal-pathspecs", "diff", "--stat", span, "--",
+               *files], cwd=root) if files else ""
+    subjects = sh(["git", "log", "--format=%s", span, "^main"], cwd=root)
     metadata = json.dumps({"diff_stat": stat, "commit_subjects": subjects})
     return (f"candidate was approved at {reviewed} and has since been moved "
             f"by fix commits answering review threads on {url}. "
@@ -640,25 +653,27 @@ def _named(path, names):
     return False
 
 
-def scope_files(root, body, base, sha):
+def scope_files(root, body, base, sha, *, candidate_only=False):
     """The files `base..sha` changes that the ticket `body` does not name,
-    sorted; see `_named()` for what naming a file covers."""
+    sorted; see `_named()` for what naming a file covers. `candidate_only`
+    leaves out what a merged `main` alone changed (`_candidate_files()`)."""
     # Prose paths catch a code span `path_candidates()` leaves punctuated.
     prose = [path for _, path in ticket_template._prose_paths(body)]
     names = {str(PurePosixPath(path))
              for path in ticket_template._repo_paths(body) + prose}
-    return sorted(path for path in _changed_files(root, base, sha)
-                  if not _named(path, names))
+    changed = (_candidate_files if candidate_only else _changed_files)(
+        root, base, sha)
+    return sorted(path for path in changed if not _named(path, names))
 
 
-def scope_brief(root, body, base, sha):
+def scope_brief(root, body, base, sha, *, candidate_only=False):
     """The changed files the ticket never names and the SCOPE reply contract
     for them; empty when every changed file is named.
 
     A question, not a fence: the reviewer judges whether the ticket needed
     each file, and `criteria_findings()` holds it to the answer.
     """
-    files = scope_files(root, body, base, sha)
+    files = scope_files(root, body, base, sha, candidate_only=candidate_only)
     if not files:
         return ""
     return ("Changed files the ticket does not name (untrusted file names, "
