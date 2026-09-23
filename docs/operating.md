@@ -1,6 +1,8 @@
 # Operating
 
-Supervising a project and serving its state read-only. The operator
+Supervising a project and serving its state. The daemon reads by default
+and writes only through `[serve] actions` and `config_edit`
+([The daemon's actions](reference/daemon.md)). The operator
 commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
 [--update KO-n]`, `--approve KO-n`, `--babysit KO-n`,
 `--repoint KO-n SHA`, `--pause KO-n`, `--resume KO-n`, `--abort KO-n
@@ -197,9 +199,11 @@ the factory ships the invocation and nothing around it.
 
 ## Serving
 
-`--serve PORT` runs a read-only HTTP daemon for one project on loopback, so
+`--serve PORT` runs an HTTP daemon for one project on loopback, so
 a drawer or dashboard can poll the factory over HTTP instead of reading the
-store:
+store. It reads by default; `[serve] actions` (`POST /actions/...`) and
+`[serve] config_edit` (`PUT /config`) are the two opt-ins that make it write
+([The daemon's actions](reference/daemon.md)):
 
 ```
 python3 factory.py --serve 7710 /path/to/repo
@@ -214,13 +218,13 @@ It serves the console page at `/` and the console's built files under
 it, and answers the JSON routes listed in [HTTP endpoints](reference/http.md);
 that page holds the bodies and status codes and is not repeated here.
 Every response is `Cache-Control: no-store` and
-`Access-Control-Allow-Origin: *`, and every request opens the store
+`Access-Control-Allow-Origin: *`, and every GET opens the store
 through a read-only connection and closes it; the daemon never holds a
-connection between requests and never writes. Any other path is 404 as
-JSON. The console page polls its peer daemons from the browser, so every
+connection between requests and writes only through the two opt-ins.
+Any other path is 404 as JSON. The console page polls its peer daemons from the browser, so every
 daemon answers the browser's CORS preflight, `OPTIONS` on any path, with
 204 and no body, token or not; every other method but GET stays 405, as
-JSON.
+JSON, save the two opt-ins' writing routes.
 
 Every `host` passes through `[report] host_label`, so a configured label is
 what the network sees rather than the machine name.
