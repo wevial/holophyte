@@ -41,7 +41,11 @@ directories the task worktree already holds, those the project lists in
 runs in the container against the packages the candidate was verified with.
 A verify command that needs an install the worktree does not hold, or a
 directory the project does not list, cannot be run there and the reviewer
-should say so rather than report the gate unverified.
+should say so rather than report the gate unverified. When the ticket's
+verify commands and the project's baseline passed at the candidate, the
+reviewer's brief says so and tells it not to rerun the full suite, which runs
+as a pull request check, but to run only the focused tests a specific concern
+needs.
 
 How many review rounds a run gets is decided per run, before its first
 review, from the size of the candidate's diff and the `[loop]` review keys
@@ -207,6 +211,24 @@ One pass:
    `--babysit` re-entry merges the candidate only at that sha and
    reviews it again at any other -- a fix the reviewer rejected has none
    on record, and is reviewed again before anything merges it.
+
+   That review reads what changed since the approval, not the whole
+   candidate again. The reviewer is told to review the range from the
+   approved sha to the candidate, those commits and whatever they touch;
+   the rest stands on the earlier approval. It still answers for every
+   criterion, and for one the range does not touch it may cite that
+   approval as `approval at SHA; tests/file.py::TestClass::test_name`,
+   where `SHA` is the approved sha (a test that is not Python is named
+   `path::"test name"` or `path::TestName`). The prompt lists the test
+   files the range changed, a merged `main`'s included, and a citation
+   of any of them is void: that criterion must be witnessed afresh. The
+   gate holds the reply to the same rule -- a citation that does not name
+   the approved sha, names no test, or names a test file changed in the
+   range leaves its criterion unwitnessed, and the run parks. So a
+   covering approval is only as good as the earlier review of each test
+   it cites, and only while that test is unchanged. When the last review
+   of the candidate asked for changes there is no approval to cite, and
+   the candidate is read whole, the fixes included.
 
 After `[merge] pr_rounds` passes the run parks naming the cap, whatever
 the PR looks like.

@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import re
 import subprocess
 import tempfile
 import unittest
@@ -54,6 +55,14 @@ class CoveringPromptTests(unittest.TestCase):
         self.assertIn("witnessed afresh", instructions)
         self.assertNotIn("holophyte/incoming.py", instructions)
         self.assertNotIn("holophyte/fix.py", instructions)
+
+    def test_citation_form_on_reviewing_page_matches_prompt(self):
+        page = (Path(__file__).resolve().parents[1] / "docs/reviewing.md")
+        template = re.search(r"`(approval at SHA; [^`]+)`",
+                             page.read_text()).group(1)
+        prompt = review.covering_scope(
+            self.root, self.approved, self.candidate("holophyte/fix.py"), "pr")
+        self.assertIn(template.replace("SHA", self.approved, 1), prompt)
 
     def test_no_changed_tests_keeps_approval_citations(self):
         instructions = self.instructions(self.candidate("holophyte/fix.py"))
