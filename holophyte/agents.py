@@ -419,8 +419,8 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     commits reach the reviewer as `refs/review/RUN/base` and
     `refs/review/RUN/candidate` — the names its prompt uses — the staged checkout
     on the default route, the task worktree on the configured one. A table
-    reviewer (`[agents.reviewer] harness = "codex"`) runs in a throwaway
-    checkout of the candidate instead (`table_review()`).
+    reviewer (`[agents.reviewer] harness = "codex"` or `"devin"`) runs in a
+    throwaway checkout of the candidate instead (`table_review()`).
 
     With `session` (an implement turn the loop asked for, not a writer
     turn routed to the implementer), a table-form implementer's session id
@@ -612,7 +612,7 @@ def table_review(seat, goal, repo, scratch, cap, env, role, *, run_id=None,
         argv = seat.turn(goal)
         output = configured_review(argv, checkout, cap, env, role,
                                    seat.named(argv), on_start=on_start)
-    reported = seat.reported_session(output)
+    reported = seat.reported_session(output, checkout, env)
     if reported:
         (Path(scratch) / "session").write_text(reported, encoding="utf-8")
     return output

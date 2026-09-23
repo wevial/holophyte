@@ -1,14 +1,15 @@
 """Live: a harness adapter's turn and resume argv against the real CLI.
 
 Opt in with `HOLOPHYTE_LIVE_HARNESS=claude` (an implementer turn and its
-resume) or `HOLOPHYTE_LIVE_HARNESS=codex` (two review rounds through
-`holophyte.agents.agent()`) on a host with that CLI signed in on PATH;
+resume) or `HOLOPHYTE_LIVE_HARNESS=codex` or `devin` (two review rounds
+through `holophyte.agents.agent()`) on a host with that CLI signed in on PATH;
 without the variable the tests skip, and with it set but no binary on PATH
 the test fails. Kept out of the ticket's verify block: the reviewer's
 container carries no agent credentials.
 
 Run: HOLOPHYTE_LIVE_HARNESS=claude python3 -m unittest tests.test_harness_live
      HOLOPHYTE_LIVE_HARNESS=codex python3 -m unittest tests.test_harness_live
+     HOLOPHYTE_LIVE_HARNESS=devin python3 -m unittest tests.test_harness_live
 """
 import os
 import secrets
@@ -25,9 +26,14 @@ from holophyte import harness
 
 LIVE = os.environ.get("HOLOPHYTE_LIVE_HARNESS")
 TURN_TIMEOUT = 300
+# The `[agents.reviewer]` table each review harness's live rounds run under.
+REVIEW_TABLES = {
+    "codex": 'harness = "codex"\neffort = "low"\n',
+    "devin": 'harness = "devin"\nmodel = "opus"\n',
+}
 
 
-@unittest.skipUnless(LIVE and LIVE != "codex",
+@unittest.skipUnless(LIVE and LIVE not in REVIEW_TABLES,
                      "set HOLOPHYTE_LIVE_HARNESS=claude for a live turn")
 class LiveHarnessTests(unittest.TestCase):
     def run_turn(self, argv, cwd):
@@ -60,17 +66,18 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertIn(word, answer.lower())
 
 
-@unittest.skipUnless(LIVE == "codex",
-                     "set HOLOPHYTE_LIVE_HARNESS=codex for live review rounds")
-class LiveCodexReviewTests(unittest.TestCase):
+@unittest.skipUnless(LIVE in REVIEW_TABLES,
+                     "set HOLOPHYTE_LIVE_HARNESS=codex or devin for live review "
+                     "rounds")
+class LiveReviewTests(unittest.TestCase):
     def git(self, repo, *args):
         return subprocess.check_output(
             ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
              *args], cwd=repo, text=True).strip()
 
     def test_rounds_see_the_candidate_and_resume_the_session(self):
-        self.assertIsNotNone(shutil.which("codex"), "HOLOPHYTE_LIVE_HARNESS=codex "
-                             "but no 'codex' on PATH")
+        self.assertIsNotNone(shutil.which(LIVE), f"HOLOPHYTE_LIVE_HARNESS={LIVE} "
+                             f"but no {LIVE!r} on PATH")
         word = "holo" + secrets.token_hex(3)
         with tempfile.TemporaryDirectory(prefix="holophyte-live-") as scratch:
             root = Path(scratch)
@@ -88,8 +95,8 @@ class LiveCodexReviewTests(unittest.TestCase):
             holo = root / "holo"
             holo.mkdir()
             (holo / "config.toml").write_text(
-                '[agents.reviewer]\nharness = "codex"\neffort = "low"\n'
-                '[loop]\nreview_session = "resume"\n')
+                '[agents.reviewer]\n' + REVIEW_TABLES[LIVE]
+                + '[loop]\nreview_session = "resume"\n')
             target = holophyte.target.Target(
                 path=repo, holo_dir=holo, store_path=holo / "store.db",
                 config_path=holo / "config.toml", worktrees=root / "repo.worktrees")

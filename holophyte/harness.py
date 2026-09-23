@@ -6,19 +6,23 @@ command string. The adapter owns what a wrapper script on the writer host
 used to: the argv of a turn, the session id that turn runs under (chosen
 before launch, so the factory records it at dispatch rather than reading it
 back out of the output -- or, for a review harness that chooses its own,
-read from the banner it prints) and the argv that resumes it. The binary is the
-harness's own name, looked up on PATH at launch, unless the top-level
-`[harnesses]` table names an absolute path for it.
+read from the banner it prints or the session list it keeps) and the argv
+that resumes it. The binary is the harness's own name, looked up on PATH at
+launch, unless the top-level `[harnesses]` table names an absolute path for
+it.
 
-Validation reads each adapter's `roles` and never names a harness or a role
-itself, so letting a harness serve another role is an addition to its set
-plus that role's argv. `holophyte.config` imports this module at load, so
-the target readers below (`check_target()`, `seat()`, `agent_session()`)
-import its tables inside the call.
+Validation reads each adapter's `roles`, `required` and `refused` options
+and never names a harness or a role itself, so letting a harness serve
+another role is an addition to its set plus that role's argv.
+`holophyte.config` imports this module at load, so the target readers below
+(`check_target()`, `seat()`, `agent_session()`) import its tables inside the
+call.
 """
+import json
 import os
 import re
 import shlex
+import subprocess
 import uuid
 from dataclasses import dataclass
 
@@ -37,6 +41,7 @@ class Claude:
     """
     name = "claude"
     roles = frozenset({"implementer"})
+    required = refused = ()
     efforts = None
 
     def turn(self, binary, options):
@@ -71,6 +76,7 @@ class Codex:
     """
     name = "codex"
     roles = frozenset({"reviewer", "adjudicator"})
+    required = refused = ()
     # `REVIEW_EFFORTS`, read at its source: `holophyte.config` imports this
     # module at load.
     efforts = review_runner.EFFORTS
@@ -82,7 +88,7 @@ class Codex:
     def resume(self, binary, options, session):
         return [binary, "exec", "resume", *self.route(options), session]
 
-    def reported_session(self, output):
+    def reported_session(self, binary, output, cwd, env):
         match = self.BANNER.search(output)
         return match.group(1) if match else None
 
@@ -95,7 +101,56 @@ class Codex:
                 "--dangerously-bypass-approvals-and-sandbox"]
 
 
-ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex())}
+class Devin:
+    """Devin in print mode for the review roles, in the same throwaway
+    candidate checkout as `Codex`.
+
+    Print mode fails in a directory Devin has never trusted, and every
+    throwaway checkout is one, hence `--respect-workspace-trust false`;
+    `dangerous` lets the reviewer run git and tests without a prompt, the
+    checkout staying the write boundary. Devin chooses the session id and
+    prints none, so `reported_session()` asks `devin list` in the checkout,
+    which holds only this turn's session: a resumed one moves to the
+    directory it was resumed in. The factory has no Devin model to default
+    to, and the CLI has no effort flag.
+    """
+    name = "devin"
+    roles = frozenset({"reviewer", "adjudicator"})
+    required = ("model",)
+    refused = ("effort",)
+    efforts = None
+    LIST_TIMEOUT = 60
+
+    def turn(self, binary, options):
+        return [binary, *self.route(options), "-p"]
+
+    def resume(self, binary, options, session):
+        return [binary, *self.route(options), "-r", session, "-p"]
+
+    def reported_session(self, binary, output, cwd, env):
+        """The one session `devin list` shows for `cwd`, None for any
+        other answer: a guess could resume someone else's conversation."""
+        try:
+            listed = subprocess.run(
+                [binary, "list", "--format", "json"], cwd=cwd, env=env,
+                capture_output=True, text=True, timeout=self.LIST_TIMEOUT,
+                stdin=subprocess.DEVNULL)
+            sessions = json.loads(listed.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None
+        if listed.returncode != 0 or not isinstance(sessions, list) \
+                or len(sessions) != 1 or not isinstance(sessions[0], dict):
+            return None
+        session = sessions[0].get("id")
+        return session if isinstance(session, str) else None
+
+    @staticmethod
+    def route(options):
+        return ["--model", options["model"], "--permission-mode", "dangerous",
+                "--respect-workspace-trust", "false"]
+
+
+ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex(), Devin())}
 
 
 @dataclass(frozen=True)
@@ -121,10 +176,10 @@ class Seat:
         """The argv that resumes `session`; the caller appends the prompt."""
         return self.adapter.resume(self.binary, self.options, session)
 
-    def reported_session(self, output):
-        """The session id a finished turn printed, for an adapter whose
-        harness chooses it; None when the output names none."""
-        return self.adapter.reported_session(output)
+    def reported_session(self, output, cwd, env):
+        """The session id a finished turn in `cwd` ran under, for an adapter
+        whose harness chooses it; None when the harness names none."""
+        return self.adapter.reported_session(self.binary, output, cwd, env)
 
     def named(self, argv):
         """`argv` as a record names it: the harness first, not a
@@ -139,9 +194,10 @@ def parse_role(where, key, table):
     `where` prefixes every refusal (the config path). Refused: a table for a
     key outside `TABLE_ROLES`, a key outside `TABLE_KEYS`, a harness with no
     adapter, a harness whose `roles` do not hold `key` -- the message names
-    the roles it does serve -- a `model` or `effort` that is not a
-    non-empty string, and an `effort` outside the adapter's `efforts` when
-    it declares them.
+    the roles it does serve -- an option the adapter lists as `refused`
+    or leaves out that it lists as `required`, a `model` or `effort` that
+    is not a non-empty string, and an `effort` outside the adapter's
+    `efforts` when it declares them.
     """
     if key not in TABLE_ROLES:
         raise SystemExit(
@@ -162,6 +218,24 @@ def parse_role(where, key, table):
         raise SystemExit(
             f"{where}: [agents.{key}] harness: {name!r} supports "
             f"{', '.join(sorted(adapter.roles))}, not {key}")
+    check_options(where, key, adapter, table)
+    return adapter
+
+
+def check_options(where, key, adapter, table):
+    """Refuse the `model` and `effort` of `[agents.KEY]` that `adapter`
+    cannot take; `parse_role()` names the refusals."""
+    name = adapter.name
+    for option in adapter.refused:
+        if option in table:
+            raise SystemExit(
+                f"{where}: [agents.{key}] {option}: harness {name!r} takes no "
+                f"{option}; drop it")
+    for option in adapter.required:
+        if option not in table:
+            raise SystemExit(
+                f"{where}: [agents.{key}] {option}: required for harness "
+                f"{name!r}")
     for option in ("model", "effort"):
         value = table.get(option)
         if value is not None and (not isinstance(value, str) or not value.strip()):
@@ -173,7 +247,6 @@ def parse_role(where, key, table):
         raise SystemExit(
             f"{where}: [agents.{key}] effort must be one of "
             f"{', '.join(adapter.efforts)}, got {effort!r}")
-    return adapter
 
 
 def check_paths(where, paths):

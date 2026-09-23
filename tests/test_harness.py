@@ -1,5 +1,6 @@
 """Table-form roles: the adapter's argv, its session and its resume -- a
-claude implementer, and a codex reviewer in a throwaway candidate checkout.
+claude implementer, and codex and devin reviewers in a throwaway candidate
+checkout.
 
 Run: python3 -m unittest tests.test_harness -v
 """
@@ -147,7 +148,11 @@ OPTIONS = ["-m", "gpt-5.6-luna", "-c", "model_reasoning_effort=low",
            "--dangerously-bypass-approvals-and-sandbox"]
 
 
-class CodexTableTests(unittest.TestCase):
+class CandidateCheckoutCase(unittest.TestCase):
+    """A run with a base and a candidate commit and a fake `HARNESS` on PATH
+    running `FAKE`, under `CONFIG`."""
+    HARNESS = FAKE = CONFIG = None
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -161,15 +166,15 @@ class CodexTableTests(unittest.TestCase):
         self.candidate = self.git("rev-parse", "HEAD")
         self.holo = root / "holo"
         self.holo.mkdir()
-        (self.holo / "config.toml").write_text(CODEX_CONFIG)
+        (self.holo / "config.toml").write_text(self.CONFIG)
         self.target = holophyte.target.Target(
             path=self.repo, holo_dir=self.holo, store_path=self.holo / "store.db",
             config_path=self.holo / "config.toml",
             worktrees=root / "repo.worktrees")
         bin_dir = root / "bin"
         bin_dir.mkdir()
-        fake = bin_dir / "codex"
-        fake.write_text(f"#!{sys.executable}\n{FAKE_CODEX}")
+        fake = bin_dir / self.HARNESS
+        fake.write_text(f"#!{sys.executable}\n{self.FAKE}")
         fake.chmod(0o755)
         self.calls = root / "calls.jsonl"
         env = patch.dict(os.environ, {
@@ -182,7 +187,7 @@ class CodexTableTests(unittest.TestCase):
         store.init(self.conn)
         project = store.ensure_project(self.conn, "test", self.repo)
         ticket = store.mirror_ticket(self.conn, project, "KO-614", "KO-614",
-                                     "codex", acceptance_criteria=["review"],
+                                     self.HARNESS, acceptance_criteria=["review"],
                                      verification_commands=["true"])
         self.run = store.claim(self.conn, project, ticket)
 
@@ -204,13 +209,20 @@ class CodexTableTests(unittest.TestCase):
             candidate_sha=self.candidate, timeout=60, conn=self.conn,
             run_id=self.run, review_round=review_round)
 
-    def assert_fresh_turn_in_a_candidate_checkout(self, call, goal):
-        self.assertEqual(call["argv"], ["exec", *OPTIONS, goal])
+    def assert_in_a_candidate_checkout(self, call):
         self.assertEqual(call["head"], self.candidate)
         self.assertNotEqual(Path(call["cwd"]).resolve(), self.repo.resolve())
         worktrees = self.git("worktree", "list", "--porcelain").splitlines()
         self.assertEqual([line for line in worktrees if line.startswith("worktree ")],
                          [f"worktree {self.repo.resolve()}"])
+
+
+class CodexTableTests(CandidateCheckoutCase):
+    HARNESS, FAKE, CONFIG = "codex", FAKE_CODEX, CODEX_CONFIG
+
+    def assert_fresh_turn_in_a_candidate_checkout(self, call, goal):
+        self.assertEqual(call["argv"], ["exec", *OPTIONS, goal])
+        self.assert_in_a_candidate_checkout(call)
 
     def test_review_and_adjudicator_tables_run_codex_in_a_candidate_checkout(self):
         for role in ("review", "adjudicate"):
@@ -254,6 +266,51 @@ class CodexTableTests(unittest.TestCase):
         self.assertEqual([event.get("reason") for event in
                           self.events("review_session")],
                          [None, None, "no rollout found"])
+
+
+# The fake devin: records every call with its cwd's HEAD, and answers
+# `list --format json` with the one session Devin keeps per directory.
+FAKE_DEVIN = """
+import json, os, subprocess, sys
+head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                      text=True).stdout.strip()
+with open(os.environ["FAKE_HARNESS_CALLS"], "a") as calls:
+    calls.write(json.dumps({"binary": sys.argv[0], "argv": sys.argv[1:],
+                            "cwd": os.getcwd(), "head": head}) + "\\n")
+if sys.argv[1:] == ["list", "--format", "json"]:
+    print(json.dumps([{"id": "amenable-astrodon", "short_id": "amenable-astrodon",
+                       "working_directory": os.getcwd(), "title": "review"}]))
+else:
+    print("APPROVE")
+"""
+
+DEVIN_CONFIG = ('[agents.reviewer]\nharness = "devin"\nmodel = "opus"\n'
+                '[loop]\nreview_session = "resume"\n')
+DEVIN_OPTIONS = ["--model", "opus", "--permission-mode", "dangerous",
+                 "--respect-workspace-trust", "false"]
+
+
+class DevinTableTests(CandidateCheckoutCase):
+    HARNESS, FAKE, CONFIG = "devin", FAKE_DEVIN, DEVIN_CONFIG
+
+    def test_a_first_round_runs_in_a_candidate_checkout_and_lists_its_session(self):
+        self.dispatch("review", "review the candidate")
+        turn, listed = self.received()
+        self.assertEqual(turn["argv"], [*DEVIN_OPTIONS, "-p", "review the candidate"])
+        self.assert_in_a_candidate_checkout(turn)
+        self.assertEqual((listed["argv"], listed["cwd"]),
+                         (["list", "--format", "json"], turn["cwd"]))
+        [recorded] = self.events("agent_session")
+        self.assertEqual((recorded["session_id"], recorded["round"]),
+                         ("amenable-astrodon", 1))
+
+    def test_round_two_resumes_the_listed_session(self):
+        self.dispatch("review", "first look")
+        self.dispatch("review", "second look", review_round=2)
+        _, _, resumed, _ = self.received()
+        self.assertEqual(resumed["argv"], [*DEVIN_OPTIONS, "-r", "amenable-astrodon",
+                                           "-p", "second look"])
+        self.assert_in_a_candidate_checkout(resumed)
 
 
 if __name__ == "__main__":

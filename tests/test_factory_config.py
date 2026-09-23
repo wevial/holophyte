@@ -73,12 +73,18 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
              r"\[agents\.reviewer\] effort"),
             ('[agents]\nreview_model = "m"\n[agents.reviewer]\nharness = "codex"\n',
              r"\[agents\] review_model"),
+            ('[agents.reviewer]\nharness = "devin"\n',
+             r"\[agents\.reviewer\] model: required"),
+            ('[agents.adjudicator]\nharness = "devin"\nmodel = "opus"\n'
+             'effort = "high"\n', r"\[agents\.adjudicator\] effort: harness 'devin'"),
         ):
             with self.subTest(config=config):
                 self.locate(config)
                 with self.assertRaisesRegex(SystemExit, message):
                     holophyte.config.check_document(self.tgt)
         self.locate(table + '[harnesses]\nclaude = "/opt/claude/bin/claude"\n')
+        holophyte.config.check_document(self.tgt)
+        self.locate('[agents.reviewer]\nharness = "devin"\nmodel = "opus"\n')
         holophyte.config.check_document(self.tgt)
 
     def test_worktree_environment_refusals(self):

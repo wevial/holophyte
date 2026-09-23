@@ -64,7 +64,7 @@ implementer's command and isolation settings.
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
 | `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"`) and optional `model` and `effort` (default `"opus"`, `"high"`); override to select another implementer harness. A table's adapter builds the argv, records the session id at dispatch and builds the resume argv. |
-| `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` (`"codex"`) and optional `model` and `effort` (default `"gpt-5.6-sol"`, `"medium"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); override only to supply an independent review route outside the container. |
+| `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` `"codex"` and optional `model` and `effort` (default `"gpt-5.6-sol"`, `"medium"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"devin"` with a required `model` and no `effort`; override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
 | `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
@@ -103,8 +103,9 @@ budget_scale = 1.5
 A role can instead be a table naming a harness adapter in
 `holophyte/harness.py`. Only `implementer`, `reviewer` and `adjudicator` may
 be tables, and only for a role the harness supports; today that is `claude`
-for `implementer` and `codex` for `reviewer` and `adjudicator`. Unknown keys,
-an unknown harness or a role the harness does not serve are startup errors. `[agents.implementer] harness = "claude"`
+for `implementer` and `codex` or `devin` for `reviewer` and `adjudicator`.
+Unknown keys, an unknown harness, a role the harness does not serve, or an
+option the harness requires or refuses are startup errors. `[agents.implementer] harness = "claude"`
 runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
 `U`, records `U` on the run before launch (a turn the budget kills keeps it),
 and resumes with `claude -p --resume U --model M --effort E PROMPT`. The
@@ -142,6 +143,24 @@ beside a table reviewer are refused like beside a command.
 harness = "codex"
 model   = "gpt-5.6-sol"   # optional; passed to -m
 effort  = "medium"        # optional; low, medium, high or xhigh
+```
+
+`[agents.reviewer] harness = "devin"` (and the same for `adjudicator`) runs
+in the same throwaway candidate checkout as
+`devin --model M --permission-mode dangerous --respect-workspace-trust false
+-p PROMPT`. Print mode fails in a directory Devin has never trusted, and every
+throwaway checkout is one; `dangerous` lets the reviewer run git and tests
+without a prompt, the checkout staying the write boundary. After the turn,
+`devin list --format json` in that checkout, which holds only this turn's
+session, supplies the id written to `$HOLOPHYTE_REVIEW_SCRATCH/session`; any
+other answer records none. A resume adds `-r ID` before `-p`. `model` is
+required, since the factory has no Devin default, and `effort` is refused,
+since the CLI has no effort flag.
+
+```toml
+[agents.reviewer]
+harness = "devin"
+model   = "opus"          # required; passed to --model
 ```
 
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,
@@ -283,6 +302,7 @@ supplies the binary; review roles run on the host and keep their path.
 | --- | --- | --- |
 | `claude` | Default: `claude` on PATH | Absolute path to the Claude CLI; set when the binary the factory should run is not the first `claude` on PATH. A relative path is refused. |
 | `codex` | Default: `codex` on PATH | Absolute path to the Codex CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `codex` on PATH. A relative path is refused. |
+| `devin` | Default: `devin` on PATH | Absolute path to the Devin CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `devin` on PATH. A relative path is refused. |
 
 ## `[loop]`
 
