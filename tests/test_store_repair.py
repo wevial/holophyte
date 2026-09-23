@@ -95,16 +95,12 @@ class RepairReferencesTests(unittest.TestCase):
         self.assertEqual(reopened.execute(
             "SELECT COUNT(*) FROM runs WHERE id = ?", (run_id,)).fetchone(), (1,))
 
-    def test_a_repair_the_checks_reject_is_rolled_back(self):
+    def test_a_repair_that_leaves_any_orphan_is_rolled_back(self):
         conn = self.raw()
         self.break_interventions(conn)
-        # An orphan the rewritten key would reject: no intervention 999.
-        ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id="issue-1",
-            linear_identifier="KO-1", title="ticket 1")
-        run_id = store.claim(conn, self.project, ticket, now=1_700_000_000_000)
-        conn.execute("UPDATE runs SET stopRequested = 999 WHERE id = ?",
-                     (run_id,))
+        # An orphan in a table the repair does not touch: there is no run 999.
+        conn.execute("INSERT INTO runEvents (runId, seq, level, kind, summary,"
+                     " at) VALUES (999, 1, 'narrative', 'note', 'orphan', 0)")
         conn.commit()
         schema, rows = self.schema(conn), self.interventions(conn)
 
@@ -114,6 +110,23 @@ class RepairReferencesTests(unittest.TestCase):
         self.assertEqual(self.schema(conn), schema)
         self.assertEqual(self.interventions(conn), rows)
         self.assertEqual(conn.execute("PRAGMA writable_schema").fetchone(), (0,))
+
+    def test_only_the_reference_clause_is_rewritten(self):
+        conn = self.raw()
+        conn.execute("CREATE TABLE parent (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE child (id INTEGER PRIMARY KEY,"
+                     " parentId INTEGER REFERENCES parent_old (id),"
+                     " label TEXT DEFAULT 'REFERENCES parent_old(id)')")
+        conn.commit()
+
+        self.assertEqual(store.repair_references(conn, dry_run=False),
+                         [("child", "parentId", "parent_old", "parent")])
+
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("INSERT INTO parent (id) VALUES (1)")
+        conn.execute("INSERT INTO child (id, parentId) VALUES (1, 1)")
+        self.assertEqual(conn.execute("SELECT label FROM child").fetchone(),
+                         ("REFERENCES parent_old(id)",))
 
     def test_a_key_with_no_base_table_is_reported_and_never_rewritten(self):
         conn = self.raw()

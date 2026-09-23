@@ -15,11 +15,34 @@ import time
 
 from .schema import _transaction
 
+# What a scan of DDL steps over whole, so text inside it is never read as a
+# clause: string literals, quoted identifiers and comments.
+_OPAQUE = r"""'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|--[^\n]*|/\*.*?\*/"""
+
 
 def _references(name):
-    """Match `REFERENCES <name> (`, quoted or not, keeping the quotes."""
-    return re.compile(r'(REFERENCES\s+["`\[]?)' + re.escape(name)
-                      + r'(["`\]]?\s*\()', re.I)
+    """Match a `REFERENCES <name>` clause, or one opaque token to step over.
+
+    The clause is tried first at each position, so its quoted table name is
+    read as part of it; anywhere else a quoted token is skipped whole."""
+    return re.compile(
+        r"(\bREFERENCES\s+)(?:([\"`\[])" + re.escape(name) + r"([\"`\]])"
+        r"|" + re.escape(name) + r"(?![\w$]))|" + _OPAQUE, re.I | re.S)
+
+
+def _rewrite(sql, missing, target):
+    """Return `sql` with each `REFERENCES missing` clause naming `target`,
+    and how many clauses that was."""
+    count = 0
+
+    def replace(match):
+        nonlocal count
+        if match.group(1) is None:
+            return match.group(0)
+        count += 1
+        return (match.group(1) + (match.group(2) or "") + target
+                + (match.group(3) or ""))
+    return _references(missing).sub(replace, sql), count
 
 
 def _dangling(conn):
@@ -35,7 +58,7 @@ def _dangling(conn):
             base = re.sub(r"_(old|new)$", "", missing, flags=re.I).lower()
             target = None
             if (base != missing.lower() and base in tables
-                    and _references(missing).search(sql)):
+                    and _rewrite(sql, missing, base)[1]):
                 target = tables[base][0]
             found.append((name, row[3], missing, target))
     return found
@@ -66,8 +89,8 @@ def repair_references(conn, dry_run=True):
     With `dry_run` false and something to rewrite: back the store's file
     up beside it, then in one transaction record a `migrate` project
     intervention, rewrite each table's DDL under `writable_schema`, bump
-    the schema cookie, and run `integrity_check` and the rewritten tables'
-    `foreign_key_check`. Anything unclean raises `sqlite3.DatabaseError`
+    the schema cookie, and run `integrity_check` and `foreign_key_check`
+    over the whole store. Anything unclean raises `sqlite3.DatabaseError`
     and rolls the whole transaction back, intervention included.
     """
     from .operate import record_project_intervention
@@ -85,8 +108,7 @@ def repair_references(conn, dry_run=True):
                 ddl[table] = conn.execute(
                     "SELECT sql FROM sqlite_master WHERE type = 'table'"
                     " AND name = ?", (table,)).fetchone()[0]
-            ddl[table] = _references(missing).sub(
-                lambda m, t=target: m.group(1) + t + m.group(2), ddl[table])
+            ddl[table] = _rewrite(ddl[table], missing, target)[0]
         (version,) = conn.execute("PRAGMA schema_version").fetchone()
         conn.execute("PRAGMA writable_schema = ON")
         try:
@@ -98,9 +120,7 @@ def repair_references(conn, dry_run=True):
             conn.execute("PRAGMA writable_schema = OFF")
         problems = [row for row in conn.execute("PRAGMA integrity_check")
                     if row != ("ok",)]
-        for table in ddl:
-            problems += conn.execute(
-                f'PRAGMA foreign_key_check("{table}")').fetchall()
+        problems += conn.execute("PRAGMA foreign_key_check").fetchall()
         if problems:
             raise sqlite3.DatabaseError(
                 f"repair left the store unclean, rolled back: {problems}")
