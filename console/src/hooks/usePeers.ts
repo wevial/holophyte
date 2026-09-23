@@ -54,7 +54,14 @@ export async function pollPeers(
         (answer) => ({ address, base, ok: true, ...answer }),
         (failure: unknown) =>
           failure instanceof AnswerError
-            ? { address, base, ok: false, error: message(failure), status: failure.status }
+            ? {
+                address,
+                base,
+                ok: false,
+                error: message(failure),
+                status: failure.status,
+                token_sent: failure.tokenSent,
+              }
             : { address, base, ok: false, error: message(failure), contract_error: failure instanceof ContractError },
       );
       inFlight.set(address, pending);

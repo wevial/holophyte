@@ -1,11 +1,12 @@
-"""holophyte.serve_levers: the daemon's hold, release-hold, pause and resume
-routes (KO-609), dispatched from `do_POST()` behind the actions' token and
-`[serve] actions = true` gate.
+"""holophyte.serve_levers: the daemon's hold, release-hold, pause, resume
+(KO-609) and abort (KO-612) routes, dispatched from `do_POST()` behind the
+actions' token and `[serve] actions = true` gate.
 
 Each lever is the CLI's own store call -- `--hold`/`--release-hold`
 through `holophyte.admission.set_hold()` on the daemon's project, `--pause`
-through `store.pause()`, `--resume` through `holophyte.stop.resume_paused()`
--- so the console and the shell cannot disagree about what a lever does.
+through `store.pause()`, `--resume` through `holophyte.stop.resume_paused()`,
+`--abort` through `holophyte.stop.abort_run()` -- so the console and the
+shell cannot disagree about what a lever does.
 Every body carries `note`, the operator's reason, and an optional `author`
 (default `maintainer`, as `send-back` has); what the store records is
 `"{author} via the console: {note}"`, since `interventions` has no actor
@@ -20,10 +21,11 @@ from __future__ import annotations
 import store
 import store.read
 from holophyte.admission import held_line, set_hold
+from holophyte.config_tables import board_config
 from holophyte.runs import open_store
 from holophyte.serve_actions import tickets_named
 from holophyte.serve_runs import no_store
-from holophyte.stop import resume_paused
+from holophyte.stop import abort_run, resume_paused
 
 DEFAULT_AUTHOR = "maintainer"
 
@@ -110,6 +112,35 @@ def resume_action(target, body):
     return lever("resume", target, body, act)
 
 
+def abort_action(target, body):
+    """`POST /actions/abort`: `abort_run()` on the run `run` names, with
+    `close` (default false) recording `abort_close` so the pull request is
+    closed too. A run whose worker is gone is ended here and its park
+    projected to the board, so a target with no `[board]` refuses before
+    anything is written, as `--abort` exits; a run already ended is
+    `ok: false` naming its outcome."""
+    run_id = body.get("run")
+    if type(run_id) is not int or not 0 < run_id < 2**63:
+        return 400, {"error": "run must be a positive integer"}
+    close = body.get("close", False)
+    if type(close) is not bool:
+        return 400, {"error": "close must be true or false"}
+
+    def act(conn, reason):
+        settings = board_config(target)
+        if settings is None:
+            return False, (f"{target.config_path}: [board] project_id is not"
+                           " set; nothing written"), {"run": run_id}
+        from provider import LinearProvider
+        ended = abort_run(target, conn, run_id, reason,
+                          provider=LinearProvider(*settings), close=close)
+        detail = (f"run {run_id} had no live worker; ended abandoned and parked"
+                  if ended else f"abort requested; run {run_id} ends at its"
+                  " worker's next heartbeat")
+        return True, detail, {"run": run_id, "close": close, "ended": ended}
+    return lever("abort", target, body, act)
+
+
 def paused_item(ticket):
     """The `/attention` item for a `blocked_on_operator` ticket whose latest
     run ended `paused`: kind `paused`, its `note` the pause's reason, so a
@@ -122,10 +153,11 @@ def paused_item(ticket):
 
 
 # Route name -> handler(target, body); `ACTIONS` in `holophyte.serve_actions`
-# names the same four.
+# names the same five.
 LEVERS = {
     "hold": admission_action("hold", True),
     "release-hold": admission_action("release-hold", False),
     "pause": pause_action,
     "resume": resume_action,
+    "abort": abort_action,
 }

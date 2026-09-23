@@ -16,12 +16,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 import ticket_template
-from holophyte import isolation, media_store, pr
+from holophyte import isolation, media_store, pr, redact
 from holophyte.config import capture_environment
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
 CAPTURE_TIMEOUT = 300
+TAIL_LINES = 20  # KO-623: a failed capture shows why.
 RECEIPT_VERSION = 5  # KO-604: sections name the sha they capture.
 # The first line under an Evidence heading: the candidate it shows (KO-604).
 CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
@@ -81,6 +82,30 @@ def matches(wt, patterns):
                for path in paths.split('\0') for pattern in patterns)
 
 
+def _tail(output, target):
+    """The last `TAIL_LINES` non-empty lines of a capture's output, redacted,
+    as a fenced block to follow the failure sentence; empty when it printed
+    nothing."""
+    if isinstance(output, bytes):
+        output = output.decode(errors='replace')
+    document = target.config() if target is not None else None
+    text = redact.outbound(output or '', redact.known_secrets(document))
+    lines = [line for line in text.splitlines() if line.strip()][-TAIL_LINES:]
+    if not lines:
+        return ''
+    body = '\n'.join(lines)
+    fence = '`' * max(3, 1 + max(map(len, re.findall('`+', body)), default=0))
+    return f'\n\n{fence}\n{body}\n{fence}'
+
+
+def _failed(command, code, output, target):
+    if code is None:
+        sentence = f'Capture command `{command}` failed: timed out after 300 seconds.'
+    else:
+        sentence = f'Capture command `{command}` failed (exit {code}).'
+    return sentence + _tail(output, target)
+
+
 def _capture(command, wt, output, task_id, states, *, target=None):
     route = isolation.route_for(target) if target is not None else isolation.Route()
     if route.backend == 'container':
@@ -97,10 +122,11 @@ def _capture(command, wt, output, task_id, states, *, target=None):
         destination = Path('/workspace') / output.relative_to(Path(wt).resolve())
         argv = ['/bin/sh', '-c', shlex.join(shlex.split(command) + [str(destination)])]
         try:
-            code, _ = isolation.launch(route, wt, env, argv, timeout=CAPTURE_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            return f'Capture command `{command}` failed: timed out after 300 seconds.'
-        return f'Capture command `{command}` failed (exit {code}).' if code else ''
+            code, printed = isolation.launch(route, wt, env, argv,
+                                             timeout=CAPTURE_TIMEOUT)
+        except subprocess.TimeoutExpired as expired:
+            return _failed(command, None, expired.output, target)
+        return _failed(command, code, printed, target) if code else ''
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen(shlex.split(command) + [str(output)],
                                    cwd=wt, env=env, stdin=subprocess.DEVNULL,
@@ -110,8 +136,11 @@ def _capture(command, wt, output, task_id, states, *, target=None):
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
-            return f'Capture command `{command}` failed: timed out after 300 seconds.'
-    return f'Capture command `{command}` failed (exit {code}).' if code else ''
+            code = None
+        if code == 0:
+            return ''
+        log.seek(0)
+        return _failed(command, code, log.read(), target)
 
 
 def _push(wt, output, files, task_id):
@@ -293,7 +322,10 @@ def _produce(target, wt, task_id, command, note, cfg, states):
             (output / '.gitignore').write_text('*\n')
         error = _capture(command, wt, output, task_id, states, target=target)
         if error:
-            return _missing('## Evidence\n\n' + error, states), error
+            note.write_text(error)
+            # `refresh()` folds the failure onto one line: the sentence only.
+            return (_missing('## Evidence\n\n' + error, states),
+                    error.partition('\n')[0])
         files = sorted(file for file in output.rglob('*')
                        if file.suffix in ('.png', '.webm', '.mp4')
                        and file.is_file() and not file.is_symlink()

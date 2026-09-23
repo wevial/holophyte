@@ -13,7 +13,7 @@ test("a stale run reads as a padded no-heartbeat sentence with a one-unit age", 
   expect(described.meta).toBe("run #91 · reviewing");
   expect(described.ageMs).toBe(421000);
   expect(described.pill).toBe("stale run");
-  expect(described.actions).toEqual(["Kill run", "Requeue"]);
+  expect(described.actions).toEqual(["Abort", "Requeue"]);
 });
 
 test("the time-box clause joins /status.runs on the run id and appears only past the box", () => {

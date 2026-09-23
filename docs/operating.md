@@ -2,8 +2,11 @@
 
 Supervising a project and serving its state read-only. The operator
 commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
-[--update KO-n]`, `--approve KO-n`, `--babysit KO-n` and
-`--repoint KO-n SHA`) are described by `factory.py --help`, and the
+[--update KO-n]`, `--approve KO-n`, `--babysit KO-n`,
+`--repoint KO-n SHA`, `--pause KO-n`, `--resume KO-n`, `--abort KO-n
+[--close-pr]`, `--close KO-n --landed URL`, `--hold`, `--release-hold` and
+`factory.py project add|list|enable|hold|disable`) are described by
+`factory.py --help` and the [CLI reference](reference/cli.md), and the
 escalation ladder they sit on in the [runbook](operating/runbook.md). Back
 to the [README](index.md).
 
@@ -84,6 +87,8 @@ does not undo the abort: it is a `warning` run event and a printed line. The
 reconcile leaves the closed pull request alone, since the run is no longer
 parked on it. `--close-pr` without `--abort` is refused. The `abort_close`
 action is schema version 35 (KO-611).
+
+## Requeue, re-point or send back a parked ticket
 
 A ticket parked `blocked_on_operator` by a merge gate conflict -- the gate's
 merge of `main` into the branch conflicted, the run failed and the branch

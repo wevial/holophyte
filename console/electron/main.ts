@@ -11,7 +11,7 @@ import { BrowserWindow, Menu, Tray, app, dialog, nativeImage, shell } from "elec
 import { CONFIG_FILE, resolveConsoleUrl } from "./config.ts";
 import { appendLog, consoleLine, failedLoadLine } from "./log.ts";
 import type { MenuActions } from "./menu.ts";
-import { POLL_INTERVAL_MS, pollAll, readTokens } from "./poll.ts";
+import { POLL_INTERVAL_MS, pollAll, readTokenSources, readTokens } from "./poll.ts";
 import { seedScript } from "./seed.ts";
 import { type Level, buildSummary, summarizeAnswer, trayImageFile } from "./tray.ts";
 
@@ -134,12 +134,13 @@ function trayActions(url: string, configText: string | null): MenuActions {
 // The tray carries the drawer's summary: every POLL_INTERVAL_MS, /peers on
 // the console URL, then /status and /attention (and /runs when idle) on each
 // daemon it names, with
-// the bearer console.json holds per address. A poll that throws (it should
+// the bearer console.json holds per address; a 401 to a bearer read from a
+// token file names that file. A poll that throws (it should
 // not: every fetch failure is a result) leaves the last menu in place.
 async function refreshTray(url: string, configText: string | null): Promise<void> {
   if (tray === null) return;
-  const tokens = readTokens(configText, app.getPath("userData"));
-  const answer = await pollAll(url, tokens);
+  const { tokens, files } = readTokenSources(configText, app.getPath("userData"));
+  const answer = await pollAll(url, tokens, { tokenFiles: files });
   if (tray === null) return;
   const { items, level } = summarizeAnswer(answer, Date.now(), {
     state: { openAtLogin: app.getLoginItemSettings().openAtLogin },

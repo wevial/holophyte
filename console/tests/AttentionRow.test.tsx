@@ -148,7 +148,7 @@ test("the band hands each row its own daemon: the fixture's status without actio
     ["Requeue", false],
     ["Mark needs_spec", true],
     ["Restart supervisor", false],
-    ["Kill run", true],
+    ["Abort", false],
     ["Requeue", false],
     ["Answer", true],
     ["Requeue", false],

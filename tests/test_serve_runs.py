@@ -919,6 +919,29 @@ class TurnTests(TranscriptCase):
         url = f"{path}/{rows[0]['id']}/transcript"
         self.assertEqual(self.request('GET', url)[0], 404)
 
+    def test_every_role_carries_its_recorded_label(self):
+        self.seed()
+        recorded = [('implement', 'primary', 'claude-implement opus', 10),
+                    ('review', 'primary', 'codex gpt-6-astra', 20),
+                    ('adjudicate', 'primary', 'codex gpt-6-astra', 30),
+                    ('write', 'fallback', 'claude-implement opus', 40),
+                    ('review', 'primary', None, 50)]
+        with store.open(str(self.db)) as conn:
+            for role, route, label, seconds in recorded:
+                payload = dict(role=role, route=route, seconds=seconds)
+                if label is not None:
+                    payload['label'] = label
+                store.record_event(conn, self.run, 'agent_turn', 'ended',
+                                   level="detail", payload=json.dumps(payload))
+        self.start()
+        rows = self.request('GET', f'/runs/{self.run}/turns')[2]['turns']
+        self.assertEqual([r['id'] for r in rows], sorted(r['id'] for r in rows))
+        self.assertEqual([(r['role'], r['route'], r['label'], r['seconds'])
+                          for r in rows],
+                         [(role, route, label, seconds)
+                          for role, route, label, seconds in recorded])
+        self.assertEqual({r['session_id'] for r in rows}, {None})
+
     def test_no_turns_is_an_empty_list(self):
         self.seed()
         self.start()

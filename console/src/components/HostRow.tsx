@@ -5,12 +5,16 @@ import { hostTone, type HostRecord } from "../lib/hosts";
 /** The glyph the rail shows for a daemon waiting on its serve token. */
 export const KEY_GLYPH = "\u26bf";
 
+/** What the rail says for a daemon that refused the token the page sent. */
+export const TOKEN_REJECTED = "saved token rejected";
+
 /** The text after a row's port: the run count when the daemon is
  *  healthy, else what is wrong with it. A fresh heartbeat says nothing
  *  about itself; a stale one is named with its age. */
 export function rowTail(host: HostRecord): string | null {
   const { status } = host;
   if (host.error != null) return "no answer";
+  if (host.token_rejected) return TOKEN_REJECTED;
   if (host.needs_token) return null;
   if (!status) return "no answer";
   if (hostTone(host) === "bad") {
@@ -34,6 +38,9 @@ export function HostRow({ host, selected, onClick }: { host: HostRecord; selecte
   const port = /:\d+$/.exec(host.address)?.[0] ?? "";
   const name = host.project != null ? projectName(host.project) : host.address;
   const tail = rowTail(host);
+  // A refused token is a fault the operator must fix, not a key to paste
+  // for the first time: it reads on its own line like one.
+  const rejected = host.token_rejected === true;
   return (
     <button
       type="button"
@@ -43,6 +50,7 @@ export function HostRow({ host, selected, onClick }: { host: HostRecord; selecte
       data-stale={stale || undefined}
       data-unreachable={unreachable || undefined}
       data-needs-token={host.needs_token || undefined}
+      data-token-rejected={rejected || undefined}
       className={`flex w-full flex-col rounded-button px-1 py-0.5 text-left ${
         selected ? "bg-rail-selected" : "hover:bg-rail-selected/50"
       }`}
@@ -60,7 +68,7 @@ export function HostRow({ host, selected, onClick }: { host: HostRecord; selecte
         <span data-port className="shrink-0 font-mono text-[11px] text-rail-faint">
           {port}
         </span>
-        {host.needs_token ? (
+        {rejected ? null : host.needs_token ? (
           <span data-tail className="ml-auto shrink-0 font-mono text-[11px] text-rail-sub">
             <span role="img" aria-label="needs token" title="needs token">
               {KEY_GLYPH}
@@ -74,7 +82,7 @@ export function HostRow({ host, selected, onClick }: { host: HostRecord; selecte
           )
         )}
       </span>
-      {bad && tail != null && (
+      {(bad || rejected) && tail != null && (
         <span data-line data-tail className="pl-4 font-mono text-[11px] text-rail-bad-text">
           {tail}
         </span>

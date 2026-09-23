@@ -155,7 +155,6 @@ test("the newest round's findings are cards pilled must, must, should, nit with 
   const actions = Array.from(document.querySelectorAll("footer button")) as HTMLButtonElement[];
   const buttons = actions.map((button) => [button.textContent, button.disabled]);
   expect(buttons).toEqual([
-    ["Kill run", true],
     ["Requeue ticket", true],
   ]);
 });
@@ -796,7 +795,8 @@ test("Turns lists recorded sessions and opens rendered transcript entries in a p
   const fetch: Fetch = async url => {
     requested.push(url);
     if (url.endsWith("/turns")) return Response.json({ turns: [
-      { id: 4, role: "implement", route: "primary", seconds: 12, session_id: "session-one" },
+      { id: 4, role: "implement", label: "claude-implement opus", route: "primary", seconds: 12, session_id: "session-one" },
+      { id: 5, role: "adjudicate", label: null, route: "primary", seconds: 3, session_id: null },
     ] });
     if (url.endsWith("/turns/4/transcript")) return Response.json({ entries: [
       { speaker: "user", text: "Check the project." },
@@ -809,7 +809,9 @@ test("Turns lists recorded sessions and opens rendered transcript entries in a p
   render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
   await screen.findByRole("link", { name: "Open transcript" });
   const turns = screen.getByRole("region", { name: "Turns" });
-  expect(turns.textContent).toContain("implement · primary · 12.0 s · session-one");
+  const rows = within(turns).getAllByRole("listitem").map(row => row.textContent);
+  expect(rows[0]).toContain("implement · claude-implement opus · primary · 12.0 s · session-one");
+  expect(rows[1]).toContain("adjudicate · label unknown · primary · 3.0 s");
   expect(requested.some(url => url.endsWith("/transcript"))).toBe(false);
   fireEvent.click(within(turns).getByRole("link", { name: "Open transcript" }));
   const panel = screen.getByRole("region", { name: "Transcript" });
@@ -819,6 +821,16 @@ test("Turns lists recorded sessions and opens rendered transcript entries in a p
   expect(panel.querySelector("script")).toBeNull();
   fireEvent.click(within(panel).getByRole("button", { name: "Close transcript" }));
   expect(screen.queryByRole("region", { name: "Transcript" })).toBeNull();
+});
+
+test("Turns from an older daemon without labels still render their rows", async () => {
+  const fetch: Fetch = async url => url.endsWith("/turns")
+    ? Response.json({ turns: [{ id: 6, role: "implement", route: "fallback", seconds: 7, session_id: null }] })
+    : answering(DETAIL)(url);
+  render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
+  const turns = await screen.findByRole("region", { name: "Turns" });
+  await within(turns).findByText("implement · label unknown · fallback · 7.0 s · no session recorded");
+  expect(within(turns).queryByRole("alert")).toBeNull();
 });
 
 test("an unavailable transcript explains the missing file or opt-in inside the panel", async () => {

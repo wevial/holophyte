@@ -125,8 +125,8 @@ test("the Now view offers Pause on an expanded live run, and not once a stop is 
     cleanup();
     return labels;
   };
-  expect(await footer(null)).toEqual(["Kill run", "Requeue ticket", "Pause"]);
-  expect(await footer("operator via the console: wrong base branch")).toEqual(["Kill run", "Requeue ticket"]);
+  expect(await footer(null)).toEqual(["Abort", "Requeue ticket", "Pause"]);
+  expect(await footer("operator via the console: wrong base branch")).toEqual(["Abort", "Requeue ticket"]);
 });
 
 test("a paused row reads as paused and Resume posts {ticket, note}, showing the daemon's detail", async () => {

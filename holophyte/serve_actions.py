@@ -34,9 +34,10 @@ UNIT_ACTIONS = {
     "restart-supervisor": ("restart", SUPERVISOR_UNIT, "restart_supervisor"),
     "launch-loop": ("start", LOOP_UNIT, "launch_loop")}
 REQUEUE_ACTION = "requeue"
-# The four levers `holophyte.serve_levers.LEVERS` answers (KO-609).
+# The five levers `holophyte.serve_levers.LEVERS` answers (KO-609, KO-612).
 ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION, "send-back", "hold",
-                                     "release-hold", "pause", "resume"}
+                                     "release-hold", "pause", "resume",
+                                     "abort"}
 # The note a requeue records when the request carries none: the store
 # refuses an empty one, and the CLI's `--note` is the operator's reason.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"

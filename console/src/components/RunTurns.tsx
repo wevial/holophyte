@@ -15,7 +15,7 @@ export function RunTurns({ base, id, polls, deps }: {
     {turns.body?.turns.length === 0 && <p>No recorded turns.</p>}
     <ol className="mt-2 flex flex-col gap-2">
       {turns.body?.turns.map(turn => <li key={turn.id}>
-        <span>{turn.role} · {turn.route} · {turn.seconds == null ? "duration unknown" : `${turn.seconds.toFixed(1)} s`} · {turn.session_id ?? "no session recorded"}</span>{" "}
+        <span>{turn.role} · {turn.label ?? "label unknown"} · {turn.route} · {turn.seconds == null ? "duration unknown" : `${turn.seconds.toFixed(1)} s`} · {turn.session_id ?? "no session recorded"}</span>{" "}
         {turn.session_id && <a href={`${base}/runs/${id}/turns/${turn.id}/transcript`}
           aria-expanded={selected === turn.id} aria-controls={`transcript-${id}`}
           onClick={event => { event.preventDefault(); select(turn.id); }}
