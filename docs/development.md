@@ -76,6 +76,9 @@ Each module, one line:
 - `holophyte/serve_actions.py` — the daemon's `POST /actions/...` routes
   (KO-395): the body parser, the two unit actions, `requeue`, and the
   interventions row each records before it acts.
+- `holophyte/serve_levers.py` — the daemon's `hold`, `release-hold`,
+  `pause` and `resume` actions (KO-609): the CLI's store calls behind the
+  action token, each requiring a note, and the `paused` attention item.
 - `holophyte/transcripts.py` — opted-in transcript location, rendering and turn event joins.
 - `holophyte/transcript_config.py` — the daemon transcript root allow-list.
 - `holophyte/serve_runs.py` — the daemon's run and ledger read routes
@@ -89,6 +92,8 @@ Each module, one line:
 - `holophyte/files.py` — the files a run touched, read from git in the
   target's checkout under a timeout: what `/runs/N/files` answers.
 - `holophyte/loop.py` — the loop: `run_task`'s stages.
+- `holophyte/harness.py` — harness adapters: a table-form `[agents]` role's
+  turn argv, session id and resume argv, and the `[harnesses]` binary paths.
 - `holophyte/fix_session.py` — review fix-session arms, resume argv and fresh retry.
 - `holophyte/session_arms.py` — shared run-number assignment for session experiments.
 - `holophyte/review_session.py` — reviewer session-file capture and resume requests.
