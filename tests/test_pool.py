@@ -650,6 +650,22 @@ class WorkerTests(LoopFixture):
         self.assertIn("KO-131", (self.tgt.path / "FINDINGS.md").read_text())
         self.assertFalse(lock.exists())
 
+    def test_a_worker_with_findings_off_skips_the_merge_lock(self):
+        """A target that keeps no FINDINGS.md has nothing to write or
+        commit at close-out, so a sibling holding the merge lock does not
+        hold this worker's slot too (KO-645: three-minute waits on the
+        writer host)."""
+        provider = StubProvider(a_task(1))
+        lock = holophyte.gates.merge_lock_path(self.tgt)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("7 0\n")
+
+        with patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0):
+            rc, out = self.worker(Refuse(), provider=provider)
+
+        self.assertEqual(rc, holophyte.pool.WORKER_FAILED)
+        self.assertNotIn("FINDINGS.md left", out)
+
     def test_a_worker_with_nothing_to_claim_exits_idle(self):
         sha = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True).strip()
