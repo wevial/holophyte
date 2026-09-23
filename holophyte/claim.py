@@ -749,14 +749,16 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
     # this repository gitignores is refused here too (KO-222) -- unless
     # the last run is on a pull request, whose candidate holds the paths
     # main lacks (KO-598, KO-655) -- and for the same reason skips the
-    # freshness check, which refuses a body naming files main lacks (KO-709).
+    # freshness check, which refuses a body naming files or symbols main
+    # lacks (KO-709, KO-713) or a `Depends on:` ticket not yet merged.
     pr = on_pull_request(conn, project_id, task)
     problem = body_problem(task, project.path, on_pull_request=pr)
     if problem:
         mirror_task(conn, project_id, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")
         return None
-    stale = [] if pr else stale_reasons(project.path, task.get("body"))
+    stale = [] if pr else stale_reasons(project.path, task.get("body"),
+                                        conn, provider)
     if stale:
         park_stale(conn, project_id, provider, task, stale)
         return None

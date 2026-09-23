@@ -7,6 +7,11 @@ claimed and fail its run on the missing landmarks. The claim now asks
 a code span, unless the body declares it new; a ticket naming one main
 lacks lands in `needs_spec`, gets one board comment, moves to Backlog,
 and the loop takes the next ticket.
+
+KO-713: the same refusal for a function or class an implementation-notes
+item names beside a file, when main's copy of that file no longer holds
+the name, and for a `Depends on:` ticket neither the store nor the board
+calls merged.
 """
 
 from __future__ import annotations
@@ -47,6 +52,22 @@ STALE_BODY = VALID_BODY.replace(
 NEW_FILE_BODY = VALID_BODY.replace(
     "## Implementation notes\n\n* None.\n",
     f"## Implementation notes\n\n* Add the new file `{GONE}` for the thing.\n")
+
+CLAIM = "holophyte/claim.py"
+# What main's `holophyte/claim.py` holds in the symbol tests.
+CLAIM_SOURCE = ("class Claimer:\n"
+                "    def admit_ticket(self):\n"
+                "        return True\n")
+
+
+def notes_body(item):
+    """The fixture's valid body with `item` as its one implementation note."""
+    return VALID_BODY.replace("## Implementation notes\n\n* None.\n",
+                              f"## Implementation notes\n\n* {item}\n")
+
+
+def depends_body(identifier):
+    return VALID_BODY.replace("Depends on: none", f"Depends on: {identifier}")
 
 
 class CommentRaises(StubProvider):
@@ -140,3 +161,94 @@ class ClaimFreshnessTests(LoopFixture):
         self.assertIn("stale-ticket comment failed for KO-131", out)
         self.assertIn("KO-131 skipped", out)
         self.assertEqual(self.runs_by_ticket(), [("KO-132",)])
+
+
+class ClaimSymbolAndDependencyTests(LoopFixture):
+    """KO-713: names a later merge renamed away, and dependencies not merged."""
+
+    def runs_by_ticket(self):
+        return self.read("SELECT t.linearIdentifier FROM runs r JOIN tickets t"
+                         " ON t.id = r.ticketId ORDER BY r.id")
+
+    def commit_claim_to_main(self):
+        (self.target / "holophyte").mkdir()
+        (self.target / CLAIM).write_text(CLAIM_SOURCE)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "claim module")
+
+    def stale_comments(self, provider, issue="iss-131"):
+        return [body for i, body in provider.comments
+                if i == issue and "Not claimed" in body]
+
+    def assert_claimed_without_comment(self, provider):
+        self.assertEqual(self.runs_by_ticket(), [("KO-131",)])
+        self.assertEqual(self.stale_comments(provider), [])
+
+    def test_a_function_main_lacks_in_the_named_file_is_parked(self):
+        self.commit_claim_to_main()
+        body = notes_body(f"Change `_admit_ticket()` in `{CLAIM}`.")
+        provider = StubProvider(dict(a_task(1), body=body), a_task(2))
+
+        out = self.main_output(Commit("second ticket"), APPROVE,
+                               provider=provider)
+
+        self.assertEqual(self.runs_by_ticket(), [("KO-132",)])
+        comments = self.stale_comments(provider)
+        self.assertEqual(len(comments), 1)
+        self.assertIn("`_admit_ticket()`", comments[0])
+        self.assertIn(CLAIM, comments[0])
+        self.assertIn("KO-131 skipped", out)
+
+    def test_a_function_and_a_class_main_holds_are_claimed(self):
+        self.commit_claim_to_main()
+        body = notes_body(f"Change `Claimer` and `claim.admit_ticket()` in"
+                          f" `{CLAIM}`.")
+        provider = StubProvider(dict(a_task(1), body=body))
+
+        self.loop(Commit("the change"), APPROVE, provider=provider)
+
+        self.assert_claimed_without_comment(provider)
+
+    def test_a_function_declared_new_is_not_checked(self):
+        self.commit_claim_to_main()
+        body = notes_body(f"Beside `admit_ticket()` in `{CLAIM}`, add a new"
+                          " `refuse_ticket()`.")
+        provider = StubProvider(dict(a_task(1), body=body))
+
+        self.loop(Commit("the new function"), APPROVE, provider=provider)
+
+        self.assert_claimed_without_comment(provider)
+
+    def test_a_dependency_neither_store_nor_board_calls_merged_is_parked(self):
+        provider = StubProvider(dict(a_task(1), body=depends_body("KO-900")),
+                                a_task(2))
+
+        self.main_output(Commit("second ticket"), APPROVE, provider=provider)
+
+        self.assertEqual(self.runs_by_ticket(), [("KO-132",)])
+        comments = self.stale_comments(provider)
+        self.assertEqual(len(comments), 1)
+        self.assertIn("`KO-900` (named in Depends on) is not merged",
+                      comments[0])
+
+    def test_a_dependency_the_board_completed_is_claimed(self):
+        provider = StubProvider(dict(a_task(1), body=depends_body("KO-900")))
+        provider.closed = {"KO-900": "completed"}
+
+        self.loop(Commit("the change"), APPROVE, provider=provider)
+
+        self.assert_claimed_without_comment(provider)
+
+    def test_a_dependency_the_store_holds_merged_is_claimed(self):
+        provider = StubProvider(dict(a_task(1), body=depends_body("KO-900")))
+        conn = holophyte.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+        dependency = holophyte.board.mirror_task(
+            conn, project_id, dict(a_task(), id="KO-900", issue_id="iss-900"))
+        store.walk_ticket(conn, dependency, "merged")
+        conn.commit()
+
+        self.loop(Commit("the change"), APPROVE, provider=provider)
+
+        self.assert_claimed_without_comment(provider)

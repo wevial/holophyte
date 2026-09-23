@@ -495,19 +495,29 @@ def _prose_paths(text):
             yield span, paths[0]
 
 
+def _mask_code_spans(text):
+    """`text` with every code span blanked, so a filename's dots do not end
+    its sentence."""
+    return re.sub(r"`[^`\n]+`", lambda m: " " * len(m.group()), text)
+
+
+def _sentence_before(masked, end):
+    """The part of the sentence in `masked` that runs up to `end`."""
+    return re.split(r"[.!?](?:\s|$)|\n\s*(?:\n|[-*+] )", masked[:end])[-1]
+
+
 def _new_paths(t):
     """Declarations apply across fields; 'new' must precede the code span
     in the same sentence. Mask code spans before finding sentence boundaries
     so a filename's dots do not end its sentence."""
     files, directories = set(), set()
     for text in t.sections.values():
-        masked = re.sub(r"`[^`\n]+`", lambda m: " " * len(m.group()), text)
+        masked = _mask_code_spans(text)
         for span in re.finditer(r"`([^`\n]+)`", text):
             path = span.group(1)
             if not PATH_TOKEN_RE.fullmatch(path):
                 continue
-            prefix = masked[:span.start()]
-            sentence = re.split(r"[.!?](?:\s|$)|\n\s*(?:\n|[-*+] )", prefix)[-1]
+            sentence = _sentence_before(masked, span.start())
             directory = re.search(r"\bdirector(?:y|ies)\b", sentence, re.I)
             if (re.search(r"\bnew\b", sentence, re.I)
                     and (_repo_paths(path) or directory)):
