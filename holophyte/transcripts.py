@@ -167,23 +167,28 @@ def turns(events):
     """Join telemetry in sequence order, respecting each producer's ordering.
 
     Review session events precede their turn; implement session events follow
-    it. A missing session never inherits a previous turn's handle.
+    it. A missing session never inherits a previous turn's handle; adjudicate
+    and write turns are listed with their recorded label but no session.
     """
     result, pending = [], {}
     for seq, kind, payload in events:
         data = decoded(payload)
         role, route = data.get('role'), data.get('route')
-        if role not in ('implement', 'review'):
+        if role not in ('implement', 'review', 'adjudicate', 'write'):
             continue
         key = role, route
         if kind == 'agent_session':
+            if role not in ('implement', 'review'):
+                continue
             if role == 'implement':
                 if result and (result[-1]['role'], result[-1]['route']) == key:
                     result[-1]['session_id'] = data.get('session_id')
             else:
                 pending[key] = data.get('session_id')
         elif kind == 'agent_turn':
+            label = data.get('label')
             result.append(dict(id=seq, role=role, route=route,
+                               label=label if isinstance(label, str) else None,
                                seconds=data.get('seconds'),
                                session_id=pending.pop(key, None)))
     return result
