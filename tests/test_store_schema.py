@@ -16,7 +16,7 @@ from unittest.mock import Mock, call, patch
 import store
 import store.schema
 import store.tickets
-from tests.schema_fixture import DOCUMENTED_COLUMNS
+from tests.schema_fixture import DOCUMENTED_COLUMNS, move_ahead_additively
 from tests.ticket_url_fixture import assert_schema_url
 
 A_PROJECT = (
@@ -482,6 +482,66 @@ HOT_FOREIGN_KEYS = {
     ("reviewRounds", "runId"),
     ("runEvents", "runId"),
 }
+
+
+class ReadableFromTests(unittest.TestCase):
+    """A build one additive version behind keeps its store (KO-661)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+        conn = store.open(self.path)
+        project = store.ensure_project(conn, "team", "/repos/example")
+        ticket = store.mirror_ticket(conn, project, "issue", "KO-1", "test")
+        self.run = store.claim(conn, project, ticket, now=1000)
+        conn.close()
+
+    def schema_state(self):
+        with sqlite3.connect(self.path) as raw:
+            state = (raw.execute("PRAGMA user_version").fetchone(),
+                     raw.execute("SELECT type, name, tbl_name, sql"
+                                 " FROM sqlite_master ORDER BY name").fetchall())
+        raw.close()
+        return state
+
+    def test_a_fresh_store_records_this_builds_floor(self):
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+        note = json.loads(store.schema.latest_migration_note(conn))
+        self.assertEqual(note["readableFrom"], store.schema.READABLE_FROM)
+
+    def test_an_additive_bump_at_the_floor_opens_and_takes_heartbeats(self):
+        move_ahead_additively(self.path, readableFrom=store.SCHEMA_VERSION)
+        newer = store.SCHEMA_VERSION + 1
+        for beat, migrate in enumerate((True, False), start=2):
+            with self.subTest(migrate=migrate):
+                conn = store.open(self.path, migrate=migrate)
+                self.addCleanup(conn.close)
+                self.assertTrue(store.heartbeat(conn, self.run, now=beat * 1000))
+                conn.close()
+                with sqlite3.connect(self.path) as raw:
+                    self.assertEqual(
+                        raw.execute("PRAGMA user_version").fetchone(), (newer,))
+                    self.assertEqual(raw.execute(
+                        "SELECT lastHeartbeat FROM runs WHERE id = ?",
+                        (self.run,)).fetchone(), (beat * 1000,))
+                raw.close()
+
+    def test_a_floor_above_this_build_or_no_floor_is_refused_untouched(self):
+        cases = (("floor above", {"readableFrom": store.SCHEMA_VERSION + 1},
+                  f"readable from version {store.SCHEMA_VERSION + 1}"),
+                 ("no floor", {}, "no readable-from floor"))
+        for name, floor, found in cases:
+            with self.subTest(name):
+                self.setUp()
+                move_ahead_additively(self.path, **floor)
+                before = self.schema_state()
+                for migrate in (True, False):
+                    with self.assertRaises(store.SchemaNewer) as caught:
+                        store.open(self.path, migrate=migrate)
+                    self.assertIn(found, str(caught.exception))
+                self.assertEqual(self.schema_state(), before)
 
 
 class StoreSchemaVersionTests(unittest.TestCase):

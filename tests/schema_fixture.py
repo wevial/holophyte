@@ -1,4 +1,9 @@
-"""Expected store columns, independent of the schema DDL."""
+"""Expected store columns, independent of the schema DDL, and a store
+moved one version ahead the way a newer build's additive migration moves it."""
+import json
+import sqlite3
+
+import store
 
 DOCUMENTED_COLUMNS = {
     "projects": {
@@ -90,3 +95,21 @@ DOCUMENTED_COLUMNS = {
     "loopRestarts": {"id", "projectId", "sha", "at", "returnedAt",
                      "reportedAt"},
 }
+
+
+def move_ahead_additively(path, **floor):
+    """Move the store at `path` to `SCHEMA_VERSION + 1` as an additive bump.
+
+    One nullable column added, the stamp raised and a `migrate` note written
+    in one transaction; `floor` is the note's `readableFrom=`, omitted for a
+    note without the key."""
+    newer = store.SCHEMA_VERSION + 1
+    note = json.dumps({"from": store.SCHEMA_VERSION, "to": newer, **floor,
+                       "build": "newer", "at": 0})
+    with sqlite3.connect(path) as conn:
+        conn.execute("ALTER TABLE runs ADD COLUMN futureNote TEXT")
+        conn.execute(
+            'INSERT INTO interventions (source, "trigger", action, note, at)'
+            " VALUES ('factory', 'manual', 'migrate', ?, 0)", (note,))
+        conn.execute(f"PRAGMA user_version = {newer}")
+    conn.close()

@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timezone
 
 import store.read
+import store.schema
 from holophyte.config_tables import report_config
 from store.working import effective_work
 
@@ -29,15 +30,11 @@ def migration_line(note, version):
 
 def migration_header(conn):
     """The latest recorded migration, absent on stores with no such history."""
-    if "note" not in {r[1] for r in conn.execute("PRAGMA table_info(interventions)")}:
-        return []
-    row = conn.execute(
-        "SELECT note FROM interventions WHERE action = 'migrate'"
-        " AND note IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
-    if row is None:
+    note = store.schema.latest_migration_note(conn)
+    if note is None:
         return []
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    return [migration_line(row[0], version)]
+    return [migration_line(note, version)]
 
 
 def live_rows(conn):

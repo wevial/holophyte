@@ -124,6 +124,9 @@ EXPECTED_CLASSES = [
 # them so `store.open()` still answers.
 EXPECTED_SCHEMA = [
     "init",
+    # KO-661: the newest migrate note, read by the report header and by
+    # open() for the floor an older build may open a newer store from.
+    "latest_migration_note",
     "open",
     "transaction",
 ]
