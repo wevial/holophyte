@@ -233,7 +233,9 @@ class WorkingTimeTests(SweepTestCase):
             stack.enter_context(patch.object(agents, 'publish_review_refs'))
             stack.enter_context(patch.object(agents, 'check_review_refs'))
             for module in (loop, babysitter, merge_gate, claim, pullrequest):
-                for name, result in (('sh', 'after'), ('ledger', None),
+                for name, result in (('sh', 'after'),
+                                     ('main_merge_base', 'after'),
+                                     ('ledger', None),
                                      ('record_round', None),
                                      ('merge_conflicts', []),
                                      ('scope_files', []),

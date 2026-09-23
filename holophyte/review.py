@@ -506,12 +506,29 @@ def _changed_files(root, approved, sha):
     return {os.fsdecode(path) for path in changed if path}
 
 
+def main_ref(root):
+    """The main the babysitter merges into a candidate: the fetched remote
+    one, which runs ahead of the local branch while the loop holds it (a
+    schema drain); the local branch only where no remote main exists."""
+    from holophyte.pr import BASE, REMOTE
+
+    ref = f"{REMOTE}/{BASE}"
+    found = subprocess.run(["git", "rev-parse", "--verify", "-q", ref],
+                           cwd=root, capture_output=True).returncode == 0
+    return ref if found else BASE
+
+
+def main_merge_base(root, sha):
+    """Where `sha`'s own changes start, against `main_ref()`."""
+    return subprocess.run(["git", "merge-base", main_ref(root), sha], cwd=root,
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+
 def _candidate_files(root, approved, sha):
     """The files `approved..sha` changes that also differ from `main`: a
     merged `main`'s own changes were reviewed on their own pull requests,
     while a file both sides changed keeps the integration under review."""
-    base = subprocess.run(["git", "merge-base", "main", sha], cwd=root,
-                          capture_output=True, text=True, check=True).stdout.strip()
+    base = main_merge_base(root, sha)
     return _changed_files(root, approved, sha) & _changed_files(root, base, sha)
 
 
@@ -538,7 +555,8 @@ def covering_scope(root, reviewed, sha, url):
     files = sorted(_candidate_files(root, reviewed, sha))
     stat = sh(["git", "--literal-pathspecs", "diff", "--stat", span, "--",
                *files], cwd=root) if files else ""
-    subjects = sh(["git", "log", "--format=%s", span, "^main"], cwd=root)
+    subjects = sh(["git", "log", "--format=%s", span, f"^{main_ref(root)}"],
+                  cwd=root)
     metadata = json.dumps({"diff_stat": stat, "commit_subjects": subjects})
     return (f"candidate was approved at {reviewed} and has since been moved "
             f"by fix commits answering review threads on {url}. "
