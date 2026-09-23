@@ -4,7 +4,14 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from fake_agent import APPROVE, MALFORMED, REQUEST_CHANGES, Commit, FakeAgent
+from fake_agent import (
+    APPROVE,
+    MALFORMED,
+    REQUEST_CHANGES,
+    Commit,
+    FakeAgent,
+    answer_scope,
+)
 from loop_fixture import VALID_BODY, StubProvider, a_task
 
 import holophyte.agents as agents
@@ -44,7 +51,7 @@ class ReviewSessionCases:
                 return implementer(target, role, goal, cwd, **kwargs)
             if fallback and calls:
                 agents.routes(target).commands['review'] = 'fallback-cli'
-            return agents.agent(target, role, goal, cwd, **kwargs)
+            return answer_scope(goal, agents.agent(target, role, goal, cwd, **kwargs))
 
         with patch.object(agents, 'run_capped', runner), \
                 patch.object(store, 'claim', claim), \

@@ -81,6 +81,8 @@ from holophyte.review import (
     criteria_brief,
     criteria_findings,
     evidence_brief,
+    scope_brief,
+    scope_files,
 )
 from holophyte.runs import (
     RunSwept,
@@ -89,7 +91,7 @@ from holophyte.runs import (
     review_round_cap,
     set_phase,
 )
-from holophyte.stop import boundary, continuation, stop_if_requested
+from holophyte.stop import Aborted, boundary, continuation, stop_if_requested
 from store.working import effective_work
 
 # The paths a run works against, plus the config they carry, are a `Target`
@@ -132,7 +134,7 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused
     except store.RunEnded as ended:
-        if ended.outcome == "paused":
+        if ended.outcome == "paused" or isinstance(ended, Aborted):
             ticket_id = store.read.run_snapshot(run.conn, run.run_id).ticketId
             board.mirror_push(run.conn, ticket_id, run.provider)
             board.release_lease_label(run.target, run.conn, ticket_id,
@@ -700,6 +702,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
             verdict = pending["verdict"]
         else:
             round_started = int(time() * 1000)
+            scope = scope_files(wt, ticket, base_sha, sha)
             with heartbeat_while(conn, run_id, beat_s):
                 verdict, decision, first_reply = _review_reply(target,
                     f"You are a READ-ONLY code reviewer. Review commit {sha} using "
@@ -711,6 +714,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f"{ticket}\n\n"
                     + _verify_brief(verify_cmd, ok, out)
                     + criteria_brief(criteria)
+                    + scope_brief(wt, ticket, base_sha, sha)
                     + evidence_brief(target, wt, task_id,
                                      ticket_template.parse(ticket).evidence_states)
                     + "Do not modify anything. End your reply with exactly one "
@@ -722,7 +726,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
             record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                          ok, out,
                          started_at=round_started, criteria=criteria, root=wt,
-                         prior_reply=first_reply)
+                         prior_reply=first_reply, scope=scope)
             if decision == "MALFORMED":
                 reason = "reviewer returned no verdict line twice"
                 print(f"[holo2] round {rnd}: {reason}")
@@ -730,7 +734,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                                    "review_route")
 
             # Unmet criteria or nonexistent named witnesses block approval.
-            unwitnessed = criteria_findings(verdict, criteria, wt)
+            unwitnessed = criteria_findings(verdict, criteria, wt, scope=scope)
             if unwitnessed:
                 print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
                       "witnessed; treating as REQUEST_CHANGES")

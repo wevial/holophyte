@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 ROOT = Path(__file__).resolve().parent.parent
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
@@ -21,6 +21,7 @@ import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import review_runner  # noqa: E402 - after the sys.path insert above
+from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 
 
 def bare_target(case, path):
@@ -346,6 +347,7 @@ class AgentRouteTests(unittest.TestCase):
             timeout=1800,
             verdicts=None,
             carry=[],
+            on_start=ANY,
         )
         self.assertEqual(holophyte.agents.agent_route(self.tgt, "review"),
                          "codex-sol-medium")
@@ -555,7 +557,7 @@ class ReviewLoopTests(unittest.TestCase):
             self.events.append(role)
             self.goals.append((role, goal))
             if role != "implement":
-                return replies.pop(0)
+                return answer_scope(goal, replies.pop(0))
             n = sum(1 for event in self.events if event == "implement")
             (Path(cwd) / f"change{n}.txt").write_text(f"work {n}\n")
             self.git("add", "-A", cwd=cwd)

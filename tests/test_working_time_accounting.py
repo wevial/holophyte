@@ -163,7 +163,9 @@ class WorkingTimeTests(SweepTestCase):
             for module in (loop, babysitter, merge_gate, claim, pullrequest):
                 for name, result in (('sh', 'after'), ('ledger', None),
                                      ('record_round', None),
-                                     ('merge_conflicts', [])):
+                                     ('merge_conflicts', []),
+                                     ('scope_files', []),
+                                     ('scope_brief', '')):
                     if hasattr(module, name):
                         stack.enter_context(patch.object(module, name,
                                                          return_value=result))

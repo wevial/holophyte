@@ -223,7 +223,10 @@ machines it walks. Back to the [README](index.md).
    with the run still parked for the next pass to ask again. The startup
    mirror reconcile leaves a ticket parked on a pull request alone even
    when the board already says Done, since only GitHub's answer closes the
-   run out with its merge commit.
+   run out with its merge commit. One a person merges while a live run
+   still watches it in the merge gate ends that run merged the same way,
+   straight from the gate (`merge_gate --> done` below, KO-653): the
+   factory ran no merge, so the run records no `merging` step.
    The same per-tick read also carries the pull request's `updatedAt`,
    its review-thread count and the token's remaining GraphQL budget
    (KO-362). Every park records what the pull request looked like *after*
@@ -392,6 +395,7 @@ stateDiagram-v2
     failed --> verifying
     failed --> working
     merge_gate --> awaiting_merge_approval
+    merge_gate --> done
     merge_gate --> failed
     merge_gate --> killed
     merge_gate --> merging

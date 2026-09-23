@@ -18,6 +18,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# `-m unittest tests.<name>` resolves the sibling fixtures as discovery does.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
 from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
@@ -529,6 +531,29 @@ class ConfigEditTests(ServeTestCase):
         message = str(raised.exception)
         self.assertIn("[serve] token_file", message)
         self.assertIn("config_edit", message)
+
+    def test_a_readable_or_missing_machine_token_file_is_a_startup_error(self):
+        """KO-647: `machine_token_file` is held to `token_file`'s rules at
+        bind, and the refusal names its own key and path, never the token."""
+        self.seed()
+        machine = self.root / "machine.token"
+        machine.write_text("machine-wide-token-value\n")
+        for mode, path in ((0o640, machine), (0o604, machine),
+                           (0o600, self.root / "absent.token")):
+            machine.chmod(mode)
+            config = self.config(
+                f'machine_token_file = "{path}"\nconfig_edit = true\n')
+            # `start()` resolves the tokens and binds as `serve()` does,
+            # without blocking should the refusal ever go missing.
+            with self.subTest(mode=oct(mode), path=path.name), \
+                    self.assertRaises(SystemExit) as raised:
+                self.start(config)
+            message = str(raised.exception)
+            self.assertIn("[serve] machine_token_file", message)
+            self.assertIn(str(path), message)
+            self.assertNotIn("machine-wide-token-value", message)
+            if path == machine:
+                self.assertIn(f"{mode:04o}", message)
 
 
 class ConfigPatchTests(ServeTestCase):

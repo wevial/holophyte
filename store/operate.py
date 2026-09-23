@@ -557,6 +557,34 @@ def pause(conn, run_id, note, source="human", now=None):
     return request
 
 
+def abort(conn, run_id, note, source="human", now=None):
+    """Record an emergency stop before marking the live run, atomically.
+
+    Shares `stopRequested` with `pause()`; the intervention's action tells the
+    two apart, and an abort supersedes a pending pause. A run that has ended,
+    or sits where the state model draws no edge to `failed`, is refused
+    before anything is written."""
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT r.endedAt, r.outcome, r.phase, r.stopRequested, i.action"
+            " FROM runs r LEFT JOIN interventions i ON i.id = r.stopRequested"
+            " WHERE r.id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        ended, outcome, phase, pending, action = row
+        if ended is not None:
+            raise ValueError(f"run {run_id} already ended with outcome {outcome}")
+        if TERMINAL_PHASES["abandoned"] not in RUN_PHASE_TRANSITIONS[phase]:
+            raise ValueError(f"run {run_id} is {phase}; it cannot end abandoned")
+        if action == "abort":
+            return pending
+        request = record_intervention(conn, run_id, "abort", note,
+                                      source=source, guidance=note, now=now)
+        conn.execute("UPDATE runs SET stopRequested = ? WHERE id = ?",
+                     (request, run_id))
+    return request
+
+
 def resume(conn, run_id, guidance=None, source="human", now=None):
     """Resume `run_id`, optionally with `guidance`; return the phase re-entered.
 

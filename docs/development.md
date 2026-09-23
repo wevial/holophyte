@@ -44,7 +44,8 @@ Each module, one line:
   read-only query over the store that claims no ticket, cuts no worktree and
   calls no one.
 - `holophyte/run.py` — the frozen claimed run and the shared landing entry point.
-- `holophyte/stop.py` — cooperative pause requests and durable continuations.
+- `holophyte/stop.py` — cooperative pause requests, operator aborts and durable
+  continuations.
 - `holophyte/runs.py` — the store seam: a run's progress as store rows.
 - `holophyte/board.py` — Linear as the notice board: the ticket mirror, its
   pushes, `--file-ticket` and the escalation. Ticket status lives in the
@@ -145,6 +146,9 @@ Each module, one line:
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round
   text, the parked question, and the passes that drive them.
+- `holophyte/main_checkout.py` — the detached main checkout the babysit
+  pass verifies main in, given the task worktree's `[worktree] carry`
+  directories, or its `[worktree] setup`, first.
 - `holophyte/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget

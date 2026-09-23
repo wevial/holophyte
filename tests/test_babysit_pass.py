@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 import unittest
 from contextlib import closing
@@ -21,8 +22,10 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
     Commit,
+    FakeAgent,
     Idle,
     Reply,
+    no_agent_processes,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
@@ -31,7 +34,9 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 
@@ -62,6 +67,22 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                           if kind in ("reply", "resolve")], ["reply", "resolve"])
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("paused",), ("merged",)])
+
+    def test_abort_during_fix_pushes_wip_and_leaves_the_pull_request(self):
+        from abort_fixture import NOTE, AbortEdit
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        self.loop(Commit(), APPROVE, Idle(''),
+                  Reply('THREAD 1: ADDRESS -- broken'), AbortEdit(self.db),
+                  provider=self.provider())
+        self.assertEqual(self.read("SELECT outcome, outcomeReason FROM runs"),
+                         [("abandoned", NOTE)])
+        self.assertEqual(self.subjects(BRANCH)[0],
+                         "WIP: preserve work at operator abort")
+        self.assertEqual(self.pushed()[-1][1], self.git("rev-parse", BRANCH).strip())
+        self.assertEqual([kind for kind, _ in self.api_calls()
+                          if kind not in ("state", "comments")], [])
+        self.assertNotIn("close", "\n".join(self.recorded()))
 
     def test_timed_out_thread_fix_records_budget(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
@@ -230,6 +251,45 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertTrue(self.read("SELECT blockedQuestion FROM tickets")
                         [0][0].startswith("rejected:"))
         self.assertIsNone(self.rc)
+
+
+    def test_pr_merged_by_a_person_mid_pass_ends_the_run_merged(self):
+        # KO-653: a person merged the PR while the run waited on its
+        # checks in `merge_gate`; the worker crashed on `merge_gate -> done`.
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state(checks="PENDING"),
+                                self.pr_state(merged=True)])
+        # Through the pool's worker, where the crash escaped (`pool._worker`).
+        fake = FakeAgent(Commit("the scripted work"), APPROVE, Idle(""))
+        with no_agent_processes(), \
+                patch.dict(sys.modules, {"linear_provider": self.provider()}), \
+                patch.object(holophyte.loop, "agent", fake), \
+                patch.object(holophyte.pr, "SLEEP", lambda _: None), \
+                patch.dict(os.environ, {holophyte.pool.WORKER_SLOT_ENV: ""}), \
+                patch.object(sys, "stdout", io.StringIO()), \
+                patch.object(sys, "stderr", io.StringIO()):
+            code = holophyte.pool.worker(self.tgt, self.provider())
+        self.assertEqual(code, holophyte.pool.WORKER_MERGED)
+        self.assertEqual(self.read("SELECT phase, outcome, mergeSha FROM runs"),
+                         [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status, activeRunId FROM tickets"),
+                         [("merged", None)])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        # Every transition it made replays through the real store's gate.
+        moves = [s.split(":")[0].split(" -> ") for (s,) in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'phase_change'"
+            " ORDER BY id")]
+        self.assertEqual(moves[-1], ["merge_gate", "done"])
+        import store
+        with closing(store.open(self.db)) as conn:
+            project = conn.execute("SELECT id FROM projects").fetchone()[0]
+            ticket = store.tickets.mirror_ticket(
+                conn, project, linear_issue_id="issue-replay",
+                linear_identifier="KO-9653", title="replay",
+                acceptance_criteria=["Given a replay, then it is legal"])
+            run = store.claim(conn, project, ticket)
+            for old, new in moves:
+                self.assertEqual(store.set_phase(conn, run, new), old)
 
 
     def test_closed_pr_at_pass_cap_is_rejected(self):

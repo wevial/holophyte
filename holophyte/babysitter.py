@@ -2,9 +2,7 @@
 import json
 import re
 import subprocess
-import tempfile
 from dataclasses import replace
-from pathlib import Path
 from time import monotonic, time
 
 import store
@@ -27,11 +25,13 @@ from holophyte.gates import (
     InfraFailure,
     RunFailure,
     VerificationOutput,
+    drop_candidate_modules,
     record_unreviewed_verification,
     run_verify,
     sh,
     with_baseline,
 )
+from holophyte.main_checkout import detached_main
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
@@ -42,6 +42,8 @@ from holophyte.review import (
     criteria_findings,
     evidence_brief,
     parse_findings,
+    scope_brief,
+    scope_files,
 )
 from holophyte.run import Run
 from holophyte.runs import heartbeat_while, record_round
@@ -358,16 +360,18 @@ def _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts):
 
 
 def _verify_detached_main(target, conn, run_id, beat_s, wt, ref, command, contracts):
-    """Check the fetched main once in an isolated sibling, then remove it."""
+    """Check the fetched main once in a prepared sibling, then remove it."""
     sha = sh(["git", "rev-parse", ref], wt)
-    with tempfile.TemporaryDirectory(prefix="main-verify-", dir=wt.parent) as tmp:
-        detached = Path(tmp) / "tree"
-        sh(["git", "worktree", "add", "--detach", str(detached), sha], wt)
-        try:
-            ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
-                                      sha, command, contracts)
-        finally:
-            sh(["git", "worktree", "remove", "--force", str(detached)], wt)
+    with detached_main(target, conn, run_id, beat_s, wt, sha) as detached:
+        command, skipped = drop_candidate_modules(command, wt, detached)
+        if skipped and conn is not None and run_id is not None:
+            store.record_event(
+                conn, run_id, "verification",
+                f"main-side verify at {sha[:12]} skipped"
+                f" {', '.join(skipped)}: exists only on the candidate,"
+                " not on main, so main cannot import it")
+        ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
+                                  sha, command, contracts)
     return sha, ok, out
 
 
@@ -621,6 +625,9 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
     rnd = _next_round(conn, run_id)
     round_started = int(time() * 1000)
+    # Only what the covered range changes is put to the scope question.
+    covered = reviewed or base_sha
+    scope = scope_files(wt, ticket, covered, sha)
     with heartbeat_while(conn, run_id, beat_s):
         verdict, decision, first_reply = _review_reply(target,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
@@ -633,6 +640,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"{ticket}\n\n"
             + _verify_brief(verify_cmd, ok, out)
             + criteria_brief(criteria)
+            + scope_brief(wt, ticket, covered, sha)
             + evidence_brief(target, wt, task_id,
                                  ticket_template.parse(ticket).evidence_states)
             + "Do not modify anything. End your reply with exactly one "
@@ -643,7 +651,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out, started_at=round_started, criteria=criteria,
                  root=wt, prior_reply=first_reply,
-                 approved_range=(reviewed, sha) if reviewed else None)
+                 approved_range=(reviewed, sha) if reviewed else None,
+                 scope=scope)
     stop_if_requested(conn, run_id, "merge_gate")
     if decision == "MALFORMED":
         reason = "the reviewer gave no verdict after one reminder"
@@ -654,7 +663,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     # The same gate as a review round's: a criterion left not met or
     # unwitnessed is a blocker whatever the verdict line says.
     unwitnessed = criteria_findings(
-        verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None)
+        verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None,
+        scope=scope)
     if unwitnessed:
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed by the review of the fix; treating as "
