@@ -38,6 +38,7 @@ from holophyte.gates import (
 )
 from holophyte.pullrequest import _prepare_pr, _push_and_open, _resume_on_pr
 from holophyte.redact import safe_print as print
+from holophyte.reproduce import tests_only_line
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 from holophyte.stop import stop_if_requested
 
@@ -150,9 +151,12 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
         ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,
                               contracts, ticket, budget_min, sync_main=False)
+        # An approved `not_reproduced` park lands tests only; the PR says
+        # so first, whatever the ticket's title reports (KO-658).
         title, text = _prepare_pr(target, conn, run_id, task_id, task, branch,
                                   body, beat_s, wt, started, budget_min,
-                                  issue_url)
+                                  issue_url,
+                                  lead=tests_only_line(conn, carried.run_id))
         with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
                         beat_s):
             url = _push_and_open(target, conn, run_id, branch, title, text,

@@ -196,8 +196,11 @@ class RequeueCliTests(unittest.TestCase):
         self.assertIn("lock released", store.read.ledger(self.conn, self.run)[-1].text)
 
     def test_requeue_refuses_parked_candidates_and_pull_requests_without_writes(self):
+        # Only a `not_reproduced` park is admitted (KO-658); a merge question
+        # still names the command that answers it.
         park_run(self.conn, self.run, "awaiting_merge_approval",
-                   "merge?", candidate_sha="a" * 40, now=T0)
+                   "merge?", candidate_sha="a" * 40, now=T0,
+                   park_kind="question")
         store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
         self.conn.execute("UPDATE tickets SET blockedQuestion = 'merge?' WHERE id = ?",
                           (self.ticket,))

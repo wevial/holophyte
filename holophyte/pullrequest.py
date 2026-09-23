@@ -276,11 +276,13 @@ def _refreshed_prose(target, conn, run_id, task_id, task, branch, ticket,
 
 
 def _prepare_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
-                wt, started, budget_min, issue_url=None):
+                wt, started, budget_min, issue_url=None, lead=None):
     """`[merge] mode = "pr"`, the half of opening the pull request that
     needs no lock: capture the evidence and write the PR text, falling back
-    to a stub on failure. Returns the `(title, text)` `_push_and_open()`
-    opens the pull request with (KO-644)."""
+    to a stub on failure. `lead`, when given, is the loop's own first line
+    of the body, ahead of the written text (KO-658). Returns the
+    `(title, text)` `_push_and_open()` opens the pull request with
+    (KO-644)."""
     with heartbeat_while(conn, run_id, beat_s):
         evidence = pr_media.prepare(
             target, wt, task_id,
@@ -289,6 +291,8 @@ def _prepare_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
     title, text = _written_pr_text(target, conn, run_id, task_id, task,
                                    branch, body, beat_s, wt, started,
                                    budget_min, issue_url)
+    if lead:
+        text = f"{lead}\n\n{text}"
     return title, pr_media.append(text, evidence)
 
 

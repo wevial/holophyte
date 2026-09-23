@@ -9,6 +9,7 @@ Run: python3 -m unittest tests.test_not_reproduced -v
 """
 from __future__ import annotations
 
+import io
 import json
 import sys
 import unittest
@@ -30,12 +31,14 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
     LoopFixture,
+    MergeModeFixture,
     StubProvider,
     a_task,
 )
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 from holophyte.gates import MergeParked  # noqa: E402 - after the sys.path insert
 from holophyte.stop import command  # noqa: E402 - after the sys.path insert above
@@ -208,6 +211,78 @@ class ResumedRouteTests(LoopFixture):
 
         self.assertEqual(fake.roles, ["implement", "adjudicate"])
         self.assertIn(REASON, fake.turns[0].goal)
+
+
+class AnsweredParkTests(LoopFixture):
+    """The park's `--requeue` and `--approve` answers, through the factory's
+    own commands (KO-658)."""
+
+    def test_requeue_after_added_detail_is_a_fresh_attempt_without_a_strike(self):
+        self.loop(Declare("test the modal"), REPRODUCED)
+
+        holophyte.operator.requeue(self.tgt, "KO-131",
+                                   "the name empties after a second rename",
+                                   out=io.StringIO())
+
+        self.assertEqual(self.read(
+            "SELECT runId, action FROM interventions"
+            " WHERE action != 'migrate'"), [(1, "requeue")])
+        ((summary,),) = self.read("SELECT summary FROM runEvents"
+                                  " WHERE runId = 1 AND kind = 'intervention'")
+        self.assertIn("the name empties after a second rename", summary)
+        self.assertEqual(self.read("SELECT outcome FROM runs"),
+                         [("abandoned",)])
+        self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
+                         [("ready", None)])
+
+        fake, _ = self.loop(Commit("fix the modal"), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertIn("fix the modal", self.subjects())
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("merged",)])
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("abandoned",), ("merged",)])
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        self.assertEqual(holophyte.board.failure_history(conn, 1), [])
+
+    def test_approve_lands_the_tests_locally_with_no_agent_turn(self):
+        self.configure('[merge]\nmode = "local"\n')
+        self.loop(Declare("test the modal"), REPRODUCED)
+        test_commit = self.git("rev-parse", BRANCH).strip()
+        holophyte.operator.approve(self.tgt, "KO-131", "keep the guard",
+                                   out=io.StringIO())
+
+        fake, _ = self.loop()
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(self.git("merge-base", "--is-ancestor", test_commit,
+                                  "main"), "")
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("merged",)])
+
+
+class AnsweredParkPullRequestTests(MergeModeFixture):
+
+    def test_an_approved_park_opens_a_pull_request_that_says_tests_only(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.loop(Declare("test the modal"), REPRODUCED,
+                  provider=self.provider())
+        self.assertEqual(self.recorded(), [])
+        holophyte.operator.approve(self.tgt, "KO-131", "keep the guard",
+                                   out=io.StringIO())
+
+        fake, _ = self.loop(
+            Idle("TITLE: Fix the rename-guest modal\nThe modal keeps the name."),
+            provider=self.provider())
+
+        # The one turn is the pull request writer's, on the implement seat.
+        (turn,) = fake.turns
+        self.assertTrue(turn.goal.startswith("Write the pull request title"))
+        first = self.pr_body.read_text().splitlines()[0]
+        self.assertEqual(
+            first, f"Tests only: the reported behaviour did not reproduce on"
+            f" {self.base}; these tests are kept as a regression guard.")
 
 
 class StorelessTests(LoopFixture):

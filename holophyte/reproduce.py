@@ -55,6 +55,29 @@ REDECLARE = ("If, once the tests exercise the reported path, the defect "
              "still does not reproduce, commit the tests only and end your "
              f"reply with exactly this line:\n{DECLARATION}")
 
+# The first line of the pull request an approved `not_reproduced` candidate
+# opens (KO-658): written by the loop, since the writer turn is given the
+# ticket, whose title reports a bug.
+TESTS_ONLY = ("Tests only: the reported behaviour did not reproduce on {base};"
+              " these tests are kept as a regression guard.")
+
+
+def tests_only_line(conn, run_id):
+    """`TESTS_ONLY` for the carried run `run_id` when it parked
+    `not_reproduced`, naming the base its park's event recorded; None for
+    any other park or with no store. The event is the witness, not
+    `runs.parkKind`: the ticket's walk out of `blocked_on_operator` on the
+    approval clears that column, and only `_park_in_store()` records the
+    event."""
+    if conn is None:
+        return None
+    row = conn.execute(
+        "SELECT payload FROM runEvents WHERE runId = ?"
+        " AND kind = 'not_reproduced' ORDER BY seq DESC LIMIT 1",
+        (run_id,)).fetchone()
+    base = json.loads(row[0])["base"] if row and row[0] else None
+    return TESTS_ONLY.format(base=base) if base else None
+
 
 def declared(reply):
     """Whether `reply`'s last non-empty line is the declaration."""
