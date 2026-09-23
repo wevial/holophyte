@@ -386,6 +386,82 @@ class MigrationStartupTests(SweepTestCase):
             "from": older, "to": store.SCHEMA_VERSION,
             "staleLock": {"holder": "migration", "why": "owner exited"}})
 
+    def kill_migrator_after_open(self):
+        """Run the owner's migration in a child killed as soon as its writable
+        open returns: the stamp and event are committed, the lock is not."""
+        import subprocess
+
+        self.conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION - 1}")
+        crash = ("import os, signal, sys\n"
+                 "sys.path.insert(0, sys.argv[1])\n"
+                 "import holophyte.project, holophyte.schema_owner as owner\n"
+                 "real = owner.store.open\n"
+                 "def opened(*a, **k):\n"
+                 "    real(*a, **k).close()\n"
+                 "    os.kill(os.getpid(), signal.SIGKILL)\n"
+                 "owner.store.open = opened\n"
+                 "owner.migrate_store(holophyte.project.Project.locate(sys.argv[2]))\n")
+        died = subprocess.run(
+            [sys.executable, "-c", crash, str(Path(__file__).resolve().parents[1]),
+             str(self.target)], capture_output=True, text=True)
+        self.assertEqual(died.returncode, -signal.SIGKILL, died.stderr)
+        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0],
+                         store.SCHEMA_VERSION)
+        path = holophyte.gates.merge_lock_path(self.project)
+        self.assertTrue(path.exists(), "the killed migrator left no lock")
+        return path
+
+    def lock_taken_events(self):
+        import json
+
+        return [json.loads(summary) for summary, in self.conn.execute(
+            "SELECT summary FROM runEvents WHERE kind='migration_lock_taken'"
+            " AND projectId = ?", (self.project_id,))]
+
+    def test_restart_on_current_store_takes_over_killed_migrators_lock(self):
+        path = self.kill_migrator_after_open()
+        out = io.StringIO()
+
+        def first_pass(*args, **kwargs):
+            self.assertFalse(path.exists())
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+        with patch('holophyte.supervisor.factory_revision', return_value='same'), \
+                patch('holophyte.supervisor.supervise_pass', first_pass):
+            self.assertEqual(holophyte.supervisor.supervise(self.project, out=out), 0)
+        self.assertFalse(path.exists())
+        self.assertIn("taking over stale merge lock: left by a migration whose"
+                      " owner exited", out.getvalue())
+        self.assertEqual(self.lock_taken_events(), [
+            {"holder": "migration", "why": "owner exited", "by": "supervisor"}])
+        # The dead migrator's own event is the only migration recorded.
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 1)
+
+    def test_acting_sweep_takes_over_lock_of_migrator_killed_after_stamp(self):
+        path = self.kill_migrator_after_open()
+        bare = holophyte.supervisor.sweep(self.project, self.conn, T0)
+        self.assertTrue(path.exists())
+        self.assertEqual(self.lock_taken_events(), [])
+        self.assertIn("--sweep --act removes it", "\n".join(bare.locks))
+        acted = holophyte.supervisor.sweep(self.project, self.conn, T0, act=True)
+        self.assertFalse(path.exists())
+        self.assertIn("removed stale merge lock: left by a migration whose owner"
+                      " exited", acted.locks)
+        self.assertEqual(self.lock_taken_events(), [
+            {"holder": "migration", "why": "owner exited", "by": "sweep"}])
+
+    def test_acting_sweep_leaves_a_live_migrators_lock_and_records_nothing(self):
+        from holophyte.schema_owner import MIGRATION_HOLDER
+
+        with holophyte.gates.merge_lock(self.project, MIGRATION_HOLDER,
+                                        operation="migration") as path:
+            acted = holophyte.supervisor.sweep(self.project, self.conn, T0,
+                                               act=True)
+            self.assertTrue(path.exists())
+        self.assertIn("alive and holds it; left alone", "\n".join(acted.locks))
+        self.assertEqual(self.lock_taken_events(), [])
+
     def test_live_migrators_lock_is_not_taken(self):
         from holophyte.schema_owner import MIGRATION_HOLDER, take_stale_lock
 

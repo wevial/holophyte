@@ -19,6 +19,7 @@ import review_runner
 import store.read
 from holophyte.gates import merge_lock_path, read_merge_lock, remove_dead_merge_lock
 from holophyte.report import REPORT_GAP, failure_lines, host_label
+from holophyte.schema_owner import names_migration, reclaim_migration_lock
 
 
 def merge_lock_lines(target, conn, act=False):
@@ -31,13 +32,16 @@ def merge_lock_lines(target, conn, act=False):
     to the store, and it is stale -- a bare sweep says so, an acting sweep
     removes it, and the line names the run either way. A lock that names no
     run (a storeless `run_task()` wrote it, or it is half-written) cannot be
-    judged and is left alone, said so.
+    judged and is left alone, said so -- unless a migration wrote it, which
+    `migration_lock_lines()` judges by its process alone.
     """
     path = merge_lock_path(target)
     holder = read_merge_lock(path)
     if holder is None:
         return []
     run_id, taken_at = holder
+    if run_id is None and names_migration(path):
+        return migration_lock_lines(target, conn, act)
     if run_id is None:
         return [f"merge lock {path} names no run; left alone"]
     snapshot = store.read.run_snapshot(conn, run_id)
@@ -60,6 +64,27 @@ def merge_lock_lines(target, conn, act=False):
         return [f"merge lock names run {run_id} ({why}) but its process is"
                 " alive and holds it; left alone"]
     return [f"stale merge lock: run {run_id} {why}; already cleared"]
+
+
+def migration_lock_lines(target, conn, act):
+    """The line for a lock the supervisor's migration wrote.
+
+    A migration names no run, so the store cannot say whether it is over;
+    its flock can. A supervisor killed after its stamp committed leaves the
+    lock on a current store, which no later migration will take, so an
+    acting sweep removes it once no process holds it, recorded as
+    `reclaim_migration_lock()` records it."""
+    what = "merge lock names a migration"
+    if not act:
+        return [f"{what}; --sweep --act removes it once its supervisor has"
+                " exited"]
+    outcome = reclaim_migration_lock(target, conn, "sweep")
+    if outcome == "removed":
+        return ["removed stale merge lock: left by a migration whose owner"
+                " exited"]
+    if outcome == "in_use":
+        return [f"{what} whose process is alive and holds it; left alone"]
+    return [f"stale {what}; already cleared"]
 
 
 SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence", "host")

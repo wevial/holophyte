@@ -355,8 +355,11 @@ supervisor still migrates, then exits without sweeping or dispatching, so
 ended is taken over under the sweep's stale-lock rule, since `--sweep --act`
 cannot open an older store, and so is the lock a supervisor killed
 mid-migration leaves behind; the takeover is printed and carried in the
-`migration` event as `staleLock`. A lock whose process still holds it is
-waited out. Initializing a fresh store creates no project row: `project add
+`migration` event as `staleLock`. A supervisor killed after its stamp
+committed leaves the lock on a current store: the next supervisor start, or
+`--sweep --act`, removes it once no process holds it and records a
+`migration_lock_taken` event naming which of them took it. A lock whose
+process still holds it is waited out. Initializing a fresh store creates no project row: `project add
 PATH` still registers it after the supervisor has started. Other writable opens refuse older schemas
 and name the supervisor as the owner. The loop keeps its schema-bump worker drain and waits
 for the supervisor's stamp after re-execution. The read-only daemon can serve

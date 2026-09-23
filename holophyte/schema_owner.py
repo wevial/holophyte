@@ -66,8 +66,79 @@ def _ended(path, run_id):
 
 # The holder a migration's merge lock names in place of a run: the owner has
 # no run, and `read_merge_lock()` reads this word as "names no run", so the
-# gate and the sweep treat it as they treat any unnamed lock.
+# gate waits on it as on any unnamed lock; the sweep and the owner judge it
+# by its process (`names_migration()`).
 MIGRATION_HOLDER = "migration"
+
+# The runEvents kind a dead migrator's lock is taken under once the store is
+# current: no migration runs then, so the takeover has no `migration` event
+# to ride in.
+LOCK_TAKEN_EVENT = "migration_lock_taken"
+
+
+def names_migration(path):
+    """Whether the lock at `path` is one a migration wrote."""
+    try:
+        return path.read_text().split()[:1] == [MIGRATION_HOLDER]
+    except FileNotFoundError:
+        return False
+
+
+def _project_id(conn, target):
+    """The registered project a run-less event of `target` is recorded under."""
+    row = conn.execute(
+        "SELECT id FROM projects WHERE repoPath = ? ORDER BY id LIMIT 1",
+        (str(target.path),)).fetchone()
+    return None if row is None else row[0]
+
+
+class _Kept(Exception):
+    """Unwinds a takeover's transaction when the lock was not removed."""
+
+
+def reclaim_migration_lock(target, conn, by):
+    """Remove the lock a dead migrator left on a current store, recorded.
+
+    Return `remove_dead_merge_lock()`'s outcome, or None when the lock is not
+    a migration's. The `LOCK_TAKEN_EVENT` is written before the removal and
+    in the same transaction, so a lock its migrator still holds (`in_use`)
+    or one already `gone` rolls the event back and nothing claims a
+    takeover that did not happen. A store with no registered project has
+    no row to carry the event, as for the migration event itself."""
+    path = merge_lock_path(target)
+    if not names_migration(path):
+        return None
+    note = {"holder": MIGRATION_HOLDER, "why": "owner exited", "by": by}
+    try:
+        with store.transaction(conn):
+            project = _project_id(conn, target)
+            if project is not None:
+                event(conn, project, LOCK_TAKEN_EVENT, json.dumps(note),
+                      int(time() * 1000))
+            outcome = remove_dead_merge_lock(path)
+            if outcome != "removed":
+                raise _Kept(outcome)
+    except _Kept as kept:
+        return kept.args[0]
+    return "removed"
+
+
+def _reclaim_on_current(target, out):
+    """A migrator killed after its stamp committed left the lock behind; the
+    store is current, so no migration will take it, and this one does."""
+    if not names_migration(merge_lock_path(target)):
+        return
+    what = "left by a migration whose owner exited"
+    print(f"[holo2] supervisor taking over stale merge lock: {what}",
+          file=out, flush=True)
+    conn = store.open(target.store_path, migrate="owner")
+    try:
+        outcome = reclaim_migration_lock(target, conn, "supervisor")
+    finally:
+        conn.close()
+    if outcome not in ("removed", None):
+        print(f"[holo2] stale merge lock ({what}) not taken: {outcome}",
+              file=out, flush=True)
 
 
 def _stale_holder(target, path):
@@ -77,11 +148,7 @@ def _stale_holder(target, path):
     migration itself wrote names no run, so it is judged by its process
     alone -- `remove_dead_merge_lock()`'s flock probe. Any other unnamed
     lock is left alone, as the sweep leaves it."""
-    try:
-        first = path.read_text().split()[:1]
-    except FileNotFoundError:
-        return None
-    if first == [MIGRATION_HOLDER]:
+    if names_migration(path):
         return None, "owner exited"
     holder = read_merge_lock(path)
     if holder is None or holder[0] is None:
@@ -98,11 +165,11 @@ def take_stale_lock(target, out):
     left alone. `--sweep --act` cannot clear it for an older store, which
     only this owner may open, so the owner applies the rule itself. A lock
     an earlier migration left when its supervisor died mid-migration is
-    taken too: nothing but a migrator writes it, and the sweep never clears
-    an unnamed lock. Both go through `remove_dead_merge_lock()`, which
-    refuses a lock whose creating process still holds its flock. The line
-    is printed before the removal and the takeover rides in the migration
-    event."""
+    taken too: nothing but a migrator writes it, and the sweep, which clears
+    it on a current store, cannot open this one. Both go through
+    `remove_dead_merge_lock()`, which refuses a lock whose creating process
+    still holds its flock. The line is printed before the removal and the
+    takeover rides in the migration event."""
     path = merge_lock_path(target)
     stale = _stale_holder(target, path)
     if stale is None:
@@ -124,8 +191,10 @@ def take_stale_lock(target, out):
 
 def migrate_store(target, out=None):
     """Run once at supervisor startup, including startup after exec."""
-    # A current store must reach the sweep even if a stale merge lock exists.
+    # A current store must reach the sweep even if a stale merge lock exists;
+    # only a dead migrator's lock is this owner's to clear before it does.
     if migration_version(target.store_path) == store.SCHEMA_VERSION:
+        _reclaim_on_current(target, out)
         return
     target.store_path.parent.mkdir(parents=True, exist_ok=True)
     taken = take_stale_lock(target, out)
@@ -139,15 +208,13 @@ def migrate_store(target, out=None):
             # Only an already registered project carries the event: creating
             # its row here would refuse the operator's `project add` later.
             # init()'s `migrate` intervention records a fresh store's stamp.
-            row = conn.execute(
-                "SELECT id FROM projects WHERE repoPath = ? ORDER BY id LIMIT 1",
-                (str(target.path),)).fetchone()
-            if row is None:
+            project = _project_id(conn, target)
+            if project is None:
                 return
             summary = {"from": from_version, "to": store.SCHEMA_VERSION}
             if taken:
                 summary["staleLock"] = taken
-            event(conn, row[0], "migration", json.dumps(summary),
+            event(conn, project, "migration", json.dumps(summary),
                   int(time() * 1000))
 
         store.open(target.store_path, migrate="owner", on_migrate=record).close()
