@@ -2,12 +2,11 @@
 
 from unittest.mock import patch
 
-from sweep_fixture import MINUTE, T0, SweepTestCase
-
 import store
 from holophyte import babysitter, loop, pr, report, serve, serve_runs, supervisor
 from store.working import settle_work, working
 from tests.phase_fixture import finish_run
+from tests.sweep_fixture import MINUTE, T0, SweepTestCase
 
 
 class WorkingConsumers(SweepTestCase):
@@ -77,6 +76,34 @@ class WorkingConsumers(SweepTestCase):
             [row[1:4] for row in report.report_rows(self.conn)],
             [(2, 10, 0.2), (2, 10, 0.2)],
         )
+
+    def test_time_box_judges_agent_work_only(self):
+        # A 10-minute box allows 15 minutes of one turn and 30 of the run.
+        run = self.a_run(budget_min=10)
+        with patch("store.working.time", return_value=T0 / 1000):
+            with working(self.conn, run, verify=True):
+                settle_work(self.conn, run, now=T0 + 30 * MINUTE)
+        start = T0 + 30 * MINUTE
+        with patch("store.working.time", return_value=start / 1000):
+            with working(self.conn, run):
+                settle_work(self.conn, run, now=start + 2 * MINUTE)
+            now = start + 2 * MINUTE
+            self.heartbeat_at(run, now)
+            self.assertFalse(supervisor.sweep(self.tgt, self.conn, now).trips)
+            with patch.object(loop, "time", return_value=now / 1000):
+                loop._check_run_cap(self.tgt, self.conn, run, 10, "abc")
+            with working(self.conn, run):
+                now = start + 25 * MINUTE
+                self.heartbeat_at(run, now)
+                trip, = supervisor.sweep(self.tgt, self.conn, now).trips
+                self.assertEqual(trip.condition, supervisor.TIME_BOX)
+                self.assertIn("27.0 min of agent work", trip.evidence)
+                with patch("store.working.time", return_value=now / 1000):
+                    self.assertTrue(
+                        supervisor.still_tripped(self.tgt, self.conn, trip))
+                with patch.object(loop, "time", return_value=now / 1000):
+                    with self.assertRaisesRegex(loop.RunFailure, "out of time"):
+                        loop._check_run_cap(self.tgt, self.conn, run, 10, "abc")
 
     def test_pending_and_quiet_waits_are_bounded(self):
         self.configure(
