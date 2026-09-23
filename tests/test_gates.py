@@ -1,6 +1,8 @@
 """Mechanical baseline verification and the merge lock."""
 import json
 import os
+import shlex
+import subprocess
 import sys
 import tempfile
 import threading
@@ -75,6 +77,89 @@ class VerifyBlockTests(unittest.TestCase):
                     self.assertEqual(out.results[-1]["tier"], tier)
                     self.assertEqual(out.results[-1]["exitCode"], 1)
                     self.assertFalse((Path(cwd) / "should-not-run").exists())
+
+
+class RepeatedPassTests(unittest.TestCase):
+    """A verify that passed earlier in the same run, on the same head with
+    the same `main`, over a clean worktree, is cited instead of run."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.wt = Path(tmp.name, "wt")
+        self.wt.mkdir()
+        self.count = Path(tmp.name, "count")
+        self.cmd = f"echo ran >> {shlex.quote(str(self.count))}"
+        self.git("init", "-q", "-b", "main")
+        self.commit("base")
+        self.git("checkout", "-q", "-b", "task")
+        self.commit("candidate")
+        record = patch.object(holophyte.gates, "_PASSES", set())
+        record.start()
+        self.addCleanup(record.stop)
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com",
+             *args], cwd=self.wt, check=True, capture_output=True,
+            text=True).stdout.strip()
+
+    def commit(self, message):
+        self.git("commit", "-q", "--allow-empty", "-m", message)
+
+    def runs(self):
+        return len(self.count.read_text().splitlines())
+
+    def verify(self, run_id=7, cmd=None):
+        return holophyte.gates.run_verify(cmd or self.cmd, self.wt,
+                                          run_id=run_id)
+
+    def test_a_repeat_on_the_same_tree_is_cited_not_run(self):
+        self.assertTrue(self.verify()[0])
+        ok, out = self.verify()
+        self.assertTrue(ok, out)
+        self.assertEqual(self.runs(), 1)
+        self.assertIn(self.git("rev-parse", "HEAD")[:12], out)
+        self.assertIn(self.git("rev-parse", "main")[:12], out)
+        self.assertIn("not run again", out)
+
+    def test_a_changed_key_or_dirty_tree_runs_the_command_again(self):
+        def new_commit():
+            self.commit("fix")
+
+        def main_moves():
+            self.git("checkout", "-q", "main")
+            self.commit("elsewhere")
+            self.git("checkout", "-q", "task")
+
+        def uncommitted():
+            (self.wt / "scratch").write_text("x")
+
+        cases = (("a new commit", new_commit, 7), ("main moved", main_moves, 7),
+                 ("an uncommitted change", uncommitted, 7),
+                 ("another run", lambda: None, 8), ("no run", lambda: None, None))
+        for name, change, run_id in cases:
+            with self.subTest(name), patch.object(holophyte.gates, "_PASSES", set()):
+                self.count.write_text("")
+                self.assertTrue(self.verify()[0])
+                change()
+                ok, out = self.verify(run_id)
+                self.assertTrue(ok, out)
+                self.assertEqual(self.runs(), 2)
+                (self.wt / "scratch").unlink(missing_ok=True)
+
+    def test_an_untracked_file_counts_when_status_hides_them(self):
+        self.git("config", "status.showUntrackedFiles", "no")
+        self.assertTrue(self.verify()[0])
+        (self.wt / "scratch").write_text("x")
+        self.assertTrue(self.verify()[0])
+        self.assertEqual(self.runs(), 2)
+
+    def test_a_failure_is_not_recorded(self):
+        cmd = self.cmd + "; exit 1"
+        self.assertFalse(self.verify(cmd=cmd)[0])
+        self.assertFalse(self.verify(cmd=cmd)[0])
+        self.assertEqual(self.runs(), 2)
 
 
 class MergeLockTests(unittest.TestCase):

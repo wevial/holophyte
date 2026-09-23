@@ -28,6 +28,7 @@ from mention_accounts_fixture import MentionAccountCases  # noqa: E402
 from triage_mention_fixture import TriageMentionCases  # noqa: E402
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
@@ -440,6 +441,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             pushes.append(result)
             if len(pushes) == 2:
                 failure.touch()
+                holophyte.gates._PASSES.clear()  # a re-exec (KO-646)
             return result
 
         with patch.object(holophyte.pr, "push_branch", push_then_break_verify):
@@ -470,6 +472,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             pushes.append(result)
             if len(pushes) == 2:
                 failure.touch()
+                holophyte.gates._PASSES.clear()  # a re-exec (KO-646)
             return result
 
         with patch.object(holophyte.pr, "push_branch", push_then_break_verify):
