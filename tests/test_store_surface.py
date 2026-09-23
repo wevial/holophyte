@@ -183,6 +183,9 @@ EXPECTED_READ = [
     # KO-328: the `serve` daemon's `/tickets/KO-n` read of one mirrored
     # ticket, body included.
     "ticket_by_identifier",
+    # KO-705: human interventions per merged run, for `--report` and
+    # `/status`.
+    "toil_since",
 ]
 
 AGENTS_MD = Path(__file__).resolve().parent.parent / "AGENTS.md"
