@@ -34,7 +34,7 @@ TURN_TIMEOUT = 300
 # The `[agents.reviewer]` table each review harness's live rounds run under.
 REVIEW_TABLES = {
     "codex": 'harness = "codex"\neffort = "low"\n',
-    "devin": 'harness = "devin"\nmodel = "opus"\n',
+    "devin": 'harness = "devin"\nmodel = "swe-2-max"\n',
 }
 
 
