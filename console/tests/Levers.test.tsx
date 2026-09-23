@@ -89,6 +89,21 @@ test("a held project shows its hold note and Release hold, posting to /actions/r
     body: { note: "schema change merged" } }]);
 });
 
+test("the Now view keeps an idle project's card, so Hold and Release hold outlive its runs", () => {
+  const floor = (admission: string, holdNote: string | null) => {
+    const status: Status = { ...working, admission, hold_note: holdNote, actions: true, runs: [] };
+    render(<Now hosts={[hostOf(status, NO_ATTENTION, BASE)]} project="all" now={working.now} deps={{ fetch: serving }} />);
+    const block = within(screen.getByRole("region", { name: "Floor" })).getByRole("region", { name: "writer" });
+    const levers = within(block).getAllByRole("button").map((node) => node.textContent).filter((text) => text !== "Settings");
+    const note = block.querySelector("[data-hold-note]")?.textContent ?? null;
+    cleanup();
+    return { levers, note };
+  };
+  expect(floor("enabled", null)).toEqual({ levers: ["Hold"], note: null });
+  expect(floor("held", "operator: schema change lands first"))
+    .toEqual({ levers: ["Release hold"], note: "held: operator: schema change lands first" });
+});
+
 test("Pause on a live run posts {run, note}", async () => {
   const { seen, fetchImpl } = fakeFetch({ action: "pause", ok: true, detail: `run ${live.id}: pause requested` });
   render(<RunDetail base={BASE} id={live.id} now={working.now} polls={1} deps={{ fetch: serving }}
