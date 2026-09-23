@@ -18,6 +18,13 @@
       "command": null
     }
   },
+  "route_labels": {
+    "implementer": "claude opus",
+    "reviewer": "codex gpt-5.6-sol",
+    "reviewer_fallback": null,
+    "adjudicator": "codex gpt-5.6-sol",
+    "writer": "claude opus"
+  },
   "workers_on_previous_build": 0,
   "host": "writer",
   "now": 1750000000000,

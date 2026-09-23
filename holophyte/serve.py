@@ -265,6 +265,7 @@ def status(target, now=None, started_ms=None):
     # the sweep agree with the cap the loop armed. `thresholds.run_cap` is
     # the hard ceiling in multiples of that box, so the bar can draw it. The
     # box is judged against `agent_ms`, not `working_ms`, which adds verify.
+    from holophyte.agent_turns import route_labels
     from holophyte.serve_runs import active_routes, workers_on_previous_build
 
     scale = budget_scale(target)
@@ -274,6 +275,7 @@ def status(target, now=None, started_ms=None):
         "admission": admission, "hold_note": hold_note,
         "schema_version": schema_version,
         "active_routes": active_routes(target),
+        "route_labels": route_labels(target),
         "workers_on_previous_build": workers_on_previous_build(target),
         "host": host_label(target, socket.gethostname()),
         "now": now,
