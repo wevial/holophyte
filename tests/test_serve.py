@@ -1117,9 +1117,8 @@ class ActionFailureTests(ServeTestCase):
         out = io.StringIO()
         with contextlib.redirect_stderr(out), patch.object(
                 holophyte.serve, "send_back_action", side_effect=failure):
-            code, headers, body = self.request("POST", "/actions/send-back",
-                                               TokenTests.BEARER, {"run": self.run})
-        return code, headers, body, out.getvalue()
+            return (*self.request("POST", "/actions/send-back", TokenTests.BEARER,
+                                  {"run": self.run}), out.getvalue())
 
     def test_a_raising_handler_answers_500_json_and_the_daemon_serves_on(self):
         # The 2026-09-22 incident: a `SystemExit` subclass, not an Exception.
@@ -1131,6 +1130,7 @@ class ActionFailureTests(ServeTestCase):
         self.assertEqual(self.request("GET", "/status")[0], 200)
 
     def test_a_registered_secret_in_the_message_is_redacted(self):
+        self.enterContext(patch("holophyte.redact._environment_values", frozenset()))
         holophyte.redact.register_values(["ko649-registered-secret"])
         _, _, body, logged = self.send_back_raising(
             RuntimeError("could not open with ko649-registered-secret"))
