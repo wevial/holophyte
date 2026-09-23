@@ -595,10 +595,11 @@ class DiscoverPatternTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         (self.repo / "tests").mkdir()
 
-    def missing(self, pattern, note="- Endpoint lives beside the other order routes."):
+    def missing(self, pattern, note="- Endpoint lives beside the other order routes.",
+                command=".venv/bin/python -m unittest discover -s tests -p '{}'"):
         text = FILLED.replace(
             ".venv/bin/python -m unittest test_orders_export",
-            f".venv/bin/python -m unittest discover -s tests -p '{pattern}'"
+            command.format(pattern)
         ).replace("- Endpoint lives beside the other order routes.", note)
         return [p for p in tt.validate(tt.parse(text), repo=self.repo)
                 if "does not exist" in p]
@@ -615,6 +616,15 @@ class DiscoverPatternTests(unittest.TestCase):
 
     def test_a_glob_pattern_is_not_a_path(self):
         self.assertEqual(self.missing("test_babysit*"), [])
+
+    def test_the_pattern_resolves_only_at_its_own_argument(self):
+        (self.repo / "tests/test_example.py").touch()
+        command = ("python3 -m unittest discover -s tests -p {0} && "
+                   "python3 -m unittest discover -s other -p {0} && "
+                   "python3 {0}")
+        self.assertEqual(self.missing("test_example.py", command=command), [
+            "path does not exist in verify command: other/test_example.py",
+            "path does not exist in verify command: test_example.py"])
 
 
 class PathCandidateTests(unittest.TestCase):
