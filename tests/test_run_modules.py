@@ -103,10 +103,12 @@ class RunModulesTests(unittest.TestCase):
 
 
 class UnitWorkflowTests(unittest.TestCase):
-    def test_unit_job_runs_the_runner_on_pull_requests_and_main(self):
+    def test_unit_job_runs_the_runner_on_pull_requests_merge_groups_and_main(self):
         text = WORKFLOW.read_text()
         on = text[text.index("\non:"):text.index("\njobs:")]
         self.assertIn("pull_request", on)
+        # A merge queue waits for its required checks on the merge group.
+        self.assertRegex(on, r"\n  merge_group:\n")
         self.assertRegex(on, r"push:\s*\n\s+branches: \[main\]")
         jobs = text[text.index("\njobs:"):]
         self.assertRegex(jobs, r"\n  unit:\n")
