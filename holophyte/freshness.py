@@ -35,7 +35,14 @@ import store
 import store.read
 import ticket_template
 from holophyte.agent_routes import routes
-from holophyte.board import comment_body, lease_turn, mirror_key, mirror_task, warn
+from holophyte.board import (
+    comment_body,
+    lease_turn,
+    mirror_key,
+    mirror_task,
+    store_status,
+    warn,
+)
 from holophyte.config_tables import loop_config
 from holophyte.files import RangeError, touched_files
 from holophyte.harness import critic_seat
@@ -333,3 +340,14 @@ def carry_warning(conn, run_id, task):
     warning = WARNINGS.pop(task["id"], None)
     if warning is not None:
         store.record_event(conn, run_id, "warning", warning)
+
+
+def parked_since_admitted(conn, ticket_id, task):
+    """True, with the skip line printed, when a sibling critic parked
+    `ticket_id` since this pass admitted it (KO-715): read under the claim's
+    `lease_turn()`, which `park_stale()` also takes, so the ticket is
+    skipped rather than claimed and refused."""
+    if store_status(conn, ticket_id) != "needs_spec":
+        return False
+    print(f"[holo2] {task['id']} was parked since it was admitted; skipping it")
+    return True

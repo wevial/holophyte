@@ -30,6 +30,7 @@ from time import monotonic
 import store
 import store.read
 import store.tickets
+from holophyte import freshness
 from holophyte.board import (
     MAX_FAILED_RUNS,
     body_problem,
@@ -66,13 +67,7 @@ from holophyte.environment_git import (
     stage_work,
     unstage_environment,
 )
-from holophyte.freshness import (
-    carry_warning,
-    critic_admits,
-    park_stale,
-    skip_labelled_stale,
-    stale_reasons,
-)
+from holophyte.freshness import park_stale, skip_labelled_stale, stale_reasons
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -689,7 +684,7 @@ def _claim_next(project, conn, project_id, provider, order, skip, seen):
             # Carry the value through the existing provider-task dispatch seam;
             # do not mutate the provider's task or rebuild the run at each phase.
             task = dict(task, _run=claimed_run(project, task, conn, run_id, provider))
-            carry_warning(conn, run_id, task)
+            freshness.carry_warning(conn, run_id, task)
         return task, ticket_id, run_id
 
 
@@ -835,7 +830,7 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
               f" not claimable ({verdict.reason}); skipping it")
         mirror_push(conn, ticket_id, provider)
         return None
-    if not (pr or critic_admits(project, conn, project_id, provider, task)):
+    if not (pr or freshness.critic_admits(project, conn, project_id, provider, task)):
         return None
     return ticket_id
 
@@ -929,13 +924,9 @@ def _claim_run(project, conn, project_id, provider, task, ticket_id, seen):
     writer took the ticket first, or None when the loop must stop rather
     than start a run."""
     # The store and board halves of the lease under one `lease_turn()`,
-    # which a close-out's label removal and a critic's park also take. A
-    # `needs_spec` row under it is a sibling critic's park since this pass
-    # admitted the ticket (KO-715): skipped, not claimed and refused.
+    # which a close-out's label removal and a critic's park also take.
     with lease_turn(project):
-        if store_status(conn, ticket_id) == "needs_spec":
-            print(f"[holo2] {task['id']} was parked since it was admitted;"
-                  " skipping it")
+        if freshness.parked_since_admitted(conn, ticket_id, task):
             return HELD
         try:
             run_id = store.claim(conn, project_id, ticket_id)
