@@ -23,7 +23,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     Reply,
 )
-from loop_fixture import BRANCH, MergeModeFixture  # noqa: E402
+from loop_fixture import BRANCH, LoopFixture, MergeModeFixture  # noqa: E402
 from mention_accounts_fixture import MentionAccountCases  # noqa: E402
 from triage_mention_fixture import TriageMentionCases  # noqa: E402
 
@@ -31,6 +31,7 @@ import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
+from holophyte.maintainer_notes import cite_commits  # noqa: E402
 
 
 class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
@@ -924,6 +925,40 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {asks[3]}", question)
         self.assertNotIn(f"> {self.DEFECT[3]}", question)
+
+
+class OperatorNoteCitationTests(LoopFixture):
+    """`cite_commits()` on real git: recording a citation never fails a fix."""
+    ADDRESSED = [(7, holophyte.pr.Thread("operator_note:7", "", None, "maintainer",
+                                         "change requested", "",
+                                         author_kind="maintainer"), "")]
+
+    def sh(self, argv, cwd):
+        return self.git(*argv[1:], cwd=cwd).strip()
+
+    def test_an_empty_last_commit_is_amended_to_carry_the_citation(self):
+        self.git("commit", "-q", "--allow-empty", "-m",
+                 "chore(merge): record that the merge already satisfies the note")
+        fixed = self.git("rev-parse", "HEAD").strip()
+
+        result = cite_commits(self.target, self.base, fixed, self.ADDRESSED, self.sh)
+
+        self.assertNotEqual(result, fixed)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), result)
+        self.assertTrue(self.git("log", "-1", "--format=%B").strip()
+                        .endswith("operator_note event 7"))
+
+    def test_a_citation_in_another_letter_case_is_not_amended(self):
+        (self.target / "README.md").write_text("requested change\n")
+        self.git("add", "README.md")
+        self.git("commit", "-q", "-m", "Fix per Operator_note event 7")
+        fixed = self.git("rev-parse", "HEAD").strip()
+
+        self.assertEqual(
+            cite_commits(self.target, self.base, fixed, self.ADDRESSED, self.sh),
+            fixed)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), fixed)
+
 
 if __name__ == "__main__":
     unittest.main()
