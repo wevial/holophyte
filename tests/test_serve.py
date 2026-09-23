@@ -29,9 +29,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.redact  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.schema  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.serve_config import TOMLKIT_MISSING  # noqa: E402
 from tests.phase_fixture import advance_phase, finish_run, park_run
@@ -1100,6 +1102,56 @@ class PrUrlTests(ServeTestCase):
         self.assertEqual(set(by_ticket), {"KO-8", "KO-9"})
         self.assertEqual(by_ticket["KO-8"]["pr_url"], self.PR_URL)
         self.assertIsNone(by_ticket["KO-9"]["pr_url"])
+
+
+class ActionFailureTests(ServeTestCase):
+    """KO-649: an exception inside an action handler is a 500 JSON answer
+    the console can read, not a dropped connection it calls "Failed to
+    fetch"."""
+
+    def start_actions(self):
+        self.seed()
+        token = self.root / "serve.token"
+        token.write_text(TokenTests.TOKEN + "\n")
+        token.chmod(0o600)
+        self.start(f'[serve]\ntoken_file = "{token}"\nactions = true\n')
+
+    def send_back_raising(self, failure):
+        """POST a send-back whose handler raises `failure`: `(status,
+        headers, body, stderr)`."""
+        out = io.StringIO()
+        with contextlib.redirect_stderr(out), \
+                patch.object(holophyte.serve, "send_back_action",
+                             side_effect=failure):
+            code, headers, body = self.request(
+                "POST", "/actions/send-back", TokenTests.BEARER,
+                body={"run": self.run, "note": "remove the subheader"})
+        return code, headers, body, out.getvalue()
+
+    def test_a_raising_handler_answers_500_json_and_the_daemon_serves_on(self):
+        self.start_actions()
+        # The 2026-09-22 incident: a `SystemExit` subclass, not an Exception.
+        code, headers, body, logged = self.send_back_raising(
+            store.schema.SchemaNewer("store.db", 99))
+        self.assertEqual(code, 500)
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
+        self.assertTrue(body["error"].startswith("SchemaNewer: store.db: "
+                                                 "store schema version 99"),
+                        body)
+        self.assertEqual(logged.count("Traceback"), 1, logged)
+        self.assertEqual(self.request("GET", "/status")[0], 200)
+
+    def test_a_registered_secret_in_the_message_is_redacted(self):
+        secret = "ko649-registered-secret-value"
+        holophyte.redact.register_values([secret])
+        self.start_actions()
+        code, _, body, logged = self.send_back_raising(
+            RuntimeError(f"could not open with {secret}"))
+        self.assertEqual(code, 500)
+        self.assertEqual(body["error"],
+                         "RuntimeError: could not open with [redacted]")
+        self.assertNotIn(secret, self.raw_body)
+        self.assertNotIn(secret, logged)
 
 
 class ParseAddressTests(unittest.TestCase):
