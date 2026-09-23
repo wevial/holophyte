@@ -328,9 +328,8 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
     merged = _verify_main_refresh(
         project, conn, run_id, provider, task_id, branch, wt, merged, beat_s,
         pull, budget_min, verify_cmd, contracts, ticket, ref)
-    state = _just_pushed_state(
-        project, conn, run_id, provider, task_id, branch, merged, beat_s, pull,
-        reviewed)
+    state = _just_pushed_state(project, conn, run_id, provider, task_id, branch,
+                               merged, beat_s, pull, reviewed)
     if merged != sha and before == _diff_identity(wt, ref):
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "pull_request",
@@ -351,8 +350,7 @@ def _refresh_verify(project, conn, run_id, beat_s, wt, sha, command, contracts):
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(command, wt, contracts, conn=conn, run_id=run_id,
                              project=project)
-        ok, out = with_baseline(project, wt, command, ok, out,
-                               conn, run_id)
+        ok, out = with_baseline(project, wt, command, ok, out, conn, run_id)
     out.results = [dict(row, output=f"Tree {sha}\n{row['output']}")
                    for row in out.results]
     record_round(project, conn, run_id, _next_round(conn, run_id), "review",
