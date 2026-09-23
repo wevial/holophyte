@@ -33,8 +33,11 @@ import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
+import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.agent_routes import reset, routes  # noqa: E402
+from holophyte.freshness import critic_brief, parse_freshness  # noqa: E402
+from tests.phase_fixture import finish_run  # noqa: E402
 
 # The fake codex: records its cwd, the HEAD there and whether HEAD is
 # detached, then answers the probe, or exits 1 when told to.
@@ -297,6 +300,39 @@ class CriticClaimTests(LoopFixture):
         self.assertIn("no FRESHNESS verdict", warnings[0][1])
         self.assertIn("no FRESHNESS verdict", warnings[1][1])
         self.assertIn("the critic crashed", warnings[2][1])
+
+
+class CriticAnswerTests(unittest.TestCase):
+    def test_fresh_with_anything_after_it_is_no_verdict(self):
+        self.assertEqual(parse_freshness("Checked.\nFRESHNESS: FRESH"),
+                         ("fresh", ""))
+        self.assertIsNone(parse_freshness(
+            "FRESHNESS: FRESH but I could not check the code"))
+
+
+class CriticBriefTests(LoopFixture):
+    def test_the_brief_names_every_run_merged_since_filing_past_one_page(self):
+        conn = holophyte.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project = tickets.ensure_project(conn, "team-1", self.target)
+        filed_at = int(time.time() * 1000) - HOUR_MS
+        for n in range(1, 53):
+            ticket = tickets.mirror_ticket(
+                conn, project, linear_issue_id=f"issue-{n}",
+                linear_identifier=f"KO-{n}", title=f"ticket {n}",
+                acceptance_criteria=[f"Given {n}, then it is worked"],
+                verification_commands=["echo ok"])
+            tickets.transition(conn, ticket, "in_flight")
+            run = store.claim(conn, project, ticket, now=filed_at - 2 * HOUR_MS)
+            # KO-1 ended before the filing; KO-2 to KO-52 after it.
+            finish_run(conn, run, "merged", now=filed_at + (n - 1) * 1000 - 500)
+
+        brief = critic_brief(conn, self.project,
+                             dict(a_task(1), body=VALID_BODY, filed_at=filed_at))
+
+        listed = [line.split()[1] for line in brief.splitlines()
+                  if line.startswith("- KO-")]
+        self.assertEqual(sorted(listed), sorted(f"KO-{n}" for n in range(2, 53)))
 
 
 if __name__ == "__main__":

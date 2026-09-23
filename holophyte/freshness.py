@@ -42,9 +42,9 @@ BACKLOG_STATE = "Backlog"
 HOUR_MS = 3600 * 1000
 # The critic's cap, in seconds: a turn is about half a minute.
 CRITIC_TIMEOUT = 300
-# How much of the merge history a brief carries: the newest merges, and the
-# first files of each.
-BRIEF_MERGES = 50
+# The merge history is read a page at a time, back to the filing; a brief
+# names the first files of each merge.
+MERGE_PAGE = 50
 BRIEF_FILES = 20
 CRITIC_BRIEF = """\
 You are the critic. Decide whether the ticket below is still relevant to
@@ -188,6 +188,21 @@ def _changed_files(project, run):
     return names + (", ..." if touched.truncated else "")
 
 
+def merged_since(conn, filed):
+    """Every merged run that ended after `filed`, newest first, paged back
+    through `merged_runs()` until a page reaches the filing."""
+    before = None
+    while True:
+        page = store.read.merged_runs(conn, MERGE_PAGE, before)
+        for run in page:
+            if run.endedAt <= filed:
+                return
+            yield run
+        if len(page) < MERGE_PAGE:
+            return
+        before = page[-1].id
+
+
 def critic_brief(conn, project, task):
     """The critic's goal: the ticket body, one line per run merged since
     `filed_at` -- identifier, title and the files its merge changed --
@@ -195,8 +210,7 @@ def critic_brief(conn, project, task):
     filed = task.get("filed_at") or 0
     merges = [f"- {run.linearIdentifier} {run.title}: "
               f"{_changed_files(project, run)}"
-              for run in store.read.merged_runs(conn, BRIEF_MERGES)
-              if run.endedAt > filed]
+              for run in merged_since(conn, filed)]
     return CRITIC_BRIEF.format(
         identifier=task["id"], title=task.get("title", ""),
         body=(task.get("body") or "").strip(),
@@ -205,8 +219,8 @@ def critic_brief(conn, project, task):
 
 def parse_freshness(output):
     """The critic's verdict from its last non-empty line: `("fresh", "")`,
-    `("stale", reason)` or `("unsure", reason)`; None for anything else,
-    a STALE or UNSURE with no reason included."""
+    `("stale", reason)` or `("unsure", reason)`; None for anything else:
+    a FRESH with text after it, or a STALE or UNSURE with no reason."""
     lines = [line.strip() for line in (output or "").splitlines()
              if line.strip()]
     match = FRESHNESS_LINE.fullmatch(lines[-1].strip("*` ")) if lines else None
@@ -214,7 +228,7 @@ def parse_freshness(output):
         return None
     verdict, reason = match.group(1).lower(), (match.group(2) or "").strip()
     if verdict == "fresh":
-        return verdict, ""
+        return None if reason else (verdict, "")
     return (verdict, reason) if reason else None
 
 
