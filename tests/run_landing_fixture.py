@@ -22,7 +22,7 @@ def landing_path(case, mode):
 
     def capture(run, verify):
         claimed = claims[-1]
-        for name in ("target", "conn", "provider", "run_id", "task_id", "issue_id",
+        for name in ("project", "conn", "provider", "run_id", "task_id", "issue_id",
                      "task", "branch", "wt", "started", "started_at", "budget_min"):
             case.assertEqual(getattr(run, name), getattr(claimed, name), name)
         row = run.conn.execute(
