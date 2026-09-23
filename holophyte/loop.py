@@ -50,7 +50,12 @@ from holophyte.config_tables import (
     sweep_config,
 )
 from holophyte.dispatch import SWEPT
-from holophyte.environment_git import paths, stage_work, unstage_environment
+from holophyte.environment_git import (
+    factory_identity,
+    paths,
+    stage_work,
+    unstage_environment,
+)
 from holophyte.gates import (
     GroupKill,
     InfraFailure,
@@ -580,12 +585,9 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                    cwd=wt).splitlines()
         if dirty:
             stage_work(target, wt)
-            # The identity is pinned for the same reason the reuse WIP
-            # commit pins it: a rescue commit is the factory's, and a
-            # target with no committer configured must not make it raise.
-            sh(["git", "-c", "user.name=holophyte",
-                "-c", "user.email=holophyte@factory.invalid",
-                "commit", "-q", "-m",
+            # The identity is chosen as the reuse WIP commit's is: the
+            # target's configured one, the factory's pins when it has none.
+            sh(["git", *factory_identity(wt), "commit", "-q", "-m",
                 f"WIP: implementer budget fired mid-edit ({task_id});"
                 " not verified"], cwd=wt)
             head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
