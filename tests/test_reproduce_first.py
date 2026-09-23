@@ -56,6 +56,14 @@ class Scribble:
         return "Ran out of time before committing."
 
 
+class Crash(Scribble):
+    """A reproduce turn that writes a half-done test, then its agent raises."""
+
+    def play(self, cwd, turn):
+        super().play(cwd, turn)
+        raise RuntimeError("the agent route fell over mid-turn")
+
+
 def bug_task(verify=VERIFY):
     return dict(a_task(), body=BUG_BODY, budget_min=15, verify=verify)
 
@@ -111,6 +119,12 @@ class ReproduceFirstTests(LoopFixture):
         self.assertIn("app.txt", self.git("ls-tree", "--name-only", "main"))
         self.assertNotIn(Scribble.path,
                          self.git("ls-tree", "--name-only", "main"))
+
+    def test_a_reproduce_turn_that_raises_leaves_no_uncommitted_edits(self):
+        fake = self.run_bug(Crash())
+
+        self.assertEqual(fake.roles, ["implement"])
+        self.assertFalse((fake.turns[0].cwd / Crash.path).exists())
 
 
 if __name__ == "__main__":

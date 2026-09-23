@@ -129,16 +129,20 @@ def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
         return None
     budget = min(FIRST_MAX, max(FIRST_MIN, budget_min / 3))
     loop._check_run_cap(target, conn, run_id, budget, start_sha)
-    loop._timed(
-        target, conn, run_id, beat_s, wt, budget,
-        "Reproduce the defect this ticket reports; do not fix it:\n\n"
-        f"{ticket}\n\nThe ticket's verify commands:\n\n{verify_cmd}\n\n"
-        "Write the smallest test that shows the reported behaviour, where "
-        "those commands run it, and commit it. Change no application code: "
-        "the fix is a later turn's. Commit messages carry no tool attribution"
-        " or co-author lines for an AI.")
+    try:
+        loop._timed(
+            target, conn, run_id, beat_s, wt, budget,
+            "Reproduce the defect this ticket reports; do not fix it:\n\n"
+            f"{ticket}\n\nThe ticket's verify commands:\n\n{verify_cmd}\n\n"
+            "Write the smallest test that shows the reported behaviour, where "
+            "those commands run it, and commit it. Change no application code:"
+            " the fix is a later turn's. Commit messages carry no tool "
+            "attribution or co-author lines for an AI.")
+    finally:
+        # Also when the turn raises: the failed run keeps its worktree, and
+        # the next claim would commit these edits as preserved work.
+        _discard_leftovers(target, wt)
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    _discard_leftovers(target, wt)
     if head == start_sha:
         ledger(conn, run_id, task_id, "note",
                "No reproduction was committed: the reproduce turn added no "
