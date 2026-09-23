@@ -47,6 +47,7 @@ from holophyte.board import (
     mirror_push,
     mirror_status,
     mirror_task,
+    on_pull_request,
     release_lease_label,
     store_status,
 )
@@ -748,7 +749,7 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
     # the last run is on a pull request, whose candidate holds the paths
     # main lacks (KO-598, KO-655).
     problem = body_problem(task, project.path,
-                           on_pull_request=_on_pull_request(conn, project_id, task))
+                           on_pull_request=on_pull_request(conn, project_id, task))
     if problem:
         mirror_task(conn, project_id, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")
@@ -820,16 +821,6 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
         mirror_push(conn, ticket_id, provider)
         return None
     return ticket_id
-
-
-def _on_pull_request(conn, project_id, task):
-    """Whether the mirrored ticket's last run holds a pull request URL.
-    Asked before the mirror, so a ticket never mirrored is not on one."""
-    row = conn.execute(
-        "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
-        " WHERE t.linearIssueId = ? AND t.projectId = ?",
-        (mirror_key(task), project_id)).fetchone()
-    return bool(row and row[0])
 
 
 class _Held:

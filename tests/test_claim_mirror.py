@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
+    VALID_BODY,
     FakePool,
     LoopFixture,
     StubProvider,
@@ -36,6 +37,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.dispatch  # noqa: E402
 import holophyte.operator  # noqa: E402
 import holophyte.pool  # noqa: E402
 import holophyte.runs  # noqa: E402
@@ -176,3 +178,55 @@ class OffBoardMirrorTests(LoopFixture):
         self.assertEqual(self.rc, 0)
         self.assertEqual(self.read("SELECT status FROM tickets"),
                          [("merged",)])
+
+
+class SentBackMirrorTests(LoopFixture):
+    """KO-680: the queue mirror applies the claim's pull request exemption.
+
+    REL-138 was sent back to its pull request for a reviewer's comment and
+    the next pass's mirror refused its body -- the verify block named test
+    files only the branch had -- so it sat in `needs_spec` and the comment
+    was never answered. The claim already skips the repository checks for
+    a ticket whose last run holds a pull request; the mirror now does too.
+    """
+
+    # A verify command naming a test file the repository's main lacks.
+    BODY = VALID_BODY.replace("```\necho ok\n```",
+                              "```\npython3 tests/test_branch_only.py\n```")
+
+    def mirror(self, pr_url):
+        """Mirror the ticket after one failed, requeued run -- holding
+        `pr_url` when given -- and answer the status the queue mirror
+        leaves it in."""
+        task = dict(a_task(), body=self.BODY)
+        provider = StubProvider(task)
+        conn = holophyte.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+        ticket = holophyte.board.mirror_task(conn, project_id, task)
+        run_id = store.claim(conn, project_id, ticket)
+        tickets.transition(conn, ticket, "in_flight")
+        if pr_url:
+            store.set_pull_request(conn, run_id, pr_url)
+        store.release(conn, run_id, "failed", "sent back to the babysitter")
+        store.requeue(conn, ticket, "new review activity")
+        conn.commit()
+
+        with patch.object(sys, "stdout", io.StringIO()):
+            listing = holophyte.dispatch._mirror_queue(
+                self.project, conn, project_id, provider)
+
+        self.assertEqual([t["id"] for t in listing], ["KO-131"])
+        return self.read("SELECT status FROM tickets")
+
+    def test_a_ticket_on_a_pull_request_is_mirrored_ready(self):
+        """The branch holds the file main lacks: the mirror leaves the
+        ticket `ready` for the claim that will address the comment."""
+        self.assertEqual(
+            self.mirror("https://github.com/example/repo/pull/2215"),
+            [("ready",)])
+
+    def test_the_same_body_with_no_pull_request_needs_spec(self):
+        """No run on a pull request: the missing path is the body's
+        problem, and the mirror lands it in `needs_spec` as before."""
+        self.assertEqual(self.mirror(None), [("needs_spec",)])

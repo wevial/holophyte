@@ -23,6 +23,7 @@ from holophyte.board import (
     close_out_failure,
     mirror_status,
     mirror_task,
+    on_pull_request,
     release_lease_label,
     release_run,
 )
@@ -65,8 +66,10 @@ def _mirror_queue(target, conn, project, provider):
     blocked in Linear -- is not shown either. Each candidate takes the same
     body-driven route the claim takes in `_admit_ticket()`: a body the
     template validator rejects is mirrored with `specced=False` and lands
-    in `needs_spec`, a valid one lands where its lists put it. Statuses
-    that are somebody's decision -- `in_flight`, `blocked_on_operator`,
+    in `needs_spec`, a valid one lands where its lists put it -- and, as
+    there, a ticket whose last run holds a pull request skips the
+    repository checks, its branch holding the paths main lacks (KO-680).
+    Statuses that are somebody's decision -- `in_flight`, `blocked_on_operator`,
     `blocked_on_deps`, the terminal ones -- are left alone by
     `store.tickets.mirror_ticket()` itself, and dependencies are left as the store
     has them. A board that cannot be asked, or a listing the mirror
@@ -86,7 +89,9 @@ def _mirror_queue(target, conn, project, provider):
     mirrored = []
     try:
         for task in provider.ready_issues():
-            specced = body_problem(task, target.path) is None
+            specced = body_problem(
+                task, target.path,
+                on_pull_request=on_pull_request(conn, project, task)) is None
             mirror_task(conn, project, task, specced=specced)
             mirrored.append(task)
     except Exception as e:  # any transport or mirror failure: not a gate

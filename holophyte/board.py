@@ -206,6 +206,19 @@ def mirror_key(task):
     return task.get("issue_id") or task["id"]
 
 
+def on_pull_request(conn, project_id, task):
+    """Whether the mirrored ticket's last run holds a pull request URL.
+    Asked before the mirror, so a ticket never mirrored is not on one.
+    The claim and the queue mirror both pass it to `body_problem()`, so a
+    ticket sent back to its pull request is judged alike by each (KO-680).
+    """
+    row = conn.execute(
+        "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.linearIssueId = ? AND t.projectId = ?",
+        (mirror_key(task), project_id)).fetchone()
+    return bool(row and row[0])
+
+
 def store_status(conn, ticket_id):
     """The store's status column for `ticket_id`, for a printed decision."""
     return store.read.ticket_by_id(conn, ticket_id).status
