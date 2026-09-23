@@ -490,5 +490,92 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertIn(self.DEFECT[3], self.question())
 
 
+    def required_checks_github(self, reports_after_retrigger=False):
+        """Main's ruleset requires "vercel" and "unit"; only "unit" reports
+        on the candidate, and "vercel" too on a later head when asked."""
+        heads = []
+
+        def rest(target, pull, method, path, payload=None):
+            if "rules/branches/" in path:
+                return [{"type": "required_status_checks", "parameters": {
+                    "required_status_checks": [{"context": "vercel"},
+                                               {"context": "unit"}]}}]
+            head = path.split("/commits/")[1].split("/")[0]
+            heads.append(head)
+            names = ["unit"] + (["vercel"] if reports_after_retrigger
+                                and head != heads[0] else [])
+            return {"total_count": len(names), "check_runs": [
+                {"name": n, "status": "completed", "conclusion": "success"}
+                for n in names]}
+        return patch.object(holophyte.pr_status, "rest", rest)
+
+    def wait_on_missing_check(self, config, reports_after_retrigger=False):
+        self.configure('[merge]\nmode = "pr"\nmissing_check_sec = 120\n' + config)
+        self.fake_route(states=[self.pr_state()])
+        naps = []
+        with self.required_checks_github(reports_after_retrigger), \
+                patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        tip = self.pushed()[-1][1]
+        return tip, self.git("log", "-1", "--format=%s", tip).strip()
+
+    def retriggers(self):
+        return self.read("SELECT summary FROM runEvents WHERE kind ="
+                         " 'pull_request' AND summary LIKE '%empty commit%'")
+
+    def test_a_missing_required_check_is_retriggered_once_and_the_wait_goes_on(self):
+        tip, subject = self.wait_on_missing_check(
+            "retrigger_missing_checks = true\n", reports_after_retrigger=True)
+        candidate, _ = [sha for _, sha in self.pushed()]
+        self.assertEqual(subject, "Retrigger missing checks: vercel")
+        self.assertEqual(self.git("rev-parse", f"{tip}^").strip(), candidate)
+        self.assertEqual(self.git("rev-parse", f"{tip}^{{tree}}").strip(),
+                         self.git("rev-parse", f"{candidate}^{{tree}}").strip())
+        ((event,),) = self.retriggers()
+        self.assertIn("vercel", event)
+        self.assertNotIn("unit", event)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [tip])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_check_still_missing_after_its_retrigger_parks_naming_it(self):
+        tip, subject = self.wait_on_missing_check(
+            "retrigger_missing_checks = true\n")
+        self.assertEqual(len(self.pushed()), 2)
+        self.assertEqual(subject, "Retrigger missing checks: vercel")
+        self.assertEqual(self.read("SELECT candidateSha FROM runs"), [(tip,)])
+        self.assertEqual(len(self.retriggers()), 1)
+        self.assertIn("required checks never reported on the head commit:"
+                      " vercel", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_a_missing_required_check_parks_without_a_retrigger_when_off(self):
+        _, subject = self.wait_on_missing_check("")
+        self.assertEqual(len(self.pushed()), 1)
+        self.assertEqual(subject, "the scripted work")
+        self.assertEqual(self.retriggers(), [])
+        self.assertIn("required checks never reported on the head commit:"
+                      " vercel", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_pending_checks_with_none_required_wait_as_before(self):
+        self.configure('[merge]\nmode = "pr"\nmissing_check_sec = 30\n'
+                       'retrigger_missing_checks = true\n')
+        self.fake_route(states=[self.pr_state(checks="PENDING")] * 4
+                        + [self.pr_state()])
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S] * 4)
+        self.assertEqual(len(self.pushed()), 1)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+
 if __name__ == "__main__":
     unittest.main()

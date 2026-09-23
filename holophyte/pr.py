@@ -163,6 +163,7 @@ class PrState:
     updated_at: int | None = None
     pending_contexts: tuple = ()
     failed_checks: tuple = ()  # `FailedCheck`s of the head commit
+    missing_checks: tuple = ()  # required contexts the head has no report of
 
 
 def origin_url(target):

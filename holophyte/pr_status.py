@@ -449,7 +449,8 @@ def _state_of(node, threads, runs, required):
                                           if isinstance(r, dict)
                                           and r.get("name")
                                           and r.get("status") != "completed"),
-                   failed_checks=_failed_checks(runs))
+                   failed_checks=_failed_checks(runs),
+                   missing_checks=_missing_checks(runs, required))
 
 
 @dataclass(frozen=True)
@@ -471,6 +472,18 @@ def _failed_checks(runs):
                              url=r.get("html_url") or "", job_id=_job_id(r))
                  for r in (runs or ()) if isinstance(r, dict)
                  and r.get("conclusion") in RED_CONCLUSIONS)
+
+
+def _missing_checks(runs, required):
+    """The contexts `required` names that nothing on the head reported --
+    no check run and no status, or only GitHub's "expected" placeholder
+    (KO-652). Either read unreadable is none known missing: a check the
+    babysitter cannot see is not one it can call absent."""
+    if runs is None or required is None:
+        return ()
+    reported = {r.get("name") for r in runs if isinstance(r, dict)
+                and r.get("conclusion") != "expected"}
+    return tuple(c for c in dict.fromkeys(required) if c not in reported)
 
 
 def _job_id(run):
