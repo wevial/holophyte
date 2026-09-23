@@ -213,6 +213,16 @@ class ValidateTests(unittest.TestCase):
             FILLED_WITH_CONTRACTS.replace("config/tunnel.yml: 8622\n", ""),
             "no 'relative/path: expected literal' declarations")
 
+    def test_reproduce_section_is_optional_but_never_empty(self):
+        section = ("## Reproduce\n\n1. Open /orders.csv with two orders.\n\n"
+                   "Seen on: the preview deployment at commit abc1234.\n\n")
+        filled = FILLED.replace("## In scope", section + "## In scope")
+        self.assertEqual(tt.validate(tt.parse(filled)), [])
+        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+        empty = FILLED.replace("## In scope", "## Reproduce\n\n## In scope")
+        self.assertTrue(any("Reproduce" in problem for problem in
+                            tt.validate(tt.parse(empty))))
+
     def test_linear_normalized_body_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(LINEAR_NORMALIZED)), [])
 

@@ -238,11 +238,23 @@ def _run_stages(run, task):
     # the implementer as the opening of its brief; empty on every other cut.
     conflicts = merge_conflicts(wt)
     resume = continuation(conn, run_id)
-    sha, unreproduced = (
-        (start_sha, reproduce.routed(resume)) if resume and resume["phase"] != "working"
-        else _implement(target, conn, run_id, task_id, task, branch, wt, fresh,
-                        beat_s, start_sha, ticket, verify_cmd, budget_min,
-                        conflicts=conflicts))
+    # A bug ticket first commits a failing test; one verify passes on is the
+    # not-reproduced route, with no implement turn (KO-659).
+    test = None if resume or conflicts else reproduce.first_turn(
+        target, conn, run_id, provider, task_id, wt, beat_s, start_sha, ticket,
+        body, verify_cmd, budget_min)
+    if resume and resume["phase"] != "working":
+        sha, unreproduced = start_sha, reproduce.routed(resume)
+    elif test and not test.failing:
+        sha, unreproduced = test.sha, True
+    else:
+        # Not fresh once the test commit exists, so a turn adding nothing
+        # keeps it rather than discarding the branch.
+        sha, unreproduced = _implement(
+            target, conn, run_id, task_id, task, branch, wt, fresh and not test,
+            beat_s, test.sha if test else start_sha, ticket, verify_cmd,
+            budget_min, conflicts=conflicts,
+            opening=test.opening() if test else "")
 
     # 2. review rounds, up to the cap the candidate's size earns it. Verify
     # runs before each review and its result goes into the brief; every
@@ -549,9 +561,9 @@ def _transport_timed(target, conn, run_id, beat_s, wt, budget_min, goal):
 
 
 def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
-               start_sha, ticket, verify_cmd, budget_min, conflicts=()):
-    """Implement the ticket, opening with reuse conflicts; return its SHA and
-    whether the reply declared the defect not reproduced (KO-657)."""
+               start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening=""):
+    """Implement the ticket, opening with reuse conflicts and `opening`; return
+    its SHA and whether the reply declared the defect not reproduced (KO-657)."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}\n\nThe full unit suite runs "
                 f"as a pull request check; do not run it in the worktree. Run "
@@ -561,7 +573,7 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     _check_run_cap(target, conn, run_id, budget_min, start_sha)
     out, timed_out = _transport_timed(
         target, conn, run_id, beat_s, wt, budget_min,
-        conflict_brief(branch, conflicts)
+        conflict_brief(branch, conflicts) + opening
         + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
         "The ticket above is the contract, acceptance criteria "
         "included; the task is done only when they hold. Commit your "

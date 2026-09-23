@@ -10,7 +10,9 @@ operator's job.
 `ticketTemplate.md` is the canonical structure and `ticket_template.py`
 validates it. Sections, in order: an H1 title; Summary; What / Why / How
 (the bold keys `**What:**`, `**Why:**`, `**How:**`, plain `What:` also
-accepted); In scope (at most three entries); Out of scope; Acceptance
+accepted); optional Reproduce (a bug's steps and where it was seen;
+its presence makes the first turn a reproduce turn that commits a failing
+test before any fix); In scope (at most three entries); Out of scope; Acceptance
 criteria (at most five, each `Given … when … then …`); Verify command(s)
 (a fenced block of relative-path, non-interactive commands; exit 0 is
 pass); optional Contract checks (`relative/path: exact literal`); optional
