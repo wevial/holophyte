@@ -10,6 +10,7 @@ unless the merge group the queue last tested it on went red (KO-714): that
 is `QueueRemoved`, which gets the babysit's one check fix turn.
 """
 from time import monotonic
+from urllib.parse import quote
 
 import store
 from holophyte import pr, pr_status
@@ -36,6 +37,8 @@ query($owner: String!, $name: String!, $number: Int!) {
 
 # A merge group's workflow run with one of these conclusions failed it.
 GROUP_RED = ("failure", "cancelled")
+# Workflow runs per page of the Actions runs read, GitHub's most.
+RUNS_PAGE = 100
 
 
 class QueueLeft(Exception):
@@ -67,12 +70,9 @@ def red_merge_group(target, pull, since):
     since_ms = pr_status._iso_ms(since)
     if since_ms is None:
         return None
-    answer = pr.rest(target, pull, "GET", f"repos/{pull.repo}/actions/runs"
-                     "?event=merge_group&per_page=100")
-    runs = answer.get("workflow_runs") if isinstance(answer, dict) else None
     prefix = f"gh-readonly-queue/{pr.BASE}/pr-{pull.number}-"
-    ours = [r for r in runs or () if isinstance(r, dict)
-            and str(r.get("head_branch") or "").startswith(prefix)
+    ours = [r for r in group_runs(target, pull, since, since_ms)
+            if str(r.get("head_branch") or "").startswith(prefix)
             and (pr_status._iso_ms(r.get("created_at")) or 0) >= since_ms]
     if not ours:
         return None
@@ -81,6 +81,26 @@ def red_merge_group(target, pull, since):
     red = any(r.get("head_sha") == group and r.get("conclusion") in GROUP_RED
               for r in ours)
     return group if red and isinstance(group, str) and group else None
+
+
+def group_runs(target, pull, since, since_ms):
+    """The repository's `merge_group` workflow runs created since `since`,
+    paged newest first until a page runs short or reaches back past it: the
+    other pull requests' queue runs can fill any number of pages first."""
+    base = (f"repos/{pull.repo}/actions/runs?event=merge_group&created="
+            f"{quote('>=' + since, safe='')}&per_page={RUNS_PAGE}")
+    runs, page = [], 1
+    while True:
+        answer = pr.rest(target, pull, "GET", f"{base}&page={page}")
+        batch = answer.get("workflow_runs") if isinstance(answer, dict) else None
+        if not isinstance(batch, list):
+            return runs
+        runs.extend(r for r in batch if isinstance(r, dict))
+        if len(batch) < RUNS_PAGE or any(
+                (pr_status._iso_ms(r.get("created_at")) or 0) < since_ms
+                for r in batch if isinstance(r, dict)):
+            return runs
+        page += 1
 
 
 def red_group(target, conn, run_id, pull, left):

@@ -39,11 +39,11 @@ def queue_read(queued=True, merged=False, commit=True):
         if queued else None}}}}
 
 
-def group_run(conclusion, created="2026-09-23T12:05:00Z"):
-    """An Actions workflow run of event `merge_group` on pull request 7's
-    queue branch, at `GROUP_SHA`."""
+def group_run(conclusion, created="2026-09-23T12:05:00Z", number=7):
+    """An Actions workflow run of event `merge_group` on pull request
+    `number`'s queue branch, at `GROUP_SHA`."""
     return {"event": "merge_group", "head_sha": GROUP_SHA,
-            "head_branch": "gh-readonly-queue/main/pr-7-" + "e" * 40,
+            "head_branch": f"gh-readonly-queue/main/pr-{number}-" + "e" * 40,
             "status": "completed", "conclusion": conclusion,
             "created_at": created}
 
@@ -52,8 +52,8 @@ class MergeQueueTests(MergeModeFixture):
     def land(self, reads, config='[merge]\nmode = "pr"\n', steps=(),
              groups=(), group_runs=(), head_runs=()):
         """Run a green, quiet candidate to its landing, the fake agent
-        taking `steps` after it, the Actions runs read answering the
-        workflow runs `groups`, and `GROUP_SHA` reporting the check runs
+        taking `steps` after it, the Actions runs read answering its
+        pages `groups` of workflow runs, and `GROUP_SHA` reporting the check runs
         `group_runs`; every other commit reports `head_runs` once queued,
         none before. The naps taken."""
         self.configure(config)
@@ -129,7 +129,7 @@ class MergeQueueTests(MergeModeFixture):
         self.land([queue_read(), queue_read(queued=False),
                    queue_read(queued=False, merged=True)],
                   steps=(Commit("fix: the unit failure"), APPROVE, Idle("")),
-                  groups=[group_run("failure")], group_runs=[UNIT])
+                  groups=[[group_run("failure")]], group_runs=[UNIT])
 
         fake = self.fake
         self.assertEqual(fake.roles, ["implement", "review", "implement"] * 2)
@@ -145,10 +145,25 @@ class MergeQueueTests(MergeModeFixture):
                          [("merged", QUEUE_SHA)])
         self.assertFalse([c for c in self.recorded() if "rerun" in c])
 
+    def test_a_red_merge_group_run_past_the_first_page_still_gets_the_fix(
+            self):
+        # A hundred newer queue runs of another pull request fill page 1.
+        busy = [group_run("success", "2026-09-23T12:09:00Z", number=8)] * 100
+        self.land([queue_read(), queue_read(queued=False),
+                   queue_read(queued=False, merged=True)],
+                  steps=(Commit("fix: the unit failure"), APPROVE, Idle("")),
+                  groups=[busy, [group_run("failure")]], group_runs=[UNIT])
+
+        self.assertIn("CHECK unit", self.fake.turns[3].goal)
+        self.assertTrue([c for c in self.recorded()
+                         if "event=merge_group" in c and c.endswith("page=2")])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", QUEUE_SHA)])
+
     def test_a_removal_with_a_green_merge_group_parks_unfixed_despite_a_red_head(
             self):
         self.land([queue_read(), queue_read(queued=False)],
-                  groups=[group_run("success")],
+                  groups=[[group_run("success")]],
                   group_runs=[dict(UNIT, conclusion="success")],
                   head_runs=[UNIT])
 
@@ -160,7 +175,7 @@ class MergeQueueTests(MergeModeFixture):
 
     def test_a_red_merge_group_from_before_the_enqueue_parks_unfixed(self):
         self.land([queue_read(), queue_read(queued=False)],
-                  groups=[group_run("failure", "2026-09-23T11:59:59Z")],
+                  groups=[[group_run("failure", "2026-09-23T11:59:59Z")]],
                   group_runs=[UNIT])
 
         self.assertEqual(self.fake.roles, ["implement", "review", "implement"])
@@ -173,7 +188,7 @@ class MergeQueueTests(MergeModeFixture):
         self.land([queue_read(), queue_read(queued=False),
                    queue_read(), queue_read(queued=False)],
                   steps=(Commit("fix: the unit failure"), APPROVE, Idle("")),
-                  groups=[group_run("cancelled")], group_runs=[UNIT])
+                  groups=[[group_run("cancelled")]], group_runs=[UNIT])
 
         self.assertEqual(self.fake.roles,
                          ["implement", "review", "implement"] * 2)

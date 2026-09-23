@@ -499,8 +499,8 @@ class MergeModeFixture(LoopFixture):
         empty success, or fails when `refuse_rerun` (KO-707). `merge_queue`
         (KO-712), a list of queue reads served like `states` (`HEAD` the
         branch tip), makes the rules read answer a `merge_queue` rule and
-        `enqueuePullRequest` succeed at `ENQUEUED_AT`; the Actions runs read
-        answers the workflow runs `merge_groups` (KO-714).
+        `enqueuePullRequest` succeed at `ENQUEUED_AT`; the Actions runs
+        read's page n answers the workflow runs `merge_groups[n-1]` (KO-714).
         `push_exit` and `push_sh` control push failure and an optional
         delay; a pull request's REST close (`PATCH`, KO-611) answers
         closed, or fails with `close_exit`. A push
@@ -536,8 +536,8 @@ class MergeModeFixture(LoopFixture):
         queue.mkdir()
         for n, read in enumerate(merge_queue or (), 1):
             (queue / f"{n:03d}.json").write_text(json.dumps(read))
-        (bindir / "groups.json").write_text(
-            json.dumps({"workflow_runs": list(merge_groups)}))
+        for n, runs in enumerate(merge_groups, 1):
+            (queue / f"page-{n}").write_text(json.dumps({"workflow_runs": runs}))
         # Kept on the fixture so `serve()` can hand a resumed run a fresh
         # answer sequence mid-test without re-faking PATH.
         self.answers = answers
@@ -596,8 +596,8 @@ class MergeModeFixture(LoopFixture):
                                          if refuse_rerun else 'exit 0;;\n')
             + f'    *actions/jobs/*/logs*) cat "{self.job_log}" && exit 0;'
             ' exit 1;;\n'
-            f'    *"actions/runs?event=merge_group"*) cat "{bindir}/groups.json";'
-            " exit 0;;\n"
+            f'    *"actions/runs?event=merge_group"*) a="$*"; cat "{queue}/page-'
+            """${a##*&page=}" 2>/dev/null || echo '{}'; exit 0;;\n"""
             '    *"GET repos/example/repo/pulls/"*) '
             "python3 -c 'import json,pathlib; "
             f'p=pathlib.Path("{self.pr_body}"); '
