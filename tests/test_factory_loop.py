@@ -1375,3 +1375,42 @@ class RunLandingTests(MergeModeFixture):
 
     def test_babysitter_landing_carries_the_claim(self):
         landing_path(self, "pr")
+
+
+class VerifyTimeoutRoundTests(LoopFixture):
+    """A round whose verify ran past its cap (KO-673).
+
+    The verify is a real chain under a 1 s cap, so the report the loop
+    reads is the one `run_verify()` writes when a ticket's command runs
+    long, not a scripted string.
+    """
+
+    TASK = dict(a_task(), verify="echo started && sleep 5")
+
+    def run_capped_loop(self, *script):
+        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0):
+            return self.loop(*script, provider=StubProvider(self.TASK))
+
+    def test_an_approved_round_that_only_timed_out_fails_without_a_fix_turn(self):
+        fake, _ = self.run_capped_loop(Commit("work"), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        ((outcome, reason, kind),) = self.read(
+            "SELECT outcome, outcomeReason, failureKind FROM runs")
+        self.assertEqual((outcome, kind), ("failed", "verify"))
+        self.assertIn("[sleep 5]", reason)
+        self.assertIn("timed out after 1s in clause 2 of 2", reason)
+        self.assertNotIn("no progress", reason)
+        self.assertIn(BRANCH, self.branches())
+
+    def test_a_timed_out_round_with_findings_still_gets_its_fix_turn(self):
+        fake, _ = self.run_capped_loop(Commit("work"), REQUEST_CHANGES,
+                                       Commit("fix round 1"), APPROVE)
+
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "implement", "review"])
+        self.assertIn("fix round 1", self.subjects(BRANCH))
+        ((outcome, reason),) = self.read(
+            "SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("timed out after 1s in clause 2 of 2", reason)

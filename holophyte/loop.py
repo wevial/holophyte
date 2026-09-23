@@ -59,6 +59,7 @@ from holophyte.gates import (
     record_unreviewed_verification,
     run_verify,
     sh,
+    verify_timed_out,
     with_baseline,
 )
 from holophyte.gates import (
@@ -764,6 +765,21 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                        f"Round {rnd}: APPROVE\nReviewer verdict:\n{verdict}",
                        provider)
                 return sha, rnd, True
+            if (not ok and not unwitnessed and decision == "APPROVE"
+                    and verify_timed_out(out)):
+                # A fix turn cannot shorten a command the ticket requires:
+                # with nothing to address it would only fail as no progress.
+                head = str(out).splitlines()[0].removeprefix("[verify] FAILED: ")
+                print(f"[holo2] round {rnd}: {head} and the review approved; "
+                      f"no fix round. Leaving branch {branch} at {sha}.")
+                ledger(conn, run_id, task_id, "round",
+                       f"Round {rnd}: APPROVE, but the verify timed out; no fix "
+                       f"round, branch {branch} preserved at {sha}\n\n{out}",
+                       provider)
+                raise RunFailure(failure_reason.verify(
+                    out, verify_cmd, f"{head} and the review approved, so no "
+                    f"fix round was run; branch {branch} preserved at "
+                    f"{sha[:12]}"))
 
         # Refuse a fix turn if the run has no budget left.
         _check_run_cap(target, conn, run_id, budget_min, sha)
