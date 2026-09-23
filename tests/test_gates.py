@@ -321,7 +321,7 @@ class IsolatedVerifyTests(unittest.TestCase):
               patch.dict(os.environ, HOST_SECRET='private'),
               patch.object(isolation, 'run_capped',
                            side_effect=filesystem_runner) as run):
-            ok, out = gates.run_verify(command, self.wt, target=self.target)
+            ok, out = gates.run_verify(command, self.wt, project=self.target)
             self.assertFalse(ok)
             ok, recorded = gates.with_baseline(self.target, self.wt, command, ok, out)
             self.assertIn('No such file', recorded.results[0]['output'])
@@ -340,7 +340,7 @@ class IsolatedVerifyTests(unittest.TestCase):
               patch.object(isolation.review_runner, '_remove_container') as remove,
               patch.object(isolation, 'run_capped', side_effect=expired) as run):
             ok, out = gates.run_verify('sleep 20', self.wt, timeout=3,
-                                       target=self.target)
+                                       project=self.target)
         self.assertFalse(ok)
         self.assertIn('started', out)
         self.assertIn('timed out', out.lower())
@@ -354,7 +354,7 @@ class IsolatedVerifyTests(unittest.TestCase):
             self.config['agents'] = agents
             with patch.object(gates, 'run_capped', return_value=(0, 'done')) as run:
                 self.assertEqual(gates.run_verify('echo done', self.wt, timeout=17,
-                                                 target=self.target), (True, 'done'))
+                                                 project=self.target), (True, 'done'))
             run.assert_called_once_with('echo done', self.wt, 17)
 
     @unittest.skipUnless(os.environ.get('HOLOPHYTE_TEST_DOCKER') == '1',
@@ -367,7 +367,7 @@ class IsolatedVerifyTests(unittest.TestCase):
         if not shutil.which('docker') or subprocess.run(
                 ['docker', 'info'], capture_output=True).returncode:
             self.skipTest('Docker unavailable')
-        ok, out = gates.run_verify(f'cat {self.outside}', self.wt, target=self.target)
+        ok, out = gates.run_verify(f'cat {self.outside}', self.wt, project=self.target)
         self.assertFalse(ok)
         self.assertIn('No such file', out)
         self.assertNotIn('host secret', out)

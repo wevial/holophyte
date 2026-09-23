@@ -340,11 +340,11 @@ def contract_report(contracts, cwd):
         problem = ticket_template.contract_path_problem(path)
         if problem is None and not literal:
             problem = "declaration has an empty expected literal"
-        target = root / path
-        if problem is None and not target.is_file():
+        declared = root / path
+        if problem is None and not declared.is_file():
             problem = "declared file does not exist"
         if problem is None:
-            if literal in target.read_text(errors="replace"):
+            if literal in declared.read_text(errors="replace"):
                 continue
             problem = "expected literal is absent from the file"
         return (f"[verify] FAILED: contract check — {problem}\n"
@@ -463,12 +463,12 @@ def run_capped(cmd, cwd, timeout, on_start=None, *, env=None):
 
 
 def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None,
-               target=None):
+               project=None):
     """Account for a mechanical verification, preserving its tuple interface."""
     from store.working import working
 
     with working(conn, run_id, verify=True):
-        return _run_verify(cmd, cwd, contracts, timeout, target=target,
+        return _run_verify(cmd, cwd, contracts, timeout, project=project,
                            run_id=run_id)
 
 
@@ -500,16 +500,16 @@ def _pass_key(run_id, cmd, cwd):
     return None if dirty else (run_id, str(Path(cwd).resolve()), head, main, cmd)
 
 
-def _verify_command(target, command, cwd, timeout):
+def _verify_command(project, command, cwd, timeout):
     from holophyte import isolation
 
-    route = isolation.route_for(target) if target is not None else isolation.Route()
+    route = isolation.route_for(project) if project is not None else isolation.Route()
     argv = ['/bin/sh', '-c', command] if route.backend == 'container' else command
-    env = isolation.environment(target) if target is not None else None
+    env = isolation.environment(project) if project is not None else None
     return isolation.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped)
 
 
-def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None,
+def _run_verify(cmd, cwd, contracts=None, timeout=None, *, project=None,
                 run_id=None):
     """Mechanical acceptance check. Returns (ok, output), with structured
     command facts on failed output's `failure` attribute. Runs via shell on
@@ -534,13 +534,13 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None,
         return True, passed + (
             "[verify] not run again: passed earlier in this run at head"
             f" {key[2][:12]} with main at {key[3][:12]}")
-    ok, out = _run_command(cmd, cwd, timeout, target)
+    ok, out = _run_command(cmd, cwd, timeout, project)
     if ok and key is not None:
         _PASSES.add(key)
     return ok, passed + out if ok else out
 
 
-def _run_command(cmd, cwd, timeout, target):
+def _run_command(cmd, cwd, timeout, project):
     """Run a verify command once; (ok, output) as `_run_verify` returns it,
     less the contract line."""
     # Complete, simple command lines can be marked without splitting the
@@ -560,7 +560,7 @@ def _run_command(cmd, cwd, timeout, target):
     marked = bool(clauses) and len(clauses) > 1
     try:
         returncode, out = _verify_command(
-            target,
+            project,
             instrumented_script(clauses, stop_on_failure=True) if marked else cmd,
             cwd, VERIFY_TIMEOUT if timeout is None else timeout)
     except subprocess.TimeoutExpired as expired:
@@ -691,10 +691,10 @@ MERGE_LOCK_WAIT_SEC = 180
 MERGE_LOCK_POLL_SEC = 1.0
 
 
-def merge_lock_path(target):
-    """The merge lock for `target`, beside its store in the state directory
+def merge_lock_path(project):
+    """The merge lock for `project`, beside its store in the state directory
     -- never in the repository, where a task's `git add -A` could commit it."""
-    return target.holo_dir / "merge.lock"
+    return project.holo_dir / "merge.lock"
 
 
 def read_merge_lock(path):
@@ -719,9 +719,9 @@ def read_merge_lock(path):
 
 
 @contextlib.contextmanager
-def merge_lock(target, run_id, wait=None, poll=None, on_wait=None,
+def merge_lock(project, run_id, wait=None, poll=None, on_wait=None,
                extend_wait=None, operation="gate"):
-    """Hold `target`'s merge lock for the block; raise `MergeLockHeld` if it
+    """Hold `project`'s merge lock for the block; raise `MergeLockHeld` if it
     cannot be had within `wait` seconds. `extend_wait(holder, elapsed)` may
     return a positive poll delay to keep waiting past that default bound.
 
@@ -739,7 +739,7 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None,
 
     wait = MERGE_LOCK_WAIT_SEC if wait is None else wait
     poll = MERGE_LOCK_POLL_SEC if poll is None else poll
-    path = merge_lock_path(target)
+    path = merge_lock_path(project)
     path.parent.mkdir(parents=True, exist_ok=True)
     stamp = f"{run_id if run_id is not None else '-'} {time():.3f}\n"
     started = monotonic()
@@ -841,11 +841,11 @@ class VerificationOutput(str):
         return value
 
 
-def run_baseline(target, wt, tier, conn=None, run_id=None):
+def run_baseline(project, wt, tier, conn=None, run_id=None):
     """Run one baseline tier in order, stopping at its first failed command."""
     from holophyte.config_tables import verify_config
 
-    config = verify_config(target)
+    config = verify_config(project)
     if tier not in ("always", "before_merge"):
         raise ValueError(f"unknown verify tier: {tier}")
     results, reports = [], []
@@ -853,7 +853,7 @@ def run_baseline(target, wt, tier, conn=None, run_id=None):
     failure = None
     for command in getattr(config, tier):
         ok, out = run_verify(command, wt, timeout=config.timeout_sec,
-                             conn=conn, run_id=run_id, target=target)
+                             conn=conn, run_id=run_id, project=project)
         results.append({"source": "baseline", "tier": tier,
                         "command": command, "exitCode": 0 if ok else 1,
                         "output": str(out)})
@@ -864,7 +864,7 @@ def run_baseline(target, wt, tier, conn=None, run_id=None):
     return ok, VerificationOutput("\n".join(reports), results, failure=failure)
 
 
-def with_baseline(target, wt, command, ok, out, conn=None, run_id=None,
+def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
                   *, before_merge=False):
     """Complete a ticket verify with the applicable target baseline tiers.
 
@@ -884,7 +884,7 @@ def with_baseline(target, wt, command, ok, out, conn=None, run_id=None,
     for tier in (("always", "before_merge") if before_merge else ("always",)):
         if not ok:
             break
-        ok, baseline = run_baseline(target, wt, tier, conn, run_id)
+        ok, baseline = run_baseline(project, wt, tier, conn, run_id)
         failure = baseline.failure
         results.extend(baseline.results)
         if baseline:

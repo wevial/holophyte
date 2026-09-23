@@ -198,7 +198,7 @@ class CoveringScopeQuestionTests(unittest.TestCase):
                 patch.object(babysitter, "run_verify", return_value=(True, "ok")))
             with self.assertRaises(Captured):
                 babysitter._review_fix(
-                    target=Mock(config=Mock(
+                    project=Mock(config=Mock(
                         return_value={"merge": {"approve": "auto"}})),
                     conn=None, run_id=602, provider=None, task_id=1,
                     branch="task", wt=self.root, sha=self.head,
