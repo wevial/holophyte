@@ -1,4 +1,5 @@
-"""KO-712: a pull-request-mode run lands through `main`'s merge queue."""
+"""KO-712: a pull-request-mode run lands through `main`'s merge queue; KO-714:
+a removal for red Actions checks on the merge group gets the one fix turn."""
 from __future__ import annotations
 
 import sys
@@ -17,32 +18,52 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 
 # The queue's merge commit, distinct from the REST merge's `MERGE_SHA`.
 QUEUE_SHA = "c0ffee" * 6 + "c0ff"
+# The merge-group commit the queue built from main plus the pull request.
+GROUP_SHA = "9a0b" * 10
+UNIT = {"name": "unit", "status": "completed", "conclusion": "failure",
+        "html_url": "https://github.com/example/repo/actions/runs/5/job/42",
+        "id": 42, "app": {"slug": "github-actions"}}
+FAILED = "FAIL: test_x (tests.test_y.Case.test_x)"
 
 
-def queue_read(queued=True, merged=False, commit=True):
+def queue_read(queued=True, merged=False, commit=True, group=None):
     """The queue read's answer as GitHub gives it; `commit=False` is a merge
-    read before GitHub has named the merge commit."""
+    read before GitHub has named the merge commit, `group` the merge-group
+    commit of a queued entry."""
     return {"data": {"repository": {"pullRequest": {
         "state": "MERGED" if merged else "OPEN", "merged": merged,
         "mergeCommit": {"oid": QUEUE_SHA} if merged and commit else None,
-        "isInMergeQueue": queued}}}}
+        "isInMergeQueue": queued,
+        "mergeQueueEntry": {"headCommit": {"oid": group}}
+        if queued and group else None}}}}
 
 
 class MergeQueueTests(MergeModeFixture):
-    def land(self, reads, config='[merge]\nmode = "pr"\n'):
-        """Run a green, quiet candidate to its landing; the naps taken."""
+    def land(self, reads, config='[merge]\nmode = "pr"\n', steps=(),
+             group_runs=()):
+        """Run a green, quiet candidate to its landing, the fake agent
+        taking `steps` after it and `GROUP_SHA` reporting `group_runs`
+        (every other commit none); the naps taken."""
         self.configure(config)
         self.fake_route(merge_queue=reads)
+        self.job_log.write_text("".join(f"step {n}\n" for n in range(200))
+                                + FAILED)
         naps = []
         with patch.object(holophyte.pr, "SLEEP", naps.append), \
                 patch.object(holophyte.merge_queue, "monotonic",
-                             side_effect=lambda: sum(naps)):
-            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                      provider=self.provider())
+                             side_effect=lambda: sum(naps)), \
+                patch("holophyte.pr_status._check_runs_of",
+                      lambda target, pull, sha:
+                      list(group_runs) if sha == GROUP_SHA else []):
+            self.fake, _ = self.loop(Commit("the scripted work"), APPROVE,
+                                     Idle(""), *steps, provider=self.provider())
         return naps
 
     def rest_merges(self):
         return [c for c in self.recorded() if "--method PUT" in c]
+
+    def enqueued(self):
+        return [v["sha"] for kind, v in self.api_calls() if kind == "enqueue"]
 
     def test_a_queued_candidate_is_enqueued_once_and_lands_as_the_queue_merged_it(
             self):
@@ -88,6 +109,51 @@ class MergeQueueTests(MergeModeFixture):
         self.assertNotIn("enqueue", [kind for kind, _ in self.api_calls()])
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
+
+    def test_a_removal_red_on_the_merge_group_gets_a_fix_turn_and_requeues(
+            self):
+        self.land([queue_read(group=GROUP_SHA), queue_read(queued=False),
+                   queue_read(queued=False, merged=True)],
+                  steps=(Commit("fix: the unit failure"), APPROVE, Idle("")),
+                  group_runs=[UNIT])
+
+        fake = self.fake
+        self.assertEqual(fake.roles, ["implement", "review", "implement"] * 2)
+        for part in ("CHECK unit", GROUP_SHA, FAILED, "step 199"):
+            self.assertIn(part, fake.turns[3].goal)
+        self.assertNotIn("head commit", fake.turns[3].goal)
+        first, fixed = self.pushed()[0][1], self.pushed()[-1][1]
+        self.assertIn("fix: the unit", self.git("log", "-1", "--format=%s",
+                                                fixed))
+        self.assertEqual(fake.turns[4].candidate_sha, fixed)
+        self.assertEqual(self.enqueued(), [first, fixed])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", QUEUE_SHA)])
+        self.assertFalse([c for c in self.recorded() if "rerun" in c])
+
+    def test_a_removal_with_a_green_merge_group_parks_unfixed(self):
+        self.land([queue_read(group=GROUP_SHA), queue_read(queued=False)],
+                  group_runs=[dict(UNIT, conclusion="success")])
+
+        self.assertEqual(self.fake.roles, ["implement", "review", "implement"])
+        self.assertIn("removed from the merge queue", self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
+    def test_a_second_red_removal_after_the_fix_turn_parks_naming_the_checks(
+            self):
+        self.land([queue_read(group=GROUP_SHA), queue_read(queued=False),
+                   queue_read(group=GROUP_SHA), queue_read(queued=False)],
+                  steps=(Commit("fix: the unit failure"), APPROVE, Idle("")),
+                  group_runs=[UNIT])
+
+        self.assertEqual(self.fake.roles,
+                         ["implement", "review", "implement"] * 2)
+        self.assertEqual(len(self.enqueued()), 2)
+        self.assertIn(f"checks unit failed on the merge group {GROUP_SHA[:12]}",
+                      self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
 
 
 if __name__ == "__main__":
