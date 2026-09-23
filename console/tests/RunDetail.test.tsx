@@ -743,6 +743,15 @@ test("run page renders babysitter waits and a twelve minute fix as labelled segm
   expect(within(timeline).getByRole("img", { name: "quiet 2m 00s" })).toBeTruthy();
 });
 
+test("a pending files 409 renders the branch wait in muted text", async () => {
+  const pending = () => Response.json({ error: "branch task/ko-232 not cut yet", run: 91, pending: true }, { status: 409 });
+  await mount(DETAIL, T + 20 * MINUTE, pending);
+  const note = screen.getByRole("region", { name: "Files touched" }).querySelector("[data-files-note]")!;
+  expect(note.textContent).toBe("branch task/ko-232 not cut yet");
+  expect(note.className).toContain("text-muted");
+  expect(note.className).not.toContain("text-bad");
+});
+
 test("Turns lists recorded sessions and opens rendered transcript entries in a panel", async () => {
   const requested: string[] = [];
   const fetch: Fetch = async url => {

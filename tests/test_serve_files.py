@@ -21,6 +21,7 @@ from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+from tests.phase_fixture import finish_run  # noqa: E402
 
 GIT_IDENTITY = ("-c", "user.name=test", "-c", "user.email=test@example.com",
                 "-c", "commit.gpgsign=false")
@@ -113,6 +114,34 @@ class LiveRunFilesTests(ServeTestCase):
         code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
         self.assertEqual(code, 409, body)
         self.assertIn(self.BRANCH, body["error"])
+
+
+class PendingRunFilesTests(ServeTestCase):
+    BRANCH = "task/ko-7-ticket-7"
+
+    def setUp(self):
+        super().setUp()
+        subprocess.run(["git", "init", "-q", "-b", "main"],
+                       cwd=self.target, check=True, capture_output=True)
+        self.seed()
+        with store.open(str(self.db)) as conn:
+            store.set_branch(conn, self.run, self.BRANCH)
+        self.start()
+
+    def test_live_run_without_branch_or_worktree_is_pending(self):
+        code, _, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 409)
+        self.assertEqual(body, {"error": f"branch {self.BRANCH} not cut yet",
+                                "run": self.run, "pending": True})
+
+    def test_ended_run_without_branch_still_reports_it_missing(self):
+        with store.open(str(self.db)) as conn:
+            finish_run(conn, self.run, "failed", "fixture ended")
+        code, _, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 409)
+        self.assertEqual(body, {
+            "error": f"branch {self.BRANCH} no longer exists in the repository",
+            "run": self.run})
 
 
 if __name__ == "__main__":

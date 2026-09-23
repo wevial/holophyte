@@ -172,7 +172,7 @@ function Card({
             </ul>
           )}
         </div>
-        <FilesTouched files={files.files} error={files.error} status={files.status} loading={files.loading} />
+        <FilesTouched files={files.files} error={files.error} status={files.status} pending={files.pending} loading={files.loading} />
       </div>
       <footer className="mt-3 flex gap-2">
         <ActionButton>Kill run</ActionButton>
