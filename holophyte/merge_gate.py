@@ -4,10 +4,12 @@
 (`_sync_main_into_branch()`, with a conflict handed to the implementer
 first and otherwise parked on `GATE_CONFLICT_QUESTION`), the pre-merge
 verify, the drift check -- run under `_gate_lock()`, the loop's take on
-`merge_lock()`. `_park_for_approval()` stops a verified candidate for a
-human under `[merge] approve = "human"`; `_resume_at_merge_gate()` is the
-run that carries the approved candidate back through the gate; `_merge()`
-is the `--no-ff` merge onto main and its one self-resolved conflict.
+`merge_lock()`, in local mode; in pull-request mode the lock covers the
+push-and-open alone (KO-644). `_park_for_approval()` stops a verified
+candidate for a human under `[merge] approve = "human"`;
+`_resume_at_merge_gate()` is the run that carries the approved candidate
+back through the gate; `_merge()` is the `--no-ff` merge onto main and its
+one self-resolved conflict.
 `_run_stages()` in `holophyte.loop` and `land()` in `holophyte.run` call in;
 back-references into the loop are deferred imports inside function bodies.
 
@@ -34,7 +36,7 @@ from holophyte.gates import (
     sh,
     with_baseline,
 )
-from holophyte.pullrequest import _open_pr, _resume_on_pr
+from holophyte.pullrequest import _prepare_pr, _push_and_open, _resume_on_pr
 from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 from holophyte.stop import stop_if_requested
@@ -141,23 +143,33 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
     print(f"[holo2] {task_id}: approved candidate {branch} at {sha[:12]}"
           f" from run {carried.run_id}; skipping to the merge gate")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-    with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
-                    beat_s):
+    ticket = f"{task}\n\n{body}" if body else task
+    # Under `mode = "pr"` the lock covers the push-and-open alone, as in
+    # `_run_stages()` (KO-644).
+    if merge.mode == "pr":
         ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,
-                              contracts, f"{task}\n\n{body}" if body else task,
-                              budget_min, sync_main=merge.mode != "pr")
-        if merge.mode == "pr":
-            url = _open_pr(target, conn, run_id, task_id, task, branch, body,
-                           beat_s, wt, started, budget_min, issue_url)
-            sha = sh(["git", "rev-parse", branch], wt)
-        else:
+                              contracts, ticket, budget_min, sync_main=False)
+        title, text = _prepare_pr(target, conn, run_id, task_id, task, branch,
+                                  body, beat_s, wt, started, budget_min,
+                                  issue_url)
+        with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            url = _push_and_open(target, conn, run_id, branch, title, text,
+                                 beat_s)
+        sha = sh(["git", "rev-parse", branch], wt)
+    else:
+        with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
+                                  issue_id, branch, wt, beat_s, sha,
+                                  verify_cmd, contracts, ticket, budget_min)
             if carried.paused and merge.approve == "human":
                 _park_for_approval(conn, run_id, provider, task_id, branch, sha)
             return run_state.land(replace(run, sha=sha), ok)
     run = replace(run, sha=sha, pr_url=url)
-    run = _babysit(run, beat_s, f"{task}\n\n{body}" if body else task,
-                   verify_cmd, contracts, criteria, reviewed=sha, verified=sha)
+    run = _babysit(run, beat_s, ticket, verify_cmd, contracts, criteria,
+                   reviewed=sha, verified=sha)
     return run_state.land(run, True)
 
 
@@ -330,7 +342,8 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
     `sync_main` is off -- PR mode, where the merge is the remote's), the
     pre-merge verify on the result, then the drift check. Returns the
     verify's `ok`, for the merged ledger line, and the branch's sha as the
-    gate leaves it. The caller holds the merge lock."""
+    gate leaves it. In local mode the caller holds the merge lock; in PR
+    mode it runs unlocked, as the babysitter's does."""
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
     if sync_main:
         sha = _sync_main_into_branch(target, conn, run_id, provider, task_id,

@@ -160,19 +160,72 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.fake_route()
         observed = []
         def open_and_observe(*args, **kwargs):
-            url = holophyte.pullrequest._open_pr(*args, **kwargs)
+            url = holophyte.pullrequest._push_and_open(*args, **kwargs)
             observed.append((url, self.read(
                 "SELECT phase, endedAt, prUrl FROM runs"), self.read(
                 "SELECT summary FROM runEvents WHERE kind = 'pull_request'"
                 " ORDER BY seq")))
             return url
-        with patch.object(holophyte.loop, "_open_pr", open_and_observe):
+        with patch.object(holophyte.loop, "_push_and_open", open_and_observe):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
         (url, rows, events), = observed
         self.assertEqual(url, self.URL)
         self.assertEqual(rows, [("merge_gate", None, url)])
         self.assertEqual(events[-1], (f"pull request open: {url}",))
+
+    def lock_witness(self):
+        """A log, and the shell line that appends whether the merge lock
+        file exists at the moment it runs, for the verify and the push."""
+        log = self.db.parent / "lock.log"
+        path = holophyte.gates.merge_lock_path(self.tgt)
+        return log, lambda who: (
+            f"if [ -e {shlex.quote(str(path))} ]; then echo {who} locked;"
+            f" else echo {who} free; fi >> {shlex.quote(str(log))}")
+
+    def test_the_gate_verifies_unlocked_and_pushes_under_the_lock(self):
+        """KO-644: the pre-merge verify shares nothing another run's gate
+        touches, so it runs with no lock held; the push, which moves refs
+        in the target checkout, runs under it."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        log, witness = self.lock_witness()
+        self.fake_route(push_sh=f"  {witness('push')}")
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  provider=StubProvider(dict(a_task(), body=self.BODY,
+                                             verify=witness("verify"))))
+        # The review round's verify, then the gate's, then the push.
+        self.assertEqual(log.read_text().splitlines(),
+                         ["verify free", "verify free", "push locked"])
+        self.assertEqual(self.read("SELECT prUrl FROM runs"), [(self.URL,)])
+
+    def test_a_held_lock_parks_after_the_verify_and_before_the_push(self):
+        """A lock another run holds past the wait still parks the run on
+        it, now with the gate's verify run and passed -- a failed one
+        parks on its own question -- and nothing pushed."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        log, witness = self.lock_witness()
+        self.fake_route(push_sh=f"  {witness('push')}")
+        gate = holophyte.loop._merge_gate
+
+        def taken_by_run_7(*args, **kwargs):
+            # Run 7 takes the lock as this run enters the gate; the claim's
+            # own fetch, under the same lock, is long done.
+            holophyte.gates.merge_lock_path(self.tgt).write_text("7 0\n")
+            return gate(*args, **kwargs)
+
+        with (patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0),
+              patch.object(holophyte.loop, "_merge_gate", taken_by_run_7)):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=StubProvider(dict(a_task(), body=self.BODY,
+                                                 verify=witness("verify"))))
+        # The review round's verify, then the gate's with run 7's lock
+        # held; no push.
+        self.assertEqual(log.read_text().splitlines(),
+                         ["verify free", "verify locked"])
+        self.assertFalse(any(c.startswith("git push") for c in self.recorded()))
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("merge_lock",)])
+        self.assertTrue(self.question().startswith("merge lock: merge lock"))
 
     def test_an_open_pull_request_on_the_branch_is_adopted_not_created(self):
         """KO-407: a run resumed on a branch its failed predecessor left

@@ -91,7 +91,7 @@ class MediaTests(unittest.TestCase):
                 return_value="https://github.com/example/repo.git",
             ),
         ):
-            pullrequest._open_pr(
+            title, text = pullrequest._prepare_pr(
                 self.target,
                 None,
                 None,
@@ -103,6 +103,9 @@ class MediaTests(unittest.TestCase):
                 self.repo,
                 monotonic(),
                 30,
+            )
+            pullrequest._push_and_open(
+                self.target, None, None, "candidate", title, text, 1
             )
         self.visibility = visibility
         self.ledger = ledger
