@@ -27,6 +27,9 @@ in [The daemon's actions](daemon.md). A project with no store answers 503.
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2},
   "actions": false,
   "config_edit": false,
+  "route_labels": {"implementer": "claude opus", "reviewer": "codex gpt-5.6-sol",
+                   "reviewer_fallback": null, "adjudicator": "codex gpt-5.6-sol",
+                   "writer": "claude opus"},
   "runs": [
     {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease", "phase": "working",
      "started_ms": 1788450461675, "heartbeat_age_ms": 71989, "elapsed_ms": 72816,
@@ -49,7 +52,11 @@ carrying the same value, kept for one release. `actions` is whether
 console draws its action buttons disabled while it is `false`.
 `config_edit` is whether `[serve] config_edit = true` opened `GET /config`
 and `PUT /config`; the console's settings sheet is read-only, naming the
-key, while it is `false`. Every `host` passes through `[report] host_label`.
+key, while it is `false`. `route_labels` names what each seat is configured
+to run, labelled as a recorded turn is: the command's first word plus its
+`-m`/`--model` value. A seat left unset shows the default the loop
+dispatches, an unset `writer` the implementer's label, and an unset
+`reviewer_fallback` null. Every `host` passes through `[report] host_label`.
 
 ## `GET /runs?limit=N`
 

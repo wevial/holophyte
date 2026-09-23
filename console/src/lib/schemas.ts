@@ -30,6 +30,7 @@ export const statusSchema = z.looseObject({
   active_routes: z.record(z.string(), z.looseObject({
     command: z.string().nullable(), fallback: z.string().optional(),
   })).optional(),
+  route_labels: z.record(z.string(), z.string().nullable()).optional(),
   supervisor: supervisorSchema,
   thresholds: z.looseObject({ heartbeat_stale_ms: z.number(), strikes: z.number() }),
   actions: z.boolean().optional(), config_edit: z.boolean().optional(),
