@@ -785,6 +785,8 @@ NEWER_SCHEMA = "newer than the version"
 def supervise(target, provider=None, interval=None, wait=None, out=None):
     from holophyte.admission import disabled_startup
     if disabled_startup(target, out):
+        # Migrating is not dispatch: `project enable` needs the owner's stamp.
+        wait_for_migration(target, provider, threading.Event(), out)
         return
     return _supervise(target, provider, interval, wait, out)
 

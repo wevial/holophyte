@@ -349,8 +349,10 @@ admission CHECK to include `disabled` and admit the new intervention actions.
 Pull, then restart the supervisor, then restart everything else in any order.
 The supervisor alone migrates the store, under the merge lock at startup and
 again after its own re-execution, and records a `migration` event with `from`
-and `to` versions. Other writable opens refuse older schemas and name the
-supervisor as the owner. The loop keeps its schema-bump worker drain and waits
+and `to` versions in the migration's own transaction. A disabled project's
+supervisor still migrates, then exits without sweeping or dispatching, so
+`project enable` can open the store. Other writable opens refuse older schemas
+and name the supervisor as the owner. The loop keeps its schema-bump worker drain and waits
 for the supervisor's stamp after re-execution. The read-only daemon can serve
 an adjacent newer schema during this window; `/status` reports `schema_version`
 as read from the store.

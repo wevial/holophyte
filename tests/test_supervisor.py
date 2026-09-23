@@ -60,6 +60,17 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
         lock.assert_not_called()
         self.assertIn("disabled: retired", out.getvalue())
 
+    def test_disabled_supervisor_still_migrates_its_store(self):
+        store.set_admission(self.conn, 1, "disabled", "retired")
+        self.conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION - 1}")
+        with patch.object(holophyte.supervisor, "acquire_supervisor_lock") as lock:
+            holophyte.supervisor.supervise(self.tgt, out=io.StringIO())
+        lock.assert_not_called()
+        # A non-owner open, as `project enable` makes, is no longer refused.
+        store.open(self.tgt.store_path).close()
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 1)
+
     def a_round(self, run_id, number=1, at=T0 + 20 * MINUTE):
         store.record_review_round(
             self.conn, run_id, number, "changes_requested", "reviewer",
@@ -264,6 +275,22 @@ class MigrationStartupTests(SweepTestCase):
             migrate_store(self.tgt)
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 0)
+
+    def test_failed_migration_event_leaves_the_store_unmigrated(self):
+        from holophyte.schema_owner import migrate_store
+
+        older = store.SCHEMA_VERSION - 1
+        self.conn.execute(f"PRAGMA user_version = {older}")
+        with patch('holophyte.schema_owner.event',
+                   side_effect=sqlite3.OperationalError("disk I/O error")):
+            with self.assertRaises(sqlite3.OperationalError):
+                migrate_store(self.tgt)
+        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], older)
+        migrate_store(self.tgt)
+        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0],
+                         store.SCHEMA_VERSION)
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 1)
 
     def test_current_store_reaches_sweep_despite_stale_merge_lock(self):
         run_id = self.a_run(phase="merge_gate")

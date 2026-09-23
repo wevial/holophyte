@@ -504,15 +504,16 @@ def _readable_from(conn, version):
     return floor if isinstance(floor, int) else None
 
 
-def open(path, *, migrate=False):  # noqa: A001 - the ticket names this entry point open()
+def open(path, *, migrate=False, on_migrate=None):  # noqa: A001 - the ticket names this entry point open()
     """Open the store at `path` in WAL mode and return the connection.
 
     Refuse a newer `user_version` with `SchemaNewer` (a `SystemExit`) before
     writing, unless its migrate note's `readableFrom` floor is at or below
     this build's version; such a store is opened as it is, never migrated or
     indexed, so its stamp is never lowered. Only `migrate="owner"` may
-    initialize or migrate the store and create missing indexes; other
-    callers refuse older stores with `SchemaOlder` before any writes. Refuse
+    initialize or migrate the store and create missing indexes, passing
+    `on_migrate` to `init()`; other callers refuse older stores with
+    `SchemaOlder` before any writes. Refuse
     with `SchemaError` a store whose foreign keys name a missing table.
     Require WAL so supervisor reads can overlap loop writes; a filesystem
     that cannot enable it raises rather than silently degrading."""
@@ -546,7 +547,7 @@ def open(path, *, migrate=False):  # noqa: A001 - the ticket names this entry po
             # current version and stamps it there, in one transaction.
             # init() refuses a dangling key before it commits, so a store
             # this refuses is left as it was found.
-            init(conn)
+            init(conn, on_migrate)
         # After migrating, not before: an older store may reference a table
         # only the ladder creates. Read-only, ahead of the WAL switch and the
         # index writes, both of which persist.
@@ -594,21 +595,13 @@ ADDED_COLUMNS = (
     ("runs", "workStartedAt", "workStartedAt INTEGER"),
     ("runs", "verifyMs", "verifyMs INTEGER"),
     ("runs", "verifyStartedAt", "verifyStartedAt INTEGER"),
-    (
-        "runs",
-        "timeBoxMs",
-        "timeBoxMs INTEGER",
-    ),
+    ("runs", "timeBoxMs", "timeBoxMs INTEGER"),
     (
         "runs",
         "resumePhase",
         "resumePhase TEXT " + _enums.check_clause("resumePhase", _enums.ResumePhase),
     ),
-    (
-        "runs",
-        "ticketSnapshot",
-        "ticketSnapshot TEXT",
-    ),
+    ("runs", "ticketSnapshot", "ticketSnapshot TEXT"),
     (
         "runs",
         "outcomeClass",
@@ -712,12 +705,14 @@ BACKFILLS = (
 )
 
 
-def init(conn):
+def init(conn, on_migrate=None):
     """Create every table the state model defines, if absent, and migrate.
 
     Add missing columns, repair historical rows, and rebuild constrained
     tables inside one transaction with foreign keys checked before commit.
-    Repeated initialization preserves existing rows and the schema version.
+    A migration calls `on_migrate(conn, from_version)` in that transaction,
+    so its caller's record commits or rolls back with the stamp. Repeated
+    initialization preserves existing rows and the schema version.
     """
     foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
     conn.execute("PRAGMA foreign_keys = OFF")
@@ -768,6 +763,8 @@ def init(conn):
         # version means.
         if version < SCHEMA_VERSION:
             _record_migration(conn, version)
+            if on_migrate is not None:
+                on_migrate(conn, version)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION:d}")
         # A migration that left a key naming a missing table rolls back here
         # rather than committing a store that refuses its own writes.

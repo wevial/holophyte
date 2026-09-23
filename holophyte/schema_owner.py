@@ -49,15 +49,14 @@ def migrate_store(target, provider=None):
         version = migration_version(target.store_path)
         if version == store.SCHEMA_VERSION:
             return
-        conn = store.open(target.store_path, migrate="owner")
-        try:
-            with store.transaction(conn):
-                row = conn.execute(
-                    "SELECT id FROM projects WHERE repoPath = ? ORDER BY id LIMIT 1",
-                    (str(target.path),)).fetchone()
-                project = row[0] if row else store.ensure_project(
-                    conn, provider.team if provider else str(target.path), target.path)
-                event(conn, project, "migration", json.dumps({
-                    "from": version, "to": store.SCHEMA_VERSION}), int(time() * 1000))
-        finally:
-            conn.close()
+        def record(conn, from_version):
+            # Inside init()'s transaction: the stamp never commits without it.
+            row = conn.execute(
+                "SELECT id FROM projects WHERE repoPath = ? ORDER BY id LIMIT 1",
+                (str(target.path),)).fetchone()
+            project = row[0] if row else store.ensure_project(
+                conn, provider.team if provider else str(target.path), target.path)
+            event(conn, project, "migration", json.dumps({
+                "from": from_version, "to": store.SCHEMA_VERSION}), int(time() * 1000))
+
+        store.open(target.store_path, migrate="owner", on_migrate=record).close()
