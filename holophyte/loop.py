@@ -566,7 +566,8 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         "included; the task is done only when they hold. Commit your "
         "work with a clear message. Stay strictly on-scope; do not "
         "expand the task. Commit messages carry no tool attribution or co-author "
-        "lines for an AI." + _capture_brief(target, ticket) + reproduce.BRIEF)
+        "lines for an AI." + _capture_brief(target, ticket, task_id)
+        + reproduce.BRIEF)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate

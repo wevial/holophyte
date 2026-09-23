@@ -56,7 +56,9 @@ commands, sends the diff and the ticket to an independent reviewer inside a
 hardened container, gives the implementer at most two fix rounds, asks a
 terminal adjudicator for a PASS or FAIL, and merges with `--no-ff`. A
 separate supervisor sweeps the store for runs that died and frees their
-leases. A read-only daemon serves the store's state as JSON, and a
+leases. A daemon serves the store's state as JSON; it reads by default
+and writes only through two opt-ins, `[serve] actions` and `config_edit`
+([The daemon's actions](reference/daemon.md)). A
 menu-bar drawer answers "what should I look at next?" from it. The same
 daemon serves the console at `/`: a browser view of the floor, the ledger
 and each run's detail, built from `console/` with Bun. All of it
@@ -84,7 +86,7 @@ settings go in `~/.holophyte/<slug>/config.toml`.
 ```
 python3 factory.py /path/to/repo                  # run the loop
 python3 factory.py --supervise /path/to/repo      # keep it honest
-python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback
+python3 factory.py --serve 7710 /path/to/repo         # JSON daemon on loopback; writes only with [serve] actions or config_edit
 ```
 
 The full mode list is in the [CLI reference](reference/cli.md); every

@@ -3,16 +3,18 @@
 `--serve PORT|HOST:PORT` answers the JSON paths below and serves the
 console's built files at `/`. Every response carries
 `Cache-Control: no-store` and `Access-Control-Allow-Origin: *`; the JSON
-ones `Content-Type: application/json`; every request opens the store
+ones `Content-Type: application/json`; every GET route opens the store
 read-only and closes it. The open origin is for the console page, which
 one daemon serves and which fetches the others from the browser: without
-the header the browser refuses a cross-origin answer. The daemon is
-read-only; on loopback the bind address is the whole boundary, and beyond
-it every JSON route but `/peers` is behind a bearer token
-([Authentication](#authentication)). Unknown paths are
-404 and any method but GET is 405, both with a JSON `error`, except the
-three `POST /actions/...` routes `[serve] actions = true` opens, documented
-in [The daemon's actions](daemon.md). A project with no store answers 503.
+the header the browser refuses a cross-origin answer. The daemon reads by
+default and writes only through two opt-ins, documented in
+[The daemon's actions](daemon.md): the `POST /actions/...` routes
+`[serve] actions = true` opens and the `PUT /config` route
+`[serve] config_edit = true` opens. On loopback the bind address is the
+whole boundary for reads, and beyond it every JSON route but `/peers` is
+behind a bearer token ([Authentication](#authentication)). Unknown paths
+are 404 and any method but GET is 405, both with a JSON `error`, except
+those writing routes. A project with no store answers 503.
 
 ## `GET /status`
 
@@ -484,23 +486,28 @@ scheme or any other value is 401 with the body `{}` and no store access,
 and nothing about the attempt is logged. `GET /`, the console's files
 under it and `GET /peers` are served without the header, so the page can
 load and learn where its peers are before it has a token to present. A
-daemon bound to loopback never asks: `--serve 7710` answers every route
-open, token file or not.
+daemon bound to loopback never asks on the read routes: `--serve 7710`
+answers them open, token file or not. The opt-in routes are the
+exception: `[serve] actions` or `[serve] config_edit` needs
+`[serve] token_file` on every bind, loopback included (the daemon
+refuses to start without it), and `POST /actions/...`, `GET /config` and
+`PUT /config` answer only to the bearer.
 
 A page served by one daemon polls the others from the browser, and a
 cross-origin GET carrying `Authorization` is not a simple request, nor
-is the console's `POST /actions/...` with the bearer and a JSON body: the
+is the console's `POST /actions/...` or `PUT /config` with the bearer
+and a JSON body: the
 browser first sends a CORS preflight, `OPTIONS` on the path with
 `Access-Control-Request-Headers: authorization` (`authorization,
 content-type` for an action). Every daemon answers it on any path with
 204, no body, `Access-Control-Allow-Origin: *`,
-`Access-Control-Allow-Methods: GET, POST`, `Access-Control-Allow-Headers:
+`Access-Control-Allow-Methods: GET, POST, PUT`, `Access-Control-Allow-Headers:
 authorization, accept, content-type` and `Access-Control-Max-Age: 600`,
 token or not: a preflight never carries credentials, so the answer
 discloses nothing and touches no store, and the request it clears is
 still refused without the bearer. Every other method but GET stays 405, `POST`
-included on every path but the `/actions/` routes of
-[The daemon's actions](daemon.md).
+included on every path but the `/actions/` routes and `PUT` on every path
+but `/config`, both in [The daemon's actions](daemon.md).
 
 ## Errors
 
@@ -510,7 +517,7 @@ included on every path but the `/actions/` routes of
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}` |
 | 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
-| 405 | any method but GET and OPTIONS, and `POST` outside `/actions/`; `Allow: GET` |
+| 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and `PUT` outside `/config`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | the project has no store yet |
 | 504 | `/runs/N/files` when git does not answer within its cap |
