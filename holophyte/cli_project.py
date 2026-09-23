@@ -15,8 +15,9 @@ def project_cli(argv):
     commands = parser.add_subparsers(dest="command", required=True)
     for verb in ("add", "list", "enable", "hold", "disable"):
         command = commands.add_parser(verb)
-        command.add_argument("--store", type=Path,
-                             help="store database (default: target/current repository)")
+        command.add_argument(
+            "--store", type=Path,
+            help="store database (default: project/current repository)")
         if verb == "add":
             command.add_argument("path", type=Path)
         elif verb != "list":

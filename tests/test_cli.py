@@ -8,8 +8,10 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import re
 import socket
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +28,7 @@ MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
 OLD_SHA = "0bbd7e6100000000000000000000000000000000"
 NEW_SHA = "7af190c000000000000000000000000000000000"
+ROOT = Path(__file__).resolve().parent.parent
 
 
 class RepointFlagTests(unittest.TestCase):
@@ -294,6 +297,29 @@ class HoldFlagTests(unittest.TestCase):
                 ):
                     self.cli(flag, *note)
                 self.assertEqual(raised.exception.code, 2)
+
+
+class HelpWordTests(unittest.TestCase):
+    """KO-617: the loop's help calls the repository it works in a project."""
+
+    def test_help_names_the_project_and_never_a_target(self):
+        def help_of(*args):
+            with tempfile.TemporaryDirectory() as home:
+                done = subprocess.run(
+                    [sys.executable, str(ROOT / "factory.py"), *args, "--help"],
+                    cwd=ROOT, capture_output=True, text=True,
+                    env={**os.environ, "HOLOPHYTE_HOME": home})
+            self.assertEqual(done.returncode, 0, done.stderr)
+            return done.stdout
+        loop = help_of()
+        add = help_of("project", "add")
+        # The usage block's last word is the positional argument.
+        usage = loop.split("\n\n", 1)[0]
+        self.assertTrue(usage.startswith("usage: factory.py"), usage)
+        self.assertEqual(usage.split()[-1], "project")
+        for text in (loop, add):
+            self.assertIsNone(re.search(r"(?i)\btarget\b", text), text)
+
 
 if __name__ == "__main__":
     unittest.main()
