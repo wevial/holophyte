@@ -6,10 +6,13 @@ skips keyword arguments: a keyword follows the callee's signature, which the
 callee's own group renames, and `threading.Thread(target=...)` must stay.
 """
 import ast
+import dataclasses
 import inspect
 import unittest
 from pathlib import Path
 
+import holophyte.claim
+import holophyte.run
 import holophyte.serve_runs
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,6 +59,27 @@ class ProjectNamesTest(unittest.TestCase):
                    holophyte.serve_runs.ledger):
             with self.subTest(fn=fn.__name__):
                 self.assertEqual(params(fn)[0], "project")
+
+    def test_the_run_modules_spell_the_project_project(self):
+        self.assert_no_old_names(
+            "holophyte/run.py", "holophyte/loop.py", "holophyte/claim.py",
+            "holophyte/gates.py", "holophyte/merge_gate.py",
+            "holophyte/babysitter.py", "holophyte/pullrequest.py")
+
+    def test_the_run_carries_a_project_and_the_claim_a_project_id(self):
+        def params(fn):
+            return list(inspect.signature(fn).parameters)
+
+        names = [f.name for f in dataclasses.fields(holophyte.run.Run)]
+        self.assertEqual(names[0], "project")
+        self.assertNotIn("target", names)
+        for fn in (holophyte.claim._claim_next, holophyte.claim._admit_ticket,
+                   holophyte.claim._claim_run):
+            with self.subTest(fn=fn.__name__):
+                self.assertEqual(params(fn)[0], "project")
+                self.assertEqual(params(fn)[2], "project_id")
+        self.assertEqual(params(holophyte.claim._park_unlisted),
+                         ["conn", "project_id", "listed"])
 
 
 if __name__ == "__main__":

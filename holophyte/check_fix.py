@@ -45,7 +45,7 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     failed = state.failed_checks
     if (check_fixed or not failed
             or any(check.job_id is None for check in failed)):
-        _park_on_pr(run.target, run.conn, run.run_id, run.provider,
+        _park_on_pr(run.project, run.conn, run.run_id, run.provider,
                     run.task_id, run.branch, run.sha, pull, why, (),
                     reviewed=reviewed)
     stop_if_requested(run.conn, run.run_id, "merge_gate")
@@ -53,17 +53,17 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     with heartbeat_while(run.conn, run.run_id, beat_s):
         for check in failed:
             try:
-                logs.append(pr.job_log(run.target, pull, check.job_id))
+                logs.append(pr.job_log(run.project, pull, check.job_id))
             except InfraFailure:
                 logs.append(None)
     print(f"[holo2] checks failed on {pull.url}"
           f" ({', '.join(check.name for check in failed)}); one fix turn")
-    sha = _fix_threads(run.target, run.conn, run.run_id, run.provider,
+    sha = _fix_threads(run.project, run.conn, run.run_id, run.provider,
                        run.task_id, run.branch, run.wt, run.sha, beat_s, pull,
                        (), None, ticket, verify_cmd, contracts, run.budget_min,
                        pass_no, review_follows=True,
                        goal=check_fix_brief(pull, failed, logs, ticket),
                        no_commit_why=why, reviewed=reviewed)
-    return sha, _just_pushed_state(run.target, run.conn, run.run_id,
+    return sha, _just_pushed_state(run.project, run.conn, run.run_id,
                                    run.provider, run.task_id, run.branch, sha,
                                    beat_s, pull, reviewed)

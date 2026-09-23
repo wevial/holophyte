@@ -175,7 +175,7 @@ def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
         return None
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, conn=conn, run_id=run_id,
-                             target=target)
+                             project=target)
     if ok:
         print(f"[holo2] verify passes at the reproduce commit {head[:12]}")
         return Reproduction(head)
@@ -294,7 +294,7 @@ def _verify(frame, rnd):
     with heartbeat_while(frame.conn, frame.run_id, frame.beat_s):
         ok, out = run_verify(frame.verify_cmd, frame.wt, frame.contracts,
                              conn=frame.conn, run_id=frame.run_id,
-                             target=frame.target)
+                             project=frame.target)
         ok, out = with_baseline(frame.target, frame.wt, frame.verify_cmd, ok,
                                 out, frame.conn, frame.run_id)
     print(f"[holo2] verify {'ok' if ok else 'FAILED'} before round {rnd}")

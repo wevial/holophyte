@@ -200,7 +200,7 @@ class WorkingTimeTests(SweepTestCase):
         pull = pr.PullRequest('example.invalid', 'owner', 'repo', 1, 'pull-url')
         thread = pr.Thread('thread', 'code.py', 1, 'bot', 'fix this', 'url',
                            author_kind='bot')
-        values = dict(target=self.tgt, conn=self.conn, run_id=run, provider=None,
+        values = dict(project=self.tgt, conn=self.conn, run_id=run, provider=None,
                       task_id='KO-1', issue_id='issue-1', task='task', branch='task',
                       wt=self.target, fresh=True, beat_s=100, start_sha='base',
                       base_sha='base', sha='before', ticket='ticket',
