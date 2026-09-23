@@ -213,6 +213,15 @@ def failure_report(cmd, clauses, per_clause, failed, returncode, cleaned):
     return f"{head}\n" + "\n".join(lines)[-2000:]
 
 
+TIMEOUT_HEAD = "[verify] FAILED: verify timed out after "
+
+
+def verify_timed_out(out):
+    """Whether a failed verify's report is `timeout_failure_report()`'s: the
+    command ran past its cap, which no change to the candidate can shorten."""
+    return str(out).startswith(TIMEOUT_HEAD)
+
+
 def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
     """Name the cap a command ran past and, for a marked chain, the clause
     that was running when it fired. Same shape as `failure_report()`, so a
@@ -224,7 +233,7 @@ def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
     stops at the first failure, so the highest marker seen is the one that
     never finished."""
     running = max(per_clause) if per_clause else None
-    head = f"[verify] FAILED: verify timed out after {timeout:g}s"
+    head = f"{TIMEOUT_HEAD}{timeout:g}s"
     if not (clauses and running and 1 <= running <= len(clauses)):
         body = cleaned.strip() or "(no output before the timeout)"
         return (f"{head}\n"
