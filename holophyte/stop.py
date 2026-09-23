@@ -25,8 +25,9 @@ def stop_if_requested(conn, run_id, phase):
     _, branch, ticket_id, repo, note, pr_url, action = row
     if action == "abort":
         end_aborted(conn, run_id)
-    phase = "merge_gate" if pr_url else phase
-    sha = preserve(Target.locate(repo), branch) if branch else None
+    stopped_at, phase = phase, "merge_gate" if pr_url else phase
+    target = Target.locate(repo)
+    sha = preserve(target, branch) if branch else None
     with _transaction(conn):
         ended, outcome, reason = conn.execute(
             "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
@@ -42,6 +43,9 @@ def stop_if_requested(conn, run_id, phase):
                       candidate_sha=sha)
         store.walk_ticket(conn, ticket_id, "blocked_on_operator")
         store.set_question(conn, ticket_id, note)
+    if pr_url:
+        from holophyte import pause_notice
+        pause_notice.mark(target, conn, run_id, stopped_at)
     raise store.RunEnded(run_id, "paused", note)
 
 
@@ -151,6 +155,9 @@ def command(target, identifier, note, *, resume=False):
                               resume_phase=phase)
                 store.walk_ticket(conn, ticket_id, "ready")
                 store.set_question(conn, ticket_id, None)
+        if resume:
+            from holophyte import pause_notice
+            pause_notice.unmark(target, conn, run_id)
         message = "ready to resume" if resume else "pause requested"
         print(f"[holo2] {identifier}: {message}")
     except (ValueError, store.ResumeRefused) as refused:

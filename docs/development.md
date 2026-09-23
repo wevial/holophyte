@@ -112,6 +112,9 @@ Each module, one line:
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from
   unpublished commits before task pushes and local merges.
+- `holophyte/pause_notice.py` — a paused run's pull request gets the
+  `holophyte:paused` label and one notice comment; `--resume` removes both
+  (KO-608).
 - `holophyte/pr.py` — `[merge] mode = "pr"`'s GitHub writes: the startup
   route check, the push, the pull request and its body, the babysitter's
   replies and resolves, the merge through the PR API, and the `gh`/API

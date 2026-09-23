@@ -469,7 +469,7 @@ class MergeModeFixture(LoopFixture):
                 "nodes": nodes}}}}}
 
     def fake_route(self, push_exit=0, push_sh="", states=None,
-                   comments=(), open_pr=None):
+                   comments=(), open_pr=None, refuse_labels=False):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -486,6 +486,9 @@ class MergeModeFixture(LoopFixture):
         read (KO-359) an open pull request; the check-runs and
         branch-rules reads answer no runs and no rules, and a job's log
         read answers `self.job_log`'s text -- a failed call without it.
+        A conversation comment answers its id (the body's number); a label
+        call or a comment delete is witnessed by `recorded()` alone, the
+        label call refused when `refuse_labels` (KO-608).
         `push_exit` and `push_sh` control push failure and an optional
         delay. A push
         the fake answers successfully also appends `REF SHA` to
@@ -558,6 +561,10 @@ class MergeModeFixture(LoopFixture):
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
             '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            '    */issues/*/labels*) cat > /dev/null; '
+            + ('echo "label refused" >&2; exit 1;;\n' if refuse_labels
+               else "echo '[]'; exit 0;;\n")
+            + '    *" DELETE "*/issues/comments/*) exit 0;;\n'
             f'    *actions/jobs/*/logs*) cat "{self.job_log}" && exit 0;'
             ' exit 1;;\n'
             '    *"GET repos/example/repo/pulls/"*) '
@@ -570,7 +577,7 @@ class MergeModeFixture(LoopFixture):
             f'  n=$(ls "{self.api_dir}" | wc -l); n=$((n+1))\n'
             f'  body="{self.api_dir}/$n.json"; cat > "$body"\n'
             '  if echo "$*" | grep -q "/issues/.*/comments"; then\n'
-            "    echo '{}'; exit 0\n"
+            '    echo "{\\"id\\":$n}"; exit 0\n'
             '  fi\n'
             '  if grep -q resolveReviewThread "$body"; then\n'
             "    echo '{\"data\":{\"resolveReviewThread\":{}}}'\n"
