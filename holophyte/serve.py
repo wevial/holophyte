@@ -240,8 +240,9 @@ def status(project, now=None, started_ms=None):
     agent_ms is the part of working_ms the time box is judged against, verify_ms
     the rest; verify_started_ms is set only while the open span is a verify.
     Runs include title, phase, round, heartbeat age and sweep strikes. The scaled
-    time box and thresholds agree with the loop's budget checks. `project` aliases
-    `target`; `actions` and `config_edit` advertise authenticated daemon mutations."""
+    time box and thresholds agree with the loop's budget checks. `project` is the
+    repository path; `actions` and `config_edit` advertise authenticated daemon
+    mutations."""
     now = int(time() * 1000) if now is None else now
     started_ms = now if started_ms is None else started_ms
     if not project.store_path.exists():
@@ -271,7 +272,6 @@ def status(project, now=None, started_ms=None):
 
     scale = budget_scale(project)
     return 200, {
-        "target": str(project.path),
         "project": str(project.path),
         "admission": admission, "hold_note": hold_note,
         "schema_version": schema_version,
@@ -419,7 +419,7 @@ def attention(project, now=None):
     else:
         level = "working" if runs else "none"
     return 200, {"level": level, "items": items, "now": now,
-                 "target": str(project.path), "project": str(project.path)}
+                 "project": str(project.path)}
 
 
 # The path to merge, left to right: the columns `/board` answers, in order,

@@ -166,7 +166,7 @@ class TokenTests(ServeTestCase):
                 opened.assert_not_called()
         code, _, body = self.request("GET", "/status", self.BEARER)
         self.assertEqual(code, 200)
-        self.assertEqual(body["target"], str(self.target))
+        self.assertEqual(body["project"], str(self.target))
         # Every store-reading route is behind it, the run routes included.
         for path in ("/runs", "/shipped", "/ledger?since=0", "/attention",
                      "/board", f"/runs/{self.run}", f"/runs/{self.run}/files",
@@ -255,7 +255,7 @@ class TokenTests(ServeTestCase):
                 code, _, body = self.request(
                     "GET", "/status", {"Authorization": f"Bearer {token}"})
                 self.assertEqual(code, 200)
-                self.assertEqual(body["target"], str(self.target))
+                self.assertEqual(body["project"], str(self.target))
         for headers in (None, {"Authorization": "Bearer wrong"},
                         {"Authorization": f"Bearer {self.MACHINE_TOKEN}x"},
                         {"Authorization": f"Basic {self.MACHINE_TOKEN}"}):
@@ -285,7 +285,8 @@ class StatusTests(ServeTestCase):
         self.assertEqual(code, 200)
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertEqual(headers["Cache-Control"], "no-store")
-        self.assertEqual(body["target"], str(self.target))
+        self.assertEqual(body["project"], str(self.target))
+        self.assertNotIn("target", body)
         self.assertGreaterEqual(body["now"], self.now)
         (run,) = body["runs"]
         self.assertEqual(run["id"], self.run)
@@ -373,7 +374,6 @@ class StatusTests(ServeTestCase):
         self.assertEqual(body["daemon"]["pid"], os.getpid())
         self.assertTrue(
             before <= body["daemon"]["started_ms"] <= body["now"], body)
-        self.assertEqual(body["project"], body["target"])
         self.assertEqual(body["project"], str(self.target))
 
     def test_the_stale_threshold_is_a_json_integer(self):
@@ -436,9 +436,9 @@ class StatusTests(ServeTestCase):
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertIn("no store", body["error"])
         self.assertIn(str(self.target), body["detail"])
-        # KO-617: the body names the project; `target` stays as an alias.
+        # KO-634: the body names the project and nothing else.
         self.assertEqual(body["project"], str(self.target))
-        self.assertEqual(body["target"], str(self.target))
+        self.assertNotIn("target", body)
         self.assertFalse(self.db.exists())
 
     def test_an_unknown_path_is_404_and_any_other_method_is_405(self):
@@ -563,7 +563,7 @@ class ConsoleTests(ServeTestCase):
         self.assertIn("not built", body["detail"])
         code, _, body = self.request("GET", "/status")
         self.assertEqual(code, 200)
-        self.assertEqual(body["target"], str(self.target))
+        self.assertEqual(body["project"], str(self.target))
 
     def test_the_json_routes_take_precedence_over_files(self):
         self.seed()
@@ -839,14 +839,14 @@ class AttentionTests(ServeTestCase):
                                       "review": "changes_requested",
                                       "threads": 3, "title": None})
 
-    def test_the_body_names_the_target_as_status_does(self):
+    def test_the_body_names_the_project_as_status_does(self):
         self.seed_attention()
         self.start()
 
         _, _, body = self.request("GET", "/attention")
 
-        self.assertEqual(body["target"], str(self.target))
         self.assertEqual(body["project"], str(self.target))
+        self.assertNotIn("target", body)
 
     def test_asked_ms_falls_back_to_the_heartbeat_without_a_redirect(self):
         self.seed_attention(redirect=False)
@@ -901,7 +901,6 @@ class AttentionTests(ServeTestCase):
 
         self.assertEqual(body, {"level": "working", "items": [],
                                 "now": body["now"],
-                                "target": str(self.target),
                                 "project": str(self.target)})
 
         conn = store.open(str(self.db))

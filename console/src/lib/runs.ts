@@ -107,7 +107,7 @@ export interface ProjectGroup {
 export function groupByProject(daemons: DaemonStatus[]): ProjectGroup[] {
   const groups: ProjectGroup[] = [];
   for (const { base, status, seen_ms } of daemons) {
-    const path = status.project ?? status.target;
+    const path = status.project;
     const existing = groups.find((group) => group.path === path && group.base === base);
     if (existing) existing.runs.push(...status.runs);
     else groups.push({ path, name: projectName(path), base, status, seen_ms, runs: [...status.runs] });

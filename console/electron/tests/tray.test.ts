@@ -14,7 +14,6 @@ mock.module("electron", () => electronStub);
 // The wire shapes from docs/reference/http.md.
 const NOW = 1788450534491;
 const STATUS: Status = {
-  target: "/srv/dev/holophyte",
   project: "/srv/dev/holophyte",
   host: "writer-1",
   now: NOW,

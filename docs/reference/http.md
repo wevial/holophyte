@@ -20,7 +20,6 @@ those writing routes. A project with no store answers 503.
 
 ```json
 {
-  "target": "/path/to/repo",
   "project": "/path/to/repo",
   "schema_version": 35,
   "admission": "enabled",
@@ -80,8 +79,7 @@ loop has not yet acted on, and `stop_action` that request's action
 are null when none is pending.
 `supervisor.state` is `live`, `stale` or `none`. `daemon` describes the
 serving process: its pid and when it started. `project` is the
-repository the daemon serves, as a path; `target` is a deprecated alias
-carrying the same value, kept for one release. `schema_version` is the
+repository the daemon serves, as a path. `schema_version` is the
 store's schema version (its `PRAGMA user_version`). `admission` is the
 project's admission state (`store/enums.py` `ProjectAdmission`): `enabled`,
 `held` or `disabled`; while it is `disabled`, `runs` is empty.
@@ -408,7 +406,7 @@ What needs the operator, computed where the store is:
 
 ```json
 {"level": "attention", "now": 1788450534491,
- "target": "/path/to/repo", "project": "/path/to/repo", "items": [
+ "project": "/path/to/repo", "items": [
   {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000,
    "pr_url": null, "level": "attention"},
   {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
@@ -446,8 +444,7 @@ item's own `title` is the ticket's title, which the console shows when
 attempt number. Every item that names a `run` carries its `pr_url`: the
 pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
 null when it opened none, so a console can link the parked question to
-the PR it waits on. `project` is the project path and `target` its
-deprecated alias with the same value, as on `/status`.
+the PR it waits on. `project` is the project path, as on `/status`.
 
 `level` is `none`, `working`, `attention` or `critical`; with no items it
 is `working` if any run is live. Items come in this order: `blocked` and
@@ -614,5 +611,5 @@ but `/config`, both in [The daemon's actions](daemon.md).
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and `PUT` outside `/config`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
-| 503 | the project has no store yet |
+| 503 | the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path |
 | 504 | `/runs/N/files` when git does not answer within its cap |

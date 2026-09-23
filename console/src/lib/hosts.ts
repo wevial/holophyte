@@ -90,7 +90,7 @@ export type PollResult =
 
 /** The project a host serves, from its last good `/status`. */
 export function hostProject(status: Status | null): string | null {
-  return status ? (status.project ?? status.target) : null;
+  return status ? status.project : null;
 }
 
 /** Fold one poll's results into the host list, in the results' order. A

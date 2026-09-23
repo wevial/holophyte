@@ -12,7 +12,6 @@ const { now } = threeDays;
 const MIN = 60_000;
 
 const status: Status = {
-  target: "/srv/dev/writer",
   project: "/srv/dev/writer",
   host: "writer",
   now,
