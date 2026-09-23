@@ -320,11 +320,10 @@ def _legacy_cli(argv):
     # failure later.
     modes.add_argument(
         "--serve", metavar=ADDRESS_SHAPE, type=serve_address,
-        help="serve the JSON routes and the console on %s until "
-             "SIGINT/SIGTERM; reads the store by default, and writes only "
-             "through two opt-ins: [serve] actions (POST /actions/...) and "
-             "[serve] config_edit (PUT /config); a bearer token from "
-             "[serve] token_file beyond loopback" % ADDRESS_SHAPE)
+        help="serve the JSON routes and the console on %s until SIGINT/SIGTERM; reads "
+             "the store by default, and writes only through two opt-ins: [serve] "
+             "actions (POST /actions/...) and [serve] config_edit (PUT /config); a "
+             "bearer token from [serve] token_file beyond loopback" % ADDRESS_SHAPE)
     # Internal: the child the scheduler spawns under `[loop] workers > 1`.
     # One ticket, claim to close, exit with the run's status; the scheduler
     # has already run the startup checks, the sweep and the supervisor spawn
