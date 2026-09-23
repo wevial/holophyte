@@ -553,6 +553,50 @@ def _unittest_modules(tokens):
         return
 
 
+def _discover_pattern(tokens):
+    """The index of the -p pattern of a `unittest discover` command and that
+    pattern joined to its -s start directory: the pattern names a file
+    there, not at the repository root."""
+    for i in range(len(tokens) - 2):
+        if tokens[i:i + 3] != ["-m", "unittest", "discover"]:
+            continue
+        start, found = ".", None
+        args = enumerate(tokens[i + 3:], i + 3)
+        for index, arg in args:
+            long = arg.startswith("--")
+            name, eq, value = arg.partition("=") if long else (arg, "", "")
+            if name not in ("-s", "--start-directory", "-p", "--pattern"):
+                continue
+            if not eq:
+                index, value = next(args, (None, None))
+            if value is None:
+                break
+            if name in ("-s", "--start-directory"):
+                start = value
+            else:
+                found = index, value
+        if found:
+            return found[0], str(Path(start) / found[1])
+        return None
+    return None
+
+
+def _verify_paths(command):
+    """The paths of each shell command in `command`, a discover pattern read
+    in its start directory and every other token left as it is."""
+    commands = _shell_commands(command)
+    if not commands:
+        return _repo_paths(command)
+    paths = []
+    for tokens in commands:
+        pattern = _discover_pattern(tokens)
+        if pattern:
+            index, path = pattern
+            tokens = tokens[:index] + [path] + tokens[index + 1:]
+        paths += _repo_paths(" ".join(tokens))
+    return list(dict.fromkeys(paths))
+
+
 def _module_available(repo, module, declarations):
     # unittest also accepts package names and qualified class/method names.
     parts = module.split(".")
@@ -586,7 +630,7 @@ def _repository_problems(t, repo):
         for path in dict.fromkeys(path for _, path in _prose_paths(text)):
             problems.append(_path_problem(repo, path, declarations, label))
     for command in t.verify_commands:
-        for path in _repo_paths(command):
+        for path in _verify_paths(command):
             problems.append(_path_problem(repo, path, declarations,
                                           "verify command", prefix=""))
         for tokens in _shell_commands(command):
