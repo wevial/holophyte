@@ -68,8 +68,8 @@ so a client interpolates work between polls only from `work_started_ms`
 and never from `elapsed_ms`. `agent_ms` is the part of `working_ms` the
 time box is judged against and `verify_ms` the rest, the time spent in the
 ticket's verify commands; `agent_ms` is null when `working_ms` is, and
-`verify_ms` for a run recorded before the split, whose work all counts
-as `agent_ms`; `verify_started_ms` is set only while the open span is a
+`verify_ms` is null for a run recorded before the split, whose work all
+counts as `agent_ms`; `verify_started_ms` is set only while the open span is a
 verify, else null. `time_box_ms` is the box the run is counted
 against, the estimate scaled by `[agents] budget_scale`, null for a
 ticket with no estimate; `thresholds.run_cap` is the hard ceiling in
