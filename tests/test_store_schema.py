@@ -1,6 +1,7 @@
 """Schema bootstrap contract for the v2 store."""
 from __future__ import annotations
 
+import contextlib
 import getpass
 import json
 import os
@@ -8,6 +9,7 @@ import socket
 import sqlite3
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -1186,6 +1188,26 @@ class Version15MigrationTests(unittest.TestCase):
                 ' \'shepherd\', 1)', (run_id,))
 
 
+@contextlib.contextmanager
+def _this_threads_sleeps():
+    """Record the retry's back-off on the test thread; every other sleep is real.
+
+    Other threads sleep through the same `time.sleep`, and so does this one:
+    a fresh store's migration stamp runs `git` with a timeout, whose
+    `Popen.wait` polls in doubling sleeps when the child is slow to exit."""
+    recorded, real_sleep, test_thread = Mock(), time.sleep, threading.get_ident()
+    retry = store.schema._connect_with_version.__code__
+
+    def sleep(seconds):
+        if (threading.get_ident() != test_thread
+                or sys._getframe(1).f_code is not retry):
+            return real_sleep(seconds)
+        return recorded(seconds)
+
+    with patch("store.schema.time.sleep", sleep):
+        yield recorded
+
+
 class OpenRetryTests(unittest.TestCase):
     def test_first_statement_retries_close_connections_then_return_usable_store(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1196,7 +1218,7 @@ class OpenRetryTests(unittest.TestCase):
                 conn.execute.side_effect = sqlite3.OperationalError("locking protocol")
             with patch("store.schema.sqlite3.connect",
                        side_effect=[*failed, connect(path)]) as opening, \
-                    patch("store.schema.time.sleep") as sleep:
+                    _this_threads_sleeps() as sleep:
                 conn = store.open(path)
             self.addCleanup(conn.close)
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
@@ -1205,6 +1227,43 @@ class OpenRetryTests(unittest.TestCase):
             self.assertEqual(sleep.call_args_list, [call(1), call(2)])
             for failed_conn in failed:
                 failed_conn.close.assert_called_once()
+
+    def test_sleeps_other_than_the_retrys_are_real_and_unrecorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "store.db")
+            connect = sqlite3.connect
+            stop, napped, naps = threading.Event(), threading.Event(), []
+
+            def nap():
+                began = time.monotonic()
+                time.sleep(0.001)
+                naps.append(time.monotonic() - began)
+                napped.set()
+
+            def keep_napping():
+                while not stop.is_set():
+                    nap()
+
+            # The second failure's close naps on the test thread, as a
+            # subprocess wait inside store.open() does.
+            failed = [Mock(), Mock(**{"close.side_effect": nap})]
+            for conn in failed:
+                conn.execute.side_effect = sqlite3.OperationalError("locking protocol")
+
+            with patch("store.schema.sqlite3.connect",
+                       side_effect=[*failed, connect(path)]), \
+                    _this_threads_sleeps() as sleep:
+                background = threading.Thread(target=keep_napping)
+                background.start()
+                try:
+                    self.assertTrue(napped.wait(5))
+                    conn = store.open(path)
+                finally:
+                    stop.set()
+                    background.join()
+            self.addCleanup(conn.close)
+            self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+            self.assertTrue(all(elapsed >= 0.001 for elapsed in naps), naps)
 
     def test_attempt_limit_and_nontransient_errors(self):
         for reason, attempts, sleeps in (
@@ -1217,7 +1276,7 @@ class OpenRetryTests(unittest.TestCase):
                     with patch("store.schema.sqlite3.connect", return_value=failed,
                                side_effect=(sqlite3.OperationalError(reason)
                                             if at_connect else None)) as opening, \
-                            patch("store.schema.time.sleep") as sleep:
+                            _this_threads_sleeps() as sleep:
                         with self.assertRaisesRegex(sqlite3.OperationalError, reason):
                             store.open("unused.db")
                     self.assertEqual(opening.call_count, attempts)

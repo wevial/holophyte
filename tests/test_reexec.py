@@ -150,7 +150,8 @@ class SeparateCheckoutTests(LoopFixture):
             can_ff, changed = pool_handoff._prepare_reexec(self.tgt, {})
         self.assertTrue(can_ff)
         self.assertTrue(changed)
-        self.assertEqual(pool_handoff.fetched_schema(self.tgt), SCHEMA_VERSION + 1)
+        self.assertEqual(pool_handoff.fetched_schema(self.tgt),
+                         (SCHEMA_VERSION + 1, None))
 
     def test_restart_moves_only_factory_and_reports_its_shas(self):
         for dirty in (False, True):

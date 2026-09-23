@@ -114,8 +114,9 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
             rows = holophyte.report.report_rows(conn)
         finally:
             conn.close()
-        keys = ("ticket", "actual_min", "estimate_min", "ratio", "rounds",
-                "outcome", "host", "ended_ms", "merge_sha", "wall_min")
+        keys = ("ticket", "actual_min", "agent_min", "verify_min",
+                "estimate_min", "ratio", "rounds", "outcome", "host",
+                "ended_ms", "merge_sha", "wall_min")
         return [dict(zip(keys, row + (ended, sha, (ended - started) / MIN)),
                      ticket_url=None)
                 for row, ended, sha, started in zip(
@@ -168,6 +169,30 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
         self.assertIsNone(body["rows"][2]["estimate_min"])
         self.assertIsNone(body["rows"][2]["ratio"])
         self.assertAlmostEqual(body["rows"][0]["ratio"], 0.5)
+
+    def test_runs_split_actual_into_agent_and_verify(self):
+        self.seed_ended()
+        conn = store.open(str(self.db))
+        try:
+            # KO-2 was recorded before the store split out verify time.
+            for ident, working, verify in (("KO-1", 5 * MIN, 3 * MIN),
+                                           ("KO-2", 4 * MIN, None)):
+                conn.execute(
+                    "UPDATE runs SET workingMs = ?, verifyMs = ? WHERE ticketId ="
+                    " (SELECT id FROM tickets WHERE linearIdentifier = ?)",
+                    (working, verify, ident))
+            conn.commit()
+        finally:
+            conn.close()
+        self.start()
+
+        code, _headers, body = self.request("GET", "/runs")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(
+            [(r["actual_min"], r["agent_min"], r["verify_min"])
+             for r in body["rows"][:2]],
+            [(5, 2, 3), (4, 4, None)])
 
     def test_each_run_carries_its_end_as_ended_ms(self):
         self.seed_ended()

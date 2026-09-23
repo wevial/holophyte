@@ -73,8 +73,8 @@ class WorkingConsumers(SweepTestCase):
                 settle_work(self.conn, other, now=T0 + 2 * MINUTE)
         finish_run(self.conn, other, "merged", now=T0 + 3 * MINUTE)
         self.assertEqual(
-            [row[1:4] for row in report.report_rows(self.conn)],
-            [(2, 10, 0.2), (2, 10, 0.2)],
+            [row[1:6] for row in report.report_rows(self.conn)],
+            [(2, 2, 0, 10, 0.2), (2, 2, 0, 10, 0.2)],
         )
 
     def test_time_box_judges_agent_work_only(self):
@@ -104,6 +104,42 @@ class WorkingConsumers(SweepTestCase):
                 with patch.object(loop, "time", return_value=now / 1000):
                     with self.assertRaisesRegex(loop.RunFailure, "out of time"):
                         loop._check_run_cap(self.tgt, self.conn, run, 10, "abc")
+
+    def test_run_answers_split_agent_from_verify_time(self):
+        run = self.a_run(budget_min=10)
+        with patch("store.working.time", return_value=T0 / 1000):
+            with working(self.conn, run):
+                settle_work(self.conn, run, now=T0 + 2 * MINUTE)
+        start = T0 + 5 * MINUTE
+
+        def answers(now):
+            return (serve.status(self.tgt, now=now)[1]["runs"][0],
+                    serve_runs.run_detail(self.tgt, str(run), now=now)[1]["run"])
+
+        with patch("store.working.time", return_value=start / 1000):
+            with working(self.conn, run, verify=True):
+                for answer in answers(start + MINUTE):
+                    self.assertEqual(
+                        (answer["working_ms"], answer["agent_ms"],
+                         answer["verify_ms"], answer["work_started_ms"],
+                         answer["verify_started_ms"]),
+                        (3 * MINUTE, 2 * MINUTE, MINUTE, start, start))
+                settle_work(self.conn, run, now=start + 3 * MINUTE)
+        start += 3 * MINUTE
+        with patch("store.working.time", return_value=start / 1000):
+            with working(self.conn, run):
+                for answer in answers(start + MINUTE):
+                    self.assertEqual(
+                        (answer["agent_ms"], answer["verify_ms"],
+                         answer["work_started_ms"], answer["verify_started_ms"]),
+                        (3 * MINUTE, 3 * MINUTE, start, None))
+                settle_work(self.conn, run, now=start + MINUTE)
+        finish_run(self.conn, run, "merged", now=start + 2 * MINUTE)
+        shipped = serve_runs.shipped(self.tgt)[1]["rows"][0]
+        self.assertEqual(
+            (shipped["working_ms"], shipped["actual_min"],
+             shipped["agent_ms"], shipped["verify_ms"]),
+            (6 * MINUTE, 6, 3 * MINUTE, 3 * MINUTE))
 
     def test_pending_and_quiet_waits_are_bounded(self):
         self.configure(
@@ -212,7 +248,7 @@ class WorkingConsumers(SweepTestCase):
         finish_run(self.conn, run, "merged", now=now + 20 * MINUTE)
         shipped = serve_runs.shipped(self.tgt)[1]["rows"][0]
         self.assertEqual((shipped["actual_min"], shipped["wall_min"]), (4, 30))
-        self.assertEqual(report.report_rows(self.conn)[0][1:4], (4, 10, 0.4))
+        self.assertEqual(report.report_rows(self.conn)[0][1:6], (4, 4, 0, 10, 0.4))
         self.conn.execute("UPDATE runs SET workingMs = NULL WHERE id = ?", (run,))
         self.conn.commit()
         self.assertIsNone(serve_runs.shipped(self.tgt)[1]["rows"][0]["actual_min"])

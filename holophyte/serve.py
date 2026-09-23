@@ -163,7 +163,7 @@ from holophyte.serve_runs import (
 )
 from holophyte.serve_watch import CODE_CHECK_SEC, CodeWatch, InFlight, Moved
 from holophyte.supervisor import SWEEPABLE_PHASES, factory_revision
-from store.working import effective_work
+from store.working import agent_work, effective_work, verify_work
 
 ADDRESS_SHAPE = "PORT|HOST:PORT"
 LOOPBACK = "127.0.0.1"
@@ -237,6 +237,8 @@ def status(target, now=None, started_ms=None):
     Read-only; a missing store returns 503. Ages and effective working_ms use
     epoch-ms `now`, defaulting to the clock; started_ms is the daemon's bind time.
     Clients interpolate work only with work_started_ms; elapsed_ms is wall time.
+    agent_ms is the part of working_ms the time box is judged against, verify_ms
+    the rest; verify_started_ms is set only while the open span is a verify.
     Runs include title, phase, round, heartbeat age and sweep strikes. The scaled
     time box and thresholds agree with the loop's budget checks. `project` aliases
     `target`; `actions` and `config_edit` advertise authenticated daemon mutations."""
@@ -262,6 +264,8 @@ def status(target, now=None, started_ms=None):
     # `time_box_ms` is the box the run is counted against -- the estimate
     # scaled by `[agents] budget_scale` -- so the console's time-box bar and
     # the sweep agree with the cap the loop armed. `thresholds.run_cap` is
+    # the hard ceiling in multiples of that box, so the bar can draw it. The
+    # box is judged against `agent_ms`, not `working_ms`, which adds verify.
     from holophyte.serve_runs import active_routes, workers_on_previous_build
 
     scale = budget_scale(target)
@@ -292,6 +296,9 @@ def status(target, now=None, started_ms=None):
                   "elapsed_ms": now - run.startedAt,
                   "working_ms": effective_work(run, now),
                   "work_started_ms": run.workStartedAt,
+                  "agent_ms": agent_work(run, now),
+                  "verify_ms": verify_work(run, now),
+                  "verify_started_ms": run.verifyStartedAt,
                   "time_box_ms": (int(run.timeBoxMs * scale)
                                   if run.timeBoxMs else run.timeBoxMs),
                   "round": run.reviewRoundCount,
