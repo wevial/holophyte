@@ -484,8 +484,9 @@ class MergeModeFixture(LoopFixture):
         `comments` (each a `comments_page()`), the open step's
         `pullRequests(headRefName:)` lookup (KO-407) one open pull request
         at `open_pr` -- none without it -- and the reconcile's pull-status
-        read (KO-359) an open pull request; the check-runs and
-        branch-rules reads answer no runs and no rules, and a job's log
+        read (KO-359) an open pull request; the check-runs, branch-rules
+        and branch reads answer no runs, no rules and no protection
+        (KO-652), and a job's log
         read answers `self.job_log`'s text -- a failed call without it.
         A conversation comment answers its id (the body's number); a label
         call or a comment delete is witnessed by `recorded()`, a label
@@ -565,6 +566,7 @@ class MergeModeFixture(LoopFixture):
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
             '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            '    */branches/*) echo \'{}\'; exit 0;;\n'
             '    *"--method PATCH repos/example/repo/pulls/"*) cat >/dev/null;'
             f' [ {close_exit} -eq 0 ] || {{ echo "HTTP 422 refused" >&2;'
             f' exit {close_exit}; }}; echo \'{{"state":"closed"}}\'; exit 0;;\n'

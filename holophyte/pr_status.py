@@ -273,7 +273,26 @@ def _check_reads(target, pull, sha):
         required = _required_contexts(rest(
             target, pull, "GET",
             f"repos/{pull.owner}/{pull.name}/rules/branches/main"))
+    if required is not None:
+        required += _protected_contexts(target, pull)
     return runs, required
+
+
+def _protected_contexts(target, pull):
+    """The contexts main's branch protection rule requires, beside the
+    rulesets' (KO-652): read off the branch itself, which a token that may
+    read the repository may read. No answer, or one without them, is no
+    requirement known."""
+    try:
+        branch = rest(target, pull, "GET",
+                      f"repos/{pull.owner}/{pull.name}/branches/main")
+    except InfraFailure:
+        return []
+    for key in ("protection", "required_status_checks"):
+        branch = branch.get(key) if isinstance(branch, dict) else None
+    contexts = branch.get("contexts") if isinstance(branch, dict) else None
+    return [c for c in contexts if isinstance(c, str) and c] \
+        if isinstance(contexts, list) else []
 
 
 def _check_runs_of(target, pull, sha):

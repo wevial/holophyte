@@ -490,16 +490,26 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertIn(self.DEFECT[3], self.question())
 
 
-    def required_checks_github(self, reports_after_retrigger=False):
-        """Main's ruleset requires "vercel" and "unit"; only "unit" reports
-        on the candidate, and "vercel" too on a later head when asked."""
+    def required_checks_github(self, reports_after_retrigger=False,
+                               protection=False):
+        """Main requires "vercel" and "unit" -- by ruleset, or by branch
+        protection alone; only "unit" reports on the candidate, and
+        "vercel" too on a later head when asked."""
         heads = []
+        required = ["vercel", "unit"]
 
         def rest(target, pull, method, path, payload=None):
             if "rules/branches/" in path:
-                return [{"type": "required_status_checks", "parameters": {
-                    "required_status_checks": [{"context": "vercel"},
-                                               {"context": "unit"}]}}]
+                return [] if protection else [
+                    {"type": "required_status_checks", "parameters": {
+                        "required_status_checks": [
+                            {"context": c} for c in required]}}]
+            if path.endswith("/branches/main"):
+                return {"name": "main", "protected": protection,
+                        "protection": {"enabled": protection,
+                                       "required_status_checks": {
+                                           "contexts": required
+                                           if protection else []}}}
             head = path.split("/commits/")[1].split("/")[0]
             heads.append(head)
             names = ["unit"] + (["vercel"] if reports_after_retrigger
@@ -509,11 +519,13 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                 for n in names]}
         return patch.object(holophyte.pr_status, "rest", rest)
 
-    def wait_on_missing_check(self, config, reports_after_retrigger=False):
+    def wait_on_missing_check(self, config, reports_after_retrigger=False,
+                              protection=False):
         self.configure('[merge]\nmode = "pr"\nmissing_check_sec = 120\n' + config)
         self.fake_route(states=[self.pr_state()])
         naps = []
-        with self.required_checks_github(reports_after_retrigger), \
+        with self.required_checks_github(reports_after_retrigger,
+                                         protection), \
                 patch.object(holophyte.pr, "SLEEP", naps.append), \
                 patch.object(holophyte.babysitter, "monotonic",
                              side_effect=lambda: sum(naps)):
@@ -560,6 +572,15 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertIn("required checks never reported on the head commit:"
                       " vercel", self.question())
         self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_a_check_only_branch_protection_requires_is_retriggered_too(self):
+        tip, subject = self.wait_on_missing_check(
+            "retrigger_missing_checks = true\n", protection=True)
+        self.assertEqual(len(self.pushed()), 2)
+        self.assertEqual(subject, "Retrigger missing checks: vercel")
+        self.assertEqual(len(self.retriggers()), 1)
+        self.assertIn("required checks never reported on the head commit:"
+                      " vercel", self.question())
 
     def test_pending_checks_with_none_required_wait_as_before(self):
         self.configure('[merge]\nmode = "pr"\nmissing_check_sec = 30\n'
