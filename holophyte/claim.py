@@ -30,6 +30,7 @@ from time import monotonic
 import store
 import store.read
 import store.tickets
+from holophyte import freshness
 from holophyte.board import (
     MAX_FAILED_RUNS,
     body_problem,
@@ -683,6 +684,7 @@ def _claim_next(project, conn, project_id, provider, order, skip, seen):
             # Carry the value through the existing provider-task dispatch seam;
             # do not mutate the provider's task or rebuild the run at each phase.
             task = dict(task, _run=claimed_run(project, task, conn, run_id, provider))
+            freshness.carry_warning(conn, run_id, task)
         return task, ticket_id, run_id
 
 
@@ -760,7 +762,7 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
         return None
     stale = [] if pr else stale_reasons(project.path, task.get("body"))
     if stale:
-        park_stale(conn, project_id, provider, task, stale)
+        park_stale(project, conn, project_id, provider, task, stale)
         return None
     # The mirror also walks a `blocked_on_deps` row the board lists again
     # back to `ready` (KO-425), so the gates below judge it like any
@@ -827,6 +829,8 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
         print(f"[holo2] {task['id']} is {status} in the store,"
               f" not claimable ({verdict.reason}); skipping it")
         mirror_push(conn, ticket_id, provider)
+        return None
+    if not (pr or freshness.critic_admits(project, conn, project_id, provider, task)):
         return None
     return ticket_id
 
@@ -919,11 +923,11 @@ def _claim_run(project, conn, project_id, provider, task, ticket_id, seen):
     move. Returns the claimed run id, `HELD` when another run or another
     writer took the ticket first, or None when the loop must stop rather
     than start a run."""
-    # The store and board halves of the lease under one `lease_turn()`:
-    # a close-out reads the store and strips its board label under the
-    # same turn, so no claim can land between the look and the removal
-    # and have its fresh label stripped.
+    # The store and board halves of the lease under one `lease_turn()`,
+    # which a close-out's label removal and a critic's park also take.
     with lease_turn(project):
+        if freshness.parked_since_admitted(conn, ticket_id, task):
+            return HELD
         try:
             run_id = store.claim(conn, project_id, ticket_id)
         except store.ClaimConflict as e:
@@ -943,19 +947,15 @@ def _claim_run(project, conn, project_id, provider, task, ticket_id, seen):
     # about this run: the projection replaces the state call the
     # provider used to make on its own.
     if not mirror_status(conn, ticket_id, "in_flight", provider):
-        # The store refused the move, so this ticket is not `ready`
-        # and no work may start on it. The ordinary cause is a board
-        # behind the store — a `merged` ticket whose Done push did not
-        # land is still non-terminal in Linear and is offered again —
-        # and §1 is that the store, not the column, decides. Running
-        # anyway would re-implement merged work once per pass.
-        #
-        # So: give the lease straight back, re-project the status as
-        # one more best-effort attempt at unsticking the board, and
-        # stop. Stopping is the same call as a refused claim — store
-        # and board disagree about what is workable — and keeps a
-        # stale ticket the re-push cannot move (an unmapped status, a
-        # Linear that is down) from being claimed round and round.
+        # The store refused the move, so no work may start. A board
+        # behind the store (a `merged` ticket whose Done push did not
+        # land, offered again) is refused by `pickable()` above, so a
+        # writer outside the lease turn moved the row; §1 is that the
+        # store, not the column, decides. So: give the lease straight
+        # back, re-project the status as one more best-effort attempt at
+        # unsticking the board, and stop, as a refused claim does, so a
+        # ticket the re-push cannot move (an unmapped status, a Linear
+        # that is down) is not claimed round and round.
         refused = InfraFailure("ticket was not ready when the run"
                                " was claimed; no work started")
         store.release(conn, run_id, "failed", str(refused),

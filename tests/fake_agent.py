@@ -137,6 +137,22 @@ FAIL = Reply("Not mergeable as it stands.\nVERDICT: FAIL")
 MALFORMED = Reply("I have some thoughts about this but never say the word.")
 
 
+@dataclass(frozen=True)
+class Critic:
+    """The claim's critic turn (KO-715): scripted text handed back verbatim,
+    or `raises` raised, the way a turn that failed would."""
+
+    text: str = "Read main; nothing has overtaken it.\nFRESHNESS: FRESH"
+    raises: Exception | None = None
+
+    role = "critic"
+
+    def play(self, cwd, turn):
+        if self.raises is not None:
+            raise self.raises
+        return self.text
+
+
 # The scope question a review prompt asks (KO-602): the changed files the
 # placeholder ticket does not name, as a JSON list.
 SCOPE_LIST_RE = re.compile(
