@@ -17,8 +17,10 @@ NOW = 1_700_010_000_000
 URL = "https://github.com/example/repo/pull/454"
 # Captured from report_lines() before the live block was added.
 FINISHED = (
-    "ticket  actual  estimate  ratio  rounds  outcome  rejected  host\n"
-    "KO-1       5.0        25   0.20       0  merged          0  writer\n"
+    "ticket  actual  agent  verify  estimate  ratio  rounds  outcome  rejected"
+    "  host\n"
+    "KO-1       5.0    5.0     0.0        25   0.20       0  merged          0"
+    "  writer\n"
     "1 runs · mean ratio 0.20 · median ratio 0.20"
 )
 
@@ -139,6 +141,25 @@ class LiveReportTests(ReportStoreCase):
     def test_no_unfinished_runs(self):
         self.assertEqual(report.report_lines(self.conn),
                          ["in flight: none", "", *FINISHED.splitlines()])
+
+    def test_actual_is_split_into_agent_and_verify_columns(self):
+        self.completed_run(2, 5, 10, 0, "merged")
+        self.completed_run(3, 4, 10, 0, "merged")
+        for ident, verify_ms in (("KO-2", 3 * 60_000), ("KO-3", None)):
+            # KO-3 was recorded before the store split out verify time.
+            self.conn.execute(
+                "UPDATE runs SET verifyMs = ? WHERE ticketId ="
+                " (SELECT id FROM tickets WHERE linearIdentifier = ?)",
+                (verify_ms, ident))
+        self.conn.commit()
+        lines = report.report_lines(self.conn)
+        header = next(line for line in lines if line.startswith("ticket "))
+        self.assertEqual(header.split()[1:6],
+                         ["actual", "agent", "verify", "estimate", "ratio"])
+        cells = {line.split()[0]: line.split()[1:6] for line in lines
+                 if line.startswith(("KO-2 ", "KO-3 "))}
+        self.assertEqual(cells, {"KO-2": ["5.0", "2.0", "3.0", "10", "0.50"],
+                                 "KO-3": ["4.0", "4.0", "n/a", "10", "0.40"]})
 
     def test_live_rows_are_chronological_and_missing_url_has_no_padding(self):
         self.live_run(454, NOW - 9 * 60_000, "working")

@@ -304,11 +304,12 @@ class ReportTests(ReportStoreCase):
         # The host column is this machine's own name: the claim stamped it.
         host = socket.gethostname()
         self.assertEqual([line.split() for line in lines[:4]], [
-            ["ticket", "actual", "estimate", "ratio", "rounds", "outcome",
-             "rejected", "host"],
-            ["KO-1", "5.0", "25", "0.20", "2", "merged", "0", host],
-            ["KO-2", "40.0", "20", "2.00", "1", "failed", "0", host],
-            ["KO-3", "3.0", "25", "0.12", "0", "merged", "0", host],
+            ["ticket", "actual", "agent", "verify", "estimate", "ratio",
+             "rounds", "outcome", "rejected", "host"],
+            ["KO-1", "5.0", "5.0", "0.0", "25", "0.20", "2", "merged", "0", host],
+            ["KO-2", "40.0", "40.0", "0.0", "20", "2.00", "1", "failed", "0",
+             host],
+            ["KO-3", "3.0", "3.0", "0.0", "25", "0.12", "0", "merged", "0", host],
         ])
         # 0.20, 2.00 and 0.12: a mean the one blown budget carries, and a
         # median that says what a typical ticket actually costs.
@@ -324,8 +325,9 @@ class ReportTests(ReportStoreCase):
 
         lines = holophyte.report.report_lines(self.conn)[3:]
 
-        self.assertEqual(lines[4].split(), ["KO-4", "7.0", "n/a", "n/a", "0",
-                                            "merged", "0", socket.gethostname()])
+        self.assertEqual(lines[4].split(), ["KO-4", "7.0", "7.0", "0.0", "n/a",
+                                            "n/a", "0", "merged", "0",
+                                            socket.gethostname()])
         self.assertEqual(lines[5], "4 runs · 3 with an estimate · "
                                    "mean ratio 0.77 · median ratio 0.20")
 

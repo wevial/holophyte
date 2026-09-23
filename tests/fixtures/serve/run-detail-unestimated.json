@@ -11,6 +11,8 @@
     "outcome": null,
     "elapsed_ms": 0,
     "working_ms": 0,
+    "agent_ms": 0,
+    "verify_ms": 0,
     "time_box_ms": null,
     "branch": null,
     "host": null,
@@ -19,6 +21,7 @@
     "commit_url": null,
     "pr_url": null,
     "work_started_ms": null,
+    "verify_started_ms": null,
     "approved_at": null,
     "approved_by": null,
     "max_rounds": 2

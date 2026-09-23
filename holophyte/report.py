@@ -10,11 +10,11 @@ from datetime import datetime, timezone
 
 import store.read
 from holophyte.config_tables import report_config
-from store.working import effective_work
+from store.working import agent_work, effective_work, verify_work
 
 # Render timing and review counts from the store without writing or claiming.
-REPORT_HEADERS = ("ticket", "actual", "estimate", "ratio", "rounds", "outcome",
-                  "rejected", "host")
+REPORT_HEADERS = ("ticket", "actual", "agent", "verify", "estimate", "ratio",
+                  "rounds", "outcome", "rejected", "host")
 REPORT_GAP = "  "
 
 
@@ -69,11 +69,14 @@ def live_lines(conn, now):
 
 
 def report_rows(conn):
-    """Ended runs, oldest first: ticket, actual_min, estimate_min, ratio,
-    rounds, outcome, host. Missing estimates and ratios are None and excluded
-    from averages; a missing host marks a run older than that column.
+    """Ended runs, oldest first: ticket, actual_min, agent_min, verify_min,
+    estimate_min, ratio, rounds, outcome, host. Missing estimates and ratios
+    are None and excluded from averages; a missing host marks a run older
+    than that column. actual_min is agent plus verify time and the ratio is
+    judged on it; a run recorded before the split has verify_min None and
+    all its working time as agent_min.
     """
-    return [row[:7] for row in ended_rows(conn)]
+    return [row[:9] for row in ended_rows(conn)]
 
 
 def ended_rows(conn):
@@ -84,10 +87,13 @@ def ended_rows(conn):
     """
     rows = []
     for run in store.read.ended_runs(conn):
-        work = effective_work(run, run.endedAt)
-        actual = work / 60000 if work is not None else None
+        actual, agent, verify = (
+            ms / 60000 if ms is not None else None
+            for ms in (effective_work(run, run.endedAt),
+                       agent_work(run, run.endedAt),
+                       verify_work(run, run.endedAt)))
         estimate = run.timeBoxMs / 60000 if run.timeBoxMs else None
-        rows.append((run.linearIdentifier, actual, estimate,
+        rows.append((run.linearIdentifier, actual, agent, verify, estimate,
                      actual / estimate if estimate and actual is not None else None,
                      run.reviewRoundCount, run.outcome or "ended", run.host,
                      run.endedAt, run.mergeSha,
@@ -97,7 +103,7 @@ def ended_rows(conn):
 
 def report_summary(rows):
     """Run count and mean/median ratios, excluding runs with no estimate."""
-    ratios = [row[3] for row in rows if row[3] is not None]
+    ratios = [row[5] for row in rows if row[5] is not None]
     if not ratios:
         return f"{len(rows)} runs · no estimates to compare against"
     counted = (f"{len(rows)} runs" if len(ratios) == len(rows)
@@ -148,10 +154,12 @@ def report_lines(conn, target=None):
     if not rows:
         return live + ["no completed runs yet"]
     table = [REPORT_HEADERS]
-    for ticket, actual, estimate, ratio, rounds, outcome, host in rows:
+    for (ticket, actual, agent, verify, estimate, ratio, rounds, outcome,
+         host) in rows:
         table.append((
             ticket,
-            f"{actual:.1f}" if actual is not None else "n/a",
+            *(f"{minutes:.1f}" if minutes is not None else "n/a"
+              for minutes in (actual, agent, verify)),
             f"{estimate:.0f}" if estimate is not None else "n/a",
             f"{ratio:.2f}" if ratio is not None else "n/a",
             str(rounds),
@@ -162,7 +170,7 @@ def report_lines(conn, target=None):
     widths = [max(len(cell) for cell in column) for column in zip(*table)]
     lines = [
         REPORT_GAP.join(
-            cell.ljust(width) if i in (0, 5, 7) else cell.rjust(width)
+            cell.ljust(width) if i in (0, 7, 9) else cell.rjust(width)
             for i, (cell, width) in enumerate(zip(row, widths))).rstrip()
         for row in table
     ]
