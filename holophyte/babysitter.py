@@ -894,6 +894,11 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
             t.author_kind == "bot" for _, t, _ in by_verdict["HUMAN"])):
         _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
                     by_verdict["HUMAN"], threads, reviewed)
+    thread_mentions.acknowledge(
+        project, conn, run_id, pull,
+        [t for _, t, _ in by_verdict["ADDRESS"]
+         if t.classification == "MENTIONED" and not maintainer_notes.is_note(t)],
+        merge.mention_handle)
     if by_verdict["ADDRESS"]:
         sha = _fix_threads(project, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],

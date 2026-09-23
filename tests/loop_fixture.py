@@ -470,7 +470,7 @@ class MergeModeFixture(LoopFixture):
 
     def fake_route(self, push_exit=0, push_sh="", states=None,
                    comments=(), open_pr=None, close_exit=0,
-                   refuse_labels=False):
+                   refuse_labels=False, refuse_reactions=False):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -491,7 +491,9 @@ class MergeModeFixture(LoopFixture):
         A conversation comment answers its id (the body's number); a label
         call or a comment delete is witnessed by `recorded()`, a label
         call's body kept a line each in `self.label_log`, and the label
-        call refused when `refuse_labels` (KO-608).
+        call refused when `refuse_labels` (KO-608). An `addReaction`
+        mutation answers an empty success, or fails when `refuse_reactions`
+        (KO-679).
         `push_exit` and `push_sh` control push failure and an optional
         delay; a pull request's REST close (`PATCH`, KO-611) answers
         closed, or fails with `close_exit`. A push
@@ -593,7 +595,10 @@ class MergeModeFixture(LoopFixture):
             "    echo '{\"data\":{\"resolveReviewThread\":{}}}'\n"
             '  elif grep -q addPullRequestReviewThreadReply "$body"; then\n'
             "    echo '{\"data\":{\"addPullRequestReviewThreadReply\":{}}}'\n"
-            '  elif grep -q mergedBy "$body"; then\n'
+            '  elif grep -q addReaction "$body"; then\n'
+            + ('    echo "reaction refused" >&2; exit 1\n' if refuse_reactions
+               else "    echo '{\"data\":{\"addReaction\":{}}}'\n")
+            + '  elif grep -q mergedBy "$body"; then\n'
             "    echo '{\"data\":{\"repository\":{\"pullRequest\":"
             "{\"state\":\"OPEN\",\"merged\":false}}}}'\n"
             '  elif grep -q PullRequestReviewThread "$body"; then\n'
@@ -645,7 +650,8 @@ class MergeModeFixture(LoopFixture):
 
     def api_calls(self):
         """Every `gh api` body the babysitter made, in order, as `(kind,
-        variables)`: the kind is `state`, `reply`, `resolve` or `merge`.
+        variables)`: the kind is `state`, `reply`, `resolve`, `react` or
+        `merge`.
         The loop's per-pass pull-status read of a parked run (KO-359) is
         left out: it is the reconcile's, tested on its own below, and
         every pass after a park makes one. The open step's
@@ -661,6 +667,7 @@ class MergeModeFixture(LoopFixture):
                 continue
             kind = ("resolve" if "resolveReviewThread" in query
                     else "reply" if "addPullRequestReviewThreadReply" in query
+                    else "react" if "addReaction" in query
                     else "comments" if "PullRequestReviewThread" in query
                     else "state" if "reviewThreads" in query
                     else "conversation" if "body" in body else "merge")

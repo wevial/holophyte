@@ -5,6 +5,7 @@ import io
 import json
 import sys
 import unittest
+from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
 
@@ -33,6 +34,19 @@ import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
 from holophyte.maintainer_notes import cite_commits  # noqa: E402
+from holophyte.thread_mentions import REFUSAL  # noqa: E402
+
+
+@dataclass
+class SeesCalls(Commit):
+    """A fix turn that notes the GitHub calls already made when it began."""
+
+    fixture: object = None
+    seen: list = field(default_factory=list)
+
+    def play(self, cwd, turn):
+        self.seen.extend(kind for kind, _ in self.fixture.api_calls())
+        return super().play(cwd, turn)
 
 
 class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
@@ -198,6 +212,91 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual([kind for kind, _ in self.api_calls()],
                          ["state", "reply", "resolve"])
         self.assertIn("needs a human's answer", self.question())
+
+    def with_node_ids(self, state, eyes=()):
+        """`state` with each review comment's GraphQL id, `C_` and its URL's
+        number, and the route's own EYES reaction on the ids in `eyes`."""
+        pull = state["data"]["repository"]["pullRequest"]
+        for t in pull["reviewThreads"]["nodes"]:
+            for c in t["comments"]["nodes"]:
+                c["id"] = "C_" + c["url"].rsplit("_r", 1)[1]
+                if c["id"] in eyes:
+                    c["reactionGroups"] = [
+                        {"content": "THUMBS_UP", "viewerHasReacted": True},
+                        {"content": "EYES", "viewerHasReacted": True}]
+        return state
+
+    def reactions(self):
+        """The subject of each `addReaction` sent, asserting it was EYES."""
+        subjects = []
+        for path in sorted(self.api_dir.iterdir(), key=lambda p: int(p.stem)):
+            body = json.loads(path.read_text())
+            if "addReaction" in body.get("query", ""):
+                self.assertIn("content: EYES", body["query"])
+                subjects.append(body["variables"]["subject"])
+        return subjects
+
+    def mention_fixed(self, thread, eyes=(), refuse_reactions=False):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.with_node_ids(self.pr_state([thread]), eyes),
+                                self.pr_state()],
+                        refuse_reactions=refuse_reactions)
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Commit("fix: use path token"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertTrue(any("use the path tokenId" in t.goal for t in fake.turns))
+        replies = [data for kind, data in self.api_calls() if kind == "reply"]
+        self.assertEqual(len(replies), 1)
+        self.assertIn("Addressed in ", replies[0]["body"])
+        return self.reactions()
+
+    def test_a_conversation_mention_is_acknowledged_once_before_its_fix(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        state = self.conversation_state(("operator", "User"),
+                                        "@holophyte fix: move the button")
+        self.resume_with_conversation(state, self.pr_state())
+        fix = SeesCalls("fix: move button", fixture=self)
+        fake, _ = self.loop(fix, Idle(""), provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "implement"])
+        self.assertEqual(self.reactions(), ["IC_1"])
+        self.assertEqual(fix.seen, ["state", "react"])
+
+    def test_a_review_mention_in_a_later_reply_is_acknowledged_on_it(self):
+        thread = ("src/app.py", 30, ("reviewer", "User"), "Which token?",
+                  ((("reviewer", "User"), "The guest one, @holophyte?"),
+                   (("operator", "User"),
+                    "@holophyte fix: use the path tokenId")))
+        self.assertEqual(self.mention_fixed(thread), ["C_1_2"])
+
+    def test_a_mention_the_factory_already_acknowledged_is_not_reacted_to(self):
+        thread = ("src/app.py", 30, ("reviewer", "User"), "Which token?",
+                  ((("reviewer", "User"), "The guest one?"),
+                   (("operator", "User"),
+                    "@holophyte fix: use the path tokenId")))
+        self.assertEqual(self.mention_fixed(thread, eyes=("C_1_2",)), [])
+
+    def test_a_refused_reaction_is_a_run_event_and_the_fix_still_runs(self):
+        thread = ("src/app.py", 30, ("operator", "User"),
+                  "@holophyte fix: use the path tokenId")
+        self.assertEqual(self.mention_fixed(thread, refuse_reactions=True),
+                         ["C_1"])
+        (summary,), = self.read("SELECT summary FROM runEvents"
+                                " WHERE summary LIKE '%EYES reaction%'")
+        self.assertIn(f"{self.URL}#discussion_r1", summary)
+        self.assertIn("reaction refused", summary)
+
+    def test_a_mention_from_an_unlisted_account_gets_no_reaction(self):
+        self.configure('[merge]\nmode = "pr"\nmention_accounts = ["operator"]\n')
+        thread = ("src/app.py", 30, ("stranger", "User"),
+                  "@holophyte fix: change tokens")
+        self.fake_route(states=[self.with_node_ids(self.pr_state([thread]))])
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  provider=self.provider())
+        replies = [data["body"] for kind, data in self.api_calls()
+                   if kind == "reply"]
+        self.assertTrue(replies)
+        self.assertTrue(all(REFUSAL in body for body in replies))
+        self.assertEqual(self.reactions(), [])
 
     def declined_thread(self, author, config=""):
         self.configure('[merge]\nmode = "pr"\n' + config)

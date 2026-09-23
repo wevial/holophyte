@@ -8,6 +8,7 @@ from unittest.mock import patch
 import holophyte.loop
 import holophyte.pullrequest
 from holophyte import pr
+from holophyte.gates import InfraFailure
 
 
 class MergePayloadTests(unittest.TestCase):
@@ -43,6 +44,28 @@ class MergePayloadTests(unittest.TestCase):
                 self.assertEqual(rest.call_args.args,
                                  (target, pull, "PUT",
                                   "repos/example/repo/pulls/7/merge", expected))
+
+
+class ReactionTests(unittest.TestCase):
+    PULL = pr.PullRequest("github.com", "example", "repo", 7,
+                          "https://github.com/example/repo/pull/7")
+
+    def test_react_eyes_sends_one_eyes_reaction_on_the_comment(self):
+        with patch.object(pr, "_call",
+                          return_value={"data": {"addReaction": {}}}) as call:
+            pr.react_eyes(SimpleNamespace(), self.PULL, "IC_kwDOAbc")
+        _, host, method, path, payload = call.call_args.args
+        self.assertEqual((call.call_count, host, method, path),
+                         (1, "github.com", "POST", "graphql"))
+        self.assertEqual(payload["variables"], {"subject": "IC_kwDOAbc"})
+        self.assertIn("addReaction(input: {subjectId: $subject, content: EYES})",
+                      payload["query"])
+
+    def test_a_reaction_github_refuses_is_an_infra_failure(self):
+        answer = {"errors": [{"message": "Could not resolve to a node"}]}
+        with patch.object(pr, "_call", return_value=answer), \
+                self.assertRaisesRegex(InfraFailure, "Could not resolve"):
+            pr.react_eyes(SimpleNamespace(), self.PULL, "IC_gone")
 
 
 class PrBodyStubTests(unittest.TestCase):

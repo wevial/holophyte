@@ -2,7 +2,7 @@
 import re
 
 from holophyte.config_tables import merge_config
-from holophyte.pr import Thread
+from holophyte.pr import Thread, acknowledged
 from holophyte.redact import known_secrets, outbound
 from holophyte.thread_mentions import REFUSAL, classify, refuse, refused
 
@@ -57,7 +57,8 @@ def _instruction(comment, pull, merge):
     thread = classify(Thread(
         id=comment.get("id") or "", path="", line=None, author=login,
         body=comment.get("body") or "", url=comment.get("url") or pull.url,
-        author_kind="user", kind="conversation"),
+        author_kind="user", kind="conversation", node_id=comment.get("id") or "",
+        acknowledged=acknowledged(comment)),
         merge.mention_handle, merge.mention_accounts)
     if (thread.classification == "MENTIONED"
             or refused(thread, merge.mention_handle, merge.mention_accounts)):
