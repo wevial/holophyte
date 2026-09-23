@@ -2,8 +2,8 @@
 
 Opt in with `HOLOPHYTE_LIVE_HARNESS=claude` (an implementer turn and its
 resume), `HOLOPHYTE_LIVE_HARNESS=codex` or `devin` (two review rounds
-through `holophyte.agents.agent()`, and for `codex` an implementer turn
-through the loop's `_timed()` and its resume) or
+through `holophyte.agents.agent()`, and an implementer turn through the
+loop's `_timed()` and its resume) or
 `HOLOPHYTE_LIVE_HARNESS=cursor` (one review round; `HOLOPHYTE_LIVE_MODEL`
 picks its model, `grok-4.7-high` by default) or
 `HOLOPHYTE_LIVE_HARNESS=critic` (the default `[agents.critic]` seat, `codex`, asked
@@ -173,12 +173,21 @@ class LiveCursorReviewTests(LiveReviewCase):
         self.assertEqual(self.git("status", "--porcelain"), "")
 
 
-@unittest.skipUnless(LIVE == "codex",
-                     "set HOLOPHYTE_LIVE_HARNESS=codex for a live implementer turn")
-class LiveCodexImplementerTests(unittest.TestCase):
+# The `[agents.implementer]` table each implementer harness's live turn runs
+# under; devin's model is the reviewer's, which its account has quota for.
+IMPLEMENTER_TABLES = {
+    "codex": 'harness = "codex"\neffort = "low"\n',
+    "devin": 'harness = "devin"\nmodel = "swe-2-high"\n',
+}
+
+
+@unittest.skipUnless(LIVE in IMPLEMENTER_TABLES,
+                     "set HOLOPHYTE_LIVE_HARNESS=codex or devin for a live "
+                     "implementer turn")
+class LiveImplementerTests(unittest.TestCase):
     def test_turn_writes_the_file_and_the_resume_remembers_the_word(self):
-        self.assertIsNotNone(shutil.which("codex"), "HOLOPHYTE_LIVE_HARNESS=codex "
-                             "but no 'codex' on PATH")
+        self.assertIsNotNone(shutil.which(LIVE), f"HOLOPHYTE_LIVE_HARNESS={LIVE} "
+                             f"but no {LIVE!r} on PATH")
         word = "holo" + secrets.token_hex(3)
         with tempfile.TemporaryDirectory(prefix="holophyte-live-") as scratch:
             root = Path(scratch)
@@ -188,7 +197,7 @@ class LiveCodexImplementerTests(unittest.TestCase):
             holo = root / "holo"
             holo.mkdir()
             (holo / "config.toml").write_text(
-                '[agents.implementer]\nharness = "codex"\neffort = "low"\n')
+                '[agents.implementer]\n' + IMPLEMENTER_TABLES[LIVE])
             target = holophyte.project.Project(
                 path=repo, holo_dir=holo, store_path=holo / "store.db",
                 config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
@@ -211,9 +220,10 @@ class LiveCodexImplementerTests(unittest.TestCase):
             note = (repo / "note.txt").read_text().strip()
             (session,) = conn.execute("SELECT providerSessionId FROM runs "
                                       "WHERE id = ?", (run,)).fetchone()
+            print(f"session: {session}")
             argv, reason = holophyte.fix_session.resume_argv(target, conn, run)
             self.assertIsNone(reason)
-            print(f"resume: {['codex', *argv[1:]]}")
+            print(f"resume: {[LIVE, *argv[1:]]}")
             result = subprocess.run(
                 argv + ["What word did I ask you to remember? Reply with the "
                         "word only."], cwd=repo, capture_output=True, text=True,
@@ -222,7 +232,8 @@ class LiveCodexImplementerTests(unittest.TestCase):
                              f"{result.stdout}\n{result.stderr}")
         print(f"answer: {result.stdout.strip()}")
         self.assertEqual(note, "ok")
-        self.assertEqual(str(uuid.UUID(session)), session)
+        if LIVE == "codex":
+            self.assertEqual(str(uuid.UUID(session)), session)
         self.assertIn(word, result.stdout.lower())
 
 

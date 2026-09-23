@@ -142,39 +142,56 @@ class Codex(Adapter):
 
 
 class Devin(Adapter):
-    """Devin in print mode for the review roles, in the same throwaway
-    candidate checkout as `Codex`.
+    """Devin in print mode: the review roles in the same throwaway candidate
+    checkout as `Codex`, the implementer in the task worktree.
 
     Print mode fails in a directory Devin has never trusted, and every
-    throwaway checkout is one, hence `--respect-workspace-trust false`;
-    `dangerous` lets the reviewer run git and tests without a prompt, the
-    checkout staying the write boundary. Devin chooses the session id and
-    prints none, so `reported_session()` asks `devin list` in the checkout,
-    which holds only this turn's session: a resumed one moves to the
-    directory it was resumed in. The question goes through the turn's own
-    runner, so it is held to what is left of the turn's cap and killed by
-    the sweep that would kill the turn. The factory has no Devin model to default
-    to, so `model` is required -- the maintainer's choice for the reviewer is
+    throwaway checkout and fresh task worktree is one, hence
+    `--respect-workspace-trust false`; `dangerous` lets the turn run git and
+    tests without a prompt, the checkout or worktree staying the write
+    boundary. Devin chooses the session id and prints none, so
+    `reported_session()` asks `devin list` in the turn's directory. A review
+    checkout holds only this turn's session: a resumed one moves to the
+    directory it was resumed in. A task worktree can hold more than one --
+    a fix round that started fresh leaves a second -- so the implementer's
+    is the newest listed. Either question goes through the turn's own
+    runner, so it is killed by the sweep that would kill the turn; a review
+    turn's is held to what is left of the turn's cap, an implementer's to
+    `LIST_TIMEOUT` of its own inside the turn's heartbeat. The
+    implementer's argv ends in `-p --`, so a prompt that starts with `-` is
+    not read as a flag. The factory has no Devin model to default to, so
+    `model` is required -- the maintainer's choice for the reviewer is
     `swe-2-high`, the live test's model -- and the CLI has no effort flag.
     """
     name = "devin"
-    roles = frozenset({"reviewer", "adjudicator"})
+    roles = frozenset({"implementer", "reviewer", "adjudicator"})
     requires = frozenset({"model"})
     refuses = frozenset({"effort"})
     LIST_TIMEOUT = 60
 
+    IMPLEMENTER = ["--respect-workspace-trust", "false", "--permission-mode",
+                   "dangerous"]
+
     def turn(self, binary, options, role):
+        if role == "implementer":
+            return [binary, *self.IMPLEMENTER, "--model", options["model"],
+                    "-p", "--"]
         return [binary, *self.route(options), "-p"]
 
     def session(self, argv):
         return None
 
     def resume(self, binary, options, session, role):
+        if role == "implementer":
+            return [binary, *self.IMPLEMENTER, "--model", options["model"],
+                    "-r", session, "-p", "--"]
         return [binary, *self.route(options), "-r", session, "-p"]
 
     def reported_session(self, binary, output, role, run):
-        """The one session `devin list` shows in the turn's checkout, None
-        for any other answer -- a guess could resume someone else's
+        """The session `devin list` shows in the turn's directory -- the
+        one a review checkout holds, the newest `last_activity_at` in a
+        task worktree -- None for any other answer, two sessions tied for
+        newest included -- a guess could resume someone else's
         conversation -- and for a turn with no `run` to ask it through."""
         if run is None:
             return None
@@ -184,8 +201,16 @@ class Devin(Adapter):
             sessions = json.loads(listed)
         except (OSError, subprocess.SubprocessError, ValueError):
             return None
-        if code != 0 or not isinstance(sessions, list) \
-                or len(sessions) != 1 or not isinstance(sessions[0], dict):
+        if code != 0 or not isinstance(sessions, list):
+            return None
+        if role == "implementer":
+            dated = [entry for entry in sessions if isinstance(entry, dict)
+                     and isinstance(entry.get("last_activity_at"), int)]
+            newest = max((entry["last_activity_at"] for entry in dated),
+                         default=None)
+            sessions = [entry for entry in dated
+                        if entry["last_activity_at"] == newest]
+        if len(sessions) != 1 or not isinstance(sessions[0], dict):
             return None
         session = sessions[0].get("id")
         return session if isinstance(session, str) else None
@@ -267,7 +292,8 @@ class Seat:
         """The session id a finished turn ran under, for an adapter whose
         harness chooses it; None when the harness names none. A review turn
         passes `run(argv, timeout)`, which runs `argv` in its checkout under
-        its cap and kill hook and returns `(returncode, stdout)`: a harness
+        its cap and kill hook and returns `(returncode, stdout)`, and an
+        implementer turn one that runs it in the task worktree: a harness
         that prints no id is asked through it (`Devin`)."""
         return self.adapter.reported_session(self.binary, output, self.role,
                                              run)

@@ -63,7 +63,7 @@ implementer's command and isolation settings.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"` or `"codex"`) and optional `model` and `effort` (`claude`: default `"opus"`, `"high"`; `codex`: default `"gpt-5.6-sol"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); override to select another implementer harness. A table's adapter builds the argv, records the session id (`claude` at dispatch, `codex` from its banner after the turn) and builds the resume argv. |
+| `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"` or `"codex"`) and optional `model` and `effort` (`claude`: default `"opus"`, `"high"`; `codex`: default `"gpt-5.6-sol"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"devin"` with a required `model` and no `effort`; override to select another implementer harness. A table's adapter builds the argv, records the session id (`claude` at dispatch, `codex` from its banner after the turn, `devin` from `devin list --format json` in the task worktree after the turn) and builds the resume argv. |
 | `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` `"codex"` and optional `model` and `effort` (default `"gpt-5.6-sol"`, `"medium"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"cursor"` or `"devin"` with a required `model` and no `effort`; override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
@@ -105,8 +105,8 @@ A role can instead be a table naming a harness adapter in
 `holophyte/harness.py`. Only `implementer`, `reviewer`, `adjudicator` and
 `critic` may be tables, and only for a role the harness supports; today that
 is `claude` for `implementer`, `codex` for `implementer`, `reviewer`,
-`adjudicator` and `critic`, and `cursor` and `devin` for `reviewer` and
-`adjudicator`. Unknown keys, an unknown harness, a role the harness does not
+`adjudicator` and `critic`, `devin` for `implementer`, `reviewer` and
+`adjudicator`, and `cursor` for `reviewer` and `adjudicator`. Unknown keys, an unknown harness, a role the harness does not
 serve, or an option the harness requires or refuses are startup errors.
 `[agents.implementer] harness = "claude"`
 runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
@@ -181,6 +181,26 @@ since the CLI has no effort flag.
 
 ```toml
 [agents.reviewer]
+harness = "devin"
+model   = "opus"          # required; passed to --model
+```
+
+`[agents.implementer] harness = "devin"` runs each turn in the task worktree
+as `devin --respect-workspace-trust false --permission-mode dangerous --model
+M -p -- PROMPT`; the `--` keeps a prompt that starts with `-` from being read
+as a flag. Devin prints no session id, so after every implement and fix turn,
+a timed-out one included, `devin list --format json` in the task worktree
+(under its own 60-second cap, inside the turn's heartbeat and killed by
+the sweep that would kill the turn) supplies it: the session with the newest
+`last_activity_at`, since a worktree holds a second session once a fix round
+started fresh. A list that fails, times out, names no session or ties two
+sessions for newest records nothing and leaves the turn as it was. A fix round under `[loop] fix_session
+= "resume"` runs `devin --respect-workspace-trust false --permission-mode
+dangerous --model M -r ID -p -- PROMPT`. `model` is required and `effort`
+refused, as for the reviewer.
+
+```toml
+[agents.implementer]
 harness = "devin"
 model   = "opus"          # required; passed to --model
 ```
@@ -356,7 +376,7 @@ supplies the binary; review roles run on the host and keep their path.
 | `claude` | Default: `claude` on PATH | Absolute path to the Claude CLI; set when the binary the factory should run is not the first `claude` on PATH. A relative path is refused. |
 | `codex` | Default: `codex` on PATH | Absolute path to the Codex CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `codex` on PATH. A relative path is refused. |
 | `cursor` | Default: `cursor-agent` on PATH | Absolute path to the Cursor CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `cursor-agent` on PATH. A relative path is refused. |
-| `devin` | Default: `devin` on PATH | Absolute path to the Devin CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `devin` on PATH. A relative path is refused. |
+| `devin` | Default: `devin` on PATH | Absolute path to the Devin CLI for a table implementer, reviewer or adjudicator; set when the binary the factory should run is not the first `devin` on PATH. A relative path is refused. |
 
 ## `[loop]`
 
