@@ -36,7 +36,7 @@ import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.agent_routes import reset, routes  # noqa: E402
-from holophyte.freshness import critic_brief, parse_freshness  # noqa: E402
+from holophyte.freshness import critic_brief, park_stale, parse_freshness  # noqa: E402
 from tests.phase_fixture import finish_run  # noqa: E402
 
 # The fake codex: records its cwd, the HEAD there and whether HEAD is
@@ -300,6 +300,61 @@ class CriticClaimTests(LoopFixture):
         self.assertIn("no FRESHNESS verdict", warnings[0][1])
         self.assertIn("no FRESHNESS verdict", warnings[1][1])
         self.assertIn("the critic crashed", warnings[2][1])
+
+
+    def admit(self, provider, task, fake):
+        """`task` through `_admit_ticket()` on a fresh store connection."""
+        conn = holophyte.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+        with patch.object(holophyte.loop, "agent", fake), \
+                patch.object(sys, "stdout", io.StringIO()):
+            admitted = holophyte.claim._admit_ticket(
+                self.project, conn, project_id, provider, task, SEEN)
+        return conn, project_id, admitted
+
+    def test_a_late_verdict_leaves_a_ticket_a_sibling_claimed_alone(self):
+        task = filed(13, 1)
+        provider, project, claimed = StubProvider(task), self.project, []
+
+        class SiblingClaims(Critic):
+            # Another loop on the store claims the ticket mid-turn.
+            def play(self, cwd, turn):
+                conn = holophyte.runs.open_store(project)
+                ticket_id, project_id = conn.execute(
+                    "SELECT id, projectId FROM tickets").fetchone()
+                claimed.append(store.claim(conn, project_id, ticket_id))
+                tickets.transition(conn, ticket_id, "in_flight")
+                conn.close()
+                return "FRESHNESS: STALE already done by KO-5"
+
+        _, _, admitted = self.admit(provider, task, FakeAgent(SiblingClaims()))
+
+        self.assertIsNone(admitted)
+        self.assertEqual(
+            self.read("SELECT status, activeRunId, acceptanceCriteria != '[]'"
+                      " FROM tickets"), [("in_flight", claimed[0], 1)])
+        self.assertEqual((provider.comments, provider.states), ([], []))
+
+    def test_a_ticket_parked_after_its_admission_is_skipped_not_claimed(self):
+        task = filed(13, 1)
+        provider = StubProvider(task)
+        conn, project_id, ticket_id = self.admit(provider, task,
+                                                 FakeAgent(Critic()))
+        # A sibling's critic, asked at the same time, answers STALE now.
+        with patch.object(sys, "stdout", io.StringIO()):
+            park_stale(
+                self.project, conn, project_id, provider, task,
+                ["critic: stale \u2014 done"], admitted=True)
+            run = holophyte.claim._claim_run(
+                self.project, conn, project_id, provider, task, ticket_id,
+                SEEN)
+
+        self.assertIs(run, holophyte.claim.HELD)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)])
+
+
+SEEN = SimpleNamespace(trips=[], watched=[])
 
 
 class CriticAnswerTests(unittest.TestCase):

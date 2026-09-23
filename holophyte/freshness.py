@@ -18,9 +18,10 @@ since filing did the work, or moved the design on (KO-715). A ticket
 naming a file `main` changed since -- is put to the `[agents.critic]` seat
 once, with `critic_brief()`: the body and what merged since. The answer's
 last line (`parse_freshness()`) decides: FRESH claims, STALE or UNSURE
-parks through `park_stale()`. The critic never blocks the queue on its own
-failure: a turn that raises or answers no verdict claims anyway, and the
-run the claim opens carries a `warning` naming the failure.
+parks through `park_stale()`, under the claim's lease turn so a sibling
+loop's claim made meanwhile stands. The critic never blocks the queue on
+its own failure: a turn that raises or answers no verdict claims anyway,
+and the run the claim opens carries a `warning` naming the failure.
 """
 import re
 import subprocess
@@ -31,7 +32,7 @@ import store
 import store.read
 import ticket_template
 from holophyte.agent_routes import routes
-from holophyte.board import comment_body, mirror_key, mirror_task, warn
+from holophyte.board import comment_body, lease_turn, mirror_key, mirror_task, warn
 from holophyte.config_tables import loop_config
 from holophyte.files import RangeError, touched_files
 from holophyte.harness import critic_seat
@@ -130,13 +131,34 @@ def stale_comment(reasons):
             " what main holds now, then move the issue back to Todo.")
 
 
-def park_stale(conn, project_id, provider, task, reasons, why=None):
+def park_stale(project, conn, project_id, provider, task, reasons, why=None,
+               admitted=False):
     """Refuse a stale ticket: mirror it `needs_spec`, comment once, move the
     issue to Backlog, print the skip line, which `why` words when the
     reasons are not missing files. A board call that fails is a warning;
-    the ticket is skipped either way and the loop goes on."""
-    ticket_id = mirror_task(conn, project_id, task, specced=False)
+    the ticket is skipped either way and the loop goes on.
+
+    Serialized with the claim (KO-715): the row is re-read and the mirror
+    written under the claim's `lease_turn()`, so no sibling loop's
+    `store.claim()` lands in between. A ticket a live run holds by then is
+    that run's -- its contract is not blanked, its issue not moved -- and so
+    is an `admitted` one, `ready` when this pass admitted it, that is no
+    longer `ready`: another loop parked or moved it while the critic ran.
+    Either is skipped with nothing written."""
     issue_id = mirror_key(task)
+    with lease_turn(project), store.transaction(conn):
+        row = conn.execute(
+            "SELECT activeRunId, status FROM tickets"
+            " WHERE linearIssueId = ? AND projectId = ?",
+            (issue_id, project_id)).fetchone()
+        taken = row is not None and (
+            row[0] is not None or (admitted and row[1] != "ready"))
+        if not taken:
+            ticket_id = mirror_task(conn, project_id, task, specced=False)
+    if taken:
+        print(f"[holo2] {task['id']} skipped: another loop claimed or parked"
+              " it while it was judged; this verdict is dropped")
+        return
     try:
         provider.comment(issue_id, comment_body(stale_comment(reasons)))
     except Exception as e:
@@ -277,9 +299,9 @@ def critic_admits(project, conn, project_id, provider, task):
     verdict, reason = answer
     if verdict == "fresh":
         return True
-    park_stale(conn, project_id, provider, task,
+    park_stale(project, conn, project_id, provider, task,
                [f"critic: {verdict} \u2014 {reason}"],
-               why=f"the critic answered {verdict.upper()}")
+               why=f"the critic answered {verdict.upper()}", admitted=True)
     return False
 
 
