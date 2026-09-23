@@ -170,6 +170,29 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
         (wt / ".env").write_text("checkout changes\n")
         self.assertEqual(source.read_text(), "PUBLIC=sentinel-link-value\n")
 
+    def test_local_capture_spec_stays_on_disk_and_out_of_the_commit(self):
+        wt = self.target.parent / "capture-local"
+        self.git("worktree", "add", "-b", "capture-local", str(wt), "main")
+        self.configure('[merge]\nui_capture_dir = ".holophyte-capture"\n'
+                       "ui_capture_local = true\n")
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        spec = wt / ".holophyte-capture" / "KO-7.capture.ts"
+        spec.write_text("test('capture', () => {});\n")
+        (wt / "work.txt").write_text("the ticket's change\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-qm", "candidate", cwd=wt)
+        tree = self.git("ls-tree", "-r", "--name-only", "HEAD", cwd=wt)
+        self.assertIn("work.txt", tree.split())
+        self.assertNotIn(".holophyte-capture", tree)
+        self.assertTrue(spec.is_file())
+
+    def test_capture_directory_untouched_without_local_key(self):
+        wt = self.target.parent / "capture-kept"
+        self.git("worktree", "add", "--detach", str(wt), "main")
+        self.configure('[merge]\nui_capture_dir = ".holophyte-capture"\n')
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertFalse((wt / ".holophyte-capture").exists())
+
     def test_without_environment_keys_setup_writes_no_environment(self):
         seen = self.target.parent / "env-absent"
         self.configure(f'[worktree]\nsetup = ["test ! -e .env && touch {seen}"]\n')

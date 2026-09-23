@@ -56,7 +56,7 @@ from holophyte.config import (
     setup_timeout,
     worktree_environment,
 )
-from holophyte.config_tables import sweep_config
+from holophyte.config_tables import merge_config, sweep_config
 from holophyte.environment_git import (
     environment_temporary_directory,
     exclude_environment,
@@ -114,6 +114,17 @@ def write_worktree_environment(target, wt):
             os.unlink(temporary)
 
 
+def write_capture_ignore(target, wt):
+    """Make a local `ui_capture_dir` ignore itself: unlike `info/exclude`,
+    its `.gitignore` travels into a container turn's clone."""
+    cfg = merge_config(target)
+    if not cfg.ui_capture_local:
+        return
+    directory = Path(wt) / cfg.ui_capture_dir
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / ".gitignore").write_text("*\n")
+
+
 def run_worktree_setup(target, wt, conn=None, run_id=None):
     """Run the target's setup commands in the fresh worktree `wt`.
 
@@ -129,6 +140,10 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
         return False, redact_values(str(error))
     except OSError:
         return False, "[holo2] worktree environment file could not be written"
+    try:
+        write_capture_ignore(target, wt)
+    except (SystemExit, OSError) as error:
+        return False, f"[holo2] local capture directory not prepared: {error}"
     commands = setup_commands(target)
     timeout = setup_timeout(target)
     if commands:
