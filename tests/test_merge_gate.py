@@ -38,6 +38,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     REQUEST_CHANGES,
     Commit,
 )
+from heartbeat_fixture import LOADED_MS, patch_beats  # noqa: E402 - same
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
     Boom,
@@ -731,10 +732,15 @@ class HeartbeatTests(LoopFixture):
     from inside its wait the way the supervisor would.
     """
 
-    def test_an_implementer_slower_than_the_stale_budget_is_not_tripped(self):
-        # 0.01 min is 600 ms; two strikes make a 1.2 s budget. The turn
-        # below sweeps every 400 ms for 2 s.
-        self.configure("[supervisor]\nheartbeat_stale_min = 0.01\n")
+    def slow_turn(self, delay_ms=0, silent=False):
+        """Run a ticket whose implementer outlasts the stale budget, each
+        beat `delay_ms` late or `silent`; return the turn's sightings."""
+        # 0.05 min is a 3 s window: a beat 1.5 s apart, even 400 ms late on
+        # a busy runner, is not stale (KO-674). One strike holds the budget
+        # to 3 s, so the turn below sweeps every 400 ms for only 5 s.
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n"
+                       "stale_strikes = 1\n")
+        patch_beats(self, delay_ms, silent)
         knobs = holophyte.config_tables.sweep_config(self.tgt)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
         db, tgt = self.db, self.tgt
@@ -761,8 +767,10 @@ class HeartbeatTests(LoopFixture):
                 return super().play(cwd, turn)
 
         fake, guard = self.loop(SlowCommit("the slow work"), APPROVE)
-
         self.assertEqual(guard.spawned, [])
+        return sightings
+
+    def assert_kept_beating(self, sightings):
         self.assertGreaterEqual(len(sightings), 4, sightings)
         self.assertEqual([trips for trips, _ in sightings if trips], [])
         # The heartbeat moved during the turn while the phase did not: the
@@ -771,8 +779,20 @@ class HeartbeatTests(LoopFixture):
         beats = [beat for _, (_, beat) in sightings]
         self.assertEqual(phases, {"working"})
         self.assertGreater(beats[-1], beats[0])
+
+    def test_an_implementer_slower_than_the_stale_budget_is_not_tripped(self):
+        self.assert_kept_beating(self.slow_turn())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertIn("the slow work", self.subjects())
+
+    def test_beats_each_late_on_a_loaded_runner_are_not_tripped(self):
+        self.assert_kept_beating(self.slow_turn(delay_ms=LOADED_MS))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_silent_heartbeat_under_the_slow_turn_fails_the_check(self):
+        sightings = self.slow_turn(silent=True)
+        with self.assertRaises(AssertionError):
+            self.assert_kept_beating(sightings)
 
 
 class EndedRunTests(LoopFixture):

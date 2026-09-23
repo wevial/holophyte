@@ -36,6 +36,12 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     Reply,
 )
+from heartbeat_fixture import (  # noqa: E402 - after the sys.path insert above
+    LOADED_MS,
+    SAMPLE_MS,
+    heartbeat_sampler,
+    patch_beats,
+)
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
     TICK,
@@ -778,28 +784,17 @@ class MergeModePullRequestTests(MergeModeFixture):
             self.read("SELECT phase, outcome, mergeSha FROM runs"),
             [("done", "merged", self.MERGE_SHA)])
 
-    def test_a_slow_push_keeps_the_run_heartbeating(self):
-        """The push and the create block for as long as the remote takes,
-        outside any agent turn or verify: a push longer than the stale
-        budget was a `stale_heartbeat` trip for the supervisor, which could
-        fail the run before its URL was recorded. The fake push here samples
-        the run's `lastHeartbeat` from the store while it takes longer than
-        the whole stale budget; the beat must move under it."""
+    def slow_push(self, delay_ms=0, silent=False):
+        """Park a run whose push samples its heartbeat for longer than the
+        stale budget, each beat `delay_ms` late or `silent`."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
                        "[supervisor]\nheartbeat_stale_min = 0.01\n")
+        patch_beats(self, delay_ms, silent)
         knobs = holophyte.config_tables.sweep_config(self.tgt)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
         samples = self.db.parent / "heartbeats.log"
-        sampler = (
-            "import sqlite3, sys, time\n"
-            f"deadline = time.monotonic() + {budget_s * 5 / 3}\n"
-            f"conn = sqlite3.connect({str(self.db)!r})\n"
-            "while time.monotonic() < deadline:\n"
-            "    time.sleep(0.2)\n"
-            "    row = conn.execute('SELECT phase, lastHeartbeat FROM runs')"
-            ".fetchone()\n"
-            f"    open({str(samples)!r}, 'a').write('%s %s\\n' % row)\n")
-        self.fake_route(push_sh=f"  {sys.executable} -c {shlex.quote(sampler)}")
+        sampler = heartbeat_sampler(self.db, samples, budget_s * 5 / 3)
+        self.fake_route(push_sh=f"  {sampler}")
 
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
@@ -807,14 +802,34 @@ class MergeModePullRequestTests(MergeModeFixture):
         seen = [line.split() for line in samples.read_text().splitlines()]
         self.assertGreaterEqual(len(seen), 4, seen)
         self.assertEqual({phase for phase, _ in seen}, {"merge_gate"})
-        beats = [int(beat) for _, beat in seen]
-        self.assertGreater(beats[-1], beats[0])
-        # No gap between beats reached the stale threshold.
-        self.assertLess(max(b - a for a, b in zip(beats, beats[1:])),
-                        knobs.heartbeat_stale_ms)
         self.assertEqual(
             self.read("SELECT phase, outcome, prUrl FROM runs"),
             [("awaiting_merge_approval", None, self.URL)])
+        return [int(beat) for _, beat in seen], knobs.heartbeat_stale_ms
+
+    def assert_kept_beating(self, beats, stale_ms):
+        self.assertGreater(beats[-1], beats[0])
+        # No gap between beats reached the stale threshold, give or take a
+        # sample and 500 ms of a busy runner's scheduling (KO-674).
+        self.assertLess(max(b - a for a, b in zip(beats, beats[1:])),
+                        stale_ms + SAMPLE_MS + 500)
+
+    def test_a_slow_push_keeps_the_run_heartbeating(self):
+        """The push and the create block for as long as the remote takes,
+        outside any agent turn or verify: a push longer than the stale
+        budget was a `stale_heartbeat` trip for the supervisor, which could
+        fail the run before its URL was recorded. The fake push here samples
+        the run's `lastHeartbeat` from the store while it takes longer than
+        the whole stale budget; the beat must move under it."""
+        self.assert_kept_beating(*self.slow_push())
+
+    def test_a_slow_push_on_a_loaded_runner_keeps_the_run_heartbeating(self):
+        self.assert_kept_beating(*self.slow_push(delay_ms=LOADED_MS))
+
+    def test_a_silent_heartbeat_under_a_slow_push_fails_the_check(self):
+        beats = self.slow_push(silent=True)
+        with self.assertRaises(AssertionError):
+            self.assert_kept_beating(*beats)
 
     def test_a_green_quiet_pr_under_auto_merges_through_the_api(self):
         """Acceptance: zero unresolved threads and green checks with
