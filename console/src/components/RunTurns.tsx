@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { useRunTurns, useTurnTranscript } from "../hooks/useRunTurns";
+import type { RunResourceState } from "../hooks/useRunResource";
+import { useTurnTranscript, type RunTurnsBody } from "../hooks/useRunTurns";
 import type { Fetch } from "../lib/poll";
 
-export function RunTurns({ base, id, polls, deps }: {
-  base: string; id: number; polls: number; deps?: { fetch: Fetch };
+export function RunTurns({ base, id, turns, deps }: {
+  base: string; id: number; turns: RunResourceState<RunTurnsBody>; deps?: { fetch: Fetch };
 }) {
-  const turns = useRunTurns(base, id, polls, deps);
   const [selected, select] = useState<number | null>(null);
   const transcript = useTurnTranscript(base, id, selected, deps);
   return <section aria-label="Turns" className="mt-4 rounded border border-line p-3">

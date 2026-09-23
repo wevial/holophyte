@@ -74,6 +74,18 @@ test("the selected project keeps only its daemon's card", () => {
   expect(document.querySelector("[data-subtitle]")!.textContent).toBe("1 host · 1 daemon on :7710");
 });
 
+test("each project on a host lists its configured seats, seat first, omitting a seat with no route", () => {
+  const route_labels = { implementer: "claude-implement opus", reviewer: "codex gpt-6-astra", writer: null };
+  render(<Hosts hosts={[hostOf({ ...working, route_labels }, NO_ATTENTION)]} project="all" now={0} />);
+  const card = screen.getByRole("article", { name: "writer" });
+  const seats = within(card).getByRole("list", { name: "writer routes" });
+  expect(within(seats).getAllByRole("listitem").map((line) => line.textContent)).toEqual([
+    "implementer claude-implement opus",
+    "reviewer codex gpt-6-astra",
+  ]);
+  expect(seats.textContent).not.toContain("writer");
+});
+
 test("a daemon that answered 401 gets the Token field in its card and the key glyph in the rail, with no unreachable styling", () => {
   const asking = { ...hostOf(working, NO_ATTENTION, "http://writer:7710", 1_000), status: null, project: null, seen_ms: null, needs_token: true };
   render(<Hosts hosts={[asking]} project="all" now={1_000} />);
