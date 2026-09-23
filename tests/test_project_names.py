@@ -40,24 +40,60 @@ def old_name_sites(paths, names=OLD_NAMES):
     return sorted(sites)
 
 
+def _bound(target, value):
+    """(target, value) pairs an assignment binds, unpacking a tuple or list
+    target against an equally long literal; otherwise every target element
+    is paired with the whole value."""
+    if isinstance(target, ast.Starred):
+        yield from _bound(target.value, value)
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        if (isinstance(value, (ast.Tuple, ast.List))
+                and len(value.elts) == len(target.elts)
+                and not any(isinstance(e, ast.Starred) for e in value.elts)):
+            for each, part in zip(target.elts, value.elts):
+                yield from _bound(each, part)
+        else:
+            for each in target.elts:
+                yield from _bound(each, value)
+    else:
+        yield target, value
+
+
+def _registers_project(value):
+    return any(
+        isinstance(node, ast.Call)
+        and getattr(node.func, "attr", getattr(node.func, "id", None))
+        in ("ensure_project", "register_project")
+        for node in ast.walk(value))
+
+
+def store_id_as_project_lines(tree):
+    """Lines where an attribute `project` is assigned, plainly, annotated or
+    by unpacking, a value from `ensure_project` or `register_project`."""
+    lines = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+        else:
+            continue
+        for target in targets:
+            for each, value in _bound(target, node.value):
+                if (isinstance(each, ast.Attribute) and each.attr == "project"
+                        and _registers_project(value)):
+                    lines.append(node.lineno)
+    return lines
+
+
 def store_id_as_project_sites(paths):
     """`path:line` for every attribute `project` assigned the store id a call
     to `ensure_project` or `register_project` returns."""
     sites = []
     for path in paths:
         tree = ast.parse(path.read_text(), filename=str(path))
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Assign)
-                    and isinstance(node.value, ast.Call)):
-                continue
-            func = node.value.func
-            called = getattr(func, "attr", getattr(func, "id", None))
-            if called not in ("ensure_project", "register_project"):
-                continue
-            for target in node.targets:
-                for each in ast.walk(target):
-                    if isinstance(each, ast.Attribute) and each.attr == "project":
-                        sites.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+        sites += [f"{path.relative_to(ROOT)}:{line}"
+                  for line in store_id_as_project_lines(tree)]
     return sorted(sites)
 
 
@@ -79,6 +115,18 @@ class ProjectNamesTest(unittest.TestCase):
         with self.subTest(store_id="project"):
             sites = store_id_as_project_sites(paths)
             self.assertEqual(sites, [], "\n" + "\n".join(sites))
+
+    def test_the_store_id_guard_sees_annotated_and_unpacked_assignments(self):
+        source = "\n".join([
+            "self.project = ensure_project(conn, path)",
+            "self.project: int = store.ensure_project(conn, path)",
+            "self.project, self.db = register_project(conn, path), db",
+            "self.db, [self.project] = db, [ensure_project(conn, path)]",
+            "self.project_id: int = ensure_project(conn, path)",
+            "self.project, self.project_id = locate(path), ensure_project(conn, path)",
+            "self.project: Project",
+        ])
+        self.assertEqual(store_id_as_project_lines(ast.parse(source)), [1, 2, 3, 4])
 
     def test_serve_runs_names_a_path_and_an_object_apart(self):
         def params(fn):
