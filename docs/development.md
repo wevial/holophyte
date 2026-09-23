@@ -73,6 +73,9 @@ Each module, one line:
 - `holophyte/serve_actions.py` — the daemon's `POST /actions/...` routes
   (KO-395): the body parser, the two unit actions, `requeue`, and the
   interventions row each records before it acts.
+- `holophyte/serve_levers.py` — the daemon's `hold`, `release-hold`,
+  `pause` and `resume` actions (KO-609): the CLI's store calls behind the
+  action token, each requiring a note, and the `paused` attention item.
 - `holophyte/transcripts.py` — opted-in transcript location, rendering and turn event joins.
 - `holophyte/transcript_config.py` — the daemon transcript root allow-list.
 - `holophyte/serve_runs.py` — the daemon's run and ledger read routes

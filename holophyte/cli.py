@@ -111,9 +111,9 @@ def _note_checks(parser, args):
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
-    if args.hold or args.release_hold or args.pause or args.abort:
+    if args.hold or args.release_hold or args.pause or args.resume or args.abort:
         if not (args.note or "").strip():
-            parser.error("--hold, --release-hold, --pause and --abort"
+            parser.error("--hold, --release-hold, --pause, --resume and --abort"
                          " require --note TEXT")
         return
     optional = args.approve or args.babysit or args.close
