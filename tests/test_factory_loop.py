@@ -881,7 +881,7 @@ class RunCapTests(LoopFixture):
         candidate = self.git("rev-parse", BRANCH).strip()
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertIn("out of time", reason)
-        self.assertIn("min spent of a 30 min box", reason)
+        self.assertIn("min of agent work against a 30 min box", reason)
         self.assertIn("cap 3x", reason)
         self.assertIn(candidate[:12], reason)
         self.assertIn("open findings", reason)

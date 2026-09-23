@@ -33,10 +33,11 @@ target repository with "git check-ignore": an ignored path can never appear
 in the candidate export the reviewer sees, so it is a violation — but only
 when the caller names the repository (validate(t, repo=...), CLI --repo);
 without one repository checks are skipped. A named witness or verify path
-that resolves outside the repository is a violation; one that does not exist
-and is not declared new, or a unittest module with no repository file, is an
-advisory, since a ticket names files its candidate will create. Verifying the
-blank template is always rejected. A criterion phrased
+that resolves outside the repository is a violation, and so is a verify path
+that does not exist and is not declared new, since that command can never
+pass; such a path in prose, or a unittest module with no repository file, is
+an advisory, since a ticket names files its candidate will create. Verifying
+the blank template is always rejected. A criterion phrased
 as something only an operator or a merged main could witness
 (OPERATOR_WITNESS_PHRASES) gets an advisory, since a sentence can mention an
 operator legitimately.
@@ -563,13 +564,14 @@ def _module_available(repo, module, declarations):
     return _available(repo, stem + "/__init__.py", declarations)
 
 
-def _path_problem(repo, path, declarations, label):
-    """Escaping the repository blocks; a missing path is only an advisory,
-    since a ticket names files its own candidate will create."""
+def _path_problem(repo, path, declarations, label, prefix=ADVISORY_PREFIX):
+    """Escaping the repository blocks; a missing path takes `prefix`, an
+    advisory by default, since prose names files its own candidate will
+    create. A verify command passes "": it can never pass (REL-137)."""
     if _outside(repo, path):
         return f"path is outside the repository in {label}: {path}"
     if not _available(repo, path, declarations):
-        return f"{ADVISORY_PREFIX}path does not exist in {label}: {path}"
+        return f"{prefix}path does not exist in {label}: {path}"
     return None
 
 
@@ -586,7 +588,7 @@ def _repository_problems(t, repo):
     for command in t.verify_commands:
         for path in _repo_paths(command):
             problems.append(_path_problem(repo, path, declarations,
-                                          "verify command"))
+                                          "verify command", prefix=""))
         for tokens in _shell_commands(command):
             for module in _unittest_modules(tokens):
                 if not _module_available(repo, module, declarations):

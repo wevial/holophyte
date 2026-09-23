@@ -86,7 +86,8 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
         trip, = self.sweep_at_46(run_id)
 
         self.assertEqual((trip.run_id, trip.condition), (run_id, "time_box"))
-        self.assertIn("46.0 min against a 30 min box × 1 turn", trip.evidence)
+        self.assertIn("46.0 min of agent work against a 30 min box × 1 turn",
+                      trip.evidence)
         self.assertNotIn("2 turns", trip.evidence)
 
     def test_a_null_cap_is_bounded_by_the_loops_default(self):

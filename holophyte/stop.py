@@ -91,14 +91,14 @@ def end_aborted(conn, run_id):
 def preserve(target, branch, why="pause"):
     """Reuse the reclaim path's environment exclusions and staging policy."""
     from holophyte.claim import paths, sh, stage_work, unstage_environment
+    from holophyte.environment_git import factory_identity
     wt = worktree_path(target, branch)
     if not wt.exists():
         return
     unstage_environment(target, wt)
     if sh(["git", "status", "--porcelain", "-uall", *paths(target)], cwd=wt):
         stage_work(target, wt)
-        sh(["git", "-c", "user.name=holophyte",
-            "-c", "user.email=holophyte@factory.invalid", "commit", "-m",
+        sh(["git", *factory_identity(wt), "commit", "-m",
             f"WIP: preserve work at operator {why}"], cwd=wt)
 
     return sh(["git", "rev-parse", "HEAD"], cwd=wt)

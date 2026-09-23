@@ -2,9 +2,7 @@
 import json
 import re
 import subprocess
-import tempfile
 from dataclasses import replace
-from pathlib import Path
 from time import monotonic, time
 
 import store
@@ -22,6 +20,7 @@ from holophyte.agents import agent_route, review_refs
 from holophyte.babysit_steps import record_step
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
+from holophyte.check_fix import check_fix_brief, fix_checks_or_park  # noqa: F401
 from holophyte.config_tables import merge_config
 from holophyte.gates import (
     InfraFailure,
@@ -33,6 +32,7 @@ from holophyte.gates import (
     sh,
     with_baseline,
 )
+from holophyte.main_checkout import detached_main
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
@@ -361,23 +361,18 @@ def _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts):
 
 
 def _verify_detached_main(target, conn, run_id, beat_s, wt, ref, command, contracts):
-    """Check the fetched main once in an isolated sibling, then remove it."""
+    """Check the fetched main once in a prepared sibling, then remove it."""
     sha = sh(["git", "rev-parse", ref], wt)
-    with tempfile.TemporaryDirectory(prefix="main-verify-", dir=wt.parent) as tmp:
-        detached = Path(tmp) / "tree"
-        sh(["git", "worktree", "add", "--detach", str(detached), sha], wt)
-        try:
-            command, skipped = drop_candidate_modules(command, wt, detached)
-            if skipped and conn is not None and run_id is not None:
-                store.record_event(
-                    conn, run_id, "verification",
-                    f"main-side verify at {sha[:12]} skipped"
-                    f" {', '.join(skipped)}: exists only on the candidate,"
-                    " not on main, so main cannot import it")
-            ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
-                                      sha, command, contracts)
-        finally:
-            sh(["git", "worktree", "remove", "--force", str(detached)], wt)
+    with detached_main(target, conn, run_id, beat_s, wt, sha) as detached:
+        command, skipped = drop_candidate_modules(command, wt, detached)
+        if skipped and conn is not None and run_id is not None:
+            store.record_event(
+                conn, run_id, "verification",
+                f"main-side verify at {sha[:12]} skipped"
+                f" {', '.join(skipped)}: exists only on the candidate,"
+                " not on main, so main cannot import it")
+        ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
+                                  sha, command, contracts)
     return sha, ok, out
 
 
@@ -452,6 +447,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         target, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
+    check_fixed = False  # One check fix per babysit: a red check cannot loop.
     for pass_no in range(1, merge.pr_rounds + 1):
         stop_if_requested(conn, run_id, "merge_gate")
         state = _settled_or_park(
@@ -491,10 +487,12 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         ledger(conn, run_id, task_id, "round",
                f"Babysit pass {pass_no} over {pull.url}: no unresolved"
                f" threads, checks {state.checks}", provider)
-        if state.checks != "success":
-            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                        f"checks {state.checks} on the head commit", (),
-                        reviewed=reviewed)
+        if state.checks != "success":  # Parks unless one fix is due.
+            sha, pushed_state = fix_checks_or_park(
+                replace(run, sha=sha), beat_s, pull, state, ticket, verify_cmd,
+                contracts, pass_no, reviewed, check_fixed)
+            check_fixed = True
+            continue  # Settle the pushed fix; its review comes before merge.
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
         if sha != reviewed:
@@ -950,7 +948,7 @@ def _verdicts_by_kind(threads, judged, parsed):
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
-                 resume_step=None):
+                 resume_step=None, no_commit_why=None, reviewed=None):
     from holophyte.loop import (
         _candidate_drift,
         _record_implementer_output,
@@ -984,6 +982,9 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
         why = outbound(why, known_secrets(target.config()))
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull, why, (),
                     park_kind="fix_declined")
+    if no_commit_why and fixed == sha and not timed_out:  # Maintainer's to see.
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+                    no_commit_why, (), reviewed=reviewed)
     if timed_out or fixed == sha:
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,

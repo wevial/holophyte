@@ -74,6 +74,9 @@ Each module, one line:
 - `holophyte/serve_runs.py` — the daemon's run and ledger read routes
   (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
   and `/runs/N/files`, their query parsers and the origin-link pair.
+- `holophyte/serve_watch.py` — the daemon's code-moved check and its
+  in-flight request count (KO-648): what re-executes it between requests
+  once the factory checkout's `HEAD` moves.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
@@ -146,6 +149,11 @@ Each module, one line:
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round
   text, the parked question, and the passes that drive them.
+- `holophyte/check_fix.py` — a red check's one fix turn per babysit: the
+  brief with each failed Actions job's log tail, and the park otherwise.
+- `holophyte/main_checkout.py` — the detached main checkout the babysit
+  pass verifies main in, given the task worktree's `[worktree] carry`
+  directories, or its `[worktree] setup`, first.
 - `holophyte/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget
