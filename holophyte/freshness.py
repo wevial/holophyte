@@ -76,6 +76,19 @@ def stale_comment(reasons):
             " what main holds now, then move the issue back to Todo.")
 
 
+def skip_labelled_stale(conn, project_id, task):
+    """Skip an issue carrying the `stale` label (KO-716), the maintainer's
+    mark that the body is still out of date: mirror it `needs_spec` and
+    print why, without asking main again or commenting a second time.
+    Returns whether the issue was skipped."""
+    if STALE_LABEL not in (task.get("labels") or []):
+        return False
+    mirror_task(conn, project_id, task, specced=False)
+    print(f"[holo2] {task['id']} skipped: labelled {STALE_LABEL};"
+          " fix the body and remove the label")
+    return True
+
+
 def park_stale(conn, project_id, provider, task, reasons):
     """Refuse a stale ticket: mirror it `needs_spec`, comment once, label
     the issue `stale`, move it to Backlog, print the skip line. A board
