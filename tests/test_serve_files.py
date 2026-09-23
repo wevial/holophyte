@@ -47,8 +47,8 @@ class LiveRunFilesTests(ServeTestCase):
         self.git("add", ".")
         self.git("commit", "-q", "-m", "base")
         self.seed()
-        self.tgt = holophyte.project.Project.locate(self.target)
-        self.wt = holophyte.project.worktree_path(self.tgt, self.BRANCH)
+        self.project = holophyte.project.Project.locate(self.target)
+        self.wt = holophyte.project.worktree_path(self.project, self.BRANCH)
         # As the loop cuts it: detached at main, then the task branch.
         self.git("worktree", "add", "-q", "--detach", str(self.wt), "main")
         self.git("checkout", "-q", "-b", self.BRANCH, cwd=self.wt)

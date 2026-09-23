@@ -48,14 +48,14 @@ class RepointFlagTests(unittest.TestCase):
         conn = open_store(self.target)
         self.addCleanup(conn.close)
         self.conn = conn
-        self.project = store.tickets.ensure_project(conn, "team-1", self.repo)
+        self.project_id = store.tickets.ensure_project(conn, "team-1", self.repo)
         self.ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id="issue-1",
+            conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
         store.tickets.transition(conn, self.ticket, "in_flight")
-        self.run = store.claim(conn, self.project, self.ticket, now=T0)
+        self.run = store.claim(conn, self.project_id, self.ticket, now=T0)
         for phase in ("working", "verifying", "reviewing", "merge_gate"):
             store.set_phase(conn, self.run, phase, now=T0 + MINUTE)
 

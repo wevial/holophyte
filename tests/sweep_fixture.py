@@ -66,12 +66,12 @@ class SweepTestCase(unittest.TestCase):
         # The `Project` every sweep here is handed. The acting sweep writes
         # FINDINGS.md into whichever target it names, so it is this test's
         # repository and never the one this suite is running in.
-        self.tgt = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.project.Project.locate(self.target)
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.projects = 1
-        self.project = store.tickets.ensure_project(self.conn, "team-1", self.target)
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1", self.target)
         self.tickets = 0
         self.ticket_of = {}
 
@@ -89,7 +89,7 @@ class SweepTestCase(unittest.TestCase):
 
         An existing ticket can be reclaimed; otherwise create an in_flight ticket.
         active_work opens a persisted interval for budget-boundary fixtures."""
-        project = self.project if project is None else project
+        project = self.project_id if project is None else project
         if ticket is None:
             self.tickets += 1
             n = self.tickets
@@ -122,7 +122,7 @@ class SweepTestCase(unittest.TestCase):
         """Give the target a config file and a `Project` that reads it, the
         way `cli()`'s target does -- a `Project` parses its config once."""
         (self.db.parent / "config.toml").write_text(toml)
-        self.tgt = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.project.Project.locate(self.target)
 
     def run_sweep(self, at, *flags):
         """The mode end to end, with the provider and the network as tripwires.

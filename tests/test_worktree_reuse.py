@@ -47,7 +47,7 @@ class ReuseFixture(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "base")
         self.base = self.git("rev-parse", "main").strip()
-        self.tgt = holophyte.project.Project(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=self.worktrees)
         self.wt = self.worktrees / "add-a-thing"
@@ -72,7 +72,7 @@ class UnregisteredLeftoverTests(ReuseFixture):
         self.wt.mkdir(parents=True)
         (self.wt / "precious.txt").write_text("rescued work\n")
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn(str(self.wt), why)
@@ -90,7 +90,7 @@ class UnregisteredLeftoverTests(ReuseFixture):
         self.wt.mkdir(parents=True)
         (self.wt / "precious.txt").write_text("rescued work\n")
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn("not a registered worktree", why)
@@ -104,7 +104,7 @@ class UnregisteredLeftoverTests(ReuseFixture):
         alias = self.worktrees.parent / "alias"
         alias.symlink_to(self.worktrees)
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, alias / "add-a-thing",
+        ok, why = holophyte.claim.reuse_leftover(self.project, alias / "add-a-thing",
                                                 self.branch)
 
         self.assertTrue(ok, why)
@@ -118,7 +118,7 @@ class DirtyLeftoverTests(ReuseFixture):
         self.leftover_worktree()
         (self.wt / "notes.txt").write_text("uncommitted rescue\n")
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("status", "--porcelain", cwd=self.wt), "")
@@ -130,7 +130,7 @@ class DirtyLeftoverTests(ReuseFixture):
     def test_a_clean_registered_leftover_is_reused_on_its_branch(self):
         self.leftover_worktree()
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(
@@ -150,7 +150,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("commit", "-q", "-m", "rescued: preserved work", cwd=self.wt)
         tip = self.git("rev-parse", "HEAD", cwd=self.wt).strip()
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
@@ -165,7 +165,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("add", "new.txt")
         self.git("commit", "-q", "-m", "main moved on")
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
@@ -184,7 +184,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("add", "new.txt")
         self.git("commit", "-q", "-m", "main moved on")
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         # The ancestor invariant both review routes enforce, asked of git
@@ -206,7 +206,7 @@ class CarriedCommitsTests(ReuseFixture):
         self.git("add", "README.md")
         self.git("commit", "-q", "-m", "main moved on")
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt, self.branch)
 
         self.assertTrue(ok, why)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.wt).strip(),
@@ -227,7 +227,7 @@ class CarriedCommitsTests(ReuseFixture):
         tip = self.git("rev-parse", "HEAD", cwd=self.wt).strip()
         self.git("checkout", "-q", "--detach", "main", cwd=self.wt)
 
-        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt, self.branch)
+        ok, why = holophyte.claim.reuse_leftover(self.project, self.wt, self.branch)
 
         self.assertFalse(ok)
         self.assertIn(self.branch, why)

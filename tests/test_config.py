@@ -13,7 +13,7 @@ class FallbackConfigTests(ConfigTestCase):
         self.locate('[agents]\nimplementer = "echo ready"\n'
                     'implementer_fallback = "echo  ready"\n')
         with self.assertRaises(SystemExit) as error:
-            check_config(self.tgt)
+            check_config(self.project)
         self.assertIn('implementer_fallback', str(error.exception))
         self.assertIn('equal implementer', str(error.exception))
 
@@ -24,8 +24,8 @@ class FallbackConfigTests(ConfigTestCase):
                 with self.subTest(key=key, value=value):
                     self.locate(f'[agents]\n{key} = {value}\n')
                     with self.assertRaisesRegex(SystemExit, key):
-                        check_config(self.tgt)
+                        check_config(self.project)
             self.locate(f'[agents]\n{key} = "echo ready"\n'
                         'review_model = "codex"\n')
             with self.assertRaisesRegex(SystemExit, 'review_model'):
-                check_config(self.tgt)
+                check_config(self.project)

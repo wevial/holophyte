@@ -159,7 +159,8 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         class CappedSession(Commit):
             def play(step, cwd, turn):
                 super().play(cwd, turn)
-                holophyte.agents.routes(self.tgt).commands["implement"] = "fallback-cli"
+                commands = holophyte.agents.routes(self.project).commands
+                commands["implement"] = "fallback-cli"
                 raise subprocess.TimeoutExpired(
                     "fallback-cli", 1, output=b"session id: capped-session")
 
@@ -182,11 +183,11 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
                            return_value=contextlib.nullcontext()),
               patch.object(holophyte.loop, "agent",
                            return_value="session id: excluded")):
-            holophyte.loop._timed(self.tgt, conn, run_id, 1, self.target, 1,
+            holophyte.loop._timed(self.project, conn, run_id, 1, self.target, 1,
                                   "write", role="write")
             self.configure("[agents]\nimplementer_isolation = 'container'\n"
                            "implementer_session = 'session id: ([a-z-]+)'\n")
-            holophyte.loop._timed(self.tgt, conn, run_id, 1, self.target, 1,
+            holophyte.loop._timed(self.project, conn, run_id, 1, self.target, 1,
                                   "implement")
 
         self.assertEqual(self.read("SELECT providerSessionId FROM runs"), [(None,)])
@@ -961,7 +962,7 @@ class GateConflictImplementerTests(LoopFixture):
                                 path="README.md", body="merged\n"))
         with patch.object(holophyte.loop, "agent", fake):
             ok, merged = holophyte.merge_gate._merge_gate(
-                self.tgt, conn, run_id, provider, "KO-131", "iss-131",
+                self.project, conn, run_id, provider, "KO-131", "iss-131",
                 branch, wt, 60, sha,
                 f"git rev-parse HEAD > '{seen}'", [], "add a thing", 5)
 
@@ -1010,7 +1011,7 @@ class GateConflictImplementerTests(LoopFixture):
                           FakeAgent(StageThenReEdit())):
             with self.assertRaises(holophyte.gates.RunFailure) as failed:
                 holophyte.merge_gate._sync_main_into_branch(
-                    self.tgt, conn, run_id, provider, "KO-131", branch,
+                    self.project, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
         self.assertEqual(
@@ -1048,7 +1049,7 @@ class GateConflictImplementerTests(LoopFixture):
         with patch.object(holophyte.loop, "agent", fake):
             with self.assertRaises(holophyte.gates.RunFailure) as failed:
                 holophyte.merge_gate._sync_main_into_branch(
-                    self.tgt, conn, run_id, provider, "KO-131", branch,
+                    self.project, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
         self.assertEqual(
@@ -1091,7 +1092,7 @@ class GateConflictImplementerTests(LoopFixture):
                           FakeAgent(AbortThenResetToMain())):
             with self.assertRaises(holophyte.gates.RunFailure) as failed:
                 holophyte.merge_gate._sync_main_into_branch(
-                    self.tgt, conn, run_id, provider, "KO-131", branch,
+                    self.project, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
         self.assertEqual(
@@ -1128,7 +1129,7 @@ class GateConflictImplementerTests(LoopFixture):
         with patch.object(holophyte.loop, "agent", fake):
             with self.assertRaises(holophyte.gates.RunFailure) as failed:
                 holophyte.merge_gate._sync_main_into_branch(
-                    self.tgt, conn, run_id, provider, "KO-131", branch,
+                    self.project, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
         self.assertEqual(failed.exception.failure_kind, "budget")
@@ -1165,16 +1166,15 @@ class GateConflictImplementerTests(LoopFixture):
         sha = self.git("rev-parse", branch, cwd=wt).strip()
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, StubProvider.TEAM,
-                                       str(self.target))
-        ticket = holophyte.board.mirror_task(conn, project, a_task())
-        run_id = store.claim(conn, project, ticket)
+        project_id = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
+        ticket = holophyte.board.mirror_task(conn, project_id, a_task())
+        run_id = store.claim(conn, project_id, ticket)
         tickets.transition(conn, ticket, "in_flight")
         store.set_branch(conn, run_id, branch)
         fake = FakeAgent()  # no steps: any turn asked for is a ScriptError
         with patch.object(holophyte.loop, "agent", fake):
             merged = holophyte.merge_gate._sync_main_into_branch(
-                self.tgt, conn, run_id, StubProvider(a_task()), "KO-131",
+                self.project, conn, run_id, StubProvider(a_task()), "KO-131",
                 branch, wt, sha, 60, "add a thing", 5)
 
         self.assertNotEqual(merged, sha)
@@ -1193,7 +1193,7 @@ class TransportRetryTests(LoopFixture):
                 with patch.object(holophyte.agents, "run_capped",
                                   return_value=(code, message)):
                     return holophyte.agents.agent(
-                        self.tgt, "implement", "task", cwd)
+                        self.project, "implement", "task", cwd)
         return FailedTurn()
 
     def test_transport_retry_reaches_review(self):
@@ -1317,7 +1317,7 @@ class NoCommitOutputTests(LoopFixture):
         provider = StubProvider(a_task())
         with no_agent_processes():
             with patch.dict(sys.modules, {"linear_provider": provider}):
-                holophyte.operator.main(self.tgt, provider)
+                holophyte.operator.main(self.project, provider)
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(self.events(), [("a second line",

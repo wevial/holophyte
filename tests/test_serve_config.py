@@ -67,8 +67,8 @@ class ConfigEditTests(ServeTestCase):
     def assert_loader_valid(self, text):
         """`text`, on disk, is a document the loop's startup accepts."""
         (self.db.parent / "config.toml").write_text(text)
-        tgt = holophyte.project.Project.locate(self.target)
-        self.assertIsNone(holophyte.config.check_document(tgt))
+        project = holophyte.project.Project.locate(self.target)
+        self.assertIsNone(holophyte.config.check_document(project))
 
     def on_disk(self):
         return (self.db.parent / "config.toml").read_text()
@@ -198,8 +198,8 @@ class ConfigEditTests(ServeTestCase):
             conn.close()
         self.assertEqual(rows, [(self.run, "human", "manual", "config_edit")])
         self.assertEqual(body["recorded"], self.run)
-        tgt = holophyte.project.Project.locate(self.target)
-        self.assertEqual(holophyte.config_tables.loop_config(tgt).workers, 3)
+        project = holophyte.project.Project.locate(self.target)
+        self.assertEqual(holophyte.config_tables.loop_config(project).workers, 3)
 
     def test_settings_sheet_pr_keys_are_accepted_and_persisted(self):
         self.seed()
@@ -504,13 +504,13 @@ class ConfigEditTests(ServeTestCase):
         self.seed()
         first = self.config("config_edit = true\n")
         (self.db.parent / "config.toml").write_text(first)
-        tgt = holophyte.project.Project.locate(self.target)
+        project = holophyte.project.Project.locate(self.target)
         when = datetime(2026, 9, 10, 12, 0, 0, tzinfo=timezone.utc)
         second = first.replace("workers = 2", "workers = 3")
         third = first.replace("workers = 2", "workers = 4")
-        code, one = holophyte.serve_config.write_config(tgt, {"text": second}, when)
+        code, one = holophyte.serve_config.write_config(project, {"text": second}, when)
         self.assertEqual(code, 200, one)
-        code, two = holophyte.serve_config.write_config(tgt, {"text": third}, when)
+        code, two = holophyte.serve_config.write_config(project, {"text": third}, when)
         self.assertEqual(code, 200, two)
         self.assertNotEqual(one["backup"], two["backup"])
         self.assertEqual(Path(one["backup"]).read_text(), first)
@@ -525,9 +525,9 @@ class ConfigEditTests(ServeTestCase):
         self.seed()
         (self.db.parent / "config.toml").write_text(
             "[serve]\nconfig_edit = true\n")
-        tgt = holophyte.project.Project.locate(self.target)
+        project = holophyte.project.Project.locate(self.target)
         with self.assertRaises(SystemExit) as raised:
-            holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())
+            holophyte.serve.serve(project, "127.0.0.1:0", out=io.StringIO())
         message = str(raised.exception)
         self.assertIn("[serve] token_file", message)
         self.assertIn("config_edit", message)
@@ -696,8 +696,9 @@ class ConfigPatchTests(ServeTestCase):
         after = self.on_disk()
         self.assertEqual(self.changed_lines(before, after),
                          ["+", "+[report]", '+findings = "none"'])
-        tgt = holophyte.project.Project.locate(self.target)
-        self.assertEqual(holophyte.config_tables.report_config(tgt).findings, "none")
+        project = holophyte.project.Project.locate(self.target)
+        self.assertEqual(holophyte.config_tables.report_config(project).findings,
+                         "none")
 
     def test_get_values_reads_a_triple_quoted_string_and_a_quoted_table(self):
         self.seed()
@@ -721,10 +722,10 @@ class ConfigPatchTests(ServeTestCase):
         self.seed()
         (self.db.parent / "config.toml").write_text(
             self.config("config_edit = true\n"))
-        tgt = holophyte.project.Project.locate(self.target)
+        project = holophyte.project.Project.locate(self.target)
         with patch.dict(sys.modules, {"tomlkit": None}):
             with self.assertRaises(SystemExit) as raised:
-                holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())
+                holophyte.serve.serve(project, "127.0.0.1:0", out=io.StringIO())
         message = str(raised.exception)
         self.assertIn("tomlkit", message)
         self.assertIn("pip install --user -r requirements.txt", message)

@@ -12,7 +12,7 @@ class WorktreeHooksTests(LoopFixture):
         wt = self.target.parent / "hooks-worktree"
         self.git("worktree", "add", "--detach", str(wt))
         (wt / ".githooks").mkdir()
-        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
         self.assertEqual(self.git("config", "--get", "core.hooksPath").strip(),
                          "shared-hooks")
         self.assertEqual(_git(wt, "config", "--get", "core.hooksPath").strip(),

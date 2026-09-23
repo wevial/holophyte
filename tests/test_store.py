@@ -111,14 +111,14 @@ class RepointTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.conn = store.open(str(Path(tmp.name) / "store.sqlite3"))
         self.addCleanup(self.conn.close)
-        self.project = store.tickets.ensure_project(self.conn, "team-1", tmp.name)
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1", tmp.name)
         self.ticket = store.tickets.mirror_ticket(
-            self.conn, self.project, linear_issue_id="issue-1",
+            self.conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
         store.tickets.transition(self.conn, self.ticket, "in_flight")
-        self.run = store.claim(self.conn, self.project, self.ticket, now=T0)
+        self.run = store.claim(self.conn, self.project_id, self.ticket, now=T0)
         for phase in ("working", "verifying", "reviewing", "merge_gate"):
             store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
 
