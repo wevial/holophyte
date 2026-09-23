@@ -6,8 +6,8 @@ from pathlib import Path
 import store
 from holophyte.config import check_config
 from holophyte.config_tables import board_config
+from holophyte.project import Project
 from holophyte.runs import open_store
-from holophyte.target import Target
 
 
 def project_cli(argv):
@@ -28,7 +28,7 @@ def project_cli(argv):
     if hasattr(args, "note") and not args.note.strip():
         parser.error("--note must be non-empty text")
     path = args.path if args.command == "add" else Path.cwd()
-    target = Target.locate(path.resolve())
+    target = Project.locate(path.resolve())
     try:
         settings = _validate(target) if args.command == "add" else None
         conn = open_store(target, args.store)

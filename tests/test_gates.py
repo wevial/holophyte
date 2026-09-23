@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import APPROVE, Commit  # noqa: E402
 from tests.loop_fixture import LoopFixture  # noqa: E402
 
@@ -86,8 +86,8 @@ class MergeLockTests(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        holophyte.target.state_dir(root / "repo").mkdir(parents=True)
-        self.tgt = holophyte.target.Target.locate(root / "repo")
+        holophyte.project.state_dir(root / "repo").mkdir(parents=True)
+        self.tgt = holophyte.project.Project.locate(root / "repo")
 
     def test_the_second_gate_waits_for_the_first_to_release(self):
         """Two runs reach the gate together: one holds the lock while the
@@ -161,7 +161,7 @@ class BaselineBriefTests(unittest.TestCase):
     def test_baseline_only_success_and_failure_are_visible_to_reviewer(self):
         from holophyte.loop import _verify_brief
         with tempfile.TemporaryDirectory() as wt:
-            target = type("Target", (), {"config": lambda self: {
+            target = type("Project", (), {"config": lambda self: {
                 "verify": {"always": ["echo baseline-detail"]}}})()
             for command, ok_expected in (("echo baseline-detail", True),
                                          ("echo baseline-detail; exit 1", False)):
@@ -214,7 +214,7 @@ class IsolatedVerifyTests(unittest.TestCase):
             workspace = Path(source).resolve()
             self.assertTrue(workspace.is_dir())
             self.assertTrue(workspace.is_relative_to(
-                holophyte.target.state_dir(self.target.path).resolve()))
+                holophyte.project.state_dir(self.target.path).resolve()))
             self.assertNotEqual(workspace, self.wt.resolve())
             self.assertEqual(Path(cwd).resolve(), workspace)
             self.assertEqual((destination, mode), ('/workspace', 'rw'))

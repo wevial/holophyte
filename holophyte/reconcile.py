@@ -30,7 +30,7 @@ from holophyte.board import ledger, mirror_push, refresh_board_states
 from holophyte.config_tables import merge_config
 from holophyte.findings import refresh_findings
 from holophyte.gates import sh
-from holophyte.target import worktree_path
+from holophyte.project import worktree_path
 
 # The mirror's status for each closed Linear state type: a ticket finished
 # elsewhere is `merged`, one cancelled is `abandoned`.

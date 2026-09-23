@@ -31,9 +31,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.sweep_report  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import review_runner  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -687,7 +687,7 @@ class ActingSweepTests(SweepTestCase):
         rendered window, in a target that renders one, names the condition
         beside the run it ended."""
         self.tgt.config_path.write_text('[report]\nfindings = "repo"\n')
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
         run_id = self.a_run(phase="reviewing")
         at = self.trip()
 
@@ -951,7 +951,7 @@ class SweepModeTests(SweepTestCase):
             holophyte.cli.cli(["--sweep", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse(holophyte.target.state_dir(self.root / "elsewhere").exists())
+        self.assertFalse(holophyte.project.state_dir(self.root / "elsewhere").exists())
 
 
 class ReviewContainerSweepTests(SweepTestCase):

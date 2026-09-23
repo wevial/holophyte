@@ -4,7 +4,7 @@ import json
 import holophyte.serve
 import holophyte.serve_runs
 import store
-from holophyte.target import Target
+from holophyte.project import Project
 from store.operator_notes import consume
 
 NOW = 1_750_000_000_000
@@ -60,7 +60,7 @@ def contract_answers(case):
         store.tickets.transition(conn, ticket, "in_flight")
         unestimated_run = store.claim(conn, project, ticket, now=NOW)
     case.null_host(unestimated_run)
-    target = Target.locate(case.target)
+    target = Project.locate(case.target)
     answers = {}
     for name, (code, body) in {
         "status": holophyte.serve.status(target, now=NOW, started_ms=NOW),

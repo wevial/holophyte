@@ -22,7 +22,7 @@ class IsolationTests(unittest.TestCase):
         )
 
     def test_none_preserves_process_call(self):
-        from holophyte.target import state_dir
+        from holophyte.project import state_dir
 
         for backend in (None, "none"):
             if backend:

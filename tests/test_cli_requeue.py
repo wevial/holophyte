@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 import holophyte.board
 import holophyte.cli
-import holophyte.target
+import holophyte.project
 import linear_provider
 import store
 import store.read
@@ -61,7 +61,7 @@ class RequeueCliTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        self.target = holophyte.target.Target.locate(self.repo)
+        self.target = holophyte.project.Project.locate(self.repo)
         self.with_board()
         conn = open_store(self.target)
         self.addCleanup(conn.close)

@@ -13,9 +13,9 @@ from holophyte.config import budget_scale
 from holophyte.config_tables import MERGE_KEYS, merge_config
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.pool_handoff import workers_on_previous_build  # noqa: F401
+from holophyte.project import worktree_path
 from holophyte.report import ended_rows, host_label
 from holophyte.runs import MAX_ROUNDS
-from holophyte.target import worktree_path
 from holophyte.thread_findings import normalize_thread
 from holophyte.thread_mentions import bot_author
 from store.operator_notes import round_notes

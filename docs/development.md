@@ -13,8 +13,8 @@ Each module, one line:
 - `holophyte/cli.py` — the argument parser and mode dispatch: `--report`,
   `--requeue`, `--approve`, `--babysit`, `--repoint`, `--file-ticket`,
   `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
-- `holophyte/target.py` — where a project's state lives (`HOLOPHYTE_HOME`,
-  the `<slug>` directory, legacy adoption) and the `Target` value.
+- `holophyte/project.py` — where a project's state lives (`HOLOPHYTE_HOME`,
+  the `<slug>` directory, legacy adoption) and the `Project` value.
 - `holophyte/config.py` — `config.toml` and every table it can set, checked
   at startup.
 - `holophyte/config_tables.py` — the per-table readers out of
@@ -111,7 +111,7 @@ Each module, one line:
   evidence check in place of round 1, and the `not_reproduced` park.
 - `holophyte/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
-- `holophyte/locks.py` — the `Locks` protocol a `Target` carries as
+- `holophyte/locks.py` — the `Locks` protocol a `Project` carries as
   its `locks` attribute, and `FileLocks`, whose `merge()` is `live_merge_lock()`
   unchanged (KO-594).
 - `holophyte/operator.py` — the operator commands and the entry point:

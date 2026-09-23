@@ -29,8 +29,8 @@ import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -122,9 +122,9 @@ class CloseOutTelemetryTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
-        # The `Target` the loop is handed, with the store and the worktrees
+        # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.target.Target(
+        self.tgt = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -236,12 +236,12 @@ class ReportStoreCase(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        # Where `cli()`'s `Target` will look: the target's directory under a
+        # Where `cli()`'s `Project` will look: the target's directory under a
         # HOLOPHYTE_HOME of this test's own, never the operator's real one.
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.target.state_dir(self.target) / "store.db"
+        self.db = holophyte.project.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
         self.worktrees = self.root / "repo.worktrees"
         self.conn = store.open(str(self.db))
@@ -401,7 +401,7 @@ class ReportTests(ReportStoreCase):
             holophyte.cli.cli(["--report", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse(holophyte.target.state_dir(self.root / "elsewhere").exists())
+        self.assertFalse(holophyte.project.state_dir(self.root / "elsewhere").exists())
 
 
 class HostLabelTests(ReportStoreCase):
@@ -413,7 +413,7 @@ class HostLabelTests(ReportStoreCase):
         super().setUp()
         (self.db.parent / "config.toml").write_text(
             f'[report]\nhost_label = "{self.LABEL}"\n')
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
 
     def test_the_report_and_findings_show_the_label_and_never_the_hostname(self):
         self.three_runs()

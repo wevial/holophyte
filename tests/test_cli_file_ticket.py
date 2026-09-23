@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 import holophyte.cli
 import holophyte.config
-import holophyte.target
+import holophyte.project
 import linear_provider
 import ticket_template
 
@@ -163,7 +163,7 @@ class FileTicketCliTests(unittest.TestCase):
         self.repo.mkdir()
         (self.repo / "test_orders_export.py").touch()
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
-        self.target = holophyte.target.Target.locate(self.repo)
+        self.target = holophyte.project.Project.locate(self.repo)
         self.ticket = self.root / "tickets" / "01-export.md"
         self.ticket.parent.mkdir()
         self.ticket.write_text(TICKET)

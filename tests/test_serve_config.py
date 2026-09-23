@@ -27,9 +27,9 @@ from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.serve_config  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
 
 
@@ -67,7 +67,7 @@ class ConfigEditTests(ServeTestCase):
     def assert_loader_valid(self, text):
         """`text`, on disk, is a document the loop's startup accepts."""
         (self.db.parent / "config.toml").write_text(text)
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         self.assertIsNone(holophyte.config.check_document(tgt))
 
     def on_disk(self):
@@ -198,7 +198,7 @@ class ConfigEditTests(ServeTestCase):
             conn.close()
         self.assertEqual(rows, [(self.run, "human", "manual", "config_edit")])
         self.assertEqual(body["recorded"], self.run)
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         self.assertEqual(holophyte.config_tables.loop_config(tgt).workers, 3)
 
     def test_settings_sheet_pr_keys_are_accepted_and_persisted(self):
@@ -504,7 +504,7 @@ class ConfigEditTests(ServeTestCase):
         self.seed()
         first = self.config("config_edit = true\n")
         (self.db.parent / "config.toml").write_text(first)
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         when = datetime(2026, 9, 10, 12, 0, 0, tzinfo=timezone.utc)
         second = first.replace("workers = 2", "workers = 3")
         third = first.replace("workers = 2", "workers = 4")
@@ -525,7 +525,7 @@ class ConfigEditTests(ServeTestCase):
         self.seed()
         (self.db.parent / "config.toml").write_text(
             "[serve]\nconfig_edit = true\n")
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         with self.assertRaises(SystemExit) as raised:
             holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())
         message = str(raised.exception)
@@ -696,7 +696,7 @@ class ConfigPatchTests(ServeTestCase):
         after = self.on_disk()
         self.assertEqual(self.changed_lines(before, after),
                          ["+", "+[report]", '+findings = "none"'])
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         self.assertEqual(holophyte.config_tables.report_config(tgt).findings, "none")
 
     def test_get_values_reads_a_triple_quoted_string_and_a_quoted_table(self):
@@ -721,7 +721,7 @@ class ConfigPatchTests(ServeTestCase):
         self.seed()
         (self.db.parent / "config.toml").write_text(
             self.config("config_edit = true\n"))
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         with patch.dict(sys.modules, {"tomlkit": None}):
             with self.assertRaises(SystemExit) as raised:
                 holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())

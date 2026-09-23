@@ -115,7 +115,7 @@ class MediaTests(unittest.TestCase):
         import shlex
 
         from holophyte import isolation
-        from holophyte.target import state_dir
+        from holophyte.project import state_dir
         self.config['agents'] = {'implementer_isolation': 'container'}
         capture_source = self.root / 'capture.env'
         capture_source.write_text('CAPTURE_KEY=sentinel-capture\nOTHER=sentinel-other\n')

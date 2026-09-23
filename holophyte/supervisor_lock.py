@@ -37,7 +37,7 @@ def supervisor_lock_path(target):
     Beside the store rather than inside the target for the store's own
     reason: nothing about the target checkout should have to know the factory
     exists, and a lock inside it is dirt a task's `git add -A` could commit.
-    Taken from the `Target`'s state directory so the lock cannot end up
+    Taken from the `Project`'s state directory so the lock cannot end up
     addressing a different directory from the store it guards.
     """
     return target.holo_dir / "supervisor.lock"

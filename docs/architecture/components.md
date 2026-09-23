@@ -10,7 +10,7 @@ every file; this page lists what each seam promises.
 
 | Seam | Where | Promise |
 | --- | --- | --- |
-| **`Target`** | `holophyte/target.py` | Everything about where a project's state lives, as a value: repository path, state directory, store path, config path. No module-level globals name a project; a function that needs one takes it. Two projects can exist in one process, which is what the tests, the daemon and a future port need. |
+| **`Project`** | `holophyte/project.py` | Everything about where a project's state lives, as a value: repository path, state directory, store path, config path. No module-level globals name a project; a function that needs one takes it. Two projects can exist in one process, which is what the tests, the daemon and a future port need. |
 | **`Provider`** | `provider.py` | The board as a protocol: `claim_next`, `fetch_task`, `set_state`, `comment`, `team`. `LinearProvider` lazily imports the GraphQL module; `FileProvider` reads a directory of `<ID>.md` files for tests and offline runs. The loop never names Linear. |
 | **`store.read`** | `store/read.py` | Typed, read-only views; the only SQL outside `store/__init__.py`. Every consumer that renders state (report, sweep, findings, serve) goes through it. |
 | **`runs`** | `holophyte/runs.py` | The loop's store seam: `open_store`, `set_phase`, `heartbeat_while`, `record_round`, `warn_on_run`, `review_round_cap`. Six helpers, so a wiring change extends one file instead of threading SQL through the loop. |
@@ -67,7 +67,7 @@ flowchart TB
   gates --> config
   agents --> config
   board --> config
-  everything[every module] --> target[Target]
+  everything[every module] --> project[Project]
 ```
 
 Arrows point at what a module imports. The three modules the PR merge mode
