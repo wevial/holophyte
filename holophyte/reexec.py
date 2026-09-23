@@ -106,7 +106,8 @@ def wait_for_supervisor(target, wait=None):
     while True:
         version = 0
         if target.store_path.exists():
-            conn = store.read.open_readonly(target.store_path)
+            conn = store.read.open_readonly(target.store_path,
+                                            daemon_boundary=False)
             try:
                 version = conn.execute("PRAGMA user_version").fetchone()[0]
             finally:

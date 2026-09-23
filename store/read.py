@@ -9,7 +9,7 @@ from pathlib import Path
 import store.schema
 
 
-def open_readonly(path) -> sqlite3.Connection:
+def open_readonly(path, *, daemon_boundary=True) -> sqlite3.Connection:
     """Open the store at `path` read-only and return the connection.
 
     A `mode=ro` URI open: the file is never created, and any write through
@@ -21,6 +21,11 @@ def open_readonly(path) -> sqlite3.Connection:
 
     Older stores and one version newer are readable during supervisor upgrades;
     a store further ahead refuses before any queries against its tables.
+    That boundary is the daemon's. A lifecycle read ahead of a writable open
+    (the owner's stamp check, the loop's wait for it, the supervisor's
+    admission check) passes `daemon_boundary=False`: a newer store is then
+    `store.open()`'s to judge by its `readableFrom` floor, and a read here
+    must not refuse a store that open would accept.
 
     `row_factory` is left unset on purpose: the functions below build their
     rows themselves, column by column, so the tuple shape is the contract.
@@ -32,7 +37,7 @@ def open_readonly(path) -> sqlite3.Connection:
     uri = Path(path).resolve().as_uri() + "?mode=ro"
     conn = sqlite3.connect(uri, uri=True, timeout=store.schema.BUSY_TIMEOUT_S)
     version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version > store.schema.SCHEMA_VERSION + 1:
+    if daemon_boundary and version > store.schema.SCHEMA_VERSION + 1:
         conn.close()
         raise store.schema.SchemaNewer(path, version)
     return conn

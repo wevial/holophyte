@@ -82,7 +82,8 @@ def disabled_startup(target, out=None):
     if not target.store_path.exists():
         return False
     from store.read import open_readonly
-    conn = open_readonly(target.store_path)
+    # Not the daemon's boundary: a newer store is the sweep's open to judge.
+    conn = open_readonly(target.store_path, daemon_boundary=False)
     try:
         admission, note = state(conn, target)
         if admission != "disabled":

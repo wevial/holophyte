@@ -97,13 +97,13 @@ DOCUMENTED_COLUMNS = {
 }
 
 
-def move_ahead_additively(path, **floor):
-    """Move the store at `path` to `SCHEMA_VERSION + 1` as an additive bump.
+def move_ahead_additively(path, *, by=1, **floor):
+    """Move the store at `path` to `SCHEMA_VERSION + by` as an additive bump.
 
     One nullable column added, the stamp raised and a `migrate` note written
     in one transaction; `floor` is the note's `readableFrom=`, omitted for a
     note without the key."""
-    newer = store.SCHEMA_VERSION + 1
+    newer = store.SCHEMA_VERSION + by
     note = json.dumps({"from": store.SCHEMA_VERSION, "to": newer, **floor,
                        "build": "newer", "at": 0})
     with sqlite3.connect(path) as conn:

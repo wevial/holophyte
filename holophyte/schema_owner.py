@@ -38,7 +38,7 @@ def migration_version(path):
     answers."""
     if not path.exists():
         return 0
-    conn = store.read.open_readonly(path)
+    conn = store.read.open_readonly(path, daemon_boundary=False)
     try:
         version = conn.execute("PRAGMA user_version").fetchone()[0]
     finally:
