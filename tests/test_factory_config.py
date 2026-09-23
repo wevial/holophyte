@@ -81,6 +81,14 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         self.locate(table + '[harnesses]\nclaude = "/opt/claude/bin/claude"\n')
         holophyte.config.check_document(self.tgt)
 
+    def test_codex_implementer_table_defaults_and_refuses_an_unknown_effort(self):
+        table = '[agents.implementer]\nharness = "codex"\n'
+        self.locate(table)
+        holophyte.config.check_document(self.tgt)
+        self.locate(table + 'effort = "max"\n')
+        with self.assertRaisesRegex(SystemExit, r"\[agents\.implementer\] effort"):
+            holophyte.config.check_document(self.tgt)
+
     def test_worktree_environment_refusals(self):
         self.locate("")
         source = self.tgt.config_path.parent / "source.env"

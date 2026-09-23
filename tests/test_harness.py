@@ -1,5 +1,6 @@
 """Table-form roles: the adapter's argv, its session and its resume -- a
-claude implementer, and a codex reviewer in a throwaway candidate checkout.
+claude or codex implementer, and a codex reviewer in a throwaway candidate
+checkout.
 
 Run: python3 -m unittest tests.test_harness -v
 """
@@ -254,6 +255,72 @@ class CodexTableTests(unittest.TestCase):
         self.assertEqual([event.get("reason") for event in
                           self.events("review_session")],
                          [None, None, "no rollout found"])
+
+
+# The fake codex implementer: records its argv, prints the banner to stderr
+# as Codex does, and sleeps past the budget when the prompt asks it to.
+FAKE_CODEX_IMPLEMENTER = """
+import json, os, sys, time
+with open(os.environ["FAKE_HARNESS_CALLS"], "a") as calls:
+    calls.write(json.dumps(sys.argv[1:]) + "\\n")
+print("session id: " + os.environ["FAKE_SESSION"], file=sys.stderr)
+sys.stderr.flush()
+if "stall" in sys.argv[-1]:
+    time.sleep(30)
+"""
+SESSION = "0199a0b1-7c2d-7e3f-8a4b-5c6d7e8f9a0b"
+IMPLEMENTER_OPTIONS = ["--dangerously-bypass-approvals-and-sandbox",
+                       "--skip-git-repo-check", "-m", "gpt-5.6-luna",
+                       "-c", "model_reasoning_effort=low"]
+
+
+class CodexImplementerTests(ClaudeTableTests):
+    def setUp(self):
+        super().setUp()
+        self.target.config_path.write_text(
+            '[agents.implementer]\nharness = "codex"\nmodel = "gpt-5.6-luna"\n'
+            'effort = "low"\n[loop]\nfix_session = "resume"\n')
+        fake = Path(os.environ["PATH"].split(os.pathsep)[0]) / "codex"
+        fake.write_text(f"#!{sys.executable}\n{FAKE_CODEX_IMPLEMENTER}")
+        fake.chmod(0o755)
+        env = patch.dict(os.environ, {"FAKE_SESSION": SESSION})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def implement(self, goal, budget_min=1):
+        return holophyte.loop._timed(self.target, self.conn, self.run, 60,
+                                     self.repo, budget_min, goal)
+
+    def test_implement_turn_runs_the_adapter_argv_and_records_its_session(self):
+        _, timed_out = self.implement("implement the thing")
+        self.assertFalse(timed_out)
+        self.assertEqual(self.received(),
+                         [["exec", *IMPLEMENTER_OPTIONS, "implement the thing"]])
+        self.assertEqual(self.session(), SESSION)
+
+    def test_a_turn_the_timeout_ends_still_leaves_its_session(self):
+        _, timed_out = self.implement("stall until the cap", budget_min=1 / 60)
+        self.assertTrue(timed_out)
+        self.assertEqual(self.received(),
+                         [["exec", *IMPLEMENTER_OPTIONS, "stall until the cap"]])
+        self.assertEqual(self.session(), SESSION)
+
+    def test_fix_turn_resumes_the_recorded_session(self):
+        self.implement("implement the thing")
+        sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.repo,
+                                      text=True).strip()
+        holophyte.fix_session.fix_turn(
+            self.target, self.conn, self.run, 60, self.repo, 1, "the ticket",
+            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop._timed,
+            check_cap=lambda *args: None)
+        _, resumed = self.received()
+        self.assertEqual(resumed[:-1], ["exec", "resume", SESSION,
+                                        *IMPLEMENTER_OPTIONS])
+        self.assertTrue(resumed[-1].startswith("Reviewer findings:"))
+        self.assertIn("REQUEST_CHANGES: a finding", resumed[-1])
+        [(payload,)] = self.conn.execute(
+            "SELECT payload FROM runEvents WHERE kind = 'fix_session'").fetchall()
+        self.assertEqual(json.loads(payload), {"arm": "resume", "resumed": True})
 
 
 if __name__ == "__main__":

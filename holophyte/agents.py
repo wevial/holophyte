@@ -317,19 +317,29 @@ def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
 
 
 def record_session(target, conn, run_id, role, output):
-    """Persist host implementer session handles from completed or capped turns."""
+    """Persist host implementer session handles from completed or capped turns.
+
+    A table implementer's adapter reads the id its harness printed (none for
+    one whose id was recorded at dispatch); a command string's is read with
+    the `implementer_session` regex."""
     import store
     from holophyte.config import implementer_session
 
     if role != "implement" or conn is None or run_id is None:
         return
-    pattern = implementer_session(target)
-    if pattern is None or isolation.route_for(target).backend == "container":
+    if isolation.route_for(target).backend == "container":
         return
-    match = pattern.search(output)
-    if match and match.group(1):
-        route = "fallback" if role in routes(target).commands else "primary"
-        store.record_agent_session(conn, run_id, match.group(1), role, route)
+    fallback = role in routes(target).commands
+    seat = None if fallback else harness_seat(target, role)
+    if seat is not None:
+        session = seat.reported_session(output)
+    else:
+        pattern = implementer_session(target)
+        match = pattern.search(output) if pattern is not None else None
+        session = match.group(1) if match else None
+    if session:
+        store.record_agent_session(conn, run_id, session, role,
+                                   "fallback" if fallback else "primary")
 
 
 def effective_role(target, role):
