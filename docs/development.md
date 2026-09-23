@@ -146,6 +146,10 @@ Each module, one line:
   media publishing and evidence shared by PR descriptions and review prompts.
   See [merge configuration](config.md#merge) for capture commands, destinations
   and size limits.
+- `holophyte/capture_playwright.py` — a standalone Playwright capture runner a
+  project can name as `[merge] ui_capture`: it runs the ticket's spec from a
+  capture directory through a generated config that imports the project's
+  own. Standard library only, so it runs by path from a project's worktree.
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.

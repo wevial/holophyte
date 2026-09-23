@@ -131,6 +131,7 @@ from holophyte.serve_actions import (
     ACTIONS_PREFIX,
     MAX_BODY,
     REQUEUE_ACTION,
+    action_failure,
     parse_action_body,
     requeue_action,
     send_back_action,
@@ -761,7 +762,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         demanded on a loopback bind as much as any other; with actions off
         the bind's read token applies, so a non-loopback daemon is 401
         before it is 404. The body is JSON (`parse_action_body()`), 400
-        when it is not.
+        when it is not. A handler that raises is 500 (`action_failure()`).
         """
         path = urlsplit(self.path).path
         if not path.startswith(ACTIONS_PREFIX):
@@ -778,17 +779,20 @@ class StatusHandler(BaseHTTPRequestHandler):
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"error": str(bad)})
-        if action == "send-back":
-            code, body = send_back_action(self.server.target, body.get("run"),
-                                          body.get("note"),
-                                          body.get("author", "maintainer"))
-        elif action == REQUEUE_ACTION:
-            code, body = requeue_action(self.server.target, body)
-        elif action in LEVERS:
-            code, body = LEVERS[action](self.server.target, body)
-        else:
-            code, body = unit_action(self.server.target, action,
-                                     self.server.unit_name)
+        target = self.server.target
+        try:
+            if action == "send-back":
+                code, body = send_back_action(
+                    target, body.get("run"), body.get("note"),
+                    body.get("author", "maintainer"))
+            elif action == REQUEUE_ACTION:
+                code, body = requeue_action(target, body)
+            elif action in LEVERS:
+                code, body = LEVERS[action](target, body)
+            else:
+                code, body = unit_action(target, action, self.server.unit_name)
+        except (Exception, SystemExit) as failure:
+            code, body = action_failure(target, action, failure)
         self.answer(code, body)
 
     def do_PUT(self):
