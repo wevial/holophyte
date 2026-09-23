@@ -93,7 +93,9 @@ def _reconcile_mirror(conn, project, provider, target=None):
     request, and only GitHub's answer closes the parked run out with its
     merge commit's sha -- so it stays `blocked_on_operator` until GitHub
     can be asked, rather than walked `merged` around a run no later pass
-    would reach. A provider that
+    would reach. A Canceled board state is the exception: the maintainer
+    gave the ticket up, so `_close_canceled()` finishes it (KO-660). A
+    provider that
     cannot answer -- no network, no key -- skips the reconcile in one line
     and the loop goes on as before: this is a repair of the mirror, not a
     gate on the work.
@@ -105,6 +107,8 @@ def _reconcile_mirror(conn, project, provider, target=None):
             continue
         if ticket.status == "blocked_on_operator" \
                 and _parked_pull_request(conn, ticket.id) is not None:
+            if _close_canceled(target, conn, provider, ticket.id):
+                continue
             # GitHub's verdict, not the board's: a Done here is a person
             # who merged the pull request, and `_reconcile_pull_requests()`
             # closes the run out with the merge commit's sha when GitHub
@@ -150,6 +154,57 @@ def _reconcile_mirror(conn, project, provider, target=None):
         print(line)
         if to_status == "abandoned" and target is not None:
             _retire_abandoned(target, conn, now)
+
+
+def _close_canceled(target, conn, provider, ticket_id):
+    """Finish a ticket held for its pull request once the board says
+    Canceled (KO-660); False when the board says anything else.
+
+    A cancel is the maintainer's decision, not a merge GitHub has to
+    report, so the pull request is no longer the thing to wait for. A run
+    that already ended -- rejected when its pull request was closed --
+    leaves only the ticket to walk `abandoned`, under a `reconcile` row
+    as the mirror reconcile records its own walks. A run still parked on
+    an open pull request is closed out first: a `close_out` row, then the
+    run ended `abandoned`, in the same transaction, and the pull request
+    is left open on GitHub for a person to close. A Done board state keeps
+    the ticket for GitHub's answer, which carries the merge sha.
+    """
+    with store.transaction(conn):
+        ticket = store.read.ticket_by_id(conn, ticket_id)
+        if ticket is None or ticket.boardState != "Canceled" \
+                or ticket.status != "blocked_on_operator" \
+                or ticket.activeRunId is not None:
+            return False
+        identifier, run_id = ticket.linearIdentifier, ticket.lastRunId
+        url = _parked_pull_request(conn, ticket_id)
+        parked = _parked_phase(conn, run_id) is not None
+        if parked:
+            store.record_intervention(
+                conn, run_id, "close_out",
+                f"{identifier} canceled on the board; run {run_id} ended"
+                f" abandoned and {url} left open",
+                source="supervisor", trigger="linear_cancelled")
+            store.release(conn, run_id, "abandoned",
+                          f"canceled on the board; pull request {url} left"
+                          " open")
+        else:
+            store.record_intervention(
+                conn, run_id, "reconcile",
+                f"Linear holds {identifier} canceled; mirror walked"
+                " blocked_on_operator -> abandoned",
+                source="supervisor", trigger="linear_cancelled")
+        store.tickets.walk_ticket(conn, ticket_id, "abandoned")
+    if parked:
+        if target is not None:
+            from holophyte.board import release_lease_label
+            release_lease_label(target, conn, ticket_id, provider, run_id)
+        print(f"[holo2] reconciled {identifier}: canceled on the board; run"
+              f" {run_id} ended abandoned, {url} left open on GitHub")
+    else:
+        print(f"[holo2] reconciled {identifier}: blocked_on_operator ->"
+              " abandoned (canceled on the board)")
+    return True
 
 
 def _retire_abandoned(target, conn, ticket):
