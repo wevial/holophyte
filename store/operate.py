@@ -557,13 +557,15 @@ def pause(conn, run_id, note, source="human", now=None):
     return request
 
 
-def abort(conn, run_id, note, source="human", now=None):
+def abort(conn, run_id, note, source="human", now=None, close=False):
     """Record an emergency stop before marking the live run, atomically.
 
     Shares `stopRequested` with `pause()`; the intervention's action tells the
-    two apart, and an abort supersedes a pending pause. A run that has ended,
-    or sits where the state model draws no edge to `failed`, is refused
-    before anything is written."""
+    two apart, and an abort supersedes a pending pause. `close` records it
+    as `abort_close`, which closes the run's pull request once the abort is
+    finished (KO-611) and supersedes a pending plain abort. A run that has
+    ended, or sits where the state model draws no edge to `failed`, is
+    refused before anything is written."""
     with _transaction(conn):
         row = conn.execute(
             "SELECT r.endedAt, r.outcome, r.phase, r.stopRequested, i.action"
@@ -576,17 +578,19 @@ def abort(conn, run_id, note, source="human", now=None):
             raise ValueError(f"run {run_id} already ended with outcome {outcome}")
         if TERMINAL_PHASES["abandoned"] not in RUN_PHASE_TRANSITIONS[phase]:
             raise ValueError(f"run {run_id} is {phase}; it cannot end abandoned")
-        if action == "abort":
+        wanted = "abort_close" if close else "abort"
+        if action in (wanted, "abort_close"):
             return pending
-        request = record_intervention(conn, run_id, "abort", note,
+        request = record_intervention(conn, run_id, wanted, note,
                                       source=source, guidance=note, now=now)
         conn.execute("UPDATE runs SET stopRequested = ? WHERE id = ?",
                      (request, run_id))
     return request
 
 
-def resume(conn, run_id, guidance=None, source="human", now=None):
+def resume(conn, run_id, guidance=None, source="human", now=None, note=None):
     """Resume `run_id`, optionally with `guidance`; return the phase re-entered.
+    `note`, the operator's reason, lands on the interventions row (KO-609).
 
     State-model §5. Two rules, and the first one is the point of the ticket:
 
@@ -678,9 +682,9 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
             )
         conn.execute(
             'INSERT INTO interventions'
-            ' (runId, source, "trigger", "action", guidance, at)'
-            " VALUES (?, ?, 'manual', 'resume', ?, ?)",
-            (run_id, source, guidance, now),
+            ' (runId, source, "trigger", "action", guidance, note, at)'
+            " VALUES (?, ?, 'manual', 'resume', ?, ?, ?)",
+            (run_id, source, guidance, note, now),
         )
     return target
 

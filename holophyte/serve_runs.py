@@ -604,7 +604,7 @@ def active_routes(target):
     fallback = active_fallbacks(target)
     table = {key: safe_command(target, value)
              for key, value in (target.config().get("agents") or {}).items()
-             if key in AGENT_CONFIG_KEYS.values() and isinstance(value, str)}
+             if key in AGENT_CONFIG_KEYS.values() and isinstance(value, (str, dict))}
     return {seat: {"command": fallback.get(seat, table.get(seat)),
                    **({"fallback": fallback[seat]} if seat in fallback else {})}
             for seat in AGENT_CONFIG_KEYS.values()}

@@ -4,10 +4,11 @@
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
-`--sweep [--act]`, `--import-store PATH --dry-run`, `--supervise`,
-`--serve PORT|HOST:PORT`, the internal `--worker` and the loop itself
+`--sweep [--act]`, `--status [--json]`, `--import-store PATH --dry-run`,
+`--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
+loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
-`holophyte.supervisor` and `holophyte.serve`; the `Target`
+`holophyte.supervisor`, `holophyte.status` and `holophyte.serve`; the `Target`
 is built once from the command line and handed down, and the board
 (`LinearProvider`) is built here and never reached for by name below.
 Importing this module locates no target, reads no config and touches no
@@ -44,6 +45,7 @@ from holophyte.operator import (
 from holophyte.pool import worker
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.startup import eager_import
+from holophyte.status import status_report
 from holophyte.store_import import dry_run
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
@@ -111,9 +113,9 @@ def _note_checks(parser, args):
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
-    if args.hold or args.release_hold or args.pause or args.abort:
+    if args.hold or args.release_hold or args.pause or args.resume or args.abort:
         if not (args.note or "").strip():
-            parser.error("--hold, --release-hold, --pause and --abort"
+            parser.error("--hold, --release-hold, --pause, --resume and --abort"
                          " require --note TEXT")
         return
     optional = args.approve or args.babysit or args.close
@@ -130,20 +132,27 @@ def _note_checks(parser, args):
 
 
 def _close_checks(parser, args):
-    """Require the landing reference only for an external close-out."""
+    """Require the landing reference only for an external close-out, and
+    let `--close-pr` modify an `--abort` alone."""
     if args.close is not None and not (args.landed or "").strip():
         parser.error("--close requires --landed URL")
     if args.landed is not None and args.close is None:
         parser.error("--landed belongs to --close")
+    if args.close_pr and not args.abort:
+        parser.error("--close-pr belongs to --abort")
 
 
 def _modifier_checks(parser, args):
     """Refuse a mode's modifier without its mode -- `--act` without
-    `--sweep`, `--dry-run` without `--import-store` -- and `--import-store`
-    without `--dry-run`, the only form of it that exists yet."""
+    `--sweep`, `--json` without `--status`, `--dry-run` without
+    `--import-store` -- and `--import-store` without `--dry-run`, the only
+    form of it that exists yet."""
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
+    if args.json and not args.status:
+        parser.error("--json says how --status prints; it prints nothing "
+                     "by itself")
     if args.import_store is not None and not args.dry_run:
         parser.error("--import-store has only its dry run yet: add --dry-run "
                      "to see what it would move; applying the import is a "
@@ -193,6 +202,10 @@ def _legacy_cli(argv):
                        help="end a run now: kill its turn, commit its tree as"
                        " WIP, push an open pull request's branch, park the"
                        " ticket; requires --note")
+    # `--close` is the external close-out's, so the modifier is `--close-pr`.
+    parser.add_argument("--close-pr", action="store_true",
+                        help="with --abort: then comment the note on the run's"
+                        " pull request and close it; the branch is kept")
     modes.add_argument(
         "--report", action="store_true",
         help="print the project store's estimate-vs-actual table and exit; "
@@ -287,6 +300,13 @@ def _legacy_cli(argv):
              "would move, their id range, the offset a remap would add and "
              "a sha256 of the rows; refuses stores at different schema "
              "versions, and writes nothing")
+    modes.add_argument(
+        "--status", action="store_true",
+        help="print what the factory is doing now -- projects, live and "
+             "parked runs, ready tickets, schema, lock holders -- and exit; "
+             "reads only")
+    parser.add_argument("--json", action="store_true",
+                        help="with --status: print it as one JSON object")
     modes.add_argument(
         "--supervise", action="store_true",
         help="run the acting sweep on an interval ([supervisor] "
@@ -387,14 +407,11 @@ def _legacy_cli(argv):
     # same window: a typo the factory ignored would leave the operator
     # believing a knob is set that is not.
     check_config(target)
-    if args.report:
-        return report(target)
-    if args.import_store is not None:
-        return dry_run(target, args.import_store)
-    # Same window as `--report`: a read-only daemon calls nobody, so no board
-    # is built and no route has to resolve.
-    if args.serve is not None:
-        return serve(target, args.serve)
+    # The modes that read the store and call nobody, in their own function
+    # so the dispatch stays under the complexity bound with all of them in it.
+    read_only = _read_only_mode(args, target)
+    if read_only is not None:
+        return read_only()
     # The board, built once here from the target's `[board]` table and handed
     # down: nothing below reaches for Linear by name. Construction touches
     # neither the network nor the module, so a read-only sweep still calls
@@ -461,6 +478,23 @@ def _legacy_cli(argv):
     return main(target, require_board(target, board))
 
 
+def _read_only_mode(args, target):
+    """Return the read-only mode the command line names as a call to make,
+    or None when it names none. `--report`, `--status`, `--import-store
+    --dry-run` and `--serve` read the store and call nobody, so no board is
+    built and no route has to resolve."""
+    if args.report:
+        return lambda: report(target)
+    if args.status:
+        return lambda: status_report(target, as_json=args.json)
+    if args.import_store is not None:
+        return lambda: dry_run(target, args.import_store)
+    # Same window as `--report`: a read-only daemon calls nobody.
+    if args.serve is not None:
+        return lambda: serve(target, args.serve)
+    return None
+
+
 def _store_verb(args, target, board):
     """Run the operator verb the command line names, if it is one of the
     verbs that write the store and exit, including `--close`, which also
@@ -470,7 +504,7 @@ def _store_verb(args, target, board):
     if args.abort:
         from holophyte.stop import abort_command
         abort_command(target, args.abort, args.note,
-                      provider=require_board(target, board))
+                      provider=require_board(target, board), close=args.close_pr)
         return True
     if args.pause or args.resume:
         from holophyte.stop import command

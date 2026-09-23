@@ -163,6 +163,35 @@ class FailedAttentionTests(ServeTestCase):
                 self.assertEqual(list(self.conn.iterdump()), before)
 
 
+class PausedAttentionTests(ServeTestCase):
+    def test_a_paused_ticket_is_paused_and_a_question_stays_blocked(self):
+        from holophyte.stop import stop_if_requested
+        self.seed()
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        store.pause(conn, self.run, "reboot the writer")
+        with self.assertRaises(store.RunEnded):
+            stop_if_requested(conn, self.run, "working")
+        project = store.tickets.ensure_project(conn, "team-1", self.target)
+        asking = store.tickets.mirror_ticket(
+            conn, project, linear_issue_id="issue-8", linear_identifier="KO-8",
+            title="ticket 8", acceptance_criteria=["Given 8, then it is worked"],
+            verification_commands=["echo ok"])
+        store.tickets.transition(conn, asking, "in_flight")
+        run = store.claim(conn, project, asking, now=self.now)
+        store.tickets.transition(conn, asking, "blocked_on_operator")
+        store.set_question(conn, asking, "which API?")
+        park_run(conn, run, "blocked_on_operator", "which API?", now=self.now)
+        self.start()
+        _, _, body = self.request("GET", "/attention")
+        items = {item["ticket"]: item for item in body["items"]}
+        self.assertEqual(
+            {key: items["KO-7"][key] for key in ("kind", "note", "run")},
+            {"kind": "paused", "note": "reboot the writer", "run": self.run})
+        self.assertEqual((items["KO-8"]["kind"], items["KO-8"]["question"]),
+                         ("blocked", "which API?"))
+
+
 class HeldStatusTests(ServeTestCase):
     def test_status_before_writer_migrates_version_26_is_read_only(self):
         self.assert_status_before_writer_migrates_is_read_only(26)

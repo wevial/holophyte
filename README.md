@@ -27,6 +27,7 @@ python3 factory.py --report /path/to/repo         # estimate-vs-actual table
 python3 factory.py /path/to/repo --hold --note TEXT # stop new admission; existing runs continue
 python3 factory.py /path/to/repo --release-hold --note TEXT # enable admission again
 python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails them
+python3 factory.py /path/to/repo --status [--json] # projects, live and parked runs, ready count, locks
 python3 factory.py --import-store PATH --dry-run /path/to/repo # what importing another store would move; writes nothing
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
 python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback, the console at /; HOST:PORT to bind elsewhere
@@ -34,8 +35,9 @@ python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queu
 python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run parked for merge approval
 python3 factory.py --babysit KO-n [--note TEXT] /path/to/repo # look at a parked run's pull request again
 python3 factory.py /path/to/repo --pause KO-n --note TEXT # stop at the next safe point
-python3 factory.py /path/to/repo --resume KO-n # continue a paused run
+python3 factory.py /path/to/repo --resume KO-n --note TEXT # continue a paused run
 python3 factory.py /path/to/repo --abort KO-n --note TEXT # end a run now, preserving its work
+python3 factory.py /path/to/repo --abort KO-n --close-pr --note TEXT # ...and close its pull request
 python3 factory.py --repoint KO-n SHA --note TEXT /path/to/repo # move a parked candidate to a rebuilt branch tip
 python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # record a change landed outside the factory
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
@@ -55,10 +57,9 @@ naming any blocker it added with a `+`, or exits 1 with the problem and nothing
 changed when the file is invalid and 2 with the identifier and the problem
 when the stored body is.
 
-`--report`, `--sweep`, `--import-store --dry-run` and `--serve` read the
-store and call nobody; the loop
-and `--supervise` need a `[board]` table. `--help` is safe: the command line
-is parsed, not indexed.
+`--report`, `--status`, `--sweep`, `--import-store --dry-run` and `--serve`
+read the store and call nobody; the loop and `--supervise` need a `[board]`
+table. `--help` is safe: the command line is parsed, not indexed.
 
 ## Read next
 

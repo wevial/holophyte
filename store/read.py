@@ -97,6 +97,9 @@ class BlockedTicket:
     title: str | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
+    # How the parked ticket's latest run ended (`runs.outcome`): `paused`
+    # for an operator's pause (KO-609), None while the run is live.
+    outcome: str | None = None
 
 
 def blocked_tickets(conn, project_id=None):
@@ -115,7 +118,7 @@ def blocked_tickets(conn, project_id=None):
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
         " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
         " r.prSeenThreads, t.url, t.boardState, r.parkKind, r.prSeenTitle,"
-        " t.title"
+        " t.title, r.outcome"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
@@ -124,7 +127,7 @@ def blocked_tickets(conn, project_id=None):
                           prUrl=row[6], prSeenChecks=row[7],
                           prSeenReview=row[8], prSeenThreads=row[9], ticketUrl=row[10],
                           boardState=row[11], parkKind=row[12],
-                          prSeenTitle=row[13], title=row[14])
+                          prSeenTitle=row[13], title=row[14], outcome=row[15])
             for row in rows]
 
 

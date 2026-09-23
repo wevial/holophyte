@@ -25,8 +25,9 @@ request note. Babysit fixes stop before their push or thread replies; resuming
 an open PR finishes a saved fix step (including its pending push and replies)
 before returning through the gate to read current checks and threads.
 
-`factory.py TARGET --resume KO-n` uses the store resume path and returns the
-ticket to ready. The next claim reuses the worktree and continues from the
+`factory.py TARGET --resume KO-n --note TEXT` uses the store resume path,
+recording the note on the resume intervention, and returns the ticket to
+ready (`POST /actions/resume` on the daemon is the same call). The next claim reuses the worktree and continues from the
 recorded boundary. Implementation is skipped when it already finished; review
 continuations retain the verification result and findings they need. A pause
 does not grant merge approval: targets requiring a human still require it.
@@ -70,6 +71,19 @@ names why, and nothing is written.
 This adds the `abort` intervention action and the `runs.workerPid` column.
 The store widens its action check and adds the column in place, with no
 schema version change.
+
+`--abort KO-n --close-pr --note "wrong approach"` is the same abort when the
+candidate is dead: the intervention is recorded as `abort_close` instead, in
+the same transaction, before anything is killed, so whichever process
+finishes the abort -- the worker or the command -- also closes the pull
+request. Once the run has ended `abandoned` it posts one comment on the pull
+request, under the factory's comment header, giving the note, the short sha
+the branch was kept at and `--requeue KO-n` as the way to start again, and
+then closes it. The branch and worktree are kept. A refused comment or close
+does not undo the abort: it is a `warning` run event and a printed line. The
+reconcile leaves the closed pull request alone, since the run is no longer
+parked on it. `--close-pr` without `--abort` is refused. The `abort_close`
+action is schema version 35 (KO-611).
 
 A ticket parked `blocked_on_operator` by a merge gate conflict -- the gate's
 merge of `main` into the branch conflicted, the run failed and the branch

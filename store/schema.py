@@ -351,7 +351,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 31 types run park reasons and backfills legacy questions (KO-583).
 # Version 33 records the pull request title the reconcile read (KO-622).
 # Version 34 records verify time apart from agent work on runs (KO-635).
-SCHEMA_VERSION = 34
+# Version 35 admits the `abort_close` intervention action (KO-611).
+SCHEMA_VERSION = 35
 
 # The oldest SCHEMA_VERSION whose builds can still read and write a store at
 # SCHEMA_VERSION (KO-661). Each migration records it in its `migrate` note,
@@ -859,7 +860,7 @@ def _widen_interventions_action(conn):
                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
                          "'migrate'", "'hold'", "'release_hold'",
                          "'register_project'", "'disable'", "'pause'",
-                         "'abort'")):
+                         "'abort'", "'abort_close'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
