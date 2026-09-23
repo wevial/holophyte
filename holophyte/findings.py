@@ -95,7 +95,7 @@ def _gist(text):
     return gist
 
 
-def _document(text):
+def decode_findings(text):
     """A stored JSON document column decoded to its list, or None.
 
     None for anything the schema's `[]` comment does not describe: text that
@@ -166,7 +166,7 @@ def round_entry(row):
     at, ticket, number = round_at(row), row.linearIdentifier, row.round
     verdict, model = row.verdict, row.reviewerModel
     results, findings = row.verificationResults, row.findings
-    results = _document(results)
+    results = decode_findings(results)
     verify = ""
     if results is None or not all(isinstance(r, dict) for r in results):
         verify = " · verify unreadable"
@@ -174,7 +174,7 @@ def round_entry(row):
         verify = (" · verify "
                   + ("passed" if all(r.get("exitCode") == 0 for r in results)
                      else "failed"))
-    raw_findings, findings = findings, _document(findings)
+    raw_findings, findings = findings, decode_findings(findings)
     lines = [f"Round {number}: {verdict} · reviewer {model}{verify}"]
     if findings is None:
         lines.append(f"Findings: unparseable — {_gist(raw_findings)}")
