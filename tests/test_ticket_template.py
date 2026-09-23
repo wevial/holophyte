@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
 import holophyte.claim  # noqa: E402
-import holophyte.target  # noqa: E402
+import holophyte.project  # noqa: E402
 import store
 import store.read
 import store.tickets
@@ -558,7 +558,7 @@ class GitignoredPathTests(unittest.TestCase):
                 "criteria": ["works"], "budget_min": 5}
         self.assertIsNotNone(holophyte.board.body_problem(task, self.repo))
         holo = Path(self.tmp.name) / "holo"
-        target = holophyte.target.Target(
+        target = holophyte.project.Project(
             path=self.repo, holo_dir=holo, store_path=holo / "store.db",
             config_path=holo / "config.toml", worktrees=holo / "wt")
         conn = store.open(Path(self.tmp.name) / "store.db")

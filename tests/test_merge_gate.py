@@ -57,10 +57,10 @@ import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.merge_gate  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -695,7 +695,7 @@ class SelfHostingTests(LoopFixture):
         self.addCleanup(shutil.rmtree, holo, ignore_errors=True)
 
         def target(path):
-            return holophyte.target.Target(
+            return holophyte.project.Project(
                 path=path, holo_dir=holo, store_path=holo / "store.db",
                 config_path=holo / "config.toml", worktrees=holo / "wt")
 

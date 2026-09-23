@@ -4,7 +4,7 @@ The reader (`load_config`) and every table the factory reads -- `[agents]`,
 `[worktree]`, `[supervisor]`, `[loop]` -- with the defaults an absent table
 leaves in place, the constraints a present value is held to, and the startup
 checks that refuse a bad one before anything is claimed. Nothing here knows
-the loop, gates or store; readers take a `Target`-shaped value.
+the loop, gates or store; readers take a `Project`-shaped value.
 
 """
 import collections

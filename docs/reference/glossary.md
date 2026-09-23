@@ -77,8 +77,8 @@ human; reused by the next run of the same ticket. Named
 
 **Project.** A repository the factory works on, with its store, config and
 board; what `factory.py project add` registers and the store's `projects`
-table holds. A value in code, never a global; the code type is still
-spelled `Target` until it is renamed.
+table holds. A value in code, never a global: the `Project` type in
+`holophyte/project.py`, built by `Project.locate()`.
 
 **Provider.** The board protocol: `claim_next`, `fetch_task`,
 `set_state`, `comment`. Linear in production, files in tests.

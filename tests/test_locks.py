@@ -1,4 +1,4 @@
-"""The merge lock is reached through `Target.locks` (KO-594)."""
+"""The merge lock is reached through `Project.locks` (KO-594)."""
 import ast
 import contextlib
 import os
@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # the package imports store/ticket_template by name
 import holophyte.claim  # noqa: E402 - after the sys.path insert above
 from holophyte.gates import merge_lock_path, read_merge_lock  # noqa: E402
-from holophyte.target import Target  # noqa: E402
+from holophyte.project import Project  # noqa: E402
 
 
 def git(cwd, *args):
@@ -53,8 +53,8 @@ class TargetLocksTests(unittest.TestCase):
         git(self.repo, "remote", "add", "origin", str(origin))
         git(self.repo, "push", "-q", "origin", "main")
         fake = RecordingLocks()
-        located = Target.locate(self.repo, adopt=False)
-        target = Target(path=located.path, holo_dir=located.holo_dir,
+        located = Project.locate(self.repo, adopt=False)
+        target = Project(path=located.path, holo_dir=located.holo_dir,
                         store_path=located.store_path,
                         config_path=located.config_path,
                         worktrees=located.worktrees, locks=fake)
@@ -64,7 +64,7 @@ class TargetLocksTests(unittest.TestCase):
         self.assertFalse(target.holo_dir.exists())
 
     def test_default_locks_hold_the_merge_lock_file(self):
-        target = Target.locate(self.repo, adopt=False)
+        target = Project.locate(self.repo, adopt=False)
         path = merge_lock_path(target)
         with target.locks.merge(None, 7, 1.0):
             self.assertEqual(read_merge_lock(path)[0], 7)

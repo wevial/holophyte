@@ -12,8 +12,8 @@ import store.read
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config
 from holophyte.gates import MergeParked
+from holophyte.project import Project
 from holophyte.redact import safe_print as print
-from holophyte.target import Target
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,7 @@ class Run:
     retain the monotonic elapsed-time calculation, including storeless callers.
     A PR pass returns its merge SHA without moving the local main checkout.
     """
-    target: Target
+    target: Project
     conn: Connection | None
     run_id: int | None
     provider: Any

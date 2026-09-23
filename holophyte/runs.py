@@ -67,7 +67,7 @@ def review_round_cap(changed_lines, cfg):
 def open_store(target, path=None):
     """Open the loop's store, creating and migrating the schema if needed.
 
-    The store's directory is made here, on first need: `Target.locate()` only
+    The store's directory is made here, on first need: `Project.locate()` only
     derives paths, and a `--report` against a target that has no store says
     so without leaving an empty directory behind.
     """

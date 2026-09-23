@@ -19,7 +19,7 @@ import unittest
 from pathlib import Path
 
 import holophyte.agents
-import holophyte.target
+import holophyte.project
 import store
 from holophyte import harness
 
@@ -90,7 +90,7 @@ class LiveCodexReviewTests(unittest.TestCase):
             (holo / "config.toml").write_text(
                 '[agents.reviewer]\nharness = "codex"\neffort = "low"\n'
                 '[loop]\nreview_session = "resume"\n')
-            target = holophyte.target.Target(
+            target = holophyte.project.Project(
                 path=repo, holo_dir=holo, store_path=holo / "store.db",
                 config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
             conn = store.open(target.store_path)

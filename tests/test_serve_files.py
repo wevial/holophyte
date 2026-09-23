@@ -1,7 +1,7 @@
 """`/runs/N/files` for a live run reads the run's worktree.
 
 The target is a real repository; the run's worktree is cut beside it where
-the loop would put it (`holophyte.target.worktree_path()`), and the store
+the loop would put it (`holophyte.project.worktree_path()`), and the store
 carries the branch as the loop records it at the cut. What is asserted is
 what the console would see over the socket, with git as the oracle.
 
@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 
-import holophyte.target  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import finish_run  # noqa: E402
 
@@ -47,8 +47,8 @@ class LiveRunFilesTests(ServeTestCase):
         self.git("add", ".")
         self.git("commit", "-q", "-m", "base")
         self.seed()
-        self.tgt = holophyte.target.Target.locate(self.target)
-        self.wt = holophyte.target.worktree_path(self.tgt, self.BRANCH)
+        self.tgt = holophyte.project.Project.locate(self.target)
+        self.wt = holophyte.project.worktree_path(self.tgt, self.BRANCH)
         # As the loop cuts it: detached at main, then the task branch.
         self.git("worktree", "add", "-q", "--detach", str(self.wt), "main")
         self.git("checkout", "-q", "-b", self.BRANCH, cwd=self.wt)

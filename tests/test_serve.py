@@ -29,8 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.schema  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
@@ -136,7 +136,7 @@ class TokenTests(ServeTestCase):
 
     def test_a_non_loopback_bind_without_a_token_file_is_a_startup_error(self):
         self.seed()
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         for address in ("0.0.0.0:0", "[::]:0", "10.0.0.1:0"):
             with self.subTest(address=address), \
                     self.assertRaises(SystemExit) as raised:
@@ -213,7 +213,7 @@ class TokenTests(ServeTestCase):
     def configured(self, path):
         """The target with `[serve] token_file` pointing at `path`."""
         (self.db.parent / "config.toml").write_text(self.token_config(path))
-        return holophyte.target.Target.locate(self.target)
+        return holophyte.project.Project.locate(self.target)
 
     def test_a_group_or_world_readable_token_file_is_refused(self):
         self.seed()
@@ -1406,7 +1406,7 @@ class FollowsCodeTests(ServeTestCase):
         a SIGTERM stops it; `(printed, events)` where `events` holds "EXEC"
         once the seam was called."""
         self.seed()
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         out = io.StringIO()
         self.events = []
         returned = threading.Event()

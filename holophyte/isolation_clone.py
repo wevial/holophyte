@@ -11,7 +11,7 @@ from holophyte.environment_git import protected, refuse_environment_history
 from holophyte.gates import InfraFailure
 from holophyte.isolation_git import copy_merge_state, git, head, import_objects
 from holophyte.isolation_return import locked_return
-from holophyte.target import state_dir
+from holophyte.project import state_dir
 
 
 def stage_files(source, destination, excluded):

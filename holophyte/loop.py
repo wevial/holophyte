@@ -100,7 +100,7 @@ from holophyte.runs import (
 from holophyte.stop import Aborted, boundary, continuation, stop_if_requested
 from store.working import agent_work
 
-# The paths a run works against, plus the config they carry, are a `Target`
+# The paths a run works against, plus the config they carry, are a `Project`
 # (below): built once by `cli()` from the command line and passed to every
 # function that needs one, so the derivation lives in one place and the
 # command line is the only thing that chooses a target. Importing this module

@@ -2,7 +2,7 @@
 
 The factory holds its leases and locks across three media -- store rows, a
 Linear label, lock files -- and each caller used to name the mechanism it
-took. `Target.locks` names the intent instead, so a second host, a
+took. `Project.locks` names the intent instead, so a second host, a
 single-process scheduler or a test can hand a target another `Locks`
 without touching the callers. The merge lock is the first lock behind it;
 the supervisor lock, the store lease, the board label and the pool handoff
@@ -26,8 +26,8 @@ class FileLocks:
 
     def merge(self, conn, run_id, beat_s, operation="gate",
               wait_phase="merge_gate"):
-        # Deferred so building a `Target` imports neither the gates nor the
-        # store, as `holophyte.target` promises.
+        # Deferred so building a `Project` imports neither the gates nor the
+        # store, as `holophyte.project` promises.
         from holophyte.merge_lock import live_merge_lock
         return live_merge_lock(self.target, conn, run_id, beat_s,
                                operation=operation, wait_phase=wait_phase)

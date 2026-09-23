@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from dataclasses import asdict
 
 import store
-from holophyte.target import Target, worktree_path
+from holophyte.project import Project, worktree_path
 from store.schema import _transaction
 
 _checkpoint = ContextVar("pause_checkpoint", default=None)
@@ -30,7 +30,7 @@ def stop_if_requested(conn, run_id, phase):
     if action in ABORTS:
         end_aborted(conn, run_id)
     stopped_at, phase = phase, "merge_gate" if pr_url else phase
-    target = Target.locate(repo)
+    target = Project.locate(repo)
     sha = preserve(target, branch) if branch else None
     with _transaction(conn):
         ended, outcome, reason = conn.execute(
@@ -82,7 +82,7 @@ def end_aborted(conn, run_id):
             " JOIN tickets t ON t.id = r.ticketId"
             " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
             (run_id,)).fetchone()
-    target = Target.locate(repo)
+    target = Project.locate(repo)
     sha = preserve(target, branch, "abort") if branch else None
     if sha and pr_url:
         try:

@@ -25,8 +25,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import merged_task  # noqa: E402 - after sys.path setup
@@ -166,11 +166,11 @@ class WiringClaimTests(unittest.TestCase):
                            ("user.name", "Factory Test")):
             subprocess.run(["git", "config", key, value],
                            cwd=self.target, check=True)
-        # The `Target` the loop is handed, with the store and the worktrees
+        # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
         self.db = Path(tmp.name) / "store.db"
         self.worktrees = Path(tmp.name) / "repo.worktrees"
-        self.tgt = holophyte.target.Target(
+        self.tgt = holophyte.project.Project(
             path=self.target, holo_dir=Path(tmp.name), store_path=self.db,
             config_path=Path(tmp.name) / "config.toml",
             worktrees=self.worktrees)
@@ -220,13 +220,13 @@ class WiringClaimTests(unittest.TestCase):
     def test_the_store_path_is_in_the_targets_state_directory(self):
         """One store per target, in its directory under `HOLOPHYTE_HOME`.
 
-        Through `Target.locate()`, because the paths are derived from the
-        target together: a `Target` assembled by hand, as the other tests
+        Through `Project.locate()`, because the paths are derived from the
+        target together: a `Project` assembled by hand, as the other tests
         do, would test the assembly rather than the rule.
         """
         home = Path(tempfile.mkdtemp()) / "home"
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}):
-            target = holophyte.target.Target.locate("/repos/example", adopt=False)
+            target = holophyte.project.Project.locate("/repos/example", adopt=False)
 
         self.assertEqual(target.store_path.parent.parent, home)
         self.assertEqual(target.store_path.name, "store.db")
