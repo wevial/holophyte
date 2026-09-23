@@ -40,7 +40,7 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.gates import GroupKill, InfraFailure, run_capped, sh
-from holophyte.harness import agent_session, route_text
+from holophyte.harness import agent_session, critic_seat, route_text
 from holophyte.harness import seat as harness_seat
 from holophyte.redact import known_secrets, outbound
 from holophyte.redact import safe_print as print
@@ -366,6 +366,18 @@ def writer_turn(project, goal, cwd, timeout, on_start):
     return AgentOutput(output.strip(), shlex.join(cmd[:-1]), exit_code=code)
 
 
+def critic_turn(project, goal, cwd, timeout):
+    """One `[agents.critic]` turn in `cwd`, a `critic_workspace()`, under
+    `timeout` seconds (`PROBE_TIMEOUT` when None); a turn that reaches the
+    cap raises `subprocess.TimeoutExpired`. No fallback: the critic is
+    advice, and its caller claims anyway when it fails (KO-715)."""
+    seat = critic_seat(project)
+    argv = seat.turn(outbound(goal, known_secrets(project.config())))
+    code, output = run_capped(argv, cwd, PROBE_TIMEOUT if timeout is None
+                              else timeout)
+    return AgentOutput(output.strip(), seat.named(argv), exit_code=code)
+
+
 def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
           review_round=None):
@@ -379,6 +391,9 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             return recorded_turn(project, requested_role, role, conn, run_id,
                                  lambda: writer_turn(
                                      project, goal, cwd, timeout, on_start))
+        if role == "critic":
+            return recorded_turn(project, requested_role, role, conn, run_id,
+                                 lambda: critic_turn(project, goal, cwd, timeout))
         record_pending_switch(project, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,
@@ -702,8 +717,11 @@ def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=No
           f"using fallback: {evidence['command']}")
     return True
 
-def startup_routes(project, provider, implementer_probe=None, *, activate=True):
-    """Probe seats; schedulers use activate=False to leave route state alone."""
+def startup_routes(project, provider, implementer_probe=None, *, activate=True,
+                   critic=True):
+    """Probe seats; schedulers use activate=False to leave route state alone.
+    A pooled worker passes critic=False and inherits the scheduler's critic
+    outcome instead, so the loop pays for one critic probe, not one a claim."""
     import store
     from holophyte.operator import _record_startup_probe
     from holophyte.runs import open_store
@@ -736,6 +754,10 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True):
         if not probe.ok:
             return False
     probe_writer(project, activate=activate)
+    if critic:
+        # Even a scheduler keeps `critic_failed`: it is never published,
+        # and `_spawn_worker()` hands it on to every worker.
+        probe_critic(project, activate=True)
     return True
 
 
@@ -751,3 +773,43 @@ def probe_writer(project, *, activate):
         state = routes(project)
         state.writer_failed = not probe.ok
         state.publish()
+
+
+@contextlib.contextmanager
+def critic_workspace(project):
+    """A detached checkout of `main` in a throwaway directory, for the
+    critic to read the code a ticket will meet without touching the
+    maintainer's checkout; `review_scratch()` removes it on every exit."""
+    with review_scratch(project.path) as scratch:
+        checkout = scratch / "main"
+        sh(["git", "worktree", "add", "--detach", "--quiet", str(checkout),
+            "main"], cwd=project.path, env=scratch_git_environment())
+        yield checkout
+
+
+def probe_critic(project, *, activate, timeout=None):
+    """Probe `[agents.critic]` in `critic_workspace()`; a failure is
+    reported and turns the critic off, but never stops the loop."""
+    seat = critic_seat(project)
+    if seat is None:
+        return None
+    cmd = seat.turn(PROBE_GOAL)
+    cap = PROBE_TIMEOUT if timeout is None else timeout
+    try:
+        with critic_workspace(project) as checkout:
+            code, out = run_capped(cmd, checkout, cap)
+        probe = ProbeResult(cmd, code, out or "", cap, seat="critic")
+    except subprocess.TimeoutExpired as expired:
+        partial = expired.output or ""
+        if isinstance(partial, bytes):
+            partial = partial.decode(errors="replace")
+        probe = ProbeResult(cmd, None, partial, cap, seat="critic")
+    except (OSError, RuntimeError) as failed:
+        probe = ProbeResult(cmd, None, "", cap, launch_error=str(failed),
+                            seat="critic")
+    print(probe_diagnostic(project, probe))
+    if not probe.ok:
+        print("[holo2] critic route down; claims skip the relevance check")
+    if activate:
+        routes(project).critic_failed = not probe.ok
+    return probe

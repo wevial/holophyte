@@ -57,6 +57,42 @@ test("a stale supervisor reads stale · pid · hb in bold bad; a live one reads 
   }
 });
 
+const withToil = (status: Status, day: number | null, week: number | null, byAction: Record<string, number>): Status => ({
+  ...status,
+  toil: {
+    "24h": { interventions: 1, merged: 2, per_merge: day, by_action: {} },
+    "7d": { interventions: 9, merged: 8, per_merge: week, by_action: byAction },
+  },
+});
+
+test("a daemon's Toil cell reads each window's interventions per merge and the week's two most frequent actions", () => {
+  const status = withToil(working, 0.5, 1.25, { approve: 1, babysit: 3, requeue: 5 });
+  render(<Hosts hosts={[hostOf(status, NO_ATTENTION, "http://writer:7710")]} project="all" now={0} />);
+  const card = screen.getByRole("article", { name: "writer" });
+  expect(within(card).getByText("Toil").tagName).toBe("DT");
+  const cell = card.querySelector("[data-toil]")!;
+  expect(cell.querySelector("[data-toil-rates]")!.textContent).toBe("24h 0.50 · 7d 1.25");
+  expect(cell.querySelector("[data-toil-actions]")!.textContent).toBe("requeue 5 · babysit 3");
+});
+
+test("a window with no merges reads an em dash, and an empty week has no actions line", () => {
+  const status = withToil(working, null, 2, {});
+  render(<Hosts hosts={[hostOf(status, NO_ATTENTION, "http://writer:7710")]} project="all" now={0} />);
+  const cell = screen.getByRole("article", { name: "writer" }).querySelector("[data-toil]")!;
+  expect(cell.querySelector("[data-toil-rates]")!.textContent).toBe("24h — · 7d 2.00");
+  expect(cell.querySelector("[data-toil-actions]")).toBeNull();
+});
+
+test("a daemon that sends no toil has no Toil cell and its other cells read as before", () => {
+  render(<Hosts hosts={[hostOf(withDaemon(second, 11 * 3_600_000), NO_ATTENTION, "http://writer-2:7710")]} project="all" now={0} />);
+  const card = screen.getByRole("article", { name: "writer-2" });
+  expect(card.querySelector("[data-toil]")).toBeNull();
+  expect(within(card).queryByText("Toil")).toBeNull();
+  expect(card.querySelector("[data-daemon]")!.textContent).toBe("up 11h");
+  expect(card.querySelector("[data-supervisor]")!.textContent).toBe("live · pid 4343 · hb 9s");
+  expect(card.querySelector("[data-runs]")!.textContent).toBe("0 active");
+});
+
 test("an unreachable daemon's card says so with the last good answer's age in place of the cells", () => {
   const lost = { ...hostOf(working, NO_ATTENTION, "http://writer:7710", 1_000), error: "connection refused", polled_ms: 41_000 };
   render(<Hosts hosts={[lost]} project="all" now={41_000} />);

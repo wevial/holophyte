@@ -443,6 +443,7 @@ class MergeModeFixture(LoopFixture):
     # state: the PR's head is the candidate the loop pushed, unless a test
     # says otherwise (`head=`).
     HEAD = "HEAD_SHA"
+    ENQUEUED_AT = "2026-09-23T12:00:00Z"
 
     def pr_state(self, threads=(), checks="SUCCESS", merged=False,
                  head=HEAD, resolved=(), next_cursor=None,
@@ -471,7 +472,7 @@ class MergeModeFixture(LoopFixture):
     def fake_route(self, push_exit=0, push_sh="", states=None,
                    comments=(), open_pr=None, close_exit=0,
                    refuse_labels=False, refuse_reactions=False,
-                   refuse_rerun=False):
+                   refuse_rerun=False, merge_queue=None, merge_groups=()):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -495,7 +496,11 @@ class MergeModeFixture(LoopFixture):
         call refused when `refuse_labels` (KO-608). An `addReaction`
         mutation answers an empty success, or fails when `refuse_reactions`
         (KO-679). A workflow run's `rerun-failed-jobs` `POST` answers an
-        empty success, or fails when `refuse_rerun` (KO-707).
+        empty success, or fails when `refuse_rerun` (KO-707). `merge_queue`
+        (KO-712), a list of queue reads served like `states` (`HEAD` the
+        branch tip), makes the rules read answer a `merge_queue` rule and
+        `enqueuePullRequest` succeed at `ENQUEUED_AT`; the Actions runs
+        read's page n answers the workflow runs `merge_groups[n-1]` (KO-714).
         `push_exit` and `push_sh` control push failure and an optional
         delay; a pull request's REST close (`PATCH`, KO-611) answers
         closed, or fails with `close_exit`. A push
@@ -527,6 +532,12 @@ class MergeModeFixture(LoopFixture):
         for n, state in enumerate([self.pr_state()] if states is None
                                   else states, 1):
             (answers / f"{n:03d}.json").write_text(json.dumps(state))
+        queue = bindir / "queue"
+        queue.mkdir()
+        for n, read in enumerate(merge_queue or (), 1):
+            (queue / f"{n:03d}.json").write_text(json.dumps(read))
+        for n, runs in enumerate(merge_groups, 1):
+            (queue / f"page-{n}").write_text(json.dumps({"workflow_runs": runs}))
         # Kept on the fixture so `serve()` can hand a resumed run a fresh
         # answer sequence mid-test without re-faking PATH.
         self.answers = answers
@@ -569,7 +580,9 @@ class MergeModeFixture(LoopFixture):
             'if [ "$1" = api ]; then\n'
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
-            '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            "    *rules/branches/*) echo '"
+            + ('[{"type":"merge_queue","parameters":{}}]' if merge_queue
+               else "[]") + "'; exit 0;;\n"
             '    */branches/*) echo \'{}\'; exit 0;;\n'
             '    *"--method PATCH repos/example/repo/pulls/"*) cat >/dev/null;'
             f' [ {close_exit} -eq 0 ] || {{ echo "HTTP 422 refused" >&2;'
@@ -583,10 +596,12 @@ class MergeModeFixture(LoopFixture):
                                          if refuse_rerun else 'exit 0;;\n')
             + f'    *actions/jobs/*/logs*) cat "{self.job_log}" && exit 0;'
             ' exit 1;;\n'
+            f'    *"actions/runs?event=merge_group"*) a="$*"; cat "{queue}/page-'
+            """${a##*&page=}" 2>/dev/null || echo '{}'; exit 0;;\n"""
             '    *"GET repos/example/repo/pulls/"*) '
             "python3 -c 'import json,pathlib; "
             f'p=pathlib.Path("{self.pr_body}"); '
-            'print(json.dumps(dict(title="feat(x): do y (KO-1)", '
+            'print(json.dumps(dict(title="feat(x): do y (KO-1)", node_id="PR_1", '
             'body=p.read_text() if p.exists() else "")))'
             "'; exit 0;;\n"
             '  esac\n'
@@ -602,7 +617,15 @@ class MergeModeFixture(LoopFixture):
             '  elif grep -q addReaction "$body"; then\n'
             + ('    echo "reaction refused" >&2; exit 1\n' if refuse_reactions
                else "    echo '{\"data\":{\"addReaction\":{}}}'\n")
-            + '  elif grep -q mergedBy "$body"; then\n'
+            + '  elif grep -q enqueuePullRequest "$body"; then\n'
+            "    echo '{\"data\":{\"enqueuePullRequest\":{\"mergeQueueEntry\":"
+            f"{{\"enqueuedAt\":\"{self.ENQUEUED_AT}\"}}}}}}}}'\n"
+            '  elif grep -q isInMergeQueue "$body"; then\n'
+            f'    f=$(ls "{queue}"/*.json | head -1)\n'
+            f'    tip=$("{real_git}" -C "{self.target}" rev-parse {BRANCH})\n'
+            f'    sed "s/{self.HEAD}/$tip/" "$f"\n'
+            f'    [ $(ls "{queue}"/*.json | wc -l) -gt 1 ] && rm "$f"\n'
+            '  elif grep -q mergedBy "$body"; then\n'
             "    echo '{\"data\":{\"repository\":{\"pullRequest\":"
             "{\"state\":\"OPEN\",\"merged\":false}}}}'\n"
             '  elif grep -q PullRequestReviewThread "$body"; then\n'
@@ -672,6 +695,8 @@ class MergeModeFixture(LoopFixture):
             kind = ("resolve" if "resolveReviewThread" in query
                     else "reply" if "addPullRequestReviewThreadReply" in query
                     else "react" if "addReaction" in query
+                    else "enqueue" if "enqueuePullRequest" in query
+                    else "queue" if "isInMergeQueue" in query
                     else "comments" if "PullRequestReviewThread" in query
                     else "state" if "reviewThreads" in query
                     else "conversation" if "body" in body else "merge")

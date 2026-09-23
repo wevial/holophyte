@@ -12,6 +12,9 @@ KO-713: the same refusal for a function or class an implementation-notes
 item names beside a file, when main's copy of that file no longer holds
 the name, and for a `Depends on:` ticket neither the store nor the board
 calls merged.
+
+KO-716: the parked issue also carries a `stale` label, and the claim skips
+an issue carrying it until the maintainer takes it off.
 """
 
 from __future__ import annotations
@@ -84,6 +87,15 @@ class BoardUnreachable(StubProvider):
         raise RuntimeError("linear is down")
 
 
+class LabelRaises(StubProvider):
+    """A board that refuses the `stale` label; the lease label still lands."""
+
+    def label_issue(self, issue_id, name):
+        if name == "stale":
+            raise RuntimeError("linear is down")
+        super().label_issue(issue_id, name)
+
+
 class ClaimFreshnessTests(LoopFixture):
 
     def runs_by_ticket(self):
@@ -107,6 +119,7 @@ class ClaimFreshnessTests(LoopFixture):
         self.assertIn(GONE, stale_comments[0])
         self.assertEqual([s for s in provider.states if s[0] == "iss-131"],
                          [("iss-131", "Backlog")])
+        self.assertIn("stale", provider.labels["iss-131"])
         self.assertIn("KO-131 skipped", out)
 
     def test_a_body_declaring_the_file_new_is_claimed(self):
@@ -166,6 +179,33 @@ class ClaimFreshnessTests(LoopFixture):
                                provider=provider)
 
         self.assertIn("stale-ticket comment failed for KO-131", out)
+        self.assertIn("KO-131 skipped", out)
+        self.assertEqual(self.runs_by_ticket(), [("KO-132",)])
+
+    def test_a_ticket_labelled_stale_is_skipped_without_a_comment(self):
+        """Moved back to Todo with the label still on: a body with no
+        problem is not claimed, and the board is not told again."""
+        provider = StubProvider(dict(a_task(1), labels=["stale"]), a_task(2))
+
+        out = self.main_output(Commit("second ticket"), APPROVE,
+                               provider=provider)
+
+        self.assertEqual(self.runs_by_ticket(), [("KO-132",)])
+        self.assertEqual(
+            self.read("SELECT status FROM tickets"
+                      " WHERE linearIdentifier = 'KO-131'"),
+            [("needs_spec",)])
+        self.assertEqual([c for c in provider.comments if c[0] == "iss-131"],
+                         [])
+        self.assertIn("KO-131 skipped: labelled stale", out)
+
+    def test_a_failed_label_warns_and_the_ticket_is_still_skipped(self):
+        provider = LabelRaises(dict(a_task(1), body=STALE_BODY), a_task(2))
+
+        out = self.main_output(Commit("second ticket"), APPROVE,
+                               provider=provider)
+
+        self.assertIn("stale label failed for KO-131", out)
         self.assertIn("KO-131 skipped", out)
         self.assertEqual(self.runs_by_ticket(), [("KO-132",)])
 

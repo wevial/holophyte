@@ -27,6 +27,20 @@
   "workers_on_previous_build": 0,
   "host": "writer",
   "now": 1750000000000,
+  "toil": {
+    "24h": {
+      "interventions": 0,
+      "merged": 0,
+      "per_merge": null,
+      "by_action": {}
+    },
+    "7d": {
+      "interventions": 0,
+      "merged": 0,
+      "per_merge": null,
+      "by_action": {}
+    }
+  },
   "daemon": {
     "started_ms": 1750000000000,
     "pid": 1

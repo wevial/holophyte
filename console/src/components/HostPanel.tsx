@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CHIP_LABELS, KINDS, countsByKind, type Kind } from "../lib/attention";
 import { isSupervisorStale, projectName } from "../lib/derive";
 import { age } from "../lib/format";
-import { addressOf, hostName, hostTone, runCounts, type HostRecord } from "../lib/hosts";
+import { addressOf, hostName, hostTone, runCounts, toilLines, type HostRecord } from "../lib/hosts";
 import { routeParts, routeText } from "../lib/routes";
 import { forgetToken, storeToken, tokenFor } from "../lib/token";
 import { ActionButton } from "./ActionButton";
@@ -95,7 +95,8 @@ function TokenField({ host, onStored }: { host: HostRecord; onStored: () => void
 }
 
 /** One daemon's card in the Hosts view: the dot, name and address, the
- *  daemon, supervisor and runs cells, its project row, and the two
+ *  daemon, supervisor and runs cells, a toil cell when the daemon sends
+ *  one, its project row, and the two
  *  operator actions, rendered
  *  disabled until writes arrive. An unreachable daemon
  *  says so in the header, with its last good answer's age, in place of the
@@ -136,6 +137,7 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
         .filter((part): part is string => part != null)
         .join(" · ")
     : "";
+  const toil = status?.toil ? toilLines(status.toil) : null;
   const summary = [status ? plural(status.runs.length, "run") : null, ...attentionSummary(host)]
     .filter((part): part is string => part != null)
     .join(" · ");
@@ -179,7 +181,7 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
       </header>
       {needsToken && <TokenField key={fieldKey} host={host} onStored={() => rerender((count) => count + 1)} />}
       {!unreachable && !needsToken && status && (
-        <dl className="mt-4 grid grid-cols-3 gap-4">
+        <dl className={`mt-4 grid gap-4 ${toil ? "grid-cols-4" : "grid-cols-3"}`}>
           <div>
             <dt className="text-[11px] font-semibold uppercase tracking-[.08em] text-faint">Daemon</dt>
             <dd data-daemon className="mt-1 text-[13px] text-body">
@@ -201,6 +203,19 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
               {runsCell}
             </dd>
           </div>
+          {toil && (
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-[.08em] text-faint">Toil</dt>
+              <dd data-toil className="mt-1 text-[13px] text-body">
+                <span data-toil-rates className="block">{toil.rates}</span>
+                {toil.actions != null && (
+                  <span data-toil-actions className="block text-[12px] text-muted">
+                    {toil.actions}
+                  </span>
+                )}
+              </dd>
+            </div>
+          )}
         </dl>
       )}
       {status && host.project != null && (

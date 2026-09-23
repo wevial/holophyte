@@ -162,6 +162,10 @@ Each module, one line:
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.
+- `holophyte/merge_queue.py` — landing a pull request through `main`'s
+  merge queue (KO-712): the rules read for a `merge_queue` rule, the
+  `enqueuePullRequest` mutation, and the bounded wait for the queue's
+  merge commit, a removal, or `[merge] check_wait_sec`.
 - `holophyte/maintainer_notes.py` — private maintainer instructions as pre-approved
   babysitter threads, contract amendments, and commit event references.
 - `store/operator_notes.py` — atomic send-back and append-only note consumption
@@ -180,6 +184,9 @@ Each module, one line:
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round
   text, the parked question, and the passes that drive them.
+- `holophyte/plain_text.py` — a review comment as plain text for a parked
+  question (KO-717): HTML reduced to its text, an `img` to its `alt`,
+  `details` blocks and quote markers dropped, and a 600-character cap.
 - `holophyte/missing_checks.py` — required checks that never reported on
   a pull request's head: the one empty-commit retrigger per candidate under
   `[merge] retrigger_missing_checks`, and the park naming them (KO-652).

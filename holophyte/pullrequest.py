@@ -5,7 +5,7 @@ from time import monotonic
 import store
 import store.read
 import ticket_template
-from holophyte import babysitter, pr, pr_activity, pr_media, pr_status
+from holophyte import babysitter, merge_queue, pr, pr_activity, pr_media, pr_status
 from holophyte import run as run_state
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config, sweep_config
@@ -366,7 +366,17 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
               " pull request API")
     try:
         with heartbeat_while(conn, run_id, beat_s):
-            merge_sha = pr.merge_pull_request(project, pull, sha)
+            # A queue on main lands the PR itself, main and PR tested together.
+            merge_sha = (merge_queue.land_through_queue(project, conn, run_id,
+                                                        pull, sha)
+                         if merge_queue.merge_queue_required(project, pull)
+                         else pr.merge_pull_request(project, pull, sha))
+    except merge_queue.QueueLeft as left:
+        removed = merge_queue.red_group(project, conn, run_id, pull, left)
+        if removed is not None:
+            raise removed from None  # The babysit's check fix turn's.
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
+                    str(left), (), reviewed=reviewed)
     except pr.MergeRefused as refused:
         if (retry_conflicts and "405" in str(refused)
                 and "merge conflicts" in str(refused).lower()):

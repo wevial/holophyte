@@ -1,6 +1,6 @@
 import { PrFacts } from "./PrFacts";
 import { TicketLink } from "./TicketLink";
-import { useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Description } from "../lib/attention";
 import { formatAge } from "../lib/format";
 import type { ThreadRow } from "../lib/threads";
@@ -68,6 +68,23 @@ export function AttentionRow({
 }) {
   const { pill, ticket, body, meta, ageMs, actions, facts } = description;
   const [expanded, setExpanded] = useState(false);
+  // A question clamps to four rendered lines (KO-717) and offers "more"
+  // when the clamp hides some of it: measured, since wrapping, not the
+  // text's length or newlines, decides how many lines it takes.
+  const question = kind === "blocked";
+  const [more, setMore] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const bodyRef = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    const element = bodyRef.current;
+    if (!question || more || !element) return;
+    const measure = () => setOverflows(element.scrollHeight > element.clientHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [question, more, body]);
   const failed = kind === "failed" && runId != null && daemon != null && !thread && !attempts;
   const card = thread ?? attempts ?? (failed ? { open: expanded, onToggle: () => setExpanded((value) => !value) } : undefined);
   const toggle = card?.onToggle;
@@ -109,7 +126,11 @@ export function AttentionRow({
           <div className="truncate text-[11px] text-faint">{project}</div>
         </div>
         <div className="min-w-0">
-          <p className="text-[13px] leading-[1.4] text-body">
+          <p
+            ref={bodyRef}
+            data-body
+            className={`text-[13px] leading-[1.4] text-body ${question ? "whitespace-pre-line break-words" : ""} ${question && !more ? "line-clamp-4" : ""}`}
+          >
             {prUrl && leadsWithLink && (
               <span onClick={(event) => event.stopPropagation()} className="mr-2">
                 <PrLink url={prUrl} />
@@ -122,6 +143,19 @@ export function AttentionRow({
               </span>
             )}
           </p>
+          {question && (overflows || more) && (
+            <button
+              type="button"
+              aria-expanded={more}
+              onClick={(event) => {
+                event.stopPropagation();
+                setMore((value) => !value);
+              }}
+              className="text-[12px] font-semibold text-needs-you-link"
+            >
+              {more ? "less" : "more"}
+            </button>
+          )}
           <PrFacts facts={facts} />
           {meta && <p className="text-[12px] text-faint">{meta}</p>}
           {failed && !attempts && (
