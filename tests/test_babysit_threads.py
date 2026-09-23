@@ -1147,6 +1147,15 @@ class ParkQuestionQuoteTests(unittest.TestCase):
         self.assertEqual([line for line in text.splitlines()
                           if line.lstrip().startswith(">")], [])
 
+    def test_a_line_break_keeps_the_words_on_either_side_apart(self):
+        text = self.quote("First<br>Second<br/>Third")
+        self.assertEqual(text.split("\n", 1)[1].split(), ["First", "Second", "Third"])
+
+    def test_block_tags_keep_their_texts_on_separate_lines(self):
+        text = self.quote("<p>First</p><p>Second</p><ul><li>one</li><li>two</li></ul>")
+        self.assertEqual([line for line in text.splitlines()[1:] if line.strip()],
+                         ["First", "Second", "one", "two"])
+
     def test_a_long_comment_is_cut_to_600_characters_under_its_url(self):
         text = self.quote("x" * 900)
         header, body = text.split("\n", 1)

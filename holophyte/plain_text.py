@@ -10,11 +10,18 @@ from html.parser import HTMLParser
 QUOTE_CHARS = 600
 QUOTE_MARKER_RE = re.compile(r"^[ \t]*(?:>[ \t]?)+", re.MULTILINE)
 BLANK_RUN_RE = re.compile(r"\n[ \t]*(?:\n[ \t]*)+\n")
+# Tags HTML displays on a line of their own; their text keeps that boundary.
+BLOCK_TAGS = frozenset((
+    "address", "article", "aside", "blockquote", "br", "dd", "div", "dl",
+    "dt", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5",
+    "h6", "header", "hr", "li", "ol", "p", "pre", "section", "summary",
+    "table", "tr", "ul"))
 
 
 class _Text(HTMLParser):
-    """Collects text: an `img` as its `alt`, other tags dropped for their
-    text, and each `details` block, however nested, dropped whole."""
+    """Collects text: an `img` as its `alt`, a line break or block tag as a
+    line boundary, other tags dropped for their text, and each `details`
+    block, however nested, dropped whole."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -24,12 +31,18 @@ class _Text(HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag == "details":
             self.hidden += 1
-        elif tag == "img" and not self.hidden:
+        elif self.hidden:
+            return
+        elif tag == "img":
             self.parts.append(dict(attrs).get("alt") or "")
+        elif tag in BLOCK_TAGS:
+            self.parts.append("\n")
 
     def handle_endtag(self, tag):
         if tag == "details" and self.hidden:
             self.hidden -= 1
+        elif tag in BLOCK_TAGS and tag != "br" and not self.hidden:
+            self.parts.append("\n")
 
     def handle_data(self, data):
         if not self.hidden:
