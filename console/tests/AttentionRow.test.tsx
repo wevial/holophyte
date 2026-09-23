@@ -347,3 +347,53 @@ test("a send-back the daemon answers 500 shows its error under the box, not Fail
   expect(shown).not.toContain("Failed to fetch");
   expect(screen.getByRole("textbox", { name: "Maintainer's note" })).toBeTruthy();
 });
+
+/** happy-dom lays nothing out, so the row's paragraph gets a stand-in
+ *  layout: a 60-character column at 18px a line, cut to four lines while
+ *  `line-clamp-4` is on. */
+function wrapAt60(run: () => void) {
+  const line = 18;
+  const lines = (element: HTMLElement) =>
+    (element.textContent ?? "").split("\n").reduce((sum, text) => sum + Math.max(1, Math.ceil(text.length / 60)), 0);
+  const saved = ["scrollHeight", "clientHeight"].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)] as const);
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return lines(this) * line;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return Math.min(lines(this), this.classList.contains("line-clamp-4") ? 4 : Infinity) * line;
+    },
+  });
+  try {
+    run();
+  } finally {
+    for (const [name, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name];
+    }
+  }
+}
+
+test("a question wrapping past four lines is clamped with more, which shows the whole text; one that fits gets no more", () => {
+  // Four 76-character lines, 307 characters: eight lines once wrapped.
+  const question = ["a", "b", "c", "d"].map((letter) => letter.repeat(76)).join("\n");
+  const item = (text: string): AttentionItem => ({ kind: "blocked", level: "attention", ticket: "KO-714", question: text });
+  wrapAt60(() => {
+    renderRow(item(question), fakeFetch({}).fetchImpl);
+    const body = document.querySelector("[data-body]")!;
+    expect(body.className).toContain("line-clamp-4");
+
+    fireEvent.click(screen.getByRole("button", { name: "more" }));
+    expect(body.className).not.toContain("line-clamp-4");
+    expect(body.textContent).toBe(question);
+    expect(screen.queryByRole("button", { name: "more" })).toBeNull();
+
+    cleanup();
+    renderRow(item("Which branch?"), fakeFetch({}).fetchImpl);
+    expect(screen.queryByRole("button", { name: "more" })).toBeNull();
+  });
+});
