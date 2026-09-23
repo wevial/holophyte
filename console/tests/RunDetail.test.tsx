@@ -524,6 +524,9 @@ test("only the newest round's fold is open and an older round's header opens it"
     },
   ];
   await mount(FAILED, T + 25 * MINUTE, undefined, entries);
+  // Round 1 reads "fixed" until its ledger row lands, which can be a tick
+  // after mount() returns; wait for the header the ledger decides.
+  await screen.findByRole("button", { name: /Round 1 · 1 finding · declined/ });
   const folds = Array.from(document.querySelectorAll("[data-round-fold]")) as HTMLElement[];
   // Newest first on the page: round 2, then round 1.
   expect(folds.map((fold) => fold.getAttribute("data-round-fold"))).toEqual(["2", "1"]);
@@ -538,8 +541,8 @@ test("only the newest round's fold is open and an older round's header opens it"
   // declined, with the implementer's line under the body.
   expect(within(folds[1]!).queryAllByRole("listitem").length).toBe(0);
   fireEvent.click(buttons[1]!);
+  const card = await within(folds[1]!).findByRole("listitem");
   expect(buttons[1]!.getAttribute("aria-expanded")).toBe("true");
-  const card = within(folds[1]!).getByRole("listitem");
   expect(card.querySelector("[data-fate]")!.textContent).toBe("declined");
   expect(card.querySelector("[data-fate-sentence]")!.textContent).toBe(
     "DECLINE old.py — superseded by the rewrite",
