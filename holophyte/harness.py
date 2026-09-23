@@ -152,7 +152,8 @@ class Devin(Adapter):
     prints none, so `reported_session()` asks `devin list` in the checkout,
     which holds only this turn's session: a resumed one moves to the
     directory it was resumed in. The factory has no Devin model to default
-    to, and the CLI has no effort flag.
+    to, so `model` is required -- the maintainer's choice for the reviewer is
+    `swe-2-high`, the live test's model -- and the CLI has no effort flag.
     """
     name = "devin"
     roles = frozenset({"reviewer", "adjudicator"})

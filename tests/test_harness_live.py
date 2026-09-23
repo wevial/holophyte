@@ -136,10 +136,11 @@ HEAD_GOAL = ("Run `git rev-parse HEAD` in the current checkout and reply with "
 
 
 # The `[agents.reviewer]` table each resuming review harness's live rounds
-# run under; devin's model is the one its account still has quota for.
+# run under; devin's is the maintainer's choice among the models its
+# account still has quota for (swe-2-max answers too, but slowly).
 RESUMING_REVIEW_TABLES = {
     "codex": 'harness = "codex"\neffort = "low"\n',
-    "devin": 'harness = "devin"\nmodel = "swe-2-max"\n',
+    "devin": 'harness = "devin"\nmodel = "swe-2-high"\n',
 }
 
 
