@@ -622,6 +622,61 @@ class MediaTests(unittest.TestCase):
         with patch("holophyte.pr_media.CAPTURE_TIMEOUT", 0.05):
             self.assertIn("timed out", self.open())
 
+    def prepare(self):
+        notes = []
+        with (patch("holophyte.pr.origin_url",
+                    return_value="https://github.com/example/repo.git"),
+              patch.object(pr_media, "repo_is_private", return_value=False)):
+            section = pr_media.prepare(self.target, self.repo, "KO-623",
+                                       record_note=notes.append)
+        return section, notes
+
+    def test_failed_host_capture_ends_with_its_last_twenty_lines(self):
+        self.candidate()
+        (self.repo / "capture.sh").write_text(
+            'for i in $(seq 1 30); do echo "line $i" >&2; echo >&2; done\nexit 2\n')
+        self.config["merge"]["ui_capture"] = "sh capture.sh"
+        section, notes = self.prepare()
+        tail = "\n".join(f"line {i}" for i in range(11, 31))
+        self.assertIn("Capture command `sh capture.sh` failed (exit 2).\n\n"
+                      f"```\n{tail}\n```", section)
+        self.assertNotIn("line 10\n", section)
+        self.assertEqual(len(notes), 1)
+        self.assertIn(tail, notes[0])
+
+    def test_failed_capture_output_is_redacted_in_section_and_note(self):
+        self.config["linear"] = {"api_key": "lin-sentinel-623"}
+        self.candidate(script="print('token lin-sentinel-623 refused')\n"
+                       "raise SystemExit(1)")
+        section, notes = self.prepare()
+        for text in (section, notes[0]):
+            self.assertNotIn("lin-sentinel-623", text)
+            self.assertIn("token [redacted] refused", text)
+
+    def test_failed_container_capture_shows_what_launch_returned(self):
+        from holophyte import isolation
+        self.config["agents"] = {"implementer_isolation": "container"}
+        self.candidate()
+        worktree = self.root / "task"
+        self.git("worktree", "add", "-qb", "task", str(worktree))
+        self.repo = worktree
+        with (patch.object(isolation, "image_ready"),
+              patch.object(isolation.review_runner, "_remove_container"),
+              patch.object(isolation, "run_capped",
+                           return_value=(3, "no spec at e2e/rel139.spec.ts\n"))):
+            section, _ = self.prepare()
+        self.assertIn("failed (exit 3).\n\n```\nno spec at e2e/rel139.spec.ts\n```",
+                      section)
+
+    def test_successful_capture_has_no_output_block(self):
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       "print('rendering')\n"
+                       f'Path(sys.argv[1], "01-screen.png").write_bytes({PNG!r})\n')
+        section, _ = self.prepare()
+        self.assertIn("01-screen.png", section)
+        self.assertNotIn("```", section)
+        self.assertNotIn("rendering", section)
+
     def test_visibility_transport_and_invalid_answers(self):
         with patch("holophyte.pr.origin_url",
                    return_value="https://github.com/example/repo.git"), patch(
