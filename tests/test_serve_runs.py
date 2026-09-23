@@ -41,13 +41,13 @@ class LivePullRequestTests(MergeModeFixture):
         observed = []
 
         def open_and_observe(target, conn, run_id, *args, **kwargs):
-            url = holophyte.pullrequest._open_pr(
+            url = holophyte.pullrequest._push_and_open(
                 target, conn, run_id, *args, **kwargs)
             observed.append(holophyte.serve_runs.run_detail(
                 target, str(run_id)))
             return url
 
-        with patch.object(holophyte.loop, "_open_pr", open_and_observe):
+        with patch.object(holophyte.loop, "_push_and_open", open_and_observe):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
 

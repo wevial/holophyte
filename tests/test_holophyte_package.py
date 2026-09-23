@@ -202,10 +202,11 @@ DEFINED = {
     _module("pullrequest"): [
         "_landed_pr",
         "_merge_pr",
-        "_open_pr",
         "_park_human",
         "_park_on_pr",
         "_pr_template",
+        "_prepare_pr",
+        "_push_and_open",
         "_resume_on_pr",
         "_written_pr_text",
     ],

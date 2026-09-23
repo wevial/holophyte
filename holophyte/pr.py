@@ -76,7 +76,7 @@ RESOLVE_MUTATION = """
 mutation($thread: ID!) {
   resolveReviewThread(input: {threadId: $thread}) { thread { isResolved } }
 }"""
-# The one read `_open_pr` makes between the push and `gh pr create`
+# The one read `_push_and_open` makes between the push and `gh pr create`
 # (KO-407): is the branch already the head of an open pull request? A run
 # resumed on a branch its failed predecessor opened as a PR adopts that PR;
 # the create would refuse with one still open.

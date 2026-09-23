@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
 import shutil
 import sqlite3
 import sys
@@ -64,6 +65,20 @@ import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
 class LockFailureWordingTests(LoopFixture):
+    def test_local_mode_verifies_at_the_gate_under_the_lock(self):
+        """Local mode keeps the whole gate under the lock (KO-644 moves
+        only pull-request mode's verify out): the gate's verify merges
+        `main` into the branch and judges what lands on main next."""
+        log = self.target.parent / "lock.log"
+        path = holophyte.gates.merge_lock_path(self.tgt)
+        verify = (f"if [ -e {shlex.quote(str(path))} ]; then echo locked;"
+                  f" else echo free; fi >> {shlex.quote(str(log))}")
+        self.loop(Commit("candidate"), APPROVE,
+                  provider=StubProvider(dict(a_task(), verify=verify)))
+        # The review round's verify, then the gate's.
+        self.assertEqual(log.read_text().splitlines(), ["free", "locked"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
     def test_gate_lock_timeout_records_typed_park(self):
         path = holophyte.gates.merge_lock_path(self.tgt)
         path.parent.mkdir(parents=True, exist_ok=True)

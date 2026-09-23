@@ -76,8 +76,9 @@ from holophyte.merge_gate import (
 )
 from holophyte.pr_media import implementer_brief as _capture_brief
 from holophyte.pullrequest import (
-    _open_pr,
     _park_on_pr,
+    _prepare_pr,
+    _push_and_open,
 )
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
@@ -272,24 +273,37 @@ def _run_stages(run, task):
     # instead of landing on main: pushed, opened as a pull request, and
     # babysat -- its threads answered, its checks awaited -- until it
     # merges through the PR's own API or parks for the operator. `approve`
-    # is read there: the PR is what the human's answer is about. The lock
-    # covers the push-and-open and not the babysitter, which waits on a
-    # remote for as long as it takes.
-    with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
-                    beat_s):
+    # is read there: the PR is what the human's answer is about. There the
+    # lock covers the push-and-open alone: the verify, the drift check and
+    # the PR text run in the task's own worktree and share nothing another
+    # run's gate touches (KO-644), and the babysitter waits on a remote for
+    # as long as it takes.
+    if merge.mode == "pr":
         ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,
                               contracts, ticket, budget_min,
-                              sync_main=merge.mode != "pr")
-        if merge.mode == "pr":
-            url = _open_pr(target, conn, run_id, task_id, task, branch, body,
-                           beat_s, wt, started, budget_min, issue_url)
-            sha = sh(["git", "rev-parse", branch], wt)
-        elif merge.approve == "human":
-            # The human half of the gate, when the target asks for one: the
-            # candidate is approved and verified, and a person says "merge".
-            _park_for_approval(conn, run_id, provider, task_id, branch, sha)
-        else:
+                              sync_main=False)
+        title, text = _prepare_pr(target, conn, run_id, task_id, task, branch,
+                                  body, beat_s, wt, started, budget_min,
+                                  issue_url)
+        with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            url = _push_and_open(target, conn, run_id, branch, title, text,
+                                 beat_s)
+        sha = sh(["git", "rev-parse", branch], wt)
+    else:
+        with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
+                                  issue_id, branch, wt, beat_s, sha,
+                                  verify_cmd, contracts, ticket,
+                                  budget_min)
+            if merge.approve == "human":
+                # The human half of the gate, when the target asks for one:
+                # the candidate is approved and verified, and a person says
+                # "merge".
+                _park_for_approval(conn, run_id, provider, task_id, branch,
+                                   sha)
             return run_state.land(replace(run, sha=sha, rnd=rnd), ok)
     run = replace(run, sha=sha, rnd=rnd, pr_url=url)
     run = _babysit(run, beat_s, ticket, verify_cmd, contracts, criteria,

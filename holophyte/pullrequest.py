@@ -275,23 +275,12 @@ def _refreshed_prose(target, conn, run_id, task_id, task, branch, ticket,
     return text
 
 
-def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
-             wt, started, budget_min, issue_url=None):
-    """`[merge] mode = "pr"`: push the approved candidate and open its pull
-    request; return the PR's URL.
-
-    `git push origin BRANCH`, then the PR with its written title and body,
-    so a PR never names a branch the remote does not hold. Either
-    refusing is `InfraFailure` out of `holophyte.pr`: the route gave out,
-    not the ticket, so no strike is spent and the branch and worktree stay
-    exactly as after a refused merge. Nothing touches main.
-
-    Adopt an existing PR on this branch, then babysit as usual (KO-407).
-    Before pushing, write the PR text, falling back to a stub on failure.
-
-    Remote calls run under `heartbeat_while()`: a slow push is not a dead
-    loop to sweep before its URL is recorded (KO-259 review round 1).
-    """
+def _prepare_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
+                wt, started, budget_min, issue_url=None):
+    """`[merge] mode = "pr"`, the half of opening the pull request that
+    needs no lock: capture the evidence and write the PR text, falling back
+    to a stub on failure. Returns the `(title, text)` `_push_and_open()`
+    opens the pull request with (KO-644)."""
     with heartbeat_while(conn, run_id, beat_s):
         evidence = pr_media.prepare(
             target, wt, task_id,
@@ -300,7 +289,26 @@ def _open_pr(target, conn, run_id, task_id, task, branch, body, beat_s,
     title, text = _written_pr_text(target, conn, run_id, task_id, task,
                                    branch, body, beat_s, wt, started,
                                    budget_min, issue_url)
-    text = pr_media.append(text, evidence)
+    return title, pr_media.append(text, evidence)
+
+
+def _push_and_open(target, conn, run_id, branch, title, text, beat_s):
+    """`[merge] mode = "pr"`: push the approved candidate and open its pull
+    request with `title` and `text`; return the PR's URL. The caller holds
+    the merge lock: the push runs in the target checkout, whose refs a
+    claim's fetch moves under the same lock.
+
+    `git push origin BRANCH`, then the PR, so a PR never names a branch the
+    remote does not hold. Either refusing is `InfraFailure` out of
+    `holophyte.pr`: the route gave out, not the ticket, so no strike is
+    spent and the branch and worktree stay exactly as after a refused
+    merge. Nothing touches main.
+
+    Adopt an existing PR on this branch, then babysit as usual (KO-407).
+
+    Remote calls run under `heartbeat_while()`: a slow push is not a dead
+    loop to sweep before its URL is recorded (KO-259 review round 1).
+    """
     # Still the `merge_gate` phase: the push and the create are the mode's
     # way out of the gate, named on the stream rather than as a phase move.
     if conn is not None and run_id is not None:
