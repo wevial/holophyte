@@ -137,6 +137,12 @@ export function agentMs(
   return run.agent_ms + (run.work_started_ms != null && run.verify_started_ms == null ? sinceMs : 0);
 }
 
+/** The run's verify time, which counts on between polls only while a
+ *  verify is open; null from a daemon that does not serve `verify_ms`. */
+export function verifyMs(run: { verify_ms?: number | null; verify_started_ms?: number | null }, sinceMs = 0): number | null {
+  return run.verify_ms == null ? null : run.verify_ms + (run.verify_started_ms != null ? sinceMs : 0);
+}
+
 /** The name of the clock `agentMs()` reads for this run. */
 export function boxClock(run: { agent_ms?: number | null }): "agent" | "working" {
   return run.agent_ms == null ? "working" : "agent";

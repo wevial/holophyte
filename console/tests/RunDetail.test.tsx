@@ -262,6 +262,38 @@ test("the box figure reads the agent clock, not verify, when the daemon serves i
   expect(box.getAttribute("data-box")).toBe("left");
 });
 
+test("beside the box the header splits the run's time into agent 10m 00s · verify 12m 00s", async () => {
+  await mount({ ...DETAIL, run: { ...DETAIL.run, working_ms: 22 * MINUTE, work_started_ms: null, agent_ms: 10 * MINUTE, verify_ms: 12 * MINUTE, verify_started_ms: null } }, T + 22 * MINUTE);
+  expect(document.querySelector("[data-clocks]")!.textContent).toBe("agent 10m 00s · verify 12m 00s");
+});
+
+test("between polls only the open span's figure counts on: verify while verify runs, agent while a turn does", async () => {
+  const seen = T + 22 * MINUTE;
+  const split = { working_ms: 22 * MINUTE, work_started_ms: T, agent_ms: 10 * MINUTE, verify_ms: 12 * MINUTE };
+  const page = (run: Partial<RunDetailBody["run"]>, sinceMs: number) => (
+    <RunDetail base={BASE} id={91} now={seen} sinceMs={sinceMs} polls={1}
+      deps={{ fetch: answering({ ...DETAIL, run: { ...DETAIL.run, ...split, ...run } }) }} />
+  );
+  const clocks = () => document.querySelector("[data-clocks]")!.textContent;
+  const verifying = render(page({ verify_started_ms: T + 20 * MINUTE }, 0));
+  await settle();
+  expect(clocks()).toBe("agent 10m 00s · verify 12m 00s");
+  verifying.rerender(page({ verify_started_ms: T + 20 * MINUTE }, 2_000));
+  expect(clocks()).toBe("agent 10m 00s · verify 12m 02s");
+  cleanup();
+
+  const turning = render(page({ verify_started_ms: null }, 0));
+  await settle();
+  expect(clocks()).toBe("agent 10m 00s · verify 12m 00s");
+  turning.rerender(page({ verify_started_ms: null }, 2_000));
+  expect(clocks()).toBe("agent 10m 02s · verify 12m 00s");
+});
+
+test("a run recorded before the split reads verify n/a beside its agent figure", async () => {
+  await mount({ ...DETAIL, run: { ...DETAIL.run, working_ms: 20 * MINUTE, work_started_ms: null, verify_ms: null } }, T + 20 * MINUTE);
+  expect(document.querySelector("[data-clocks]")!.textContent).toBe("agent 20m 00s · verify n/a");
+});
+
 test("past the box the header reads 10m 00s over the box in the bad tone and the segments fill the bar", async () => {
   await mount({ ...DETAIL, run: { ...DETAIL.run, working_ms: 40 * MINUTE } }, T + 40 * MINUTE);
   const box = document.querySelector("[data-box]")!;
