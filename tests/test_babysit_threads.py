@@ -236,8 +236,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                 subjects.append(body["variables"]["subject"])
         return subjects
 
-    def mention_fixed(self, thread, eyes=(), refuse_reactions=False):
-        self.configure('[merge]\nmode = "pr"\n')
+    def mention_fixed(self, thread, eyes=(), refuse_reactions=False, config=""):
+        self.configure('[merge]\nmode = "pr"\n' + config)
         self.fake_route(states=[self.with_node_ids(self.pr_state([thread]), eyes),
                                 self.pr_state()],
                         refuse_reactions=refuse_reactions)
@@ -274,6 +274,12 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                    (("operator", "User"),
                     "@holophyte fix: use the path tokenId")))
         self.assertEqual(self.mention_fixed(thread, eyes=("C_1_2",)), [])
+
+    def test_a_configured_bot_s_mention_gets_no_reaction(self):
+        thread = ("src/app.py", 30, ("service", "User"),
+                  "@holophyte fix: use the path tokenId")
+        self.assertEqual(self.mention_fixed(
+            thread, config='bot_logins = ["service"]\n'), [])
 
     def test_a_refused_reaction_is_a_run_event_and_the_fix_still_runs(self):
         thread = ("src/app.py", 30, ("operator", "User"),
