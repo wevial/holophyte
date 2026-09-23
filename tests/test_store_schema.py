@@ -1541,9 +1541,9 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
     def test_an_older_store_admits_the_not_reproduced_park(self):
         """KO-657: the enum rebuild widens `runs.parkKind`, keeping the row.
 
-        The ticket named 33 -> 34, but 34 and 35 shipped first (KO-635,
-        KO-611): a store stamped 33, and one stamped 35 -- the last version
-        whose CHECK lacked the value -- both open at this build's version."""
+        A store stamped 35 -- the version just below 36, the last whose
+        CHECK lacked the value -- and an older one stamped 33 both open at
+        this build's version."""
         for version in (33, 35):
             with self.subTest(version=version):
                 path = self.path.with_name(f"v{version}.sqlite3")
