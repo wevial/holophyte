@@ -11,6 +11,8 @@ export const turnsSchema = z.object({ turns: z.array(z.object({
   session_id: z.string().nullable(),
 }).strict()) }).strict();
 
+export type RunTurnsBody = z.infer<typeof turnsSchema>;
+
 export const transcriptSchema = z.object({ entries: z.array(z.object({
   speaker: z.enum(["user", "assistant", "command", "tool"]),
   text: z.string(),
