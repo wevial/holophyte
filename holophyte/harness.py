@@ -49,7 +49,7 @@ class Adapter:
     def binary(self):
         return self.name
 
-    def reported_session(self, binary, output, role, cwd, env):
+    def reported_session(self, binary, output, role, run):
         return None
 
 
@@ -120,7 +120,7 @@ class Codex(Adapter):
         return [binary, "exec", "resume", *self.route(options),
                 "--dangerously-bypass-approvals-and-sandbox", session]
 
-    def reported_session(self, binary, output, role, cwd, env):
+    def reported_session(self, binary, output, role, run):
         """The first banner's id; for the implementer, only a UUID, which
         is what `runs.providerSessionId` holds for a resume to name."""
         match = self.BANNER.search(output)
@@ -151,7 +151,9 @@ class Devin(Adapter):
     checkout staying the write boundary. Devin chooses the session id and
     prints none, so `reported_session()` asks `devin list` in the checkout,
     which holds only this turn's session: a resumed one moves to the
-    directory it was resumed in. The factory has no Devin model to default
+    directory it was resumed in. The question goes through the turn's own
+    runner, so it is held to what is left of the turn's cap and killed by
+    the sweep that would kill the turn. The factory has no Devin model to default
     to, so `model` is required -- the maintainer's choice for the reviewer is
     `swe-2-high`, the live test's model -- and the CLI has no effort flag.
     """
@@ -170,18 +172,19 @@ class Devin(Adapter):
     def resume(self, binary, options, session, role):
         return [binary, *self.route(options), "-r", session, "-p"]
 
-    def reported_session(self, binary, output, role, cwd, env):
-        """The one session `devin list` shows for `cwd`, None for any
-        other answer: a guess could resume someone else's conversation."""
+    def reported_session(self, binary, output, role, run):
+        """The one session `devin list` shows in the turn's checkout, None
+        for any other answer -- a guess could resume someone else's
+        conversation -- and for a turn with no `run` to ask it through."""
+        if run is None:
+            return None
         try:
-            listed = subprocess.run(
-                [binary, "list", "--format", "json"], cwd=cwd, env=env,
-                capture_output=True, text=True, timeout=self.LIST_TIMEOUT,
-                stdin=subprocess.DEVNULL)
-            sessions = json.loads(listed.stdout)
+            code, listed = run([binary, "list", "--format", "json"],
+                               self.LIST_TIMEOUT)
+            sessions = json.loads(listed)
         except (OSError, subprocess.SubprocessError, ValueError):
             return None
-        if listed.returncode != 0 or not isinstance(sessions, list) \
+        if code != 0 or not isinstance(sessions, list) \
                 or len(sessions) != 1 or not isinstance(sessions[0], dict):
             return None
         session = sessions[0].get("id")
@@ -260,13 +263,14 @@ class Seat:
         """The argv that resumes `session`; the caller appends the prompt."""
         return self.adapter.resume(self.binary, self.options, session, self.role)
 
-    def reported_session(self, output, cwd=None, env=None):
-        """The session id a finished turn in `cwd` ran under, for an adapter
-        whose harness chooses it; None when the harness names none. A review
-        turn passes its checkout and environment, which a harness that
-        prints no id is asked in (`Devin`)."""
+    def reported_session(self, output, run=None):
+        """The session id a finished turn ran under, for an adapter whose
+        harness chooses it; None when the harness names none. A review turn
+        passes `run(argv, timeout)`, which runs `argv` in its checkout under
+        its cap and kill hook and returns `(returncode, stdout)`: a harness
+        that prints no id is asked through it (`Devin`)."""
         return self.adapter.reported_session(self.binary, output, self.role,
-                                             cwd, env)
+                                             run)
 
     def named(self, argv):
         """`argv` as a record names it: the harness first, not a

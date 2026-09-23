@@ -19,6 +19,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -506,6 +507,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     if role != "implement":
         # runs imports agent_route for round records; defer this import to
         # avoid a cycle at module load time.
+        from holophyte.review_session import prepare_environment, record_session
         from holophyte.runs import heartbeat_while
 
         beat_s = sweep_config(project).heartbeat_stale_ms / 2000
@@ -514,24 +516,28 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         # process group, as it kills an implementer's (KO-592).
         kill = GroupKill()
         try:
-            with review_scratch(cwd) as scratch, heartbeat_while(
-                    conn, run_id, beat_s, on_swept=kill):
-                env = dict(
-                    os.environ, HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1],
-                    HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
-                from holophyte.review_session import prepare_environment, record_session
-                route = 'fallback' if role in routes(project).commands else 'primary'
-                prepare_environment(project, env, conn, run_id, role, route,
-                                    review_round)
-                try:
+            with review_scratch(cwd) as scratch:
+                with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
+                    env = dict(
+                        os.environ,
+                        HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1],
+                        HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
+                    route = ('fallback' if role in routes(project).commands
+                             else 'primary')
+                    prepare_environment(project, env, conn, run_id, role, route,
+                                        review_round)
                     if seat is not None:
-                        return table_review(seat, goal, cwd, scratch, cap, env,
-                                            role, run_id=run_id, conn=conn,
-                                            on_start=kill.arm)
-                    return configured_review(cmd, cwd, cap, env, role,
-                                             dispatched_route, on_start=kill.arm)
-                finally:
-                    record_session(scratch, conn, run_id, role, route, review_round)
+                        output = table_review(seat, goal, cwd, scratch, cap, env,
+                                              role, run_id=run_id, conn=conn,
+                                              kill=kill)
+                    else:
+                        output = configured_review(cmd, cwd, cap, env, role,
+                                                   dispatched_route,
+                                                   on_start=kill.arm)
+                # Past the heartbeat's exit, which raises for a run swept or
+                # aborted mid-turn: an ended run records no session.
+                record_session(scratch, conn, run_id, role, route, review_round)
+                return output
         finally:
             check_review_refs(cwd, run_id, base_sha, candidate_sha)
     # `IMPL_TIMEOUT` is the scaled thirty minutes on this target: the
@@ -609,7 +615,7 @@ NO_ROLLOUT = "no rollout found"
 
 
 def table_review(seat, goal, repo, scratch, cap, env, role, *, run_id=None,
-                 conn=None, on_start=None):
+                 conn=None, kill=None):
     """Run a table reviewer in a detached checkout of the candidate ref.
 
     The checkout lives under `scratch`, so `review_scratch()` removes it on
@@ -619,10 +625,25 @@ def table_review(seat, goal, repo, scratch, cap, env, role, *, run_id=None,
     id the harness reports is written to `scratch/session` for
     `review_session.record_session()`. A resume the harness answers with
     `NO_ROLLOUT` runs once more fresh, and a `review_session` event says so.
+
+    Every process the turn starts -- the retry, and a harness asked
+    afterwards for its session -- shares the one `cap` and is armed on
+    `kill`, the sweep's `GroupKill`; once a sweep has asked for the kill,
+    the harness is not asked and no session is written.
     """
+    deadline = time.monotonic() + cap
+    on_start = kill.arm if kill is not None else None
     checkout = Path(scratch) / "candidate"
     sh(["git", "worktree", "add", "--detach", "--quiet", str(checkout),
         review_refs(run_id)[1]], cwd=repo, env=scratch_git_environment())
+
+    def remaining():
+        return max(0.0, deadline - time.monotonic())
+
+    def ask(argv, timeout):
+        return run_capped(argv, checkout, min(timeout, remaining()),
+                          on_start=on_start, env=env, stderr=subprocess.DEVNULL)
+
     session = env.get("HOLOPHYTE_REVIEW_RESUME")
     argv = seat.resume(session) + [goal] if session else seat.turn(goal)
     output = configured_review(argv, checkout, cap, env, role, seat.named(argv),
@@ -636,10 +657,12 @@ def table_review(seat, goal, repo, scratch, cap, env, role, *, run_id=None,
                                    {"arm": "resume", "requested": True,
                                     "resumed": False, "reason": NO_ROLLOUT}))
         argv = seat.turn(goal)
-        output = configured_review(argv, checkout, cap, env, role,
+        output = configured_review(argv, checkout, remaining(), env, role,
                                    seat.named(argv), on_start=on_start)
-    reported = seat.reported_session(output, checkout, env)
-    if reported:
+    if kill is not None and kill.wanted:
+        return output
+    reported = seat.reported_session(output, ask)
+    if reported and not (kill is not None and kill.wanted):
         (Path(scratch) / "session").write_text(reported, encoding="utf-8")
     return output
 
