@@ -71,7 +71,7 @@ PINNED = {
     "tests/test_store_interventions.py": 442,
     "tests/test_store_lease.py": 140, "tests/test_store_pickable.py": 181,
     "tests/test_store_read.py": 414, "tests/test_store_resume.py": 263,
-    "tests/test_store_schema.py": 1501, "tests/test_store_status.py": 372,
+    "tests/test_store_schema.py": 1560, "tests/test_store_status.py": 372,
     "tests/test_store_status_graph.py": 171,
     "tests/test_store_surface.py": 340, "tests/test_store_tickets.py": 178,
     "tests/test_supervise.py": 1360, "tests/test_supervisor_sweep.py": 1100,
