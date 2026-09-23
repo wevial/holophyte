@@ -164,6 +164,20 @@ model   = "gpt-5.6-sol"   # optional; passed to -m
 effort  = "medium"        # optional; low, medium, high or xhigh
 ```
 
+`[agents.reviewer] harness = "cursor"` (and the same for `adjudicator`) runs
+the Cursor CLI in the same throwaway candidate checkout, as
+`cursor-agent -p --model M --force --trust PROMPT`. `model` is required and
+`effort` is refused: the CLI has no effort flag. Cursor cannot resume here, so
+on a re-review under `[loop] review_session = "resume"` or `"alternate"` no
+`HOLOPHYTE_REVIEW_RESUME` is set and the `review_session` event records
+`reason: "harness cannot resume"`.
+
+```toml
+[agents.reviewer]
+harness = "cursor"
+model   = "grok-4.7-high"   # required; passed to --model
+```
+
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,
 bridge networking, the factory user's non-root UID/GID, a temporary home and
 `/workspace` mounted read-write. Only `[worktree] env_allow` values and the
@@ -304,6 +318,7 @@ supplies the binary; review roles run on the host and keep their path.
 | --- | --- | --- |
 | `claude` | Default: `claude` on PATH | Absolute path to the Claude CLI; set when the binary the factory should run is not the first `claude` on PATH. A relative path is refused. |
 | `codex` | Default: `codex` on PATH | Absolute path to the Codex CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `codex` on PATH. A relative path is refused. |
+| `cursor` | Default: `cursor-agent` on PATH | Absolute path to the Cursor CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `cursor-agent` on PATH. A relative path is refused. |
 
 ## `[loop]`
 
