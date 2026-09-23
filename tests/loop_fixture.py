@@ -487,8 +487,9 @@ class MergeModeFixture(LoopFixture):
         branch-rules reads answer no runs and no rules, and a job's log
         read answers `self.job_log`'s text -- a failed call without it.
         A conversation comment answers its id (the body's number); a label
-        call or a comment delete is witnessed by `recorded()` alone, the
-        label call refused when `refuse_labels` (KO-608).
+        call or a comment delete is witnessed by `recorded()`, a label
+        call's body kept a line each in `self.label_log`, and the label
+        call refused when `refuse_labels` (KO-608).
         `push_exit` and `push_sh` control push failure and an optional
         delay. A push
         the fake answers successfully also appends `REF SHA` to
@@ -506,6 +507,7 @@ class MergeModeFixture(LoopFixture):
         self.api_dir = bindir / "api"
         self.api_dir.mkdir()
         self.job_log = bindir / "job.log"
+        self.label_log = bindir / "labels.log"
         # The open step's lookup answer: `open_pr` is the URL the branch
         # is already open as, None the common "no open pull request".
         self.open_answer = bindir / "open.json"
@@ -561,7 +563,8 @@ class MergeModeFixture(LoopFixture):
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
             '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
-            '    */issues/*/labels*) cat > /dev/null; '
+            f'    */issues/*/labels*) cat >> "{self.label_log}"; '
+            f'echo >> "{self.label_log}"; '
             + ('echo "label refused" >&2; exit 1;;\n' if refuse_labels
                else "echo '[]'; exit 0;;\n")
             + '    *" DELETE "*/issues/comments/*) exit 0;;\n'

@@ -43,6 +43,8 @@ class PauseNoticeTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
         (label,) = [line for line in self.github() if "/labels" in line]
         self.assertIn(f"--method POST {LABELS}", label)
+        self.assertEqual(json.loads(self.label_log.read_text()),
+                         {"labels": ["holophyte:paused"]})
         (comment,) = [v["body"] for kind, v in self.api_calls()
                       if kind == "conversation"]
         self.assertTrue(comment.startswith(COMMENT_HEADER.split("{")[0]), comment)
