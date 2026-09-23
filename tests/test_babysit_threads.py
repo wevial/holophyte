@@ -441,6 +441,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         fixed = self.git("rev-parse", BRANCH).strip()
         self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM runs"),
                          [("awaiting_merge_approval", None, fixed)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
         self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
 
         holophyte.operator.babysit_ticket(self.tgt, "KO-131", "repin the file size",
