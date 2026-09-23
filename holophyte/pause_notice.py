@@ -26,8 +26,8 @@ def body(identifier, who, note, boundary):
             f"**Paused.** The factory has stopped working on this pull request:"
             f" {who} paused {identifier} at its `{boundary}` boundary.\n\n"
             f"Note: {note or '(none recorded)'}\n\n"
-            f"To resume, run `factory.py TARGET --resume {identifier}` on the"
-            " writer host, or press Resume on the ticket in the console."
+            f"To resume, run `factory.py TARGET --resume {identifier} --note TEXT`"
+            " on the writer host, or press Resume on the ticket in the console."
             f" Resuming removes the `{LABEL}` label and this comment.")
 
 
