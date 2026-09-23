@@ -66,6 +66,7 @@ from holophyte.environment_git import (
     stage_work,
     unstage_environment,
 )
+from holophyte.freshness import park_stale, stale_reasons
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -747,12 +748,17 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
     # opened. The target's path goes along so a body naming a path
     # this repository gitignores is refused here too (KO-222) -- unless
     # the last run is on a pull request, whose candidate holds the paths
-    # main lacks (KO-598, KO-655).
-    problem = body_problem(task, project.path,
-                           on_pull_request=on_pull_request(conn, project_id, task))
+    # main lacks (KO-598, KO-655) -- and for the same reason skips the
+    # freshness check, which refuses a body naming files main lacks (KO-709).
+    pr = on_pull_request(conn, project_id, task)
+    problem = body_problem(task, project.path, on_pull_request=pr)
     if problem:
         mirror_task(conn, project_id, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")
+        return None
+    stale = [] if pr else stale_reasons(project.path, task.get("body"))
+    if stale:
+        park_stale(conn, project_id, provider, task, stale)
         return None
     # The mirror also walks a `blocked_on_deps` row the board lists again
     # back to `ready` (KO-425), so the gates below judge it like any
