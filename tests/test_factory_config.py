@@ -78,6 +78,10 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
              r"\[agents\.reviewer\] model is required"),
             ('[agents.adjudicator]\nharness = "devin"\nmodel = "opus"\n'
              'effort = "high"\n', r"\[agents\.adjudicator\] effort: harness 'devin'"),
+            ('[agents.implementer]\nharness = "devin"\n',
+             r"\[agents\.implementer\] model is required"),
+            ('[agents.implementer]\nharness = "devin"\nmodel = "opus"\n'
+             'effort = "high"\n', r"\[agents\.implementer\] effort: harness 'devin'"),
         ):
             with self.subTest(config=config):
                 self.locate(config)
@@ -86,6 +90,8 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         self.locate(table + '[harnesses]\nclaude = "/opt/claude/bin/claude"\n')
         holophyte.config.check_document(self.project)
         self.locate('[agents.reviewer]\nharness = "devin"\nmodel = "opus"\n')
+        holophyte.config.check_document(self.project)
+        self.locate('[agents.implementer]\nharness = "devin"\nmodel = "opus"\n')
         holophyte.config.check_document(self.project)
 
     def test_codex_implementer_table_defaults_and_refuses_an_unknown_effort(self):

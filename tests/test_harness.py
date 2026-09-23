@@ -1,6 +1,6 @@
 """Table-form roles: the adapter's argv, its session and its resume -- a
-claude or codex implementer, and codex, cursor and devin reviewers in a
-throwaway candidate checkout.
+claude, codex or devin implementer, and codex, cursor and devin reviewers in
+a throwaway candidate checkout.
 
 Run: python3 -m unittest tests.test_harness -v
 """
@@ -463,6 +463,92 @@ class CodexImplementerTests(ClaudeTableTests):
             "SELECT payload FROM runEvents WHERE kind = 'fix_session'").fetchall()
         self.assertEqual(json.loads(payload), {"arm": "resume", "resumed": True})
 
+
+
+# The fake devin implementer: records its argv and cwd, sleeps past the
+# budget when the prompt asks it to, and answers `list --format json` with
+# one session -- or, when told to, fails it.
+FAKE_DEVIN_IMPLEMENTER = """
+import json, os, sys, time
+with open(os.environ["FAKE_HARNESS_CALLS"], "a") as calls:
+    calls.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}) + "\\n")
+if sys.argv[1:] == ["list", "--format", "json"]:
+    if os.environ.get("FAKE_LIST_FAILS"):
+        print("Error: not signed in", file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps([{"id": "brisk-heron", "working_directory": os.getcwd(),
+                       "last_activity_at": 1790199962, "title": "implement"}]))
+    sys.exit(0)
+print("fake devin ran")
+sys.stdout.flush()
+if "stall" in sys.argv[-1]:
+    time.sleep(30)
+"""
+DEVIN_IMPLEMENTER = ["--respect-workspace-trust", "false", "--permission-mode",
+                     "dangerous", "--model", "opus"]
+LIST = ["list", "--format", "json"]
+
+
+class DevinImplementerTests(ClaudeTableTests):
+    def setUp(self):
+        super().setUp()
+        self.target.config_path.write_text(
+            '[agents.implementer]\nharness = "devin"\nmodel = "opus"\n'
+            '[loop]\nfix_session = "resume"\n')
+        fake = Path(os.environ["PATH"].split(os.pathsep)[0]) / "devin"
+        fake.write_text(f"#!{sys.executable}\n{FAKE_DEVIN_IMPLEMENTER}")
+        fake.chmod(0o755)
+
+    def implement(self, goal, budget_min=1):
+        return holophyte.loop._timed(self.target, self.conn, self.run, 60,
+                                     self.repo, budget_min, goal)
+
+    def assert_turn_then_list(self, goal):
+        turn, listed = self.received()
+        self.assertEqual(turn["argv"], [*DEVIN_IMPLEMENTER, "-p", "--", goal])
+        self.assertEqual((listed["argv"], Path(listed["cwd"]).resolve()),
+                         (LIST, self.repo.resolve()))
+
+    def test_implement_turn_runs_the_adapter_argv_and_records_its_session(self):
+        _, timed_out = self.implement("implement the thing")
+        self.assertFalse(timed_out)
+        self.assert_turn_then_list("implement the thing")
+        self.assertEqual(self.session(), "brisk-heron")
+
+    def test_a_turn_the_timeout_ends_still_leaves_its_session(self):
+        _, timed_out = self.implement("stall until the cap", budget_min=1 / 60)
+        self.assertTrue(timed_out)
+        self.assert_turn_then_list("stall until the cap")
+        self.assertEqual(self.session(), "brisk-heron")
+
+    def test_a_failing_list_records_nothing_and_leaves_the_output(self):
+        with patch.dict(os.environ, {"FAKE_LIST_FAILS": "1"}):
+            output, timed_out = self.implement("implement the thing")
+        self.assertFalse(timed_out)
+        self.assertEqual(str(output), "fake devin ran")
+        self.assertEqual(getattr(output, "exit_code", 0), 0)
+        self.assert_turn_then_list("implement the thing")
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind = 'agent_session'"
+        ).fetchone(), (0,))
+        self.assertIsNone(self.session())
+
+    def test_fix_turn_resumes_the_recorded_session(self):
+        self.implement("implement the thing")
+        sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.repo,
+                                      text=True).strip()
+        holophyte.fix_session.fix_turn(
+            self.target, self.conn, self.run, 60, self.repo, 1, "the ticket",
+            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop._timed,
+            check_cap=lambda *args: None)
+        _, _, resumed, _ = self.received()
+        self.assertEqual(resumed["argv"][:-1], [*DEVIN_IMPLEMENTER, "-r",
+                                                "brisk-heron", "-p", "--"])
+        self.assertTrue(resumed["argv"][-1].startswith("Reviewer findings:"))
+        self.assertIn("REQUEST_CHANGES: a finding", resumed["argv"][-1])
+        [(payload,)] = self.conn.execute(
+            "SELECT payload FROM runEvents WHERE kind = 'fix_session'").fetchall()
+        self.assertEqual(json.loads(payload), {"arm": "resume", "resumed": True})
 
 
 class CriticTableTests(unittest.TestCase):

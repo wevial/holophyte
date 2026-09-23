@@ -469,7 +469,7 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
               " output before the budget fired:\n"
               + (partial[-2000:] or "(no output before the budget fired)"))
         output, timed_out = partial, True
-    record_session(project, conn, run_id, session_role, output)
+    record_session(project, conn, run_id, session_role, output, wt)
     return output, timed_out
 
 
