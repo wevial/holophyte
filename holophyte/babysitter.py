@@ -595,14 +595,23 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
     stop_if_requested(conn, run_id, "merge_gate")
-    if merge_config(target).approve != "auto":
-        if not ok:
-            record_unreviewed_verification(conn, run_id, out)
-            reason = failure_reason.verify(out, verify_cmd, "before human approval")
-            failure_reason.record(conn, run_id, reason)
-            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
-                        pull, reason, (),
-                        reviewed=reviewed)
+    auto = merge_config(target).approve == "auto"
+    if not ok:
+        # Park under either mode so `--babysit --note` can send a fix (KO-666).
+        record_unreviewed_verification(conn, run_id, out)
+        if auto:
+            ledger(conn, run_id, task_id, "failure",
+                   f"FAILED verify before the review of the fix at {sha} on"
+                   f" {pull.url}; branch {branch} preserved, not merged\n\n{out}",
+                   provider)
+        reason = failure_reason.verify(
+            out, verify_cmd, f"before the review of the fix on {pull.url}"
+            if auto else "before human approval")
+        failure_reason.record(conn, run_id, reason)
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                    pull, reason, (),
+                    reviewed=reviewed)
+    if not auto:
         recovered = _fix_answers(conn, run_id, _next_round(conn, run_id), fix_note)
         answered = "\n".join(part for part in (fix_context, recovered) if part)
         if not answered:
@@ -615,15 +624,6 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                     " says merge on the candidate as it stands"
                     " ([merge] approve = \"human\")", (),
                     reviewed=reviewed)
-    if not ok:
-        record_unreviewed_verification(conn, run_id, out)
-        ledger(conn, run_id, task_id, "failure",
-               f"FAILED verify before the review of the fix at {sha} on"
-               f" {pull.url}; branch {branch} preserved, not merged\n\n{out}",
-               provider)
-        raise RunFailure(failure_reason.verify(
-            out, verify_cmd, f"before the review of the fix on {pull.url}; "
-            f"branch {branch} preserved at {sha[:12]}"))
     set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
     record_step(conn, run_id, "covering_review")
     base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)

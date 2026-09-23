@@ -1,6 +1,7 @@
 """`holophyte.babysitter`'s pass under `[merge] mode = "pr"`, end to end."""
 from __future__ import annotations
 
+import io
 import json
 import sys
 import unittest
@@ -405,6 +406,49 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         fixed = self.git("rev-parse", BRANCH).strip()
         self.assertEqual(self.read("SELECT phase, candidateSha FROM runs"),
                          [("awaiting_merge_approval", fixed)])
+
+    def test_auto_fix_failed_verify_parks_and_accepts_a_send_back(self):
+        """KO-666: under automatic approval a verify that fails before the
+        covering review parks on the PR, so `--babysit --note` can answer."""
+        failure = self.db.parent / "verify-failed"
+        command = f"test ! -f {failure}"
+        self.configure('[merge]\nmode = "pr"\n'
+                       f'[verify]\nalways = ["{command}"]\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        push = holophyte.pr.push_branch
+        pushes = []
+
+        def push_then_break_verify(*args, **kwargs):
+            result = push(*args, **kwargs)
+            pushes.append(result)
+            if len(pushes) == 2:
+                failure.touch()
+            return result
+
+        with patch.object(holophyte.pr, "push_branch", push_then_break_verify):
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                                Reply("THREAD 1: ADDRESS -- a real crash"),
+                                Commit("fix: default load()"),
+                                provider=self.provider())
+
+        question = self.question()
+        self.assertIn("verify failed", question)
+        self.assertIn(command, question)
+        self.assertEqual(fake.roles.count("review"), 1)
+        route = holophyte.agents.agent_route(self.tgt, "review")
+        self.assertEqual(self.read("SELECT count(*) FROM reviewRounds WHERE"
+                                   f" reviewerModel = '{route}'"), [(1,)])
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM runs"),
+                         [("awaiting_merge_approval", None, fixed)])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "repin the file size",
+                                          out=io.StringIO())
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
+        (payload,), = self.read("SELECT payload FROM runEvents"
+                                " WHERE kind = 'operator_note'")
+        self.assertEqual(json.loads(payload)["note"], "repin the file size")
 
     def test_a_fix_round_the_reviewer_rejects_parks_instead_of_merging(self):
         """An initial PR pass rejection parks; only a resume gets the allowance."""
