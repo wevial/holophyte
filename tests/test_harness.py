@@ -16,7 +16,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.agents
+import holophyte.config
 import holophyte.fix_session
+import holophyte.harness
 import holophyte.loop
 import holophyte.project
 import store
@@ -388,6 +390,47 @@ class CodexImplementerTests(ClaudeTableTests):
         [(payload,)] = self.conn.execute(
             "SELECT payload FROM runEvents WHERE kind = 'fix_session'").fetchall()
         self.assertEqual(json.loads(payload), {"arm": "resume", "resumed": True})
+
+
+
+class CriticTableTests(unittest.TestCase):
+    """`[agents.critic]`: table-only, Codex with the critic's own defaults."""
+
+    def target(self, config):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "config.toml").write_text(config)
+        return holophyte.project.Project(
+            path=root, holo_dir=root, store_path=root / "store.db",
+            config_path=root / "config.toml", worktrees=root / "worktrees")
+
+    def turn(self, config):
+        return holophyte.harness.critic_seat(self.target(config)).turn("GOAL")
+
+    def test_critic_turn_defaults_to_codex_luna_medium_and_takes_overrides(self):
+        bypass = ["--dangerously-bypass-approvals-and-sandbox", "GOAL"]
+        self.assertEqual(self.turn("[agents.critic]\n"), [
+            "codex", "exec", "-m", "gpt-6-luna",
+            "-c", "model_reasoning_effort=medium", *bypass])
+        self.assertEqual(self.turn(
+            '[agents.critic]\nmodel = "gpt-6-astra"\neffort = "high"\n'), [
+            "codex", "exec", "-m", "gpt-6-astra",
+            "-c", "model_reasoning_effort=high", *bypass])
+
+    def test_critic_refusals_name_the_table_and_the_problem(self):
+        for config, message in (
+            ('[agents.critic]\nharness = "claude"\n',
+             r"\[agents\.critic\] harness: 'claude' supports implementer, "
+             r"not critic"),
+            ('[agents.critic]\neffort = "max"\n',
+             r"\[agents\.critic\] effort must be one of .*'max'"),
+            ('[agents]\ncritic = "codex exec"\n',
+             r"no command-string form; write it as the \[agents\.critic\]"),
+        ):
+            with self.subTest(config=config):
+                with self.assertRaisesRegex(SystemExit, message):
+                    holophyte.config.check_document(self.target(config))
 
 
 if __name__ == "__main__":

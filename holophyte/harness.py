@@ -26,8 +26,9 @@ from dataclasses import dataclass
 import review_runner
 
 # The `[agents]` roles that may be written as a table at all, and the keys
-# such a table holds. Every other `[agents]` command stays a string.
-TABLE_ROLES = ("implementer", "reviewer", "adjudicator")
+# such a table holds. Every other `[agents]` command stays a string, and the
+# critic has no string form at all.
+TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic")
 TABLE_KEYS = ("harness", "model", "effort")
 
 
@@ -92,7 +93,7 @@ class Codex(Adapter):
     carries the turn's model and effort.
     """
     name = "codex"
-    roles = frozenset({"implementer", "reviewer", "adjudicator"})
+    roles = frozenset({"implementer", "reviewer", "adjudicator", "critic"})
     # `REVIEW_EFFORTS`, read at its source: `holophyte.config` imports this
     # module at load.
     efforts = review_runner.EFFORTS
@@ -179,8 +180,8 @@ ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex(), Cursor())}
 @dataclass(frozen=True)
 class Seat:
     """One table-form role, resolved: its adapter, binary and options, and
-    the `[agents]` role (`implementer`, `reviewer`, `adjudicator`) it fills,
-    which the adapter's argv may differ by."""
+    the `[agents]` role (`implementer`, `reviewer`, `adjudicator`, `critic`)
+    it fills, which the adapter's argv may differ by."""
     adapter: object
     binary: str
     options: dict
@@ -322,9 +323,11 @@ def seat(target, role, *, fallback=False):
     from holophyte.config import AGENT_CONFIG_KEYS, config_table
     key = AGENT_CONFIG_KEYS[role] + ("_fallback" if fallback else "")
     table = config_table(target, "agents").get(key)
+    where = f"[holo2] {target.config_path}"
+    if key == "critic" and table is not None:
+        table = critic_table(where, table)
     if not isinstance(table, dict):
         return None
-    where = f"[holo2] {target.config_path}"
     adapter = parse_role(where, key, table)
     from holophyte.isolation import route_for
     binary = adapter.binary
@@ -333,6 +336,25 @@ def seat(target, role, *, fallback=False):
         check_paths(where, paths)
         binary = paths.get(adapter.name, binary)
     return Seat(adapter, binary, table, AGENT_CONFIG_KEYS[role])
+
+
+def critic_table(where, table):
+    """`[agents.critic]` with its defaults filled in: harness `codex`,
+    model `CRITIC_MODEL`, effort `CRITIC_EFFORT` -- passed as options,
+    since `Codex.route()`'s own defaults are the reviewer's. The critic has
+    no command-string form, so `[agents] critic = "..."` is refused."""
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"{where}: [agents] critic: the critic has no command-string form; "
+            f"write it as the [agents.critic] table")
+    from holophyte.config import CRITIC_EFFORT, CRITIC_MODEL
+    return {"harness": "codex", "model": CRITIC_MODEL,
+            "effort": CRITIC_EFFORT, **table}
+
+
+def critic_seat(target):
+    """The critic's `Seat`, None when the target has no `[agents.critic]`."""
+    return seat(target, "critic")
 
 
 def agent_session(target, role, argv):
