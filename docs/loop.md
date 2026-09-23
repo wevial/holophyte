@@ -9,7 +9,7 @@ machines it walks. Back to the [README](index.md).
    `blocks` relations are the only machine-checked dependencies). The lease
    is per ticket, not per project: the claim asserts that the ticket has no
    active run and points its `activeRunId` at the new one, so two loops on
-   one target each work a ticket of their own, and a ticket another live
+   one project each work a ticket of their own, and a ticket another live
    run holds is skipped in one line (`ticket KO-n: lease already held by
    run N`) for the next candidate rather than stopping the loop. The store
    lease is one writer's: a second writer host has a store of its own and
@@ -63,17 +63,17 @@ machines it walks. Back to the [README](index.md).
    to `merged` or `abandoned`, with a `reconcile` intervention row on its
    most recent run and one printed line naming the move; a board that
    cannot be asked skips the reconcile in one line and the loop goes on.
-2. Every target refreshes `main` from origin before every cut: `git fetch
+2. Every project refreshes `main` from origin before every cut: `git fetch
    origin` in the checkout, under the merge lock of step 6, then a
    fast-forward of local `main` when `origin/main` is ahead. Local ahead
    or equal (a local-mode checkout's unpushed merges) changes nothing --
    behind is fast-forwarded, never reset. Diverged -- neither `main` nor
    `origin/main` contains the other -- refuses the cut with an infra
-   failure naming both shas, for a person to reconcile; a target with no
+   failure naming both shas, for a person to reconcile; a project with no
    `origin` skips the step, and a failed fetch is the network's failure,
    not the ticket's strike. Then cut a per-task branch in a sibling
    worktree (`<repo>.worktrees/`), so
-   the main checkout stays untouched, and run the target's configured
+   the main checkout stays untouched, and run the project's configured
    `[worktree] setup` commands there — a worktree that borrows the main
    checkout's environment tests something other than the branch it is on.
    After setup, a worktree containing a `.githooks` directory automatically
@@ -91,7 +91,7 @@ machines it walks. Back to the [README](index.md).
    simple newline verify block must pass, and the run stops at the first
    failure. Lines share one shell,
    so exported variables and `cd` carry forward; an allowed failure must
-   say so explicitly with `|| true`. The target's `[verify] always`
+   say so explicitly with `|| true`. The project's `[verify] always`
    baseline runs after the ticket commands at every verify gate, including
    fix rounds; `before_merge` adds a final tier at the merge gate. Each tier
    runs in order and stops on failure. Both default to empty lists, and
@@ -114,8 +114,8 @@ machines it walks. Back to the [README](index.md).
    `min(review_rounds_max, review_rounds + changed_lines // review_rounds_per_lines)`
    from `[loop]` (see [Config](config.md)): 2 by default, one more per 800
    changed lines, never above 4.
-6. Merge gate: the gate runs under a per-target merge lock (a file in the
-   target's state directory naming the run and when it took it), so two runs
+6. Merge gate: the gate runs under a per-project merge lock (a file in the
+   project's state directory naming the run and when it took it), so two runs
    reaching it together take turns and merges into `main` serialise; a gate
    that waits out the bound parks the ticket naming the holder, and
    `--sweep --act` removes a lock whose run has ended (judged and removed
@@ -223,7 +223,10 @@ machines it walks. Back to the [README](index.md).
    with the run still parked for the next pass to ask again. The startup
    mirror reconcile leaves a ticket parked on a pull request alone even
    when the board already says Done, since only GitHub's answer closes the
-   run out with its merge commit.
+   run out with its merge commit. One a person merges while a live run
+   still watches it in the merge gate ends that run merged the same way,
+   straight from the gate (`merge_gate --> done` below, KO-653): the
+   factory ran no merge, so the run records no `merging` step.
    The same per-tick read also carries the pull request's `updatedAt`,
    its review-thread count and the token's remaining GraphQL budget
    (KO-362). Every park records what the pull request looked like *after*
@@ -254,7 +257,7 @@ machines it walks. Back to the [README](index.md).
    `main` is merged in and any implementer turn runs — a remote ahead
    moves the local branch and worktree to its head (a ledger note names
    the commit count), an equal or behind one changes nothing, and a
-   diverged one fails the run naming both shas. A target with no
+   diverged one fails the run naming both shas. A project with no
    `origin` skips the step. The one reuse that does not fetch is the
    approved candidate's resume under `--approve KO-n` (item 6): the
    approval is of the sha the park recorded, so that branch merges at
@@ -276,13 +279,13 @@ machines it walks. Back to the [README](index.md).
 ### The pool
 
 Under `[loop] workers = N` with `N > 1` (see [Config](config.md)) the
-process that ran `factory.py TARGET` works no ticket itself: it is the
+process that ran `factory.py PROJECT` works no ticket itself: it is the
 scheduler of a pool. It runs the startup checks, the read-only sweep, the
 reconcile and the supervisor spawn once, for the whole pool, then ticks:
 mirror the board's ready listing, count the tickets a worker could claim
 (the store's own pickability: mirrored `ready`, under no live run's lease,
 every dependency merged -- one listing and one store read per tick, then
-the predicate per listed ticket), spawn `factory.py TARGET --worker`
+the predicate per listed ticket), spawn `factory.py PROJECT --worker`
 children until `min(claimable, workers)` are alive, block until any child
 exits, read its status, repeat. While fewer than `workers` are alive the
 block carries `[loop] tick_sec` (default 120 seconds) as a deadline: a
@@ -365,6 +368,7 @@ stateDiagram-v2
     killed
     merge_gate
     merging
+    paused
     rejected
     reviewing
     squashing
@@ -372,25 +376,30 @@ stateDiagram-v2
     working
     addressing --> failed
     addressing --> killed
+    addressing --> paused
     addressing --> verifying
     awaiting_merge_approval --> done
     awaiting_merge_approval --> failed
     awaiting_merge_approval --> killed
+    awaiting_merge_approval --> paused
     awaiting_merge_approval --> rejected
     blocked_on_operator --> working
     claimed --> awaiting_merge_approval
     claimed --> failed
     claimed --> killed
     claimed --> merge_gate
+    claimed --> paused
     claimed --> working
     failed --> addressing
     failed --> reviewing
     failed --> verifying
     failed --> working
     merge_gate --> awaiting_merge_approval
+    merge_gate --> done
     merge_gate --> failed
     merge_gate --> killed
     merge_gate --> merging
+    merge_gate --> paused
     merge_gate --> rejected
     merge_gate --> verifying
     merging --> awaiting_merge_approval
@@ -399,19 +408,30 @@ stateDiagram-v2
     merging --> failed
     merging --> killed
     merging --> merge_gate
+    merging --> paused
     merging --> verifying
+    paused --> addressing
+    paused --> merge_gate
+    paused --> merging
+    paused --> reviewing
+    paused --> verifying
+    paused --> working
     reviewing --> addressing
     reviewing --> awaiting_merge_approval
     reviewing --> failed
     reviewing --> killed
     reviewing --> merge_gate
+    reviewing --> paused
     reviewing --> verifying
+    squashing --> paused
     verifying --> awaiting_merge_approval
     verifying --> failed
     verifying --> killed
+    verifying --> paused
     verifying --> reviewing
     working --> failed
     working --> killed
+    working --> paused
     working --> verifying
 ```
 <!-- end state-graph: runs -->

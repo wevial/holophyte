@@ -10,11 +10,11 @@ every file; this page lists what each seam promises.
 
 | Seam | Where | Promise |
 | --- | --- | --- |
-| **`Target`** | `holophyte/target.py` | Everything about where a target's state lives, as a value: repository path, state directory, store path, config path. No module-level globals name a target; a function that needs one takes it. Two targets can exist in one process, which is what the tests, the daemon and a future port need. |
+| **`Project`** | `holophyte/project.py` | Everything about where a project's state lives, as a value: repository path, state directory, store path, config path. No module-level globals name a project; a function that needs one takes it. Two projects can exist in one process, which is what the tests, the daemon and a future port need. |
 | **`Provider`** | `provider.py` | The board as a protocol: `claim_next`, `fetch_task`, `set_state`, `comment`, `team`. `LinearProvider` lazily imports the GraphQL module; `FileProvider` reads a directory of `<ID>.md` files for tests and offline runs. The loop never names Linear. |
 | **`store.read`** | `store/read.py` | Typed, read-only views; the only SQL outside `store/__init__.py`. Every consumer that renders state (report, sweep, findings, serve) goes through it. |
 | **`runs`** | `holophyte/runs.py` | The loop's store seam: `open_store`, `set_phase`, `heartbeat_while`, `record_round`, `warn_on_run`, `review_round_cap`. Six helpers, so a wiring change extends one file instead of threading SQL through the loop. |
-| **`gates`** | `holophyte/gates.py` | Worktree cutting and reuse, the verify gate, process-group reaping. Takes a target and a ticket, returns a red or green report. |
+| **`gates`** | `holophyte/gates.py` | Worktree cutting and reuse, the verify gate, process-group reaping. Takes a project and a ticket, returns a red or green report. |
 | **`agents`** | `holophyte/agents.py` | `agent_route()` (which command, which model, from `[agents]`) and `agent()` (one turn of a role in a process group with a budget). The implementer and the reviewer are both routes; `review_runner` is the reviewer's transport. |
 | **`review`** | `holophyte/review.py` | Reviewer prose in, structured findings and a verdict out: the `CRITERION n:` checklist parser, the witness-test resolver, the finding key. |
 | **`findings`** | `holophyte/findings.py` | The `FINDINGS.md` window renderer, byte-stable, from `EndedRun` and `ReviewRound` rows only. |
@@ -67,7 +67,7 @@ flowchart TB
   gates --> config
   agents --> config
   board --> config
-  everything[every module] --> target[Target]
+  everything[every module] --> project[Project]
 ```
 
 Arrows point at what a module imports. The three modules the PR merge mode
@@ -76,14 +76,17 @@ API; imports `store.read`, `findings` and `gates`), `babysitter.py` (the
 thread verdicts of a PR pass; imports `pr.py`) and `files.py` (touched-file
 counts read from git for the daemon; imports `gates`, and is imported by
 `serve`). `config` imports `pr.py` lazily, at the startup route check only.
-Three rules hold the graph in this shape: `serve` imports `store.read` and never `store` (it cannot write);
+Three rules hold the graph in this shape: `serve` reads through
+`store.read`, and its action endpoints (`serve_actions`) write only through
+the store API (`store.record_intervention()`, `store.requeue()`,
+`store.operator_notes.send_back()`);
 `holophyte.config` never imports `factory` or the loop (no cycles); and
 nothing outside `store/` writes SQL.
 
 ## Configuration as the second seam
 
 Everything an operator would otherwise patch is a `config.toml` table on
-the target, read at startup and refused if unknown:
+the project, read at startup and refused if unknown:
 
 | Table | Chooses |
 | --- | --- |
@@ -91,7 +94,7 @@ the target, read at startup and refused if unknown:
 | `[worktree]` | setup commands run in each fresh worktree and their cap |
 | `[supervisor]` | stale threshold, strikes, time-box grace, review-overlap threshold, sweep interval, restart grace |
 | `[loop]` | stop on failure; claim order by identifier or priority; `spawn_supervisor`; the review-round cap from `review_rounds`, `review_rounds_per_lines` and `review_rounds_max`; `workers`, the pool's ceiling |
-| `[board]` | the Linear project and team this target claims from |
+| `[board]` | the Linear project, or board, and team this project claims from |
 | `[report]` | the host label rendered instead of the machine name |
 | `[merge]` | `approve` (auto or human), `mode` (local or pr) and `pr_rounds`, the babysitter-pass cap |
 | `[console]` | `daemons`, the `HOST:PORT` peers the console page fans out to |

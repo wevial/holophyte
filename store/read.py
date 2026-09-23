@@ -84,9 +84,10 @@ class BlockedTicket:
     was asked: the newest `redirect` intervention on that run, else the
     run's `lastHeartbeat` for a ticket parked by a module that recorded no
     redirect. Both are None only for a ticket that was parked with no run
-    behind it at all. `prSeenChecks`, `prSeenReview` and `prSeenThreads`
-    are what the reconcile last saw of the run's pull request
-    (`runs.prSeen*`, KO-368), None for a run never polled or with no run.
+    behind it at all. `prSeenChecks`, `prSeenReview`, `prSeenThreads` and
+    `prSeenTitle` are what the reconcile last saw of the run's pull
+    request (`runs.prSeen*`, KO-368, KO-622), None for a run never polled
+    or with no run. `title` is the ticket's own title.
     """
 
     id: int
@@ -96,11 +97,17 @@ class BlockedTicket:
     askedMs: int | None = None
     # The pull request the parked run opened (`runs.prUrl`), None when none.
     prUrl: str | None = None
+    parkKind: str | None = None
     prSeenChecks: str | None = None
     prSeenReview: str | None = None
     prSeenThreads: int | None = None
+    prSeenTitle: str | None = None
+    title: str | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
+    # How the parked ticket's latest run ended (`runs.outcome`): `paused`
+    # for an operator's pause (KO-609), None while the run is live.
+    outcome: str | None = None
 
 
 def blocked_tickets(conn, project_id=None):
@@ -118,7 +125,8 @@ def blocked_tickets(conn, project_id=None):
         " (SELECT MAX(i.at) FROM interventions i"
         "  WHERE i.runId = r.id AND i.\"action\" = 'redirect'),"
         " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
-        " r.prSeenThreads, t.url, t.boardState"
+        " r.prSeenThreads, t.url, t.boardState, r.parkKind, r.prSeenTitle,"
+        " t.title, r.outcome"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
@@ -126,7 +134,8 @@ def blocked_tickets(conn, project_id=None):
                           askedMs=row[4] if row[4] is not None else row[5],
                           prUrl=row[6], prSeenChecks=row[7],
                           prSeenReview=row[8], prSeenThreads=row[9], ticketUrl=row[10],
-                          boardState=row[11])
+                          boardState=row[11], parkKind=row[12],
+                          prSeenTitle=row[13], title=row[14], outcome=row[15])
             for row in rows]
 
 
@@ -245,6 +254,9 @@ class RunSnapshot:
     reviewRoundCap: int | None = None
     workingMs: int | None = None
     workStartedAt: int | None = None
+    # The verify part of workingMs and its open span (KO-635).
+    verifyMs: int | None = None
+    verifyStartedAt: int | None = None
 
 
 def run_snapshot(conn, run_id):
@@ -254,14 +266,15 @@ def run_snapshot(conn, run_id):
         "SELECT id, ticketId, phase, lastHeartbeat, endedAt, startedAt,"
         " timeBoxMs, workingMs, workStartedAt, (SELECT COUNT(*) FROM reviewRounds"
         " WHERE runId = runs.id AND verdict != 'error'),"
-        " reviewRoundCap FROM runs WHERE id = ?",
+        " reviewRoundCap, verifyMs, verifyStartedAt FROM runs WHERE id = ?",
         (run_id,)).fetchone()
     if row is None:
         return None
     return RunSnapshot(id=row[0], ticketId=row[1], phase=row[2],
                        lastHeartbeat=row[3], endedAt=row[4], startedAt=row[5],
                        timeBoxMs=row[6], workingMs=row[7], workStartedAt=row[8],
-                       reviewRoundCount=row[9], reviewRoundCap=row[10])
+                       reviewRoundCount=row[9], reviewRoundCap=row[10],
+                       verifyMs=row[11], verifyStartedAt=row[12])
 
 
 @dataclass(frozen=True)
@@ -289,6 +302,9 @@ class LiveRun:
     prUrl: str | None = None
     workingMs: int | None = None
     workStartedAt: int | None = None
+    # The verify part of workingMs and its open span (KO-635).
+    verifyMs: int | None = None
+    verifyStartedAt: int | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
 
@@ -311,20 +327,21 @@ class ApprovedCandidate:
     # a fix round or a rejected fix leaves `sha` past it; None when the
     # park recorded none (a store older than the column).
     approved_sha: str | None = None
+    paused: bool = False
 
 
 def approved_candidate(conn, ticket_id, run_id):
     """The latest prior run released to the gate and its explicit approval."""
     row = conn.execute(
-        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha, approvedAt"
+        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha, approvedAt, outcome"
         " FROM runs"
         " WHERE ticketId = ? AND id <> ?"
         " ORDER BY attempt DESC LIMIT 1", (ticket_id, run_id)).fetchone()
-    if row is None or row[1] != "merge_gate":
+    if row is None or row[1] not in ("merge_gate", "merging"):
         return None
     return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
                              approved=row[5] is not None,
-                             approved_sha=row[4])
+                             approved_sha=row[4], paused=row[6] == "paused")
 
 
 def last_independent_verdict(conn, ticket_id):
@@ -366,7 +383,8 @@ def live_runs(conn, phases):
         " r.startedAt, r.timeBoxMs, r.host,"
         " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id"
         " AND rr.verdict != 'error'),"
-        " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt, t.url, t.boardState"
+        " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt, t.url, t.boardState,"
+        " r.verifyMs, r.verifyStartedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NULL"
         f"   AND r.phase IN ({', '.join('?' * len(phases))})"
@@ -376,7 +394,8 @@ def live_runs(conn, phases):
                     timeBoxMs=row[6], host=row[7], reviewRoundCount=row[8],
                     reviewRoundCap=row[9], prUrl=row[10],
                     workingMs=row[11], workStartedAt=row[12], ticketUrl=row[13],
-                    boardState=row[14])
+                    boardState=row[14], verifyMs=row[15],
+                    verifyStartedAt=row[16])
             for row in rows]
 
 
@@ -404,6 +423,9 @@ class EndedRun:
     mergeSha: str | None
     workingMs: int | None = None
     workStartedAt: int | None = None
+    # The verify part of workingMs and its open span (KO-635).
+    verifyMs: int | None = None
+    verifyStartedAt: int | None = None
 
 
 def newest_run_id(conn):
@@ -423,7 +445,7 @@ def ended_runs(conn):
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.startedAt, r.endedAt, r.timeBoxMs,"
         " r.reviewRoundCount, r.outcome, r.outcomeReason, r.branch, r.host,"
-        " r.mergeSha, r.workingMs, r.workStartedAt"
+        " r.mergeSha, r.workingMs, r.workStartedAt, r.verifyMs, r.verifyStartedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NOT NULL"
         " ORDER BY r.endedAt, r.id").fetchall()
@@ -431,7 +453,8 @@ def ended_runs(conn):
                      endedAt=row[3], timeBoxMs=row[4], reviewRoundCount=row[5],
                      outcome=row[6], outcomeReason=row[7], branch=row[8],
                      host=row[9], mergeSha=row[10],
-                     workingMs=row[11], workStartedAt=row[12])
+                     workingMs=row[11], workStartedAt=row[12],
+                     verifyMs=row[13], verifyStartedAt=row[14])
             for row in rows]
 
 
@@ -458,6 +481,9 @@ class MergedRun:
     outcomeReason: str | None = None
     workingMs: int | None = None
     workStartedAt: int | None = None
+    # The verify part of workingMs and its open span (KO-635).
+    verifyMs: int | None = None
+    verifyStartedAt: int | None = None
     ticketUrl: str | None = None
 
 
@@ -496,7 +522,7 @@ def finished_runs(conn, limit, before=None, outcomes=None):
         " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
         "    FROM reviewRounds rr WHERE rr.runId = r.id),"
         " r.host, r.mergeSha, r.prUrl, r.outcome, r.outcomeReason,"
-        " r.workingMs, r.workStartedAt, t.url"
+        " r.workingMs, r.workStartedAt, t.url, r.verifyMs, r.verifyStartedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         f" WHERE {where}"
         " ORDER BY r.endedAt DESC, r.id DESC LIMIT ?",
@@ -506,7 +532,8 @@ def finished_runs(conn, limit, before=None, outcomes=None):
                       reviewRoundCount=row[6], findingCount=row[7],
                       host=row[8], mergeSha=row[9], prUrl=row[10],
                       outcome=row[11], outcomeReason=row[12],
-                      workingMs=row[13], workStartedAt=row[14], ticketUrl=row[15])
+                      workingMs=row[13], workStartedAt=row[14], ticketUrl=row[15],
+                      verifyMs=row[16], verifyStartedAt=row[17])
             for row in rows]
 
 
@@ -679,6 +706,9 @@ class RunDetail:
     prUrl: str | None = None
     workingMs: int | None = None
     workStartedAt: int | None = None
+    # The verify part of workingMs and its open span (KO-635).
+    verifyMs: int | None = None
+    verifyStartedAt: int | None = None
     ticketUrl: str | None = None
     approvedAt: int | None = None
     approvedBy: str | None = None
@@ -690,7 +720,8 @@ def run_detail(conn, run_id):
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.attempt,"
         " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
         " r.branch, r.host, r.mergeSha, r.reviewRoundCap, r.prUrl,"
-        " r.workingMs, r.workStartedAt, t.url, r.approvedAt, r.approvedBy"
+        " r.workingMs, r.workStartedAt, t.url, r.approvedAt, r.approvedBy,"
+        " r.verifyMs, r.verifyStartedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.id = ?", (run_id,)).fetchone()
     if row is None:
@@ -701,7 +732,8 @@ def run_detail(conn, run_id):
                      timeBoxMs=row[9], branch=row[10], host=row[11],
                      mergeSha=row[12], reviewRoundCap=row[13],
                      prUrl=row[14], workingMs=row[15], workStartedAt=row[16],
-                     ticketUrl=row[17], approvedAt=row[18], approvedBy=row[19])
+                     ticketUrl=row[17], approvedAt=row[18], approvedBy=row[19],
+                     verifyMs=row[20], verifyStartedAt=row[21])
 
 
 @dataclass(frozen=True)

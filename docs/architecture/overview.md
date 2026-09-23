@@ -8,7 +8,7 @@ read. The store is the only thing every other part agrees on.
 ```mermaid
 flowchart TB
   subgraph board[Linear · the board]
-    L[project: ready tickets]
+    L[Linear project: ready tickets]
   end
   subgraph host[One machine]
     direction TB
@@ -38,7 +38,8 @@ flowchart TB
 ```
 
 Solid arrows carry work. Dotted arrows are projections: the store is
-written by the loop and the supervisor only, and Linear, `FINDINGS.md`, the
+written by the loop, the supervisor and the serve daemon's action
+endpoints, all through the store API, and Linear, `FINDINGS.md`, the
 daemon's JSON and the drawer are all views of it. Everything in the box
 runs on one machine; splitting the drawer or the operator onto a second
 one is [Across machines](../operating/hosts.md).
@@ -49,7 +50,7 @@ one is [Across machines](../operating/hosts.md).
 
 | Process | Started by | Reads | Writes | Ends when |
 | --- | --- | --- | --- | --- |
-| **loop** (`factory.py TARGET`) | operator, in a terminal | Linear, store, config | store, worktrees, `main`, Linear, `FINDINGS.md` | queue empty, a failed run, or after a self-merge (re-execs) |
+| **loop** (`factory.py PROJECT`) | operator, in a terminal | Linear, store, config | store, worktrees, `main`, Linear, `FINDINGS.md` | queue empty, a failed run, or after a self-merge (re-execs) |
 | **supervisor** (`--supervise`) | the loop, or the operator | store | store (strikes, releases, heartbeats) | SIGTERM; re-execs itself when the factory checkout's HEAD moves |
 | **serve daemon** (`--serve`) | operator, or a systemd user unit | store, read-only | nothing | never; restart to pick up new code |
 | **implementer** | the loop, per run | the worktree, the ticket body | the worktree | budget or commit |
@@ -61,7 +62,7 @@ restart.
 
 ### The store
 
-One SQLite file per target, WAL mode, eleven tables: projects, tickets,
+One SQLite file per project, WAL mode, eleven tables: projects, tickets,
 runs, review rounds, run events, sweep strikes, supervisor heartbeats, loop
 restarts, Linear deliveries, ledger, interventions. Two state machines live
 in it
@@ -91,7 +92,7 @@ sees. [Store and state](data.md) has the tables and the diagrams.
 - **Linear state** is pushed from the store, one way, last write wins,
   never read back for status. The ticket body is read back, once, at
   claim and again at merge.
-- **`FINDINGS.md`**, in a target that opts in with `[report] findings =
+- **`FINDINGS.md`**, in a project that opts in with `[report] findings =
   "repo"`, is the newest twenty-five entries below a marker, regenerated
   from `runs` and `reviewRounds` at every close-out. Nobody edits it. By
   default (`"none"`) it is not rendered: the store is the record.
@@ -110,7 +111,7 @@ sees. [Store and state](data.md) has the tables and the diagrams.
 | loop | origin | nothing. The factory never pushes; the operator does | none |
 | supervisor | loop | only through the store: strikes, releases, `loopRestarts` | local |
 | daemon | drawer | HTTP on the bind address | local, or inbound from a private network |
-| operator | Linear | `--file-ticket` against the target's `[board]` | outbound |
+| operator | Linear | `--file-ticket` against the project's `[board]` | outbound |
 
 ## Why it is shaped this way
 

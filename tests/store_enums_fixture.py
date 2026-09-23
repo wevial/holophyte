@@ -84,3 +84,21 @@ BASELINE = {'PHASES': ('claimed',
                            'blocked_on_operator': frozenset({'working'}),
                            'killed': frozenset(),
                            'rejected': frozenset()}}
+
+# KO-589: a cooperative pause is an ended run with a recorded continuation.
+BASELINE['PHASES'] += ('paused',)
+BASELINE['INTERVENTION_ACTIONS'] += ('pause',)
+for phase in ('claimed', 'working', 'verifying', 'reviewing', 'addressing',
+              'merge_gate', 'merging', 'squashing', 'awaiting_merge_approval'):
+    BASELINE['RUN_PHASE_TRANSITIONS'][phase] |= {'paused'}
+BASELINE['RUN_PHASE_TRANSITIONS']['paused'] = frozenset({
+    'working', 'verifying', 'reviewing', 'addressing', 'merge_gate', 'merging'})
+
+# KO-592: an emergency stop shares the request column with a distinct action.
+BASELINE['INTERVENTION_ACTIONS'] += ('abort',)
+
+# KO-611: an abort that also closes the run's pull request.
+BASELINE['INTERVENTION_ACTIONS'] += ('abort_close',)
+
+# KO-653: a pull request a person merges while the run watches it in the gate.
+BASELINE['RUN_PHASE_TRANSITIONS']['merge_gate'] |= {'done'}

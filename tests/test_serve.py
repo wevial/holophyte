@@ -10,28 +10,33 @@ import http.client
 import io
 import json
 import os
+import shutil
 import signal
 import socket
 import sqlite3
+import subprocess
 import sys
 import threading
+import types
 import unittest
 from pathlib import Path
 from time import monotonic, sleep, time
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
+# `-m unittest tests.<name>` resolves the sibling fixtures as discovery does.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.schema  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.serve_config import TOMLKIT_MISSING  # noqa: E402
 from tests.phase_fixture import advance_phase, finish_run, park_run
+from tests.serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
 
 # How far the clock may move between seeding and the assertion: the daemon
 # stamps its own `now`, so an age is "about" the seeded distance.
@@ -131,7 +136,7 @@ class TokenTests(ServeTestCase):
 
     def test_a_non_loopback_bind_without_a_token_file_is_a_startup_error(self):
         self.seed()
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         for address in ("0.0.0.0:0", "[::]:0", "10.0.0.1:0"):
             with self.subTest(address=address), \
                     self.assertRaises(SystemExit) as raised:
@@ -208,7 +213,7 @@ class TokenTests(ServeTestCase):
     def configured(self, path):
         """The target with `[serve] token_file` pointing at `path`."""
         (self.db.parent / "config.toml").write_text(self.token_config(path))
-        return holophyte.target.Target.locate(self.target)
+        return holophyte.project.Project.locate(self.target)
 
     def test_a_group_or_world_readable_token_file_is_refused(self):
         self.seed()
@@ -231,6 +236,42 @@ class TokenTests(ServeTestCase):
                     self.assertRaises(SystemExit) as raised:
                 holophyte.serve.serve(tgt, "0.0.0.0:0", out=io.StringIO())
             self.assertIn(str(path), str(raised.exception))
+
+    MACHINE_TOKEN = "machine-wide-token-value"
+
+    def machine_token_file(self):
+        path = self.root / "machine.token"
+        path.write_text(self.MACHINE_TOKEN + "\n")
+        path.chmod(0o600)
+        return path
+
+    def test_either_the_project_or_the_machine_token_is_accepted(self):
+        self.seed()
+        config = (self.token_config(self.token_file())
+                  + f'machine_token_file = "{self.machine_token_file()}"\n')
+        self.start(config, host="0.0.0.0")
+        for token in (self.TOKEN, self.MACHINE_TOKEN):
+            with self.subTest(token=token):
+                code, _, body = self.request(
+                    "GET", "/status", {"Authorization": f"Bearer {token}"})
+                self.assertEqual(code, 200)
+                self.assertEqual(body["target"], str(self.target))
+        for headers in (None, {"Authorization": "Bearer wrong"},
+                        {"Authorization": f"Bearer {self.MACHINE_TOKEN}x"},
+                        {"Authorization": f"Basic {self.MACHINE_TOKEN}"}):
+            with self.subTest(headers=headers):
+                code, _, body = self.request("GET", "/status", headers)
+                self.assertEqual((code, body), (401, {}))
+
+    def test_without_the_machine_key_only_the_project_token_is_accepted(self):
+        self.seed()
+        self.machine_token_file()  # on disk, but no key names it
+        self.start(self.token_config(self.token_file()), host="0.0.0.0")
+        code, _, _ = self.request("GET", "/status", self.BEARER)
+        self.assertEqual(code, 200)
+        code, _, _ = self.request(
+            "GET", "/status", {"Authorization": f"Bearer {self.MACHINE_TOKEN}"})
+        self.assertEqual(code, 401)
 
 
 class StatusTests(ServeTestCase):
@@ -408,6 +449,9 @@ class StatusTests(ServeTestCase):
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertIn("no store", body["error"])
         self.assertIn(str(self.target), body["detail"])
+        # KO-617: the body names the project; `target` stays as an alias.
+        self.assertEqual(body["project"], str(self.target))
+        self.assertEqual(body["target"], str(self.target))
         self.assertFalse(self.db.exists())
 
     def test_an_unknown_path_is_404_and_any_other_method_is_405(self):
@@ -754,7 +798,7 @@ class AttentionTests(ServeTestCase):
                           "\n1. src/x.py:3 by @coworker", parked))
             conn.commit()
             park_run(conn, run, "awaiting_merge_approval", "PR open",
-                       candidate_sha="a" * 40, pr_url=url,
+                       candidate_sha="a" * 40, pr_url=url, park_kind="pull_request",
                        now=self.now - 2 * MIN, pr_seen=pr_seen)
         finally:
             conn.close()
@@ -780,12 +824,12 @@ class AttentionTests(ServeTestCase):
                          "Which branch is canonical?")
         self.assertEqual(by_ticket["KO-10"], {
             "kind": "pr_open", "ticket": "KO-10", "ticket_url": None,
-            "run": run, "pr_url": url,
+            "title": "ticket KO-10", "run": run, "pr_url": url,
             "reason": "review requested from a coworker"
                       "\n1. src/x.py:3 by @coworker",
             "asked_ms": self.now - 2 * MIN,
             "pr": {"number": 2170, "checks": None, "review": None,
-                   "threads": None},
+                   "threads": None, "title": None},
             "level": "attention"})
         self.assertEqual(body["level"], "attention")
 
@@ -797,7 +841,7 @@ class AttentionTests(ServeTestCase):
         self.seed_attention()
         url = "https://github.com/example/repo/pull/2170"
         self.park_on_pr(url, pr_seen=("2026-09-10T10:00:00Z", 3, "failure",
-                                      "changes_requested"))
+                                      "changes_requested", None))
         self.start()
 
         _, _, body = self.request("GET", "/attention")
@@ -806,7 +850,7 @@ class AttentionTests(ServeTestCase):
                     if item["kind"] == "pr_open")
         self.assertEqual(item["pr"], {"number": 2170, "checks": "failure",
                                       "review": "changes_requested",
-                                      "threads": 3})
+                                      "threads": 3, "title": None})
 
     def test_the_body_names_the_target_as_status_does(self):
         self.seed_attention()
@@ -1072,6 +1116,41 @@ class PrUrlTests(ServeTestCase):
         self.assertIsNone(by_ticket["KO-9"]["pr_url"])
 
 
+class ActionFailureTests(ServeTestCase):
+    """KO-649: an action handler that raises is a 500 JSON answer the
+    console can read, not a dropped connection it calls "Failed to fetch"."""
+
+    def send_back_raising(self, failure):
+        """`(status, headers, body, stderr)` of a send-back raising `failure`."""
+        self.seed()
+        token = self.root / "serve.token"
+        token.write_text(TokenTests.TOKEN + "\n")
+        token.chmod(0o600)
+        self.start(f'[serve]\ntoken_file = "{token}"\nactions = true\n')
+        out = io.StringIO()
+        with contextlib.redirect_stderr(out), patch.object(
+                holophyte.serve, "send_back_action", side_effect=failure):
+            return (*self.request("POST", "/actions/send-back", TokenTests.BEARER,
+                                  {"run": self.run}), out.getvalue())
+
+    def test_a_raising_handler_answers_500_json_and_the_daemon_serves_on(self):
+        # The 2026-09-22 incident: a `SystemExit` subclass, not an Exception.
+        code, headers, body, logged = self.send_back_raising(
+            store.schema.SchemaNewer("store.db", 99))
+        self.assertEqual((code, headers["Access-Control-Allow-Origin"]), (500, "*"))
+        self.assertIn("SchemaNewer: store.db: store schema version 99", body["error"])
+        self.assertEqual(logged.count("Traceback"), 1, logged)
+        self.assertEqual(self.request("GET", "/status")[0], 200)
+
+    def test_a_registered_secret_in_the_message_is_redacted(self):
+        self.enterContext(patch("holophyte.redact._environment_values", frozenset()))
+        holophyte.redact.register_values(["ko649-registered-secret"])
+        _, _, body, logged = self.send_back_raising(
+            RuntimeError("could not open with ko649-registered-secret"))
+        self.assertEqual(body["error"], "RuntimeError: could not open with [redacted]")
+        self.assertNotIn("ko649-registered-secret", self.raw_body + logged)
+
+
 class ParseAddressTests(unittest.TestCase):
 
     def test_a_bare_port_binds_loopback(self):
@@ -1179,6 +1258,10 @@ class RefusedStartTests(unittest.TestCase):
                 self.assertEqual(problems[0][1].count(TOMLKIT_MISSING), 1)
 
 
+# A server for a handler run on a socket pair: every request is counted in.
+COUNTER = types.SimpleNamespace(begin=lambda: True, done=lambda: None)
+
+
 class DisconnectedClientTests(unittest.TestCase):
     def test_closed_client_logs_one_line_without_traceback(self):
         server_side, client_side = socket.socketpair()
@@ -1189,7 +1272,7 @@ class DisconnectedClientTests(unittest.TestCase):
         with contextlib.redirect_stderr(out), \
                 patch.object(holophyte.serve.StatusHandler, "do_GET",
                              lambda handler: handler.answer(404, {})):
-            holophyte.serve.StatusHandler(server_side, ("local", 0), None)
+            holophyte.serve.StatusHandler(server_side, ("local", 0), COUNTER)
         self.assertEqual(out.getvalue(),
                          "[holo2] client disconnected: '/missing\\x1b[31m'\n")
         self.assertNotIn("Traceback", out.getvalue())
@@ -1205,10 +1288,225 @@ class DisconnectedClientTests(unittest.TestCase):
                              lambda handler: handler.answer(200, {})), \
                 patch("socketserver._SocketWriter.write",
                       side_effect=[None, ConnectionResetError()]):
-            holophyte.serve.StatusHandler(server_side, ("local", 0), None)
+            holophyte.serve.StatusHandler(server_side, ("local", 0), COUNTER)
         self.assertEqual(len(out.getvalue().splitlines()), 1)
         self.assertIn("/status", out.getvalue())
         self.assertNotIn("Traceback", out.getvalue())
+
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def git(checkout, *args):
+    """Run git in `checkout` as a throwaway identity; its stdout, stripped."""
+    return subprocess.run(
+        ["git", "-c", "user.name=serve-test", "-c", "user.email=serve@test",
+         "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
+         *args], cwd=checkout, capture_output=True, text=True,
+        check=True).stdout.strip()
+
+
+def free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+class FollowsCodeProcessTests(ServeTestCase):
+    """KO-648 end to end: a real daemon run from its own git checkout of the
+    factory re-executes when that checkout's `HEAD` moves, and the fresh
+    process answers on the address the old one held."""
+
+    CHECK = 0.2  # the copy's check interval, seconds
+    TOLERANCE = 1.0  # scheduling slack on a loaded host, seconds
+
+    def factory_checkout(self):
+        """A copy of this factory committed as commit A in its own git
+        repository, with the check interval cut so the test is quick."""
+        checkout = self.root / "factory"
+        skip = shutil.ignore_patterns("__pycache__")
+        for package in ("holophyte", "store"):
+            shutil.copytree(REPO / package, checkout / package, ignore=skip)
+        for module in REPO.glob("*.py"):
+            shutil.copy(module, checkout)
+        serve_py = checkout / "holophyte" / "serve_watch.py"
+        text = serve_py.read_text()
+        self.assertIn("\nCODE_CHECK_SEC = 15\n", text)
+        serve_py.write_text(text.replace(
+            "\nCODE_CHECK_SEC = 15\n", f"\nCODE_CHECK_SEC = {self.CHECK}\n"))
+        git(checkout, "init", "-q")
+        git(checkout, "add", "-A")
+        git(checkout, "commit", "-q", "-m", "A")
+        return checkout
+
+    def get_status(self, port):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            conn.request("GET", "/status")
+            response = conn.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            conn.close()
+
+    def test_a_moved_checkout_re_executes_and_answers_on_the_same_address(self):
+        self.seed()
+        checkout = self.factory_checkout()
+        first = git(checkout, "rev-parse", "HEAD")
+        port = free_port()
+        daemon = subprocess.Popen(
+            [sys.executable, "-u", str(checkout / "factory.py"),
+             str(self.target), "--serve", f"127.0.0.1:{port}"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        lines, stamps = [], []
+
+        def read():
+            for line in daemon.stdout:
+                stamps.append(monotonic())
+                lines.append(line)
+        reader = threading.Thread(target=read)
+        reader.start()
+        self.addCleanup(daemon.stdout.close)
+        self.addCleanup(reader.join)
+        self.addCleanup(daemon.wait, 10)
+        self.addCleanup(daemon.kill)
+        announced = f"[holo2] serving 127.0.0.1:{port} "
+
+        def wait_for(count):
+            deadline = monotonic() + 20
+            while monotonic() < deadline and daemon.poll() is None:
+                if sum(line.startswith(announced) for line in lines) >= count:
+                    return
+                sleep(0.05)
+            self.fail(f"no serving line #{count}: {''.join(lines)}")
+
+        wait_for(1)
+        # A client that connects and never sends a request: accepted ahead
+        # of the `/status` below, it must not hold the re-exec back.
+        idle = socket.create_connection(("127.0.0.1", port), timeout=10)
+        self.addCleanup(idle.close)
+        code, before = self.get_status(port)
+        self.assertEqual(code, 200, before)
+
+        git(checkout, "commit", "-q", "--allow-empty", "-m", "B")
+        committed = monotonic()
+        second = git(checkout, "rev-parse", "HEAD")
+        wait_for(2)
+
+        moved = [n for n, line in enumerate(lines)
+                 if "factory code moved" in line]
+        self.assertEqual(len(moved), 1, "".join(lines))
+        self.assertIn(f"factory code moved from {first} to {second};"
+                      " serve re-executing", lines[moved[0]])
+        self.assertLess(stamps[moved[0]] - committed,
+                        self.CHECK + self.TOLERANCE)
+        self.assertEqual(idle.recv(1), b"")  # dropped by the exec
+        code, after = self.get_status(port)
+        self.assertEqual(code, 200, after)
+        # The same pid (an exec, not a child) answering as a fresh daemon.
+        self.assertIsNone(daemon.poll())
+        self.assertGreater(after["daemon"]["started_ms"],
+                           before["daemon"]["started_ms"])
+
+
+class FollowsCodeTests(ServeTestCase):
+    """KO-648 in process: `serve()` on this thread with the revision read
+    and the `EXEC` seam patched, a client on a helper thread."""
+
+    INTERVAL = 0.05
+
+    def serve_with(self, revision, client):
+        """Run `serve()` until it re-executes or `client(port)` returns and
+        a SIGTERM stops it; `(printed, events)` where `events` holds "EXEC"
+        once the seam was called."""
+        self.seed()
+        tgt = holophyte.project.Project.locate(self.target)
+        out = io.StringIO()
+        self.events = []
+        returned = threading.Event()
+
+        def drive():
+            deadline = monotonic() + 10
+            while "serving" not in out.getvalue() and monotonic() < deadline:
+                sleep(0.01)
+            port = int(out.getvalue().split()[2].rsplit(":", 1)[1])
+            try:
+                client(port)
+            finally:
+                if not returned.wait(5):
+                    os.kill(os.getpid(), signal.SIGTERM)
+        helper = threading.Thread(target=drive)
+        helper.start()
+        with patch.object(holophyte.serve, "factory_revision", revision), \
+                patch.object(holophyte.serve, "EXEC",
+                             lambda *_: self.events.append("EXEC")), \
+                patch.object(sys, "orig_argv", ["python3", "factory.py"]):
+            try:
+                code = holophyte.serve.serve(tgt, "127.0.0.1:0", out=out,
+                                             interval=self.INTERVAL)
+            finally:
+                returned.set()
+                helper.join()
+        self.assertEqual(code, 0)
+        return out.getvalue()
+
+    def test_a_request_in_flight_is_answered_before_the_re_exec(self):
+        moved, checked = threading.Event(), threading.Event()
+        answers = []
+
+        def revision():
+            if moved.is_set():
+                checked.set()
+                return "bbb"
+            return "aaa"
+
+        def slow_status(target, started_ms=None):
+            moved.set()
+            self.assertTrue(checked.wait(10))  # the check ran mid-request
+            sleep(0.3)
+            self.events.append("answered")
+            return 200, {"slow": True}
+
+        def client(port):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn.request("GET", "/status")
+            response = conn.getresponse()
+            answers.append((response.status, json.loads(response.read())))
+            conn.close()
+
+        with patch.object(holophyte.serve, "status", slow_status):
+            printed = self.serve_with(revision, client)
+
+        self.assertEqual(answers, [(200, {"slow": True})])
+        self.assertEqual(self.events, ["answered", "EXEC"])
+        self.assertIn("[holo2] factory code moved from aaa to bbb;"
+                      " serve re-executing", printed)
+
+    def test_an_unreadable_head_keeps_serving_and_logs_once(self):
+        reads = []
+        answers = []
+
+        def revision():
+            reads.append(None)
+            return "aaa" if len(reads) == 1 else None
+
+        def client(port):
+            deadline = monotonic() + 10
+            while len(reads) < 4 and monotonic() < deadline:
+                sleep(0.01)
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            conn.request("GET", "/status")
+            answers.append(conn.getresponse().status)
+            conn.close()
+
+        printed = self.serve_with(revision, client)
+
+        self.assertGreaterEqual(len(reads), 4)
+        self.assertEqual(answers, [200])
+        self.assertEqual(self.events, [])
+        self.assertEqual(printed.count("cannot read the factory checkout's"
+                                       " HEAD"), 1, printed)
+        self.assertIn("serve stopping on signal", printed)
+
 
 
 if __name__ == "__main__":

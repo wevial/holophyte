@@ -39,7 +39,9 @@ from holophyte.config import (
     review_route,
     sweep_config,
 )
-from holophyte.gates import InfraFailure, run_capped, sh
+from holophyte.gates import GroupKill, InfraFailure, run_capped, sh
+from holophyte.harness import agent_session, route_text
+from holophyte.harness import seat as harness_seat
 from holophyte.redact import known_secrets, outbound
 from holophyte.redact import safe_print as print
 
@@ -217,14 +219,14 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
                     profile=review_profile(*review_route(target)),
                     timeout=cap, verdicts=None, carry=carry_directories(target))
                 code = 0
+            elif role == "implement":
+                code, out = isolation.launch(
+                    replace(isolation.route_for(target), writable=False), scratch,
+                    isolation.environment(target), cmd, timeout=cap,
+                    runner=run_capped)
             else:
-                if role == "implement":
-                    code, out = isolation.launch(
-                        replace(isolation.route_for(target), writable=False), scratch,
-                        isolation.environment(target), cmd, timeout=cap,
-                        runner=run_capped)
-                else:
-                    code, out = run_capped(cmd, scratch, cap)
+                code, out = probe_configured_review(target, role, fallback, goal,
+                                                    cmd, scratch, cap)
         except subprocess.TimeoutExpired as expired:
             partial = expired.output or ""
             if isinstance(partial, bytes):
@@ -238,18 +240,36 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
                        expected_commit=sha)
 
 
+def probe_configured_review(target, role, fallback, goal, cmd, clone, cap):
+    """A configured review route's probe turn in the probe's clone: a
+    command string runs there, a table in `table_review()`'s throwaway
+    checkout of the clone's candidate ref -- the path its turns take."""
+    seat = harness_seat(target, role, fallback=fallback)
+    if seat is None:
+        return run_capped(cmd, clone, cap)
+    env = {key: value for key, value in os.environ.items()
+           if key != "HOLOPHYTE_REVIEW_RESUME"}
+    with review_scratch(clone) as scratch:
+        output = table_review(seat, goal, clone, scratch, cap, env, role)
+    if output.timed_out:
+        raise subprocess.TimeoutExpired(cmd, cap, output="")
+    return output.exit_code, output
+
+
 def agent_route(target, role):
     """What ran `role`'s turn, named for the record the round leaves.
 
     The profile of the container route the config chooses (`codex-sol-medium`
-    by default), or the configured command when the target named one. A
+    by default), the configured command when the target named one, or the
+    harness when it wrote the role as a table. A
     `reviewRounds` row reading `codex-sol-medium` about a round some other
     harness or model ran would be evidence of something that did not happen,
     and the rows are what FINDINGS.md and the fingerprint are built from.
     """
     role = effective_role(target, role)
     command = (routes(target).commands.get(role)
-            or (target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
+            or route_text((target.config().get("agents") or {}).get(
+                AGENT_CONFIG_KEYS[role]))
             or (DEFAULT_IMPLEMENTER if role == "implement" else
                 review_profile(*review_route(target))))
     return safe_command(target, command)
@@ -297,19 +317,29 @@ def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
 
 
 def record_session(target, conn, run_id, role, output):
-    """Persist host implementer session handles from completed or capped turns."""
+    """Persist host implementer session handles from completed or capped turns.
+
+    A table implementer's adapter reads the id its harness printed (none for
+    one whose id was recorded at dispatch); a command string's is read with
+    the `implementer_session` regex."""
     import store
     from holophyte.config import implementer_session
 
     if role != "implement" or conn is None or run_id is None:
         return
-    pattern = implementer_session(target)
-    if pattern is None or isolation.route_for(target).backend == "container":
+    if isolation.route_for(target).backend == "container":
         return
-    match = pattern.search(output)
-    if match and match.group(1):
-        route = "fallback" if role in routes(target).commands else "primary"
-        store.record_agent_session(conn, run_id, match.group(1), role, route)
+    fallback = role in routes(target).commands
+    seat = None if fallback else harness_seat(target, role)
+    if seat is not None:
+        session = seat.reported_session(output)
+    else:
+        pattern = implementer_session(target)
+        match = pattern.search(output) if pattern is not None else None
+        session = match.group(1) if match else None
+    if session:
+        store.record_agent_session(conn, run_id, session, role,
+                                   "fallback" if fallback else "primary")
 
 
 def effective_role(target, role):
@@ -352,7 +382,8 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         record_pending_switch(target, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,
-                      run_id=run_id, argv=argv, review_round=review_round)
+                      run_id=run_id, argv=argv, review_round=review_round,
+                      session=requested_role == "implement")
 
         def launch():
             return recorded_turn(target, requested_role, role, conn, run_id,
@@ -368,7 +399,7 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 
 def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
-          review_round=None):
+          review_round=None, session=False):
     """Run one agent turn for a role. Returns combined output text.
 
     An `implement` turn runs in a process group of its own under `timeout`
@@ -397,7 +428,14 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     the exact-SHA requirement is enforced either way, and either way the two
     commits reach the reviewer as `refs/review/RUN/base` and
     `refs/review/RUN/candidate` — the names its prompt uses — the staged checkout
-    on the default route, the task worktree on the configured one.
+    on the default route, the task worktree on the configured one. A table
+    reviewer (`[agents.reviewer] harness = "codex"`) runs in a throwaway
+    checkout of the candidate instead (`table_review()`).
+
+    With `session` (an implement turn the loop asked for, not a writer
+    turn routed to the implementer), a table-form implementer's session id
+    is recorded before launch: the adapter chose it, so a turn the budget
+    kills leaves it on the run as surely as one that finishes.
     """
     if role not in AGENT_CONFIG_KEYS:
         raise ValueError(role)
@@ -407,26 +445,38 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     command = routes(target).commands.get(role)
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(target, role, goal))
+    session_id = (agent_session(target, role, cmd)
+                  if session and command is None and argv is None else None)
     if argv is not None:
         cmd = [outbound(arg, known_secrets(target.config())) for arg in argv] + [goal]
-    dispatched_route = shlex.join(cmd[:-1]) if cmd is not None else DEFAULT_IMPLEMENTER
+    seat = harness_seat(target, role) if command is None else None
+    dispatched_route = (seat.named(cmd) if seat is not None else
+                        shlex.join(cmd[:-1]) if cmd is not None else
+                        DEFAULT_IMPLEMENTER)
     if cmd is None:
         if role != "implement":
+            from holophyte.runs import heartbeat_while
             model, effort = review_route(target)
+            # An abort or a sweep kills the container's client; the runner
+            # then removes the container (KO-592).
+            kill = GroupKill()
+            beat_s = sweep_config(target).heartbeat_stale_ms / 2000
             try:
-                return AgentOutput(review_runner.run_review(
-                    repo=Path(cwd),
-                    run_id=run_id,
-                    base_sha=base_sha,
-                    candidate_sha=candidate_sha,
-                    prompt=goal,
-                    model=model,
-                    effort=effort,
-                    profile=review_profile(model, effort),
-                    timeout=1800,
-                    verdicts=None,
-                    carry=carry_directories(target),
-                ), review_profile(model, effort))
+                with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
+                    return AgentOutput(review_runner.run_review(
+                        repo=Path(cwd),
+                        run_id=run_id,
+                        base_sha=base_sha,
+                        candidate_sha=candidate_sha,
+                        prompt=goal,
+                        model=model,
+                        effort=effort,
+                        profile=review_profile(model, effort),
+                        timeout=1800,
+                        verdicts=None,
+                        carry=carry_directories(target),
+                        on_start=kill.arm,
+                    ), review_profile(model, effort))
             except review_runner.ReviewBoundaryError as e:
                 # The runner could not stage, start or read the reviewer —
                 # a missing CLI, an image that will not build, a container
@@ -445,8 +495,12 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 
         beat_s = sweep_config(target).heartbeat_stale_ms / 2000
         cap = 1800 if timeout is None else min(timeout, 1800)
+        # A sweep or an operator's abort mid-review kills the reviewer's
+        # process group, as it kills an implementer's (KO-592).
+        kill = GroupKill()
         try:
-            with review_scratch(cwd) as scratch, heartbeat_while(conn, run_id, beat_s):
+            with review_scratch(cwd) as scratch, heartbeat_while(
+                    conn, run_id, beat_s, on_swept=kill):
                 env = dict(
                     os.environ, HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1],
                     HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
@@ -455,7 +509,12 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 prepare_environment(target, env, conn, run_id, role, route,
                                     review_round)
                 try:
-                    return configured_review(cmd, cwd, cap, env, role, dispatched_route)
+                    if seat is not None:
+                        return table_review(seat, goal, cwd, scratch, cap, env,
+                                            role, run_id=run_id, conn=conn,
+                                            on_start=kill.arm)
+                    return configured_review(cmd, cwd, cap, env, role,
+                                             dispatched_route, on_start=kill.arm)
                 finally:
                     record_session(scratch, conn, run_id, role, route, review_round)
         finally:
@@ -469,6 +528,9 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     # The hook is passed only when there is one, so a turn without a
     # sweep-time kill runs exactly the call it always did.
     hook = {"on_start": on_start} if on_start is not None else {}
+    if session_id is not None and conn is not None and run_id is not None:
+        import store
+        store.record_agent_session(conn, run_id, session_id, role, "primary")
     code, out = isolation.launch(isolation.route_for(target), cwd,
                                  isolation.environment(target), cmd,
                                  timeout=cap, runner=run_capped, target=target, **hook)
@@ -478,9 +540,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 @contextlib.contextmanager
 def review_scratch(repo):
     """Own the wrapper's scratch space, including git's worktree registrations."""
-    env = {key: value for key, value in os.environ.items()
-           if key not in {"GIT_DIR", "GIT_COMMON_DIR",
-                          "GIT_WORK_TREE", "GIT_INDEX_FILE"}}
+    env = scratch_git_environment()
     with tempfile.TemporaryDirectory(prefix="holophyte-review-") as scratch:
         try:
             yield Path(scratch)
@@ -497,6 +557,14 @@ def review_scratch(repo):
                 sh(["git", "worktree", "prune"], cwd=repo, env=env)
 
 
+def scratch_git_environment():
+    """The environment without a caller's git location overrides, so a
+    worktree command acts on the repository its cwd names."""
+    return {key: value for key, value in os.environ.items()
+            if key not in {"GIT_DIR", "GIT_COMMON_DIR",
+                           "GIT_WORK_TREE", "GIT_INDEX_FILE"}}
+
+
 def review_worktrees(repo, env=None):
     """Read porcelain on Git 2.34 (raw paths) and newer Git (C-quoted paths)."""
     listing = sh(["git", "worktree", "list", "--porcelain"], cwd=repo, env=env)
@@ -510,14 +578,54 @@ def review_worktrees(repo, env=None):
         yield Path(raw)
 
 
-def configured_review(cmd, cwd, cap, env, role, command):
+def configured_review(cmd, cwd, cap, env, role, command, on_start=None):
     """Turn the group cap into a reviewer failure eligible for route fallback."""
     try:
-        code, output = run_capped(cmd, cwd, cap, env=env)
+        code, output = run_capped(cmd, cwd, cap, on_start=on_start, env=env)
     except subprocess.TimeoutExpired:
         message = f"{AGENT_CONFIG_KEYS[role]} timed out after {cap / 60:g} minutes"
         return AgentOutput(message, command, timed_out=True)
     return AgentOutput(output.strip(), command, exit_code=code)
+
+
+# What `codex exec resume` prints for an id it has no rollout for.
+NO_ROLLOUT = "no rollout found"
+
+
+def table_review(seat, goal, repo, scratch, cap, env, role, *, run_id=None,
+                 conn=None, on_start=None):
+    """Run a table reviewer in a detached checkout of the candidate ref.
+
+    The checkout lives under `scratch`, so `review_scratch()` removes it on
+    every exit, and the harness's cwd is that checkout rather than the task
+    worktree. The protocol is the one a wrapper script speaks:
+    `HOLOPHYTE_REVIEW_RESUME` in `env` asks for a resume, and the session
+    id the harness reports is written to `scratch/session` for
+    `review_session.record_session()`. A resume the harness answers with
+    `NO_ROLLOUT` runs once more fresh, and a `review_session` event says so.
+    """
+    checkout = Path(scratch) / "candidate"
+    sh(["git", "worktree", "add", "--detach", "--quiet", str(checkout),
+        review_refs(run_id)[1]], cwd=repo, env=scratch_git_environment())
+    session = env.get("HOLOPHYTE_REVIEW_RESUME")
+    argv = seat.resume(session) + [goal] if session else seat.turn(goal)
+    output = configured_review(argv, checkout, cap, env, role, seat.named(argv),
+                               on_start=on_start)
+    if session and not output.timed_out and NO_ROLLOUT in output:
+        if conn is not None and run_id is not None:
+            import store
+            store.record_event(conn, run_id, "review_session",
+                               "review session: resume found no rollout",
+                               level="detail", payload=json.dumps(
+                                   {"arm": "resume", "requested": True,
+                                    "resumed": False, "reason": NO_ROLLOUT}))
+        argv = seat.turn(goal)
+        output = configured_review(argv, checkout, cap, env, role,
+                                   seat.named(argv), on_start=on_start)
+    reported = seat.reported_session(output)
+    if reported:
+        (Path(scratch) / "session").write_text(reported, encoding="utf-8")
+    return output
 
 
 # Exact substrings emitted by the supported routes. Keep causes here so the

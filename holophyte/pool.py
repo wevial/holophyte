@@ -1,6 +1,7 @@
 """Worker pool: the scheduler mirrors and reconciles; children claim one task.
 
-The pool drains for schema moves; ordinary self-merges preserve children.
+The pool drains for schema moves its workers cannot read; ordinary
+self-merges and additive moves preserve children.
 SPAWN and WAIT are the process seams; worker exit codes report outcomes.
 """
 import os
@@ -12,7 +13,7 @@ import store
 import store.tickets
 from holophyte import admission, pool_handoff
 from holophyte.config_tables import loop_config
-from holophyte.findings import commit_findings, refresh_findings
+from holophyte.findings import commit_findings, findings_off, refresh_findings
 from holophyte.gates import MergeLockHeld, merge_lock
 from holophyte.reconcile import _reconcile_at_startup
 from holophyte.redact import safe_print as print
@@ -146,8 +147,11 @@ def _render_findings_locked(target, conn, run_id, task, commit=None):
     failed run's close-out passes `refresh=False` and renders here
     instead. A lock that cannot be had within the gate's wait leaves the
     window unrendered and says so: the next close-out in this checkout
-    renders these rows with its own.
+    renders these rows with its own. A target with the file off has no
+    write and no commit to serialise, so it does not wait on the lock.
     """
+    if findings_off(target):
+        return
     try:
         with merge_lock(target, run_id):
             refresh_findings(target, conn)
@@ -203,7 +207,8 @@ def scheduler(target, provider, knobs):
 
     Mirror and refill on exits or partial-pool deadlines (`tick_sec`, KO-353).
     A full pool waits on exits. Failure under `stop_on_failure`
-    drains and stops; only a schema move drains before re-exec.
+    drains and stops; only a schema move that is not additive drains
+    before re-exec.
     An idle worker pauses spawning until the next exit recounts: a sibling
     may have claimed ahead of it. Return zero for an empty, drained queue,
     nonzero for a broken worker process, a human stop, or an unavailable
@@ -224,9 +229,10 @@ def scheduler(target, provider, knobs):
         first_tick = True
         while True:
             state.check_schema(target)
-            if pool_handoff.prepare_restart(state, target, pool):
+            if (pool_handoff.prepare_restart(state, target, pool)
+                    and state.may_reexec(target)):
                 pool_handoff.save(target, pool)
-                _reexec(target, conn, project, state.restart_reason,
+                _reexec(target, conn, project, state.reason,
                         prepared_sha=state.prepared_sha, can_ff=state.can_ff)
                 return  # only a test's EXEC returns
             # Every tick, timer or exit: a pull request merged on GitHub
@@ -262,7 +268,7 @@ def scheduler(target, provider, knobs):
                 if state.restart and not state.stopped:
                     # A stop takes priority: restarting would spawn again.
                     # The operator decides when to relaunch.
-                    _reexec(target, conn, project, state.restart_reason,
+                    _reexec(target, conn, project, state.reason,
                             prepared_sha=state.prepared_sha, can_ff=state.can_ff)
                     return  # only a test's EXEC returns
                 store.record_loop_return(conn, project)
@@ -296,18 +302,47 @@ class _PoolState:
         self.stopped = False
         self.paused = False
         self.restart = False
-        self.restart_reason = None
+        self.restart_reason = None   # a store move this build cannot open: drain
+        self.readable_reason = None  # one it can: hand the pool off
+        self.unfollowable = False
         self.prepared_sha = None
         self.can_ff = None
 
     def check_schema(self, target):
-        """A migration stops spawning and uses the self-merge drain path."""
+        """A migration stops spawning. One `open()` refuses drains; one this
+        build reads takes the self-merge hand-off path, unless this checkout
+        already failed to fast-forward onto it."""
         from holophyte.operator import _schema_move
 
-        if self.spawning:
-            self.restart_reason = _schema_move(target)
-            if self.restart_reason:
-                self.restart = True
+        if not self.spawning:
+            return
+        moved = _schema_move(target)
+        if not moved or (moved.readable and self.unfollowable):
+            return
+        self.restart = True
+        if moved.readable:
+            self.readable_reason = moved.reason
+        else:
+            self.restart_reason = moved.reason
+
+    @property
+    def reason(self):
+        return self.restart_reason or self.readable_reason
+
+    def may_reexec(self, target):
+        """Whether a prepared restart may exec now. For a readable store move,
+        only once the checkout has fast-forwarded: otherwise -- a failed
+        fetch, or a diverged main -- the code on disk is this build, which
+        would find the same moved store and restart again. That restart is
+        dropped and spawning resumes on this build."""
+        if not self.readable_reason or (
+                self.can_ff and pool_handoff._ff_main(target)):
+            return True
+        self.restart = False
+        self.readable_reason = None
+        self.unfollowable = True
+        self.prepared_sha = self.can_ff = None
+        return False
 
     @property
     def draining(self):

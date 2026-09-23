@@ -95,6 +95,7 @@ const answering =
     entries: LedgerRow[] = [],
   ): Fetch =>
   async (url) => {
+    if (url.endsWith("/runs/91/turns")) return Response.json({ turns: [] });
     if (url.endsWith("/runs/91/files")) return typeof files === "function" ? files() : files;
     if (url.endsWith("/runs/91/ledger")) return Response.json({ run_id: 91, ticket: "KO-232", entries });
     return url.endsWith("/runs/91") ? Response.json(body) : new Response("not found", { status: 404 });
@@ -154,7 +155,6 @@ test("the newest round's findings are cards pilled must, must, should, nit with 
   const actions = Array.from(document.querySelectorAll("footer button")) as HTMLButtonElement[];
   const buttons = actions.map((button) => [button.textContent, button.disabled]);
   expect(buttons).toEqual([
-    ["Kill run", true],
     ["Requeue ticket", true],
   ]);
 });
@@ -252,6 +252,45 @@ test("a finished run's box figure freezes at its end while a live run's keeps co
   expect(document.querySelector("[data-box]")!.textContent).toBe("10m 00s over the working box · wall 40m 00s");
   view.rerender(page(seen + 2_000));
   expect(document.querySelector("[data-box]")!.textContent).toBe("10m 02s over the working box · wall 40m 02s");
+});
+
+test("the box figure reads the agent clock, not verify, when the daemon serves it", async () => {
+  await mount({ ...DETAIL, run: { ...DETAIL.run, time_box_ms: 20 * MINUTE, working_ms: 25 * MINUTE, agent_ms: 12 * MINUTE, verify_ms: 13 * MINUTE, verify_started_ms: null } }, T + 25 * MINUTE);
+  const box = document.querySelector("[data-box]")!;
+  expect(box.textContent).toBe("8m 00s left in working box · wall 25m 00s");
+  expect(box.getAttribute("data-box")).toBe("left");
+});
+
+test("beside the box the header splits the run's time into agent 10m 00s · verify 12m 00s", async () => {
+  await mount({ ...DETAIL, run: { ...DETAIL.run, working_ms: 22 * MINUTE, work_started_ms: null, agent_ms: 10 * MINUTE, verify_ms: 12 * MINUTE, verify_started_ms: null } }, T + 22 * MINUTE);
+  expect(document.querySelector("[data-clocks]")!.textContent).toBe("agent 10m 00s · verify 12m 00s");
+});
+
+test("between polls only the open span's figure counts on: verify while verify runs, agent while a turn does", async () => {
+  const seen = T + 22 * MINUTE;
+  const split = { working_ms: 22 * MINUTE, work_started_ms: T, agent_ms: 10 * MINUTE, verify_ms: 12 * MINUTE };
+  const page = (run: Partial<RunDetailBody["run"]>, sinceMs: number) => (
+    <RunDetail base={BASE} id={91} now={seen} sinceMs={sinceMs} polls={1}
+      deps={{ fetch: answering({ ...DETAIL, run: { ...DETAIL.run, ...split, ...run } }) }} />
+  );
+  const clocks = () => document.querySelector("[data-clocks]")!.textContent;
+  const verifying = render(page({ verify_started_ms: T + 20 * MINUTE }, 0));
+  await settle();
+  expect(clocks()).toBe("agent 10m 00s · verify 12m 00s");
+  verifying.rerender(page({ verify_started_ms: T + 20 * MINUTE }, 2_000));
+  expect(clocks()).toBe("agent 10m 00s · verify 12m 02s");
+  cleanup();
+
+  const turning = render(page({ verify_started_ms: null }, 0));
+  await settle();
+  expect(clocks()).toBe("agent 10m 00s · verify 12m 00s");
+  turning.rerender(page({ verify_started_ms: null }, 2_000));
+  expect(clocks()).toBe("agent 10m 02s · verify 12m 00s");
+});
+
+test("a run recorded before the split reads verify n/a beside its agent figure", async () => {
+  await mount({ ...DETAIL, run: { ...DETAIL.run, working_ms: 20 * MINUTE, work_started_ms: null, verify_ms: null } }, T + 20 * MINUTE);
+  expect(document.querySelector("[data-clocks]")!.textContent).toBe("agent 20m 00s · verify n/a");
 });
 
 test("past the box the header reads 10m 00s over the box in the bad tone and the segments fill the bar", async () => {
@@ -485,6 +524,9 @@ test("only the newest round's fold is open and an older round's header opens it"
     },
   ];
   await mount(FAILED, T + 25 * MINUTE, undefined, entries);
+  // Round 1 reads "fixed" until its ledger row lands, which can be a tick
+  // after mount() returns; wait for the header the ledger decides.
+  await screen.findByRole("button", { name: /Round 1 · 1 finding · declined/ });
   const folds = Array.from(document.querySelectorAll("[data-round-fold]")) as HTMLElement[];
   // Newest first on the page: round 2, then round 1.
   expect(folds.map((fold) => fold.getAttribute("data-round-fold"))).toEqual(["2", "1"]);
@@ -499,8 +541,8 @@ test("only the newest round's fold is open and an older round's header opens it"
   // declined, with the implementer's line under the body.
   expect(within(folds[1]!).queryAllByRole("listitem").length).toBe(0);
   fireEvent.click(buttons[1]!);
+  const card = await within(folds[1]!).findByRole("listitem");
   expect(buttons[1]!.getAttribute("aria-expanded")).toBe("true");
-  const card = within(folds[1]!).getByRole("listitem");
   expect(card.querySelector("[data-fate]")!.textContent).toBe("declined");
   expect(card.querySelector("[data-fate-sentence]")!.textContent).toBe(
     "DECLINE old.py — superseded by the rewrite",
@@ -740,4 +782,67 @@ test("run page renders babysitter waits and a twelve minute fix as labelled segm
   expect(within(timeline).getByRole("img", { name: "checks 2m 00s" })).toBeTruthy();
   expect(within(timeline).getByRole("img", { name: "fix 12m 00s" })).toBeTruthy();
   expect(within(timeline).getByRole("img", { name: "quiet 2m 00s" })).toBeTruthy();
+});
+
+test("a pending files 409 renders the branch wait in muted text", async () => {
+  const pending = () => Response.json({ error: "branch task/ko-232 not cut yet", run: 91, pending: true }, { status: 409 });
+  await mount(DETAIL, T + 20 * MINUTE, pending);
+  const note = screen.getByRole("region", { name: "Files touched" }).querySelector("[data-files-note]")!;
+  expect(note.textContent).toBe("branch task/ko-232 not cut yet");
+  expect(note.className).toContain("text-muted");
+  expect(note.className).not.toContain("text-bad");
+});
+
+test("Turns lists recorded sessions and opens rendered transcript entries in a panel", async () => {
+  const requested: string[] = [];
+  const fetch: Fetch = async url => {
+    requested.push(url);
+    if (url.endsWith("/turns")) return Response.json({ turns: [
+      { id: 4, role: "implement", label: "claude-implement opus", route: "primary", seconds: 12, session_id: "session-one" },
+      { id: 5, role: "adjudicate", label: null, route: "primary", seconds: 3, session_id: null },
+    ] });
+    if (url.endsWith("/turns/4/transcript")) return Response.json({ entries: [
+      { speaker: "user", text: "Check the project." },
+      { speaker: "command", text: "echo checked" },
+      { speaker: "tool", text: "checked\nExit code: 0" },
+      { speaker: "assistant", text: "All checks passed. <script>literal</script>" },
+    ] });
+    return answering(DETAIL)(url);
+  };
+  render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
+  await screen.findByRole("link", { name: "Open transcript" });
+  const turns = screen.getByRole("region", { name: "Turns" });
+  const rows = within(turns).getAllByRole("listitem").map(row => row.textContent);
+  expect(rows[0]).toContain("implement · claude-implement opus · primary · 12.0 s · session-one");
+  expect(rows[1]).toContain("adjudicate · label unknown · primary · 3.0 s");
+  expect(requested.some(url => url.endsWith("/transcript"))).toBe(false);
+  fireEvent.click(within(turns).getByRole("link", { name: "Open transcript" }));
+  const panel = screen.getByRole("region", { name: "Transcript" });
+  await within(panel).findByText("Check the project.");
+  expect(panel.textContent).toContain("Exit code: 0");
+  expect(panel.textContent).toContain("All checks passed. <script>literal</script>");
+  expect(panel.querySelector("script")).toBeNull();
+  fireEvent.click(within(panel).getByRole("button", { name: "Close transcript" }));
+  expect(screen.queryByRole("region", { name: "Transcript" })).toBeNull();
+});
+
+test("Turns from an older daemon without labels still render their rows", async () => {
+  const fetch: Fetch = async url => url.endsWith("/turns")
+    ? Response.json({ turns: [{ id: 6, role: "implement", route: "fallback", seconds: 7, session_id: null }] })
+    : answering(DETAIL)(url);
+  render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
+  const turns = await screen.findByRole("region", { name: "Turns" });
+  await within(turns).findByText("implement · label unknown · fallback · 7.0 s · no session recorded");
+  expect(within(turns).queryByRole("alert")).toBeNull();
+});
+
+test("an unavailable transcript explains the missing file or opt-in inside the panel", async () => {
+  const fetch: Fetch = async url => url.endsWith("/turns")
+    ? Response.json({ turns: [{ id: 8, role: "review", route: "primary", seconds: 4, session_id: "review-session" }] })
+    : answering(DETAIL)(url);
+  render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
+  await screen.findByRole("link", { name: "Open transcript" });
+  fireEvent.click(screen.getByRole("link", { name: "Open transcript" }));
+  const alert = await within(screen.getByRole("region", { name: "Transcript" })).findByRole("alert");
+  expect(alert.textContent).toContain("Transcript unavailable");
 });

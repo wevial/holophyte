@@ -135,7 +135,7 @@ test("every action button of a daemon without actions is disabled: wired ones na
     "Requeue",
     "Mark needs_spec",
     "Restart supervisor",
-    "Kill run",
+    "Abort",
     "Requeue",
     "Answer",
     "Requeue",
@@ -160,7 +160,7 @@ test("another project's selection leaves one quiet muted line and no band; one i
   expect(screen.queryByRole("region", { name: "Needs you" })).toBeNull();
   cleanup();
   const one = { ...allKinds.attention, items: allKinds.attention.items.slice(0, 1) };
-  render(<NeedsYou hosts={[hostOf(allKinds.status, one)]} project={allKinds.status.target} now={allKinds.status.now} />);
+  render(<NeedsYou hosts={[hostOf(allKinds.status, one)]} project={allKinds.status.target!} now={allKinds.status.now} />);
   expect(screen.getByText("thing needs you")).toBeTruthy();
   expect(rows().length).toBe(1);
 });

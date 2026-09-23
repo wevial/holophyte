@@ -4,10 +4,11 @@
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
-`--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT`, the internal
-`--worker` and the loop itself
+`--sweep [--act]`, `--status [--json]`, `--import-store PATH --dry-run`,
+`--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
+loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
-`holophyte.supervisor` and `holophyte.serve`; the `Target`
+`holophyte.supervisor`, `holophyte.status` and `holophyte.serve`; the `Project`
 is built once from the command line and handed down, and the board
 (`LinearProvider`) is built here and never reached for by name below.
 Importing this module locates no target, reads no config and touches no
@@ -42,12 +43,14 @@ from holophyte.operator import (
     requeue,
 )
 from holophyte.pool import worker
+from holophyte.project import Project
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.startup import eager_import
+from holophyte.status import status_report
+from holophyte.store_import import dry_run
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
-from holophyte.target import Target
 from provider import LinearProvider
 
 # The entry point the loop's spawned supervisor is started through: the
@@ -110,9 +113,10 @@ def _note_checks(parser, args):
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
-    if args.hold or args.release_hold:
+    if args.hold or args.release_hold or args.pause or args.resume or args.abort:
         if not (args.note or "").strip():
-            parser.error("--hold and --release-hold require --note TEXT")
+            parser.error("--hold, --release-hold, --pause, --resume and --abort"
+                         " require --note TEXT")
         return
     optional = args.approve or args.babysit or args.close
     if args.note is not None and args.requeue is None \
@@ -128,11 +132,34 @@ def _note_checks(parser, args):
 
 
 def _close_checks(parser, args):
-    """Require the landing reference only for an external close-out."""
+    """Require the landing reference only for an external close-out, and
+    let `--close-pr` modify an `--abort` alone."""
     if args.close is not None and not (args.landed or "").strip():
         parser.error("--close requires --landed URL")
     if args.landed is not None and args.close is None:
         parser.error("--landed belongs to --close")
+    if args.close_pr and not args.abort:
+        parser.error("--close-pr belongs to --abort")
+
+
+def _modifier_checks(parser, args):
+    """Refuse a mode's modifier without its mode -- `--act` without
+    `--sweep`, `--json` without `--status`, `--dry-run` without
+    `--import-store` -- and `--import-store` without `--dry-run`, the only
+    form of it that exists yet."""
+    if args.act and not args.sweep:
+        parser.error("--act says what --sweep does with the runs it finds; "
+                     "it has nothing to act on by itself")
+    if args.json and not args.status:
+        parser.error("--json says how --status prints; it prints nothing "
+                     "by itself")
+    if args.import_store is not None and not args.dry_run:
+        parser.error("--import-store has only its dry run yet: add --dry-run "
+                     "to see what it would move; applying the import is a "
+                     "later ticket built on that report (after KO-595)")
+    if args.dry_run and args.import_store is None:
+        parser.error("--dry-run says what --import-store does with the store "
+                     "it names; it has nothing to run by itself")
 
 
 def cli(argv=None):
@@ -161,14 +188,27 @@ def _legacy_cli(argv):
     # one machine. A missing target is an argparse error, the same way a
     # mistyped flag is.
     parser.add_argument(
-        "target", help="repository the loop works in")
+        "target", metavar="project",
+        help="repository the loop works in")
     # The read-only modes, exclusive of each other: each one prints its table
     # and exits, so a command line naming both is a mistake argparse should
     # answer rather than a silent choice between them.
     modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--pause", metavar="KO-n",
+                       help="stop at the next safe point; requires --note")
+    modes.add_argument("--resume", metavar="KO-n",
+                       help="resume a paused run at its recorded boundary")
+    modes.add_argument("--abort", metavar="KO-n",
+                       help="end a run now: kill its turn, commit its tree as"
+                       " WIP, push an open pull request's branch, park the"
+                       " ticket; requires --note")
+    # `--close` is the external close-out's, so the modifier is `--close-pr`.
+    parser.add_argument("--close-pr", action="store_true",
+                        help="with --abort: then comment the note on the run's"
+                        " pull request and close it; the branch is kept")
     modes.add_argument(
         "--report", action="store_true",
-        help="print the target store's estimate-vs-actual table and exit; "
+        help="print the project store's estimate-vs-actual table and exit; "
              "reads only -- claims no ticket, cuts no worktree, calls nobody")
     # The one writing mode among them, and the only write it makes: the
     # ladder's rung-3 pair (`record_intervention` then `walk_ticket`) as a
@@ -180,9 +220,9 @@ def _legacy_cli(argv):
              "a 'requeue' intervention on that run carrying --note and walks "
              "the ticket to ready and clears its question in one transaction; "
              "accepts in_flight or blocked_on_operator after a failed or "
-             "rejected run; refuses live runs and other states or outcomes; "
-             "for parked candidates use --approve or --babysit, for parked "
-             "pull requests use --babysit; refusals write nothing")
+             "rejected run, or a not_reproduced park (ended abandoned, no "
+             "strike); refuses live runs, other states or outcomes and other "
+             "parks (use --approve or --babysit); refusals write nothing")
     # The operator's answer to `merge?`: the same rung-3 pair as `--requeue`
     # for a ticket parked by `[merge] approve = "human"`, so the loop's next
     # claim takes the preserved candidate straight to the merge gate.
@@ -240,8 +280,8 @@ def _legacy_cli(argv):
     # checked step rather than the thing the loop discovers at claim time.
     modes.add_argument(
         "--file-ticket", metavar="TICKET.md",
-        help="validate the ticket file against the target, create it as an "
-             "issue in the target's [board] project with its title, body, "
+        help="validate the ticket file against the project, create it as an "
+             "issue in the project's board with its title, body, "
              "estimate, state and Depends-on relations, read the stored body "
              "back and validate that; exits 1 with the problem and nothing "
              "created when the file is invalid, 2 with the identifier and "
@@ -251,11 +291,27 @@ def _legacy_cli(argv):
         help="print the live runs that have tripped a mechanical condition "
              "(dead heartbeat, blown time box, stuck review) and exit; acts "
              "on none of them unless --act says to")
+    # Read-only on both stores for now: the apply step is a later ticket
+    # built on this report, so the mode runs only with `--dry-run` said.
+    modes.add_argument(
+        "--import-store", metavar="PATH",
+        help="with --dry-run: open the store at PATH and the project's own "
+             "store read-only and print, per table, the rows an import "
+             "would move, their id range, the offset a remap would add and "
+             "a sha256 of the rows; refuses stores at different schema "
+             "versions, and writes nothing")
+    modes.add_argument(
+        "--status", action="store_true",
+        help="print what the factory is doing now -- projects, live and "
+             "parked runs, ready tickets, schema, lock holders -- and exit; "
+             "reads only")
+    parser.add_argument("--json", action="store_true",
+                        help="with --status: print it as one JSON object")
     modes.add_argument(
         "--supervise", action="store_true",
         help="run the acting sweep on an interval ([supervisor] "
              "sweep_interval_sec, default %ds) until SIGINT/SIGTERM, as the "
-             "target's one supervisor: a second one for the same target "
+             "project's one supervisor: a second one for the same project "
              "exits naming the first" % SUPERVISE_INTERVAL_SEC)
     # The port is required and a bare one binds loopback: the only default
     # interface is the one that publishes nothing, and a read daemon on any
@@ -264,10 +320,10 @@ def _legacy_cli(argv):
     # failure later.
     modes.add_argument(
         "--serve", metavar=ADDRESS_SHAPE, type=serve_address,
-        help="answer GET /status and GET /runs as JSON on %s, read-only, "
-             "until SIGINT/SIGTERM; a read-only connection per request, "
-             "a bearer token from [serve] token_file beyond loopback, and "
-             "writes nothing" % ADDRESS_SHAPE)
+        help="serve the JSON routes and the console on %s until SIGINT/SIGTERM; reads "
+             "the store by default, and writes only through two opt-ins: [serve] "
+             "actions (POST /actions/...) and [serve] config_edit (PUT /config); a "
+             "bearer token from [serve] token_file beyond loopback" % ADDRESS_SHAPE)
     # Internal: the child the scheduler spawns under `[loop] workers > 1`.
     # One ticket, claim to close, exit with the run's status; the scheduler
     # has already run the startup checks, the sweep and the supervisor spawn
@@ -286,6 +342,12 @@ def _legacy_cli(argv):
         "--act", action="store_true",
         help="with --sweep: fail each tripped run and release its leases, "
              "leaving its branch and worktree for a human")
+    # `--import-store`'s modifier, as `--act` is `--sweep`'s, and for now
+    # its required one: the apply step without it does not exist yet.
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="with --import-store: report what the import would do and "
+             "write nothing; required, as only the dry run exists yet")
     # Required with `--requeue` and `--repoint`, optional with `--approve`
     # and `--babysit`/`--close`, and meaningless without one of them: the
     # intervention row is the point of these modes, and a requeue or
@@ -325,12 +387,13 @@ def _legacy_cli(argv):
     args = parser.parse_args(argv)
     eager_import()
     _file_ticket_only(parser, args)
-    if args.act and not args.sweep:
-        parser.error("--act says what --sweep does with the runs it finds; "
-                     "it has nothing to act on by itself")
+    _modifier_checks(parser, args)
     _note_checks(parser, args)
     _close_checks(parser, args)
-    target = Target.locate(args.target)
+    # A dry run writes nothing, and adopting legacy state moves files: it
+    # locates the target without adopting, so a store still in a legacy
+    # layout is reported absent rather than moved.
+    target = Project.locate(args.target, adopt=args.import_store is None)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.
@@ -344,12 +407,11 @@ def _legacy_cli(argv):
     # same window: a typo the factory ignored would leave the operator
     # believing a knob is set that is not.
     check_config(target)
-    if args.report:
-        return report(target)
-    # Same window as `--report`: a read-only daemon calls nobody, so no board
-    # is built and no route has to resolve.
-    if args.serve is not None:
-        return serve(target, args.serve)
+    # The modes that read the store and call nobody, in their own function
+    # so the dispatch stays under the complexity bound with all of them in it.
+    read_only = _read_only_mode(args, target)
+    if read_only is not None:
+        return read_only()
     # The board, built once here from the target's `[board]` table and handed
     # down: nothing below reaches for Linear by name. Construction touches
     # neither the network nor the module, so a read-only sweep still calls
@@ -416,17 +478,45 @@ def _legacy_cli(argv):
     return main(target, require_board(target, board))
 
 
+def _read_only_mode(args, target):
+    """Return the read-only mode the command line names as a call to make,
+    or None when it names none. `--report`, `--status`, `--import-store
+    --dry-run` and `--serve` read the store and call nobody, so no board is
+    built and no route has to resolve."""
+    if args.report:
+        return lambda: report(target)
+    if args.status:
+        return lambda: status_report(target, as_json=args.json)
+    if args.import_store is not None:
+        return lambda: dry_run(target, args.import_store)
+    # Same window as `--report`: a read-only daemon calls nobody.
+    if args.serve is not None:
+        return lambda: serve(target, args.serve)
+    return None
+
+
 def _store_verb(args, target, board):
     """Run the operator verb the command line names, if it is one of the
     verbs that write the store and exit, including `--close`, which also
     projects the result to the board. No agent route has to resolve first."""
-    # Hands the ticket back to a loop that will mirror it to the board when
-    # it claims it again, so a target with no board exits here naming the
-    # key, before anything is written.
+    # Parks the ticket and may end the run here, which projects to the board
+    # like `--close`, so a target with no board exits here naming the key.
+    if args.abort:
+        from holophyte.stop import abort_command
+        abort_command(target, args.abort, args.note,
+                      provider=require_board(target, board), close=args.close_pr)
+        return True
+    if args.pause or args.resume:
+        from holophyte.stop import command
+        command(target, args.pause or args.resume, args.note, resume=bool(args.resume))
+        return True
     if args.hold or args.release_hold:
         from holophyte.admission import change
         change(target, args.hold, args.note)
         return True
+    # Hands the ticket back to a loop that will mirror it to the board when
+    # it claims it again, so a target with no board exits here naming the
+    # key, before anything is written.
     if args.requeue is not None:
         requeue(target, args.requeue, args.note,
                 provider=require_board(target, board))

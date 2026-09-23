@@ -16,6 +16,7 @@ from unittest.mock import ANY, patch
 import holophyte.cli
 import holophyte.config
 import holophyte.pr
+import holophyte.project
 import holophyte.supervisor_lock
 import review_runner
 from provider import LinearProvider
@@ -533,7 +534,7 @@ class SupervisorSpawnTests(StartupCheckTests):
     def start_loop(self, target):
         import store
 
-        located = holophyte.target.Target.locate(target)
+        located = holophyte.project.Project.locate(target)
         located.store_path.parent.mkdir(parents=True, exist_ok=True)
         store.open(located.store_path, migrate="owner").close()
         printed = io.StringIO()

@@ -32,9 +32,12 @@ path a criterion, verify command or contract check names is asked of the
 target repository with "git check-ignore": an ignored path can never appear
 in the candidate export the reviewer sees, so it is a violation — but only
 when the caller names the repository (validate(t, repo=...), CLI --repo);
-without one repository checks are skipped. Named witness and verify paths
-must exist or be declared new; unittest modules must resolve to repository
-files. Verifying the blank template is always rejected. A criterion phrased
+without one repository checks are skipped. A named witness or verify path
+that resolves outside the repository is a violation, and so is a verify path
+that does not exist and is not declared new, since that command can never
+pass; such a path in prose, or a unittest module with no repository file, is
+an advisory, since a ticket names files its candidate will create. Verifying
+the blank template is always rejected. A criterion phrased
 as something only an operator or a merged main could witness
 (OPERATOR_WITNESS_PHRASES) gets an advisory, since a sentence can mention an
 operator legitimately.
@@ -48,14 +51,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Every section the template defines, in order. Literal checks and visual
-# evidence are optional; the rest are required.
+# Every section the template defines, in order. A bug's reproduction,
+# literal checks and visual evidence are optional; the rest are required.
 TEMPLATE_ORDER = [
-    "Summary", "What / Why / How", "In scope", "Out of scope",
+    "Summary", "What / Why / How", "Reproduce", "In scope", "Out of scope",
     "Acceptance criteria", "Verify command(s)", "Contract checks", "Evidence",
     "Implementation notes", "Estimate & dependencies", "Open questions",
 ]
-OPTIONAL_SECTIONS = {"Contract checks", "Evidence"}
+OPTIONAL_SECTIONS = {"Reproduce", "Contract checks", "Evidence"}
 SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
 # Mechanical scope caps. Module-level so a future per-project config can
 # override them without touching validate().
@@ -268,6 +271,9 @@ class Ticket:
         self.verify_commands = []
         self.contract_checks = []
         self.evidence_states = []
+        # A bug ticket's steps and where the behaviour was seen, comments
+        # dropped; "" when the section is absent or empty (KO-659).
+        self.reproduce = ""
         self.notes = []
         self.estimate_min = None
         self.depends_on = None
@@ -307,6 +313,7 @@ def parse(text):
         if m:
             kv[m.group(1)] = _clean(m.group(2))
     t.what, t.why, t.how = kv.get("What", ""), kv.get("Why", ""), kv.get("How", "")
+    t.reproduce = COMMENT_RE.sub("", t.sections.get("Reproduce", "")).strip()
     t.in_scope = _list_items(t.sections.get("In scope", ""))
     t.out_of_scope = _list_items(t.sections.get("Out of scope", ""))
     (t.acceptance, t.acceptance_done, t.acceptance_other,
@@ -340,6 +347,8 @@ def _labeled_texts(t):
     for label, v in (("What:", t.what), ("Why:", t.why), ("How:", t.how)):
         if v:
             yield label, v
+    if t.reproduce:
+        yield "Reproduce", t.reproduce
     lists = (("In scope", t.in_scope), ("Out of scope", t.out_of_scope),
              ("Acceptance criteria", t.acceptance),
              ("Implementation notes", t.notes), ("Evidence", t.evidence_states))
@@ -497,12 +506,16 @@ def _new_paths(t):
     return files, directories
 
 
+def _outside(repo, path):
+    try:
+        return not (repo / path).resolve().is_relative_to(repo.resolve())
+    except (OSError, RuntimeError):
+        return True
+
+
 def _available(repo, path, declarations):
     # Check containment before existence or exemptions, including new files.
-    try:
-        if not (repo / path).resolve().is_relative_to(repo.resolve()):
-            return False
-    except (OSError, RuntimeError):
+    if _outside(repo, path):
         return False
     files, directories = declarations
     normalized = str(Path(path))
@@ -529,21 +542,88 @@ def _shell_commands(command):
     return commands + [current]
 
 
-def _unittest_modules(tokens):
+def _unittest_args(tokens):
+    """The arguments after the first `-m unittest`; None without one."""
     for i in range(len(tokens) - 1):
-        if tokens[i:i + 2] != ["-m", "unittest"]:
+        if tokens[i:i + 2] == ["-m", "unittest"]:
+            return tokens[i + 2:]
+    return None
+
+
+def _unittest_modules(tokens):
+    args = iter(_unittest_args(tokens) or ())
+    for arg in args:
+        if arg == "discover":
+            return
+        if arg in ("-k", "--locals"):
+            if arg == "-k":
+                next(args, None)
             continue
-        args = iter(tokens[i + 2:])
-        for arg in args:
-            if arg == "discover":
-                return
-            if arg in ("-k", "--locals"):
-                if arg == "-k":
-                    next(args, None)
+        if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", arg):
+            yield arg
+
+
+def _discovers_whole_suite(tokens):
+    """`-m unittest discover` with no `-p`/`--pattern` narrowing it."""
+    args = _unittest_args(tokens) or []
+    if "discover" not in args:
+        return False
+    return not any(arg.startswith(("-p", "--pattern"))
+                   for arg in args[args.index("discover") + 1:])
+
+
+def _suite_advisories(t):
+    """Name focused test modules; the pull request check runs the suite."""
+    return [f"{ADVISORY_PREFIX}verify command discovers the whole unit suite; "
+            f"name the focused test modules (discover -s tests -p "
+            f"'test_x.py') — the full suite runs as a pull request check: "
+            f"{cmd}"
+            for cmd in t.verify_commands
+            if any(_discovers_whole_suite(c) for c in _shell_commands(cmd))]
+
+
+def _discover_pattern(tokens):
+    """The index of the -p pattern of a `unittest discover` command and that
+    pattern joined to its -s start directory: the pattern names a file
+    there, not at the repository root."""
+    for i in range(len(tokens) - 2):
+        if tokens[i:i + 3] != ["-m", "unittest", "discover"]:
+            continue
+        start, found = ".", None
+        args = enumerate(tokens[i + 3:], i + 3)
+        for index, arg in args:
+            long = arg.startswith("--")
+            name, eq, value = arg.partition("=") if long else (arg, "", "")
+            if name not in ("-s", "--start-directory", "-p", "--pattern"):
                 continue
-            if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", arg):
-                yield arg
-        return
+            if not eq:
+                index, value = next(args, (None, None))
+            if value is None:
+                break
+            if name in ("-s", "--start-directory"):
+                start = value
+            else:
+                found = index, value
+        if found:
+            return found[0], str(Path(start) / found[1])
+        return None
+    return None
+
+
+def _verify_paths(command):
+    """The paths of each shell command in `command`, a discover pattern read
+    in its start directory and every other token left as it is."""
+    commands = _shell_commands(command)
+    if not commands:
+        return _repo_paths(command)
+    paths = []
+    for tokens in commands:
+        pattern = _discover_pattern(tokens)
+        if pattern:
+            index, path = pattern
+            tokens = tokens[:index] + [path] + tokens[index + 1:]
+        paths += _repo_paths(" ".join(tokens))
+    return list(dict.fromkeys(paths))
 
 
 def _module_available(repo, module, declarations):
@@ -557,6 +637,17 @@ def _module_available(repo, module, declarations):
     return _available(repo, stem + "/__init__.py", declarations)
 
 
+def _path_problem(repo, path, declarations, label, prefix=ADVISORY_PREFIX):
+    """Escaping the repository blocks; a missing path takes `prefix`, an
+    advisory by default, since prose names files its own candidate will
+    create. A verify command passes "": it can never pass (REL-137)."""
+    if _outside(repo, path):
+        return f"path is outside the repository in {label}: {path}"
+    if not _available(repo, path, declarations):
+        return f"{prefix}path does not exist in {label}: {path}"
+    return None
+
+
 def _repository_problems(t, repo):
     repo = Path(repo)
     declarations = _new_paths(t)
@@ -566,18 +657,17 @@ def _repository_problems(t, repo):
     texts.append(("Implementation notes", t.sections.get("Implementation notes", "")))
     for label, text in texts:
         for path in dict.fromkeys(path for _, path in _prose_paths(text)):
-            if not _available(repo, path, declarations):
-                problems.append(f"path does not exist in {label}: {path}")
+            problems.append(_path_problem(repo, path, declarations, label))
     for command in t.verify_commands:
-        for path in _repo_paths(command):
-            if not _available(repo, path, declarations):
-                problems.append(f"path does not exist in verify command: {path}")
+        for path in _verify_paths(command):
+            problems.append(_path_problem(repo, path, declarations,
+                                          "verify command", prefix=""))
         for tokens in _shell_commands(command):
             for module in _unittest_modules(tokens):
                 if not _module_available(repo, module, declarations):
-                    problems.append("unittest module does not exist in verify "
-                                    f"command: {module}")
-    return problems
+                    problems.append(f"{ADVISORY_PREFIX}unittest module does not "
+                                    f"exist in verify command: {module}")
+    return [problem for problem in problems if problem]
 
 
 def _script_arguments(tokens):
@@ -670,6 +760,9 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
 
     if len(t.evidence_states) > 6:
         p.append("'Evidence' has more than 6 states; the limit is 6")
+    if "Reproduce" in t.order and not t.reproduce:
+        p.append("'Reproduce' is empty; give the steps and where the "
+                 "behaviour was seen, or omit the section")
     if "Evidence" in t.order and not t.evidence_states:
         p.append("'Evidence' is empty; list states or omit the section")
     for index, state in enumerate(t.evidence_states, 1):
@@ -751,6 +844,7 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
                      f".venv/bin/{token} if the project has one): {cmd}")
     p.extend(_blank_template_problems(t))
     p.extend(_fence_advisories(t))
+    p.extend(_suite_advisories(t))
     p.extend(_operator_witness_advisories(t))
     if repo is not None:
         p.extend(_gitignored_path_problems(t, repo))
@@ -814,7 +908,7 @@ def main(argv):
         if repo is None:
             advisories.append(f"{ADVISORY_PREFIX}repository check "
                               f"skipped: pass --repo PATH to check named "
-                              f"paths against the target repository")
+                              f"paths against the project repository")
         for pr in blockers + advisories:
             print(f"  - {pr}")
     return 1 if invalid else 0

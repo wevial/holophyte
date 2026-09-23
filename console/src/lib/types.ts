@@ -52,6 +52,9 @@ export interface ShippedRow {
   ended_ms: number;
   actual_min: number | null;
   working_ms?: number | null;
+  /** The two parts of `working_ms`; absent on a daemon older than them. */
+  agent_ms?: number | null;
+  verify_ms?: number | null;
   wall_min?: number;
   estimate_min: number | null;
   merge_sha: string | null;

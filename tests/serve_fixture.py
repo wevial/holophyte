@@ -20,8 +20,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import finish_run
@@ -43,7 +43,7 @@ class ServeTestCase(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.target.state_dir(self.target) / "store.db"
+        self.db = holophyte.project.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
 
     def seed(self):
@@ -107,7 +107,7 @@ class ServeTestCase(unittest.TestCase):
         An absent console build under the temporary root is the default."""
         if config is not None:
             (self.db.parent / "config.toml").write_text(config)
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
         console_dir = console_dir or self.root / "console" / "dist"
         token = holophyte.serve.resolve_token(self.tgt, host)
         server = holophyte.serve.make_server(self.tgt, host, 0,

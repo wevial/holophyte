@@ -1,5 +1,6 @@
 """A migrated store must not silence a live loop (KO-464)."""
 import io
+import json
 import sqlite3
 import tempfile
 import threading
@@ -11,7 +12,8 @@ from unittest.mock import Mock, patch
 import store
 from holophyte import operator, pool, runs
 from holophyte.config_tables import loop_config
-from tests.loop_fixture import FakePool, LoopFixture, StubProvider, a_task
+from tests.loop_fixture import TICK, FakePool, LoopFixture, StubProvider, a_task
+from tests.schema_fixture import move_ahead_additively
 
 
 class HeartbeatSchemaBumpTests(unittest.TestCase):
@@ -88,6 +90,13 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
         self.assertTrue(all(conn is self.conn for conn in connections))
         self.assertEqual(output.count('[holo2] heartbeat failed:'), 1)
         self.assertIn(f'version {store.SCHEMA_VERSION + 1} is newer', output)
+
+    def test_additive_bump_at_the_floor_keeps_the_threads_connection(self):
+        move_ahead_additively(self.path, readableFrom=store.SCHEMA_VERSION)
+        connections, output = self.three_beats()
+        self.assertEqual(len(connections), 3)
+        self.assertTrue(all(conn is not self.conn for conn in connections))
+        self.assertNotIn('beating through the open connection', output)
 
     def test_three_failed_opens_then_recovery_keeps_every_beat(self):
         opened = store.open(self.path, migrate="owner")
@@ -254,3 +263,98 @@ class LoopSchemaBumpTests(LoopFixture):
         self.assertEqual(len(workers.reaped), 2)
         self.assertIn(f'store schema moved to {store.SCHEMA_VERSION + 1}'
                       ' under this process; re-executing', out.getvalue())
+
+    def run_readable_move(self, exits, sh=None):
+        """`workers = 3` over two ready tickets; `exits`' first callback
+        moves the store one version ahead, readable from this build."""
+        self.configure('[loop]\nworkers = 3\n')
+        self.provider = StubProvider(a_task(1), a_task(2))
+        workers = FakePool(exits)
+        self.handed = []
+
+        def execute(*args):
+            self.handed.append((list(workers.alive), json.loads(
+                self.tgt.store_path.with_name('pool.json').read_text())))
+
+        out = io.StringIO()
+        with ExitStack() as stack:
+            if sh is not None:
+                stack.enter_context(patch.object(operator, 'sh', sh))
+            stack.enter_context(patch.object(pool, 'SPAWN', workers.spawn))
+            stack.enter_context(patch.object(pool, 'WAIT', workers.wait))
+            stack.enter_context(patch.object(operator, 'EXEC', execute))
+            stack.enter_context(redirect_stdout(out))
+            operator.main(self.tgt, self.provider)
+        return workers, out.getvalue()
+
+    def move(self):
+        move_ahead_additively(self.db, readableFrom=store.SCHEMA_VERSION)
+
+    def test_readable_move_hands_live_workers_to_the_new_build(self):
+        version = store.SCHEMA_VERSION + 1
+        original = operator.sh
+
+        def fetched(args, cwd):
+            if args[:2] == ['git', 'fetch'] or args[:2] == ['git', 'merge']:
+                return ''
+            if args == ['git', 'show', 'origin/main:store/schema.py']:
+                return (f'SCHEMA_VERSION = {version}\n'
+                        f'READABLE_FROM = {store.SCHEMA_VERSION}\n')
+            if args == ['git', 'rev-parse', '--short', 'origin/main']:
+                return 'new5678'
+            return original(args, cwd)
+
+        workers, out = self.run_readable_move([(TICK, self.move)], fetched)
+
+        self.assertEqual(len(self.handed), 1)
+        alive, handoff = self.handed[0]
+        self.assertEqual(alive, [5001, 5002])
+        self.assertEqual([(w['pid'], w['previous']) for w in handoff['workers']],
+                         [(5001, True), (5002, True)])
+        self.assertEqual(workers.reaped, [])
+        self.assertIn(f'store schema moved to {version} under this process'
+                      ' and is readable by this build; re-executing', out)
+        self.assertIn(f'is additive (readable from {store.SCHEMA_VERSION})', out)
+
+    def assert_stuck_checkout_keeps_spawning(self):
+        def move_and_file_a_third():
+            self.move()
+            self.provider.queue.append(a_task(3))
+
+        def finish():
+            self.provider.queue.clear()
+
+        workers, out = self.run_readable_move([
+            (TICK, move_and_file_a_third), (TICK, None),
+            (pool.WORKER_PARKED, finish), (pool.WORKER_PARKED, None),
+            (pool.WORKER_PARKED, None)])
+
+        self.assertEqual(self.handed, [])
+        self.assertEqual(len(workers.spawned), 3)
+        self.assertEqual(len(workers.reaped), 3)
+        self.assertEqual(out.count('checkout not fast-forwarded'), 1)
+
+    def test_readable_move_on_a_stuck_checkout_keeps_spawning(self):
+        # The fixture's factory checkout has no origin: the fetch fails.
+        self.assert_stuck_checkout_keeps_spawning()
+
+    def test_readable_move_on_a_diverged_checkout_keeps_spawning(self):
+        """Fetched, on main and clean, but the fast-forward itself fails."""
+        origin = self.target.with_name('factory-origin')
+        self.git('clone', '-q', str(self.target), str(origin))
+        schema = origin / 'store' / 'schema.py'
+        schema.parent.mkdir()
+        schema.write_text(f'SCHEMA_VERSION = {store.SCHEMA_VERSION + 1}\n'
+                          f'READABLE_FROM = {store.SCHEMA_VERSION}\n')
+        identity = ('-c', 'user.email=factory@example.invalid',
+                    '-c', 'user.name=Factory Test')
+        self.git('add', '.', cwd=origin)
+        self.git(*identity, 'commit', '-qm', 'additive bump', cwd=origin)
+        self.git('remote', 'add', 'origin', str(origin))
+        (self.target / 'LOCAL.md').write_text('a commit origin lacks\n')
+        self.git('add', 'LOCAL.md')
+        self.git('commit', '-qm', 'diverge')
+        leaving = self.git('rev-parse', 'HEAD')
+
+        self.assert_stuck_checkout_keeps_spawning()
+        self.assertEqual(self.git('rev-parse', 'HEAD'), leaving)

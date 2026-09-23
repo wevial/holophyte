@@ -13,7 +13,7 @@ import store
 import store.tickets
 from holophyte import maintainer_notes
 from holophyte.pr import PrState
-from holophyte.target import Target
+from holophyte.project import Project
 from tests.phase_fixture import park_run
 
 
@@ -28,7 +28,7 @@ class BabysitCliFixture:
         env = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(Path(tmp.name) / "home")})
         env.start()
         self.addCleanup(env.stop)
-        self.target = Target.locate(self.repo)
+        self.target = Project.locate(self.repo)
         self.target.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.target.config_path.write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n'

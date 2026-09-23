@@ -4,20 +4,24 @@
 (`_sync_main_into_branch()`, with a conflict handed to the implementer
 first and otherwise parked on `GATE_CONFLICT_QUESTION`), the pre-merge
 verify, the drift check -- run under `_gate_lock()`, the loop's take on
-`merge_lock()`. `_park_for_approval()` stops a verified candidate for a
-human under `[merge] approve = "human"`; `_resume_at_merge_gate()` is the
-run that carries the approved candidate back through the gate; `_merge()`
-is the `--no-ff` merge onto main and its one self-resolved conflict.
-`_run_stages()` and `_land()` in `holophyte.loop` call in; back-references
-into the loop are deferred imports inside function bodies.
+`merge_lock()`, in local mode; in pull-request mode the lock covers the
+push-and-open alone (KO-644). `_park_for_approval()` stops a verified
+candidate for a human under `[merge] approve = "human"`;
+`_resume_at_merge_gate()` is the run that carries the approved candidate
+back through the gate; `_merge()` is the `--no-ff` merge onto main and its
+one self-resolved conflict.
+`_run_stages()` in `holophyte.loop` and `land()` in `holophyte.run` call in;
+back-references into the loop are deferred imports inside function bodies.
 
 Moved verbatim from `holophyte.loop` (KO-424, design note 0015).
 """
 import contextlib
 import subprocess
+from dataclasses import replace
 
 import store
 import store.read
+from holophyte import run as run_state
 from holophyte.babysitter import _babysit
 from holophyte.board import block_ticket, ledger, merge_drift
 from holophyte.claim import _resolve_merge_conflict, reuse_leftover
@@ -32,15 +36,15 @@ from holophyte.gates import (
     sh,
     with_baseline,
 )
-from holophyte.merge_lock import live_merge_lock
-from holophyte.pullrequest import _landed_pr, _open_pr, _resume_on_pr
+from holophyte.pullrequest import _prepare_pr, _push_and_open, _resume_on_pr
 from holophyte.redact import safe_print as print
+from holophyte.reproduce import tests_only_line
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
+from holophyte.stop import stop_if_requested
 
 
-def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
-                          task, branch, wt, carried, started, verify_cmd,
-                          contracts, budget_min, body, criteria=(),
+def _resume_at_merge_gate(run, carried, verify_cmd,
+                          contracts, body, criteria=(),
                           issue_url=None):
     """The approved candidate's run: the preserved worktree, the pre-merge
     verify against the main of today, the merge. No implementer, no reviewer.
@@ -83,18 +87,18 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     `claimed -> merge_gate` directly, the one edge §4 draws for this path,
     with the carried run named on the stream.
     """
-    from holophyte.loop import _candidate_drift, _land
+    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    task_id, issue_id, task = run.task_id, run.issue_id, run.task
+    branch, wt, started, budget_min = run.branch, run.wt, run.started, run.budget_min
+    from holophyte.loop import _candidate_drift
     # The branch is recorded first, as `_cut_worktree()` records it: the
     # worktree stands from the run's first moment, and the files panel reads
     # `runs.branch` to find it whichever way the resume goes (KO-304).
     store.set_branch(conn, run_id, branch)
     merge = merge_config(target)
     if merge.mode == "pr" and carried.pr_url is not None:
-        return _resume_on_pr(target, conn, run_id, provider, task_id,
-                             issue_id, task, branch, wt, carried, started,
-                             verify_cmd, contracts, budget_min, body,
-                             criteria)
-    if not carried.approved:
+        return _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria)
+    if not carried.approved and not carried.paused:
         ledger(conn, run_id, task_id, "failure",
                f"FAILED to merge the candidate for: {task}\nrun"
                f" {carried.run_id} was released by --babysit, which is not"
@@ -140,26 +144,37 @@ def _resume_at_merge_gate(target, conn, run_id, provider, task_id, issue_id,
     print(f"[holo2] {task_id}: approved candidate {branch} at {sha[:12]}"
           f" from run {carried.run_id}; skipping to the merge gate")
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-    with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
-                    beat_s):
+    ticket = f"{task}\n\n{body}" if body else task
+    # Under `mode = "pr"` the lock covers the push-and-open alone, as in
+    # `_run_stages()` (KO-644).
+    if merge.mode == "pr":
         ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,
-                              contracts, f"{task}\n\n{body}" if body else task,
-                              budget_min, sync_main=merge.mode != "pr")
-        if merge.mode == "pr":
-            url = _open_pr(target, conn, run_id, task_id, task, branch, body,
-                           beat_s, wt, started, budget_min, issue_url)
-            sha = sh(["git", "rev-parse", branch], wt)
-        else:
-            return _land(target, conn, run_id, provider, task_id, task,
-                         branch, wt, sha, ok, started, budget_min, 0)
-    merge_sha = _babysit(target, conn, run_id, provider, task_id,
-                          issue_id, task, branch, wt, sha, beat_s, url,
-                          f"{task}\n\n{body}" if body else task,
-                          verify_cmd, contracts, budget_min, criteria,
-                          reviewed=sha, verified=sha)
-    return _landed_pr(conn, run_id, provider, task_id, task, branch, url,
-                      merge_sha, started, budget_min, 0)
+                              contracts, ticket, budget_min, sync_main=False)
+        # An approved `not_reproduced` park lands tests only; the PR says
+        # so first, whatever the ticket's title reports (KO-658).
+        title, text = _prepare_pr(target, conn, run_id, task_id, task, branch,
+                                  body, beat_s, wt, started, budget_min,
+                                  issue_url,
+                                  lead=tests_only_line(conn, carried.run_id))
+        with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            url = _push_and_open(target, conn, run_id, branch, title, text,
+                                 beat_s)
+        sha = sh(["git", "rev-parse", branch], wt)
+    else:
+        with _gate_lock(target, conn, run_id, provider, task_id, branch, sha,
+                        beat_s):
+            ok, sha = _merge_gate(target, conn, run_id, provider, task_id,
+                                  issue_id, branch, wt, beat_s, sha,
+                                  verify_cmd, contracts, ticket, budget_min)
+            if carried.paused and merge.approve == "human":
+                _park_for_approval(conn, run_id, provider, task_id, branch, sha)
+            return run_state.land(replace(run, sha=sha), ok)
+    run = replace(run, sha=sha, pr_url=url)
+    run = _babysit(run, beat_s, ticket, verify_cmd, contracts, criteria,
+                   reviewed=sha, verified=sha)
+    return run_state.land(run, True)
 
 
 @contextlib.contextmanager
@@ -169,23 +184,24 @@ def _gate_lock(target, conn, run_id, provider, task_id, branch, sha, beat_s):
     the `MergeLockHeld` ends the run (an infra failure: no strike spent,
     branch and worktree untouched)."""
     try:
-        with live_merge_lock(target, conn, run_id, beat_s):
+        with target.locks.merge(conn, run_id, beat_s):
             yield
     except MergeLockHeld as e:
         _park_at_gate(conn, run_id, provider, task_id, branch, sha,
-                      f"merge lock: {e}", f"MERGE GATE DID NOT RUN: {e}.")
+                      f"merge lock: {e}", f"MERGE GATE DID NOT RUN: {e}.",
+                      park_kind="merge_lock")
         raise
 
 
 def _park_at_gate(conn, run_id, provider, task_id, branch, sha, question,
-                  ledger_text):
+                  ledger_text, park_kind="question"):
     """A gate refusal that is a person's to answer: the ticket goes
     `blocked_on_operator` asking `question`, the ledger records why, and
     the caller raises the failure that leaves branch and worktree in place.
     The run itself ends the way every refused merge ends."""
     if conn is not None and run_id is not None:
         ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-        if not block_ticket(conn, ticket_id, provider, question):
+        if not block_ticket(conn, ticket_id, provider, question, park_kind=park_kind):
             print(f"[holo2] {task_id} could not be moved to"
                   " blocked_on_operator; failing the run anyway")
     ledger(conn, run_id, task_id, "failure",
@@ -330,7 +346,8 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
     `sync_main` is off -- PR mode, where the merge is the remote's), the
     pre-merge verify on the result, then the drift check. Returns the
     verify's `ok`, for the merged ledger line, and the branch's sha as the
-    gate leaves it. The caller holds the merge lock."""
+    gate leaves it. In local mode the caller holds the merge lock; in PR
+    mode it runs unlocked, as the babysitter's does."""
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
     if sync_main:
         sha = _sync_main_into_branch(target, conn, run_id, provider, task_id,
@@ -341,6 +358,7 @@ def _merge_gate(target, conn, run_id, provider, task_id, issue_id, branch, wt,
                              target=target)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id, before_merge=True)
+    stop_if_requested(conn, run_id, "merge_gate")
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")

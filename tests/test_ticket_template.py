@@ -2,16 +2,21 @@
 
 Run: python3 -m unittest discover tests -v
 """
+import io
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.claim  # noqa: E402
+import holophyte.project  # noqa: E402
 import store
+import store.read
 import store.tickets
 import ticket_template as tt  # noqa: E402 - after the sys.path insert above
 
@@ -207,6 +212,16 @@ class ValidateTests(unittest.TestCase):
         self.assert_problems_contain(
             FILLED_WITH_CONTRACTS.replace("config/tunnel.yml: 8622\n", ""),
             "no 'relative/path: expected literal' declarations")
+
+    def test_reproduce_section_is_optional_but_never_empty(self):
+        section = ("## Reproduce\n\n1. Open /orders.csv with two orders.\n\n"
+                   "Seen on: the preview deployment at commit abc1234.\n\n")
+        filled = FILLED.replace("## In scope", section + "## In scope")
+        self.assertEqual(tt.validate(tt.parse(filled)), [])
+        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+        empty = FILLED.replace("## In scope", "## Reproduce\n\n## In scope")
+        self.assertTrue(any("Reproduce" in problem for problem in
+                            tt.validate(tt.parse(empty))))
 
     def test_linear_normalized_body_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(LINEAR_NORMALIZED)), [])
@@ -525,6 +540,102 @@ class GitignoredPathTests(unittest.TestCase):
         self.assertIsNone(
             holophyte.board.body_problem({"body": TRACKED_CRITERION}, self.repo))
 
+    def test_body_naming_only_missing_paths_is_claimable(self):
+        # REL-134/135: bodies naming files only their open pull request holds.
+        text = TRACKED_CRITERION.replace(
+            "`src/lotuspod/cli.py` runs",
+            "`src/lotuspod/cli.py` runs and `tests/test_counts.py` passes"
+        ).replace(".venv/bin/python -m unittest test_orders_export",
+                  ".venv/bin/python -m unittest tests.test_counts")
+        self.assertIsNone(holophyte.board.body_problem({"body": text}, self.repo))
+
+    def test_body_problem_names_a_path_outside_the_repository(self):
+        text = TRACKED_CRITERION.replace("`src/lotuspod/cli.py`",
+                                         "`../elsewhere/cli.py`")
+        self.assertEqual(
+            holophyte.board.body_problem({"body": text}, self.repo),
+            "path is outside the repository in Acceptance criteria #1: "
+            "../elsewhere/cli.py")
+
+    def test_a_ticket_on_a_pull_request_is_not_refused_for_its_paths(self):
+        # KO-598: a parked candidate's pull request holds the files its
+        # verify names; main does not, and the claim must not refuse it.
+        text = TRACKED_CRITERION.replace(
+            ".venv/bin/python -m unittest test_orders_export",
+            "ruff check tests/test_counts.py")
+        task = {"id": "KO-598", "issue_id": "iss-598", "title": "Counts",
+                "body": text, "verify": "ruff check tests/test_counts.py",
+                "criteria": ["works"], "budget_min": 5}
+        self.assertIsNotNone(holophyte.board.body_problem(task, self.repo))
+        holo = Path(self.tmp.name) / "holo"
+        target = holophyte.project.Project(
+            path=self.repo, holo_dir=holo, store_path=holo / "store.db",
+            config_path=holo / "config.toml", worktrees=holo / "wt")
+        conn = store.open(Path(self.tmp.name) / "store.db", migrate="owner")
+        self.addCleanup(conn.close)
+        store.init(conn)
+        project = store.tickets.ensure_project(conn, "team", str(self.repo))
+        ticket = holophyte.board.mirror_task(conn, project, task)
+        run = store.claim(conn, project, ticket)
+        store.tickets.transition(conn, ticket, "in_flight")
+        store.park(conn, run, "awaiting_merge_approval",
+                   pr_url="https://github.com/o/r/pull/7")
+        store.tickets.transition(conn, ticket, "blocked_on_operator")
+        conn.commit()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            admitted = holophyte.claim._admit_ticket(
+                target, conn, project, None, task, None)
+        self.assertIsNone(admitted)
+        self.assertNotIn("skipped: path does not exist", out.getvalue())
+        self.assertIn("parked on PR https://github.com/o/r/pull/7",
+                      out.getvalue())
+        self.assertEqual(store.read.ticket_by_id(conn, ticket).status,
+                         "blocked_on_operator")
+
+
+class DiscoverPatternTests(unittest.TestCase):
+    """KO-667: `discover -s tests -p NAME.py` names a module inside `tests`,
+    not a file at the repository root."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        (self.repo / "tests").mkdir()
+
+    def missing(self, pattern, note="- Endpoint lives beside the other order routes.",
+                command=".venv/bin/python -m unittest discover -s tests -p '{}'"):
+        text = FILLED.replace(
+            ".venv/bin/python -m unittest test_orders_export",
+            command.format(pattern)
+        ).replace("- Endpoint lives beside the other order routes.", note)
+        return [p for p in tt.validate(tt.parse(text), repo=self.repo)
+                if "does not exist" in p]
+
+    def test_a_pattern_declared_new_under_the_start_directory_passes(self):
+        self.assertEqual(self.missing(
+            "test_example.py", "- Add a new test file `tests/test_example.py`."), [])
+
+    def test_a_missing_pattern_is_named_under_the_start_directory(self):
+        self.assertEqual(self.missing("test_example.py"), [
+            "path does not exist in verify command: tests/test_example.py"])
+        (self.repo / "tests/test_example.py").touch()
+        self.assertEqual(self.missing("test_example.py"), [])
+
+    def test_a_glob_pattern_is_not_a_path(self):
+        self.assertEqual(self.missing("test_babysit*"), [])
+
+    def test_the_pattern_resolves_only_at_its_own_argument(self):
+        (self.repo / "tests/test_example.py").touch()
+        command = ("python3 -m unittest discover -s tests -p {0} && "
+                   "python3 -m unittest discover -s other -p {0} && "
+                   "python3 {0}")
+        self.assertEqual(self.missing("test_example.py", command=command), [
+            "path does not exist in verify command: other/test_example.py",
+            "path does not exist in verify command: test_example.py"])
+
 
 class PathCandidateTests(unittest.TestCase):
     def test_code_spans_links_and_prose_yield_relative_paths_only(self):
@@ -777,6 +888,36 @@ class InterpreterAdvisoryTests(unittest.TestCase):
     def test_activation_must_precede_the_bare_token(self):
         self.assertEqual(
             len(self.advisories("python3 -m build && . .venv/bin/activate")), 1)
+
+class SuiteAdvisoryTests(unittest.TestCase):
+    """KO-641: the pull request check runs the whole suite, not the ticket."""
+
+    def run_cli(self, *commands):
+        with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
+            f.write(FILLED.replace(
+                ".venv/bin/python -m unittest test_orders_export",
+                "\n".join(commands)))
+            f.flush()
+            r = subprocess.run(
+                [sys.executable, str(ROOT / "ticket_template.py"), f.name],
+                capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("OK", r.stdout)
+        return [line for line in r.stdout.splitlines()
+                if "pull request check" in line]
+
+    def test_whole_suite_discover_is_advised_naming_the_line(self):
+        line = "HOLOPHYTE_HOME=$(mktemp -d) python3 -m unittest discover -s tests"
+        (advisory,) = self.run_cli(line)
+        self.assertIn(tt.ADVISORY_PREFIX, advisory)
+        self.assertIn(line, advisory)
+        self.assertIn("full suite runs as a pull request check", advisory)
+
+    def test_focused_modules_are_not_advised(self):
+        self.assertEqual(self.run_cli(
+            "python3 -m unittest discover -s tests -p 'test_serve.py'",
+            "python3 -m unittest tests.test_board"), [])
+
 
 class EvidenceTests(unittest.TestCase):
     def body(self, states):

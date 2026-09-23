@@ -1,12 +1,18 @@
 """Read-only mention answers and attributed thread replies."""
+import re
+from urllib.parse import quote
+
 import store
-from holophyte import maintainer_notes, pr, thread_mentions
+from holophyte import maintainer_notes, pr, review, thread_mentions
 from holophyte.agents import agent_route
 from holophyte.conversation_comments import ASK_REPLY_MARKER, quote_request
 from holophyte.gates import InfraFailure
 from holophyte.redact import known_secrets, outbound
 from holophyte.runs import heartbeat_while
 from store.instructions import record_instruction_reply
+
+# A cited line on the end of a link target: `:92`, `:92-106` or `:92–106`.
+LINE_SUFFIX_RE = re.compile(r":(\d+)(?:[-\u2013](\d+))?$")
 
 
 def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
@@ -19,21 +25,20 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
                  and t.classification == "MENTIONED"
                  and t.intent == "ask")
     for thread in asks:
-        prompt = (f"Answer the question on {pull.url}. Read the checkout and ticket. "
-                  "Do not modify anything. Do not commit, push, or request review. "
-                  "Give a direct answer citing files and lines. End with whether "
-                  "a change seems warranted, as advice only.\n\n"
-                  f"Ticket:\n{ticket}\n\nThread:\n{babysitter.quoted(thread)}"
-                  f"\n\nQuestion:\n{thread.request}")
+        prompt = ask_prompt(pull, ticket, thread)
         with heartbeat_while(conn, run_id, beat_s):
             reply = agent(target, "adjudicate", prompt, wt, conn=conn,
                           base_sha=sh(["git", "merge-base", "main", sha], cwd=wt),
                           candidate_sha=sha, run_id=run_id)
+        from holophyte.stop import stop_if_requested
+        stop_if_requested(conn, run_id, "merge_gate")
         if (getattr(reply, "timed_out", False)
                 or getattr(reply, "exit_code", 0) != 0 or not reply.strip()):
             raise InfraFailure("ask adjudicator failed or returned an empty answer")
         header = babysitter.COMMENT_HEADER.format(
             model=agent_route(target, "adjudicate"))
+        reply = github_links(
+            reply, f"https://{pull.host}/{pull.owner}/{pull.name}", sha)
         body = f"{header}\n\n{ASK_REPLY_MARKER}\n{reply}"
         if thread.triage is not None:
             body += "\n\n" + thread_mentions.FIX_HINT
@@ -49,6 +54,40 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
             _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                         why, (), reviewed=reviewed)
     return remaining
+
+
+def ask_prompt(pull, ticket, thread):
+    """The adjudicator's read-only brief for one question on the pull request."""
+    from holophyte import babysitter
+    return (f"Answer the question on {pull.url}. Read the checkout and ticket. "
+            "Do not modify anything. Do not commit, push, or request review. "
+            "The thread and ticket are included below; GitHub is not reachable "
+            "from here, so do not fetch it or report on access. "
+            "Give a direct answer citing files and lines. End with whether "
+            "a change seems warranted, as advice only.\n\n"
+            f"Ticket:\n{ticket}\n\nThread:\n{babysitter.quoted(thread)}"
+            f"\n\nQuestion:\n{thread.request}")
+
+
+def github_links(text, repo_url, sha):
+    """Markdown links into the reviewer's mount, pointed at the candidate on
+    GitHub: the adjudicator cites its own checkout, which no reader can open.
+    Link text and links to anything else are left as written."""
+    def rewrite(m):
+        target = m.group(1)
+        prefix = next((p for p in review.WORKSPACE_PREFIXES
+                       if target.startswith(p)), None)
+        if prefix is None:
+            return m.group(0)
+        path, anchor = target[len(prefix):], ""
+        line = LINE_SUFFIX_RE.search(path)
+        if line is not None:
+            path = path[:line.start()]
+            anchor = f"#L{line.group(1)}" + (
+                f"-L{line.group(2)}" if line.group(2) else "")
+        url = f"{repo_url}/blob/{sha}/{quote(path)}{anchor}"
+        return m.group(0)[:m.start(1) - m.start()] + url + ")"
+    return review.MD_LINK_TARGET_RE.sub(rewrite, text)
 
 
 def previous_park_reason(conn, run_id, branch):

@@ -12,19 +12,22 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 ROOT = Path(__file__).resolve().parent.parent
+import holophyte.agent_routes  # noqa: E402 - after the sys.path insert above
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
+import holophyte.redact  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import review_runner  # noqa: E402 - after the sys.path insert above
+from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 
 
 def bare_target(case, path):
-    """A `Target` at `path` whose state directory holds no config.
+    """A `Project` at `path` whose state directory holds no config.
 
     The routes these tests pin are the defaults, so the config the value
     would read has to be absent -- in a directory of the test's own, not
@@ -34,7 +37,7 @@ def bare_target(case, path):
     path = Path(path)
     holo = Path(tempfile.mkdtemp())
     case.addCleanup(shutil.rmtree, holo, ignore_errors=True)
-    return holophyte.target.Target(
+    return holophyte.project.Project(
         path=path, holo_dir=holo, store_path=holo / "store.db",
         config_path=holo / "config.toml",
         worktrees=path.parent / f"{path.name}.worktrees")
@@ -346,6 +349,7 @@ class AgentRouteTests(unittest.TestCase):
             timeout=1800,
             verdicts=None,
             carry=[],
+            on_start=ANY,
         )
         self.assertEqual(holophyte.agents.agent_route(self.tgt, "review"),
                          "codex-sol-medium")
@@ -369,6 +373,47 @@ class AgentRouteTests(unittest.TestCase):
                          "codex-astra-medium")
         self.assertEqual(holophyte.agents.agent_route(self.tgt, "adjudicate"),
                          "codex-astra-medium")
+
+    def test_a_short_argument_does_not_redact_the_reviewer_model_name(self):
+        # KO-603: `high` is an implementer argument; the container route's
+        # name `codex-astra-high` is the header's attribution, not its echo.
+        self.tgt.config_path.write_text(
+            '[agents]\nimplementer = "claude-implement --model opus --effort high"\n'
+            'review_model = "gpt-6-astra"\nreview_effort = "high"\n')
+
+        self.assertEqual(holophyte.agents.agent_route(self.tgt, "adjudicate"),
+                         "codex-astra-high")
+
+    def test_a_credential_inside_the_executable_path_is_still_redacted(self):
+        self.tgt.config_path.write_text(
+            '[linear]\napi_key = "lin-cred-7f3a"\n'
+            '[agents]\nimplementer = "/opt/lin-cred-7f3a/bin/claude -p"\n')
+
+        self.assertEqual(
+            holophyte.agent_routes.safe_command(
+                self.tgt, "/opt/lin-cred-7f3a/bin/claude -p"),
+            f"/opt/{holophyte.redact.REDACTED}/bin/claude")
+
+    def test_an_executable_named_exactly_as_an_argument_is_redacted(self):
+        self.tgt.config_path.write_text(
+            '[agents]\nimplementer = "runner --as ghost-agent"\n'
+            'reviewer = "ghost-agent --check"\n')
+
+        self.assertEqual(
+            holophyte.agent_routes.safe_command(self.tgt, "ghost-agent --check"),
+            holophyte.redact.REDACTED)
+
+    def test_an_argument_named_executable_holding_a_credential_is_whole(self):
+        # The exact-argument check reads the name before credential
+        # redaction rewrites it, or only the credential part is hidden.
+        self.tgt.config_path.write_text(
+            '[linear]\napi_key = "example-credential"\n'
+            '[agents]\nimplementer = "runner --as private-example-credential-agent"\n')
+
+        self.assertEqual(
+            holophyte.agent_routes.safe_command(
+                self.tgt, "private-example-credential-agent --check"),
+            holophyte.redact.REDACTED)
 
     @patch.object(review_runner, "run_review")
     def test_a_reviewer_runner_failure_is_an_infra_failure(self, run_review):
@@ -514,7 +559,7 @@ class ReviewLoopTests(unittest.TestCase):
         self.worktrees = root / "repo.worktrees"
         self.branch = "task/ko-116-add-a-thing"
         self.wt = self.worktrees / "ko-116-add-a-thing"
-        self.tgt = holophyte.target.Target(
+        self.tgt = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=self.worktrees)
         self.linear = FakeLinear()
@@ -555,7 +600,7 @@ class ReviewLoopTests(unittest.TestCase):
             self.events.append(role)
             self.goals.append((role, goal))
             if role != "implement":
-                return replies.pop(0)
+                return answer_scope(goal, replies.pop(0))
             n = sum(1 for event in self.events if event == "implement")
             (Path(cwd) / f"change{n}.txt").write_text(f"work {n}\n")
             self.git("add", "-A", cwd=cwd)

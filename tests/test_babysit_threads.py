@@ -1,6 +1,7 @@
 """`holophyte.babysitter`'s pass under `[merge] mode = "pr"`, end to end."""
 from __future__ import annotations
 
+import io
 import json
 import sys
 import unittest
@@ -22,7 +23,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     Reply,
 )
-from loop_fixture import BRANCH, MergeModeFixture  # noqa: E402
+from loop_fixture import BRANCH, LoopFixture, MergeModeFixture  # noqa: E402
 from mention_accounts_fixture import MentionAccountCases  # noqa: E402
 from triage_mention_fixture import TriageMentionCases  # noqa: E402
 
@@ -30,6 +31,7 @@ import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
+from holophyte.maintainer_notes import cite_commits  # noqa: E402
 
 
 class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
@@ -358,6 +360,52 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual(self.read("SELECT phase, candidateSha FROM runs"),
                          [("awaiting_merge_approval", fixed)])
 
+    def test_human_review_fixes_reviews_the_fix_range_before_parking(self):
+        """KO-663: `review_fixes` puts the fix range to a covering review,
+        and the park names what that review covered."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'review_fixes = true\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        fake, _ = self.loop(
+            Commit("the scripted work"), APPROVE, Idle(""),
+            Reply("THREAD 1: ADDRESS -- a real crash"),
+            Commit("fix: default load()"), APPROVE, Idle(""),
+            provider=self.provider())
+
+        self.assertEqual(fake.roles.count("review"), 2)
+        released = fake.turns[1].candidate_sha
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertIn(f"{released}..{fixed}", fake.turns[5].goal)
+        self.assertIn(f"ready to merge; fix commits since {released[:12]}"
+                      f" reviewed at {fixed[:12]}; waiting for a human to say"
+                      ' merge ([merge] approve = "human")', self.question())
+        self.assertEqual(
+            self.read("SELECT phase, candidateSha, approvedSha FROM runs"),
+            [("awaiting_merge_approval", fixed, fixed)])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_human_review_fixes_rejection_parks_without_approval(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'review_fixes = true\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        fake, _ = self.loop(
+            Commit("the scripted work"), APPROVE, Idle(""),
+            Reply("THREAD 1: ADDRESS -- a real crash"),
+            Commit("fix: default load()"), REQUEST_CHANGES,
+            provider=self.provider())
+
+        self.assertEqual(fake.roles.count("review"), 2)
+        fixed = self.git("rev-parse", BRANCH).strip()
+        question = self.question()
+        self.assertIn(f"the review of the fix at {fixed[:12]} asked for"
+                      " changes", question)
+        self.assertIn("scripted change is incomplete", question)
+        self.assertEqual(
+            self.read("SELECT phase, candidateSha, approvedSha FROM runs"),
+            [("awaiting_merge_approval", fixed, None)])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        self.assertFalse([c for c in self.recorded() if "pr merge" in c])
+
     def test_fix_verify_failure_redacts_environment_from_print_and_outcome(self):
         source = self.target.parent / "source.env"
         source.write_bytes(b"PUBLIC=sentinel-fix-value\r\n")
@@ -405,6 +453,51 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         fixed = self.git("rev-parse", BRANCH).strip()
         self.assertEqual(self.read("SELECT phase, candidateSha FROM runs"),
                          [("awaiting_merge_approval", fixed)])
+
+    def test_auto_fix_failed_verify_parks_and_accepts_a_send_back(self):
+        """KO-666: under automatic approval a verify that fails before the
+        covering review parks on the PR, so `--babysit --note` can answer."""
+        failure = self.db.parent / "verify-failed"
+        command = f"test ! -f {failure}"
+        self.configure('[merge]\nmode = "pr"\n'
+                       f'[verify]\nalways = ["{command}"]\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        push = holophyte.pr.push_branch
+        pushes = []
+
+        def push_then_break_verify(*args, **kwargs):
+            result = push(*args, **kwargs)
+            pushes.append(result)
+            if len(pushes) == 2:
+                failure.touch()
+            return result
+
+        with patch.object(holophyte.pr, "push_branch", push_then_break_verify):
+            fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                                Reply("THREAD 1: ADDRESS -- a real crash"),
+                                Commit("fix: default load()"),
+                                provider=self.provider())
+
+        question = self.question()
+        self.assertIn("verify failed", question)
+        self.assertIn(command, question)
+        self.assertEqual(fake.roles.count("review"), 1)
+        route = holophyte.agents.agent_route(self.tgt, "review")
+        self.assertEqual(self.read("SELECT count(*) FROM reviewRounds WHERE"
+                                   f" reviewerModel = '{route}'"), [(1,)])
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.read("SELECT phase, outcome, candidateSha FROM runs"),
+                         [("awaiting_merge_approval", None, fixed)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+        holophyte.operator.babysit_ticket(self.tgt, "KO-131", "repin the file size",
+                                          out=io.StringIO())
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
+        (payload,), = self.read("SELECT payload FROM runEvents"
+                                " WHERE kind = 'operator_note'")
+        self.assertEqual(json.loads(payload)["note"], "repin the file size")
 
     def test_a_fix_round_the_reviewer_rejects_parks_instead_of_merging(self):
         """An initial PR pass rejection parks; only a resume gets the allowance."""
@@ -713,6 +806,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             self.read("SELECT phase, outcome, prUrl FROM runs"),
             [("awaiting_merge_approval", None, self.URL)])
         question = self.question()
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {asks[3]}", question)
         self.assertIn("src/app.py:30 by @ko", question)
@@ -760,6 +854,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             self.read("SELECT phase, outcome, prUrl FROM runs"),
             [("awaiting_merge_approval", None, self.URL)])
         question = self.question()
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {person[3]}", question)
         self.assertIn("src/app.py:30 by @wevial", question)
@@ -847,6 +942,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             self.read("SELECT phase, outcome, prUrl, candidateSha FROM runs"),
             [("awaiting_merge_approval", None, self.URL, fixed)])
         question = self.question()
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {person[3]}", question)
         self.assertIn("src/app.py:30 by @wevial", question)
@@ -871,9 +967,43 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             self.read("SELECT phase, outcome, prUrl FROM runs"),
             [("awaiting_merge_approval", None, self.URL)])
         question = self.question()
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
         self.assertIn(f"> {asks[3]}", question)
         self.assertNotIn(f"> {self.DEFECT[3]}", question)
+
+
+class OperatorNoteCitationTests(LoopFixture):
+    """`cite_commits()` on real git: recording a citation never fails a fix."""
+    ADDRESSED = [(7, holophyte.pr.Thread("operator_note:7", "", None, "maintainer",
+                                         "change requested", "",
+                                         author_kind="maintainer"), "")]
+
+    def sh(self, argv, cwd):
+        return self.git(*argv[1:], cwd=cwd).strip()
+
+    def test_an_empty_last_commit_is_amended_to_carry_the_citation(self):
+        self.git("commit", "-q", "--allow-empty", "-m",
+                 "chore(merge): record that the merge already satisfies the note")
+        fixed = self.git("rev-parse", "HEAD").strip()
+
+        result = cite_commits(self.target, self.base, fixed, self.ADDRESSED, self.sh)
+
+        self.assertNotEqual(result, fixed)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), result)
+        self.assertTrue(self.git("log", "-1", "--format=%B").strip()
+                        .endswith("operator_note event 7"))
+
+    def test_a_citation_in_another_letter_case_is_not_amended(self):
+        (self.target / "README.md").write_text("requested change\n")
+        self.git("add", "README.md")
+        self.git("commit", "-q", "-m", "Fix per Operator_note event 7")
+        fixed = self.git("rev-parse", "HEAD").strip()
+
+        result = cite_commits(self.target, self.base, fixed, self.ADDRESSED, self.sh)
+        self.assertEqual(result, fixed)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), fixed)
+
 
 if __name__ == "__main__":
     unittest.main()

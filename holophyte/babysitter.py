@@ -2,9 +2,7 @@
 import json
 import re
 import subprocess
-import tempfile
 from dataclasses import replace
-from pathlib import Path
 from time import monotonic, time
 
 import store
@@ -22,15 +20,20 @@ from holophyte.agents import agent_route, review_refs
 from holophyte.babysit_steps import record_step
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
+from holophyte.check_fix import check_fix_brief, fix_checks_or_park  # noqa: F401
 from holophyte.config_tables import merge_config
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
     VerificationOutput,
+    drop_candidate_modules,
     record_unreviewed_verification,
     run_verify,
+    sh,
     with_baseline,
 )
+from holophyte.main_checkout import detached_main
+from holophyte.missing_checks import Retrigger, unreported
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
@@ -40,9 +43,14 @@ from holophyte.review import (
     criteria_brief,
     criteria_findings,
     evidence_brief,
+    main_merge_base,
     parse_findings,
+    scope_brief,
+    scope_files,
 )
+from holophyte.run import Run
 from holophyte.runs import heartbeat_while, record_round
+from holophyte.stop import boundary, fix_state, stop_if_requested
 from holophyte.thread_answers import answer_asks, post
 from holophyte.thread_findings import thread_finding
 
@@ -266,7 +274,7 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
                        ticket=""):
     """Merge and push main; unresolved conflicts get one turn, then park."""
     from holophyte.claim import merge_conflicts
-    from holophyte.loop import _timed, sh
+    from holophyte.loop import _timed
     from holophyte.merge_gate import _is_ancestor, _merge_ref, merge_conflict_goal
     from holophyte.pullrequest import _park_on_pr
     with heartbeat_while(conn, run_id, beat_s):
@@ -307,6 +315,7 @@ def _merge_origin_main(target, conn, run_id, provider, task_id, branch, wt,
     else:
         merged = detail
     with heartbeat_while(conn, run_id, beat_s):
+        stop_if_requested(conn, run_id, "merge_gate")
         pr.push_branch(target, branch)
     merged = sh(["git", "rev-parse", branch], wt)
     print(f"[holo2] pushed {branch} to {pr.REMOTE} at {merged[:12]}"
@@ -354,17 +363,18 @@ def _refresh_verify(target, conn, run_id, beat_s, wt, sha, command, contracts):
 
 
 def _verify_detached_main(target, conn, run_id, beat_s, wt, ref, command, contracts):
-    """Check the fetched main once in an isolated sibling, then remove it."""
-    from holophyte.loop import sh
+    """Check the fetched main once in a prepared sibling, then remove it."""
     sha = sh(["git", "rev-parse", ref], wt)
-    with tempfile.TemporaryDirectory(prefix="main-verify-", dir=wt.parent) as tmp:
-        detached = Path(tmp) / "tree"
-        sh(["git", "worktree", "add", "--detach", str(detached), sha], wt)
-        try:
-            ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
-                                      sha, command, contracts)
-        finally:
-            sh(["git", "worktree", "remove", "--force", str(detached)], wt)
+    with detached_main(target, conn, run_id, beat_s, wt, sha) as detached:
+        command, skipped = drop_candidate_modules(command, wt, detached)
+        if skipped and conn is not None and run_id is not None:
+            store.record_event(
+                conn, run_id, "verification",
+                f"main-side verify at {sha[:12]} skipped"
+                f" {', '.join(skipped)}: exists only on the candidate,"
+                " not on main, so main cannot import it")
+        ok, out = _refresh_verify(target, conn, run_id, beat_s, detached,
+                                  sha, command, contracts)
     return sha, ok, out
 
 
@@ -391,7 +401,7 @@ def _verify_main_refresh(target, conn, run_id, provider, task_id, branch, wt,
     return _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                         beat_s, pull, (), None, ticket, command, contracts,
                         budget_min, _next_round(conn, run_id),
-                        review_follows=merge_config(target).approve == "auto",
+                        review_follows=_fixes_reviewed(merge_config(target)),
                         goal=goal)
 
 
@@ -403,13 +413,29 @@ def _diff_identity(wt, ref):
                           capture_output=True, check=True).stdout
 
 
-def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
-              wt, sha, beat_s, url, ticket, verify_cmd, contracts, budget_min,
-              criteria=(), approved=False, reviewed=None, verified=None, fix_note=None,
-              just_pushed=False):
+def _babysit(run, *args, **kwargs):
+    """Accept a Run; retain the positional seam for storeless callers."""
+    legacy = not isinstance(run, Run)
+    if legacy:
+        (conn, run_id, provider, task_id, issue_id, task, branch, wt, sha,
+         beat_s, url, ticket, verify_cmd, contracts, budget_min, *rest) = args
+        run = Run(run, conn, run_id, provider, task_id, issue_id, task,
+                  branch, wt, budget_min, monotonic(), sha=sha, pr_url=url)
+        args = (beat_s, ticket, verify_cmd, contracts, *rest)
+    result = _babysit_pass(run, *args, **kwargs)
+    return result.merge_sha if legacy else result
+
+
+def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
+                   approved=False, reviewed=None, verified=None, fix_note=None,
+                   just_pushed=False):
     """Watch a PR until merge or park, bounded by rounds and a no-work deadline.
     Changed candidates need verification and independent review; human approval
     covers only the released SHA. Conflict recovery pushes origin/main's merge."""
+    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    task_id, issue_id = run.task_id, run.issue_id
+    branch, wt, sha = run.branch, run.wt, run.sha
+    budget_min, url = run.budget_min, run.pr_url
     from holophyte.pullrequest import _park_on_pr
     merge = merge_config(target)
     pull = pr_status.parse_pr_url(url)
@@ -423,15 +449,20 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
         target, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
+    check_fixed = False  # One check fix per babysit: a red check cannot loop.
     for pass_no in range(1, merge.pr_rounds + 1):
+        stop_if_requested(conn, run_id, "merge_gate")
+        retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
         state = _settled_or_park(
             target, conn, run_id, beat_s, pull, pushed_state, provider,
-            task_id, branch, sha, reviewed, refresh)
+            task_id, branch, sha, reviewed, refresh, retrigger)
+        sha, reviewed = retrigger.sha, retrigger.reviewed
         pushed_state = None
+        stop_if_requested(conn, run_id, "merge_gate")
         done = _pr_terminal(target, conn, run_id, provider, task_id, branch,
                             sha, pull, state, reviewed)
         if done is not None:
-            return done
+            return replace(run, sha=sha, merge_sha=done)
         state = replace(state, threads=answer_asks(
             target, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
             pull, thread_mentions.classified(state.threads, merge), ticket, reviewed))
@@ -460,12 +491,15 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
         ledger(conn, run_id, task_id, "round",
                f"Babysit pass {pass_no} over {pull.url}: no unresolved"
                f" threads, checks {state.checks}", provider)
-        if state.checks != "success":
-            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                        f"checks {state.checks} on the head commit", (),
-                        reviewed=reviewed)
+        if state.checks != "success":  # Parks unless one fix is due.
+            sha, pushed_state = fix_checks_or_park(
+                replace(run, sha=sha), beat_s, pull, state, ticket, verify_cmd,
+                contracts, pass_no, reviewed, check_fixed)
+            check_fixed = True
+            continue  # Settle the pushed fix; its review comes before merge.
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
+        released = sha
         if sha != reviewed:
             fixed = _review_fix(target, conn, run_id, provider, task_id, branch, wt,
                                 sha, reviewed, beat_s, pull, ticket, verify_cmd,
@@ -478,13 +512,15 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                     beat_s, pull, reviewed)
                 continue  # Settle the pushed fix's checks and threads first.
             # Keep verified behind: the reviewed fix still needs the merge gate.
-            reviewed = sha
+            # An `--approve` covered the release, not these reviewed fixes.
+            released, reviewed, approved = reviewed, sha, False
         if merge.approve == "auto" or approved:
             try:
-                return _verified_merge(target, conn, run_id, provider, task_id,
+                merge_sha = _verified_merge(target, conn, run_id, provider, task_id,
                                        issue_id, branch, wt, sha, beat_s, pull,
                                        reviewed, verified, verify_cmd, contracts,
                                        ticket, budget_min, merge.approve == "auto")
+                return replace(run, sha=sha, merge_sha=merge_sha)
             except pr.MergeRefused as refused:
                 verified = sha
                 sha, pushed_state, reviewed = _merge_origin_main(
@@ -494,11 +530,12 @@ def _babysit(target, conn, run_id, provider, task_id, issue_id, task, branch,
                     verify_cmd=verify_cmd, contracts=contracts, ticket=ticket)
                 continue
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                    "ready to merge; waiting for a human to say merge"
-                    " ([merge] approve = \"human\")", (), reviewed=reviewed)
+                    _ready(released, sha), (), reviewed=reviewed)
+    retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
     state = _settled_or_park(
         target, conn, run_id, beat_s, pull, pushed_state, provider,
-        task_id, branch, sha, reviewed, refresh)
+        task_id, branch, sha, reviewed, refresh, retrigger)
+    sha, reviewed = retrigger.sha, retrigger.reviewed
     _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                  pull, state, reviewed)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
@@ -520,6 +557,12 @@ def _verified_merge(target, conn, run_id, provider, task_id, issue_id, branch,
                      beat_s, pull, reviewed=reviewed, retry_conflicts=retry_conflicts)
 
 
+def _fixes_reviewed(merge):
+    """Whether a covering review follows a fix: always under automatic
+    approval, and under human approval once `review_fixes` opts in."""
+    return merge.approve == "auto" or merge.review_fixes
+
+
 def _moved(sha, reviewed):
     """Why the candidate at `sha` needs an independent look: it sits past
     the sha the last judgement covered, or nothing on record covers it."""
@@ -529,6 +572,17 @@ def _moved(sha, reviewed):
                 " none)")
     return (f"the fix rounds moved the candidate from {reviewed[:12]} to"
             f" {sha[:12]}; the release covered {reviewed[:12]}")
+
+
+def _ready(released, sha):
+    """The human park's reason, naming what a covering review of fix
+    commits since the release at `released` approved (KO-663)."""
+    covered = ""
+    if released != sha:
+        covered = (f"fix commits since {released[:12]} reviewed at {sha[:12]}; "
+                   if released else f"the candidate reviewed at {sha[:12]}; ")
+    return (f"ready to merge; {covered}waiting for a human to say merge"
+            " ([merge] approve = \"human\")")
 
 
 def _fix_answers(conn, run_id, rnd, fix_note):
@@ -555,7 +609,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=(), fix_note=None, budget_min=None, *, fix_context=""):
     """Verify and review; allow one fix past the cap, then park on rejection."""
-    from holophyte.loop import _verify_brief, agent, set_phase, sh
+    from holophyte.loop import _verify_brief, agent, set_phase
     from holophyte.pullrequest import _park_on_pr, refresh_pr_text
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
@@ -564,18 +618,29 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                              target=target)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
-    if merge_config(target).approve != "auto":
-        if not ok:
-            record_unreviewed_verification(conn, run_id, out)
-            reason = failure_reason.verify(out, verify_cmd, "before human approval")
-            failure_reason.record(conn, run_id, reason)
-            _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
-                        pull, reason, (),
-                        reviewed=reviewed)
+    stop_if_requested(conn, run_id, "merge_gate")
+    merge = merge_config(target)
+    auto = merge.approve == "auto"
+    if not ok:
+        # Park under either mode so `--babysit --note` can send a fix (KO-666).
+        record_unreviewed_verification(conn, run_id, out)
+        if auto:
+            ledger(conn, run_id, task_id, "failure",
+                   f"FAILED verify before the review of the fix at {sha} on"
+                   f" {pull.url}; branch {branch} preserved, not merged\n\n{out}",
+                   provider)
+        reason = failure_reason.verify(
+            out, verify_cmd, f"before the review of the fix on {pull.url}"
+            if auto else "before human approval")
+        failure_reason.record(conn, run_id, reason)
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
+                    pull, reason, (),
+                    reviewed=reviewed)
+    if not _fixes_reviewed(merge):
         recovered = _fix_answers(conn, run_id, _next_round(conn, run_id), fix_note)
         answered = "\n".join(part for part in (fix_context, recovered) if part)
         if not answered:
-            base = reviewed or sh(["git", "merge-base", "main", sha], cwd=wt)
+            base = reviewed or main_merge_base(wt, sha)
             answered = sh(["git", "log", "--format=%s", f"{base}..{sha}"], cwd=wt)
         refresh_pr_text(target, conn, run_id, task_id, ticket.splitlines()[0],
                         branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
@@ -584,20 +649,15 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                     " says merge on the candidate as it stands"
                     " ([merge] approve = \"human\")", (),
                     reviewed=reviewed)
-    if not ok:
-        record_unreviewed_verification(conn, run_id, out)
-        ledger(conn, run_id, task_id, "failure",
-               f"FAILED verify before the review of the fix at {sha} on"
-               f" {pull.url}; branch {branch} preserved, not merged\n\n{out}",
-               provider)
-        raise RunFailure(failure_reason.verify(
-            out, verify_cmd, f"before the review of the fix on {pull.url}; "
-            f"branch {branch} preserved at {sha[:12]}"))
     set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
     record_step(conn, run_id, "covering_review")
-    base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
+    base_sha = main_merge_base(wt, sha)
     rnd = _next_round(conn, run_id)
     round_started = int(time() * 1000)
+    # Only what the covered range changes, less what a merged `main` alone
+    # brought, is put to the scope question.
+    covered = reviewed or base_sha
+    scope = scope_files(wt, ticket, covered, sha, candidate_only=True)
     with heartbeat_while(conn, run_id, beat_s):
         verdict, decision, first_reply = _review_reply(target,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
@@ -610,6 +670,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"{ticket}\n\n"
             + _verify_brief(verify_cmd, ok, out)
             + criteria_brief(criteria)
+            + scope_brief(wt, ticket, covered, sha, candidate_only=True)
             + evidence_brief(target, wt, task_id,
                                  ticket_template.parse(ticket).evidence_states)
             + "Do not modify anything. End your reply with exactly one "
@@ -620,7 +681,9 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out, started_at=round_started, criteria=criteria,
                  root=wt, prior_reply=first_reply,
-                 approved_range=(reviewed, sha) if reviewed else None)
+                 approved_range=(reviewed, sha) if reviewed else None,
+                 scope=scope)
+    stop_if_requested(conn, run_id, "merge_gate")
     if decision == "MALFORMED":
         reason = "the reviewer gave no verdict after one reminder"
         if conn is not None and run_id is not None:
@@ -630,7 +693,8 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     # The same gate as a review round's: a criterion left not met or
     # unwitnessed is a blocker whatever the verdict line says.
     unwitnessed = criteria_findings(
-        verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None)
+        verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None,
+        scope=scope)
     if unwitnessed:
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed by the review of the fix; treating as "
@@ -694,13 +758,17 @@ def _quiet_left(state, quiet_ms, refresh=None):
 
 
 def _settled_or_park(target, conn, run_id, beat_s, pull, state, provider,
-                     task_id, branch, sha, reviewed, refresh=None):
+                     task_id, branch, sha, reviewed, refresh=None,
+                     retrigger=None):
     from holophyte.pullrequest import _park_on_pr
     try:
         state = state or pr_status.pr_state(target, pull)
         state = maintainer_notes.pending_state(conn, run_id, state, pull.url)
-        return _settled_state(target, conn, run_id, beat_s, pull, state, refresh)
+        return _settled_state(target, conn, run_id, beat_s, pull, state,
+                              refresh, retrigger)
     except WaitExpired as expired:
+        if retrigger is not None:  # Park the head the retrigger pushed.
+            sha, reviewed = retrigger.sha, retrigger.reviewed
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
                     pull, str(expired), (), reviewed=reviewed)
 
@@ -709,17 +777,32 @@ class WaitExpired(Exception):
     """A continuous PR wait reached its independent liveness deadline."""
 
 
-def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None):
-    """Bound pending/quiet waiting with one deadline; return threads promptly."""
+def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None,
+                   retrigger=None):
+    """Bound pending/quiet waiting with one deadline; return threads promptly.
+    A required check with no report for `missing_check_sec` is retriggered
+    once (`Retrigger`) or ends the wait naming it."""
     merge = merge_config(target)
     quiet_ms = merge.pr_quiet_sec * 1000
     deadline = monotonic() + merge.check_wait_sec
+    absent = {}
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(target, pull)
         state = route_bot_threads(target, conn, run_id, beat_s, pull, state, merge)
         while (not state.threads and not state.merged and not state.closed
                and state.mergeable != "CONFLICTING"):
             if state.checks == "pending":
+                late = unreported(state, absent, merge.missing_check_sec,
+                                  monotonic)
+                if late:
+                    state = retrigger(late) if retrigger else None
+                    if state is None:
+                        raise WaitExpired(
+                            "required checks never reported on the head"
+                            f" commit: {', '.join(late)}")
+                    state = route_bot_threads(target, conn, run_id, beat_s,
+                                              pull, state, merge)
+                    continue
                 record_step(conn, run_id, "checks")
                 reason = "pending checks"
                 if state.pending_contexts:
@@ -741,6 +824,7 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None)
             if remaining <= 0:
                 raise WaitExpired(
                     f"{reason} exceeded {merge.check_wait_sec}s on the pull request")
+            stop_if_requested(conn, run_id, "merge_gate")
             pr.SLEEP(min(nap, remaining))
             state = pr_status.pr_state(target, pull)
             state = route_bot_threads(target, conn, run_id, beat_s, pull, state, merge)
@@ -754,12 +838,12 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     Resolve declines only for configured bots or `[bot]` logins. Other declines
     park open. Human ADDRESSes under act are answered but stay open; other
     human verdicts park without a reply."""
-    from holophyte.loop import agent, sh
+    from holophyte.loop import agent
     from holophyte.pullrequest import _park_human, _park_on_pr
     merge = merge_config(target)
     record_step(conn, run_id, "threads")
     threads = thread_mentions.classified(state.threads, merge)
-    base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
+    base_sha = main_merge_base(wt, sha)
     round_started = int(time() * 1000)
     # Park unmentioned human threads unless human_threads = "act".
     act = merge.human_threads == "act"
@@ -774,6 +858,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                               pull, judged, ticket, sha,
                               babysitter.conventions(wt), run_id=run_id), wt, conn=conn,
                           base_sha=base_sha, candidate_sha=sha, run_id=run_id)
+    stop_if_requested(conn, run_id, "merge_gate")
     verdicts = _verdicts_by_kind(
         threads, judged, babysitter.parse_verdicts(reply, len(judged)))
     record_round(target, conn, run_id, rnd, "review",
@@ -814,7 +899,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
                            model, ticket, verify_cmd, contracts, budget_min,
                            pass_no,
-                           review_follows=merge_config(target).approve == "auto")
+                           review_follows=_fixes_reviewed(merge_config(target)))
     declined_open = _decline_threads(target, conn, run_id, beat_s, pull,
                                      by_verdict["DECLINE"], model)
     left_open = declined_open + tuple(
@@ -907,19 +992,27 @@ def _verdicts_by_kind(threads, judged, parsed):
 
 def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
-                 contracts, budget_min, pass_no, *, review_follows, goal=None):
+                 contracts, budget_min, pass_no, *, review_follows, goal=None,
+                 resume_step=None, no_commit_why=None, reviewed=None):
     from holophyte.loop import (
         _candidate_drift,
         _record_implementer_output,
         _transport_timed,
-        sh,
     )
     from holophyte.pullrequest import _park_on_pr
     from holophyte.redact import known_secrets, outbound, redact_prose
-    record_step(conn, run_id, "fix")
-    maintainer_notes.start_fix(conn, run_id, addressed)
-    fixes, timed_out = _transport_timed(target, conn, run_id, beat_s, wt, budget_min,
-        goal or babysitter.fix_brief(pull, addressed, ticket))
+    if resume_step is None:
+        record_step(conn, run_id, "fix")
+        maintainer_notes.start_fix(conn, run_id, addressed)
+        fixes, timed_out = _transport_timed(
+            target, conn, run_id, beat_s, wt, budget_min,
+            goal or babysitter.fix_brief(pull, addressed, ticket))
+        saved = fix_state(sha, fixes, timed_out, addressed, model,
+                          pass_no, review_follows)
+    else:
+        saved = dict(resume_step)
+        fixes, timed_out = saved["fixes"], saved["timed_out"]
+    boundary(conn, run_id, "merge_gate", **saved)
     fixed = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if fixed == sha:
         _record_implementer_output(conn, run_id, f"fix round {pass_no}: {fixes}",
@@ -932,7 +1025,11 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
             f"THREAD {n} -- {where(thread)}:\n> {summaries[n]}"
             for n, thread, _ in addressed)
         why = outbound(why, known_secrets(target.config()))
-        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull, why, ())
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull, why, (),
+                    park_kind="fix_declined")
+    if no_commit_why and fixed == sha and not timed_out:  # Maintainer's to see.
+        _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
+                    no_commit_why, (), reviewed=reviewed)
     if timed_out or fixed == sha:
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,
@@ -953,6 +1050,7 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
                              target=target)
         ok, out = with_baseline(target, wt, verify_cmd, ok, out,
                                conn, run_id)
+    boundary(conn, run_id, "merge_gate", **saved)
     if not ok or not review_follows:
         record_unreviewed_verification(conn, run_id, out)
     if not ok:
@@ -966,10 +1064,13 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
             out, verify_cmd, f"after the fix round for {pull.url}; "
             f"branch {branch} preserved at {fixed[:12]}"))
     with heartbeat_while(conn, run_id, beat_s):
+        stop_if_requested(conn, run_id, "merge_gate")
         pr.push_branch(target, branch)
     fixed = sh(["git", "rev-parse", branch], wt)
     print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")
-    for n, thread, reason in addressed:
+    for index, (n, thread, reason) in enumerate(addressed):
+        if index < saved["posted"]:
+            continue
         if maintainer_notes.is_note(thread):
             continue
         reply = babysitter.addressed_reply(model, summaries.get(n, reason), fixed)
@@ -977,9 +1078,13 @@ def _fix_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
               reply,
               resolve=(thread.author_kind == "bot"
                        or thread.classification == "MENTIONED"))
+        saved["posted"] = index + 1
+        boundary(conn, run_id, "merge_gate", **saved)
+    boundary(conn, run_id, "merge_gate")
     return fixed
 
 
 def _post(target, conn, run_id, beat_s, pull, thread, body, resolve):
     """Keep the babysitter reply seam shared with read-only answers."""
+    stop_if_requested(conn, run_id, "merge_gate")
     return post(target, conn, run_id, beat_s, pull, thread, body, resolve)

@@ -4,7 +4,7 @@ import json
 import holophyte.serve
 import holophyte.serve_runs
 import store
-from holophyte.target import Target
+from holophyte.project import Project
 from store.operator_notes import consume
 
 NOW = 1_750_000_000_000
@@ -21,7 +21,8 @@ def normalize_contract(value, key=""):
     if key in {"host", "target", "project"}:
         return "writer" if key == "host" else "/repo"
     if key in {"id", "event_id", "run_id", "pid", "now", "at", "started_ms",
-               "ended_ms", "work_started_ms", "approved_at"}:
+               "ended_ms", "work_started_ms", "verify_started_ms",
+               "approved_at"}:
         return 1 if key in {"id", "event_id", "run_id", "pid"} else NOW
     return value
 
@@ -59,7 +60,7 @@ def contract_answers(case):
         store.tickets.transition(conn, ticket, "in_flight")
         unestimated_run = store.claim(conn, project, ticket, now=NOW)
     case.null_host(unestimated_run)
-    target = Target.locate(case.target)
+    target = Project.locate(case.target)
     answers = {}
     for name, (code, body) in {
         "status": holophyte.serve.status(target, now=NOW, started_ms=NOW),

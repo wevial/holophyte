@@ -8,7 +8,7 @@ import { formatClock, formatSettled, formatSpan } from "../lib/format";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel, roundLabel } from "../lib/runs";
-import { workingMs } from "../lib/runs";
+import { agentMs, verifyMs } from "../lib/runs";
 import { buildTimeline } from "../lib/timeline";
 import type { Round, RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
@@ -17,7 +17,10 @@ import { FindingCard } from "./FindingCard";
 import { OperatorNoteCard } from "./OperatorNoteCard";
 import { InstructionCard } from "./InstructionCard";
 import { RoundTimeline } from "./RoundTimeline";
+import { RunTurns } from "./RunTurns";
 import { RunLog } from "./RunLog";
+import { ReasonAction } from "./ReasonAction";
+import type { RowDaemon } from "./RowActions";
 import { PrLink, Sha } from "./ShippedTable";
 
 /** Count independent reviews against their cap; other rounds have no review budget. */
@@ -32,7 +35,9 @@ export function roundLine(body: RunDetailBody): string {
 
 /** The expanded run's card: header line, round timeline, the newest
  *  round's open findings and the run log from `/runs/N`, the files touched
- *  from `/runs/N/files`; both read on expand and again each poll. */
+ *  from `/runs/N/files`; both read on expand and again each poll. Given
+ *  its `daemon`, a live run has Abort in the footer, Abort and close too
+ *  when it has a pull request, and Pause when it has no `stopRequested`. */
 export function RunDetail({
   base,
   id,
@@ -40,6 +45,8 @@ export function RunDetail({
   sinceMs = 0,
   polls,
   deps,
+  daemon,
+  stopRequested,
 }: {
   base: string;
   id: number;
@@ -49,6 +56,9 @@ export function RunDetail({
   sinceMs?: number;
   polls: number;
   deps?: { fetch: Fetch };
+  daemon?: RowDaemon;
+  /** The live run's pending stop request from `/status`, if any. */
+  stopRequested?: string | null;
 }) {
   const { detail, error, loading } = useRunDetail(base, id, polls, deps);
   const files = useRunFiles(base, id, polls, deps);
@@ -63,7 +73,9 @@ export function RunDetail({
           {error}
         </p>
       )}
-      {detail && <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs} />}
+      {detail && <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs}
+        daemon={daemon} pauseDaemon={stopRequested ? undefined : daemon} />}
+      {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} polls={polls} deps={deps} />}
     </div>
   );
 }
@@ -74,12 +86,16 @@ function Card({
   ledger,
   now,
   sinceMs,
+  daemon,
+  pauseDaemon,
 }: {
   body: RunDetailBody;
   files: RunFilesState;
   ledger: LedgerRow[];
   now: number;
   sinceMs: number;
+  daemon?: RowDaemon;
+  pauseDaemon?: RowDaemon;
 }) {
   const { run } = body;
   const rounds = [...body.rounds].sort((a, b) => a.started_ms - b.started_ms);
@@ -88,7 +104,8 @@ function Card({
   // live run keeps counting between polls and a finished one stays put —
   // and reads at settled granularity, its seconds done counting too.
   const tickingNow = now + sinceMs;
-  const work = workingMs(run, run.ended_ms == null ? sinceMs : 0);
+  const work = agentMs(run, run.ended_ms == null ? sinceMs : 0);
+  const verify = verifyMs(run, run.ended_ms == null ? sinceMs : 0);
   const remaining = work == null || run.time_box_ms == null ? null : run.time_box_ms - work;
   const over = remaining != null && remaining < 0;
   const finished = run.ended_ms != null;
@@ -112,6 +129,9 @@ function Card({
         >
           {run.time_box_ms == null ? "working box unknown" : remaining == null ? "working n/a" : over ? `${boxFigure(-remaining)} over the working box` : `${boxFigure(remaining)} left in working box`}
           {" · wall "}{boxFigure((run.ended_ms ?? tickingNow) - run.started_ms)}
+        </span>
+        <span data-clocks className="font-mono text-[12px] text-muted">
+          agent {work == null ? "n/a" : boxFigure(work)} · verify {verify == null ? "n/a" : boxFigure(verify)}
         </span>
       </header>
       {run.approved_at != null && (
@@ -170,11 +190,13 @@ function Card({
             </ul>
           )}
         </div>
-        <FilesTouched files={files.files} error={files.error} status={files.status} loading={files.loading} />
+        <FilesTouched files={files.files} error={files.error} status={files.status} pending={files.pending} loading={files.loading} />
       </div>
       <footer className="mt-3 flex gap-2">
-        <ActionButton>Kill run</ActionButton>
+        {daemon && !finished && <ReasonAction daemon={daemon} route="/actions/abort" body={{ run: run.id, close: false }} label="Abort" />}
+        {daemon && !finished && run.pr_url && <ReasonAction daemon={daemon} route="/actions/abort" body={{ run: run.id, close: true }} label="Abort and close" />}
         <ActionButton>Requeue ticket</ActionButton>
+        {pauseDaemon && !finished && <ReasonAction daemon={pauseDaemon} route="/actions/pause" body={{ run: run.id }} label="Pause" />}
       </footer>
       <RunLog events={body.events} rounds={rounds} now={tickingNow} />
     </article>

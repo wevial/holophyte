@@ -35,13 +35,17 @@ takes the host worktree's SHA, never the container's files.
 What the reviewer can run is what that copy holds. The container has no
 network route to a package registry, so `[worktree] setup` is not re-run
 inside it; instead the stage carries read-only copies of the ignored install
-directories the task worktree already holds, those the target lists in
+directories the task worktree already holds, those the project lists in
 `[worktree] carry` (see [config.md](config.md)), at the same paths. With
 `console/node_modules` carried, a console ticket's `bun --cwd=console test`
 runs in the container against the packages the candidate was verified with.
 A verify command that needs an install the worktree does not hold, or a
-directory the target does not list, cannot be run there and the reviewer
-should say so rather than report the gate unverified.
+directory the project does not list, cannot be run there and the reviewer
+should say so rather than report the gate unverified. When the ticket's
+verify commands and the project's baseline passed at the candidate, the
+reviewer's brief says so and tells it not to rerun the full suite, which runs
+as a pull request check, but to run only the focused tests a specific concern
+needs.
 
 How many review rounds a run gets is decided per run, before its first
 review, from the size of the candidate's diff and the `[loop]` review keys
@@ -55,7 +59,7 @@ Bun (checksum-verified, on `PATH` under `/opt/bun/bin`) so console `bun`
 criteria can be witnessed inside the container, and a pinned Go 1.26.6
 (checksum-verified, under `/usr/local/go`, `GOTOOLCHAIN=local` so no other
 toolchain is ever downloaded, caches under the writable `/home/reviewer`) so a
-Go target's `go test` criteria can be witnessed too. It also installs
+Go project's `go test` criteria can be witnessed too. It also installs
 `tomlkit` at the version `requirements.txt` pins, so the factory's own suite
 imports inside the container; a change to the Dockerfile moves the tag so the
 next review rebuilds instead of reusing the cached image. The image follows
@@ -134,7 +138,7 @@ One pass:
    GitHub `User`, or an account GitHub no longer names -- is `HUMAN`,
    "opened by a person", before the adjudicator is asked: bots get
    replies, people do not, and no reviewer is named to tell them apart.
-   A target that sets `[merge] human_threads = "act"` has a person's
+   A project that sets `[merge] human_threads = "act"` has a person's
    thread judged with the bots': one asking for a concrete change is
    addressed -- fixed, answered with the sha, and left unresolved for its
    author to close, the run parking after the fix with it listed -- and
@@ -207,6 +211,24 @@ One pass:
    `--babysit` re-entry merges the candidate only at that sha and
    reviews it again at any other -- a fix the reviewer rejected has none
    on record, and is reviewed again before anything merges it.
+
+   That review reads what changed since the approval, not the whole
+   candidate again. The reviewer is told to review the range from the
+   approved sha to the candidate, those commits and whatever they touch;
+   the rest stands on the earlier approval. It still answers for every
+   criterion, and for one the range does not touch it may cite that
+   approval as `approval at SHA; tests/file.py::TestClass::test_name`,
+   where `SHA` is the approved sha (a test that is not Python is named
+   `path::"test name"` or `path::TestName`). The prompt lists the test
+   files the range changed, a merged `main`'s included, and a citation
+   of any of them is void: that criterion must be witnessed afresh. The
+   gate holds the reply to the same rule -- a citation that does not name
+   the approved sha, names no test, or names a test file changed in the
+   range leaves its criterion unwitnessed, and the run parks. So a
+   covering approval is only as good as the earlier review of each test
+   it cites, and only while that test is unchanged. When the last review
+   of the candidate asked for changes there is no approval to cite, and
+   the candidate is read whole, the fixes included.
 
 After `[merge] pr_rounds` passes the run parks naming the cap, whatever
 the PR looks like.

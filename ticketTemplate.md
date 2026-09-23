@@ -12,6 +12,14 @@
 
 **How:** <Intended technical direction, important constraints, and existing patterns to reuse — without over-specifying incidental implementation details.>
 
+## Reproduce
+
+<!-- OPTIONAL: keep only for a bug report; its presence makes this a bug
+     ticket, whose first turn commits a failing test before any fix.
+     Delete the whole section otherwise. -->
+
+<Steps that show the reported behaviour, and where it was seen: the deployment, URL or commit.>
+
 ## In scope
 
 <!-- Scope caps, enforced by ticket_template.py: max 3 entries here, 5 acceptance criteria, 30 min estimate. Every list entry counts, whatever its marker. Split anything larger. -->
@@ -63,6 +71,9 @@ Rules:
   project's venv (holophyte-bugs.md #5). A command that needs the project
   venv must activate it first (`. .venv/bin/activate && ...`) or use the
   venv's interpreter path (`.venv/bin/python -m ...`).
+- Name the focused test modules (`python3 -m unittest discover -s tests -p
+  'test_x.py'` works for every module), never the whole suite: the pull
+  request's checks run it.
 ```
 
 ## Contract checks

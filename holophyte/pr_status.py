@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from holophyte.config_tables import merge_config
 from holophyte.conversation_comments import conversation_threads
 from holophyte.gates import InfraFailure
 from holophyte.pr import (
@@ -17,8 +18,9 @@ from holophyte.pr import (
     graphql,
     rest,
 )
-from holophyte.pr_activity import ACTIVITY_FIELDS, activities
+from holophyte.pr_activity import ACTIVITY_FIELDS, HEADER, activities
 from holophyte.pr_contexts import CONTEXTS_FIELDS, status_contexts_of
+from holophyte.thread_mentions import classify
 
 # The shape of a pull request URL, `gh pr create`'s and the API's alike; the
 # host is kept so an Enterprise PR is answered on its own API.
@@ -34,6 +36,8 @@ CHECK_STATES = {None: "success", "SUCCESS": "success",
 # and the rest are not.
 RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
                    "startup_failure", "error"}
+# The app whose check runs are Actions jobs, with a log to read.
+ACTIONS_APP = "github-actions"
 # Page size for the check-runs and rollup-context reads.
 CHECK_RUNS_PAGE = 100
 
@@ -52,7 +56,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
-      state merged headRefOid mergeable mergeCommit { oid } updatedAt
+      state merged headRefOid mergeable mergeCommit { oid } updatedAt title
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
       comments(first: 100, after: $commentsAfter) {
         pageInfo { hasNextPage endCursor }
@@ -95,7 +99,7 @@ query($owner: String!, $name: String!, $number: Int!) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
       state merged mergeable mergeCommit { oid } mergedBy { login }
-      updatedAt
+      updatedAt title
       threadCount: reviewThreads { totalCount }
       reviewDecision
       %s
@@ -126,17 +130,18 @@ class PullStatus:
     rate_remaining: int | None = None
     rate_reset: str | None = None
     activity: tuple = ()
+    title: str | None = None
 
 
 def pull_status(target, pull):
     """One GraphQL read of the pull request's `state`, `merged`,
-    `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, review-thread
-    count, authored content, `reviewDecision` and head checks rollup, with the token's
-    `rateLimit` (`PULL_QUERY`): the loop's reconcile of a run parked on
-    its PR asks this once per pass. GitHub answering without the pull
-    request is `InfraFailure`, as every read here is; an answer without
-    the activity, fact or budget fields is one without them (None), not
-    an error."""
+    `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, `title`,
+    review-thread count, authored content, `reviewDecision` and head
+    checks rollup, with the token's `rateLimit` (`PULL_QUERY`): the loop's
+    reconcile of a run parked on its PR asks this once per pass. GitHub
+    answering without the pull request is `InfraFailure`, as every read
+    here is; an answer without the activity, fact or budget fields is one
+    without them (None), not an error."""
     data = graphql(target, pull, PULL_QUERY,
                    {"owner": pull.owner, "name": pull.name,
                     "number": pull.number})
@@ -151,7 +156,9 @@ def pull_status(target, pull):
     rate = data.get("rateLimit") or {}
     updated = node.get("updatedAt")
     decision = node.get("reviewDecision")
-    return PullStatus(activity=activities(target, pull, node,
+    title = node.get("title")
+    return PullStatus(title=title if isinstance(title, str) else None,
+                      activity=activities(target, pull, node,
                       (data.get("viewer") or {}).get("login"), graphql, rate),
                       merged=bool(node.get("merged")),
                       closed=node.get("state") == "CLOSED",
@@ -208,26 +215,29 @@ def parse_pr_url(url):
 
 
 def pr_state(target, pull):
-    """One read of the pull request: its unresolved review threads, the
-    head commit's check rollup, its `mergeable` answer, its `updatedAt`,
+    """One read of the pull request: its unresolved review threads (and
+    resolved ones a new mention reopened, `_reopened()`), the head
+    commit's check rollup, its `mergeable` answer, its `updatedAt`,
     and whether it is already merged or closed."""
     first_page = node = _pull_request_page(target, pull, None)
     threads = []
     while True:
         page = node.get("reviewThreads") or {}
         for t in (page.get("nodes") or ()):
-            if not isinstance(t, dict) or t.get("isResolved"):
+            if not isinstance(t, dict):
                 continue
             comments = _comments_of(target, pull, t)
             if not comments:
                 continue
             first, *rest = comments
-            threads.append(Thread(
+            thread = Thread(
                 id=t.get("id") or "", path=t.get("path") or "",
                 line=t.get("line"), author=first.author, body=first.body,
                 url=_comment_url(t) or pull.url,
                 outdated=bool(t.get("isOutdated")), replies=tuple(rest),
-                author_kind=first.author_kind))
+                author_kind=first.author_kind)
+            if not t.get("isResolved") or _reopened(target, thread):
+                threads.append(thread)
         info = page.get("pageInfo") or {}
         if not (info.get("hasNextPage") and info.get("endCursor")):
             break
@@ -242,6 +252,17 @@ def pr_state(target, pull):
     return _state_of(first_page, threads, runs, required)
 
 
+def _reopened(target, thread):
+    """A resolved thread still speaks to the factory when its latest
+    comment is not the factory's own and mentions it from an authorised
+    account: resolving after an answer does not end the conversation."""
+    if HEADER.match(thread.comments[-1].body):
+        return False
+    merge = merge_config(target)
+    return classify(thread, merge.mention_handle,
+                    merge.mention_accounts).classification == "MENTIONED"
+
+
 def _check_reads(target, pull, sha):
     """Read runs and required contexts; unreadable REST data stays pending."""
     runs = required = None
@@ -252,7 +273,26 @@ def _check_reads(target, pull, sha):
         required = _required_contexts(rest(
             target, pull, "GET",
             f"repos/{pull.owner}/{pull.name}/rules/branches/main"))
+    if required is not None:
+        required += _protected_contexts(target, pull)
     return runs, required
+
+
+def _protected_contexts(target, pull):
+    """The contexts main's branch protection rule requires, beside the
+    rulesets' (KO-652): read off the branch itself, which a token that may
+    read the repository may read. No answer, or one without them, is no
+    requirement known."""
+    try:
+        branch = rest(target, pull, "GET",
+                      f"repos/{pull.owner}/{pull.name}/branches/main")
+    except InfraFailure:
+        return []
+    for key in ("protection", "required_status_checks"):
+        branch = branch.get(key) if isinstance(branch, dict) else None
+    contexts = branch.get("contexts") if isinstance(branch, dict) else None
+    return [c for c in contexts if isinstance(c, str) and c] \
+        if isinstance(contexts, list) else []
 
 
 def _check_runs_of(target, pull, sha):
@@ -427,7 +467,52 @@ def _state_of(node, threads, runs, required):
                    pending_contexts=tuple(r["name"] for r in (runs or [])
                                           if isinstance(r, dict)
                                           and r.get("name")
-                                          and r.get("status") != "completed"))
+                                          and r.get("status") != "completed"),
+                   failed_checks=_failed_checks(runs),
+                   missing_checks=_missing_checks(runs, required))
+
+
+@dataclass(frozen=True)
+class FailedCheck:
+    """A check run on the head commit whose conclusion is red. `job_id` is
+    the GitHub Actions job whose log `pr.job_log()` reads; None for a check
+    run another app made or a commit status, which have no such log."""
+
+    name: str
+    conclusion: str
+    url: str
+    job_id: int | None = None
+
+
+def _failed_checks(runs):
+    """A `FailedCheck` for each red row of `runs`."""
+    return tuple(FailedCheck(name=r.get("name") or "",
+                             conclusion=r["conclusion"],
+                             url=r.get("html_url") or "", job_id=_job_id(r))
+                 for r in (runs or ()) if isinstance(r, dict)
+                 and r.get("conclusion") in RED_CONCLUSIONS)
+
+
+def _missing_checks(runs, required):
+    """The contexts `required` names that nothing on the head reported --
+    no check run and no status, or only GitHub's "expected" placeholder
+    (KO-652). Either read unreadable is none known missing: a check the
+    babysitter cannot see is not one it can call absent."""
+    if runs is None or required is None:
+        return ()
+    reported = {r.get("name") for r in runs if isinstance(r, dict)
+                and r.get("conclusion") != "expected"}
+    return tuple(c for c in dict.fromkeys(required) if c not in reported)
+
+
+def _job_id(run):
+    """A GitHub Actions check run's `id`, which is its job's; None for any
+    other app's run and for a commit status."""
+    app = run.get("app")
+    if not isinstance(app, dict) or app.get("slug") != ACTIONS_APP:
+        return None
+    job = run.get("id")
+    return job if isinstance(job, int) and not isinstance(job, bool) else None
 
 
 def _closed_by(node):

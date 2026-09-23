@@ -15,9 +15,12 @@ lives with them in `holophyte.serve_runs`, so the import runs one way;
 from __future__ import annotations
 
 import json
+import sys
+import traceback
 
 import store.read
 from holophyte.config import serve_config
+from holophyte.redact import known_secrets, outbound
 from holophyte.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.runs import open_store
 from holophyte.serve_runs import no_store
@@ -34,7 +37,10 @@ UNIT_ACTIONS = {
     "restart-supervisor": ("restart", SUPERVISOR_UNIT, "restart_supervisor"),
     "launch-loop": ("start", LOOP_UNIT, "launch_loop")}
 REQUEUE_ACTION = "requeue"
-ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION, "send-back"}
+# The five levers `holophyte.serve_levers.LEVERS` answers (KO-609, KO-612).
+ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION, "send-back", "hold",
+                                     "release-hold", "pause", "resume",
+                                     "abort"}
 # The note a requeue records when the request carries none: the store
 # refuses an empty one, and the CLI's `--note` is the operator's reason.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
@@ -58,7 +64,7 @@ def parse_action_body(raw):
     return body
 
 
-def unit_action(target, action, unit_name):
+def unit_action(project, action, unit_name):
     """Run the `systemctl --user` step `action` names against the unit
     instance `unit_name`: `(http status, JSON-able body)`.
 
@@ -78,7 +84,7 @@ def unit_action(target, action, unit_name):
     verb, template, intervention = UNIT_ACTIONS[action]
     unit = template + unit_name
     note = f"operator asked the daemon to {verb} {unit} (POST /actions/{action})"
-    recorded = record_action_intervention(target, intervention, note)
+    recorded = record_action_intervention(project, intervention, note)
     if recorded is None:
         detail = ("the store holds no run to record the intervention"
                   " against; nothing run")
@@ -92,13 +98,13 @@ def unit_action(target, action, unit_name):
                  "unit": unit, "recorded": recorded}
 
 
-def record_action_intervention(target, action, note):
+def record_action_intervention(project, action, note):
     """Record the human `action` with `note` as an interventions row on the
     store's newest run, before the step it describes; the run's id, or None
     when the store does not exist or holds no run to record against."""
-    if not target.store_path.exists():
+    if not project.store_path.exists():
         return None
-    conn = open_store(target)
+    conn = open_store(project)
     try:
         run_id = store.read.newest_run_id(conn)
         if run_id is not None:
@@ -122,7 +128,7 @@ def tickets_named(conn, identifier):
     return count
 
 
-def requeue_action(target, body):
+def requeue_action(project, body):
     """`POST /actions/requeue`: `store.requeue()` on the ticket `body`
     names, with `note` or `DEFAULT_REQUEUE_NOTE`: `(http status, JSON-able
     body)`. An optional `run` must name the ticket's latest attempt.
@@ -140,9 +146,9 @@ def requeue_action(target, body):
     if not isinstance(note, str) or not note.strip():
         note = DEFAULT_REQUEUE_NOTE
     identifier = identifier.strip()
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    conn = open_store(target)
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = open_store(project)
     try:
         ticket = store.read.ticket_by_identifier(conn, identifier)
         if ticket is None:
@@ -172,15 +178,15 @@ def requeue_action(target, body):
                  "run": run_id}
 
 
-def send_back_action(target, run_id, note, author):
+def send_back_action(project, run_id, note, author):
     """Release a parked PR with a private maintainer instruction."""
-    if not serve_config(target).actions:
+    if not serve_config(project).actions:
         return 404, {"error": "actions are disabled"}
     if type(run_id) is not int or not 0 < run_id < 2**63:
         return 400, {"error": "run must be a positive integer"}
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    conn = open_store(target)
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = open_store(project)
     try:
         event_id = send_back(conn, run_id, note, author)
     except (store.ApproveRefused, ValueError) as refused:
@@ -189,3 +195,21 @@ def send_back_action(target, run_id, note, author):
         conn.close()
     return 200, {"ok": True, "run": run_id, "event_id": event_id,
                  "detail": f"Sent back with operator_note event {event_id}"}
+
+
+def action_failure(project, action, failure):
+    """The 500 for an action handler that raised `failure` (KO-649), its
+    traceback logged once. `SystemExit` counts: the store's `SchemaNewer`
+    is one, and unanswered it closed the connection, which the console
+    could only call "Failed to fetch". The `error` names the exception's
+    type and message; it and the log are redacted as other outbound text
+    is, with registered values alone when the config is what failed."""
+    try:
+        secrets = known_secrets(project.config())
+    except (Exception, SystemExit):
+        secrets = known_secrets(None)
+    print(outbound(f"[holo2] action {action} failed:\n"
+                   + traceback.format_exc(), secrets),
+          file=sys.stderr, end="")
+    return 500, {"error": outbound(
+        f"{type(failure).__name__}: {failure}", secrets)}

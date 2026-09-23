@@ -28,11 +28,11 @@ import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor_lock  # noqa: E402 - after the sys.path insert above
 import holophyte.sweep_report  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 
@@ -78,7 +78,7 @@ class SuperviseTests(SweepTestCase):
         # provider is a tripwire below, so the values are never sent.
         (self.db.parent / "config.toml").write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n')
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
         self.lock = holophyte.supervisor_lock.supervisor_lock_path(self.tgt)
 
     def supervise(self, wait):
@@ -492,13 +492,13 @@ class SupervisorConfigTests(SweepTestCase):
     """
 
     def configure(self, text):
-        """Write the target's config and build the `Target` that reads it.
+        """Write the target's config and build the `Project` that reads it.
 
-        A fresh value rather than the fixture's: a `Target` parses its config
+        A fresh value rather than the fixture's: a `Project` parses its config
         once, and this test wants the file it just wrote.
         """
         (self.db.parent / "config.toml").write_text(text)
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
 
     def test_an_absent_table_is_the_documented_defaults(self):
 
@@ -714,7 +714,7 @@ class HostLabelTests(SweepTestCase):
         (self.db.parent / "config.toml").write_text(
             f'[report]\nhost_label = "{self.LABEL}"\n'
             '[board]\nproject_id = "p-1"\nteam = "T"\n')
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
         self.lock = holophyte.supervisor_lock.supervisor_lock_path(self.tgt)
 
     def test_the_sweep_table_and_watched_line_show_the_label(self):
@@ -773,7 +773,7 @@ class ParkedPullRequestTests(SweepTestCase):
         (self.db.parent / "config.toml").write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n'
             '[merge]\nmode = "pr"\napprove = "human"\n')
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
 
     def parked_on_pr(self):
         """A run parked on its pull request the way `_park_on_pr()` leaves
@@ -867,7 +867,7 @@ class ParkedPullRequestTests(SweepTestCase):
         """The mark the babysitter's park left: a read older than
         `ACTIVE_PULL`'s activity, so the next read is new activity."""
         store.record_pr_seen(self.conn, run_id,
-                             ("2026-09-01T10:00:00Z", 1, None, None))
+                             ("2026-09-01T10:00:00Z", 1, None, None, None))
 
     def test_a_sweep_that_sent_a_ticket_back_starts_the_loop_unit(self):
         run_id = self.parked_on_pr()

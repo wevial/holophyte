@@ -18,6 +18,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# `-m unittest tests.<name>` resolves the sibling fixtures as discovery does.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
 from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
@@ -25,9 +27,9 @@ from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.serve_config  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
 
 
@@ -65,7 +67,7 @@ class ConfigEditTests(ServeTestCase):
     def assert_loader_valid(self, text):
         """`text`, on disk, is a document the loop's startup accepts."""
         (self.db.parent / "config.toml").write_text(text)
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         self.assertIsNone(holophyte.config.check_document(tgt))
 
     def on_disk(self):
@@ -196,7 +198,7 @@ class ConfigEditTests(ServeTestCase):
             conn.close()
         self.assertEqual(rows, [(self.run, "human", "manual", "config_edit")])
         self.assertEqual(body["recorded"], self.run)
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         self.assertEqual(holophyte.config_tables.loop_config(tgt).workers, 3)
 
     def test_settings_sheet_pr_keys_are_accepted_and_persisted(self):
@@ -502,7 +504,7 @@ class ConfigEditTests(ServeTestCase):
         self.seed()
         first = self.config("config_edit = true\n")
         (self.db.parent / "config.toml").write_text(first)
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         when = datetime(2026, 9, 10, 12, 0, 0, tzinfo=timezone.utc)
         second = first.replace("workers = 2", "workers = 3")
         third = first.replace("workers = 2", "workers = 4")
@@ -523,12 +525,35 @@ class ConfigEditTests(ServeTestCase):
         self.seed()
         (self.db.parent / "config.toml").write_text(
             "[serve]\nconfig_edit = true\n")
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         with self.assertRaises(SystemExit) as raised:
             holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())
         message = str(raised.exception)
         self.assertIn("[serve] token_file", message)
         self.assertIn("config_edit", message)
+
+    def test_a_readable_or_missing_machine_token_file_is_a_startup_error(self):
+        """KO-647: `machine_token_file` is held to `token_file`'s rules at
+        bind, and the refusal names its own key and path, never the token."""
+        self.seed()
+        machine = self.root / "machine.token"
+        machine.write_text("machine-wide-token-value\n")
+        for mode, path in ((0o640, machine), (0o604, machine),
+                           (0o600, self.root / "absent.token")):
+            machine.chmod(mode)
+            config = self.config(
+                f'machine_token_file = "{path}"\nconfig_edit = true\n')
+            # `start()` resolves the tokens and binds as `serve()` does,
+            # without blocking should the refusal ever go missing.
+            with self.subTest(mode=oct(mode), path=path.name), \
+                    self.assertRaises(SystemExit) as raised:
+                self.start(config)
+            message = str(raised.exception)
+            self.assertIn("[serve] machine_token_file", message)
+            self.assertIn(str(path), message)
+            self.assertNotIn("machine-wide-token-value", message)
+            if path == machine:
+                self.assertIn(f"{mode:04o}", message)
 
 
 class ConfigPatchTests(ServeTestCase):
@@ -671,7 +696,7 @@ class ConfigPatchTests(ServeTestCase):
         after = self.on_disk()
         self.assertEqual(self.changed_lines(before, after),
                          ["+", "+[report]", '+findings = "none"'])
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         self.assertEqual(holophyte.config_tables.report_config(tgt).findings, "none")
 
     def test_get_values_reads_a_triple_quoted_string_and_a_quoted_table(self):
@@ -696,7 +721,7 @@ class ConfigPatchTests(ServeTestCase):
         self.seed()
         (self.db.parent / "config.toml").write_text(
             self.config("config_edit = true\n"))
-        tgt = holophyte.target.Target.locate(self.target)
+        tgt = holophyte.project.Project.locate(self.target)
         with patch.dict(sys.modules, {"tomlkit": None}):
             with self.assertRaises(SystemExit) as raised:
                 holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())

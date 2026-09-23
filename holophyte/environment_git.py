@@ -42,6 +42,24 @@ def stage_work(target, wt):
     unstage_environment(target, wt)
 
 
+def factory_identity(wt):
+    """The `-c` pins a commit the factory makes itself in `wt` carries.
+
+    Empty when the checkout resolves both `user.name` and `user.email`, so
+    the commit is authored by the configured identity the implementer's own
+    commits carry -- a deploy platform that checks authors refuses a made-up
+    one (KO-656). The `holophyte` pins otherwise, so a target with no
+    committer configured cannot make the commit raise.
+    """
+    configured = [subprocess.run(["git", "config", "--get", key], cwd=wt,
+                                 capture_output=True, text=True).stdout.strip()
+                  for key in ("user.name", "user.email")]
+    if all(configured):
+        return []
+    return ["-c", "user.name=holophyte",
+            "-c", "user.email=holophyte@factory.invalid"]
+
+
 def refuse_environment_history(target, branch, *, action, commit=None):
     if not protected(target):
         return branch

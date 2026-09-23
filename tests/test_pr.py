@@ -116,7 +116,7 @@ class RequiredStatusContextTests(unittest.TestCase):
                                        {"context": "vitest"}]}}]
         with patch.object(pr_status, "graphql", side_effect=responses), \
                 patch.object(pr_status, "rest", side_effect=[
-                    {"total_count": 1, "check_runs": [run]}, rules]), \
+                    {"total_count": 1, "check_runs": [run]}, rules, {}]), \
                 patch.object(pr_status, "fold_checks",
                              wraps=pr_status.fold_checks) as fold:
             state = pr_status.pr_state(SimpleNamespace(), pull)

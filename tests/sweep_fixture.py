@@ -18,8 +18,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.sweep_report  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import advance_phase, seed_observed_phase  # noqa: E402
@@ -55,18 +55,18 @@ class SweepTestCase(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        # Where `Target.locate(self.target)` will look: the target's directory
+        # Where `Project.locate(self.target)` will look: the target's directory
         # under a HOLOPHYTE_HOME of this test's own, never the operator's real
         # one.
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.target.state_dir(self.target) / "store.db"
+        self.db = holophyte.project.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
-        # The `Target` every sweep here is handed. The acting sweep writes
+        # The `Project` every sweep here is handed. The acting sweep writes
         # FINDINGS.md into whichever target it names, so it is this test's
         # repository and never the one this suite is running in.
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
         self.conn = store.open(str(self.db), migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
@@ -119,10 +119,10 @@ class SweepTestCase(unittest.TestCase):
                         now=at)
 
     def configure(self, toml):
-        """Give the target a config file and a `Target` that reads it, the
-        way `cli()`'s target does -- a `Target` parses its config once."""
+        """Give the target a config file and a `Project` that reads it, the
+        way `cli()`'s target does -- a `Project` parses its config once."""
         (self.db.parent / "config.toml").write_text(toml)
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
 
     def run_sweep(self, at, *flags):
         """The mode end to end, with the provider and the network as tripwires.

@@ -29,10 +29,11 @@ import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 from tests.phase_fixture import finish_run  # noqa: E402 - after sys.path setup
 
 
@@ -122,9 +123,9 @@ class CloseOutTelemetryTests(unittest.TestCase):
 
         self.db = root / "repo.holophyte.db"
         store.open(self.db, migrate="owner").close()
-        # The `Target` the loop is handed, with the store and the worktrees
+        # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.target.Target(
+        self.tgt = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -148,7 +149,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
                        conn=None, run_id=None, review_round=None):
             turns.append(role)
             if role != "implement":
-                return replies.pop(0)
+                return answer_scope(goal, replies.pop(0))
             n = sum(1 for turn in turns if turn == "implement")
             (Path(cwd) / f"change{n}.txt").write_text(f"work {n}\n")
             self.git("add", "-A", cwd=cwd)
@@ -236,12 +237,12 @@ class ReportStoreCase(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        # Where `cli()`'s `Target` will look: the target's directory under a
+        # Where `cli()`'s `Project` will look: the target's directory under a
         # HOLOPHYTE_HOME of this test's own, never the operator's real one.
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.target.state_dir(self.target) / "store.db"
+        self.db = holophyte.project.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
         self.worktrees = self.root / "repo.worktrees"
         self.conn = store.open(str(self.db), migrate="owner")
@@ -304,11 +305,12 @@ class ReportTests(ReportStoreCase):
         # The host column is this machine's own name: the claim stamped it.
         host = socket.gethostname()
         self.assertEqual([line.split() for line in lines[:4]], [
-            ["ticket", "actual", "estimate", "ratio", "rounds", "outcome",
-             "rejected", "host"],
-            ["KO-1", "5.0", "25", "0.20", "2", "merged", "0", host],
-            ["KO-2", "40.0", "20", "2.00", "1", "failed", "0", host],
-            ["KO-3", "3.0", "25", "0.12", "0", "merged", "0", host],
+            ["ticket", "actual", "agent", "verify", "estimate", "ratio",
+             "rounds", "outcome", "rejected", "host"],
+            ["KO-1", "5.0", "5.0", "0.0", "25", "0.20", "2", "merged", "0", host],
+            ["KO-2", "40.0", "40.0", "0.0", "20", "2.00", "1", "failed", "0",
+             host],
+            ["KO-3", "3.0", "3.0", "0.0", "25", "0.12", "0", "merged", "0", host],
         ])
         # 0.20, 2.00 and 0.12: a mean the one blown budget carries, and a
         # median that says what a typical ticket actually costs.
@@ -324,8 +326,9 @@ class ReportTests(ReportStoreCase):
 
         lines = holophyte.report.report_lines(self.conn)[3:]
 
-        self.assertEqual(lines[4].split(), ["KO-4", "7.0", "n/a", "n/a", "0",
-                                            "merged", "0", socket.gethostname()])
+        self.assertEqual(lines[4].split(), ["KO-4", "7.0", "7.0", "0.0", "n/a",
+                                            "n/a", "0", "merged", "0",
+                                            socket.gethostname()])
         self.assertEqual(lines[5], "4 runs · 3 with an estimate · "
                                    "mean ratio 0.77 · median ratio 0.20")
 
@@ -399,7 +402,7 @@ class ReportTests(ReportStoreCase):
             holophyte.cli.cli(["--report", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse(holophyte.target.state_dir(self.root / "elsewhere").exists())
+        self.assertFalse(holophyte.project.state_dir(self.root / "elsewhere").exists())
 
 
 class HostLabelTests(ReportStoreCase):
@@ -411,7 +414,7 @@ class HostLabelTests(ReportStoreCase):
         super().setUp()
         (self.db.parent / "config.toml").write_text(
             f'[report]\nhost_label = "{self.LABEL}"\n')
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
 
     def test_the_report_and_findings_show_the_label_and_never_the_hostname(self):
         self.three_runs()

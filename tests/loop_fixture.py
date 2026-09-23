@@ -31,8 +31,8 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
 # from `factory`'s slug rule: an expectation computed by the code under test
@@ -189,19 +189,19 @@ class LoopFixture(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
         self.base = self.git("rev-parse", "main").strip()
 
-        # Where `Target.locate(self.target)` will look: the target's directory
+        # Where `Project.locate(self.target)` will look: the target's directory
         # under a HOLOPHYTE_HOME of this test's own, never the operator's real
         # one.
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.target.state_dir(self.target) / "store.db"
+        self.db = holophyte.project.state_dir(self.target) / "store.db"
         from tests.test_store_phase_gate import audit_loop_store
         self.addCleanup(audit_loop_store, self)
         self.db.parent.mkdir(parents=True)
         import store
         store.open(self.db, migrate="owner").close()
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
         assert self.tgt.store_path == self.db
         assert self.tgt.worktrees == self.worktrees
 
@@ -210,14 +210,14 @@ class LoopFixture(unittest.TestCase):
                               check=True, capture_output=True, text=True).stdout
 
     def configure(self, toml):
-        """Give the fixture target a config file and a `Target` that reads it.
+        """Give the fixture target a config file and a `Project` that reads it.
 
-        Through `Target.locate()` rather than a hand-set `config_path`, so a
+        Through `Project.locate()` rather than a hand-set `config_path`, so a
         test that set the config by hand could pass with the file unwired.
-        A fresh value, too: a `Target` parses its config once.
+        A fresh value, too: a `Project` parses its config once.
         """
         (self.db.parent / "config.toml").write_text(toml)
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.tgt = holophyte.project.Project.locate(self.target)
 
     def loop(self, *script, provider=None, fake=None):
         """Run `main()` over the queued tasks with the script answering agents.
@@ -471,7 +471,8 @@ class MergeModeFixture(LoopFixture):
                 "nodes": nodes}}}}}
 
     def fake_route(self, push_exit=0, push_sh="", states=None,
-                   comments=(), open_pr=None):
+                   comments=(), open_pr=None, close_exit=0,
+                   refuse_labels=False):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -485,9 +486,17 @@ class MergeModeFixture(LoopFixture):
         `comments` (each a `comments_page()`), the open step's
         `pullRequests(headRefName:)` lookup (KO-407) one open pull request
         at `open_pr` -- none without it -- and the reconcile's pull-status
-        read (KO-359) an open pull request; the check-runs and
-        branch-rules reads answer no runs and no rules. `push_exit` and
-        `push_sh` control push failure and an optional delay. A push
+        read (KO-359) an open pull request; the check-runs, branch-rules
+        and branch reads answer no runs, no rules and no protection
+        (KO-652), and a job's log
+        read answers `self.job_log`'s text -- a failed call without it.
+        A conversation comment answers its id (the body's number); a label
+        call or a comment delete is witnessed by `recorded()`, a label
+        call's body kept a line each in `self.label_log`, and the label
+        call refused when `refuse_labels` (KO-608).
+        `push_exit` and `push_sh` control push failure and an optional
+        delay; a pull request's REST close (`PATCH`, KO-611) answers
+        closed, or fails with `close_exit`. A push
         the fake answers successfully also appends `REF SHA` to
         `self.push_log`: the refspec's source resolved in the pushing
         checkout at push time, which is the tip a real remote's branch
@@ -502,6 +511,8 @@ class MergeModeFixture(LoopFixture):
         self.push_log = bindir / "pushes.log"
         self.api_dir = bindir / "api"
         self.api_dir.mkdir()
+        self.job_log = bindir / "job.log"
+        self.label_log = bindir / "labels.log"
         # The open step's lookup answer: `open_pr` is the URL the branch
         # is already open as, None the common "no open pull request".
         self.open_answer = bindir / "open.json"
@@ -557,6 +568,17 @@ class MergeModeFixture(LoopFixture):
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
             '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            '    */branches/*) echo \'{}\'; exit 0;;\n'
+            '    *"--method PATCH repos/example/repo/pulls/"*) cat >/dev/null;'
+            f' [ {close_exit} -eq 0 ] || {{ echo "HTTP 422 refused" >&2;'
+            f' exit {close_exit}; }}; echo \'{{"state":"closed"}}\'; exit 0;;\n'
+            f'    */issues/*/labels*) cat >> "{self.label_log}"; '
+            f'echo >> "{self.label_log}"; '
+            + ('echo "label refused" >&2; exit 1;;\n' if refuse_labels
+               else "echo '[]'; exit 0;;\n")
+            + '    *" DELETE "*/issues/comments/*) exit 0;;\n'
+            f'    *actions/jobs/*/logs*) cat "{self.job_log}" && exit 0;'
+            ' exit 1;;\n'
             '    *"GET repos/example/repo/pulls/"*) '
             "python3 -c 'import json,pathlib; "
             f'p=pathlib.Path("{self.pr_body}"); '
@@ -567,7 +589,7 @@ class MergeModeFixture(LoopFixture):
             f'  n=$(ls "{self.api_dir}" | wc -l); n=$((n+1))\n'
             f'  body="{self.api_dir}/$n.json"; cat > "$body"\n'
             '  if echo "$*" | grep -q "/issues/.*/comments"; then\n'
-            "    echo '{}'; exit 0\n"
+            '    echo "{\\"id\\":$n}"; exit 0\n'
             '  fi\n'
             '  if grep -q resolveReviewThread "$body"; then\n'
             "    echo '{\"data\":{\"resolveReviewThread\":{}}}'\n"

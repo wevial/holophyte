@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import store
 import store.read
@@ -106,9 +107,11 @@ def _serial(target, provider, knobs):
         skip = set()
         first_pass = True
         while True:
-            reason = _schema_move(target)
-            if reason:
-                _reexec(target, conn, project, reason)
+            # A move `open()` reads needs no restart here: only the pool
+            # re-executes for one, to hand its workers to the new build.
+            moved = _schema_move(target)
+            if moved and not moved.readable:
+                _reexec(target, conn, project, moved.reason)
                 return
             # Before the claim: a pull request a person merged since the
             # last pass ships its parked run here (KO-359). The first pass
@@ -158,7 +161,9 @@ def _serial(target, provider, knobs):
                 # left it saying, so it is not offered again this pass, and
                 # a failure the sweep already counted is not counted twice.
                 skip.add(task["id"])
-                print(f"[holo2] {task['id']} was swept mid-turn; continuing"
+                outcome = conn.execute("SELECT outcome FROM runs WHERE id = ?",
+                                       (run_id,)).fetchone()[0]
+                print(f"[holo2] {task['id']} ended ({outcome}); continuing"
                       " to the next ready ticket")
                 continue
             if not merged:
@@ -194,13 +199,28 @@ def _schema_reason(moved):
             " re-executing")
 
 
+class SchemaMove(NamedTuple):
+    reason: str
+    readable: bool  # `open()` accepts the moved store on this build
+
+
 def _schema_move(target):
-    """Probe at the pass boundary before claiming or spawning more work."""
+    """Probe at the pass boundary before claiming or spawning more work.
+
+    A `SchemaMove` for a store above this build's version, whether `open()`
+    refuses it or reads it from its migrate note's floor; None otherwise."""
     try:
-        store.open(target.store_path).close()
+        conn = store.open(target.store_path)
     except store.SchemaNewer as moved:
-        return _schema_reason(moved)
-    return None
+        return SchemaMove(_schema_reason(moved), False)
+    try:
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        conn.close()
+    if version <= store.SCHEMA_VERSION:
+        return None
+    return SchemaMove(f"store schema moved to {version} under this process"
+                      " and is readable by this build; re-executing", True)
 
 
 def _reexec(target, conn, project, reason=None, *, prepared_sha=None,

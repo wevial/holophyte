@@ -67,7 +67,7 @@ def review_round_cap(changed_lines, cfg):
 def open_store(target, path=None):
     """Open the store without migrating; the supervisor owns the schema.
 
-    The store's directory is made here, on first need: `Target.locate()` only
+    The store's directory is made here, on first need: `Project.locate()` only
     derives paths, and a `--report` against a target that has no store says
     so without leaving an empty directory behind.
     """
@@ -92,6 +92,8 @@ def set_phase(conn, run_id, phase, note=None):
     """
     if conn is None:
         return
+    from holophyte.stop import stop_if_requested
+    stop_if_requested(conn, run_id, phase)
     store.set_phase(conn, run_id, phase, note)
 
 
@@ -149,6 +151,12 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     whether the body returned or raised. A body that ends on its own path
     inside a live run is unaffected: no beat fails, nothing is raised.
 
+    An operator's `--abort` is noticed the same way (KO-592): a beat that
+    finds the run marked kills the turn through `on_swept` and stops, and
+    the exit -- or the exit beat, for a mark that landed between beats --
+    commits the tree, pushes it when a pull request is open, and ends the
+    run `abandoned` through `end_aborted()`, which raises `Aborted`.
+
     The exit beats once more, on the caller's own `conn`, after the thread
     is joined. A run ended between the timer's last beat and the block's
     exit -- a sweep landing as the agent finishes -- was otherwise never
@@ -179,8 +187,15 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
         thread.join()
     if not swept and not store.heartbeat(conn, run_id):
         swept.append(_ending_of(conn, run_id))
+    from holophyte.stop import Aborted, abort_requested, end_aborted
+    if swept[:1] == [ABORT] or not swept and abort_requested(conn, run_id):
+        end_aborted(conn, run_id)  # raises Aborted once the run is ended
+    if isinstance(failure, Aborted):
+        raise failure  # an inner block or boundary already ended the run
     if swept:
         outcome, reason = swept[0]
+        if outcome == "paused":
+            raise store.RunEnded(run_id, outcome, reason) from failure
         raise RunSwept(run_id, outcome, reason) from failure
     if failure is not None:
         raise failure
@@ -199,11 +214,20 @@ def _fallback_heartbeat(conn, run_id, swept, stop):
     return True
 
 
+# What a beat appends when the run is live but an operator asked to abort it.
+ABORT = ("abort", None)
+
+
 def _heartbeat(conn, run_id, swept):
-    """Beat and read an ending under the connection's transaction lock."""
+    """Beat and read an ending, or a pending abort, under the connection's
+    transaction lock."""
+    from holophyte.stop import abort_requested
     with store.transaction(conn):
         if store.heartbeat(conn, run_id):
-            return True
+            if not abort_requested(conn, run_id):
+                return True
+            swept.append(ABORT)
+            return False
         swept.append(_ending_of(conn, run_id))
         return False
 
@@ -248,7 +272,7 @@ def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat):
                     print(f"[holo2] heartbeat failed: {e}", flush=True)
                 failed = True
                 continue
-            # Swept: the run is over. Kill the turn, then stop beating.
+            # Swept or aborted: kill the turn, then stop beating.
             _notify_swept(on_swept)
             return
     finally:
@@ -280,7 +304,8 @@ def _ending_of(conn, run_id):
 
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                  started_at=None, criteria=(), root=None, route=None,
-                 prior_reply="", structured_findings=None, approved_range=None):
+                 prior_reply="", structured_findings=None, approved_range=None,
+                 scope=()):
     """Record one review or adjudication round as a `reviewRounds` row.
 
     The round the loop just ran, as the store holds it: the verdict, the
@@ -307,7 +332,9 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     adjudicator keeps its bare PASS/FAIL contract and is not held to the
     checklist. `root` is the round's worktree: with it, a `met` witness that
     names a test must exist there (`criteria_findings()`), so a named test
-    not found is one more such finding.
+    not found is one more such finding. `scope` is the list of changed files
+    the ticket does not name that the round's prompt put to the reviewer; a
+    tangent or an unanswered one is a finding the same way.
 
     `route` names what issued the round when it was not the role's agent
     route: a babysit pass over a pull request is stamped `github:LOGIN`,
@@ -339,7 +366,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
         findings = structured_findings
     if role == "review" and verdict != "error":
         unwitnessed = criteria_findings(reply, criteria, root,
-                                        approved_range=approved_range)
+                                        approved_range=approved_range,
+                                        scope=scope)
         if unwitnessed:
             verdict = "changes_requested"
             findings = findings + unwitnessed

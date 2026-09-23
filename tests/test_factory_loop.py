@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.test_factory_loop` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
+from abort_fixture import AbortTurnCases  # noqa: E402
 from failure_kind_fixture import FailureKindCases  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
@@ -42,10 +43,13 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     IdleThenTimeout,
     InfraRefuse,
     LoopFixture,
+    MergeModeFixture,
     StubProvider,
     a_task,
 )
+from pause_fixture import PauseFailureCases  # noqa: E402
 from review_session_fixture import ReviewSessionCases  # noqa: E402
+from run_landing_fixture import landing_path  # noqa: E402
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.board  # noqa: E402 - after the sys.path insert above
@@ -57,14 +61,34 @@ import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.merge_gate  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
 
-class LoopTests(FailureKindCases, ReviewSessionCases, FixSessionCases, LoopFixture):
+class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
+                ReviewSessionCases, FixSessionCases, LoopFixture):
+    def test_pause_after_implement_preserves_work_and_parks_with_note(self):
+        from pause_fixture import PauseEdit
+        self.loop(PauseEdit(self.db))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "verifying")])
+        self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
+                         [("blocked_on_operator", "reboot writer")])
+        wt = self.worktrees / "ko-131-add-a-thing"
+        self.assertEqual((wt / "pause-work.txt").read_text(),
+                         "preserve this uncommitted work\n")
+        self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
+        events = self.read("SELECT kind, summary FROM runEvents ORDER BY seq")
+        request = next(i for i, (kind, _) in enumerate(events)
+                       if kind == "intervention")
+        release = next(i for i, (_, summary) in enumerate(events)
+                       if "outcome paused" in summary)
+        self.assertLess(request, release)
+        self.assertIn("WIP: preserve work at operator pause", self.subjects(BRANCH))
+
     def test_illegal_phase_is_infrastructure_failure_and_preserves_work(self):
         original = store.set_phase
 
@@ -857,7 +881,7 @@ class RunCapTests(LoopFixture):
         candidate = self.git("rev-parse", BRANCH).strip()
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertIn("out of time", reason)
-        self.assertIn("min spent of a 30 min box", reason)
+        self.assertIn("min of agent work against a 30 min box", reason)
         self.assertIn("cap 3x", reason)
         self.assertIn(candidate[:12], reason)
         self.assertIn("open findings", reason)
@@ -1340,3 +1364,53 @@ class NoCommitOutputTests(LoopFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunLandingTests(MergeModeFixture):
+    def test_local_landing_carries_the_claim(self):
+        landing_path(self, "local")
+
+    def test_approved_landing_carries_the_new_claim(self):
+        landing_path(self, "approved")
+
+    def test_babysitter_landing_carries_the_claim(self):
+        landing_path(self, "pr")
+
+
+class VerifyTimeoutRoundTests(LoopFixture):
+    """A round whose verify ran past its cap (KO-673).
+
+    The verify is a real chain under a 1 s cap, so the report the loop
+    reads is the one `run_verify()` writes when a ticket's command runs
+    long, not a scripted string.
+    """
+
+    TASK = dict(a_task(), verify="echo started && sleep 5")
+
+    def run_capped_loop(self, *script):
+        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0):
+            return self.loop(*script, provider=StubProvider(self.TASK))
+
+    def test_an_approved_round_that_only_timed_out_fails_without_a_fix_turn(self):
+        fake, _ = self.run_capped_loop(Commit("work"), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        ((outcome, reason, kind),) = self.read(
+            "SELECT outcome, outcomeReason, failureKind FROM runs")
+        self.assertEqual((outcome, kind), ("failed", "verify"))
+        self.assertIn("[sleep 5]", reason)
+        self.assertIn("timed out after 1s in clause 2 of 2", reason)
+        self.assertNotIn("no progress", reason)
+        self.assertIn(BRANCH, self.branches())
+
+    def test_a_timed_out_round_with_findings_still_gets_its_fix_turn(self):
+        fake, _ = self.run_capped_loop(Commit("work"), REQUEST_CHANGES,
+                                       Commit("fix round 1"), APPROVE)
+
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "implement", "review"])
+        self.assertIn("fix round 1", self.subjects(BRANCH))
+        ((outcome, reason),) = self.read(
+            "SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("timed out after 1s in clause 2 of 2", reason)

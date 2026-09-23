@@ -25,6 +25,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     no_agent_processes,
 )
+from heartbeat_fixture import LOADED_MS, patch_beats  # noqa: E402
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     TICK,
     FakePool,
@@ -497,6 +498,24 @@ class PoolTests(PoolRestartCases, LoopFixture):
         self.assertIn("linear unreachable", self.out)
         self.assertEqual(self.rc, 0)
 
+    def test_the_fetched_schema_is_read_through_real_git(self):
+        """Both literals of `origin/main:store/schema.py`, fetched from a
+        real remote into the factory checkout, with no fake `sh`."""
+        origin = self.target.with_name("factory-origin")
+        self.git("clone", "-q", str(self.target), str(origin))
+        schema = origin / "store" / "schema.py"
+        schema.parent.mkdir()
+        schema.write_text("# An additive bump.\nSCHEMA_VERSION = 41\n"
+                          "READABLE_FROM = 40\n")
+        self.git("add", ".", cwd=origin)
+        self.git("-c", "user.email=factory@example.invalid",
+                 "-c", "user.name=Factory Test",
+                 "commit", "-qm", "bump the schema", cwd=origin)
+        self.git("remote", "add", "origin", str(origin))
+        self.git("fetch", "-q", "origin", "main")
+
+        self.assertEqual(holophyte.pool_handoff.fetched_schema(self.tgt), (41, 40))
+
 
 
 class WorkerTests(LoopFixture):
@@ -631,6 +650,20 @@ class WorkerTests(LoopFixture):
         self.assertIn("KO-131", (self.tgt.path / "FINDINGS.md").read_text())
         self.assertFalse(lock.exists())
 
+    def test_a_worker_with_findings_off_skips_the_merge_lock(self):
+        """With no FINDINGS.md to write, a sibling's merge lock does not
+        hold this worker's slot at close-out (KO-645)."""
+        provider = StubProvider(a_task(1))
+        lock = holophyte.gates.merge_lock_path(self.tgt)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("7 0\n")
+
+        with patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0):
+            rc, out = self.worker(Refuse(), provider=provider)
+
+        self.assertEqual(rc, holophyte.pool.WORKER_FAILED)
+        self.assertNotIn("FINDINGS.md left", out)
+
     def test_a_worker_with_nothing_to_claim_exits_idle(self):
         sha = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True).strip()
@@ -712,10 +745,16 @@ class SweptHeartbeatTests(unittest.TestCase):
 class SweptTurnTests(LoopFixture):
     """A swept turn stops its worker and preserves the candidate."""
 
-    def test_a_swept_run_kills_its_turn_writes_nothing_more_and_moves_on(self):
-        # A 600 ms stale threshold gives a 300 ms beat to detect the sweep.
-        self.configure("[supervisor]\nheartbeat_stale_min = 0.01\n")
+    def swept_turn(self, delay_ms=0, silent=False):
+        """Run a turn that sweeps its own run, each beat `delay_ms` late or
+        `silent`; return what the turn saw, the output, agent and provider."""
+        # A 3 s stale threshold gives a 1.5 s beat to detect the sweep, and a
+        # beat 400 ms late on a busy runner still lands well inside the wait
+        # below of two thresholds (KO-674).
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n")
+        patch_beats(self, delay_ms, silent)
         knobs = holophyte.config_tables.sweep_config(self.tgt)
+        wait_s = knobs.heartbeat_stale_ms * 2 / 1000
         db, tgt = self.db, self.tgt
         seen = {}
         fake = FakeAgent()
@@ -749,7 +788,7 @@ class SweptTurnTests(LoopFixture):
                 finally:
                     conn.close()
                 try:
-                    proc.wait(timeout=20)
+                    proc.wait(timeout=wait_s)
                     seen["returncode"] = proc.returncode
                 except subprocess.TimeoutExpired:
                     # The loop never killed it: end it here so the test
@@ -763,16 +802,22 @@ class SweptTurnTests(LoopFixture):
         out = io.StringIO()
         with patch.object(sys, "stdout", out):
             self.loop(provider=provider, fake=fake)
-        out = out.getvalue()
+        return seen, out.getvalue(), fake, provider
+
+    def assert_turn_killed(self, seen, out):
+        # The turn's process was killed, not left to finish its 30 seconds.
+        self.assertEqual(seen["returncode"], -signal.SIGKILL)
+        self.assertIn("[holo2] run 1 was ended by the supervisor"
+                      f" ({seen['row'][1]}); stopping this turn", out)
+
+    def test_a_swept_run_kills_its_turn_writes_nothing_more_and_moves_on(self):
+        seen, out, fake, provider = self.swept_turn()
         # The sweep tripped the time box and ended the run.
         self.assertEqual(seen["trips"], ["time_box"])
         self.assertEqual(seen["row"][0], "failed")
         self.assertIn("swept by the supervisor", seen["row"][1])
         self.assertIsNotNone(seen["row"][2])
-        # The turn's process was killed, not left to finish its 30 seconds.
-        self.assertEqual(seen["returncode"], -signal.SIGKILL)
-        self.assertIn("[holo2] run 1 was ended by the supervisor"
-                      f" ({seen['row'][1]}); stopping this turn", out)
+        self.assert_turn_killed(seen, out)
         # Nothing more was written to the swept run: its row and its
         # streams are as the sweep left them.
         self.assertEqual(
@@ -794,6 +839,17 @@ class SweptTurnTests(LoopFixture):
                          [(1, "failed"), (2, "merged")])
         self.assertIn("the next work", self.subjects())
         self.assertIsNone(self.rc)
+
+    def test_beats_each_late_on_a_loaded_runner_still_kill_the_turn(self):
+        seen, out, _, _ = self.swept_turn(delay_ms=LOADED_MS)
+        self.assert_turn_killed(seen, out)
+        self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
+                         [(1, "failed"), (2, "merged")])
+
+    def test_a_silent_heartbeat_under_the_swept_turn_fails_the_check(self):
+        seen, out, _, _ = self.swept_turn(silent=True)
+        with self.assertRaises(AssertionError):
+            self.assert_turn_killed(seen, out)
 
 
 class ImplementerProbeTests(LoopFixture):

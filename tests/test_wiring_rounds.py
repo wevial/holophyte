@@ -27,10 +27,11 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 import holophyte.config  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
+from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 
 
 class StubProvider:
@@ -105,9 +106,9 @@ class ReviewRoundRowTests(unittest.TestCase):
 
         self.db = root / "repo.holophyte.db"
         store.open(self.db, migrate="owner").close()
-        # The `Target` the loop is handed, with the store and the worktrees
+        # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.target.Target(
+        self.tgt = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -126,7 +127,7 @@ class ReviewRoundRowTests(unittest.TestCase):
                        conn=None, run_id=None, review_round=None):
             turns.append(role)
             if role != "implement":
-                return replies.pop(0)
+                return answer_scope(goal, replies.pop(0))
             n = sum(1 for turn in turns if turn == "implement")
             (Path(cwd) / f"change{n}.txt").write_text(f"work {n}\n")
             self.git("add", "-A", cwd=cwd)

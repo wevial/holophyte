@@ -45,6 +45,17 @@ class RunPhase(str, Enum):
     FAILED = 'failed'
     KILLED = 'killed'
     REJECTED = 'rejected'
+    PAUSED = 'paused'
+
+
+class ParkKind(str, Enum):
+    PULL_REQUEST = 'pull_request'
+    PULL_REQUEST_CLOSED = 'pull_request_closed'
+    THREAD = 'thread'
+    FIX_DECLINED = 'fix_declined'
+    MERGE_LOCK = 'merge_lock'
+    QUESTION = 'question'
+    NOT_REPRODUCED = 'not_reproduced'
 
 
 class RunOutcome(str, Enum):
@@ -53,6 +64,7 @@ class RunOutcome(str, Enum):
     ABANDONED = 'abandoned'
     FAILED = 'failed'
     REJECTED = 'rejected'
+    PAUSED = 'paused'
 
 
 class FailureKind(str, Enum):
@@ -139,6 +151,9 @@ class InterventionAction(str, Enum):
     RELEASE_HOLD = 'release_hold'
     REGISTER_PROJECT = 'register_project'
     DISABLE = 'disable'
+    PAUSE = 'pause'
+    ABORT = 'abort'
+    ABORT_CLOSE = 'abort_close'
 
 
 # Line breaks are part of the existing sqlite_master SQL contract.
@@ -157,6 +172,7 @@ CONSTRAINED_COLUMNS = {
     ('tickets', 'status'): TicketStatus,
     ('tickets', 'affinity'): Affinity,
     ('runs', 'phase'): RunPhase,
+    ('runs', 'parkKind'): ParkKind,
     ('runs', 'outcome'): RunOutcome,
     ('runs', 'outcomeClass'): OutcomeClass,
     ('runs', 'failureKind'): FailureKind,
@@ -219,8 +235,12 @@ RUN_PHASE_TRANSITIONS = {
     RunPhase.ADDRESSING.value: frozenset({
         RunPhase.VERIFYING.value, RunPhase.FAILED.value,
         RunPhase.KILLED.value}),
+    # `merge_gate -> done` is the pull request a person merged on GitHub
+    # while the babysitter still watched it (KO-653): the run ends merged
+    # with that merge commit, and records no `merging` step it never took.
+    # The factory's own merges still go `merge_gate -> merging -> done`.
     RunPhase.MERGE_GATE.value: frozenset({
-        RunPhase.MERGING.value,
+        RunPhase.MERGING.value, RunPhase.DONE.value,
         # The babysitter verifies each new fix before its covering review.
         RunPhase.VERIFYING.value,
         RunPhase.AWAITING_MERGE_APPROVAL.value, RunPhase.FAILED.value,
@@ -252,4 +272,10 @@ RUN_PHASE_TRANSITIONS = {
     RunPhase.KILLED.value: frozenset(),
     RunPhase.REJECTED.value: frozenset(),
 }
+# KO-589: cooperative stop is legal from every live working boundary.
+for _phase in ("claimed", "working", "verifying", "reviewing", "addressing",
+               "merge_gate", "merging", "squashing", "awaiting_merge_approval"):
+    RUN_PHASE_TRANSITIONS[_phase] |= {"paused"}
+RUN_PHASE_TRANSITIONS["paused"] = frozenset({
+    "working", "verifying", "reviewing", "addressing", "merge_gate", "merging"})
 assert set(RUN_PHASE_TRANSITIONS) == {e.value for e in RunPhase}

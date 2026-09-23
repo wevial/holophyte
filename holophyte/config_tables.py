@@ -1,6 +1,6 @@
 """Per-table config keys, defaults and validated readers.
 
-The key sets are registered in config.KNOWN_KEYS; readers take a Target and
+The key sets are registered in config.KNOWN_KEYS; readers take a Project and
 refuse invalid values with the table, key and constraint. Importing runs no
 host checks. The loop and daemon share these readers (KO-397).
 """
@@ -321,10 +321,13 @@ def board_config(target):
 
 
 # `approve = "auto"` merges a green, approved candidate; `"human"` parks it
-# awaiting operator approval. `mode = "local"` merges into local main;
-# `"pr"` pushes the task branch to origin and opens a PR for bots and CI.
-# The factory never pushes main. `pr_rounds` (at least 1) caps babysit passes
-# before parking the PR on its unresolved threads for the operator.
+# awaiting operator approval. `review_fixes = true` (KO-663, default false)
+# puts fix commits pushed after the release under `"human"` to the covering
+# review the auto path runs before the run parks. `mode = "local"` merges
+# into local main; `"pr"` pushes the task branch to origin and opens a PR for
+# bots and CI. The factory never pushes main. `pr_rounds` (at least 1) caps
+# babysit passes before parking the PR on its unresolved threads for the
+# operator.
 #
 # `pr_merge_method` is the `merge_method` the babysitter sends GitHub's merge
 # API when it lands a green, quiet pull request under `mode = "pr"`:
@@ -344,6 +347,10 @@ def board_config(target):
 # `pr_quiet_sec`: quiet since GitHub updatedAt before merging (default 300;
 # 0 merges as soon as green). `check_wait_sec`: positive pending/quiet wait
 # cap, default pr.CHECK_WAIT_S (1800), independently set per target (KO-477).
+# `missing_check_sec`: how long a check main requires may report nothing on
+# the head before the wait stops for it (default 600); with
+# `retrigger_missing_checks = true` one empty commit per candidate wakes it
+# first, otherwise the run parks naming the checks (KO-652).
 #
 # Pull request titles and bodies are always written by one implementer turn
 # from the diff, ticket and repository conventions. `pr_style` supplies
@@ -379,8 +386,10 @@ MERGE_KEYS = {
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
-    "pr_style": "", "pr_changes_log": False,
+    "missing_check_sec": 600, "retrigger_missing_checks": False,
+    "pr_style": "", "pr_changes_log": False, "review_fixes": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
+    "ui_capture_local": False,
     "media_repo": "",
     "media_bucket": None, "media_max_file_mb": 10, "media_max_total_mb": 20,
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
@@ -398,7 +407,8 @@ MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
 MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
 PR_POLL_FLOOR = 10
 MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
-                    "pr_quiet_sec": 0, "check_wait_sec": 1}
+                    "pr_quiet_sec": 0, "check_wait_sec": 1,
+                    "missing_check_sec": 1}
 
 
 def merge_config(target):
@@ -420,6 +430,15 @@ def merge_config(target):
     values["pr_changes_log"] = _merge_boolean(
         target, "pr_changes_log",
         table.get("pr_changes_log", defaults.pop("pr_changes_log")))
+    values["review_fixes"] = _merge_boolean(
+        target, "review_fixes",
+        table.get("review_fixes", defaults.pop("review_fixes")))
+    values["retrigger_missing_checks"] = _merge_boolean(
+        target, "retrigger_missing_checks", table.get(
+            "retrigger_missing_checks", defaults.pop("retrigger_missing_checks")))
+    values["ui_capture_local"] = _merge_boolean(
+        target, "ui_capture_local",
+        table.get("ui_capture_local", defaults.pop("ui_capture_local")))
     for key, default in defaults.items():
         value = table.get(key, default)
         if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):
@@ -513,6 +532,14 @@ def _validate_ui(target, values):
     if any(not p.strip() or PurePosixPath(p).is_absolute()
            or ".." in PurePosixPath(p).parts for p in paths):
         raise SystemExit("[merge] ui_paths must be non-empty repository-relative globs")
+    directory = PurePosixPath(values["ui_capture_dir"])
+    if values["ui_capture_local"] and (
+            directory.is_absolute() or not directory.parts
+            or ".." in directory.parts):
+        raise SystemExit(
+            f"{target.config_path}: [merge] ui_capture_local needs ui_capture_dir"
+            " to be a repository-relative directory without `..`, got"
+            f" {values['ui_capture_dir']!r}")
     try:
         args = shlex.split(command)
     except ValueError as error:

@@ -21,9 +21,11 @@ inside their callers, the house back-import pattern (`holophyte/pool.py`,
 `holophyte/pullrequest.py`), so a `holophyte.loop` attribute patch lands.
 """
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
+from time import monotonic
 
 import store
 import store.read
@@ -41,17 +43,24 @@ from holophyte.board import (
     lease_label,
     lease_turn,
     ledger,
+    mirror_key,
     mirror_push,
     mirror_status,
     mirror_task,
     release_lease_label,
     store_status,
 )
-from holophyte.config import setup_commands, setup_timeout, worktree_environment
-from holophyte.config_tables import sweep_config
+from holophyte.config import (
+    branch_prefix,
+    setup_commands,
+    setup_timeout,
+    worktree_environment,
+)
+from holophyte.config_tables import merge_config, sweep_config
 from holophyte.environment_git import (
     environment_temporary_directory,
     exclude_environment,
+    factory_identity,
     paths,
     stage_work,
     unstage_environment,
@@ -63,10 +72,10 @@ from holophyte.gates import (
     run_verify,
     sh,
 )
-from holophyte.merge_lock import live_merge_lock
-from holophyte.reconcile import PR_CLOSED_QUESTION
+from holophyte.project import worktree_path
 from holophyte.redact import redact_values
 from holophyte.redact import safe_print as print
+from holophyte.run import Run
 from holophyte.runs import heartbeat_while, set_phase
 
 
@@ -105,6 +114,39 @@ def write_worktree_environment(target, wt):
             os.unlink(temporary)
 
 
+def write_capture_ignore(target, wt):
+    """Make a local `ui_capture_dir` ignore itself: unlike `info/exclude`,
+    its `.gitignore` travels into a container turn's clone.
+
+    A checkout can carry tracked symlinks, so no component of the path is
+    followed: a symlinked directory or `.gitignore` is refused, and the file
+    is replaced rather than written through, which also spares a hardlink."""
+    cfg = merge_config(target)
+    if not cfg.ui_capture_local:
+        return
+    root = Path(wt).resolve()
+    directory = root
+    for part in Path(cfg.ui_capture_dir).parts:
+        directory = directory / part
+        if directory.is_symlink():
+            raise OSError(f"{directory.relative_to(root)} is a symlink")
+        directory.mkdir(exist_ok=True)
+    ignore = directory / ".gitignore"
+    if ignore.is_symlink():
+        raise OSError(f"{ignore.relative_to(root)} is a symlink")
+    if not directory.resolve().is_relative_to(root):
+        raise OSError(f"{cfg.ui_capture_dir} resolves outside the worktree")
+    fd, temporary = tempfile.mkstemp(prefix=".gitignore-", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o644)
+            stream.write("*\n")
+        os.replace(temporary, ignore)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def run_worktree_setup(target, wt, conn=None, run_id=None):
     """Run the target's setup commands in the fresh worktree `wt`.
 
@@ -120,6 +162,10 @@ def run_worktree_setup(target, wt, conn=None, run_id=None):
         return False, redact_values(str(error))
     except OSError:
         return False, "[holo2] worktree environment file could not be written"
+    try:
+        write_capture_ignore(target, wt)
+    except (SystemExit, OSError) as error:
+        return False, f"[holo2] local capture directory not prepared: {error}"
     commands = setup_commands(target)
     timeout = setup_timeout(target)
     if commands:
@@ -209,11 +255,10 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     sh(["git", "checkout", "-B", branch], cwd=wt)
     if dirty:
         stage_work(target, wt)
-        # The identity is pinned so a target with no committer configured
-        # cannot raise here — and a rescue commit is the factory's, not a
-        # person's.
-        sh(["git", "-c", "user.name=holophyte",
-            "-c", "user.email=holophyte@factory.invalid", "commit", "-m",
+        # The configured identity when the target has one, the factory's
+        # pinned one otherwise so a target with no committer configured
+        # cannot raise here; the message says the commit is the factory's.
+        sh(["git", *factory_identity(wt), "commit", "-m",
             f"WIP: uncommitted leftovers preserved on reuse of {branch}"],
            cwd=wt)
         print(f"[holo2] preserved uncommitted leftovers as a WIP commit"
@@ -242,8 +287,7 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
         # parking it for a person cost an operator round-trip per add/add
         # overlap in a test file (KO-355), and the first verify fails the
         # run if it is still there.
-        r = subprocess.run(["git", "-c", "user.name=holophyte",
-                            "-c", "user.email=holophyte@factory.invalid",
+        r = subprocess.run(["git", *factory_identity(wt),
                             "merge", "--no-edit", "main"],
                            cwd=wt, capture_output=True, text=True)
         if r.returncode != 0:
@@ -374,8 +418,8 @@ def _refresh_main(target, run_id=None, conn=None):
                               cwd=target.path, capture_output=True).returncode == 0
 
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-    with live_merge_lock(target, conn, run_id, beat_s,
-                         operation="fetch before the cut", wait_phase="working"):
+    with target.locks.merge(conn, run_id, beat_s,
+                            operation="fetch before the cut", wait_phase="working"):
         fr = subprocess.run(["git", "fetch", "origin"], cwd=target.path,
                             capture_output=True, text=True)
         if fr.returncode != 0:
@@ -524,13 +568,13 @@ def retire_worktree(target, branch):
     Keep the branch. A remote read must succeed before its tip is trusted;
     stale remote-tracking refs are not evidence that work is still backed up.
     """
-    from holophyte.target import worktree_path
+    from holophyte.project import worktree_path
 
     wt = worktree_path(target, branch)
     if wt.resolve() == target.worktrees.resolve() or wt.is_symlink():
         return "worktree is not a task checkout"
     if not wt.resolve().is_relative_to(target.worktrees.resolve()):
-        return "worktree is outside the target's worktrees directory"
+        return "worktree is outside the project's worktrees directory"
     try:
         if not wt.exists():
             sh(["git", "worktree", "prune"], target.path)
@@ -633,16 +677,20 @@ def _claim_next(target, conn, project, provider, order, skip, seen):
             # problem. Skipped like a held ticket found at admission.
             skip.add(task["id"])
             continue
+        if run_id is not None:
+            # Carry the value through the existing provider-task dispatch seam;
+            # do not mutate the provider's task or rebuild the run at each phase.
+            task = dict(task, _run=claimed_run(target, task, conn, run_id, provider))
         return task, ticket_id, run_id
 
 
-def skip_line(identifier, strikes, pr_url, question):
+def skip_line(identifier, strikes, pr_url, question, park_kind=None):
     """The admit step's one line for a ticket the store holds parked.
 
     Pure, so the wording is tested without a store. A pull request wins:
     the run behind it is parked alive, so its URL and the `--approve` that
     merges it are the whole story whatever failed before it -- unless the
-    question says the PR was closed unmerged (`PR_CLOSED_QUESTION`), when
+    park kind says the PR was closed unmerged, when
     there is nothing an `--approve` would merge and the question is the
     line. A merge-gate conflict (`GATE_CONFLICT_QUESTION`) names its way
     back, `--requeue` once the branch is resolved (KO-365). Then a module's
@@ -655,7 +703,7 @@ def skip_line(identifier, strikes, pr_url, question):
     """
     from holophyte.merge_gate import GATE_CONFLICT_QUESTION
 
-    closed = (question or "").strip().startswith(PR_CLOSED_QUESTION)
+    closed = park_kind == "pull_request_closed"
     if pr_url and not closed:
         return (f"{identifier} is parked on PR {pr_url} awaiting"
                 f" --approve {identifier}; skipping it")
@@ -696,8 +744,11 @@ def _admit_ticket(target, conn, project, provider, task, seen):
     # summary and the first criterion, no What line). The mirror lands
     # in `needs_spec` as an under-specced body would; no run row is
     # opened. The target's path goes along so a body naming a path
-    # this repository gitignores is refused here too (KO-222).
-    problem = body_problem(task, target.path)
+    # this repository gitignores is refused here too (KO-222) -- unless
+    # the last run is on a pull request, whose candidate holds the paths
+    # main lacks (KO-598, KO-655).
+    problem = body_problem(task, target.path,
+                           on_pull_request=_on_pull_request(conn, project, task))
     if problem:
         mirror_task(conn, project, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")
@@ -735,14 +786,14 @@ def _admit_ticket(target, conn, project, provider, task, seen):
         # or a question -- so a ticket parked for the operator's merge is
         # not reported as a failure that never happened.
         ticket = store.read.ticket_by_id(conn, ticket_id)
-        pr_url = None
+        pr_url, park_kind = None, None
         if ticket.lastRunId is not None:
-            row = conn.execute("SELECT prUrl FROM runs WHERE id = ?",
+            row = conn.execute("SELECT prUrl, parkKind FROM runs WHERE id = ?",
                                (ticket.lastRunId,)).fetchone()
-            pr_url = row[0] if row else None
+            pr_url, park_kind = row if row else (None, None)
         print("[holo2] " + skip_line(task["id"],
                                      len(failure_history(conn, ticket_id)),
-                                     pr_url, ticket.blockedQuestion))
+                                     pr_url, ticket.blockedQuestion, park_kind))
         return None
     # Same place, the store's own question: §2's `pickable()`. The
     # board and the store can disagree about whether a ticket is
@@ -769,6 +820,16 @@ def _admit_ticket(target, conn, project, provider, task, seen):
         mirror_push(conn, ticket_id, provider)
         return None
     return ticket_id
+
+
+def _on_pull_request(conn, project, task):
+    """Whether the mirrored ticket's last run holds a pull request URL.
+    Asked before the mirror, so a ticket never mirrored is not on one."""
+    row = conn.execute(
+        "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.linearIssueId = ? AND t.projectId = ?",
+        (mirror_key(task), project)).fetchone()
+    return bool(row and row[0])
 
 
 class _Held:
@@ -913,3 +974,15 @@ def _claim_run(target, conn, project, provider, task, ticket_id, seen):
               " from; stopping for a human")
         return None
     return run_id
+
+
+def claimed_run(target, task, conn=None, run_id=None, provider=None, *,
+                clock=monotonic):
+    """Name a run once, including direct callers without a store claim."""
+    ident = re.sub(r"[^a-z0-9]+", "-", task["id"].lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", task["title"].lower())[:30].strip("-")
+    branch = f"{branch_prefix(target)}/{ident}-{slug}"
+    row = store.read.run_snapshot(conn, run_id) if conn is not None else None
+    return Run(target, conn, run_id, provider, task["id"], mirror_key(task),
+               task["title"], branch, worktree_path(target, branch),
+               task["budget_min"], clock(), row.startedAt if row else None, clock=clock)

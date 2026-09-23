@@ -501,6 +501,8 @@ class RejectedPullRequestTests(MergeModeFixture):
         self.main_output(provider=provider)
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("rejected", "rejected")])
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("pull_request_closed",)])
         reason = self.read("SELECT outcomeReason FROM runs")[0][0]
         self.assertIn("alice", reason)
         self.assertIn(sha, reason)
@@ -619,7 +621,8 @@ class ContentWakeTests(MergeModeFixture):
         self.assertEqual(ticket.blockedQuestion, 'woken repeatedly with nothing new')
         item = parked_item(ticket)
         self.assertEqual(item['ticket'], 'KO-131')
-        self.assertEqual(item['question'], 'woken repeatedly with nothing new')
+        self.assertEqual(item['kind'], 'pr_open')
+        self.assertEqual(item['reason'], 'woken repeatedly with nothing new')
         before = self.read("SELECT id FROM interventions WHERE action = 'babysit'")
         self.main_output(provider=StubProvider())
         self.assertEqual(self.read("SELECT id FROM interventions "

@@ -22,9 +22,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli
+import holophyte.project
 import holophyte.report
 import holophyte.serve_runs
-import holophyte.target
 import store
 import store.read
 import store.tickets
@@ -47,7 +47,7 @@ class ApproveCliTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        self.target = holophyte.target.Target.locate(self.repo)
+        self.target = holophyte.project.Project.locate(self.repo)
         self.target.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.target.config_path.write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n')
@@ -119,6 +119,9 @@ class ApproveCliTests(unittest.TestCase):
         self.assertNotEqual(phase, "awaiting_merge_approval")
         self.assertIsNotNone(ended)
         self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+        self.assertEqual(self.conn.execute(
+            "SELECT parkKind FROM runs WHERE id = ?", (self.run,)).fetchone(),
+            (None,))
         # Released, the ticket is claimable again -- the loop's next pass
         # is what takes the candidate to the gate.
         self.assertTrue(store.tickets.pickable(self.conn, self.ticket))

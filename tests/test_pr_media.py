@@ -91,7 +91,7 @@ class MediaTests(unittest.TestCase):
                 return_value="https://github.com/example/repo.git",
             ),
         ):
-            pullrequest._open_pr(
+            title, text = pullrequest._prepare_pr(
                 self.target,
                 None,
                 None,
@@ -104,6 +104,9 @@ class MediaTests(unittest.TestCase):
                 monotonic(),
                 30,
             )
+            pullrequest._push_and_open(
+                self.target, None, None, "candidate", title, text, 1
+            )
         self.visibility = visibility
         self.ledger = ledger
         return create.call_args.args[3]
@@ -112,8 +115,13 @@ class MediaTests(unittest.TestCase):
         import shlex
 
         from holophyte import isolation
-        from holophyte.target import state_dir
+        from holophyte.project import state_dir
         self.config['agents'] = {'implementer_isolation': 'container'}
+        capture_source = self.root / 'capture.env'
+        capture_source.write_text('CAPTURE_KEY=sentinel-capture\nOTHER=sentinel-other\n')
+        self.config['merge'].update(capture_env_source=str(capture_source),
+                                    capture_env_allow=['CAPTURE_KEY'],
+                                    ui_capture_dir='.holophyte-capture')
         self.candidate()
         worktree = self.root / 'task'
         self.git('worktree', 'add', '-qb', 'task', str(worktree))
@@ -137,8 +145,13 @@ class MediaTests(unittest.TestCase):
             relative_output = Path(script[-1]).relative_to('/workspace')
             output = workspace / relative_output
             self.assertEqual(env['HOLOPHYTE_TICKET'], 'KO-530')
+            self.assertEqual(env['HOLOPHYTE_CAPTURE_DIR'], '.holophyte-capture')
             self.assertEqual(env['HOLOPHYTE_EVIDENCE_STATES'], '\n'.join(states))
             self.assertNotIn('MEDIA_SECRET', env)
+            self.assertIn('--env=CAPTURE_KEY', argv)
+            self.assertNotIn('sentinel-capture', ' '.join(argv))
+            self.assertEqual(env['CAPTURE_KEY'], 'sentinel-capture')
+            self.assertNotIn('OTHER', env)
             host_image = self.repo / relative_output / '01-dialog.png'
             self.assertEqual(self.git('check-ignore', str(host_image)),
                              str(host_image))
@@ -156,6 +169,7 @@ class MediaTests(unittest.TestCase):
             section = pr_media.prepare(self.target, self.repo, 'KO-530',
                                        evidence_states=states)
         run.assert_called_once()
+        self.assertNotIn('CAPTURE_KEY', isolation.environment(self.target))
         self.assertIn('Dialog open — captured', section)
         self.assertEqual(subprocess.check_output(
             ['git', '--git-dir', str(self.remote), 'show',
@@ -185,7 +199,7 @@ class MediaTests(unittest.TestCase):
             {'implementer_credential': {'env': 'CAPTURE_KEY'}},
         ]
         with patch.object(pr_media, '_produce',
-                          return_value='capture failed') as produce:
+                          return_value=('capture failed', '')) as produce:
             pr_media.prepare(self.target, self.repo, 'KO-530')
             for number, change in enumerate(changes, 2):
                 with self.subTest(change=change):
@@ -202,7 +216,8 @@ class MediaTests(unittest.TestCase):
         source.write_text('ALLOWED=first-secret\nEXCLUDED=one\n')
         self.config['agents'] = {'implementer_isolation': 'container'}
         self.config['worktree'] = {'env_source': str(source), 'env_allow': ['ALLOWED']}
-        with patch.object(pr_media, '_produce', return_value='evidence') as produce:
+        with patch.object(pr_media, '_produce',
+                          return_value=('evidence', '')) as produce:
             pr_media.prepare(self.target, self.repo, 'KO-530')
             source.write_text('EXCLUDED=two\nALLOWED=first-secret\n')
             pr_media.prepare(self.target, self.repo, 'KO-530')
@@ -218,6 +233,7 @@ class MediaTests(unittest.TestCase):
 
     def test_host_capture_preserves_popen_call(self):
         from unittest.mock import ANY
+        self.config['merge']['ui_capture_dir'] = '.holophyte-capture'
         for agents in ({}, {'implementer_isolation': 'none'}):
             self.config['agents'] = agents
             with patch.object(pr_media.subprocess, 'Popen') as popen:
@@ -228,10 +244,34 @@ class MediaTests(unittest.TestCase):
             popen.assert_called_once_with(
                 ['python3', 'capture.py', str(self.root)], cwd=self.repo,
                 env=dict(os.environ, HOLOPHYTE_TICKET='KO-530',
+                         HOLOPHYTE_CAPTURE_DIR='.holophyte-capture',
                          HOLOPHYTE_EVIDENCE_STATES='Open'),
                 stdin=subprocess.DEVNULL, stdout=ANY, stderr=ANY,
                 start_new_session=True)
             popen.return_value.wait.assert_called_once_with(timeout=300)
+
+    def test_host_capture_adds_only_allowed_capture_environment(self):
+        from unittest.mock import ANY
+        source = self.root / 'capture.env'
+        source.write_text('CAPTURE_KEY=sentinel-capture\nOTHER=sentinel-other\n')
+        self.config['merge'].update(capture_env_source=str(source),
+                                    capture_env_allow=['CAPTURE_KEY'])
+        with (patch.dict(os.environ),
+              patch.object(pr_media.subprocess, 'Popen') as popen):
+            os.environ.pop('CAPTURE_KEY', None)
+            os.environ.pop('OTHER', None)
+            popen.return_value.wait.return_value = 0
+            error = pr_media._capture('python3 capture.py', self.repo, self.root,
+                                      'KO-530', [], target=self.target)
+            self.assertNotIn('CAPTURE_KEY', os.environ)
+            popen.assert_called_once_with(
+                ['python3', 'capture.py', str(self.root)], cwd=self.repo,
+                env=dict(os.environ, CAPTURE_KEY='sentinel-capture',
+                         HOLOPHYTE_TICKET='KO-530',
+                         HOLOPHYTE_CAPTURE_DIR='e2e/capture'),
+                stdin=subprocess.DEVNULL, stdout=ANY, stderr=ANY,
+                start_new_session=True)
+        self.assertEqual(error, '')
 
     def test_ticket_states_reach_capture_and_review(self):
         from holophyte.review import evidence_brief
@@ -262,14 +302,24 @@ class MediaTests(unittest.TestCase):
         from holophyte.loop import _capture_brief
 
         body = "## Evidence\n\nDialog open\nName saved\n"
-        brief = _capture_brief(self.target, body)
+        brief = _capture_brief(self.target, body, "KO-7")
         self.assertIn("e2e/capture", brief)
         self.assertIn("01: Dialog open\n02: Name saved", brief)
         self.assertIn("NN-slug.png", brief)
         self.assertIn("recording", brief)
+        self.assertNotIn("KO-7", brief)
+        self.assertNotIn("commit", brief)
         self.config["merge"]["ui_capture_dir"] = "tests/screens"
-        self.assertIn("tests/screens", _capture_brief(self.target, body))
-        self.assertEqual(_capture_brief(self.target, "No evidence section"), "")
+        self.assertIn("tests/screens", _capture_brief(self.target, body, "KO-7"))
+        self.assertEqual(
+            _capture_brief(self.target, "No evidence section", "KO-7"), "")
+        self.config["merge"].update(ui_capture_dir=".holophyte-capture",
+                                    ui_capture_local=True)
+        local = _capture_brief(self.target, body, "KO-7")
+        self.assertIn("`.holophyte-capture/KO-7.capture.ts`", local)
+        self.assertIn("never committed", local)
+        self.assertIn("01: Dialog open\n02: Name saved", local)
+        self.assertIn("NN-slug.png", local)
 
     def test_bucket_precedes_git_publishers_and_keeps_credentials_out_of_ledger(self):
         self.config["merge"]["media_repo"] = "example/media"
@@ -533,6 +583,13 @@ class MediaTests(unittest.TestCase):
         self.assertEqual(self.open(private=True), body)
         self.visibility.assert_not_called()
 
+    def test_evidence_names_the_candidate_it_captured(self):
+        self.candidate()
+        body = self.open()
+        section = body[body.index("## Evidence"):].split("\n\n")
+        self.assertEqual(section[1],
+                         f"Captured at {self.git('rev-parse', 'HEAD')[:12]}")
+
     def test_non_ui_and_unconfigured_do_not_capture(self):
         self.candidate("holophyte/loop.py")
         self.assertNotIn("## Evidence", self.open())
@@ -583,6 +640,61 @@ class MediaTests(unittest.TestCase):
         with patch("holophyte.pr_media.CAPTURE_TIMEOUT", 0.05):
             self.assertIn("timed out", self.open())
 
+    def prepare(self):
+        notes = []
+        with (patch("holophyte.pr.origin_url",
+                    return_value="https://github.com/example/repo.git"),
+              patch.object(pr_media, "repo_is_private", return_value=False)):
+            section = pr_media.prepare(self.target, self.repo, "KO-623",
+                                       record_note=notes.append)
+        return section, notes
+
+    def test_failed_host_capture_ends_with_its_last_twenty_lines(self):
+        self.candidate()
+        (self.repo / "capture.sh").write_text(
+            'for i in $(seq 1 30); do echo "line $i" >&2; echo >&2; done\nexit 2\n')
+        self.config["merge"]["ui_capture"] = "sh capture.sh"
+        section, notes = self.prepare()
+        tail = "\n".join(f"line {i}" for i in range(11, 31))
+        self.assertIn("Capture command `sh capture.sh` failed (exit 2).\n\n"
+                      f"```\n{tail}\n```", section)
+        self.assertNotIn("line 10\n", section)
+        self.assertEqual(len(notes), 1)
+        self.assertIn(tail, notes[0])
+
+    def test_failed_capture_output_is_redacted_in_section_and_note(self):
+        self.config["linear"] = {"api_key": "lin-sentinel-623"}
+        self.candidate(script="print('token lin-sentinel-623 refused')\n"
+                       "raise SystemExit(1)")
+        section, notes = self.prepare()
+        for text in (section, notes[0]):
+            self.assertNotIn("lin-sentinel-623", text)
+            self.assertIn("token [redacted] refused", text)
+
+    def test_failed_container_capture_shows_what_launch_returned(self):
+        from holophyte import isolation
+        self.config["agents"] = {"implementer_isolation": "container"}
+        self.candidate()
+        worktree = self.root / "task"
+        self.git("worktree", "add", "-qb", "task", str(worktree))
+        self.repo = worktree
+        with (patch.object(isolation, "image_ready"),
+              patch.object(isolation.review_runner, "_remove_container"),
+              patch.object(isolation, "run_capped",
+                           return_value=(3, "no spec at e2e/rel139.spec.ts\n"))):
+            section, _ = self.prepare()
+        self.assertIn("failed (exit 3).\n\n```\nno spec at e2e/rel139.spec.ts\n```",
+                      section)
+
+    def test_successful_capture_has_no_output_block(self):
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       "print('rendering')\n"
+                       f'Path(sys.argv[1], "01-screen.png").write_bytes({PNG!r})\n')
+        section, _ = self.prepare()
+        self.assertIn("01-screen.png", section)
+        self.assertNotIn("```", section)
+        self.assertNotIn("rendering", section)
+
     def test_visibility_transport_and_invalid_answers(self):
         with patch("holophyte.pr.origin_url",
                    return_value="https://github.com/example/repo.git"), patch(
@@ -624,5 +736,18 @@ class MediaTests(unittest.TestCase):
             {"ui_paths": ["console/**"], "ui_capture": "'"},
         ):
             with self.subTest(config), self.assertRaises(SystemExit):
+                self.config = {"merge": config}
+                merge_config(self.target)
+
+    def test_local_capture_key_refuses_non_boolean_and_escaping_directory(self):
+        from holophyte.config_tables import merge_config
+
+        for config in (
+            {"ui_capture_local": "yes"},
+            {"ui_capture_local": True, "ui_capture_dir": "../specs"},
+            {"ui_capture_local": True, "ui_capture_dir": "/specs"},
+        ):
+            with (self.subTest(config),
+                  self.assertRaisesRegex(SystemExit, "ui_capture_local")):
                 self.config = {"merge": config}
                 merge_config(self.target)

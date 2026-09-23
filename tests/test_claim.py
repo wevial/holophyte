@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import unittest
 from dataclasses import dataclass
@@ -43,6 +45,7 @@ import holophyte.claim  # noqa: E402 - after the sys.path insert above
 import holophyte.environment_git  # noqa: E402
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -100,6 +103,8 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
             'QUOTED="sentinel quoted value"\n'
             "AUTH_KEY=sentinel-auth-value\nDB_KEY=sentinel-db-value\n"
             "OTHER=sentinel-other-value\n")
+        capture = self.target.parent / "capture.env"
+        capture.write_text("CAPTURE_KEY=sentinel-capture\n")
         seen = self.target.parent / "seen.env"
         mode = self.target.parent / "seen.mode"
         self.configure(
@@ -107,12 +112,16 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
             'env_allow = ["PUBLIC", "QUOTED"]\n'
             f'setup = ["cp .env {seen}; '
             f'(stat -c %a .env 2>/dev/null || stat -f %Lp .env) > {mode}; '
-            f'echo sentinel-public-value", "cat {source}; exit 3"]\n')
+            f'echo sentinel-public-value", "cat {source}; exit 3"]\n'
+            f'[merge]\ncapture_env_source = "{capture}"\n'
+            'capture_env_allow = ["CAPTURE_KEY"]\n')
         provider = StubProvider(a_task())
         out = self.main_output(provider=provider)
         self.assertEqual(seen.read_text(),
                          'PUBLIC=sentinel-public-value\n'
                          'QUOTED="sentinel quoted value"\n')
+        self.assertNotIn("CAPTURE_KEY", seen.read_text())
+        self.assertNotIn("sentinel-capture", seen.read_text())
         self.assertEqual(mode.read_text().strip(), "600")
         conn = store.open(str(self.db), migrate="owner")
         try:
@@ -161,6 +170,50 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
         (wt / ".env").write_text("checkout changes\n")
         self.assertEqual(source.read_text(), "PUBLIC=sentinel-link-value\n")
 
+    def test_local_capture_spec_stays_on_disk_and_out_of_the_commit(self):
+        wt = self.target.parent / "capture-local"
+        self.git("worktree", "add", "-b", "capture-local", str(wt), "main")
+        self.configure('[merge]\nui_capture_dir = ".holophyte-capture"\n'
+                       "ui_capture_local = true\n")
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        spec = wt / ".holophyte-capture" / "KO-7.capture.ts"
+        spec.write_text("test('capture', () => {});\n")
+        (wt / "work.txt").write_text("the ticket's change\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-qm", "candidate", cwd=wt)
+        tree = self.git("ls-tree", "-r", "--name-only", "HEAD", cwd=wt)
+        self.assertIn("work.txt", tree.split())
+        self.assertNotIn(".holophyte-capture", tree)
+        self.assertTrue(spec.is_file())
+
+    def test_local_capture_setup_refuses_to_write_through_a_symlink(self):
+        self.configure('[merge]\nui_capture_dir = "specs/capture"\n'
+                       "ui_capture_local = true\n")
+        outside = self.target.parent / "outside"
+        outside.mkdir()
+        (outside / ".gitignore").write_text("kept\n")
+        for name, link, points_at in (
+                ("ancestor", "specs", outside),
+                ("file", "specs/capture/.gitignore", outside / ".gitignore")):
+            with self.subTest(name):
+                wt = self.target.parent / f"capture-{name}"
+                self.git("worktree", "add", "--detach", str(wt), "main")
+                (wt / link).parent.mkdir(parents=True, exist_ok=True)
+                (wt / link).symlink_to(points_at)
+                ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
+                self.assertFalse(ok)
+                self.assertIn("symlink", report)
+                self.assertEqual(sorted(p.name for p in outside.iterdir()),
+                                 [".gitignore"])
+                self.assertEqual((outside / ".gitignore").read_text(), "kept\n")
+
+    def test_capture_directory_untouched_without_local_key(self):
+        wt = self.target.parent / "capture-kept"
+        self.git("worktree", "add", "--detach", str(wt), "main")
+        self.configure('[merge]\nui_capture_dir = ".holophyte-capture"\n')
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertFalse((wt / ".holophyte-capture").exists())
+
     def test_without_environment_keys_setup_writes_no_environment(self):
         seen = self.target.parent / "env-absent"
         self.configure(f'[worktree]\nsetup = ["test ! -e .env && touch {seen}"]\n')
@@ -193,7 +246,7 @@ class SkipLineTests(unittest.TestCase):
         self.assertNotIn("fail", asked)
 
         closed = holophyte.claim.skip_line(
-            "KO-131", 0, url, f"rejected: {url}")
+            "KO-131", 0, url, f"rejected: {url}", "pull_request_closed")
         self.assertIn(f"a question: rejected: {url};", closed)
         self.assertNotIn("--approve", closed)
 
@@ -289,6 +342,55 @@ class TicketNameTests(LoopFixture):
 
 
 class LeftoverWorktreeTests(LoopFixture):
+    def test_pause_after_review_resumes_findings_without_repeating_review(self):
+        from pause_fixture import PauseReply
+
+        from holophyte.stop import command
+        self.loop(Commit(), PauseReply(self.db, REQUEST_CHANGES))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "addressing")])
+        command(self.tgt, "KO-131", None, resume=True)
+        fake, _ = self.loop(Commit("address recorded findings"), APPROVE)
+        self.assertIn("scripted change is incomplete", fake.turns[0].goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("merged",)])
+
+    def test_pause_after_approval_preserves_human_merge_gate(self):
+        from pause_fixture import PauseReply
+
+        from holophyte.stop import command
+        self.configure('[merge]\napprove = "human"\n')
+        self.loop(Commit(), PauseReply(self.db, APPROVE))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "merge_gate")])
+        command(self.tgt, "KO-131", None, resume=True)
+        self.loop()  # No new agent turn, and no merge approval granted by resume.
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+        self.assertEqual(self.read("SELECT phase FROM runs ORDER BY id"),
+                         [("paused",), ("awaiting_merge_approval",)])
+
+    def test_resumed_pause_reuses_worktree_without_implementing(self):
+        from pause_fixture import PauseEdit
+
+        from holophyte.stop import command
+        self.loop(PauseEdit(self.db))
+        wt = self.worktrees / "ko-131-add-a-thing"
+        original = wt.stat().st_ino
+        command(self.tgt, "KO-131", None, resume=True)
+        # An APPROVE-only script fails if another implement turn is dispatched.
+        cut = holophyte.claim._cut_worktree
+        def reuse(*args, **kwargs):
+            self.assertEqual(wt.stat().st_ino, original)
+            return cut(*args, **kwargs)
+        with patch.object(holophyte.loop, "_cut_worktree", side_effect=reuse):
+            self.loop(APPROVE)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("merged",)])
+        self.assertEqual(self.git("show", "main:pause-work.txt"),
+                         "preserve this uncommitted work\n")
+
+
     def leftover(self):
         """A registered leftover worktree on BRANCH, as a failed run leaves it."""
         wt = self.worktrees / "ko-131-add-a-thing"
@@ -1498,3 +1600,93 @@ class BoardLeaseLabelTests(LoopFixture):
         self.assertEqual(provider.label_calls,
                          [("unlabel", "iss-131", "holo:writer-1")])
         self.assertEqual(provider.labels["iss-131"], ["other"])
+
+
+class FactoryCommitIdentityTests(unittest.TestCase):
+    """The commits the factory makes itself on worktree reuse carry the
+    target's configured identity, and the pinned factory one only when none
+    is configured (KO-656): a deploy platform that checks authors refused
+    a merge authored `holophyte@factory.invalid` as a pull request's head.
+    Real git, with the global and system config shut out."""
+
+    PINNED = "holophyte holophyte@factory.invalid"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        env = patch.dict(os.environ, {"HOME": str(root / "home"),
+                                      "GIT_CONFIG_GLOBAL": os.devnull,
+                                      "GIT_CONFIG_NOSYSTEM": "1"})
+        env.start()
+        self.addCleanup(env.stop)
+        for name in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+                     "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"):
+            os.environ.pop(name, None)
+        self.repo = root / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q", "-b", "main")
+        (self.repo / "README.md").write_text("base\n")
+        self.setup_commit("base")
+        self.tgt = holophyte.project.Project(
+            path=self.repo, holo_dir=root, store_path=root / "store.db",
+            config_path=root / "config.toml", worktrees=root / "wts")
+        self.branch = "task/ko-656"
+        self.wt = root / "wts" / "ko-656"
+        self.git("worktree", "add", "-q", "-b", self.branch, str(self.wt),
+                 "main")
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(["git", *args], cwd=str(cwd or self.repo),
+                              check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    def setup_commit(self, message, cwd=None):
+        """The fixture's own commits name their author inline, so they set
+        no identity the factory's commits could pick up."""
+        self.git("add", "-A", cwd=cwd)
+        self.git("-c", "user.name=Setup", "-c", "user.email=setup@example.com",
+                 "commit", "-q", "-m", message, cwd=cwd)
+
+    def identities(self, rev):
+        return self.git("log", "-1", "--format=%an %ae%n%cn %ce", rev,
+                        cwd=self.wt).splitlines()
+
+    def reuse_after_main_moved(self):
+        (self.wt / "work.txt").write_text("preserved\n")
+        self.setup_commit("preserved work", cwd=self.wt)
+        (self.repo / "new.txt").write_text("newer main\n")
+        self.setup_commit("main moved on")
+        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt,
+                                                 self.branch)
+        self.assertTrue(ok, why)
+        self.assertEqual(self.git("rev-list", "--parents", "-n", "1", "HEAD",
+                                  cwd=self.wt).count(" "), 2)  # a merge
+
+    def test_the_reuse_merge_carries_the_configured_identity(self):
+        self.git("config", "user.name", "Operator")
+        self.git("config", "user.email", "operator@example.com")
+
+        self.reuse_after_main_moved()
+
+        self.assertEqual(self.identities("HEAD"),
+                         ["Operator operator@example.com"] * 2)
+
+    def test_the_reuse_merge_falls_back_to_the_pinned_identity(self):
+        self.reuse_after_main_moved()
+
+        self.assertEqual(self.identities("HEAD"), [self.PINNED] * 2)
+
+    def test_the_wip_rescue_carries_the_configured_identity(self):
+        self.git("config", "user.name", "Operator")
+        self.git("config", "user.email", "operator@example.com")
+        (self.wt / "dirty.txt").write_text("uncommitted\n")
+
+        ok, why = holophyte.claim.reuse_leftover(self.tgt, self.wt,
+                                                 self.branch)
+
+        self.assertTrue(ok, why)
+        self.assertIn("WIP: uncommitted leftovers preserved on reuse",
+                      self.git("log", "-1", "--format=%s", cwd=self.wt))
+        self.assertEqual(self.identities("HEAD"),
+                         ["Operator operator@example.com"] * 2)

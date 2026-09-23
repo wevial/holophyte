@@ -95,3 +95,14 @@ class ConfigReferenceTests(unittest.TestCase):
         for term in ("conversation", "explicit", "rewritten"):
             with self.subTest(term=term):
                 self.assertIn(term, document)
+
+    def test_covering_review_scope_notes(self):
+        document = (DOCS / "reviewing.md").read_text()
+        boundary = document.split("## Local reviewer boundary", 1)[1]
+        boundary = boundary.split("\n## ", 1)[0]
+        step = document.split("6. **Review the fix.**", 1)[1]
+        step = step.split("After `[merge] pr_rounds`", 1)[0]
+        for term in ("approval at", "void", "read whole"):
+            with self.subTest(term=term):
+                self.assertIn(term, step)
+        self.assertIn("focused", boundary)

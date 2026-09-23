@@ -1,10 +1,11 @@
 # Store and state
 
 The store is the source of truth. Linear, `FINDINGS.md`, the daemon's JSON
-and the drawer are views of it; the loop and the supervisor are its only
-writers. It is one SQLite file per target in WAL mode, at
+and the drawer are views of it; the loop, the supervisor and the serve
+daemon's action endpoints write it, all through the store API. It is one
+SQLite file per project in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 10) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 36) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -19,8 +20,8 @@ after a claim is contract drift.
 
 | Table | One row per | Written by | Notes |
 | --- | --- | --- | --- |
-| `projects` | target | loop | `activeRunId` is the lease: one run per project at a time |
-| `tickets` | Linear issue the loop has mirrored | loop | status machine below; `blockedQuestion` when parked for a human; the contract snapshot the merge gate compares against |
+| `projects` | project | loop | `activeRunId` is a legacy column, neither asserted nor written since the lease moved to `tickets` |
+| `tickets` | Linear issue the loop has mirrored | loop | `activeRunId` is the lease: held by one run at a time, renewed by that run's heartbeat; status machine below; `blockedQuestion` when parked for a human; the contract snapshot the merge gate compares against |
 | `runs` | attempt at a ticket | loop, supervisor (end only) | phase machine below; `lastHeartbeat`, `timeBoxMs`, `outcome`, `outcomeReason`, `outcomeClass` (`work` or `infra`), `resumePhase`, `host` |
 | `reviewRounds` | review or adjudication round | loop | verdict, structured findings, their fingerprint, the verify result shown to the reviewer, the agent route |
 | `runEvents` | narrative event | loop, supervisor | phase changes, warnings, sweeps; the story `FINDINGS.md` does not tell. `level` ∈ `narrative, detail`; a `detail` row of kind `crash` carries the traceback of a run that crashed in its `payload`, its summary the one-line reason |
@@ -75,7 +76,7 @@ never disagree.
   until the supervisor sweeps the run, which is the supervisor's reason to
   exist.
 - `supervisor.lock` in the state directory holds the supervisor's pid;
-  a second supervisor for the same target exits naming it. A dead pid is
+  a second supervisor for the same project exits naming it. A dead pid is
   reclaimed under an `flock` on a sidecar.
 - Review scratch directories under `~/.cache/holophyte/reviews/` are
   temporary; a review container whose directory is gone is a stray.
@@ -105,13 +106,13 @@ absent loses its copy and nothing else. `record_intervention()` writes the
 entries. `store.read.ledger(conn, run_id)` returns a run's entries oldest
 first and `store.read.ledger_since()` a window across runs, newest first.
 The daemon serves them as `/runs/N/ledger` and `/ledger?since=MS`
-([HTTP endpoints](../reference/http.md)). A target with
+([HTTP endpoints](../reference/http.md)). A project with
 `[report] findings = "repo"` also has `FINDINGS.md` rendered from `runs` and
 `reviewRounds`; by default (`"none"`) nothing is rendered.
 
 ## FINDINGS
 
-`FINDINGS.md` in a target repository that opts in with
+`FINDINGS.md` in a project repository that opts in with
 `[report] findings = "repo"` (the default `"none"` renders nothing: the
 store is the record) is a rendered window over the store:
 above a `<!-- store-rendered below -->` marker, frozen pre-store history

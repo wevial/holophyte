@@ -38,6 +38,7 @@ from .tickets import walk_ticket
 # leave a finished run parked in the phase it was working in. `killed` is its
 # own phase in §4; the other two failure outcomes share `failed`.
 TERMINAL_PHASES = {
+    "paused": "paused",
     _enums.RunOutcome.REJECTED.value: _Phase.REJECTED.value,
     _enums.RunOutcome.MERGED.value: _Phase.DONE.value,
     _enums.RunOutcome.KILLED.value: _Phase.KILLED.value,
@@ -57,7 +58,8 @@ OUTCOME_CLASSES = frozenset(e.value for e in _enums.OutcomeClass)
 
 
 def release(conn, run_id, outcome, reason=None, now=None,
-            outcome_class="work", merge_sha=None, failure_kind=None):
+            outcome_class="work", merge_sha=None, failure_kind=None, resume_phase=None,
+            candidate_sha=None):
     """End run `run_id` with `outcome` and give the ticket's lease back.
 
     The mirror of `claim()`, and the reason a crashed loop does not brick the
@@ -153,7 +155,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
         # resumable are worth recording — a run that failed while `claimed` or
         # mid-merge has no work phase to go back to, and `resume()` reads the
         # NULL as §4's edge back to `working`.
-        resume_phase = (stopped_in
+        resume_phase = resume_phase if outcome == "paused" else (stopped_in
                         if TERMINAL_PHASES[outcome] == "failed"
                         and stopped_in in RESUMABLE_WORK_PHASES
                         else None)
@@ -165,11 +167,12 @@ def release(conn, run_id, outcome, reason=None, now=None,
         conn.execute(
             "UPDATE runs SET endedAt = ?, outcome = ?, outcomeReason = ?,"
             " outcomeClass = ?, resumePhase = ?, mergeSha = ?, failureKind = ?,"
+            " candidateSha = COALESCE(?, candidateSha),"
             " reviewRoundCount = (SELECT COUNT(*) FROM reviewRounds"
             "                     WHERE runId = ? AND verdict != 'error')"
             " WHERE id = ?",
             (now, outcome, reason, outcome_class, resume_phase, merge_sha,
-             failure_kind, run_id, run_id),
+             failure_kind, candidate_sha, run_id, run_id),
         )
         conn.execute(
             "UPDATE tickets SET activeRunId = NULL, lastRunId = ?"
@@ -218,7 +221,10 @@ def requeue(conn, ticket_id, note, now=None):
     is admitted too (KO-497), unless its run awaits merge approval. Clear
     its question in the same transaction as the intervention and walk.
     Candidates and pull requests still awaiting approval name the operator
-    command that applies instead.
+    command that applies instead -- except a `not_reproduced` park (KO-658),
+    whose question offers `--requeue` once the maintainer has added detail:
+    in the same transaction, after the intervention, its run is ended
+    `abandoned` (never a strike) the way `_release_parked()` ends one.
 
     Refuses, with `RequeueRefused` and no write, anything else: an unknown
     ticket, one shelved on the board, one with an active run,
@@ -241,32 +247,46 @@ def requeue(conn, ticket_id, note, now=None):
             raise RequeueRefused(
                 f"{identifier}: run {active_run_id} is still live;"
                 " a requeue is for a ticket whose run has ended")
-        run = (conn.execute("SELECT outcome, phase, prUrl FROM runs"
+        run = (conn.execute("SELECT outcome, phase, prUrl, parkKind FROM runs"
                             " WHERE id = ?", (last_run_id,)).fetchone()
                if last_run_id is not None else None)
-        parked = status == "blocked_on_operator"
-        if parked and run is not None and run[1] == "awaiting_merge_approval":
-            command = "--babysit" if run[2] else "--approve or --babysit"
-            raise RequeueRefused(
-                f"{identifier} is parked awaiting merge approval; use {command}")
-        if status != "in_flight" and not (
-                parked and run is not None and run[0] in ("failed", "rejected")):
-            raise RequeueRefused(
-                f"{identifier} is {status}, not in_flight; nothing to requeue")
-        if run is None:
-            raise RequeueRefused(
-                f"{identifier} has no ended run to requeue after")
-        if run[0] not in ("failed", "rejected"):
-            raise RequeueRefused(
-                f"{identifier}: run {last_run_id} ended {run[0]},"
-                " not failed or rejected; nothing to requeue")
+        unreproduced = _requeue_admits(identifier, status, last_run_id, run)
         record_intervention(conn, last_run_id, "requeue", note, now=now)
+        if unreproduced:
+            release(conn, last_run_id, "abandoned",
+                    "not reproduced; requeued for another attempt", now=now)
         conn.execute("UPDATE tickets SET blockedQuestion = NULL"
                      " WHERE id = ?", (ticket_id,))
         conn.execute("UPDATE runs SET approvedAt = NULL, approvedBy = NULL"
                      " WHERE id = ?", (last_run_id,))
         walk_ticket(conn, ticket_id, "ready")
     return last_run_id
+
+
+def _requeue_admits(identifier, status, last_run_id, run):
+    """`requeue()`'s refusals, before any write: raise `RequeueRefused`
+    naming the reason, or return whether the admitted run is a
+    `not_reproduced` park still to be ended. `run` is the newest run's
+    `(outcome, phase, prUrl, parkKind)`, None when the ticket has none."""
+    parked = status == "blocked_on_operator"
+    if parked and run is not None and run[1] == "awaiting_merge_approval":
+        if run[3] == _enums.ParkKind.NOT_REPRODUCED.value:
+            return True
+        command = "--babysit" if run[2] else "--approve or --babysit"
+        raise RequeueRefused(
+            f"{identifier} is parked awaiting merge approval; use {command}")
+    if status != "in_flight" and not (
+            parked and run is not None and run[0] in ("failed", "rejected")):
+        raise RequeueRefused(
+            f"{identifier} is {status}, not in_flight; nothing to requeue")
+    if run is None:
+        raise RequeueRefused(
+            f"{identifier} has no ended run to requeue after")
+    if run[0] not in ("failed", "rejected"):
+        raise RequeueRefused(
+            f"{identifier}: run {last_run_id} ended {run[0]},"
+            " not failed or rejected; nothing to requeue")
+    return False
 
 
 class ApproveRefused(Exception):
@@ -522,7 +542,7 @@ def repoint(conn, ticket_id, sha, note, now=None):
 # phases a run is parked *in*, not phases work was interrupted in, so neither
 # is a phase to send a resumed run back to.
 RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {
-    _Phase.FAILED.value, _Phase.BLOCKED_ON_OPERATOR.value}
+    _Phase.FAILED.value, _Phase.BLOCKED_ON_OPERATOR.value, "paused"}
 # The phases a run is parked *in*, alive and waiting for a person: the loop
 # wrote a question (or, under `[merge] approve = "human"`, an approved
 # candidate), gave the lease back and went home. Neither has a heartbeat by
@@ -536,8 +556,58 @@ class ResumeRefused(Exception):
     """A resume the state model does not allow; nothing was written."""
 
 
-def resume(conn, run_id, guidance=None, source="human", now=None):
+def pause(conn, run_id, note, source="human", now=None):
+    """Record a cooperative stop request before marking the live run, atomically."""
+    with _transaction(conn):
+        row = conn.execute("SELECT endedAt, outcome, stopRequested FROM runs"
+                           " WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        if row[0] is not None:
+            raise ValueError(f"run {run_id} already ended with outcome {row[1]}")
+        if row[2] is not None:
+            return row[2]
+        request = record_intervention(conn, run_id, "pause", note,
+                                      source=source, guidance=note, now=now)
+        conn.execute("UPDATE runs SET stopRequested = ? WHERE id = ?",
+                     (request, run_id))
+    return request
+
+
+def abort(conn, run_id, note, source="human", now=None, close=False):
+    """Record an emergency stop before marking the live run, atomically.
+
+    Shares `stopRequested` with `pause()`; the intervention's action tells the
+    two apart, and an abort supersedes a pending pause. `close` records it
+    as `abort_close`, which closes the run's pull request once the abort is
+    finished (KO-611) and supersedes a pending plain abort. A run that has
+    ended, or sits where the state model draws no edge to `failed`, is
+    refused before anything is written."""
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT r.endedAt, r.outcome, r.phase, r.stopRequested, i.action"
+            " FROM runs r LEFT JOIN interventions i ON i.id = r.stopRequested"
+            " WHERE r.id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        ended, outcome, phase, pending, action = row
+        if ended is not None:
+            raise ValueError(f"run {run_id} already ended with outcome {outcome}")
+        if TERMINAL_PHASES["abandoned"] not in RUN_PHASE_TRANSITIONS[phase]:
+            raise ValueError(f"run {run_id} is {phase}; it cannot end abandoned")
+        wanted = "abort_close" if close else "abort"
+        if action in (wanted, "abort_close"):
+            return pending
+        request = record_intervention(conn, run_id, wanted, note,
+                                      source=source, guidance=note, now=now)
+        conn.execute("UPDATE runs SET stopRequested = ? WHERE id = ?",
+                     (request, run_id))
+    return request
+
+
+def resume(conn, run_id, guidance=None, source="human", now=None, note=None):
     """Resume `run_id`, optionally with `guidance`; return the phase re-entered.
+    `note`, the operator's reason, lands on the interventions row (KO-609).
 
     State-model §5. Two rules, and the first one is the point of the ticket:
 
@@ -608,14 +678,16 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
             raise ResumeRefused(
                 f"run {run_id}: phase {phase} is not one state-model §5 resumes"
             )
-        if phase == "failed" and resume_phase is not None:
+        if phase in ("failed", "paused") and resume_phase is not None:
             target = resume_phase
         elif phase in ("failed", "blocked_on_operator"):
             target = "working"
         else:
             target = phase
         conn.execute(
-            "UPDATE runs SET phase = ?, resumePhase = NULL WHERE id = ?",
+            "UPDATE runs SET phase = ?, resumePhase = NULL, parkKind = NULL,"
+            " stopRequested = NULL"
+            " WHERE id = ?",
             (target, run_id),
         )
         if phase in ENDED_PHASES:
@@ -627,9 +699,9 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
             )
         conn.execute(
             'INSERT INTO interventions'
-            ' (runId, source, "trigger", "action", guidance, at)'
-            " VALUES (?, ?, 'manual', 'resume', ?, ?)",
-            (run_id, source, guidance, now),
+            ' (runId, source, "trigger", "action", guidance, note, at)'
+            " VALUES (?, ?, 'manual', 'resume', ?, ?, ?)",
+            (run_id, source, guidance, note, now),
         )
     return target
 
@@ -638,6 +710,16 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
 INTERVENTION_SOURCES = tuple(e.value for e in _enums.InterventionSource)
 INTERVENTION_TRIGGERS = tuple(e.value for e in _enums.InterventionTrigger)
 INTERVENTION_ACTIONS = tuple(e.value for e in _enums.InterventionAction)
+
+
+def _validate_intervention(action, note, source, trigger):
+    for kind, value, allowed in (("action", action, INTERVENTION_ACTIONS),
+                                 ("source", source, INTERVENTION_SOURCES),
+                                 ("trigger", trigger, INTERVENTION_TRIGGERS)):
+        if value not in allowed:
+            raise ValueError(f"unknown intervention {kind} {value!r}")
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError(f"note must be non-empty text, got {note!r}")
 
 
 def record_intervention(conn, run_id, action, note, source="human",
@@ -649,14 +731,7 @@ def record_intervention(conn, run_id, action, note, source="human",
     entry, while question/guidance retain their intervention meanings. Redirect
     requires a question. `now` defaults to current epoch milliseconds.
     An enclosing transaction joins the event and row to the caller's write."""
-    if action not in INTERVENTION_ACTIONS:
-        raise ValueError(f"unknown intervention action {action!r}")
-    if source not in INTERVENTION_SOURCES:
-        raise ValueError(f"unknown intervention source {source!r}")
-    if trigger not in INTERVENTION_TRIGGERS:
-        raise ValueError(f"unknown intervention trigger {trigger!r}")
-    if not isinstance(note, str) or not note.strip():
-        raise ValueError(f"note must be non-empty text, got {note!r}")
+    _validate_intervention(action, note, source, trigger)
     if action == "redirect" and (
             not isinstance(question, str) or not question.strip()):
         raise ValueError("a redirect records the question it asked;"
@@ -898,3 +973,31 @@ def _set_admission(conn, project_id, note, state, action):
         conn.execute("UPDATE projects SET admission = ?, holdNote = ? WHERE id = ?",
                      (state, note if state != "enabled" else None, project_id))
         return intervention
+
+
+def record_project_intervention(conn, action, note, source="human",
+                                trigger="manual", project_id=None, now=None):
+    """Record a decision that belongs to the project, not to one run (KO-665).
+
+    Validated like `record_intervention()`; `project_id` defaults to the
+    store's only project. Only `migrate` may be recorded with no project."""
+    _validate_intervention(action, note, source, trigger)
+    with _transaction(conn):
+        projects = [row[0] for row in conn.execute("SELECT id FROM projects")]
+        if project_id is None and len(projects) == 1:
+            project_id = projects[0]
+        if project_id is not None and project_id not in projects:
+            raise ValueError(f"no project {project_id}")
+        if project_id is None and action != "migrate":
+            raise ValueError(f"{action} needs a project and the store has"
+                             f" {len(projects)}; pass project_id")
+        return conn.execute(
+            'INSERT INTO interventions (projectId, source, "trigger", action,'
+            " note, at) VALUES (?, ?, ?, ?, ?, ?)",
+            (project_id, source, trigger, action, note,
+             now if now is not None else int(time.time() * 1000))).lastrowid
+
+
+# The schema repair lives beside this module for its size; it records its
+# decision through `record_project_intervention()` above.
+from .repair import repair_references  # noqa: E402,F401

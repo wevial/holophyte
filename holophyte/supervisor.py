@@ -61,7 +61,7 @@ from holophyte.supervisor_lock import (
     supervisor_lock_path,
 )
 from holophyte.sweep_report import merge_lock_lines, sweep_lines
-from store.working import effective_work
+from store.working import agent_work
 
 # How the supervisor restarts itself when the factory's code moves under it:
 # the process image is replaced, never a module reloaded. A seam so tests can
@@ -198,7 +198,7 @@ def still_tripped(target, conn, trip, knobs=None):
     """Recheck a trip under the acting transaction's write lock.
 
     An ended run or changed phase is acquitted. A fresh heartbeat clears only
-    staleness: overrunning or stuck work can still be alive. Recompute effective
+    staleness: overrunning or stuck work can still be alive. Recompute agent
     work and its allowance because settlement or completed review rounds may
     change time-box evidence between observation and action. Recompute review
     overlap against the original knobs for the same reason."""
@@ -211,7 +211,7 @@ def still_tripped(target, conn, trip, knobs=None):
     if trip.condition == STALE_HEARTBEAT:
         return run.lastHeartbeat == trip.heartbeat
     if trip.condition == TIME_BOX:
-        spent = effective_work(run)
+        spent = agent_work(run)
         return (spent is not None and bool(run.timeBoxMs)
                 and spent > time_box_allowance(
                     run.timeBoxMs * budget_scale(target), run.reviewRoundCount,
@@ -413,7 +413,7 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
             else:
                 strikes = store.record_strike(
                     conn, run_id, stale, heartbeat, now)
-            elapsed = effective_work(run, now)
+            elapsed = agent_work(run, now)
             rounds, cap = run.reviewRoundCount, run.reviewRoundCap or MAX_ROUNDS
             turns = 1 + min(rounds, cap)
             if strikes >= strikes_needed:
@@ -425,7 +425,7 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
                     time_box, rounds, cap, grace, run_cap):
                 trips.append(Trip(
                     run_id, ticket, phase, TIME_BOX,
-                    f"{elapsed / 60000:.1f} min against a"
+                    f"{elapsed / 60000:.1f} min of agent work against a"
                     f" {time_box / 60000:.0f} min box × {turns}"
                     f" {'turn' if turns == 1 else 'turns'} ({grace}x grace,"
                     f" {run_cap}x run cap)",

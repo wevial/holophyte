@@ -52,7 +52,7 @@ worktree and merged only after mechanical verification and independent review.
   (the writer host, the operator seat), never machine names or personal paths.
 - The store is the run record: `runs`/`reviewRounds` are the execution
   evidence, read through the console or `--report`. This repository keeps no
-  `FINDINGS.md`; a target opts into that rendered window with
+  `FINDINGS.md`; a project opts into that rendered window with
   `[report] findings = "repo"`, and even then the rows are the record — do not
   hand-edit the rendered window or drop rows to make a run appear clean.
 - Model/harness routing is an explicit factory policy: live-probe the exact
@@ -77,10 +77,12 @@ worktree and merged only after mechanical verification and independent review.
   where no API exists — and then only paired with a ticket for the
   missing API, filed the same day. Never skip a rung downward.
 - **Operator store API, by name.** `release`, `resume`, `transition`,
-  `record_intervention`, `walk_ticket` and `requeue` are kept for the REPL
-  rung above even when the loop itself does not call them (`--requeue` is
-  `requeue`); `tests/test_store_surface.py` holds the module's public
-  surface to an explicit allow-list and checks these six against this
+  `record_intervention`, `record_project_intervention`, `walk_ticket`,
+  `requeue` and `repair_references` are kept for the REPL rung above
+  even when the loop itself does not call them (`--requeue` is `requeue`;
+  `repair_references` rewrites a foreign key naming a dropped table, dry
+  run first); `tests/test_store_surface.py` holds the module's public
+  surface to an explicit allow-list and checks these eight against this
   list, so a removal or addition is deliberate.
 - **A stuck or refused lease is a `--sweep` question, not a SQL
   question.** The first response to "lease already held by run N" is a

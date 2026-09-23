@@ -1,13 +1,16 @@
 import { formatAge, formatClock, formatSpan } from "./format";
+import { agentMs } from "./runs";
 import type { AttentionItem, Run, Status } from "./types";
 
 /** The item kinds `/attention` sends today (holophyte/serve.py `attention()`),
  *  plus `unreachable`, which the console adds for a daemon that stopped
  *  answering (lib/hosts.ts `hostItems`). `pr_open` is a run parked on its
  *  pull request: nobody owes the factory an answer, the PR waits on a
- *  review or a merge, so it is its own kind and not a question. */
-export type Kind = "blocked" | "pr_open" | "stale_run" | "failed" | "supervisor" | "unreachable";
-export const KINDS: Kind[] = ["blocked", "pr_open", "stale_run", "failed", "supervisor", "unreachable"];
+ *  review or a merge, so it is its own kind and not a question. `paused`
+ *  is a ticket a pause parked (holophyte/serve_levers.py `paused_item()`),
+ *  waiting on a Resume. */
+export type Kind = "blocked" | "pr_open" | "paused" | "stale_run" | "failed" | "supervisor" | "unreachable";
+export const KINDS: Kind[] = ["blocked", "pr_open", "paused", "stale_run", "failed", "supervisor", "unreachable"];
 
 /** A chip: every kind, or one of them. */
 export type KindFilter = "all" | Kind;
@@ -16,6 +19,7 @@ export const CHIP_LABELS: Record<KindFilter, string> = {
   all: "All",
   blocked: "Questions",
   pr_open: "PRs",
+  paused: "Paused",
   stale_run: "Stale runs",
   failed: "Failed",
   supervisor: "Supervisor",
@@ -25,6 +29,7 @@ export const CHIP_LABELS: Record<KindFilter, string> = {
 export const PILL_TEXT: Record<Kind, string> = {
   blocked: "question",
   pr_open: "PR",
+  paused: "paused",
   stale_run: "stale run",
   failed: "failed",
   supervisor: "supervisor",
@@ -35,10 +40,22 @@ export const PILL_TEXT: Record<Kind, string> = {
  *  route behind it (components/AttentionRow.tsx). */
 export const OPEN_PR = "Open PR";
 
+/** The `paused` row's one action: a reason box posting to `/actions/resume`
+ *  (components/RowActions.tsx). */
+export const RESUME = "Resume";
+
+/** The `stale_run` row's two aborts: reason boxes posting to
+ *  `/actions/abort` with `close` false, or true to close the run's pull
+ *  request too (components/RowActions.tsx); the second only on a run with
+ *  a pull request. */
+export const ABORT = "Abort";
+export const ABORT_CLOSE = "Abort and close";
+
 const ACTIONS: Record<Kind, string[]> = {
   blocked: ["Answer", "Requeue"],
   pr_open: [OPEN_PR],
-  stale_run: ["Kill run", "Requeue"],
+  paused: [RESUME],
+  stale_run: [ABORT, "Requeue"],
   failed: ["Requeue", "Mark needs_spec"],
   supervisor: ["Restart supervisor"],
   unreachable: [],
@@ -124,7 +141,7 @@ export function collapseFailed(items: AttentionItem[]): BandEntry[] {
 export type Counts = Record<KindFilter, number>;
 
 export function countsByKind(items: AttentionItem[]): Counts {
-  const counts: Counts = { all: items.length, blocked: 0, pr_open: 0, stale_run: 0, failed: 0, supervisor: 0, unreachable: 0 };
+  const counts: Counts = { all: items.length, blocked: 0, pr_open: 0, paused: 0, stale_run: 0, failed: 0, supervisor: 0, unreachable: 0 };
   for (const item of items) {
     if ((KINDS as string[]).includes(item.kind)) counts[item.kind as Kind] += 1;
   }
@@ -174,6 +191,15 @@ export interface PrFacts {
   checks?: string | null;
   review?: string | null;
   threads?: number | null;
+  title?: string | null;
+}
+
+/** A `pr_open` item's name for its pull request: the title the reconcile
+ *  last read (`pr.title`), else the ticket's own `title`; null when the
+ *  daemon sent neither. */
+export function prTitle(item: AttentionItem): string | null {
+  const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PrFacts) : null;
+  return str(pr?.title) || str(item.title) || null;
 }
 
 const CHECKS: Record<string, Fact> = {
@@ -288,8 +314,9 @@ function joinMeta(...parts: (string | null)[]): string | null {
 function overTimeBox(item: AttentionItem, runs: Run[] | undefined): string {
   const id = num(item.run);
   const run = id == null ? undefined : runs?.find((candidate) => candidate.id === id);
-  if (!run || run.time_box_ms == null || !(run.working_ms != null && run.working_ms > run.time_box_ms)) return "";
-  return ` and ${formatSpan(run.working_ms! - run.time_box_ms)} over its ${formatAge(run.time_box_ms)} time box`;
+  const spent = run == null ? null : agentMs(run);
+  if (!run || run.time_box_ms == null || !(spent != null && spent > run.time_box_ms)) return "";
+  return ` and ${formatSpan(spent - run.time_box_ms)} over its ${formatAge(run.time_box_ms)} time box`;
 }
 
 /** One row's text from an `/attention` item. Fields a newer daemon adds
@@ -331,11 +358,20 @@ export function describe(
         ...(pr ? { facts: prFacts(pr) } : {}),
       };
     }
+    case "paused": {
+      const asked = num(item.asked_ms);
+      return {
+        ...base,
+        body: str(item.note) ?? "",
+        meta: joinMeta(runLabel(item), asked == null ? null : `paused at ${formatClock(asked)}`),
+      };
+    }
     case "stale_run": {
       const age = num(item.heartbeat_age_ms) ?? 0;
       const phase = str(item.phase) ?? "unknown";
       return {
         ...base,
+        actions: str(item.pr_url) ? [ABORT, ABORT_CLOSE, "Requeue"] : base.actions,
         body: `No heartbeat for ${formatSpan(age)} while ${phase}${overTimeBox(item, context.runs)}`,
         meta: joinMeta(runLabel(item), str(item.phase)),
       };

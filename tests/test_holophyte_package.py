@@ -13,6 +13,7 @@ import importlib.util
 import inspect
 import io
 import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -34,8 +35,9 @@ FACTORY = ROOT / "factory.py"
 # carry no `__module__`, so they are not listed. Edit these lists in the same
 # change that moves a name, and say why in the commit.
 DEFINED = {
-    _module("target"): [
-        "Target",
+    _module("run"): ["Run", "land"],
+    _module("project"): [
+        "Project",
         "adopt_legacy_state",
         "legacy_state_layouts",
         "state_dir",
@@ -201,10 +203,11 @@ DEFINED = {
     _module("pullrequest"): [
         "_landed_pr",
         "_merge_pr",
-        "_open_pr",
         "_park_human",
         "_park_on_pr",
         "_pr_template",
+        "_prepare_pr",
+        "_push_and_open",
         "_resume_on_pr",
         "_written_pr_text",
     ],
@@ -334,6 +337,10 @@ class MediaStartupTests(unittest.TestCase):
 
 class MovedNamesTests(unittest.TestCase):
 
+    def test_landing_is_owned_by_run(self):
+        self.assertFalse(hasattr(_module("loop"), "_land"))
+
+
     def test_each_moved_name_is_defined_in_its_new_module(self):
         for module, names in DEFINED.items():
             for name in names:
@@ -356,6 +363,32 @@ class MovedNamesTests(unittest.TestCase):
             and value.__module__ == entry.__name__)
         self.assertEqual(own, [])
         self.assertIs(entry.cli, _module("cli").cli)
+
+
+class ProjectTypeTests(unittest.TestCase):
+    """KO-619: the project's type is `Project` in `holophyte.project`, with
+    no shim left at the old module path."""
+
+    # Spelled in pieces so the grep below does not find this file.
+    OLD_TYPE = "Tar" "get"
+    OLD_MODULE = OLD_TYPE.lower()
+
+    def test_the_old_module_path_no_longer_imports(self):
+        with self.assertRaises(ModuleNotFoundError):
+            _module(self.OLD_MODULE)
+
+    def test_the_old_names_are_gone_from_the_code_and_the_manual(self):
+        found = subprocess.run(
+            ["git", "grep", "-nw",
+             "-e", self.OLD_TYPE,
+             "-e", f"holophyte.{self.OLD_MODULE}",
+             "-e", f"holophyte/{self.OLD_MODULE}.py",
+             "--", "holophyte", "tests", "store", "factory.py", "README.md",
+             "AGENTS.md", "docs", ":!docs/design"],
+            cwd=ROOT, capture_output=True, text=True)
+        # Exit 1 is "no match"; anything else is git failing, not a pass.
+        self.assertIn(found.returncode, (0, 1), found.stderr)
+        self.assertEqual(found.stdout.splitlines(), [])
 
 
 if __name__ == "__main__":

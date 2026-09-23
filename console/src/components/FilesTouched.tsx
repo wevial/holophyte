@@ -3,8 +3,8 @@ import { capFiles, filesLabel, statusLetter, type StatusLetter } from "../lib/fi
 import type { RunFilesBody } from "../lib/types";
 
 /** The daemon's two named refusals (404 unknown run, 409 no range to diff)
- *  mean the rows are gone for good, so they replace a body kept from an
- *  earlier poll and are the only failures the column names, in the
+ *  replace a body kept from an earlier poll and are the only failures
+ *  the column names, in the
  *  endpoint's own words; any other failure leaves the last body, or reads
  *  as no files yet when there is none. */
 const REFUSALS: ReadonlySet<number> = new Set([404, 409]);
@@ -25,12 +25,14 @@ export function FilesTouched({
   error,
   status,
   loading,
+  pending = false,
 }: {
   files: RunFilesBody | null;
   error: string | null;
   /** The HTTP status behind `error`, null for a failure with no answer. */
   status: number | null;
   loading: boolean;
+  pending?: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
   const refused = error !== null && status !== null && REFUSALS.has(status);
@@ -48,7 +50,7 @@ export function FilesTouched({
       {body ? (
         <Rows body={body} showAll={showAll} onToggle={() => setShowAll((previous) => !previous)} />
       ) : (
-        <p data-files-note className={`mt-2 text-[12px] ${refused ? "font-semibold text-bad" : "text-muted"}`}>
+        <p data-files-note className={`mt-2 text-[12px] ${refused && !pending ? "font-semibold text-bad" : "text-muted"}`}>
           {refused ? error : loading ? "loading…" : "No files yet"}
         </p>
       )}

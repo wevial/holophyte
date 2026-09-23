@@ -5,6 +5,7 @@ import { age } from "../lib/format";
 import { addressOf, hostName, hostTone, runCounts, type HostRecord } from "../lib/hosts";
 import { forgetToken, storeToken, tokenFor } from "../lib/token";
 import { ActionButton } from "./ActionButton";
+import { TOKEN_REJECTED } from "./HostRow";
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -12,6 +13,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 const NOUNS: Record<Kind, string> = {
   blocked: "question",
   pr_open: "open PR",
+  paused: "paused ticket",
   stale_run: "stale run",
   failed: "failed run",
   supervisor: "supervisor",
@@ -156,7 +158,7 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
         )}
         {needsToken && (
           <span data-needs-token-line className="ml-auto font-mono text-[12px] text-muted">
-            needs token
+            {host.token_rejected ? TOKEN_REJECTED : "needs token"}
           </span>
         )}
         {hasToken && (

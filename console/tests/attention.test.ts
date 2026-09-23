@@ -13,7 +13,7 @@ test("a stale run reads as a padded no-heartbeat sentence with a one-unit age", 
   expect(described.meta).toBe("run #91 · reviewing");
   expect(described.ageMs).toBe(421000);
   expect(described.pill).toBe("stale run");
-  expect(described.actions).toEqual(["Kill run", "Requeue"]);
+  expect(described.actions).toEqual(["Abort", "Requeue"]);
 });
 
 test("the time-box clause joins /status.runs on the run id and appears only past the box", () => {
@@ -22,6 +22,15 @@ test("the time-box clause joins /status.runs on the run id and appears only past
   expect(within.body).toBe("No heartbeat for 7m 01s while reviewing");
   const over = { ...allKinds.status.runs[0]!, working_ms: 1800000 + 754000 };
   expect(describe(item, thresholds, { runs: [over] }).body).toBe(
+    "No heartbeat for 7m 01s while reviewing and 12m 34s over its 30m time box",
+  );
+});
+
+test("the time-box clause reads the agent clock when the daemon serves it", () => {
+  const item = { kind: "stale_run", level: "attention", run: 91, ticket: "KO-232", phase: "reviewing", heartbeat_age_ms: 421000 };
+  const base = { ...allKinds.status.runs[0]!, time_box_ms: 1800000, working_ms: 2100000 };
+  expect(describe(item, thresholds, { runs: [{ ...base, agent_ms: 1200000 }] }).body).toBe("No heartbeat for 7m 01s while reviewing");
+  expect(describe(item, thresholds, { runs: [{ ...base, agent_ms: 1800000 + 754000 }] }).body).toBe(
     "No heartbeat for 7m 01s while reviewing and 12m 34s over its 30m time box",
   );
 });
@@ -43,5 +52,5 @@ test("newer-daemon fields show only when present", () => {
 });
 
 test("the fixture's counts are one per kind", () => {
-  expect(countsByKind(allKinds.attention.items)).toEqual({ all: 4, blocked: 1, pr_open: 0, stale_run: 1, failed: 1, supervisor: 1, unreachable: 0 });
+  expect(countsByKind(allKinds.attention.items)).toEqual({ all: 4, blocked: 1, pr_open: 0, paused: 0, stale_run: 1, failed: 1, supervisor: 1, unreachable: 0 });
 });

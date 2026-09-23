@@ -8,25 +8,38 @@ export const supervisorSchema = z.looseObject({
 
 export const runSchema = z.looseObject({
   id: z.number(), ticket: z.string(), phase: z.string(),
+  stop_requested: z.string().nullable().optional(),
+  stop_action: z.enum(["pause", "abort", "abort_close"]).nullable().optional(),
   ticket_url: z.string().nullable().optional(), pr_url: z.string().nullable().optional(),
   heartbeat_age_ms: z.number(), elapsed_ms: z.number(),
   working_ms: z.number().nullable().optional(), work_started_ms: z.number().nullable().optional(),
+  agent_ms: z.number().nullable().optional(), verify_ms: z.number().nullable().optional(),
+  verify_started_ms: z.number().nullable().optional(),
   time_box_ms: z.number().nullable(), host: z.string().nullable(), title: z.string().nullable().optional(),
   started_ms: z.number().optional(), round: z.number().optional(), strikes: z.number().optional(),
 });
 
+// `target` is the older name for `project`: either one may be missing, not both,
+// and the parsed status always carries the path as `project`.
 export const statusSchema = z.looseObject({
-  target: z.string(), project: z.string().optional(), schema_version: z.number().optional(),
+  target: z.string().optional(), project: z.string().optional(), schema_version: z.number().optional(),
   host: z.string(), now: z.number(),
+  admission: z.string().optional(), hold_note: z.string().nullable().optional(),
   daemon: z.looseObject({ started_ms: z.number(), pid: z.number() }).optional(),
   workers_on_previous_build: z.number().optional(),
   active_routes: z.record(z.string(), z.looseObject({
     command: z.string().nullable(), fallback: z.string().optional(),
   })).optional(),
+  route_labels: z.record(z.string(), z.string().nullable()).optional(),
   supervisor: supervisorSchema,
   thresholds: z.looseObject({ heartbeat_stale_ms: z.number(), strikes: z.number() }),
   actions: z.boolean().optional(), config_edit: z.boolean().optional(),
   runs: z.array(runSchema),
+}).transform((status, ctx) => {
+  const project = status.project ?? status.target;
+  if (project !== undefined) return { ...status, project };
+  ctx.issues.push({ code: "custom", message: "project is required", path: ["project"], input: status });
+  return z.NEVER;
 });
 
 export const threadFindingFieldsSchema = z.looseObject({
@@ -66,6 +79,8 @@ export const runDetailSchema = z.looseObject({
     title: z.string().nullable().optional(), phase: z.string(), attempt: z.number().optional(),
     started_ms: z.number(), ended_ms: z.number().nullable(), elapsed_ms: z.number().optional(),
     working_ms: z.number().nullable().optional(), work_started_ms: z.number().nullable().optional(),
+    agent_ms: z.number().nullable().optional(), verify_ms: z.number().nullable().optional(),
+    verify_started_ms: z.number().nullable().optional(),
     outcome: z.string().nullable().optional(), time_box_ms: z.number().nullable(),
     branch: z.string().nullable().optional(), host: z.string().nullable(),
     heartbeat_age_ms: z.number().nullable().optional(), merge_sha: z.string().nullable().optional(),

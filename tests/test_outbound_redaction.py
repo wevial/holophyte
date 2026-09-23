@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from holophyte import agents, board, gates, loop, pr, redact
-from holophyte.target import Target
+from holophyte.project import Project
 
 SENTINEL = "outbound-sentinel-542"
 
@@ -21,7 +21,7 @@ class OutboundRedactionTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.target = Target(
+        self.target = Project(
             path=self.root, holo_dir=self.root, store_path=self.root / "store.db",
             config_path=self.root / "config.toml", worktrees=self.root / "trees")
         self.enterContext(patch.object(redact, "_environment_values", frozenset()))

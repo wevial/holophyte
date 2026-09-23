@@ -1,7 +1,7 @@
 {
   "target": "/repo",
   "project": "/repo",
-  "schema_version": 30,
+  "schema_version": 36,
   "admission": "enabled",
   "hold_note": null,
   "active_routes": {
@@ -17,6 +17,13 @@
     "writer": {
       "command": null
     }
+  },
+  "route_labels": {
+    "implementer": "claude opus",
+    "reviewer": "codex gpt-5.6-sol",
+    "reviewer_fallback": null,
+    "adjudicator": "codex gpt-5.6-sol",
+    "writer": "claude opus"
   },
   "workers_on_previous_build": 0,
   "host": "writer",
@@ -50,10 +57,15 @@
       "elapsed_ms": 120000,
       "working_ms": 0,
       "work_started_ms": null,
+      "agent_ms": 0,
+      "verify_ms": 0,
+      "verify_started_ms": null,
       "time_box_ms": 1500000,
       "round": 1,
       "strikes": 0,
-      "host": "writer"
+      "host": "writer",
+      "stop_requested": null,
+      "stop_action": null
     },
     {
       "id": 1,
@@ -66,10 +78,15 @@
       "elapsed_ms": 0,
       "working_ms": 0,
       "work_started_ms": null,
+      "agent_ms": 0,
+      "verify_ms": 0,
+      "verify_started_ms": null,
       "time_box_ms": null,
       "round": 0,
       "strikes": 0,
-      "host": null
+      "host": null,
+      "stop_requested": null,
+      "stop_action": null
     }
   ]
 }

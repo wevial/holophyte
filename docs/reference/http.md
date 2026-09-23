@@ -3,16 +3,18 @@
 `--serve PORT|HOST:PORT` answers the JSON paths below and serves the
 console's built files at `/`. Every response carries
 `Cache-Control: no-store` and `Access-Control-Allow-Origin: *`; the JSON
-ones `Content-Type: application/json`; every request opens the store
+ones `Content-Type: application/json`; every GET route opens the store
 read-only and closes it. The open origin is for the console page, which
 one daemon serves and which fetches the others from the browser: without
-the header the browser refuses a cross-origin answer. The daemon is
-read-only; on loopback the bind address is the whole boundary, and beyond
-it every JSON route but `/peers` is behind a bearer token
-([Authentication](#authentication)). Unknown paths are
-404 and any method but GET is 405, both with a JSON `error`, except the
-three `POST /actions/...` routes `[serve] actions = true` opens, documented
-in [The daemon's actions](daemon.md). A target with no store answers 503.
+the header the browser refuses a cross-origin answer. The daemon reads by
+default and writes only through two opt-ins, documented in
+[The daemon's actions](daemon.md): the `POST /actions/...` routes
+`[serve] actions = true` opens and the `PUT /config` route
+`[serve] config_edit = true` opens. On loopback the bind address is the
+whole boundary for reads, and beyond it every JSON route but `/peers` is
+behind a bearer token ([Authentication](#authentication)). Unknown paths
+are 404 and any method but GET is 405, both with a JSON `error`, except
+those writing routes. A project with no store answers 503.
 
 ## `GET /status`
 
@@ -20,17 +22,32 @@ in [The daemon's actions](daemon.md). A target with no store answers 503.
 {
   "target": "/path/to/repo",
   "project": "/path/to/repo",
+  "schema_version": 35,
+  "admission": "enabled",
+  "hold_note": null,
+  "active_routes": {"implementer": {"command": "claude"},
+                    "reviewer": {"command": "claude", "fallback": "claude"},
+                    "adjudicator": {"command": "codex"},
+                    "writer": {"command": null}},
+  "route_labels": {"implementer": "claude opus", "reviewer": "codex gpt-5.6-sol",
+                   "reviewer_fallback": null, "adjudicator": "codex gpt-5.6-sol",
+                   "writer": "claude opus"},
+  "workers_on_previous_build": 0,
   "host": "writer-1",
   "now": 1788450534491,
   "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
-  "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2},
+  "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2, "run_cap": 3.0},
   "actions": false,
   "config_edit": false,
   "runs": [
-    {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease", "phase": "working",
+    {"id": 52, "ticket": "KO-219", "ticket_url": "https://linear.app/example/issue/KO-219",
+     "title": "The sweep frees a silent lease", "phase": "working",
      "started_ms": 1788450461675, "heartbeat_age_ms": 71989, "elapsed_ms": 72816,
-     "time_box_ms": 1500000, "round": 0, "strikes": 0, "host": "writer-1"}
+     "working_ms": 61200, "work_started_ms": 1788450511675,
+     "agent_ms": 61200, "verify_ms": 0, "verify_started_ms": null,
+     "time_box_ms": 1500000, "round": 0, "strikes": 0, "host": "writer-1",
+     "stop_requested": null, "stop_action": null}
   ]
 }
 ```
@@ -41,15 +58,52 @@ daemon against its own `now`, so a client compares one number to
 host about the time. `started_ms` is the run's start as epoch
 milliseconds; `round` is the review rounds recorded so far; `strikes` is
 the sweep's tally for the run, 0 when it is not under suspicion.
+`ticket_url` is the ticket's page on the board (`tickets.url`), null when
+the store has none. `elapsed_ms` is wall time since `started_ms`.
+`working_ms` is the work the run has recorded plus, while a span of work
+is open, the time since that span began, null for a run whose work was
+never measured; `work_started_ms` is when the open span began, as epoch
+milliseconds, and null while no span is open,
+so a client interpolates work between polls only from `work_started_ms`
+and never from `elapsed_ms`. `agent_ms` is the part of `working_ms` the
+time box is judged against and `verify_ms` the rest, the time spent in the
+ticket's verify commands; `agent_ms` is null when `working_ms` is, and
+`verify_ms` is null for a run recorded before the split, whose work all
+counts as `agent_ms`; `verify_started_ms` is set only while the open span is a
+verify, else null. `time_box_ms` is the box the run is counted
+against, the estimate scaled by `[agents] budget_scale`, null for a
+ticket with no estimate; `thresholds.run_cap` is the hard ceiling in
+multiples of that box, so a time-box bar can draw it. `stop_requested` is
+the note of a pause or abort the operator has asked of the run and the
+loop has not yet acted on, and `stop_action` that request's action
+(`pause`, `abort` or `abort_close`); both
+are null when none is pending.
 `supervisor.state` is `live`, `stale` or `none`. `daemon` describes the
-serving process: its pid and when it started. `project` is the same
-string as `target`, the console's word for it; both are carried for one
-release. `actions` is whether `[serve] actions = true` opened the
-`POST /actions/...` routes of [The daemon's actions](daemon.md); the
+serving process: its pid and when it started. `project` is the
+repository the daemon serves, as a path; `target` is a deprecated alias
+carrying the same value, kept for one release. `schema_version` is the
+store's schema version (its `PRAGMA user_version`). `admission` is the
+project's admission state (`store/enums.py` `ProjectAdmission`): `enabled`,
+`held` or `disabled`; while it is `disabled`, `runs` is empty.
+`hold_note` is the note of the latest admission change, null when there
+is none.
+`actions` is whether
+`[serve] actions = true` opened the `POST /actions/...` routes of [The daemon's actions](daemon.md); the
 console draws its action buttons disabled while it is `false`.
 `config_edit` is whether `[serve] config_edit = true` opened `GET /config`
 and `PUT /config`; the console's settings sheet is read-only, naming the
-key, while it is `false`. Every `host` passes through `[report] host_label`.
+key, while it is `false`. `route_labels` names what each seat is configured
+to run, labelled as a recorded turn is: the command's first word plus its
+`-m`/`--model` value. A seat left unset shows the default the loop
+dispatches, an unset `writer` the implementer's label, and an unset
+`reviewer_fallback` null. `active_routes` holds one entry per seat
+(`implementer`, `reviewer`, `adjudicator`, `writer`) naming what the seat
+runs now: `command` is the executable alone, never its arguments, null for
+a seat left unset in `[agents]`; while a running loop has switched the seat
+to its fallback, `command` is the fallback's and the entry also carries
+`fallback`, naming it. `workers_on_previous_build` counts the workers a
+restarted loop inherited from the build it replaced and still owns, 0
+when there are none. Every `host` passes through `[report] host_label`.
 
 ## `GET /runs?limit=N`
 
@@ -99,11 +153,11 @@ non-integer `limit`, or a non-integer `before`, is 400 with `error`
 naming the parameter; a `before` no run has is 200 with no rows.
 `/runs` is untouched: it stays the terminal's table, oldest first.
 
-`commit_url` is the merge commit's page on the target's `origin`:
+`commit_url` is the merge commit's page on the project's `origin`:
 `https://HOST/OWNER/REPO/commit/SHA` when the `origin` URL is
 `https://HOST/OWNER/REPO(.git)` or `git@HOST:OWNER/REPO(.git)` and the
-sha is an ancestor of `origin/main` in the target's checkout. It is null
-when the row has no `merge_sha`, the target has no `origin`, the remote
+sha is an ancestor of `origin/main` in the project's checkout. It is null
+when the row has no `merge_sha`, the project has no `origin`, the remote
 is of another shape (including one carrying a `?` query, `#` fragment
 or credentials, which would otherwise ride into the link), or the sha has not reached `origin/main` (a local
 merge never pushed, one rewritten on the way up, a fresh clone with no
@@ -120,23 +174,44 @@ opened, so its last path segment is the PR number.
 ## `GET /runs/N`
 
 ```json
-{"run": {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease",
+{"run": {"id": 52, "ticket": "KO-219", "ticket_url": "https://linear.app/example/issue/KO-219",
+         "title": "The sweep frees a silent lease",
          "phase": "done", "attempt": 1, "started_ms": 1788450461675,
-         "ended_ms": 1788451661675, "outcome": "merged", "time_box_ms": 1500000,
+         "ended_ms": 1788451661675, "outcome": "merged",
+         "elapsed_ms": 1200000, "working_ms": 912000, "agent_ms": 840000,
+         "verify_ms": 72000, "time_box_ms": 1500000,
          "branch": "task/ko-219-the-sweep-frees-a-silent-lease", "host": "writer-1",
          "heartbeat_age_ms": null,
          "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
          "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
          "pr_url": "https://github.com/example/repo/pull/2170",
+         "work_started_ms": null, "verify_started_ms": null,
+         "approved_at": 1788451561675, "approved_by": "operator",
          "max_rounds": 2},
  "rounds": [
   {"round": 1, "started_ms": 1788450761675, "ended_ms": 1788450941675,
    "verdict": "changes_requested", "reviewer_model": "reviewer-model",
    "findings": [{"path": "holophyte/serve.py", "line": 12, "severity": "p1",
-                 "criterion": "AC1", "message": "the route is unmatched"}]},
+                 "criterion": "AC1", "message": "the route is unmatched"},
+                {"path": "holophyte/serve.py", "line": 40, "severity": "p1",
+                 "criterion": null, "message": "Validate input", "kind": "thread",
+                 "author": "review-bot", "author_kind": "bot",
+                 "summary": "Validate input", "verdict": "ADDRESS",
+                 "raw": "Please validate input",
+                 "url": "https://github.com/example/repo/pull/2170#discussion_r1"}],
+   "instructions": [{"kind": "instruction", "path": "holophyte/serve.py", "line": null,
+                     "author": "operator", "severity": "nit",
+                     "message": "Keep validation", "request": "Keep validation",
+                     "url": "https://github.com/example/repo/pull/2170#discussion_r2",
+                     "outcome": "changed", "reply": "Validation retained"}],
+   "operator_notes": [{"note": "Keep validation", "author": "operator",
+                       "kind": "operator_note", "event_id": 7, "consumed": true,
+                       "run_id": 52, "round": 1}]},
   {"round": 2, "started_ms": 1788451061675, "ended_ms": 1788451181675,
-   "verdict": "pass", "reviewer_model": "reviewer-model", "findings": []}
+   "verdict": "pass", "reviewer_model": "reviewer-model", "findings": [],
+   "instructions": [], "operator_notes": []}
  ],
+ "findings": [{"tone": "advisory", "message": "https://github.com/example/repo/pull/2170#discussion_r3: Consider a cache"}],
  "events": [
   {"at": 1788450461675, "kind": "phase_change", "summary": "claimed"},
   {"at": 1788450941675, "kind": "review", "summary": "round 1 asked for changes"}
@@ -153,6 +228,33 @@ recomputing it; a run recorded before the store carried the cap answers
 the loop's base of 2. `rounds` lists the run's review rounds oldest
 first, each with its `findings` decoded into objects (`path`, `line`,
 `severity`, `criterion`, `message`) rather than the stored JSON string.
+A finding decoded from a pull-request review thread also carries `kind`
+(`thread`), `author` (the thread's last commenter), `author_kind` (`bot`
+for a login `[merge] bot_authors` or `bot_logins` names, else `user` or
+`unknown` as GitHub reported it), `summary` (the finding's one-line gist,
+which `message` repeats), `verdict` (the adjudication: `ADDRESS`,
+`FOLLOW_UP` or `DECLINE`), `raw` (the comment's text, redacted and cut at
+20,000 characters) and `url` (the thread's page). A round's `instructions` are the requests a human
+reviewer addressed to the factory on the pull request, split out of
+`findings`: each an object with `kind` (`instruction`), `path`, `line`
+(null when the thread has none), `author`, `request` (the ask), `url` and,
+where the round recorded them, `severity`, `message`, `outcome` (`changed`
+or `asked`) and `reply`, the factory's answer on the thread. A round's
+`operator_notes` are the private operator notes (`--babysit KO-n --note
+TEXT` on a parked pull request) that round consumed: each with the
+`note`, its `author`, `kind` (`operator_note`), `event_id` (the run event
+that recorded it),
+`consumed`, and the `run_id` and `round` that consumed it. Top-level
+`findings` are the advisory bot threads the factory noted on the pull
+request without acting on: each with `tone` (`advisory`) and `message`,
+the thread's URL and first line; empty when there are none.
+`elapsed_ms`, `working_ms`, `agent_ms`, `verify_ms`, `work_started_ms`,
+`verify_started_ms`, `time_box_ms` and `ticket_url` are as `/status`
+carries them, except that a run's clocks stop at `ended_ms` once it has
+ended. `approved_at` (epoch milliseconds) and `approved_by` (the
+operator's login) record the approval (`--approve`) that released a
+parked candidate to merge; both are null for a run no one approved, and a
+`--requeue` clears them.
 `events` is the `narrative` level of the run's event stream, oldest
 first; `detail` events and their payloads are not served. An `N` that is
 not an integer is 400; an integer with no run behind it is 404 carrying
@@ -184,10 +286,10 @@ merge commit; the daemon resolves those to a commit range and runs
 `git diff --numstat` and `git diff --name-status` over it, each under a
 timeout, so the answer is what git says today, not a snapshot. For a
 merged run (a recorded `merge_sha`) the range is the merge commit's first
-parent to the merge commit in the target's checkout: exactly what the
+parent to the merge commit in the project's checkout: exactly what the
 `--no-ff` landing added to main, whether or not the branch still exists.
 For a live run, one whose branch still has its worktree beside the
-target, the diff is taken inside that worktree from the merge base of
+project, the diff is taken inside that worktree from the merge base of
 `main` and its HEAD to the working tree: commits and uncommitted edits
 together, untracked files listed as added, so the panel fills in as the
 implementer works, and a worktree with nothing changed yet answers an
@@ -309,9 +411,10 @@ What needs the operator, computed where the store is:
  "target": "/path/to/repo", "project": "/path/to/repo", "items": [
   {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000,
    "pr_url": null, "level": "attention"},
-  {"kind": "pr_open", "ticket": "KO-n", "run": 53, "pr_url": "https://github.com/example/repo/pull/2170",
-   "reason": "…", "asked_ms": 1788449000000,
-   "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2}, "level": "attention"},
+  {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
+   "pr_url": "https://github.com/example/repo/pull/2170", "reason": "…", "asked_ms": 1788449000000,
+   "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…"},
+   "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
    "pr_url": null, "level": "attention"},
   {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "attempt": 2,
@@ -324,22 +427,27 @@ A `blocked` item's `run` is the run parked for the ticket and `asked_ms`
 when the question was asked: the newest `redirect` intervention on that
 run, else the run's last heartbeat (both null only for a ticket parked
 with no run behind it). A `pr_open` item is a `blocked_on_operator`
-ticket whose run has a `pr_url` and whose question opens with `PR open:`,
-the line a park under `[merge] mode = "pr"` writes first: the run waits
-on a review or a merge, not on an answer, so the item carries `pr_url`
-and `reason` (the question with that first line removed) in place of
+ticket whose parked run has a `pr_url` and whose recorded park kind
+(`runs.parkKind`, one of `store/enums.py` `ParkKind`) is `pull_request`,
+as a park under `[merge] mode = "pr"` records it; the question's wording
+plays no part. The run waits on a review or a merge, not on an answer,
+so the item carries `pr_url` and `reason` (the question with its first
+line removed, or the whole question when it has one line) in place of
 `question`; its `run` and `asked_ms` are as on `blocked`. Its `pr` is
 the pull request as the loop's reconcile last read it: `number` from the
 URL, `checks` (`success`, `pending`, `failure`, null for a PR with no
 checks), `review` (GitHub's review decision lower-cased: `approved`,
 `changes_requested`, `review_required`, null when none is required) and
-`threads`, the review-thread count (`runs.prSeenChecks`, `prSeenReview`,
-`prSeenThreads`); all three facts are null for a run never polled. A `failed` item's `attempt` is the run's 1-based
+`threads`, the review-thread count, and `title`, the pull request's
+title (`runs.prSeenChecks`, `prSeenReview`, `prSeenThreads`,
+`prSeenTitle`); all four facts are null for a run never polled. The
+item's own `title` is the ticket's title, which the console shows when
+`pr.title` is null. A `failed` item's `attempt` is the run's 1-based
 attempt number. Every item that names a `run` carries its `pr_url`: the
 pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
 null when it opened none, so a console can link the parked question to
-the PR it waits on. `target` and `project` are the target path, as on
-`/status`.
+the PR it waits on. `project` is the project path and `target` its
+deprecated alias with the same value, as on `/status`.
 
 `level` is `none`, `working`, `attention` or `critical`; with no items it
 is `working` if any run is live. Items come in this order: `blocked` and
@@ -421,10 +529,10 @@ daemon it was loaded from:
 ```
 
 `self` is the address this daemon bound, `HOST:PORT` as `--serve`
-announced it, not the machine's name. `peers` is the target's `[console]
+announced it, not the machine's name. `peers` is the project's `[console]
 daemons` list (see `docs/config.md`) in its configured order, empty when
 the table is absent: an empty list, never an error. The daemon answers
-from config and never contacts a peer; it needs no store, so a target
+from config and never contacts a peer; it needs no store, so a project
 with none still answers 200 here.
 
 ## Static files
@@ -432,7 +540,7 @@ with none still answers 200 here.
 `GET /` answers `console/dist/index.html` and `GET /PATH` answers
 `console/dist/PATH` for a regular file under that directory: the
 repository's own `console/dist/`, where the renderer's build writes the
-console, found from the package rather than the target's checkout. The
+console, found from the package rather than the project's checkout. The
 JSON routes above, and any added later, take precedence over a file of
 the same name. The content type follows the extension:
 
@@ -465,28 +573,36 @@ A daemon bound to anything but loopback runs with `[serve] token_file`
 Authorization: Bearer TOKEN
 ```
 
-The value is compared whole, in constant time; a missing header, another
+With `[serve] machine_token_file` also set, the contents of that file are
+accepted as `TOKEN` too, on every route that demands the project's token:
+one token for every daemon on the machine, beside the project's own.
+Each value is compared whole, in constant time; a missing header, another
 scheme or any other value is 401 with the body `{}` and no store access,
 and nothing about the attempt is logged. `GET /`, the console's files
 under it and `GET /peers` are served without the header, so the page can
 load and learn where its peers are before it has a token to present. A
-daemon bound to loopback never asks: `--serve 7710` answers every route
-open, token file or not.
+daemon bound to loopback never asks on the read routes: `--serve 7710`
+answers them open, token file or not. The opt-in routes are the
+exception: `[serve] actions` or `[serve] config_edit` needs
+`[serve] token_file` on every bind, loopback included (the daemon
+refuses to start without it), and `POST /actions/...`, `GET /config` and
+`PUT /config` answer only to the bearer.
 
 A page served by one daemon polls the others from the browser, and a
 cross-origin GET carrying `Authorization` is not a simple request, nor
-is the console's `POST /actions/...` with the bearer and a JSON body: the
+is the console's `POST /actions/...` or `PUT /config` with the bearer
+and a JSON body: the
 browser first sends a CORS preflight, `OPTIONS` on the path with
 `Access-Control-Request-Headers: authorization` (`authorization,
 content-type` for an action). Every daemon answers it on any path with
 204, no body, `Access-Control-Allow-Origin: *`,
-`Access-Control-Allow-Methods: GET, POST`, `Access-Control-Allow-Headers:
+`Access-Control-Allow-Methods: GET, POST, PUT`, `Access-Control-Allow-Headers:
 authorization, accept, content-type` and `Access-Control-Max-Age: 600`,
 token or not: a preflight never carries credentials, so the answer
 discloses nothing and touches no store, and the request it clears is
 still refused without the bearer. Every other method but GET stays 405, `POST`
-included on every path but the `/actions/` routes of
-[The daemon's actions](daemon.md).
+included on every path but the `/actions/` routes and `PUT` on every path
+but `/config`, both in [The daemon's actions](daemon.md).
 
 ## Errors
 
@@ -496,7 +612,7 @@ included on every path but the `/actions/` routes of
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}` |
 | 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
-| 405 | any method but GET and OPTIONS, and `POST` outside `/actions/`; `Allow: GET` |
+| 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and `PUT` outside `/config`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
-| 503 | the target has no store yet |
+| 503 | the project has no store yet |
 | 504 | `/runs/N/files` when git does not answer within its cap |

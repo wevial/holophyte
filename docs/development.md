@@ -13,8 +13,8 @@ Each module, one line:
 - `holophyte/cli.py` — the argument parser and mode dispatch: `--report`,
   `--requeue`, `--approve`, `--babysit`, `--repoint`, `--file-ticket`,
   `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
-- `holophyte/target.py` — where a target's state lives (`HOLOPHYTE_HOME`,
-  the `<slug>` directory, legacy adoption) and the `Target` value.
+- `holophyte/project.py` — where a project's state lives (`HOLOPHYTE_HOME`,
+  the `<slug>` directory, legacy adoption) and the `Project` value.
 - `holophyte/config.py` — `config.toml` and every table it can set, checked
   at startup.
 - `holophyte/config_tables.py` — the per-table readers out of
@@ -43,6 +43,9 @@ Each module, one line:
   (actual, estimate, ratio, rounds, outcome) with mean and median ratio, a
   read-only query over the store that claims no ticket, cuts no worktree and
   calls no one.
+- `holophyte/run.py` — the frozen claimed run and the shared landing entry point.
+- `holophyte/stop.py` — cooperative pause requests, operator aborts and durable
+  continuations.
 - `holophyte/runs.py` — the store seam: a run's progress as store rows.
 - `holophyte/board.py` — Linear as the notice board: the ticket mirror, its
   pushes, `--file-ticket` and the escalation. Ticket status lives in the
@@ -56,24 +59,43 @@ Each module, one line:
   `SWEEP_HEADERS` table, the per-run and restart lines, `sweep_report()`
   as `--sweep`'s whole body, and the review-container and merge-lock
   sections.
-- `holophyte/supervisor_lock.py` — the one-supervisor-per-target lock
+- `holophyte/status.py` — `--status [--json]` (KO-596): what the project is
+  doing now — projects and admission, live and parked runs, the ready
+  count, the schema version and the lock holders — read only, no network.
+- `holophyte/store_import.py` — `--import-store PATH --dry-run` (KO-595):
+  `plan()` reads another store and the project's own, both read-only, and
+  says per table what an import would move — rows, id range, the remap
+  offset and a sha256 of the rows in id order; `render()` prints it.
+- `holophyte/supervisor_lock.py` — the one-supervisor-per-project lock
   (KO-396): the lockfile's path, read, acquire and release, the
   `SupervisorHeld` refusal and the `supervisor_running()` probe.
-- `holophyte/serve.py` — `--serve PORT|HOST:PORT`, the read-only HTTP daemon.
+- `holophyte/serve.py` — `--serve PORT|HOST:PORT`, the HTTP daemon: it
+  reads by default and writes only through `[serve] actions` and
+  `config_edit`.
 - `holophyte/serve_config.py` — the daemon's `/config` routes (KO-394):
   `GET`'s redacted read and `PUT`'s validated, recorded and backed-up
   write, `text` and `{"patch": ...}` bodies alike.
 - `holophyte/serve_actions.py` — the daemon's `POST /actions/...` routes
   (KO-395): the body parser, the two unit actions, `requeue`, and the
   interventions row each records before it acts.
+- `holophyte/serve_levers.py` — the daemon's `hold`, `release-hold`,
+  `pause` and `resume` actions (KO-609): the CLI's store calls behind the
+  action token, each requiring a note, and the `paused` attention item.
+- `holophyte/transcripts.py` — opted-in transcript location, rendering and turn event joins.
+- `holophyte/transcript_config.py` — the daemon transcript root allow-list.
 - `holophyte/serve_runs.py` — the daemon's run and ledger read routes
   (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
   and `/runs/N/files`, their query parsers and the origin-link pair.
+- `holophyte/serve_watch.py` — the daemon's code-moved check and its
+  in-flight request count (KO-648): what re-executes it between requests
+  once the factory checkout's `HEAD` moves.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
-  target's checkout under a timeout: what `/runs/N/files` answers.
+  project's checkout under a timeout: what `/runs/N/files` answers.
 - `holophyte/loop.py` — the loop: `run_task`'s stages.
+- `holophyte/harness.py` — harness adapters: a table-form `[agents]` role's
+  turn argv, session id and resume argv, and the `[harnesses]` binary paths.
 - `holophyte/fix_session.py` — review fix-session arms, resume argv and fresh retry.
 - `holophyte/session_arms.py` — shared run-number assignment for session experiments.
 - `holophyte/review_session.py` — reviewer session-file capture and resume requests.
@@ -84,8 +106,14 @@ Each module, one line:
   (KO-424): `main` merged into the branch, the pre-merge verify and the
   drift check under the merge lock, the park for a human's approval, the
   approved candidate's resumed run, and the `--no-ff` merge onto main.
+- `holophyte/reproduce.py` — a reported defect the implementer could not
+  reproduce (KO-657): the `OUTCOME: NOT_REPRODUCED` declaration, the
+  evidence check in place of round 1, and the `not_reproduced` park.
 - `holophyte/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
+- `holophyte/locks.py` — the `Locks` protocol a `Project` carries as
+  its `locks` attribute, and `FileLocks`, whose `merge()` is `live_merge_lock()`
+  unchanged (KO-594).
 - `holophyte/operator.py` — the operator commands and the entry point:
   `main` (the serial pass or the pool's scheduler) and the self-merge
   re-exec, `report`, and the `--requeue`/`--approve`/`--babysit`/
@@ -101,6 +129,9 @@ Each module, one line:
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from
   unpublished commits before task pushes and local merges.
+- `holophyte/pause_notice.py` — a paused run's pull request gets the
+  `holophyte:paused` label and one notice comment; `--resume` removes both
+  (KO-608).
 - `holophyte/pr.py` — `[merge] mode = "pr"`'s GitHub writes: the startup
   route check, the push, the pull request and its body, the babysitter's
   replies and resolves, the merge through the PR API, and the `gh`/API
@@ -120,6 +151,10 @@ Each module, one line:
   media publishing and evidence shared by PR descriptions and review prompts.
   See [merge configuration](config.md#merge) for capture commands, destinations
   and size limits.
+- `holophyte/capture_playwright.py` — a standalone Playwright capture runner a
+  project can name as `[merge] ui_capture`: it runs the ticket's spec from a
+  capture directory through a generated config that imports the project's
+  own. Standard library only, so it runs by path from a project's worktree.
 - `holophyte/pullrequest.py` — the pull-request stage of the loop: the PR
   open or adopt, every park on the PR, the merge through the PR API and
   its ledger line, and the resume of a run parked on its PR.
@@ -141,6 +176,14 @@ Each module, one line:
   adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
   verdict parser, the `---- Comment by MODEL ----` replies, the round
   text, the parked question, and the passes that drive them.
+- `holophyte/missing_checks.py` — required checks that never reported on
+  a pull request's head: the one empty-commit retrigger per candidate under
+  `[merge] retrigger_missing_checks`, and the park naming them (KO-652).
+- `holophyte/check_fix.py` — a red check's one fix turn per babysit: the
+  brief with each failed Actions job's log tail, and the park otherwise.
+- `holophyte/main_checkout.py` — the detached main checkout the babysit
+  pass verifies main in, given the task worktree's `[worktree] carry`
+  directories, or its `[worktree] setup`, first.
 - `holophyte/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget
@@ -163,8 +206,11 @@ The store is its own package:
   file: claims and leases, run-phase transitions, review rounds and
   the ledger.
 - `store/operate.py` — the operator API: `release()`/`resume()`/
-  `requeue()`/`repoint()`/`approve()`/`babysit()`, `record_intervention()`
-  and the `runEvents` writers, re-exported from the package.
+  `requeue()`/`repoint()`/`approve()`/`babysit()`, `record_intervention()`,
+  `record_project_intervention()` and the `runEvents` writers,
+  re-exported from the package.
+- `store/repair.py` — `repair_references()`: a dry run, then a recorded
+  rewrite of foreign keys that name a dropped table.
 - `store/failure_kinds.py` — prefix-only backfill for historical run failures.
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
@@ -204,7 +250,7 @@ At the root:
   declares `relative/path: exact literal` lines the gate asserts verbatim, so
   a required value (a port, a URL) cannot drift while the commands still pass.
 - `docker/reviewer.Dockerfile` — pinned minimal reviewer image.
-- `FINDINGS.md` (generated, not kept in this repository) — in a target with
+- `FINDINGS.md` (generated, not kept in this repository) — in a project with
   `[report] findings = "repo"`, a rendered window over the store, not a log:
   the factory regenerates it at each close-out from `runs`/`reviewRounds` as
   the newest 25 entries below a `<!-- store-rendered below -->` marker, with
@@ -227,7 +273,7 @@ python3 -m unittest discover -s tests
 ```
 
 The configuration lives in `ruff.toml`: line length
-88, target `py311`, and rule sets `E`, `F`, `W`, `I`, `C90` (pycodestyle
+88, Python version `py311`, and rule sets `E`, `F`, `W`, `I`, `C90` (pycodestyle
 errors and warnings, pyflakes, import ordering, McCabe complexity). Nothing is formatted, only checked.
 Every enabled rule is a promise the factory keeps forever, so the selection
 stays small, and a violation that has to stand is suppressed with a per-line
@@ -314,7 +360,7 @@ that source is a dialog naming it, never a fall-through to the next:
 1. `HOLOPHYTE_CONSOLE_URL` in the environment.
 2. `console.json` in Electron's user-data directory, `{"url": "…"}`; the
    operator's own URL lives there, never in the repo.
-3. The default `http://127.0.0.1:7710/`, the first target's port on a host.
+3. The default `http://127.0.0.1:7710/`, the first project's port on a host.
 
 Only `http` and `https` are accepted.
 
@@ -388,8 +434,8 @@ bun --cwd=console/electron run package
 machine. `package` runs `build` and `icon` itself, then `electron-builder`
 (configured in `console/electron/electron-builder.yml`) writes
 `console/electron/dist/mac-arm64/Holophyte.app` and, one level up,
-`console/electron/dist/Holophyte-<version>-arm64.dmg` (the builder puts a
-target's artifact in the output directory and the unpacked app in its
+`console/electron/dist/Holophyte-<version>-arm64.dmg` (the builder puts each
+build's artifact in the output directory and the unpacked app in its
 per-arch subdirectory). The app is ad-hoc signed: the config sets
 `identity: "-"` explicitly, since the builder's default is to skip signing
 when no certificate is in the keychain; notarisation, auto-update and other

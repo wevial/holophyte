@@ -11,7 +11,7 @@ class StoreSeamTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "store.sqlite3"
-        self.conn = store.open(self.path)
+        self.conn = store.open(self.path, migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         for i in (1, 2):
@@ -85,6 +85,30 @@ class StoreSeamTests(unittest.TestCase):
                         self.assertEqual(self.snapshot(self.reader), before)
                         raise RuntimeError("abort")
                 self.assertEqual(self.snapshot(self.reader), before)
+
+    def test_question_kind_is_atomic_and_survives_prose_updates(self):
+        for released in (False, True):
+            with self.subTest(released=released):
+                kind = "pull_request_closed" if released else "pull_request"
+                if released:
+                    store.release(self.conn, self.run, "failed", "verify failed")
+                before = self.snapshot(self.reader)
+                with self.assertRaisesRegex(RuntimeError, "abort"):
+                    with store.transaction(self.conn):
+                        store.set_question(self.conn, self.ticket, "merge?",
+                                           park_kind=kind)
+                        self.assertEqual(self.snapshot(self.reader), before)
+                        raise RuntimeError("abort")
+                self.assertEqual(self.snapshot(self.reader), before)
+                store.set_question(self.conn, self.ticket, "merge?",
+                                   park_kind=kind)
+                store.set_question(self.conn, self.ticket, "Approval needed")
+                self.assertEqual(self.conn.execute(
+                    "SELECT parkKind FROM runs WHERE id = ?",
+                    (self.run,)).fetchone(), (kind,))
+                self.assertEqual(self.conn.execute(
+                    "SELECT blockedQuestion FROM tickets WHERE id = ?",
+                    (self.ticket,)).fetchone(), ("Approval needed",))
 
 
 if __name__ == "__main__":

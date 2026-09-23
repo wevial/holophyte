@@ -22,14 +22,49 @@ def turn_label(target, role):
     if not active and argv is not None:
         argv = argv[:-1]  # The appended prompt is never label material.
     if argv is None:
-        argv = ([DEFAULT_IMPLEMENTER, "--model", IMPL_MODEL] if role == "implement"
-                else ["codex", "--model", review_route(target)[0]])
-    label = argv[0]
+        argv = default_argv(target, role)
+    return outbound(argv_label(argv), known_secrets(target.config()))
+
+
+def default_argv(target, role):
+    """The route the loop dispatches for a role the config leaves unset."""
+    return ([DEFAULT_IMPLEMENTER, "--model", IMPL_MODEL] if role == "implement"
+            else ["codex", "--model", review_route(target)[0]])
+
+
+def argv_label(argv):
+    """`argv[0]`, plus the value of its first -m/--model flag."""
     for flag, value in zip(argv[1:], argv[2:]):
         if flag in ("-m", "--model"):
-            label += " " + value
-            break
-    return outbound(label, known_secrets(target.config()))
+            return f"{argv[0]} {value}"
+    return argv[0]
+
+
+def route_labels(target):
+    """The configured label per seat, as `turn_label()` would record it.
+
+    An unset seat gets the default the loop dispatches; an unset writer
+    follows the implementer, as `effective_role()` sends it; an unset
+    reviewer fallback is None."""
+    secrets = known_secrets(target.config())
+
+    def label(role, fallback=False):
+        argv = agent_command(target, role, "", fallback=fallback)
+        if argv is not None:
+            argv = argv[:-1]  # The appended prompt is never label material.
+        elif fallback:
+            return None
+        else:
+            argv = default_argv(target, role)
+        return outbound(argv_label(argv), secrets)
+
+    implementer = label("implement")
+    return {"implementer": implementer,
+            "reviewer": label("review"),
+            "reviewer_fallback": label("review", fallback=True),
+            "adjudicator": label("adjudicate"),
+            "writer": (implementer if agent_command(target, "write", "") is None
+                       else label("write"))}
 
 
 def recorded_turn(target, role, routed_role, conn, run_id, launch):
