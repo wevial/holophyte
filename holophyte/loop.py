@@ -637,10 +637,10 @@ def _verify_brief(verify_cmd, ok, out):
                 for row in getattr(out, "results", []))
     if not verify_cmd and not count:
         return ""
-    return (f"The ticket's verification commands and the target's baseline "
+    return (f"The ticket's verification commands and the project's baseline "
             f"({count} commands) were run and "
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n"
-            + ("The ticket's checks and the target's baseline passed at this "
+            + ("The ticket's checks and the project's baseline passed at this "
                "commit; the full suite runs as a pull request check. Do not run "
                "the full suite, run only focused tests needed to check a "
                "specific concern.\n" if ok else ""))

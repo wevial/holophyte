@@ -12,7 +12,7 @@ it every JSON route but `/peers` is behind a bearer token
 ([Authentication](#authentication)). Unknown paths are
 404 and any method but GET is 405, both with a JSON `error`, except the
 three `POST /actions/...` routes `[serve] actions = true` opens, documented
-in [The daemon's actions](daemon.md). A target with no store answers 503.
+in [The daemon's actions](daemon.md). A project with no store answers 503.
 
 ## `GET /status`
 
@@ -42,10 +42,10 @@ host about the time. `started_ms` is the run's start as epoch
 milliseconds; `round` is the review rounds recorded so far; `strikes` is
 the sweep's tally for the run, 0 when it is not under suspicion.
 `supervisor.state` is `live`, `stale` or `none`. `daemon` describes the
-serving process: its pid and when it started. `project` is the same
-string as `target`, the console's word for it; both are carried for one
-release. `actions` is whether `[serve] actions = true` opened the
-`POST /actions/...` routes of [The daemon's actions](daemon.md); the
+serving process: its pid and when it started. `project` is the
+repository the daemon serves, as a path; `target` is a deprecated alias
+carrying the same value, kept for one release. `actions` is whether
+`[serve] actions = true` opened the `POST /actions/...` routes of [The daemon's actions](daemon.md); the
 console draws its action buttons disabled while it is `false`.
 `config_edit` is whether `[serve] config_edit = true` opened `GET /config`
 and `PUT /config`; the console's settings sheet is read-only, naming the
@@ -99,11 +99,11 @@ non-integer `limit`, or a non-integer `before`, is 400 with `error`
 naming the parameter; a `before` no run has is 200 with no rows.
 `/runs` is untouched: it stays the terminal's table, oldest first.
 
-`commit_url` is the merge commit's page on the target's `origin`:
+`commit_url` is the merge commit's page on the project's `origin`:
 `https://HOST/OWNER/REPO/commit/SHA` when the `origin` URL is
 `https://HOST/OWNER/REPO(.git)` or `git@HOST:OWNER/REPO(.git)` and the
-sha is an ancestor of `origin/main` in the target's checkout. It is null
-when the row has no `merge_sha`, the target has no `origin`, the remote
+sha is an ancestor of `origin/main` in the project's checkout. It is null
+when the row has no `merge_sha`, the project has no `origin`, the remote
 is of another shape (including one carrying a `?` query, `#` fragment
 or credentials, which would otherwise ride into the link), or the sha has not reached `origin/main` (a local
 merge never pushed, one rewritten on the way up, a fresh clone with no
@@ -184,10 +184,10 @@ merge commit; the daemon resolves those to a commit range and runs
 `git diff --numstat` and `git diff --name-status` over it, each under a
 timeout, so the answer is what git says today, not a snapshot. For a
 merged run (a recorded `merge_sha`) the range is the merge commit's first
-parent to the merge commit in the target's checkout: exactly what the
+parent to the merge commit in the project's checkout: exactly what the
 `--no-ff` landing added to main, whether or not the branch still exists.
 For a live run, one whose branch still has its worktree beside the
-target, the diff is taken inside that worktree from the merge base of
+project, the diff is taken inside that worktree from the merge base of
 `main` and its HEAD to the working tree: commits and uncommitted edits
 together, untracked files listed as added, so the panel fills in as the
 implementer works, and a worktree with nothing changed yet answers an
@@ -342,8 +342,8 @@ item's own `title` is the ticket's title, which the console shows when
 attempt number. Every item that names a `run` carries its `pr_url`: the
 pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
 null when it opened none, so a console can link the parked question to
-the PR it waits on. `target` and `project` are the target path, as on
-`/status`.
+the PR it waits on. `project` is the project path and `target` its
+deprecated alias with the same value, as on `/status`.
 
 `level` is `none`, `working`, `attention` or `critical`; with no items it
 is `working` if any run is live. Items come in this order: `blocked` and
@@ -425,10 +425,10 @@ daemon it was loaded from:
 ```
 
 `self` is the address this daemon bound, `HOST:PORT` as `--serve`
-announced it, not the machine's name. `peers` is the target's `[console]
+announced it, not the machine's name. `peers` is the project's `[console]
 daemons` list (see `docs/config.md`) in its configured order, empty when
 the table is absent: an empty list, never an error. The daemon answers
-from config and never contacts a peer; it needs no store, so a target
+from config and never contacts a peer; it needs no store, so a project
 with none still answers 200 here.
 
 ## Static files
@@ -436,7 +436,7 @@ with none still answers 200 here.
 `GET /` answers `console/dist/index.html` and `GET /PATH` answers
 `console/dist/PATH` for a regular file under that directory: the
 repository's own `console/dist/`, where the renderer's build writes the
-console, found from the package rather than the target's checkout. The
+console, found from the package rather than the project's checkout. The
 JSON routes above, and any added later, take precedence over a file of
 the same name. The content type follows the extension:
 
@@ -505,5 +505,5 @@ included on every path but the `/actions/` routes of
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET and OPTIONS, and `POST` outside `/actions/`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
-| 503 | the target has no store yet |
+| 503 | the project has no store yet |
 | 504 | `/runs/N/files` when git does not answer within its cap |

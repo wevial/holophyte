@@ -899,7 +899,7 @@ def main(argv):
         if repo is None:
             advisories.append(f"{ADVISORY_PREFIX}repository check "
                               f"skipped: pass --repo PATH to check named "
-                              f"paths against the target repository")
+                              f"paths against the project repository")
         for pr in blockers + advisories:
             print(f"  - {pr}")
     return 1 if invalid else 0

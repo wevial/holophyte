@@ -5,17 +5,17 @@ A ticket that adds a config table edits this file; one that adds a mode edits
 the README's usage block. Back to the [README](index.md).
 
 `LINEAR_API_KEY` — an env var or `.env` next to `linear_provider.py`. Which
-Linear project a target is driven from is the `[board]` table of that
-target's `config.toml`, below.
+Linear project, or board, a project is driven from is the `[board]` table of
+that project's `config.toml`, below.
 
-Per-target behavior lives in `~/.holophyte/<slug>/config.toml`. Everything the
-factory keeps about a target sits in that one directory — the store at
+Per-project behavior lives in `~/.holophyte/<slug>/config.toml`. Everything the
+factory keeps about a project sits in that one directory — the store at
 `store.db`, the supervisor lock — created on first need; only
 `<repo>.worktrees` keeps a sibling address of its own.
 
 The directory is host state, not repo state: it holds this host's agent
 routes, leases and heartbeats, so it belongs to the host rather than to a
-checkout that gets cloned, moved and deleted. `<slug>` is the target's
+checkout that gets cloned, moved and deleted. `<slug>` is the project's
 basename plus the first eight hex digits of the SHA-1 of its absolute path,
 so `/a/repo` and `/b/repo` — two repositories with two histories — never
 share a store. Set `HOLOPHYTE_HOME` to put the whole tree somewhere other
@@ -36,7 +36,7 @@ that hand-written `config.toml`, say, with a legacy `<repo>.holophyte.toml`
 still beside the checkout — stops the move the same way rather than being
 overwritten.
 
-Adoption runs for the target the command line names, once `cli()` has named
+Adoption runs for the project the command line names, once `cli()` has named
 it. Importing the module or asking for `--help` derives paths and moves
 nothing.
 
@@ -58,19 +58,19 @@ each table below.
 A configured `writer` uses the same host-command treatment as a configured
 adjudicator: its wrapper is responsible for enforcing read-only access. The
 writing prompt asks for text only, leads with behaviour and reasons, and applies
-the target's `pr_style` afterwards. Without a writer, writing keeps the
+the project's `pr_style` afterwards. Without a writer, writing keeps the
 implementer's command and isolation settings.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
 | `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"`) and optional `model` and `effort` (default `"opus"`, `"high"`); override to select another implementer harness. A table's adapter builds the argv, records the session id at dispatch and builds the resume argv. |
-| `reviewer` | Default: Hardened Codex review container | Non-empty command string; override only to supply an independent review route outside the container. |
-| `adjudicator` | Default: Hardened Codex review container | Non-empty command string; change to supply a separate adjudication route. |
+| `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` (`"codex"`) and optional `model` and `effort` (default `"gpt-5.6-sol"`, `"medium"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); override only to supply an independent review route outside the container. |
+| `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
 | `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"medium"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
 | `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |
-| `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and target toolchain. Startup refuses a missing image and prints its build command. |
+| `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and the project's toolchain. Startup refuses a missing image and prints its build command. |
 | `implementer_credential` | Default: `{}` (no credential) | Either `{ env = "AGENT_API_KEY" }` to pass one named host variable, or `{ file = "~/.agent/auth.json", destination = "/home/implementer/.agent/auth.json" }` to mount one regular file read-only under the temporary home. |
 | `implementer_resume` | Default: absent (disabled) | Command string containing `{session}`; the findings prompt is appended as the last argv element. Refused beside a table implementer, whose adapter builds the resume. |
 | `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. Refused beside a table implementer, whose adapter assigns the session. |
@@ -103,8 +103,8 @@ budget_scale = 1.5
 A role can instead be a table naming a harness adapter in
 `holophyte/harness.py`. Only `implementer`, `reviewer` and `adjudicator` may
 be tables, and only for a role the harness supports; today that is `claude`
-for `implementer`. Unknown keys, an unknown harness or a role the harness
-does not serve are startup errors. `[agents.implementer] harness = "claude"`
+for `implementer` and `codex` for `reviewer` and `adjudicator`. Unknown keys,
+an unknown harness or a role the harness does not serve are startup errors. `[agents.implementer] harness = "claude"`
 runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
 `U`, records `U` on the run before launch (a turn the budget kills keeps it),
 and resumes with `claude -p --resume U --model M --effort E PROMPT`. The
@@ -122,12 +122,34 @@ effort  = "high"    # optional; passed to --effort as written
 claude = "/opt/claude/bin/claude"   # optional; absolute path only
 ```
 
+`[agents.reviewer] harness = "codex"` (and the same for `adjudicator`) does
+what a host wrapper script used to. Each turn runs in a throwaway detached
+worktree of `refs/review/RUN/candidate` inside the review scratch directory,
+removed with it on every exit, as
+`codex exec -m M -c model_reasoning_effort=E
+--dangerously-bypass-approvals-and-sandbox PROMPT`: Codex's read-only sandbox
+cannot start under a systemd user unit with PrivateTmp, so the throwaway
+checkout is the write boundary. The id from Codex's first `session id:` line
+is written to `$HOLOPHYTE_REVIEW_SCRATCH/session`, and when
+`HOLOPHYTE_REVIEW_RESUME` is set (see `[loop] review_session`) the turn is
+`codex exec resume` with the same options, the id and the prompt; a resume
+answered with "no rollout found" runs once more fresh and records a
+`review_session` event with that `reason`. `review_model` and `review_effort`
+beside a table reviewer are refused like beside a command.
+
+```toml
+[agents.reviewer]
+harness = "codex"
+model   = "gpt-5.6-sol"   # optional; passed to -m
+effort  = "medium"        # optional; low, medium, high or xhigh
+```
+
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,
 bridge networking, the factory user's non-root UID/GID, a temporary home and
 `/workspace` mounted read-write. Only `[worktree] env_allow` values and the
 declared credential enter the agent environment, alongside fixed runtime and Git
 identity settings. With no worktree environment configured, no host environment
-variables are inherited. Git author identity comes from the target's configured
+variables are inherited. Git author identity comes from the project's configured
 `user.name` and `user.email`; host Git configuration and hooks are not mounted.
 A self-contained Git directory permits commits in linked worktrees; objects,
 HEAD and index return to the host after the container has been removed. Verify
@@ -173,7 +195,7 @@ it selects a harness: an implementer that reads more and edits later can
 hit a thirty-minute cap on work it had nearly finished, and the answer is
 more wall clock, not a smaller ticket. The estimate, the ticket and the
 template's ceiling are untouched — the scale multiplies them only where the
-clock is armed, so a `budget_scale = 1.5` target arms a 45-minute turn for
+clock is armed, so a `budget_scale = 1.5` project arms a 45-minute turn for
 a 30-minute ticket, the timeout line names both figures, and the
 supervisor's time-box sweep allows for the scaled box. A value under 1.0
 or over 3.0 — or a non-number — is a startup error naming the key and the
@@ -253,12 +275,14 @@ neither startup nor the operator named.
 
 Where a harness adapter finds its binary when a role in `[agents]` is written
 as a table. Keys are registered harness names; each value is an absolute
-path. Absent, the adapter runs the harness's own name from PATH. Ignored under
-`implementer_isolation = "container"`, where the image supplies the binary.
+path. Absent, the adapter runs the harness's own name from PATH. Ignored for
+the implementer under `implementer_isolation = "container"`, where the image
+supplies the binary; review roles run on the host and keep their path.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
 | `claude` | Default: `claude` on PATH | Absolute path to the Claude CLI; set when the binary the factory should run is not the first `claude` on PATH. A relative path is refused. |
+| `codex` | Default: `codex` on PATH | Absolute path to the Codex CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `codex` on PATH. A relative path is refused. |
 
 ## `[loop]`
 
@@ -302,7 +326,7 @@ stop_on_failure = true   # false: record the failure and claim the next ticket
 # Which ready ticket the loop claims first. Optional; the default is the
 # lowest identifier.
 order = "identifier"     # "priority": most urgent Linear priority first
-# Whether the loop starts a detached --supervise for the target at startup
+# Whether the loop starts a detached --supervise for the project at startup
 # when no live supervisor holds its lock. Optional; the default is true.
 spawn_supervisor = true  # false: a service manager runs the supervisor
 # The review-round cap, computed per run from the candidate's diff. Optional;
@@ -340,10 +364,10 @@ P3s should not wait behind all of them. The file board has no priority and
 orders by identifier under either value. Anything but one of the two strings
 is a startup error naming the key.
 
-With `spawn_supervisor = true` (the default) the loop checks the target's
+With `spawn_supervisor = true` (the default) the loop checks the project's
 `supervisor.lock` at startup, after the config and route checks and before
 its first claim, and when no live pid holds it starts `factory.py --supervise`
-for the same target as a detached process, logging to `supervisor.log` in the
+for the same project as a detached process, logging to `supervisor.log` in the
 state directory; when a live supervisor holds the lock it names that pid and
 carries on. `spawn_supervisor = false` skips the check and the spawn, for an
 operator whose service manager runs the supervisor as a unit of its own; the
@@ -372,9 +396,9 @@ must be an integer: `review_rounds` and `review_rounds_max` at least `1`,
 `workers` is the ceiling on the pool of worker processes the loop keeps
 running. With `1` (the default) the loop is one process working one ticket
 at a time, exactly as before the key. Above `1` the process that ran
-`factory.py TARGET` becomes a scheduler: it runs the startup checks and the
+`factory.py PROJECT` becomes a scheduler: it runs the startup checks and the
 sweep once, then keeps `min(claimable, workers)` children running, each a
-`factory.py TARGET --worker` that claims one ticket and works it to merge or
+`factory.py PROJECT --worker` that claims one ticket and works it to merge or
 park -- a queue of one ticket is one worker, a queue of five under
 `workers = 3` is three (see [The loop](loop.md#the-pool)). Merges into `main`
 still serialise under the merge lock. `stop_on_failure` keeps its meaning
@@ -395,30 +419,30 @@ scheduler reads it: under `workers = 1` there is no pool to tick.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `project_id` | Default: None; required for a configured board | Non-empty string naming the Linear project UUID; set to choose the target's queue. |
+| `project_id` | Default: None; required for a configured board | Non-empty string naming the Linear project UUID; set to choose the project's queue. |
 | `team` | Default: None; required for a configured board | Non-empty string naming the Linear team; set to resolve that team's workflow states. |
 | `label` | Default: Absent (no filter) | Non-empty string; set to claim only ready issues with this label. |
 
 ```toml
 [board]
-# The Linear project this target claims from and the team whose workflow
-# states its tickets move through. Required for the loop and --supervise.
+# The Linear project, or board, this project claims from and the team whose
+# workflow states its tickets move through. Required for the loop and --supervise.
 project_id = "00000000-0000-0000-0000-000000000000"
 team = "Example Team"
 # The label a ready issue must carry for the loop to see it. Optional;
-# absent, every ready issue in the project is the loop's.
+# absent, every ready issue in the Linear project is the loop's.
 label = "holophyte"
 ```
 
-The board is a per-target setting: two targets on one host driven from one
-process-wide variable would both claim from the same project, and the second
-would silently work the first's queue. Both values must be non-empty strings.
+The board is a per-project setting: two projects on one host driven from one
+process-wide variable would both claim from the same Linear project, and the
+second would silently work the first's queue. Both values must be non-empty strings.
 `--report`, `--serve`, `--repoint` and a read-only `--sweep` need no board and
 run without the table; the loop and `--supervise` exit at startup naming `[board]
 project_id` when it is absent. Nothing in the environment stands in for the
 table.
 
-`label` is the opt-in for a project people also work in: when it is set, the
+`label` is the opt-in for a board people also work in: when it is set, the
 loop's ready listing keeps only issues carrying that label by name
 (case-sensitive, as Linear shows it), so a ticket a person has decided to
 take, or one that is a plan rather than a contract, is invisible to the
@@ -426,7 +450,7 @@ factory however ready it looks. The claim, the queue the console's Board
 mirrors and the supervisor's board fallback all read through the same filter,
 so the label decides the whole queue rather than only the claim. The key is
 read once when the process builds its provider: set, unset or changed on a
-live target it takes effect at the next restart, not the next pass. The board
+live project it takes effect at the next restart, not the next pass. The board
 side is live -- the loop asks the board fresh each claim, so a ticket that
 gains the label joins the listing, and a mirror row whose ticket lost it
 waits on the board at `blocked_on_deps` until it carries it again.
@@ -438,9 +462,9 @@ string, and anything else is a startup error naming the key.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `setup` | Default: `[]` | List of non-empty shell command strings; set to install the target's dependencies before agent turns. |
+| `setup` | Default: `[]` | List of non-empty shell command strings; set to install the project's dependencies before agent turns. |
 | `setup_timeout_sec` | Default: `300` seconds | Finite positive number; increase for slower dependency installation. |
-| `branch_prefix` | Default: `"task"` | Legal single git branch segment (constraints below); change to follow the target's branch naming convention. |
+| `branch_prefix` | Default: `"task"` | Legal single git branch segment (constraints below); change to follow the project's branch naming convention. |
 | `env_source` | Default: absent | Source dotenv path, with `~` expanded; relative paths resolve beside config.toml. Requires `env_allow`. |
 | `env_allow` | Default: absent | List of names matching `[A-Za-z_][A-Za-z0-9_]*`; requires `env_source`. Missing names refuse startup. Writes exactly these assignments to a mode-0600 `.env` before setup commands. An empty list writes an empty file. |
 | `carry` | Default: `[]` | List of non-empty repository-relative directory paths without `..`; set for ignored dependencies the reviewer needs. |
@@ -476,7 +500,7 @@ that fired, and its output, attributing a top-level `&&` chain clause by
 clause.
 
 A failing command stops the setup — step two of a setup assumes step one worked
-— and fails the run before an agent turn is dispatched, so a target whose
+— and fails the run before an agent turn is dispatched, so a project whose
 toolchain will not install costs no tokens. The branch and worktree are
 discarded rather than preserved: no agent ran, so there is nothing on them to
 keep, and the reason goes to the ticket as a comment. The table's shape is
@@ -484,7 +508,7 @@ checked at startup with the `[agents]` commands; the commands themselves are not
 run there, since the worktree they are written against does not exist yet.
 
 What setup writes into the worktree is untracked, and the implementer is asked
-to commit its work: keep build artifacts (`.venv/`, caches) in the target's
+to commit its work: keep build artifacts (`.venv/`, caches) in the project's
 `.gitignore`, or a task's `git add -A` will sweep them into the branch.
 
 `env_source` accepts `NAME=value` lines, blank lines, comments and an optional
@@ -589,7 +613,7 @@ Use TOML literal strings for custom patterns, for example
 | `ui_capture` | Default: `""` | Command string with shell-style quoting but no shell evaluation; set with ui_paths to capture evidence non-interactively. |
 | `capture_env_source` | Default: absent | Source dotenv path for the capture command only, with `~` expanded; relative paths resolve beside config.toml. Requires `capture_env_allow`. |
 | `capture_env_allow` | Default: absent | List of names matching `[A-Za-z_][A-Za-z0-9_]*`; requires `capture_env_source`. Missing names refuse startup, naming the variable. Exactly these values are added to the `ui_capture` command's environment, on the host and in a container; they are never written to the worktree and never reach agent turns or verify commands. Source values are redacted from output. |
-| `media_repo` | Default: `""` (target repository) | Empty string or GitHub `owner/name`; set a separate repository to keep evidence out of the target's git storage. |
+| `media_repo` | Default: `""` (project repository) | Empty string or GitHub `owner/name`; set a separate repository to keep evidence out of the project's git storage. |
 | `media_bucket` | Default: Absent (git publishing) | Table described under [merge.media_bucket](#mergemedia_bucket) below; set to publish evidence in S3-compatible object storage instead. |
 | `media_max_file_mb` | Default: `10` MB | Finite positive number; change the largest permitted individual evidence file. |
 | `media_max_total_mb` | Default: `20` MB | Finite positive number; change the total evidence budget per capture. |
@@ -698,7 +722,7 @@ when it is on PATH, and otherwise through the GitHub API with a token read
 from `GH_TOKEN` or `GITHUB_TOKEN` in the environment; the babysitter's calls
 (`gh api`, GraphQL for the threads) take the same route, and the token is
 never written to the config, the store or a log. Startup checks the route
-before anything is claimed: a target with no `origin` remote, a `gh` whose
+before anything is claimed: a project with no `origin` remote, a `gh` whose
 `gh auth status` fails, or neither `gh` nor a token is a startup error naming
 `[merge] mode`. At the gate, a refused push, a PR create that fails, or a
 route that has gone missing since startup ends the run as an infra failure
@@ -791,7 +815,7 @@ a script under `ui_capture_dir`, producing `01-slug.png`, `02-slug.png`, etc.
 in state order, plus a recording when the states describe a flow. The command
 receives `HOLOPHYTE_TICKET` and, only when states are listed,
 `HOLOPHYTE_EVIDENCE_STATES` joined with newlines, plus any
-`capture_env_allow` values. The target's own harness
+`capture_env_allow` values. The project's own harness
 selects and runs that ticket's script. Numbered images receive state captions;
 missing images are marked "not captured" in the PR and reviewer prompt.
 Tickets without the section keep the default capture.
@@ -806,7 +830,7 @@ spec code the candidate wrote, which sees the values while it runs.
 MB means 1,048,576 bytes: oversized files are omitted, then
 videos are dropped first to fit the total cap, with each omission listed in
 Evidence. Without a bucket, `media_repo` selects a separate GitHub repository;
-otherwise evidence goes to the target repository on `pr-media/KO-n`. Image
+otherwise evidence goes to the project repository on `pr-media/KO-n`. Image
 links reflect the destination repository's visibility; videos use blob links.
 
 A human mention in the pull request conversation tab is also an instruction,
@@ -843,7 +867,7 @@ retention_days = 7
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `heartbeat_stale_min` | Default: `5` minutes | Finite positive number; increase for a target whose healthy heartbeat can be delayed. |
+| `heartbeat_stale_min` | Default: `5` minutes | Finite positive number; increase for a project whose healthy heartbeat can be delayed. |
 | `stale_strikes` | Default: `2` | Positive integer; increase to require more consecutive silent sightings before acting. |
 | `budget_grace` | Default: `1.5` | Finite positive number; change the grace multiplier on the run's per-turn allowance. |
 | `run_cap` | Default: `3.0` | Finite number from 1.5 to 5.0; change the hard ceiling in scaled ticket boxes. |
@@ -903,7 +927,7 @@ keeps earning turns by failing review, the case the per-turn budget cannot
 bound. `run_cap` is a number from 1.5 to 5.0; `/status` carries it in
 `thresholds` so the console's time-box bar can draw it.
 
-Different targets want different patience — a Go build's worktree setup is
+Different projects want different patience — a Go build's worktree setup is
 slower than stdlib Python's — and these are the knobs `--sweep` and
 `--supervise` read. Each value is checked at startup, for every mode: the
 thresholds and the interval must be positive numbers, `stale_strikes` a
@@ -924,7 +948,7 @@ supervisor does not pick up an edit.
 | `machine_token_file` | Default: Absent | Non-empty path string, resolved as `token_file` is; set to accept one machine-wide token beside the project's own wherever `token_file` is demanded. |
 | `actions` | Default: `false` | Boolean; enable to expose authenticated daemon action routes. |
 | `config_edit` | Default: `false` | Boolean; enable to read and edit config through authenticated daemon routes. |
-| `name` | Default: Target directory name | Non-empty string without `/`; change to match the deployed systemd instance. |
+| `name` | Default: Project directory name | Non-empty string without `/`; change to match the deployed systemd instance. |
 
 ```toml
 [serve]
@@ -946,7 +970,7 @@ actions = false
 # `[agents]`, which the next loop start runs as commands on this host.
 config_edit = false
 # The systemd instance those actions address: `holophyte-supervise@NAME`,
-# `holophyte-loop@NAME`. The target directory's name when absent.
+# `holophyte-loop@NAME`. The project directory's name when absent.
 name = "holophyte"
 ```
 
@@ -964,7 +988,7 @@ mode. The token is the file's contents with surrounding whitespace stripped
 and is never printed or logged. `~` is expanded and a relative path is taken
 against the config's directory. A loopback bind ignores the key for its
 reads: `--serve 7710` is as open as it always was, unless `actions` is on
-(below). One token per target, no rotation: to change it, write the file
+(below). One token per project, no rotation: to change it, write the file
 and restart the unit.
 
 `machine_token_file` names a second token file, read wherever `token_file`
@@ -988,7 +1012,7 @@ reads, not a hand on the units -- so `actions = true` needs `token_file`
 whatever the bind, and a bind without it is a startup error naming the
 key. `name` is the
 instance name the unit actions append -- the slug the deploy templates were
-enabled under -- a non-empty string with no `/`, the target directory's
+enabled under -- a non-empty string with no `/`, the project directory's
 name when absent. `config_edit` opens this file itself to the console:
 `GET /config` is its text with the value of every key named `...token` or
 `...key` replaced by `[redacted]`, wherever and however the key is written
@@ -1047,7 +1071,7 @@ operator gives it.
 # What the factory prints where it would print the machine's hostname.
 # Optional; absent, the hostname is printed as recorded.
 host_label = "writer-1"
-# Whether the loop renders FINDINGS.md into the target: `none` renders and
+# Whether the loop renders FINDINGS.md into the project: `none` renders and
 # commits nothing, `repo` renders and commits the bounded window at every
 # close-out. Optional; the default is `none`.
 findings = "none"
@@ -1056,11 +1080,11 @@ findings = "none"
 The store is the run record, read through the console or `--report`;
 `FINDINGS.md` is a second copy of it that can drift, so by default
 (`findings = "none"`) no close-out writes or commits the file, the merge
-path makes no findings commit, and a pull request target's checkout gains
-no untracked file. `findings = "repo"` is for a target that wants the
+path makes no findings commit, and the checkout of a project that merges by
+pull request gains no untracked file. `findings = "repo"` is for a project that wants the
 evidence beside its code: the bounded window is rendered and committed at
 every close-out, one commit per merge. Any other value fails startup naming
-`[report] findings`. Switching a target from `repo` to `none` leaves the
+`[report] findings`. Switching a project from `repo` to `none` leaves the
 `FINDINGS.md` already in its repository exactly as it is, not deleted; the
 operator removes it by hand. `--report` prints the mode in effect below the
 table.

@@ -13,8 +13,10 @@ after the cap.
 operator now. Computed from stale heartbeats, stale supervisors, blocked
 tickets and recent failures.
 
-**Board.** The Linear project a target claims from, named by the target's
-`[board]` table. Status flows one way, store to board.
+**Board.** The Linear project, or board, a project claims from, named by
+the project's `[board]` table; a Linear project is always written "Linear
+project" or "board", never bare "project". Status flows one way, store to
+board.
 
 **Candidate.** The commit under review: the worktree's HEAD, exported
 read-only for the reviewer.
@@ -33,7 +35,7 @@ operator's error, fixed by revising the ticket and requeueing.
 **Drawer.** The menu-bar menu on the operator's Mac, a SwiftBar plugin
 over the serve daemons.
 
-**FINDINGS.md.** The rendered window over the store in a target repository
+**FINDINGS.md.** The rendered window over the store in a project repository
 that opts in with `[report] findings = "repo"`: newest twenty-five entries,
 regenerated at every close-out, never hand-edited. Off by default; the
 store is the record.
@@ -73,6 +75,11 @@ human; reused by the next run of the same ticket. Named
 `PREFIX/IDENT-SLUG`, where the prefix is `[worktree] branch_prefix`
 (`task` by default) and the identifier keeps it traceable to its ticket.
 
+**Project.** A repository the factory works on, with its store, config and
+board; what `factory.py project add` registers and the store's `projects`
+table holds. A value in code, never a global; the code type is still
+spelled `Target` until it is renamed.
+
 **Provider.** The board protocol: `claim_next`, `fetch_task`,
 `set_state`, `comment`. Linear in production, files in tests.
 
@@ -85,7 +92,7 @@ findings above the overlap threshold: the review is circling.
 **Run.** One attempt at a ticket. Has phases, a heartbeat, a time box, an
 outcome and a class (`work` or `infra`).
 
-**Self-merge.** A merge whose target is the factory itself. The loop
+**Self-merge.** A merge in a project that is the factory itself. The loop
 re-execs from the new `main`; the supervisor follows on its next pass.
 
 **Serve token.** `[serve] token_file`: the bearer token a daemon bound
@@ -98,10 +105,10 @@ every thread `ADDRESS`, `DECLINE` or `HUMAN`, fixes and pushes, and merges
 through the API when green and quiet or parks. `--babysit KO-n` asks for
 another pass.
 
-**Slug.** A target's basename plus eight hex digits of its path's SHA-1;
+**Slug.** A project's basename plus eight hex digits of its path's SHA-1;
 names its state directory under `~/.holophyte/`.
 
-**Store.** The SQLite file per target that everything else is rendered
+**Store.** The SQLite file per project that everything else is rendered
 from.
 
 **Strike.** One supervisor sighting of a run with a stale heartbeat; a
@@ -109,9 +116,6 @@ configured number in a row ends the run.
 
 **Sweep.** One supervisor pass over live runs. `--sweep` reports,
 `--sweep --act` acts.
-
-**Target.** A repository the factory works on, with its store, config and
-board. A value in code (`Target`), never a global.
 
 **Time box.** A run's wall-clock budget, from the ticket's estimate.
 

@@ -537,7 +537,7 @@ def retire_worktree(target, branch):
     if wt.resolve() == target.worktrees.resolve() or wt.is_symlink():
         return "worktree is not a task checkout"
     if not wt.resolve().is_relative_to(target.worktrees.resolve()):
-        return "worktree is outside the target's worktrees directory"
+        return "worktree is outside the project's worktrees directory"
     try:
         if not wt.exists():
             sh(["git", "worktree", "prune"], target.path)

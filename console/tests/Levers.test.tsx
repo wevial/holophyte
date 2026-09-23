@@ -44,7 +44,7 @@ afterEach(cleanup);
 const button = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
 
 function card(status: Status, actionFetch: Fetch) {
-  const group = { path: status.target, name: "writer", base: BASE, status, runs: [] };
+  const group = { path: status.project, name: "writer", base: BASE, status, runs: [] };
   render(<ProjectBlock group={group} expandedRun={null} onToggleRun={() => {}} actionFetch={actionFetch} />);
 }
 

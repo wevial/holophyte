@@ -156,7 +156,7 @@ def _written_pr_text(target, conn, run_id, task_id, task, branch, body,
                      + template)
     style = merge_config(target).pr_style.strip()
     if style:
-        parts.append(f"Style instructions from the target's configuration:"
+        parts.append(f"Style instructions from the project's configuration:"
                      f"\n{style}")
     for name, text in babysitter.conventions(wt):
         parts.append(f"The repository's {name}:\n\n{text}")

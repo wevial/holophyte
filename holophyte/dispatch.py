@@ -50,7 +50,7 @@ def _startup_sweep(target, conn):
     if seen.trips or seen.watched or seen.restarts:
         print("\n".join(sweep_lines(seen, target)))
         if seen.trips:
-            print(SWEEP_HINT.format(target=target.path))
+            print(SWEEP_HINT.format(project=target.path))
     return seen
 
 

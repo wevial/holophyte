@@ -16,7 +16,7 @@ Python 3.11+ and Git on the host, Docker for the reviewer container, and
 the daemon needs it to edit a config in place and exits naming it when it
 is missing. Bun is needed
 only to build the console (`bun --cwd=console run build`); see
-[Development](docs/development.md). Per-target settings go in
+[Development](docs/development.md). Per-project settings go in
 `~/.holophyte/<slug>/config.toml`; see [Config](docs/config.md).
 
 ## Usage
@@ -45,7 +45,7 @@ python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # repla
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
 ```
 
-`--file-ticket` validates the file against the target, creates the issue,
+`--file-ticket` validates the file against the project, creates the issue,
 reads the stored body back and validates that again, so a transfer that
 rewrites the body is caught. With `--update KO-n` it replaces that issue's
 title, description and estimate from the file instead of creating one, with

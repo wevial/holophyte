@@ -219,14 +219,14 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
                     profile=review_profile(*review_route(target)),
                     timeout=cap, verdicts=None, carry=carry_directories(target))
                 code = 0
+            elif role == "implement":
+                code, out = isolation.launch(
+                    replace(isolation.route_for(target), writable=False), scratch,
+                    isolation.environment(target), cmd, timeout=cap,
+                    runner=run_capped)
             else:
-                if role == "implement":
-                    code, out = isolation.launch(
-                        replace(isolation.route_for(target), writable=False), scratch,
-                        isolation.environment(target), cmd, timeout=cap,
-                        runner=run_capped)
-                else:
-                    code, out = run_capped(cmd, scratch, cap)
+                code, out = probe_configured_review(target, role, fallback, goal,
+                                                    cmd, scratch, cap)
         except subprocess.TimeoutExpired as expired:
             partial = expired.output or ""
             if isinstance(partial, bytes):
@@ -238,6 +238,22 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
                                seat=AGENT_CONFIG_KEYS[role], expected_commit=sha)
     return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role],
                        expected_commit=sha)
+
+
+def probe_configured_review(target, role, fallback, goal, cmd, clone, cap):
+    """A configured review route's probe turn in the probe's clone: a
+    command string runs there, a table in `table_review()`'s throwaway
+    checkout of the clone's candidate ref -- the path its turns take."""
+    seat = harness_seat(target, role, fallback=fallback)
+    if seat is None:
+        return run_capped(cmd, clone, cap)
+    env = {key: value for key, value in os.environ.items()
+           if key != "HOLOPHYTE_REVIEW_RESUME"}
+    with review_scratch(clone) as scratch:
+        output = table_review(seat, goal, clone, scratch, cap, env, role)
+    if output.timed_out:
+        raise subprocess.TimeoutExpired(cmd, cap, output="")
+    return output.exit_code, output
 
 
 def agent_route(target, role):
@@ -402,7 +418,9 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     the exact-SHA requirement is enforced either way, and either way the two
     commits reach the reviewer as `refs/review/RUN/base` and
     `refs/review/RUN/candidate` — the names its prompt uses — the staged checkout
-    on the default route, the task worktree on the configured one.
+    on the default route, the task worktree on the configured one. A table
+    reviewer (`[agents.reviewer] harness = "codex"`) runs in a throwaway
+    checkout of the candidate instead (`table_review()`).
 
     With `session` (an implement turn the loop asked for, not a writer
     turn routed to the implementer), a table-form implementer's session id
@@ -421,12 +439,10 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                   if session and command is None and argv is None else None)
     if argv is not None:
         cmd = [outbound(arg, known_secrets(target.config())) for arg in argv] + [goal]
-    dispatched_route = shlex.join(cmd[:-1]) if cmd is not None else DEFAULT_IMPLEMENTER
     seat = harness_seat(target, role) if command is None else None
-    if seat is not None:
-        # Named by the harness, not a `[harnesses]` path: the outage
-        # signatures match on the route's name.
-        dispatched_route = shlex.join([seat.name, *cmd[1:-1]])
+    dispatched_route = (seat.named(cmd) if seat is not None else
+                        shlex.join(cmd[:-1]) if cmd is not None else
+                        DEFAULT_IMPLEMENTER)
     if cmd is None:
         if role != "implement":
             from holophyte.runs import heartbeat_while
@@ -483,6 +499,10 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 prepare_environment(target, env, conn, run_id, role, route,
                                     review_round)
                 try:
+                    if seat is not None:
+                        return table_review(seat, goal, cwd, scratch, cap, env,
+                                            role, run_id=run_id, conn=conn,
+                                            on_start=kill.arm)
                     return configured_review(cmd, cwd, cap, env, role,
                                              dispatched_route, on_start=kill.arm)
                 finally:
@@ -510,9 +530,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 @contextlib.contextmanager
 def review_scratch(repo):
     """Own the wrapper's scratch space, including git's worktree registrations."""
-    env = {key: value for key, value in os.environ.items()
-           if key not in {"GIT_DIR", "GIT_COMMON_DIR",
-                          "GIT_WORK_TREE", "GIT_INDEX_FILE"}}
+    env = scratch_git_environment()
     with tempfile.TemporaryDirectory(prefix="holophyte-review-") as scratch:
         try:
             yield Path(scratch)
@@ -527,6 +545,14 @@ def review_scratch(repo):
                             print(f"[holo2] review worktree cleanup failed: {exc}")
             finally:
                 sh(["git", "worktree", "prune"], cwd=repo, env=env)
+
+
+def scratch_git_environment():
+    """The environment without a caller's git location overrides, so a
+    worktree command acts on the repository its cwd names."""
+    return {key: value for key, value in os.environ.items()
+            if key not in {"GIT_DIR", "GIT_COMMON_DIR",
+                           "GIT_WORK_TREE", "GIT_INDEX_FILE"}}
 
 
 def review_worktrees(repo, env=None):
@@ -550,6 +576,46 @@ def configured_review(cmd, cwd, cap, env, role, command, on_start=None):
         message = f"{AGENT_CONFIG_KEYS[role]} timed out after {cap / 60:g} minutes"
         return AgentOutput(message, command, timed_out=True)
     return AgentOutput(output.strip(), command, exit_code=code)
+
+
+# What `codex exec resume` prints for an id it has no rollout for.
+NO_ROLLOUT = "no rollout found"
+
+
+def table_review(seat, goal, repo, scratch, cap, env, role, *, run_id=None,
+                 conn=None, on_start=None):
+    """Run a table reviewer in a detached checkout of the candidate ref.
+
+    The checkout lives under `scratch`, so `review_scratch()` removes it on
+    every exit, and the harness's cwd is that checkout rather than the task
+    worktree. The protocol is the one a wrapper script speaks:
+    `HOLOPHYTE_REVIEW_RESUME` in `env` asks for a resume, and the session
+    id the harness reports is written to `scratch/session` for
+    `review_session.record_session()`. A resume the harness answers with
+    `NO_ROLLOUT` runs once more fresh, and a `review_session` event says so.
+    """
+    checkout = Path(scratch) / "candidate"
+    sh(["git", "worktree", "add", "--detach", "--quiet", str(checkout),
+        review_refs(run_id)[1]], cwd=repo, env=scratch_git_environment())
+    session = env.get("HOLOPHYTE_REVIEW_RESUME")
+    argv = seat.resume(session) + [goal] if session else seat.turn(goal)
+    output = configured_review(argv, checkout, cap, env, role, seat.named(argv),
+                               on_start=on_start)
+    if session and not output.timed_out and NO_ROLLOUT in output:
+        if conn is not None and run_id is not None:
+            import store
+            store.record_event(conn, run_id, "review_session",
+                               "review session: resume found no rollout",
+                               level="detail", payload=json.dumps(
+                                   {"arm": "resume", "requested": True,
+                                    "resumed": False, "reason": NO_ROLLOUT}))
+        argv = seat.turn(goal)
+        output = configured_review(argv, checkout, cap, env, role,
+                                   seat.named(argv), on_start=on_start)
+    reported = seat.reported_session(output)
+    if reported:
+        (Path(scratch) / "session").write_text(reported, encoding="utf-8")
+    return output
 
 
 # Exact substrings emitted by the supported routes. Keep causes here so the
