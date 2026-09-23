@@ -116,6 +116,39 @@ def failure_lines(conn):
         " WHERE outcome = 'failed' GROUP BY 1 ORDER BY 1")]
 
 
+# The toil windows (KO-705), label to span: interventions per merge over
+# each, so a factory change is judged by the hand work it saved.
+TOIL_WINDOWS = (("24h", 24 * 3_600_000), ("7d", 7 * 24 * 3_600_000))
+
+
+def toil_status(conn, now):
+    """`/status`'s `toil` object: each window's human interventions, merged
+    runs, their ratio (null with nothing merged) and the actions counted."""
+    body = {}
+    for label, span in TOIL_WINDOWS:
+        toil = store.read.toil_since(conn, now - span)
+        count = sum(toil.by_action.values())
+        body[label] = {
+            "interventions": count, "merged": toil.merged,
+            "per_merge": count / toil.merged if toil.merged else None,
+            "by_action": toil.by_action}
+    return body
+
+
+def toil_lines(conn, now):
+    """One report line per toil window, the rate left out with no merge."""
+    lines = []
+    for label, window in toil_status(conn, now).items():
+        rate = ("" if window["per_merge"] is None
+                else f", {window['per_merge']:.2f} per merge")
+        actions = ", ".join(f"{action} {n}"
+                            for action, n in window["by_action"].items())
+        lines.append(f"toil {label}: {window['interventions']} human"
+                     f" interventions, {window['merged']} merged{rate}"
+                     + (f" ({actions})" if actions else ""))
+    return lines
+
+
 def approval_lines(conn):
     """Explicit human approvals, including released candidates awaiting claim."""
     rows = conn.execute(
@@ -139,12 +172,14 @@ def report_lines(conn, target=None):
         conn.execute("BEGIN")
     try:
         # Both sections describe one snapshot while WAL writers keep working.
-        live = live_lines(conn, int(time.time() * 1000)) + [""]
+        now = int(time.time() * 1000)
+        live = live_lines(conn, now) + [""]
         rows = report_rows(conn)
         from store.operator_notes import report_lines as note_lines
         live += note_lines(conn)
         live += approval_lines(conn)
         live += failure_lines(conn)
+        live += toil_lines(conn, now)
     finally:
         if owns_transaction:
             conn.rollback()  # Release only our read transaction, even on errors.
