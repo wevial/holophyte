@@ -20,7 +20,7 @@ from holophyte.agents import agent_route, review_refs
 from holophyte.babysit_steps import record_step
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
-from holophyte.check_fix import check_fix_brief, fix_checks_or_park  # noqa: F401
+from holophyte.check_fix import CheckFix, fix_checks_or_park
 from holophyte.config_tables import merge_config
 from holophyte.gates import (
     InfraFailure,
@@ -449,7 +449,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         project, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
-    check_fixed = False  # One check fix per babysit: a red check cannot loop.
+    check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
     for pass_no in range(1, merge.pr_rounds + 1):
         stop_if_requested(conn, run_id, "merge_gate")
         retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
@@ -494,8 +494,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         if state.checks != "success":  # Parks unless one fix is due.
             sha, pushed_state = fix_checks_or_park(
                 replace(run, sha=sha), beat_s, pull, state, ticket, verify_cmd,
-                contracts, pass_no, reviewed, check_fixed)
-            check_fixed = True
+                contracts, pass_no, reviewed, check_fix)
             continue  # Settle the pushed fix; its review comes before merge.
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
@@ -759,13 +758,13 @@ def _quiet_left(state, quiet_ms, refresh=None):
 
 def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
                      task_id, branch, sha, reviewed, refresh=None,
-                     retrigger=None):
+                     retrigger=None, deadline=None):
     from holophyte.pullrequest import _park_on_pr
     try:
         state = state or pr_status.pr_state(project, pull)
         state = maintainer_notes.pending_state(conn, run_id, state, pull.url)
         return _settled_state(project, conn, run_id, beat_s, pull, state,
-                              refresh, retrigger)
+                              refresh, retrigger, deadline)
     except WaitExpired as expired:
         if retrigger is not None:  # Park the head the retrigger pushed.
             sha, reviewed = retrigger.sha, retrigger.reviewed
@@ -778,13 +777,13 @@ class WaitExpired(Exception):
 
 
 def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None,
-                   retrigger=None):
+                   retrigger=None, deadline=None):
     """Bound pending/quiet waiting with one deadline; return threads promptly.
     A required check with no report for `missing_check_sec` is retriggered
     once (`Retrigger`) or ends the wait naming it."""
     merge = merge_config(project)
     quiet_ms = merge.pr_quiet_sec * 1000
-    deadline = monotonic() + merge.check_wait_sec
+    deadline = deadline or monotonic() + merge.check_wait_sec
     absent = {}
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(project, pull)

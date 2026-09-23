@@ -470,7 +470,8 @@ class MergeModeFixture(LoopFixture):
 
     def fake_route(self, push_exit=0, push_sh="", states=None,
                    comments=(), open_pr=None, close_exit=0,
-                   refuse_labels=False, refuse_reactions=False):
+                   refuse_labels=False, refuse_reactions=False,
+                   refuse_rerun=False):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -493,7 +494,8 @@ class MergeModeFixture(LoopFixture):
         call's body kept a line each in `self.label_log`, and the label
         call refused when `refuse_labels` (KO-608). An `addReaction`
         mutation answers an empty success, or fails when `refuse_reactions`
-        (KO-679).
+        (KO-679). A workflow run's `rerun-failed-jobs` `POST` answers an
+        empty success, or fails when `refuse_rerun` (KO-707).
         `push_exit` and `push_sh` control push failure and an optional
         delay; a pull request's REST close (`PATCH`, KO-611) answers
         closed, or fails with `close_exit`. A push
@@ -577,7 +579,9 @@ class MergeModeFixture(LoopFixture):
             + ('echo "label refused" >&2; exit 1;;\n' if refuse_labels
                else "echo '[]'; exit 0;;\n")
             + '    *" DELETE "*/issues/comments/*) exit 0;;\n'
-            f'    *actions/jobs/*/logs*) cat "{self.job_log}" && exit 0;'
+            + '    *rerun-failed-jobs*) ' + ('echo "HTTP 403" >&2; exit 1;;\n'
+                                         if refuse_rerun else 'exit 0;;\n')
+            + f'    *actions/jobs/*/logs*) cat "{self.job_log}" && exit 0;'
             ' exit 1;;\n'
             '    *"GET repos/example/repo/pulls/"*) '
             "python3 -c 'import json,pathlib; "
