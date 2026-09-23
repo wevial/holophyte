@@ -64,8 +64,8 @@ implementer's command and isolation settings.
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
 | `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"`) and optional `model` and `effort` (default `"opus"`, `"high"`); override to select another implementer harness. A table's adapter builds the argv, records the session id at dispatch and builds the resume argv. |
-| `reviewer` | Default: Hardened Codex review container | Non-empty command string; override only to supply an independent review route outside the container. |
-| `adjudicator` | Default: Hardened Codex review container | Non-empty command string; change to supply a separate adjudication route. |
+| `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` (`"codex"`) and optional `model` and `effort` (default `"gpt-5.6-sol"`, `"medium"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); override only to supply an independent review route outside the container. |
+| `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
 | `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"medium"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
@@ -103,8 +103,8 @@ budget_scale = 1.5
 A role can instead be a table naming a harness adapter in
 `holophyte/harness.py`. Only `implementer`, `reviewer` and `adjudicator` may
 be tables, and only for a role the harness supports; today that is `claude`
-for `implementer`. Unknown keys, an unknown harness or a role the harness
-does not serve are startup errors. `[agents.implementer] harness = "claude"`
+for `implementer` and `codex` for `reviewer` and `adjudicator`. Unknown keys,
+an unknown harness or a role the harness does not serve are startup errors. `[agents.implementer] harness = "claude"`
 runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
 `U`, records `U` on the run before launch (a turn the budget kills keeps it),
 and resumes with `claude -p --resume U --model M --effort E PROMPT`. The
@@ -120,6 +120,28 @@ effort  = "high"    # optional; passed to --effort as written
 
 [harnesses]
 claude = "/opt/claude/bin/claude"   # optional; absolute path only
+```
+
+`[agents.reviewer] harness = "codex"` (and the same for `adjudicator`) does
+what a host wrapper script used to. Each turn runs in a throwaway detached
+worktree of `refs/review/RUN/candidate` inside the review scratch directory,
+removed with it on every exit, as
+`codex exec -m M -c model_reasoning_effort=E
+--dangerously-bypass-approvals-and-sandbox PROMPT`: Codex's read-only sandbox
+cannot start under a systemd user unit with PrivateTmp, so the throwaway
+checkout is the write boundary. The id from Codex's first `session id:` line
+is written to `$HOLOPHYTE_REVIEW_SCRATCH/session`, and when
+`HOLOPHYTE_REVIEW_RESUME` is set (see `[loop] review_session`) the turn is
+`codex exec resume` with the same options, the id and the prompt; a resume
+answered with "no rollout found" runs once more fresh and records a
+`review_session` event with that `reason`. `review_model` and `review_effort`
+beside a table reviewer are refused like beside a command.
+
+```toml
+[agents.reviewer]
+harness = "codex"
+model   = "gpt-5.6-sol"   # optional; passed to -m
+effort  = "medium"        # optional; low, medium, high or xhigh
 ```
 
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,
@@ -253,12 +275,14 @@ neither startup nor the operator named.
 
 Where a harness adapter finds its binary when a role in `[agents]` is written
 as a table. Keys are registered harness names; each value is an absolute
-path. Absent, the adapter runs the harness's own name from PATH. Ignored under
-`implementer_isolation = "container"`, where the image supplies the binary.
+path. Absent, the adapter runs the harness's own name from PATH. Ignored for
+the implementer under `implementer_isolation = "container"`, where the image
+supplies the binary; review roles run on the host and keep their path.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
 | `claude` | Default: `claude` on PATH | Absolute path to the Claude CLI; set when the binary the factory should run is not the first `claude` on PATH. A relative path is refused. |
+| `codex` | Default: `codex` on PATH | Absolute path to the Codex CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `codex` on PATH. A relative path is refused. |
 
 ## `[loop]`
 
