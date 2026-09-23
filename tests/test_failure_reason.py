@@ -3,6 +3,7 @@ import json
 import unittest
 from unittest.mock import patch
 
+import holophyte.gates
 import holophyte.pr
 from tests.fake_agent import (
     APPROVE,
@@ -102,6 +103,7 @@ class BabysitterFailureTests(MergeModeFixture):
             pushes.append(result)
             if len(pushes) == 2:
                 marker.touch()
+                holophyte.gates._PASSES.clear()  # a re-exec (KO-646)
             return result
 
         class BreakVerify(Commit):
