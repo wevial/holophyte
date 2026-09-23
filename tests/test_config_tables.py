@@ -349,7 +349,7 @@ class MergeConfigTests(ConfigTestCase):
         self.assertTrue(config.strip_attribution)
         self.assertEqual(config[1:],
                          ("auto", "local", 5, "merge", 180, 300, 1800, 600, False,
-                          "", False,
+                          "", False, False,
                           (), "", "e2e/capture", False, "", None, 10, 20, "park",
                           "act", (), "holophyte", (), (), ("devin-ai-integration",
                            "coderabbitai", "greptile-apps", "github-actions")))
@@ -471,6 +471,12 @@ class MergeConfigTests(ConfigTestCase):
         self.locate('[merge]\napprove = "human"\n')
         self.assertEqual(config_tables.merge_config(self.tgt).approve,
                          "human")
+
+    def test_review_fixes_must_be_a_boolean(self):
+        """KO-663: `"yes"` is not a boolean; startup names the key."""
+        message = refused(self, '[merge]\nreview_fixes = "yes"\n')
+        self.assertIn("[merge] review_fixes", message)
+        self.assertIn("boolean", message)
 
     def test_any_other_value_or_key_is_a_startup_error_naming_it(self):
         """`"later"` names no gate and `approve_by` is a key nobody reads:

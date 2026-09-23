@@ -321,10 +321,13 @@ def board_config(target):
 
 
 # `approve = "auto"` merges a green, approved candidate; `"human"` parks it
-# awaiting operator approval. `mode = "local"` merges into local main;
-# `"pr"` pushes the task branch to origin and opens a PR for bots and CI.
-# The factory never pushes main. `pr_rounds` (at least 1) caps babysit passes
-# before parking the PR on its unresolved threads for the operator.
+# awaiting operator approval. `review_fixes = true` (KO-663, default false)
+# puts fix commits pushed after the release under `"human"` to the covering
+# review the auto path runs before the run parks. `mode = "local"` merges
+# into local main; `"pr"` pushes the task branch to origin and opens a PR for
+# bots and CI. The factory never pushes main. `pr_rounds` (at least 1) caps
+# babysit passes before parking the PR on its unresolved threads for the
+# operator.
 #
 # `pr_merge_method` is the `merge_method` the babysitter sends GitHub's merge
 # API when it lands a green, quiet pull request under `mode = "pr"`:
@@ -384,7 +387,7 @@ MERGE_KEYS = {
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
     "missing_check_sec": 600, "retrigger_missing_checks": False,
-    "pr_style": "", "pr_changes_log": False,
+    "pr_style": "", "pr_changes_log": False, "review_fixes": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
     "ui_capture_local": False,
     "media_repo": "",
@@ -427,6 +430,9 @@ def merge_config(target):
     values["pr_changes_log"] = _merge_boolean(
         target, "pr_changes_log",
         table.get("pr_changes_log", defaults.pop("pr_changes_log")))
+    values["review_fixes"] = _merge_boolean(
+        target, "review_fixes",
+        table.get("review_fixes", defaults.pop("review_fixes")))
     values["retrigger_missing_checks"] = _merge_boolean(
         target, "retrigger_missing_checks", table.get(
             "retrigger_missing_checks", defaults.pop("retrigger_missing_checks")))
