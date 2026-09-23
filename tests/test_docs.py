@@ -226,6 +226,11 @@ class ProjectWordTests(unittest.TestCase):
 
     maxDiff = None
     OLD_WORD = re.compile(r"\btargets?\b", re.IGNORECASE)
+    # `holophyte/target.py` is permitted beyond the ticket's three forms:
+    # the ticket leaves the module path to the type rename
+    # (394-project-rename-c-type.md), and DevelopmentDocTests requires
+    # development.md to name every module that exists. That rename retires
+    # this exception.
     PERMITTED = re.compile(
         r"```mermaid\n.*?```|`Target`|`target`|\"target\""
         r"|`holophyte/target\.py`", re.DOTALL)
