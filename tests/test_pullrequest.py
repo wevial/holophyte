@@ -100,27 +100,29 @@ class MergeModePullRequestTests(MergeModeFixture):
                             provider=provider)
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         calls = self.recorded()
-        # The seventh is the park reading the pull request once more, after
+        # The eighth is the park reading the pull request once more, after
         # the pass's own writes, for the activity mark it records (KO-362);
-        # the eighth is the pass after the park asking GitHub whether the
+        # the ninth is the pass after the park asking GitHub whether the
         # parked pull request has been merged (KO-359).
-        self.assertEqual(len(calls), 8, calls)
-        self.assertEqual(calls[6:], ["gh api --hostname github.com --method"
+        self.assertEqual(len(calls), 9, calls)
+        self.assertEqual(calls[7:], ["gh api --hostname github.com --method"
                                      " POST graphql --input -"] * 2)
         self.assertEqual(calls[0], f"git push origin {BRANCH}")
         # Between the push and the create, the open step's lookup of an
         # open pull request on the branch (KO-407) -- answered none here.
         self.assertEqual(calls[1], "gh api --hostname github.com --method"
                                    " POST graphql --input -")
-        # Beside the state query: the head's check runs and main's rules,
-        # so a rollup that says success before the checks have reported is
-        # not read as green.
+        # Beside the state query: the head's check runs, main's rules and
+        # main's protection (KO-652), so a rollup that says success before
+        # the checks have reported is not read as green.
         tip = self.git("rev-parse", BRANCH).strip()
-        self.assertEqual(calls[4:6], [
+        self.assertEqual(calls[4:7], [
             "gh api --hostname github.com --method GET"
             f" repos/example/repo/commits/{tip}/check-runs?per_page=100",
             "gh api --hostname github.com --method GET"
-            " repos/example/repo/rules/branches/main"])
+            " repos/example/repo/rules/branches/main",
+            "gh api --hostname github.com --method GET"
+            " repos/example/repo/branches/main"])
         # Pin the repository to the push destination, not gh's default.
         self.assertEqual(
             calls[2],

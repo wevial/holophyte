@@ -347,6 +347,10 @@ def board_config(target):
 # `pr_quiet_sec`: quiet since GitHub updatedAt before merging (default 300;
 # 0 merges as soon as green). `check_wait_sec`: positive pending/quiet wait
 # cap, default pr.CHECK_WAIT_S (1800), independently set per target (KO-477).
+# `missing_check_sec`: how long a check main requires may report nothing on
+# the head before the wait stops for it (default 600); with
+# `retrigger_missing_checks = true` one empty commit per candidate wakes it
+# first, otherwise the run parks naming the checks (KO-652).
 #
 # Pull request titles and bodies are always written by one implementer turn
 # from the diff, ticket and repository conventions. `pr_style` supplies
@@ -382,6 +386,7 @@ MERGE_KEYS = {
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
+    "missing_check_sec": 600, "retrigger_missing_checks": False,
     "pr_style": "", "pr_changes_log": False, "review_fixes": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
     "media_repo": "",
@@ -401,7 +406,8 @@ MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
 MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
 PR_POLL_FLOOR = 10
 MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
-                    "pr_quiet_sec": 0, "check_wait_sec": 1}
+                    "pr_quiet_sec": 0, "check_wait_sec": 1,
+                    "missing_check_sec": 1}
 
 
 def merge_config(target):
@@ -426,6 +432,9 @@ def merge_config(target):
     values["review_fixes"] = _merge_boolean(
         target, "review_fixes",
         table.get("review_fixes", defaults.pop("review_fixes")))
+    values["retrigger_missing_checks"] = _merge_boolean(
+        target, "retrigger_missing_checks", table.get(
+            "retrigger_missing_checks", defaults.pop("retrigger_missing_checks")))
     for key, default in defaults.items():
         value = table.get(key, default)
         if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):

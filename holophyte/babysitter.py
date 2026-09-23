@@ -33,6 +33,7 @@ from holophyte.gates import (
     with_baseline,
 )
 from holophyte.main_checkout import detached_main
+from holophyte.missing_checks import Retrigger, unreported
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
@@ -450,9 +451,11 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
     check_fixed = False  # One check fix per babysit: a red check cannot loop.
     for pass_no in range(1, merge.pr_rounds + 1):
         stop_if_requested(conn, run_id, "merge_gate")
+        retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
         state = _settled_or_park(
             target, conn, run_id, beat_s, pull, pushed_state, provider,
-            task_id, branch, sha, reviewed, refresh)
+            task_id, branch, sha, reviewed, refresh, retrigger)
+        sha, reviewed = retrigger.sha, retrigger.reviewed
         pushed_state = None
         stop_if_requested(conn, run_id, "merge_gate")
         done = _pr_terminal(target, conn, run_id, provider, task_id, branch,
@@ -527,9 +530,11 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                 continue
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     _ready(released, sha), (), reviewed=reviewed)
+    retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
     state = _settled_or_park(
         target, conn, run_id, beat_s, pull, pushed_state, provider,
-        task_id, branch, sha, reviewed, refresh)
+        task_id, branch, sha, reviewed, refresh, retrigger)
+    sha, reviewed = retrigger.sha, retrigger.reviewed
     _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                  pull, state, reviewed)
     _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
@@ -752,13 +757,17 @@ def _quiet_left(state, quiet_ms, refresh=None):
 
 
 def _settled_or_park(target, conn, run_id, beat_s, pull, state, provider,
-                     task_id, branch, sha, reviewed, refresh=None):
+                     task_id, branch, sha, reviewed, refresh=None,
+                     retrigger=None):
     from holophyte.pullrequest import _park_on_pr
     try:
         state = state or pr_status.pr_state(target, pull)
         state = maintainer_notes.pending_state(conn, run_id, state, pull.url)
-        return _settled_state(target, conn, run_id, beat_s, pull, state, refresh)
+        return _settled_state(target, conn, run_id, beat_s, pull, state,
+                              refresh, retrigger)
     except WaitExpired as expired:
+        if retrigger is not None:  # Park the head the retrigger pushed.
+            sha, reviewed = retrigger.sha, retrigger.reviewed
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha,
                     pull, str(expired), (), reviewed=reviewed)
 
@@ -767,17 +776,32 @@ class WaitExpired(Exception):
     """A continuous PR wait reached its independent liveness deadline."""
 
 
-def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None):
-    """Bound pending/quiet waiting with one deadline; return threads promptly."""
+def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None,
+                   retrigger=None):
+    """Bound pending/quiet waiting with one deadline; return threads promptly.
+    A required check with no report for `missing_check_sec` is retriggered
+    once (`Retrigger`) or ends the wait naming it."""
     merge = merge_config(target)
     quiet_ms = merge.pr_quiet_sec * 1000
     deadline = monotonic() + merge.check_wait_sec
+    absent = {}
     with heartbeat_while(conn, run_id, beat_s):
         state = state or pr_status.pr_state(target, pull)
         state = route_bot_threads(target, conn, run_id, beat_s, pull, state, merge)
         while (not state.threads and not state.merged and not state.closed
                and state.mergeable != "CONFLICTING"):
             if state.checks == "pending":
+                late = unreported(state, absent, merge.missing_check_sec,
+                                  monotonic)
+                if late:
+                    state = retrigger(late) if retrigger else None
+                    if state is None:
+                        raise WaitExpired(
+                            "required checks never reported on the head"
+                            f" commit: {', '.join(late)}")
+                    state = route_bot_threads(target, conn, run_id, beat_s,
+                                              pull, state, merge)
+                    continue
                 record_step(conn, run_id, "checks")
                 reason = "pending checks"
                 if state.pending_contexts:
