@@ -57,8 +57,11 @@ gets, and never touches a worktree.
 One per target, as a systemd user unit (`holophyte-serve@SLUG`). A
 `ThreadingHTTPServer` bound to the one address given, loopback when only
 a port is; every request opens
-the store read-only, answers, closes. It imports `store.read` and nothing
-from `store`, so it cannot write. Endpoints in the
+the store read-only, answers, closes. Its read routes go through
+`store.read`; its `POST /actions/...` endpoints write through the store
+API (`store.record_intervention()`, `store.requeue()`,
+`store.operator_notes.send_back()`), recording before they requeue a
+ticket, act on a unit or send a run back. Endpoints in the
 [HTTP reference](../reference/http.md). On loopback the bind address is
 the boundary; beyond it a bearer token from `[serve] token_file` guards
 every JSON route but `/peers`. Stateless, so a code change is picked up by
