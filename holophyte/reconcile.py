@@ -169,7 +169,16 @@ def _close_canceled(target, conn, provider, ticket_id):
     run ended `abandoned`, in the same transaction, and the pull request
     is left open on GitHub for a person to close. A Done board state keeps
     the ticket for GitHub's answer, which carries the merge sha.
+
+    The pull request is asked again before a parked run is abandoned
+    (`_ask_before_cancel()`, PR #216 review): it may have merged since the
+    pass's pull request reconcile read it, and an abandoned run takes the
+    ticket out of the `blocked_on_operator` read that alone could land
+    that merge with its sha.
     """
+    verdict = _ask_before_cancel(target, conn, provider, ticket_id)
+    if verdict != "cancel":
+        return verdict == "landed"
     with store.transaction(conn):
         ticket = store.read.ticket_by_id(conn, ticket_id)
         if ticket is None or ticket.boardState != "Canceled" \
@@ -205,6 +214,38 @@ def _close_canceled(target, conn, provider, ticket_id):
         print(f"[holo2] reconciled {identifier}: blocked_on_operator ->"
               " abandoned (canceled on the board)")
     return True
+
+
+def _ask_before_cancel(target, conn, provider, ticket_id):
+    """`"cancel"` when the canceled ticket may be finished: its run has
+    already ended, or GitHub says its pull request is open, or closed (the
+    run is rejected here first, as the pull request reconcile would).
+    `"landed"` when the pull request merged: landed with its sha instead.
+    `"wait"` when GitHub could not be asked: the run stays parked for the
+    next pass. A URL no reconcile can read has no merge to wait for."""
+    ticket = next((t for t in store.read.blocked_tickets(conn)
+                   if t.id == ticket_id), None)
+    if ticket is None or ticket.boardState != "Canceled" \
+            or _parked_phase(conn, ticket.runId) is None:
+        return "cancel"
+    pull = pr_status.parse_pr_url(ticket.prUrl)
+    if pull is None:
+        return "cancel"
+    if target is None or _budget_low():
+        return "wait"
+    try:
+        status = pr_status.pull_status(target, pull)
+    except Exception as e:  # noqa: BLE001 - any transport failure
+        print(f"[holo2] {ticket.linearIdentifier}: {pull.url} could not be"
+              f" read before its cancel ({e}); the run stays parked")
+        return "wait"
+    GITHUB_BUDGET.remember(status)
+    if status.merged:
+        _land_github_merge(target, conn, provider, ticket, pull, status)
+        return "landed"
+    if status.closed:
+        _note_closed_pr(target, conn, provider, ticket, pull, status)
+    return "cancel"
 
 
 def _retire_abandoned(target, conn, ticket):

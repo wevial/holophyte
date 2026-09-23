@@ -786,3 +786,21 @@ class CanceledParkedPullRequestTests(MergeModeFixture):
                          [("blocked_on_operator",)])
         self.assertEqual(self.read("SELECT id FROM interventions"
                                    " WHERE runId IS NOT NULL"), [])
+
+    def test_a_pr_merged_after_the_pull_request_read_lands_not_abandons(self):
+        """PR #216 review: the pull request merged between the pass's pull
+        request read and the cancel; the cancel asks again and lands it."""
+        H = self.parked_on_pr()
+        asked = H.fake_client(self, H.OPEN_PULL, H.MERGED_PULL)
+
+        printed = self.main_output(provider=self.board_says("Canceled"))
+
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'
+                                   " WHERE runId IS NOT NULL"), [("approve",)])
+        self.assertNotIn("left open", printed)
