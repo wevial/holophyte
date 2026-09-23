@@ -1,0 +1,29 @@
+name: unit
+
+# Runs every Python test module as a pull request check, one process per
+# module and four at a time (GitHub-hosted runners for public repositories
+# have four vCPUs), through tests/run_modules.py. Ruff, typecheck and the
+# console's bun tests stay in local verify.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements.txt
+      # Some tests commit with `git -c` and need an identity to fall back on.
+      - run: |
+          git config --global user.name "unit check"
+          git config --global user.email "unit-check@example.com"
+      - run: python3 tests/run_modules.py --jobs 4
