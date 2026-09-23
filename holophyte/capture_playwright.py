@@ -153,7 +153,7 @@ def run(argv):
         _boot(args.boot, ["--config", generated, str(spec)], env)
     finally:
         os.unlink(generated)
-    if not any(output.glob(SHOT)):
+    if not any(shot.is_file() for shot in output.glob(SHOT)):
         raise Refusal(f"no screenshot in {output}: expected at least one "
                       f"NN-slug.png ({SHOT})")
 

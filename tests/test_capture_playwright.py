@@ -12,15 +12,19 @@ RUNNER = Path(__file__).resolve().parents[1] / "holophyte" / "capture_playwright
 MODULES = "HOLOPHYTE_TEST_PLAYWRIGHT_MODULES"
 
 # Records its argv, environment and whether the config it was handed exists,
-# then writes the file named by FAKE_WRITES into CAPTURE_OUT and exits with
-# FAKE_EXIT.
+# then writes the file named by FAKE_WRITES into CAPTURE_OUT (a directory when
+# the name ends in a slash) and exits with FAKE_EXIT.
 FAKE = """\
 import json, os, sys
 config = sys.argv[sys.argv.index('--config') + 1]
 with open('record.json', 'w') as file:
     json.dump({'argv': sys.argv[1:], 'env': dict(os.environ),
                'config_existed': os.path.exists(config)}, file)
-open(os.path.join(os.environ['CAPTURE_OUT'], os.environ['FAKE_WRITES']), 'wb').close()
+written = os.path.join(os.environ['CAPTURE_OUT'], os.environ['FAKE_WRITES'])
+if written.endswith('/'):
+    os.makedirs(written)
+else:
+    open(written, 'wb').close()
 sys.exit(int(os.environ.get('FAKE_EXIT', '0')))
 """
 
@@ -71,11 +75,14 @@ class FakeBootTests(unittest.TestCase):
         self.assertEqual(self.leftovers(), ["KO-7.capture.ts"])
 
     def test_a_run_without_a_numbered_screenshot_fails(self):
-        result = self.capture(writes="shot.png")
+        for writes in ("shot.png", "01-open.png/"):
+            with self.subTest(writes=writes):
+                result = self.capture(writes=writes)
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(str((self.repo / "out").resolve()), result.stderr)
-        self.assertIn("NN-slug.png", result.stderr)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(str((self.repo / "out").resolve()), result.stderr)
+                self.assertIn("NN-slug.png", result.stderr)
+                (self.repo / "record.json").unlink()
 
     def test_a_missing_ticket_or_spec_refuses_before_booting(self):
         for ticket, named in ((None, "HOLOPHYTE_TICKET"),
