@@ -1,6 +1,6 @@
 {
  "status": {
-  "target": "/srv/dev/writer",
+  "project": "/srv/dev/writer",
   "host": "writer",
   "now": 1756900000000,
   "supervisor": {

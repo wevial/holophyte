@@ -96,7 +96,7 @@ test("strikes are amber until the run stands on its last one, red from there, no
 });
 
 test("groupByProject keys one block per project path and daemon, and names it by its last segment", () => {
-  const other: Status = { ...working, target: "/srv/dev/other", runs: [{ ...working.runs[0]!, id: 7 }] };
+  const other: Status = { ...working, project: "/srv/dev/other", runs: [{ ...working.runs[0]!, id: 7 }] };
   const writer = "http://writer:7710";
   const second = "http://second:7710";
   const groups = groupByProject([

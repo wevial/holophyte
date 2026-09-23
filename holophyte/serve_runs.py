@@ -74,8 +74,7 @@ def no_store(project):
     return {"error": "no store",
             "detail": f"{project.path} has no store yet; nothing has run"
                       " against it on this host",
-            "project": str(project.path),
-            "target": str(project.path)}
+            "project": str(project.path)}
 
 
 # An optional sign and digits: what `int()` accepts minus its leniencies

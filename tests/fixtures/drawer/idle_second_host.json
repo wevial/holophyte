@@ -1,5 +1,5 @@
 {
- "target": "/srv/dev/writer-2",
+ "project": "/srv/dev/writer-2",
  "host": "writer-2",
  "now": 1756900000000,
  "supervisor": {

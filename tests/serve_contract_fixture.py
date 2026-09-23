@@ -18,7 +18,7 @@ def normalize_contract(value, key=""):
         return [normalize_contract(v) for v in value]
     if value is None:
         return None
-    if key in {"host", "target", "project"}:
+    if key in {"host", "project"}:
         return "writer" if key == "host" else "/repo"
     if key in {"id", "event_id", "run_id", "pid", "now", "at", "started_ms",
                "ended_ms", "work_started_ms", "verify_started_ms",

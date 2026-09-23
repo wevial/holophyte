@@ -289,15 +289,14 @@ class BabysitterTests(unittest.TestCase):
 class ProjectWordTests(unittest.TestCase):
     """KO-618: the manual calls the repository the factory works on a
     project, as `factory.py project add` and the store's `projects` table
-    do. Mermaid node names follow the code, and the JSON alias key `target`
-    keeps the old word until a later ticket renames it; `docs/design/` holds
-    dated records. The code type and its module left the old word in KO-619,
-    which retired their exception here."""
+    do. Mermaid node names follow the code; `docs/design/` holds dated
+    records. The code type and its module left the old word in KO-619, and
+    the daemon's JSON alias key in KO-634, which retired their exceptions
+    here."""
 
     maxDiff = None
     OLD_WORD = re.compile(r"\btargets?\b", re.IGNORECASE)
-    PERMITTED = re.compile(
-        r"```mermaid\n.*?```|`target`|\"target\"", re.DOTALL)
+    PERMITTED = re.compile(r"```mermaid\n.*?```", re.DOTALL)
 
     def test_the_old_word_is_gone_outside_the_design_notes(self):
         found = []
@@ -334,7 +333,7 @@ class ProjectWordTests(unittest.TestCase):
                  if not row.split(" | ")[0].endswith(" PROJECT`")]
         self.assertEqual(wrong, [])
 
-    def test_the_http_page_names_project_the_key_and_target_its_alias(self):
+    def test_the_http_page_names_project_the_repository_key(self):
         text = re.sub(r"\s+", " ",
                       (DOCS / "reference" / "http.md").read_text())
         for route in ("/status", "/attention"):
@@ -342,8 +341,10 @@ class ProjectWordTests(unittest.TestCase):
             self.assertIn('"project": "/path/to/repo"', section, route)
             self.assertRegex(section, r"`project` is the (?:project path|"
                              r"repository the daemon serves)", route)
-            self.assertRegex(section, r"`target` (?:is )?(?:its |a )?"
-                             r"deprecated alias[^.]*same value", route)
+        (no_store,) = [row for row in text.split(" | ")
+                       if "no store yet" in row]
+        self.assertRegex(no_store, r"`project`, the repository the daemon"
+                         r" serves")
 
 
 class ArchitectureTruthTests(unittest.TestCase):
