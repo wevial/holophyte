@@ -12,6 +12,7 @@ import store
 from holophyte import operator, pool, runs
 from holophyte.config_tables import loop_config
 from tests.loop_fixture import FakePool, LoopFixture, StubProvider, a_task
+from tests.schema_fixture import move_ahead_additively
 
 
 class HeartbeatSchemaBumpTests(unittest.TestCase):
@@ -88,6 +89,13 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
         self.assertTrue(all(conn is self.conn for conn in connections))
         self.assertEqual(output.count('[holo2] heartbeat failed:'), 1)
         self.assertIn(f'version {store.SCHEMA_VERSION + 1} is newer', output)
+
+    def test_additive_bump_at_the_floor_keeps_the_threads_connection(self):
+        move_ahead_additively(self.path, readableFrom=store.SCHEMA_VERSION)
+        connections, output = self.three_beats()
+        self.assertEqual(len(connections), 3)
+        self.assertTrue(all(conn is not self.conn for conn in connections))
+        self.assertNotIn('beating through the open connection', output)
 
     def test_three_failed_opens_then_recovery_keeps_every_beat(self):
         opened = store.open(self.path)

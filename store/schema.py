@@ -348,6 +348,28 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 33 records the pull request title the reconcile read (KO-622).
 SCHEMA_VERSION = 33
 
+# The oldest SCHEMA_VERSION whose builds can still read and write a store at
+# SCHEMA_VERSION (KO-661). Each migration records it in its `migrate` note,
+# and a build behind the store opens it unmigrated when its own version is at
+# or above the floor that note names. On each bump, keep it for an additive
+# change and raise it to the new version for any other:
+#
+# * Additive: a new table or index; a new column that is nullable, or
+#   NOT NULL with a DEFAULT (an older build's INSERTs name their columns);
+#   a backfill that writes only columns the same bump adds.
+# * Not additive: a dropped or renamed column or table; a new or tightened
+#   CHECK, UNIQUE or NOT NULL on an existing column; an enum value removed
+#   or renamed, since the newer CHECK rejects an older build's write.
+# * An added enum value is additive only on a column an older build records
+#   or displays and never branches on (`interventions.action`,
+#   `runEvents.level`, `ledger.kind`, `runs.failureKind`). It is not on
+#   `runs.phase` (bump 32's `paused` raises KeyError in an older
+#   `set_phase()`), `projects.admission` (bump 30's `disabled` is claimed
+#   on by a build that tests only for `held`), `tickets.status` (it decides
+#   pickability) or `runs.parkKind` (the claim and the serve daemon choose a
+#   path from it).
+READABLE_FROM = SCHEMA_VERSION
+
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
 # heartbeat thread, its phase changes and the supervisor's sweep are three
@@ -371,12 +393,15 @@ CREATE INDEX IF NOT EXISTS ledger_runId ON ledger (runId);
 class SchemaNewer(SystemExit):
     """A newer factory migrated this store; an old loop must re-execute."""
 
-    def __init__(self, path, version):
+    def __init__(self, path, version, floor=None):
         self.version = version
+        self.floor = floor
+        found = ("it records no readable-from floor" if floor is None
+                 else f"it is readable from version {floor} on")
         super().__init__(
             f"{path}: store schema version {version} is newer than the"
             f" version {SCHEMA_VERSION} this build understands; refusing"
-            " to open it with an older factory")
+            f" to open it with an older factory ({found})")
 
 
 class SchemaOlder(SystemExit):
@@ -443,22 +468,57 @@ def _connect_with_version(path):
             time.sleep(2 ** attempt)
 
 
+def latest_migration_note(conn):
+    """The newest `migrate` note as JSON text, or None when there is none.
+
+    A store whose `interventions` table has no `note` column, or no such
+    table at all, has no migration history to read."""
+    if "note" not in {r[1] for r in conn.execute("PRAGMA table_info(interventions)")}:
+        return None
+    row = conn.execute(
+        "SELECT note FROM interventions WHERE action = 'migrate'"
+        " AND note IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
+    return None if row is None else row[0]
+
+
+def _readable_from(conn, version):
+    """The floor the migration to `version` recorded, or None.
+
+    A note that records another target version is not this version's
+    floor: a stamp moved without its migration record has none."""
+    note = latest_migration_note(conn)
+    try:
+        detail = json.loads(note) if note is not None else {}
+    except ValueError:
+        return None
+    if not isinstance(detail, dict) or detail.get("to") != version:
+        return None
+    floor = detail.get("readableFrom")
+    return floor if isinstance(floor, int) else None
+
+
 def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry point open()
     """Open the store at `path` in WAL mode and return the connection.
 
     Refuse a newer `user_version` with `SchemaNewer` (a `SystemExit`) before
-    writing. Migrate older stores with `init()` and create missing indexes.
-    With `migrate=False`, refuse older stores with `SchemaOlder` and skip
-    index creation. Refuse with `SchemaError` a store whose foreign keys
-    name a missing table. Require WAL so supervisor reads can overlap loop writes;
-    a filesystem that cannot enable it raises rather than silently degrading."""
+    writing, unless its migrate note's `readableFrom` floor is at or below
+    this build's version; such a store is opened as it is, never migrated or
+    indexed, so its stamp is never lowered. Migrate older stores with
+    `init()` and create missing indexes. With `migrate=False`, refuse older
+    stores with `SchemaOlder` and skip index creation. Refuse with
+    `SchemaError` a store whose foreign keys name a missing table. Require
+    WAL so supervisor reads can overlap loop writes; a filesystem that
+    cannot enable it raises rather than silently degrading."""
     # Before anything that writes, including the WAL switch below: a store a
     # newer module stamped is refused without touching it, so the file is
     # still exactly what that newer build left for it to reopen.
     conn, version = _connect_with_version(path)
-    if version > SCHEMA_VERSION:
-        conn.close()
-        raise SchemaNewer(path, version)
+    newer = version > SCHEMA_VERSION
+    if newer:
+        floor = _readable_from(conn, version)
+        if floor is None or floor > SCHEMA_VERSION:
+            conn.close()
+            raise SchemaNewer(path, version, floor)
     # Referential integrity is off by default in SQLite and is per-connection,
     # so it has to be asserted on every open, not once at init().
     conn.execute("PRAGMA foreign_keys = ON")
@@ -485,7 +545,7 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
         if mode.lower() != "wal":
             raise sqlite3.DatabaseError(
                 f"{path}: could not enable WAL mode (journal_mode is {mode!r})")
-        if migrate:
+        if migrate and not newer:
             conn.executescript(INDEXES)
     except BaseException:
         conn.close()
@@ -763,7 +823,8 @@ def _record_migration(conn, version):
     except (OSError, subprocess.SubprocessError):
         build = "unknown"
     at = int(time.time() * 1000)
-    note = json.dumps({"from": version, "to": SCHEMA_VERSION, "build": build,
+    note = json.dumps({"from": version, "to": SCHEMA_VERSION,
+                       "readableFrom": READABLE_FROM, "build": build,
                        "pid": os.getpid(), "ppid": os.getppid(),
                        "argv": sys.argv, "user": getpass.getuser(), "at": at})
     conn.execute(
