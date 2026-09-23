@@ -650,12 +650,28 @@ class StatusHandler(BaseHTTPRequestHandler):
     """
 
     def handle_one_request(self):
+        self.counted = False
         try:
             super().handle_one_request()
         except (BrokenPipeError, ConnectionResetError):
             self.close_connection = True
             print(f"[holo2] client disconnected: {getattr(self, 'path', '?')!r}",
                   file=sys.stderr)
+        finally:
+            if self.counted:
+                self.server.done()
+
+    def parse_request(self):
+        # A request is in flight from its parsed headers to its answer
+        # (`InFlight`); one whose headers land once the daemon is draining
+        # for a re-exec is 503, never started and cut off.
+        if not super().parse_request():
+            return False
+        self.counted = self.server.begin()
+        if not self.counted:
+            self.close_connection = True
+            self.answer(503, {"error": "daemon restarting"})
+        return self.counted
 
     def do_GET(self):
         parts = urlsplit(self.path)

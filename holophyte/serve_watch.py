@@ -5,9 +5,9 @@ factory checkout had at startup and, every `CODE_CHECK_SEC`, the one it has
 now, and raises `Moved` out of `serve_forever()` once they differ -- the
 supervisor's code-moved check, read through the same `factory_revision()`,
 which `serve()` hands in so the daemon's tests patch it where it is used.
-`InFlight` counts the requests a `ThreadingHTTPServer` has accepted and not
-yet answered, so the re-exec can wait for them: the daemon's handler
-threads are daemons, which `server_close()` is not promised to join.
+`InFlight` counts the requests the daemon has read and not yet answered,
+so the re-exec can wait for them: the daemon's handler threads are
+daemons, which `server_close()` is not promised to join.
 Standard library only.
 """
 from __future__ import annotations
@@ -62,36 +62,32 @@ class CodeWatch:
 
 
 class InFlight:
-    """A `ThreadingMixIn` server mix-in: `drain()` waits until every
-    request accepted so far has been answered. Counted where a request is
-    accepted, on the serving thread, so one accepted just before the loop
-    unwinds is waited for too."""
+    """A server mix-in counting requests, not connections: the handler
+    calls `begin()` once a request's headers are in and `done()` once it
+    is answered, so `drain()` waits for the requests being answered and
+    never for a client that connected and sent nothing -- the exec closes
+    that socket with the rest. From `drain()` on, `begin()` refuses, so no
+    request starts that the exec would cut off."""
 
     def __init__(self, *args, **kwargs):
         self.in_flight = 0
+        self.draining = False
         self.settled = threading.Condition()
         super().__init__(*args, **kwargs)
 
-    def process_request(self, request, client_address):
+    def begin(self):
         with self.settled:
+            if self.draining:
+                return False
             self.in_flight += 1
-        try:
-            super().process_request(request, client_address)
-        except BaseException:
-            self.request_done()
-            raise
+            return True
 
-    def process_request_thread(self, request, client_address):
-        try:
-            super().process_request_thread(request, client_address)
-        finally:
-            self.request_done()
-
-    def request_done(self):
+    def done(self):
         with self.settled:
             self.in_flight -= 1
             self.settled.notify_all()
 
     def drain(self):
         with self.settled:
+            self.draining = True
             self.settled.wait_for(lambda: self.in_flight == 0)

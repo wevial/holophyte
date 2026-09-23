@@ -17,6 +17,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import types
 import unittest
 from pathlib import Path
 from time import monotonic, sleep, time
@@ -1167,6 +1168,10 @@ class RefusedStartTests(unittest.TestCase):
                 self.assertEqual(problems[0][1].count(TOMLKIT_MISSING), 1)
 
 
+# A server for a handler run on a socket pair: every request is counted in.
+COUNTER = types.SimpleNamespace(begin=lambda: True, done=lambda: None)
+
+
 class DisconnectedClientTests(unittest.TestCase):
     def test_closed_client_logs_one_line_without_traceback(self):
         server_side, client_side = socket.socketpair()
@@ -1177,7 +1182,7 @@ class DisconnectedClientTests(unittest.TestCase):
         with contextlib.redirect_stderr(out), \
                 patch.object(holophyte.serve.StatusHandler, "do_GET",
                              lambda handler: handler.answer(404, {})):
-            holophyte.serve.StatusHandler(server_side, ("local", 0), None)
+            holophyte.serve.StatusHandler(server_side, ("local", 0), COUNTER)
         self.assertEqual(out.getvalue(),
                          "[holo2] client disconnected: '/missing\\x1b[31m'\n")
         self.assertNotIn("Traceback", out.getvalue())
@@ -1193,7 +1198,7 @@ class DisconnectedClientTests(unittest.TestCase):
                              lambda handler: handler.answer(200, {})), \
                 patch("socketserver._SocketWriter.write",
                       side_effect=[None, ConnectionResetError()]):
-            holophyte.serve.StatusHandler(server_side, ("local", 0), None)
+            holophyte.serve.StatusHandler(server_side, ("local", 0), COUNTER)
         self.assertEqual(len(out.getvalue().splitlines()), 1)
         self.assertIn("/status", out.getvalue())
         self.assertNotIn("Traceback", out.getvalue())
@@ -1222,6 +1227,9 @@ class FollowsCodeProcessTests(ServeTestCase):
     factory re-executes when that checkout's `HEAD` moves, and the fresh
     process answers on the address the old one held."""
 
+    CHECK = 0.2  # the copy's check interval, seconds
+    TOLERANCE = 1.0  # scheduling slack on a loaded host, seconds
+
     def factory_checkout(self):
         """A copy of this factory committed as commit A in its own git
         repository, with the check interval cut so the test is quick."""
@@ -1234,8 +1242,8 @@ class FollowsCodeProcessTests(ServeTestCase):
         serve_py = checkout / "holophyte" / "serve_watch.py"
         text = serve_py.read_text()
         self.assertIn("\nCODE_CHECK_SEC = 15\n", text)
-        serve_py.write_text(text.replace("\nCODE_CHECK_SEC = 15\n",
-                                         "\nCODE_CHECK_SEC = 0.2\n"))
+        serve_py.write_text(text.replace(
+            "\nCODE_CHECK_SEC = 15\n", f"\nCODE_CHECK_SEC = {self.CHECK}\n"))
         git(checkout, "init", "-q")
         git(checkout, "add", "-A")
         git(checkout, "commit", "-q", "-m", "A")
@@ -1259,8 +1267,13 @@ class FollowsCodeProcessTests(ServeTestCase):
             [sys.executable, "-u", str(checkout / "factory.py"),
              str(self.target), "--serve", f"127.0.0.1:{port}"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        lines = []
-        reader = threading.Thread(target=lambda: lines.extend(daemon.stdout))
+        lines, stamps = [], []
+
+        def read():
+            for line in daemon.stdout:
+                stamps.append(monotonic())
+                lines.append(line)
+        reader = threading.Thread(target=read)
         reader.start()
         self.addCleanup(daemon.stdout.close)
         self.addCleanup(reader.join)
@@ -1277,17 +1290,26 @@ class FollowsCodeProcessTests(ServeTestCase):
             self.fail(f"no serving line #{count}: {''.join(lines)}")
 
         wait_for(1)
+        # A client that connects and never sends a request: accepted ahead
+        # of the `/status` below, it must not hold the re-exec back.
+        idle = socket.create_connection(("127.0.0.1", port), timeout=10)
+        self.addCleanup(idle.close)
         code, before = self.get_status(port)
         self.assertEqual(code, 200, before)
 
         git(checkout, "commit", "-q", "--allow-empty", "-m", "B")
+        committed = monotonic()
         second = git(checkout, "rev-parse", "HEAD")
         wait_for(2)
 
-        moved = [line for line in lines if "factory code moved" in line]
+        moved = [n for n, line in enumerate(lines)
+                 if "factory code moved" in line]
         self.assertEqual(len(moved), 1, "".join(lines))
         self.assertIn(f"factory code moved from {first} to {second};"
-                      " serve re-executing", moved[0])
+                      " serve re-executing", lines[moved[0]])
+        self.assertLess(stamps[moved[0]] - committed,
+                        self.CHECK + self.TOLERANCE)
+        self.assertEqual(idle.recv(1), b"")  # dropped by the exec
         code, after = self.get_status(port)
         self.assertEqual(code, 200, after)
         # The same pid (an exec, not a child) answering as a fresh daemon.
