@@ -36,6 +36,9 @@ WORKER_STOP = 4     # the claim said stop for a human (`_claim_run()`)
 # The variable a worker reads its slot number from, for the `[holo2 wN]`
 # prefix: the children share the scheduler's stdout.
 WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
+# Set to 1 when the scheduler's startup critic probe failed: a worker does
+# not probe the critic again, and keeps the critic off for its life.
+CRITIC_DOWN_ENV = "HOLOPHYTE_CRITIC_DOWN"
 # The seams the scheduler spawns and reaps through, so a test patches these
 # and never `subprocess.Popen` or `os.wait` for the whole process.
 SPAWN = subprocess.Popen
@@ -88,9 +91,10 @@ def worker(target, provider):
     banner()
     configured = target.config().get("agents") or {}
     reset(target)
+    routes(target).critic_failed = os.environ.get(CRITIC_DOWN_ENV) == "1"
     try:
         if "writer" in configured or any(k in configured for k in AGENT_FALLBACK_KEYS):
-            if not startup_routes(target, provider):
+            if not startup_routes(target, provider, critic=False):
                 return WORKER_STOP
         result = _worker(target, provider)
         return WORKER_STOP if routes(target).failed else result
@@ -401,8 +405,13 @@ def _spawn_worker(target, slot):
     (see `_wait_any()`). The command line is the scheduler's own,
     `--worker` appended, so the interpreter flags the operator launched
     with (`-u` above all) reach the child too."""
+    from holophyte.agent_routes import routes
+
     program, argv = reexec_command()
     env = dict(os.environ, **{WORKER_SLOT_ENV: str(slot)})
+    env.pop(CRITIC_DOWN_ENV, None)
+    if routes(target).critic_failed:
+        env[CRITIC_DOWN_ENV] = "1"
     child = SPAWN([program, *argv[1:], "--worker"], env=env,
                   stdin=subprocess.DEVNULL)
     print(f"[holo2] started worker {slot} as pid {child.pid}")

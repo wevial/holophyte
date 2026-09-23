@@ -185,7 +185,9 @@ model   = "grok-4.7-high"   # required; passed to --model
 `gpt-6-luna` and `medium`, with its cwd a detached worktree of `main` under a
 temporary directory that is removed on every exit. Startup probes it after the
 writer; a failed probe prints "critic route down; claims skip the relevance
-check" and the loop carries on without the critic.
+check" and the loop carries on without the critic. Under `[loop] workers > 1`
+only the scheduler probes it; each worker inherits that outcome rather than
+probing again.
 
 ```toml
 [agents.critic]

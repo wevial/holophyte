@@ -702,8 +702,11 @@ def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=No
           f"using fallback: {evidence['command']}")
     return True
 
-def startup_routes(project, provider, implementer_probe=None, *, activate=True):
-    """Probe seats; schedulers use activate=False to leave route state alone."""
+def startup_routes(project, provider, implementer_probe=None, *, activate=True,
+                   critic=True):
+    """Probe seats; schedulers use activate=False to leave route state alone.
+    A pooled worker passes critic=False and inherits the scheduler's critic
+    outcome instead, so the loop pays for one critic probe, not one a claim."""
     import store
     from holophyte.operator import _record_startup_probe
     from holophyte.runs import open_store
@@ -736,7 +739,10 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True):
         if not probe.ok:
             return False
     probe_writer(project, activate=activate)
-    probe_critic(project, activate=activate)
+    if critic:
+        # Even a scheduler keeps `critic_failed`: it is never published,
+        # and `_spawn_worker()` hands it on to every worker.
+        probe_critic(project, activate=True)
     return True
 
 

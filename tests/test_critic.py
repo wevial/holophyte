@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import holophyte.agents
 import holophyte.harness
+import holophyte.pool
 import holophyte.project
 from holophyte.agent_routes import reset, routes
 
@@ -70,12 +71,17 @@ class CriticProbeTests(unittest.TestCase):
         self.addCleanup(reset, project)
         return project
 
-    def start(self, project):
+    def start(self, project, **options):
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
             started = holophyte.agents.startup_routes(
-                project, SimpleNamespace(team="test"))
+                project, SimpleNamespace(team="test"), **options)
         return started, printed.getvalue()
+
+    def critic_calls(self):
+        if not self.calls.exists():
+            return []
+        return [json.loads(line) for line in self.calls.read_text().splitlines()]
 
     def critic(self):
         return self.target(f'[agents.critic]\n[harnesses]\ncodex = "{self.fake}"\n')
@@ -112,6 +118,38 @@ class CriticProbeTests(unittest.TestCase):
         self.assertTrue(routes(project).critic_failed)
         [call] = [json.loads(line) for line in self.calls.read_text().splitlines()]
         self.assertFalse(Path(call["cwd"]).exists())
+
+    def test_a_scheduler_hands_its_failed_probe_to_the_workers_it_spawns(self):
+        project = self.critic()
+        with patch.dict("os.environ", {"FAKE_CRITIC_FAIL": "1"}):
+            started, _ = self.start(project, activate=False)
+        self.assertTrue(started)
+        spawned = []
+
+        def spawn(argv, env, **_):
+            spawned.append(env)
+            return SimpleNamespace(pid=1)
+        with patch.object(holophyte.pool, "SPAWN", spawn), \
+                contextlib.redirect_stdout(io.StringIO()):
+            holophyte.pool._spawn_worker(project, 1)
+        self.assertEqual(spawned[0].get(holophyte.pool.CRITIC_DOWN_ENV), "1")
+
+    def test_a_worker_with_a_writer_keeps_the_critic_off_without_a_probe(self):
+        writer = self.repo.parent / "writer.sh"
+        writer.write_text("#!/bin/sh\necho ready\n")
+        writer.chmod(0o755)
+        project = self.target(f'[agents]\nwriter = "{writer}"\n[agents.critic]\n'
+                              f'[harnesses]\ncodex = "{self.fake}"\n')
+        seen = []
+
+        def claim(target, _):
+            seen.append(routes(target).critic_failed)
+        with patch.dict("os.environ", {holophyte.pool.CRITIC_DOWN_ENV: "1"}), \
+                patch.object(holophyte.pool, "_worker", claim), \
+                contextlib.redirect_stdout(io.StringIO()):
+            holophyte.pool.worker(project, SimpleNamespace(team="test"))
+        self.assertEqual(seen, [True])
+        self.assertEqual(self.critic_calls(), [])
 
 
 if __name__ == "__main__":
