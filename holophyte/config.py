@@ -128,7 +128,7 @@ KNOWN_KEYS["questions"] = frozenset(("url", "key_env", "min_confidence"))
 KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
 
 
-def check_config_keys(target):
+def check_config_keys(project):
     """Refuse a key the factory does not read inside a table it does.
 
     Runs at startup for every mode, in the same breath as `sweep_config()`
@@ -141,53 +141,53 @@ def check_config_keys(target):
     already says so in its own words.
     """
     for table, known in KNOWN_KEYS.items():
-        section = target.config().get(table)
+        section = project.config().get(table)
         if not isinstance(section, dict):
             continue
         for key in section:
             if key not in known:
                 raise SystemExit(
-                    f"[holo2] {target.config_path}: [{table}] {key}: unknown key; "
+                    f"[holo2] {project.config_path}: [{table}] {key}: unknown key; "
                     f"[{table}] accepts: {', '.join(sorted(known))}")
 
 
-def check_config(target):
+def check_config(project):
     """Validate config before claiming work, without touching the host.
     CLI startup and daemon writes share these checks; refusals name the setting.
     """
-    merge = merge_config(target)
+    merge = merge_config(project)
     from holophyte.questions import settings
     try:
-        settings(target.config())
+        settings(project.config())
     except ValueError as error:
         raise SystemExit(str(error)) from None
-    verify_config(target)
-    check_config_keys(target)
-    harness.check_target(target)
-    budget_scale(target)
-    implementer_session(target)
+    verify_config(project)
+    check_config_keys(project)
+    harness.check_target(project)
+    budget_scale(project)
+    implementer_session(project)
     from holophyte.fix_session import resume_template
-    resume_template(target)
+    resume_template(project)
     from holophyte.isolation import route_for
-    route = route_for(target)
+    route = route_for(project)
     if merge.ui_capture and route.backend == "container" and not route.writable:
         raise SystemExit(
             "[merge] ui_capture requires [agents] implementer_isolation "
             "writable = true for its worktree output directory")
-    check_agent_fallbacks(target)
-    sweep_config(target)
-    loop_config(target)
-    report_config(target)
-    console_config(target)
-    serve_config(target)
+    check_agent_fallbacks(project)
+    sweep_config(project)
+    loop_config(project)
+    report_config(project)
+    console_config(project)
+    serve_config(project)
 
 
-def implementer_session(target):
+def implementer_session(project):
     """Optional compiled session-id pattern; refuse invalid settings at startup."""
-    value = config_table(target, "agents").get("implementer_session")
+    value = config_table(project, "agents").get("implementer_session")
     if value is None:
         return None
-    key = f"[holo2] {target.config_path}: [agents] implementer_session"
+    key = f"[holo2] {project.config_path}: [agents] implementer_session"
     if not isinstance(value, str):
         raise SystemExit(f"{key} must be a regular expression string")
     try:
@@ -199,7 +199,7 @@ def implementer_session(target):
     return pattern
 
 
-def check_document(target):
+def check_document(project):
     """`check_config()` plus the shape of the tables the loop's startup
     reads before it claims: `[board]` through `board_config()`, `[agents]`
     through `agent_command()` and `review_route()`, `[worktree]` through
@@ -209,17 +209,17 @@ def check_document(target):
     next start, not a property of the document. A relative program path
     is: `check_agent_commands()` refuses it whatever the host holds, so it
     is refused here through the same `check_command_path()`."""
-    check_config(target)
-    board_config(target)
-    review_route(target)
+    check_config(project)
+    board_config(project)
+    review_route(project)
     for role, key in AGENT_CONFIG_KEYS.items():
-        argv = agent_command(target, role, "")
+        argv = agent_command(project, role, "")
         if argv is not None:
-            check_command_path(target, key, argv[0])
-    check_worktree_setup(target)
+            check_command_path(project, key, argv[0])
+    check_worktree_setup(project)
 
 
-def agent_command(target, role, goal, *, fallback=False):
+def agent_command(project, role, goal, *, fallback=False):
     """The configured argv for `role`, or None when the config names none.
 
     The goal is appended as the command's last argument, which is where both
@@ -239,44 +239,44 @@ def agent_command(target, role, goal, *, fallback=False):
     would answer a different question than the one the config asked.
     """
     key = AGENT_CONFIG_KEYS[role] + ("_fallback" if fallback else "")
-    command = config_table(target, "agents").get(key)
+    command = config_table(project, "agents").get(key)
     if command is None:
         return None
     if isinstance(command, dict):
-        return harness.seat(target, role, fallback=fallback).turn(goal)
+        return harness.seat(project, role, fallback=fallback).turn(goal)
     if not isinstance(command, str):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {key} must be "
+            f"[holo2] {project.config_path}: [agents] {key} must be "
             f"a command string, got {type(command).__name__}")
     try:
         argv = shlex.split(command)
     except ValueError as bad:
         # `shlex` says "No closing quotation"; the key it was in is ours.
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {key}"
+            f"[holo2] {project.config_path}: [agents] {key}"
             f" cannot be split into a command: {bad}")
     if not argv:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {key}"
+            f"[holo2] {project.config_path}: [agents] {key}"
             " is empty")
     return argv + [goal]
 
 
-def check_agent_fallbacks(target):
+def check_agent_fallbacks(project):
     """Fallback commands obey the primary grammar and name a distinct route."""
     for role, key in AGENT_CONFIG_KEYS.items():
-        fallback = agent_command(target, role, "", fallback=True)
+        fallback = agent_command(project, role, "", fallback=True)
         if fallback is None:
             continue
-        primary = agent_command(target, role, "")
+        primary = agent_command(project, role, "")
         if fallback == primary:
-            raise SystemExit(f"[holo2] {target.config_path}: [agents] "
+            raise SystemExit(f"[holo2] {project.config_path}: [agents] "
                              f"{key}_fallback may not equal {key}")
-        check_command_path(target, key + "_fallback", fallback[0])
-    review_route(target)
+        check_command_path(project, key + "_fallback", fallback[0])
+    review_route(project)
 
 
-def review_route(target):
+def review_route(project):
     """The `(model, effort)` pair the review container runs, per the config.
 
     `[agents] review_model` and `review_effort` when set, `REVIEW_MODEL` and
@@ -293,24 +293,24 @@ def review_route(target):
     believes. (An `adjudicator` override alone leaves the reviewer in the
     container, so the pair still has a job.)
     """
-    agents = config_table(target, "agents")
+    agents = config_table(project, "agents")
     model_key, effort_key = REVIEW_ROUTE_KEYS
     for key in REVIEW_ROUTE_KEYS:
         if key in agents and any(k in agents for k in ("reviewer",
                                                        *AGENT_FALLBACK_KEYS)):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [agents] {key} beside [agents] "
+                f"[holo2] {project.config_path}: [agents] {key} beside [agents] "
                 f"reviewer or fallback command: the command opts out of the container "
                 f"the pair routes -- drop one of the two")
     model = agents.get(model_key, REVIEW_MODEL)
     if not isinstance(model, str) or not model.strip():
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {model_key} must be a "
+            f"[holo2] {project.config_path}: [agents] {model_key} must be a "
             f"non-empty Codex model id, got {model!r}")
     effort = agents.get(effort_key, REVIEW_EFFORT)
     if effort not in REVIEW_EFFORTS:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {effort_key} must be one of "
+            f"[holo2] {project.config_path}: [agents] {effort_key} must be one of "
             f"{', '.join(REVIEW_EFFORTS)}, got {effort!r}")
     return model, effort
 
@@ -326,7 +326,7 @@ BUDGET_SCALE = 1.0
 BUDGET_SCALE_RANGE = (1.0, 3.0)
 
 
-def budget_scale(target):
+def budget_scale(project):
     """The `[agents] budget_scale` multiplier on the implementer's box.
 
     `BUDGET_SCALE` when the key is absent -- the estimate exactly, as it
@@ -338,65 +338,65 @@ def budget_scale(target):
     `[supervisor]` threshold gets: a multiplier the factory quietly
     clamped would bound turns with a number nobody chose.
     """
-    value = config_table(target, "agents").get("budget_scale")
+    value = config_table(project, "agents").get("budget_scale")
     if value is None:
         return BUDGET_SCALE
     low, high = BUDGET_SCALE_RANGE
     if (isinstance(value, bool) or not isinstance(value, (int, float))
             or not math.isfinite(value) or not low <= value <= high):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] budget_scale must be a "
+            f"[holo2] {project.config_path}: [agents] budget_scale must be a "
             f"number from {low} to {high}, got {value!r}")
     return value
 
 
-def check_agent_commands(target):
+def check_agent_commands(project):
     """Validate route grammar; check executables on the host only for host seats.
 
     Container implementers are live-probed before claiming. Host routes without
     fallbacks need installed executables; default reviewers need Docker and an
     image. PR merge mode also checks its remote and authentication prerequisites."""
     from holophyte.isolation import route_for
-    isolated = route_for(target).backend == "container"
-    review_route(target)
+    isolated = route_for(project).backend == "container"
+    review_route(project)
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
-        argv = agent_command(target, role, "")
+        argv = agent_command(project, role, "")
         if role == "write" and argv is not None:
-            check_command_path(target, key, argv[0])
+            check_command_path(project, key, argv[0])
         if role == "write" or (role == "implement" and isolated):
             continue
         if argv is None:
-            if agent_command(target, role, "", fallback=True) is not None:
+            if agent_command(project, role, "", fallback=True) is not None:
                 # The live startup probe settles the default route and can
                 # activate the configured fallback if its CLI is unavailable.
                 continue
             if role == "implement":
-                check_default_implementer(target)
+                check_default_implementer(project)
             else:
                 default_container_keys.append(key)
             continue
         program = argv[0]
-        check_command_path(target, key, program)
+        check_command_path(project, key, program)
         if (shutil.which(program) is None
-                and agent_command(target, role, "", fallback=True) is None):
+                and agent_command(project, role, "", fallback=True) is None):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [agents] {key}: no executable "
+                f"[holo2] {project.config_path}: [agents] {key}: no executable "
                 f"{program!r} on PATH")
     if default_container_keys:
-        check_default_reviewer(target, default_container_keys)
+        check_default_reviewer(project, default_container_keys)
     # And the merge route, when it leaves the machine: `[merge] mode = "pr"`
     # pushes to `origin` and opens a pull request, so a target with no
     # `origin`, or a host with neither an authenticated `gh` nor a token, is
     # found here rather than by the first approved run reaching the gate with
     # its lease held. Imported at the call: `holophyte.pr` imports the gates,
     # which import this module.
-    if merge_config(target).mode == "pr":
+    if merge_config(project).mode == "pr":
         from holophyte.pr import check_pr_route
-        check_pr_route(target)
+        check_pr_route(project)
 
 
-def check_command_path(target, key, program):
+def check_command_path(project, key, program):
     """Refuse a relative program path with a directory in it (`./worker`)
     for `[agents] key`: rounds run with `cwd` set to a task worktree that
     does not exist yet, so the name resolves somewhere no check can look.
@@ -405,22 +405,22 @@ def check_command_path(target, key, program):
     startup."""
     if os.path.dirname(program) and not os.path.isabs(program):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {key}: relative command path "
+            f"[holo2] {project.config_path}: [agents] {key}: relative command path "
             f"{program!r} -- rounds run in a task worktree, so name the "
             f"program by an absolute path or leave it to PATH")
 
 
-def check_default_implementer(target):
+def check_default_implementer(project):
     """The default implementer route is `claude` on PATH; nothing else."""
     if shutil.which(DEFAULT_IMPLEMENTER) is None:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] implementer is not set, so the "
+            f"[holo2] {project.config_path}: [agents] implementer is not set, so the "
             f"implementer runs `{DEFAULT_IMPLEMENTER}`, and there is no "
             f"executable {DEFAULT_IMPLEMENTER!r} on PATH -- install the Claude "
             f"CLI or set [agents] implementer to the command to run instead")
 
 
-def check_default_reviewer(target, keys):
+def check_default_reviewer(project, keys):
     """The default container route needs `docker` and a daemon that answers.
 
     `keys` are the `[agents]` keys whose roles fall to that route, named in
@@ -441,20 +441,20 @@ def check_default_reviewer(target, keys):
               f"command to run instead")
     if shutil.which(DEFAULT_REVIEWER) is None:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {unset} not set, so the review "
+            f"[holo2] {project.config_path}: [agents] {unset} not set, so the review "
             f"runs in a `{DEFAULT_REVIEWER}` container ({review_runner.IMAGE}), "
             f"and there is no executable {DEFAULT_REVIEWER!r} on PATH -- "
             f"install Docker or set [agents] {unset} to the command to run "
             f"instead")
-    probe = docker_probe(target, ["info"], unset, remedy)
+    probe = docker_probe(project, ["info"], unset, remedy)
     if probe.returncode:
         detail = (probe.stderr or probe.stdout).strip().splitlines()
         reason = detail[-1] if detail else f"exit {probe.returncode}"
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {unset} not set, so the review "
+            f"[holo2] {project.config_path}: [agents] {unset} not set, so the review "
             f"runs in a `{DEFAULT_REVIEWER}` container, and the Docker daemon "
             f"did not answer `{DEFAULT_REVIEWER} info`: {reason} -- {remedy}")
-    image = docker_probe(target, ["image", "inspect", review_runner.IMAGE],
+    image = docker_probe(project, ["image", "inspect", review_runner.IMAGE],
                          unset, remedy)
     if image.returncode:
         print(f"[holo2] review image {review_runner.IMAGE} is not built on this "
@@ -462,7 +462,7 @@ def check_default_reviewer(target, keys):
               f"{review_runner.DOCKERFILE}")
 
 
-def docker_probe(target, args, unset, remedy):
+def docker_probe(project, args, unset, remedy):
     """Ask the daemon `docker <args>` under `DOCKER_PROBE_TIMEOUT`.
 
     A daemon that does not answer in time is a startup error naming the
@@ -475,7 +475,7 @@ def docker_probe(target, args, unset, remedy):
                               timeout=DOCKER_PROBE_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [agents] {unset} not set, so the review "
+            f"[holo2] {project.config_path}: [agents] {unset} not set, so the review "
             f"runs in a `{DEFAULT_REVIEWER}` container, and the Docker daemon "
             f"did not answer `{' '.join(argv)}` within "
             f"{DOCKER_PROBE_TIMEOUT}s -- {remedy}") from None
@@ -490,7 +490,7 @@ def docker_probe(target, args, unset, remedy):
 # runs, and a run costs exactly what it costs now.
 
 
-def setup_commands(target):
+def setup_commands(project):
     """The target's `[worktree] setup` list, or `[]` when it names none.
 
     Each entry is one shell command, run in order. A table that is present but
@@ -501,43 +501,43 @@ def setup_commands(target):
     worktree nobody prepared, and that surfaces far away from the config, as a
     toolchain failure in the middle of a round.
     """
-    commands = config_table(target, "worktree").get("setup")
+    commands = config_table(project, "worktree").get("setup")
     if commands is None:
         return []
     if not isinstance(commands, list):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [worktree] setup must be a list of "
+            f"[holo2] {project.config_path}: [worktree] setup must be a list of "
             f"command strings, got {type(commands).__name__}")
     for command in commands:
         if not isinstance(command, str):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [worktree] setup: every entry must be "
+                f"[holo2] {project.config_path}: [worktree] setup: every entry must be "
                 f"a command string, got {type(command).__name__}")
         if not command.strip():
             raise SystemExit(
-                f"[holo2] {target.config_path}: [worktree] setup: entry {command!r} "
+                f"[holo2] {project.config_path}: [worktree] setup: entry {command!r} "
                 "is empty")
     return commands
 
 
-def config_table(target, name):
+def config_table(project, name):
     """The target's `[name]` table, `{}` when absent -- refused, naming
     the table, when the key holds anything but a table. The readers of
     `[agents]` and `[worktree]` take their keys through this rather than
     `.get()` on whatever the file holds, so `worktree = "invalid"` is one
     sentence at startup, and the same sentence from `PUT /config`, rather
     than a traceback from the first reader to ask it for a key."""
-    table = target.config().get(name)
+    table = project.config().get(name)
     if table is None:
         return {}
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [{name}] must be a table, got "
+            f"[holo2] {project.config_path}: [{name}] must be a table, got "
             f"{type(table).__name__}")
     return table
 
 
-def check_worktree_setup(target):
+def check_worktree_setup(project):
     """Parse the `[worktree]` table before the loop claims work.
 
     `check_agent_commands()`'s sibling, here for the same reason: a table read
@@ -556,12 +556,12 @@ def check_worktree_setup(target):
     allow-list, which shares the `[worktree]` reader. `check_document()` runs
     the same call over a `PUT /config` candidate, so the two cannot drift.
     """
-    setup_commands(target)
-    setup_timeout(target)
-    branch_prefix(target)
-    carry_directories(target)
-    worktree_environment(target)
-    capture_environment(target)
+    setup_commands(project)
+    setup_timeout(project)
+    branch_prefix(project)
+    carry_directories(project)
+    worktree_environment(project)
+    capture_environment(project)
 
 
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
@@ -583,36 +583,36 @@ def parse_environment(text, label="env_source"):
     return values
 
 
-def worktree_environment(target):
+def worktree_environment(project):
     """Validate and read the allow-list; None preserves targets without it.
 
     Relative sources resolve beside config.toml. All source values are held
     only in memory for redaction, including values excluded from the checkout.
     """
-    return allowed_environment(target, "worktree", "env_source", "env_allow")
+    return allowed_environment(project, "worktree", "env_source", "env_allow")
 
 
-def capture_environment(target):
+def capture_environment(project):
     """`[merge]`'s capture-only allow-list, read like `[worktree]`'s.
 
     Only `pr_media._capture()` adds these values to a command's environment:
     they are never written to the worktree and never reach agent turns,
     verify commands or `isolation.environment()`.
     """
-    return allowed_environment(target, "merge", "capture_env_source",
+    return allowed_environment(project, "merge", "capture_env_source",
                                "capture_env_allow")
 
 
-def allowed_environment(target, name, source_key, allow_key):
+def allowed_environment(project, name, source_key, allow_key):
     """Both-or-neither `source_key`/`allow_key` in table `name`, read and
     checked; None when neither is set. Every source value is registered for
     redaction, and a refusal names keys and variables, never a value."""
     from holophyte.redact import register_values
 
-    table = config_table(target, name)
+    table = config_table(project, name)
     if source_key not in table and allow_key not in table:
         return None
-    prefix = f"[holo2] {target.config_path}: [{name}] "
+    prefix = f"[holo2] {project.config_path}: [{name}] "
     for key in (source_key, allow_key):
         if key not in table:
             raise SystemExit(prefix + f"missing {key}; "
@@ -627,7 +627,7 @@ def allowed_environment(target, name, source_key, allow_key):
                          "matching [A-Za-z_][A-Za-z0-9_]*")
     path = Path(source).expanduser()
     if not path.is_absolute():
-        path = Path(target.config_path).parent / path
+        path = Path(project.config_path).parent / path
     try:
         values = parse_environment(path.read_text(encoding="utf-8"), source_key)
     except (OSError, UnicodeError):
@@ -641,7 +641,7 @@ def allowed_environment(target, name, source_key, allow_key):
     return {item: values[item] for item in allow}
 
 
-def setup_timeout(target):
+def setup_timeout(project):
     """The per-command cap on `[worktree] setup`, in seconds.
 
     `[worktree] setup_timeout_sec` when the target names one, else the same
@@ -654,18 +654,18 @@ def setup_timeout(target):
     factory quietly replaced with its default would bound the setup with a
     number nobody chose.
     """
-    value = config_table(target, "worktree").get("setup_timeout_sec")
+    value = config_table(project, "worktree").get("setup_timeout_sec")
     if value is None:
         return VERIFY_TIMEOUT
     if (isinstance(value, bool) or not isinstance(value, (int, float))
             or not math.isfinite(value) or value <= 0):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [worktree] setup_timeout_sec must be a "
+            f"[holo2] {project.config_path}: [worktree] setup_timeout_sec must be a "
             f"finite positive number of seconds, got {value!r}")
     return value
 
 
-def carry_directories(target):
+def carry_directories(project):
     """The target's `[worktree] carry` list, or `[]` when it names none.
 
     Each entry is a repository-relative directory `[worktree] setup` installs
@@ -677,23 +677,23 @@ def carry_directories(target):
     against the worktree the round is about, and answered there with a
     boundary error naming the entry.
     """
-    entries = config_table(target, "worktree").get("carry")
+    entries = config_table(project, "worktree").get("carry")
     if entries is None:
         return []
     if not isinstance(entries, list):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [worktree] carry must be a list of "
+            f"[holo2] {project.config_path}: [worktree] carry must be a list of "
             f"repository-relative directories, got {type(entries).__name__}")
     for entry in entries:
         if not isinstance(entry, str):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [worktree] carry: every entry must "
+                f"[holo2] {project.config_path}: [worktree] carry: every entry must "
                 f"be a repository-relative directory, got {type(entry).__name__}")
         parts = pathlib.PurePosixPath(entry).parts
         if (not entry.strip() or entry.startswith("/") or not parts
                 or ".." in parts):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [worktree] carry: entry {entry!r} "
+                f"[holo2] {project.config_path}: [worktree] carry: entry {entry!r} "
                 "must be a relative path inside the repository")
     return entries
 
@@ -705,7 +705,7 @@ BRANCH_PREFIX_REFUSED = set("/~^:?*[\\")
 DEFAULT_BRANCH_PREFIX = "task"
 
 
-def branch_prefix(target):
+def branch_prefix(project):
     """The segment ahead of the slash in a task branch name.
 
     `[worktree] branch_prefix` when the target names one, else `task` -- so a
@@ -723,23 +723,23 @@ def branch_prefix(target):
     at `git worktree add` would abandon a claimed ticket over something one
     sentence at startup could have said.
     """
-    value = config_table(target, "worktree").get("branch_prefix")
+    value = config_table(project, "worktree").get("branch_prefix")
     if value is None:
         return DEFAULT_BRANCH_PREFIX
     if not isinstance(value, str):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [worktree] branch_prefix must be a "
+            f"[holo2] {project.config_path}: [worktree] branch_prefix must be a "
             f"string, got {type(value).__name__}")
     if not value:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [worktree] branch_prefix must not be "
+            f"[holo2] {project.config_path}: [worktree] branch_prefix must not be "
             "empty")
     if (any(c.isspace() or c in BRANCH_PREFIX_REFUSED or ord(c) < 0x20 or c == "\x7f"
             for c in value)
             or value.startswith((".", "-")) or value.endswith((".", ".lock"))
             or ".." in value or "@{" in value or value == "@"):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [worktree] branch_prefix {value!r} is "
+            f"[holo2] {project.config_path}: [worktree] branch_prefix {value!r} is "
             "not a legal branch segment: no whitespace, no '/', none of "
             "~ ^ : ? * [ \\, no leading '.' or '-', no '..', and not ending in "
             "'.' or '.lock'")
@@ -749,7 +749,7 @@ def branch_prefix(target):
 ConsoleConfig = collections.namedtuple("ConsoleConfig", ("daemons",))
 
 
-def console_config(target):
+def console_config(project):
     """The target's `[console]` knobs over the defaults.
 
     Checked at startup beside `report_config()`, the same way: an absent
@@ -761,15 +761,15 @@ def console_config(target):
     entry, like a bad `[report]` value. Keys this version does not know
     are refused by `check_config_keys()`.
     """
-    table = target.config().get("console", {})
+    table = project.config().get("console", {})
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [console] must be a table, got "
+            f"[holo2] {project.config_path}: [console] must be a table, got "
             f"{type(table).__name__}")
     daemons = table.get("daemons", CONSOLE_KEYS["daemons"])
     if not isinstance(daemons, (list, tuple)):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [console] daemons must be a list "
+            f"[holo2] {project.config_path}: [console] daemons must be a list "
             f"of HOST:PORT strings, got {daemons!r}")
     seen = set()
     for entry in daemons:
@@ -779,11 +779,11 @@ def console_config(target):
             split_address(entry)
         except ValueError as error:
             raise SystemExit(
-                f"[holo2] {target.config_path}: [console] daemons: {error}"
+                f"[holo2] {project.config_path}: [console] daemons: {error}"
             ) from None
         if entry in seen:
             raise SystemExit(
-                f"[holo2] {target.config_path}: [console] daemons: {entry!r} "
+                f"[holo2] {project.config_path}: [console] daemons: {entry!r} "
                 f"is listed twice")
         seen.add(entry)
     return ConsoleConfig(daemons=tuple(daemons))
@@ -824,7 +824,7 @@ ServeConfig = collections.namedtuple(
                     "config_edit", "transcripts"))
 
 
-def serve_config(target):
+def serve_config(project):
     """The target's `[serve]` knobs over the defaults.
 
     An absent table (or key) is no token file; a present `token_file` or
@@ -839,36 +839,36 @@ def serve_config(target):
     (KO-348). Keys this version does not know are refused by
     `check_config_keys()`.
     """
-    table = target.config().get("serve", {})
+    table = project.config().get("serve", {})
     if not isinstance(table, dict):
         raise SystemExit(
-            f"[holo2] {target.config_path}: [serve] must be a table, got "
+            f"[holo2] {project.config_path}: [serve] must be a table, got "
             f"{type(table).__name__}")
     flags = {}
     for key in ("actions", "config_edit"):
         flags[key] = table.get(key, SERVE_KEYS[key])
         if not isinstance(flags[key], bool):
             raise SystemExit(
-                f"[holo2] {target.config_path}: [serve] {key} must be true or "
+                f"[holo2] {project.config_path}: [serve] {key} must be true or "
                 f"false, got {flags[key]!r}")
     actions, config_edit = flags["actions"], flags["config_edit"]
     name = table.get("name", SERVE_KEYS["name"])
     if name is None:
-        name = target.path.name
+        name = project.path.name
     elif not isinstance(name, str) or not name.strip() or "/" in name:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [serve] name must be a non-empty "
+            f"[holo2] {project.config_path}: [serve] name must be a non-empty "
             f"systemd instance name without '/', got {name!r}")
     from holophyte.transcript_config import transcript_roots
-    transcripts = transcript_roots(target, table.get("transcripts", []))
+    transcripts = transcript_roots(project, table.get("transcripts", []))
     return ServeConfig(
-        token_file=token_path(target, table, "token_file"),
-        machine_token_file=token_path(target, table, "machine_token_file"),
+        token_file=token_path(project, table, "token_file"),
+        machine_token_file=token_path(project, table, "machine_token_file"),
         actions=actions, name=name, config_edit=config_edit,
         transcripts=transcripts)
 
 
-def token_path(target, table, key):
+def token_path(project, table, key):
     """`[serve] KEY` as a path, or None when absent: a non-empty string,
     `~` expanded, a relative path taken against the config's directory."""
     value = table.get(key, SERVE_KEYS[key])
@@ -876,9 +876,9 @@ def token_path(target, table, key):
         return None
     if not isinstance(value, str) or not value.strip():
         raise SystemExit(
-            f"[holo2] {target.config_path}: [serve] {key} must be a "
+            f"[holo2] {project.config_path}: [serve] {key} must be a "
             f"non-empty path, got {value!r}")
     path = Path(value).expanduser()
     if not path.is_absolute():
-        path = Path(target.config_path).parent / path
+        path = Path(project.config_path).parent / path
     return path
