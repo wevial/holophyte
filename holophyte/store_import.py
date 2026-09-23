@@ -9,6 +9,7 @@ body: both stores open read-only and nothing is written to either.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
@@ -108,11 +109,33 @@ def _table_plan(source_conn, dest_conn, table, id_column):
                      checksum(source_conn, table, id_column))
 
 
+@contextlib.contextmanager
+def _snapshot(conn):
+    """Hold one read transaction on `conn` for the block, so every query in
+    it reads the same committed snapshot while a writer keeps committing.
+    A transaction the caller already holds is theirs, and left open."""
+    if conn.in_transaction:
+        yield
+        return
+    conn.execute("BEGIN")
+    try:
+        yield
+    finally:
+        conn.rollback()
+
+
 def plan(source_conn, dest_conn):
     """The `Plan` for importing `source_conn`'s store into `dest_conn`'s.
 
-    Reads only. Refuses with `VersionMismatch` when the two stores' schema
-    versions differ, before reading a table."""
+    Reads only, each store in one snapshot from its version check to its
+    last checksum, so a count and its checksum describe the same rows.
+    Refuses with `VersionMismatch` when the two stores' schema versions
+    differ, before reading a table."""
+    with _snapshot(source_conn), _snapshot(dest_conn):
+        return _plan(source_conn, dest_conn)
+
+
+def _plan(source_conn, dest_conn):
     version = schema_version(source_conn)
     dest_version = schema_version(dest_conn)
     if version != dest_version:

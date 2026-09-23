@@ -13,6 +13,7 @@ from unittest.mock import patch
 import holophyte.cli
 import holophyte.target
 import store
+import store.read
 import store.tickets
 from holophyte import store_import
 from tests.phase_fixture import finish_run
@@ -37,11 +38,17 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def tree(root):
+    """Every file under `root`, by relative path, with its hash."""
+    return {str(p.relative_to(root)): digest(p)
+            for p in sorted(Path(root).rglob("*")) if p.is_file()}
+
+
 class ImportStoreDryRunTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        root = Path(tmp.name)
+        root = self.root = Path(tmp.name)
         self.target = root / "repo"
         self.target.mkdir()
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
@@ -77,6 +84,20 @@ class ImportStoreDryRunTests(unittest.TestCase):
             lines[-1],
             f"source {self.source.resolve()}  schema {store.SCHEMA_VERSION}")
         self.assertEqual((digest(self.source), digest(self.dest)), self.before)
+
+    def test_a_legacy_destination_is_not_adopted(self):
+        # A target whose store still sits in the dotted-sibling layout: any
+        # other mode would move it under the home, which is a write.
+        legacy = self.root / "legacy"
+        legacy.mkdir()
+        seed(self.root / "legacy.holophyte.db", 5).close()
+        before = tree(self.root)
+        self.target = legacy
+        out, _, exit_ = self.run_cli("--import-store", str(self.source),
+                                     "--dry-run")
+        self.assertIn("no destination store", str(exit_.code))
+        self.assertEqual(out, "")
+        self.assertEqual(tree(self.root), before)
 
     def test_a_different_schema_version_is_refused(self):
         older = store.SCHEMA_VERSION - 1
@@ -131,6 +152,35 @@ class ChecksumTests(unittest.TestCase):
         self.assertNotEqual(sums[0]["supervisorHeartbeats"], empty)
         self.assertTrue(all(re.fullmatch(r"[0-9a-f]{64}", s)
                             for s in sums[0].values()))
+
+    def test_a_commit_mid_plan_is_not_seen(self):
+        # A writer commits a heartbeat after the plan has counted the table
+        # and before it checksums it: both must describe the rows as they
+        # stood when the plan began, which here is none.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "live.db"
+        writer = seed(path, 3)
+        self.addCleanup(writer.close)
+        real = store_import.checksum
+
+        def commit_first(conn, table, id_column):
+            if table == "supervisorHeartbeats":
+                writer.execute(
+                    "INSERT INTO supervisorHeartbeats (pid, startedAt,"
+                    " lastBeat, passes) VALUES (11, ?, ?, 1)", (AT, AT))
+                writer.commit()
+            return real(conn, table, id_column)
+
+        reader = store.read.open_readonly(path)
+        self.addCleanup(reader.close)
+        with patch.object(store_import, "checksum", commit_first):
+            result = store_import.plan(reader, reader)
+        beats = next(t for t in result.tables
+                     if t.table == "supervisorHeartbeats")
+        self.assertEqual((beats.rows, beats.sha256),
+                         (0, hashlib.sha256(b"").hexdigest()))
+        self.assertFalse(reader.in_transaction)
 
 
 if __name__ == "__main__":

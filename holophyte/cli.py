@@ -369,7 +369,10 @@ def _legacy_cli(argv):
     _modifier_checks(parser, args)
     _note_checks(parser, args)
     _close_checks(parser, args)
-    target = Target.locate(args.target)
+    # A dry run writes nothing, and adopting legacy state moves files: it
+    # locates the target without adopting, so a store still in a legacy
+    # layout is reported absent rather than moved.
+    target = Target.locate(args.target, adopt=args.import_store is None)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.
