@@ -111,6 +111,10 @@ CREATE TABLE IF NOT EXISTS runs (
     timeBoxMs         INTEGER,
     workingMs         INTEGER, -- NULL means historical/unmeasured
     workStartedAt     INTEGER, -- epoch milliseconds of the active work call
+    -- The verify part of `workingMs` (KO-635): the time box judges agent
+    -- work, `workingMs - verifyMs`. NULL for a run claimed before the column.
+    verifyMs          INTEGER,
+    verifyStartedAt   INTEGER, -- set with workStartedAt when the span is a verify
     -- The ticket's contract as it stood at the claim: its title and the two
     -- lists §2's pickability predicate reads, as one canonical JSON document
     -- (`contract_snapshot()` below). A run is worked to the ticket it was
@@ -346,7 +350,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 30 adds disabled project admission and registration (KO-586).
 # Version 31 types run park reasons and backfills legacy questions (KO-583).
 # Version 33 records the pull request title the reconcile read (KO-622).
-SCHEMA_VERSION = 33
+# Version 34 records verify time apart from agent work on runs (KO-635).
+SCHEMA_VERSION = 34
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -522,6 +527,8 @@ ADDED_COLUMNS = (
     ("interventions", "projectId", "projectId INTEGER REFERENCES projects (id)"),
     ("runs", "workingMs", "workingMs INTEGER"),
     ("runs", "workStartedAt", "workStartedAt INTEGER"),
+    ("runs", "verifyMs", "verifyMs INTEGER"),
+    ("runs", "verifyStartedAt", "verifyStartedAt INTEGER"),
     (
         "runs",
         "timeBoxMs",

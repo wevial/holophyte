@@ -60,6 +60,7 @@ from holophyte.config_tables import sweep_config
 from holophyte.environment_git import (
     environment_temporary_directory,
     exclude_environment,
+    factory_identity,
     paths,
     stage_work,
     unstage_environment,
@@ -218,11 +219,10 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     sh(["git", "checkout", "-B", branch], cwd=wt)
     if dirty:
         stage_work(target, wt)
-        # The identity is pinned so a target with no committer configured
-        # cannot raise here — and a rescue commit is the factory's, not a
-        # person's.
-        sh(["git", "-c", "user.name=holophyte",
-            "-c", "user.email=holophyte@factory.invalid", "commit", "-m",
+        # The configured identity when the target has one, the factory's
+        # pinned one otherwise so a target with no committer configured
+        # cannot raise here; the message says the commit is the factory's.
+        sh(["git", *factory_identity(wt), "commit", "-m",
             f"WIP: uncommitted leftovers preserved on reuse of {branch}"],
            cwd=wt)
         print(f"[holo2] preserved uncommitted leftovers as a WIP commit"
@@ -251,8 +251,7 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
         # parking it for a person cost an operator round-trip per add/add
         # overlap in a test file (KO-355), and the first verify fails the
         # run if it is still there.
-        r = subprocess.run(["git", "-c", "user.name=holophyte",
-                            "-c", "user.email=holophyte@factory.invalid",
+        r = subprocess.run(["git", *factory_identity(wt),
                             "merge", "--no-edit", "main"],
                            cwd=wt, capture_output=True, text=True)
         if r.returncode != 0:
@@ -709,8 +708,11 @@ def _admit_ticket(target, conn, project, provider, task, seen):
     # summary and the first criterion, no What line). The mirror lands
     # in `needs_spec` as an under-specced body would; no run row is
     # opened. The target's path goes along so a body naming a path
-    # this repository gitignores is refused here too (KO-222).
-    problem = body_problem(task, target.path)
+    # this repository gitignores is refused here too (KO-222) -- unless
+    # the last run is on a pull request, whose candidate holds the paths
+    # main lacks (KO-598, KO-655).
+    problem = body_problem(task, target.path,
+                           on_pull_request=_on_pull_request(conn, project, task))
     if problem:
         mirror_task(conn, project, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")
@@ -782,6 +784,16 @@ def _admit_ticket(target, conn, project, provider, task, seen):
         mirror_push(conn, ticket_id, provider)
         return None
     return ticket_id
+
+
+def _on_pull_request(conn, project, task):
+    """Whether the mirrored ticket's last run holds a pull request URL.
+    Asked before the mirror, so a ticket never mirrored is not on one."""
+    row = conn.execute(
+        "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.linearIssueId = ? AND t.projectId = ?",
+        (mirror_key(task), project)).fetchone()
+    return bool(row and row[0])
 
 
 class _Held:

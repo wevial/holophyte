@@ -205,8 +205,8 @@ def claim(conn, project_id, ticket_id, now=None):
         run_id = conn.execute(
             "INSERT INTO runs"
             " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"
-            "  timeBoxMs, ticketSnapshot, host, workerPid, workingMs)"
-            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?, 0)",
+            "  timeBoxMs, ticketSnapshot, host, workerPid, workingMs, verifyMs)"
+            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?, 0, 0)",
             (ticket_id, project_id, prior + 1, now, now, estimate, snapshot,
              socket.gethostname(), os.getpid()),
         ).lastrowid

@@ -36,6 +36,8 @@ CHECK_STATES = {None: "success", "SUCCESS": "success",
 # and the rest are not.
 RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
                    "startup_failure", "error"}
+# The app whose check runs are Actions jobs, with a log to read.
+ACTIONS_APP = "github-actions"
 # Page size for the check-runs and rollup-context reads.
 CHECK_RUNS_PAGE = 100
 
@@ -446,7 +448,39 @@ def _state_of(node, threads, runs, required):
                    pending_contexts=tuple(r["name"] for r in (runs or [])
                                           if isinstance(r, dict)
                                           and r.get("name")
-                                          and r.get("status") != "completed"))
+                                          and r.get("status") != "completed"),
+                   failed_checks=_failed_checks(runs))
+
+
+@dataclass(frozen=True)
+class FailedCheck:
+    """A check run on the head commit whose conclusion is red. `job_id` is
+    the GitHub Actions job whose log `pr.job_log()` reads; None for a check
+    run another app made or a commit status, which have no such log."""
+
+    name: str
+    conclusion: str
+    url: str
+    job_id: int | None = None
+
+
+def _failed_checks(runs):
+    """A `FailedCheck` for each red row of `runs`."""
+    return tuple(FailedCheck(name=r.get("name") or "",
+                             conclusion=r["conclusion"],
+                             url=r.get("html_url") or "", job_id=_job_id(r))
+                 for r in (runs or ()) if isinstance(r, dict)
+                 and r.get("conclusion") in RED_CONCLUSIONS)
+
+
+def _job_id(run):
+    """A GitHub Actions check run's `id`, which is its job's; None for any
+    other app's run and for a commit status."""
+    app = run.get("app")
+    if not isinstance(app, dict) or app.get("slug") != ACTIONS_APP:
+        return None
+    job = run.get("id")
+    return job if isinstance(job, int) and not isinstance(job, bool) else None
 
 
 def _closed_by(node):
