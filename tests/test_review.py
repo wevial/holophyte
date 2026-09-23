@@ -119,7 +119,7 @@ class CoveringRangeTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.git("init", "-q")
+        self.git("init", "-q", "-b", "main")
         self.git("config", "user.name", "Test reviewer")
         self.git("config", "user.email", "reviewer@example.test")
         (self.root / "tests").mkdir()
