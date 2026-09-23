@@ -186,10 +186,9 @@ class RequeueRefused(Exception):
 
     The ticket does not exist, still has a live run, is neither `in_flight`
     nor `blocked_on_operator` after a failed, rejected or aborted run, or
-    its last run did not end `failed`, `rejected` or aborted -- each is
-    the same answer to the operator: this is not a failed ticket waiting
-    to go back in the queue, so the message names which and the command
-    line exits on it.
+    its last run did not end so -- each the same answer to the operator:
+    this is not a failed ticket waiting to go back in the queue, so the
+    message names which and the command line exits on it.
     """
 
 
@@ -220,9 +219,8 @@ def requeue(conn, ticket_id, note, now=None):
     A ticket parked `blocked_on_operator` after a failed or rejected run
     is admitted too (KO-497), unless its run awaits merge approval, and so
     is one `--abort` parked: its run ended `abandoned` carrying an `abort`
-    or `abort_close` intervention (KO-719); an `abandoned` run without one
-    is refused as not aborted. Clear
-    its question in the same transaction as the intervention and walk.
+    or `abort_close` intervention (KO-719), which `_aborted()` looks up.
+    Clear its question in the same transaction as the intervention and walk.
     Candidates and pull requests still awaiting approval name the operator
     command that applies instead -- except a `not_reproduced` park (KO-658),
     whose question offers `--requeue` once the maintainer has added detail:
@@ -230,11 +228,10 @@ def requeue(conn, ticket_id, note, now=None):
     `abandoned` (never a strike) the way `_release_parked()` ends one.
 
     Refuses, with `RequeueRefused` and no write, anything else: an unknown
-    ticket, one shelved on the board, one with an active run,
-    one not `in_flight` (already `ready`,
-    say), or one whose last run ended some other way (merged) or never
-    ended. Touches no board state: the loop mirrors the Linear status when
-    it claims.
+    ticket, one shelved on the board, one with an active run, one not
+    `in_flight` (already `ready`, say), or one whose last run ended some
+    other way (merged, or abandoned but not aborted) or never ended.
+    Touches no board state: the loop mirrors the Linear status when it claims.
     """
     with _transaction(conn):
         row = conn.execute(
@@ -268,8 +265,7 @@ def requeue(conn, ticket_id, note, now=None):
 
 
 def _aborted(conn, run_id):
-    """Whether an operator's `abort` or `abort_close` was recorded on the run
-    (KO-719): an `abandoned` run that carries one ended by `--abort`."""
+    """Whether the run carries the `abort` or `abort_close` `--abort` records."""
     return run_id is not None and conn.execute(
         'SELECT 1 FROM interventions WHERE runId = ? AND "action" IN (?, ?)',
         (run_id, _enums.InterventionAction.ABORT.value,
