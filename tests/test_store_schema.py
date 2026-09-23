@@ -1307,7 +1307,8 @@ class Version26EnumMigrationTests(unittest.TestCase):
         after['runs'] = [tuple(value for column, value in zip(columns, row)
                                if column not in {'parkKind', 'failureKind',
                                                  'stopRequested', 'workerPid',
-                                                 'prSeenTitle'})
+                                                 'prSeenTitle', 'verifyMs',
+                                                 'verifyStartedAt'})
                          for row in after['runs']]
         self.assertEqual(after, self.before)
         self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],

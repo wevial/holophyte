@@ -457,7 +457,7 @@ def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None
     """Account for a mechanical verification, preserving its tuple interface."""
     from store.working import working
 
-    with working(conn, run_id):
+    with working(conn, run_id, verify=True):
         return _run_verify(cmd, cwd, contracts, timeout, target=target)
 
 

@@ -60,6 +60,7 @@ from holophyte.config_tables import sweep_config
 from holophyte.environment_git import (
     environment_temporary_directory,
     exclude_environment,
+    factory_identity,
     paths,
     stage_work,
     unstage_environment,
@@ -218,11 +219,10 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
     sh(["git", "checkout", "-B", branch], cwd=wt)
     if dirty:
         stage_work(target, wt)
-        # The identity is pinned so a target with no committer configured
-        # cannot raise here — and a rescue commit is the factory's, not a
-        # person's.
-        sh(["git", "-c", "user.name=holophyte",
-            "-c", "user.email=holophyte@factory.invalid", "commit", "-m",
+        # The configured identity when the target has one, the factory's
+        # pinned one otherwise so a target with no committer configured
+        # cannot raise here; the message says the commit is the factory's.
+        sh(["git", *factory_identity(wt), "commit", "-m",
             f"WIP: uncommitted leftovers preserved on reuse of {branch}"],
            cwd=wt)
         print(f"[holo2] preserved uncommitted leftovers as a WIP commit"
@@ -251,8 +251,7 @@ def reuse_leftover(target, wt, branch, conn=None, run_id=None,
         # parking it for a person cost an operator round-trip per add/add
         # overlap in a test file (KO-355), and the first verify fails the
         # run if it is still there.
-        r = subprocess.run(["git", "-c", "user.name=holophyte",
-                            "-c", "user.email=holophyte@factory.invalid",
+        r = subprocess.run(["git", *factory_identity(wt),
                             "merge", "--no-edit", "main"],
                            cwd=wt, capture_output=True, text=True)
         if r.returncode != 0:

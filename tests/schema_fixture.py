@@ -31,7 +31,7 @@ DOCUMENTED_COLUMNS = {
         "providerSessionId", "branch", "prUrl", "parkKind", "startedAt",
         "lastHeartbeat",
         "endedAt", "reviewRoundCount", "outcome", "outcomeReason", "failureKind",
-        "workingMs", "workStartedAt",
+        "workingMs", "workStartedAt", "verifyMs", "verifyStartedAt",
         # Store-owned: the merge commit a merged run landed on main as, so
         # the ticket-to-commit link is a column and not a grep of git log.
         "mergeSha",
