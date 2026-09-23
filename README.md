@@ -30,7 +30,7 @@ python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails th
 python3 factory.py /path/to/repo --status [--json] # projects, live and parked runs, ready count, locks
 python3 factory.py --import-store PATH --dry-run /path/to/repo # what importing another store would move; writes nothing
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
-python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback, the console at /; HOST:PORT to bind elsewhere
+python3 factory.py --serve 7710 /path/to/repo         # JSON daemon on loopback, the console at /; reads, and writes only with [serve] actions or config_edit; HOST:PORT to bind elsewhere
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
 python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run parked for merge approval
 python3 factory.py --babysit KO-n [--note TEXT] /path/to/repo # look at a parked run's pull request again
@@ -58,9 +58,11 @@ naming any blocker it added with a `+`, or exits 1 with the problem and nothing
 changed when the file is invalid and 2 with the identifier and the problem
 when the stored body is.
 
-`--report`, `--status`, `--sweep`, `--import-store --dry-run` and `--serve`
-read the store and call nobody; the loop and `--supervise` need a `[board]`
-table. `--help` is safe: the command line is parsed, not indexed.
+`--report`, `--status`, `--sweep` and `--import-store --dry-run` read the
+store and call nobody; `--serve` reads it too, and writes only through its
+two opt-ins, `[serve] actions` and `config_edit`
+([The daemon's actions](docs/reference/daemon.md)); the loop and
+`--supervise` need a `[board]` table. `--help` is safe: the command line is parsed, not indexed.
 
 ## Read next
 

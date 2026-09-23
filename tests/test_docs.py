@@ -12,6 +12,7 @@ Run: python3 -m unittest discover -s tests -p 'test_docs*' -v
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -385,6 +386,67 @@ class ArchitectureTruthTests(unittest.TestCase):
         self.assertIn("bearer token", unit)
         self.assertIn("[serve] token_file", unit)
         self.assertNotIn("no authentication", unit)
+
+
+class DaemonWritesTests(unittest.TestCase):
+    """KO-627: `--serve` reads by default and writes through two opt-ins,
+    `[serve] actions` and `[serve] config_edit`, so neither `--help` nor the
+    manual calls it read-only. `docs/design/` holds dated records and
+    `docs/architecture/` is ArchitectureTruthTests' (KO-593)."""
+
+    # What the pages said before the action endpoints and `PUT /config`.
+    RETIRED = ("read-only JSON daemon", "read-only HTTP daemon",
+               "A read-only daemon", "The daemon is read-only",
+               "serving its state read-only")
+
+    def test_no_page_calls_the_daemon_read_only(self):
+        # A phrase may wrap, so its words match across any whitespace; the
+        # hit is reported at the line it starts on.
+        patterns = [re.compile(r"\s+".join(map(re.escape, phrase.split())))
+                    for phrase in self.RETIRED]
+        found = []
+        for path in [README, *DOCS.rglob("*.md")]:
+            if {DOCS / "design", DOCS / "architecture"} & set(path.parents):
+                continue
+            text = path.read_text()
+            found += [f"{path.relative_to(ROOT)}:"
+                      f"{text.count(chr(10), 0, hit.start()) + 1}: "
+                      f"{' '.join(hit.group(0).split())}"
+                      for pattern in patterns
+                      for hit in pattern.finditer(text)]
+        self.assertEqual(found, [])
+
+    def test_help_names_the_actions_opt_in(self):
+        # A wide COLUMNS keeps argparse from wrapping an entry mid-phrase.
+        help_text = subprocess.run(
+            [sys.executable, "factory.py", "--help"], cwd=ROOT,
+            env={**os.environ, "COLUMNS": "1000"}, capture_output=True,
+            text=True, check=True).stdout
+        entry = re.search(r"^  --serve .*?(?=^  -)", help_text,
+                          re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(entry, help_text)
+        serve = " ".join(entry.group(0).split())
+        self.assertNotIn("writes nothing", serve)
+        self.assertNotIn("read-only", serve)
+        self.assertIn("[serve] actions", serve)
+
+    def test_cli_row_and_http_opening_link_the_writing_routes(self):
+        cli = (DOCS / "reference" / "cli.md").read_text()
+        row = re.search(r"^\| `--serve PORT PROJECT` \|.*$", cli, re.MULTILINE)
+        self.assertIsNotNone(row, "cli.md has no --serve row")
+        http = (DOCS / "reference" / "http.md").read_text()
+        opening = http.split("\n## ", 1)[0]
+        for name, text in (("cli.md", row.group(0)), ("http.md", opening)):
+            text = " ".join(text.split())
+            self.assertIn("](daemon.md)", text, name)
+            self.assertIn("POST /actions/", text, name)
+            self.assertIn("PUT /config", text, name)
+
+    def test_http_preflight_names_the_methods_serve_sends(self):
+        auth = section((DOCS / "reference" / "http.md").read_text(),
+                       "Authentication")
+        self.assertIn("`Access-Control-Allow-Methods: GET, POST, PUT`",
+                      " ".join(auth.split()))
 
 
 if __name__ == "__main__":
