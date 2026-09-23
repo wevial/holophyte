@@ -472,11 +472,11 @@ def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None
                            run_id=run_id)
 
 
-# Passes this process has seen: (run id, head sha, main's sha, command). A
-# command that passed on a clean tree answers the same on the same tree, so
-# a repeat for the same run -- the merge gate after an approving round, with
-# `main` unmoved -- is cited instead of run. Failures are never recorded; a
-# re-exec starts empty; nothing outlives the process.
+# Passes this process has seen: (run id, worktree, head, main, command). A
+# repeat for the same run on the same clean tree -- the merge gate after an
+# approving round, `main` unmoved -- is cited instead of run. The worktree
+# keeps another store's run 1 on the same commits from matching. Failures
+# are never recorded; a re-exec starts empty; nothing outlives the process.
 _PASSES = set()
 
 
@@ -497,7 +497,7 @@ def _pass_key(run_id, cmd, cwd):
             cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError, ValueError):
         return None
-    return None if dirty else (run_id, head, main, cmd)
+    return None if dirty else (run_id, str(Path(cwd).resolve()), head, main, cmd)
 
 
 def _verify_command(target, command, cwd, timeout):
@@ -533,7 +533,7 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None,
     if key in _PASSES:
         return True, passed + (
             "[verify] not run again: passed earlier in this run at head"
-            f" {key[1][:12]} with main at {key[2][:12]}")
+            f" {key[2][:12]} with main at {key[3][:12]}")
     ok, out = _run_command(cmd, cwd, timeout, target)
     if ok and key is not None:
         _PASSES.add(key)
