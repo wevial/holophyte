@@ -71,6 +71,9 @@ REVIEW_EFFORT = review_runner.EFFORT
 REVIEW_EFFORTS = review_runner.EFFORTS
 review_profile = review_runner.profile_for
 REVIEW_PROFILE = review_profile(REVIEW_MODEL, REVIEW_EFFORT)
+# `[agents.critic]`'s defaults: a cheap Codex route that may read the code.
+CRITIC_MODEL = "gpt-6-luna"
+CRITIC_EFFORT = "medium"
 
 # The loop's internal role names, and the `[agents]` key each one reads. The
 # config speaks the job title an operator writes on a ticket; the loop speaks
@@ -80,6 +83,7 @@ AGENT_CONFIG_KEYS = {
     "review": "reviewer",
     "adjudicate": "adjudicator",
     "write": "writer",
+    "critic": "critic",
 }
 
 # The `[agents]` keys that choose the Codex route the review container runs,
@@ -364,7 +368,8 @@ def check_agent_commands(project):
         argv = agent_command(project, role, "")
         if role == "write" and argv is not None:
             check_command_path(project, key, argv[0])
-        if role == "write" or (role == "implement" and isolated):
+        # The critic is advice: its live probe, not the host, settles it.
+        if role in ("write", "critic") or (role == "implement" and isolated):
             continue
         if argv is None:
             if agent_command(project, role, "", fallback=True) is not None:

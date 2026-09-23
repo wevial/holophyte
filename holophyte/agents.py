@@ -40,7 +40,7 @@ from holophyte.config import (
     sweep_config,
 )
 from holophyte.gates import GroupKill, InfraFailure, run_capped, sh
-from holophyte.harness import agent_session, route_text
+from holophyte.harness import agent_session, critic_seat, route_text
 from holophyte.harness import seat as harness_seat
 from holophyte.redact import known_secrets, outbound
 from holophyte.redact import safe_print as print
@@ -736,6 +736,7 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True):
         if not probe.ok:
             return False
     probe_writer(project, activate=activate)
+    probe_critic(project, activate=activate)
     return True
 
 
@@ -751,3 +752,43 @@ def probe_writer(project, *, activate):
         state = routes(project)
         state.writer_failed = not probe.ok
         state.publish()
+
+
+@contextlib.contextmanager
+def critic_workspace(project):
+    """A detached checkout of `main` in a throwaway directory, for the
+    critic to read the code a ticket will meet without touching the
+    maintainer's checkout; `review_scratch()` removes it on every exit."""
+    with review_scratch(project.path) as scratch:
+        checkout = scratch / "main"
+        sh(["git", "worktree", "add", "--detach", "--quiet", str(checkout),
+            "main"], cwd=project.path, env=scratch_git_environment())
+        yield checkout
+
+
+def probe_critic(project, *, activate, timeout=None):
+    """Probe `[agents.critic]` in `critic_workspace()`; a failure is
+    reported and turns the critic off, but never stops the loop."""
+    seat = critic_seat(project)
+    if seat is None:
+        return None
+    cmd = seat.turn(PROBE_GOAL)
+    cap = PROBE_TIMEOUT if timeout is None else timeout
+    try:
+        with critic_workspace(project) as checkout:
+            code, out = run_capped(cmd, checkout, cap)
+        probe = ProbeResult(cmd, code, out or "", cap, seat="critic")
+    except subprocess.TimeoutExpired as expired:
+        partial = expired.output or ""
+        if isinstance(partial, bytes):
+            partial = partial.decode(errors="replace")
+        probe = ProbeResult(cmd, None, partial, cap, seat="critic")
+    except (OSError, RuntimeError) as failed:
+        probe = ProbeResult(cmd, None, "", cap, launch_error=str(failed),
+                            seat="critic")
+    print(probe_diagnostic(project, probe))
+    if not probe.ok:
+        print("[holo2] critic route down; claims skip the relevance check")
+    if activate:
+        routes(project).critic_failed = not probe.ok
+    return probe

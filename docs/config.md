@@ -67,6 +67,7 @@ implementer's command and isolation settings.
 | `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` (`"codex"`) and optional `model` and `effort` (default `"gpt-5.6-sol"`, `"medium"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
+| `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default), `model` (default `"gpt-6-luna"`) and `effort` (default `"medium"`; one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
 | `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"medium"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
 | `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |
@@ -101,10 +102,10 @@ budget_scale = 1.5
 ```
 
 A role can instead be a table naming a harness adapter in
-`holophyte/harness.py`. Only `implementer`, `reviewer` and `adjudicator` may
-be tables, and only for a role the harness supports; today that is `claude`
-for `implementer` and `codex` for `implementer`, `reviewer` and
-`adjudicator`. Unknown keys,
+`holophyte/harness.py`. Only `implementer`, `reviewer`, `adjudicator` and
+`critic` may be tables, and only for a role the harness supports; today that
+is `claude` for `implementer` and `codex` for `implementer`, `reviewer`,
+`adjudicator` and `critic`. Unknown keys,
 an unknown harness or a role the harness does not serve are startup errors. `[agents.implementer] harness = "claude"`
 runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
 `U`, records `U` on the run before launch (a turn the budget kills keeps it),
@@ -176,6 +177,20 @@ on a re-review under `[loop] review_session = "resume"` or `"alternate"` no
 [agents.reviewer]
 harness = "cursor"
 model   = "grok-4.7-high"   # required; passed to --model
+```
+
+`[agents.critic]` is table-only and may leave out `harness`, which means
+`"codex"`. Its turn runs as `codex exec -m M -c model_reasoning_effort=E
+--dangerously-bypass-approvals-and-sandbox PROMPT`, `M` and `E` defaulting to
+`gpt-6-luna` and `medium`, with its cwd a detached worktree of `main` under a
+temporary directory that is removed on every exit. Startup probes it after the
+writer; a failed probe prints "critic route down; claims skip the relevance
+check" and the loop carries on without the critic.
+
+```toml
+[agents.critic]
+model  = "gpt-6-luna"   # optional; passed to -m
+effort = "medium"       # optional; low, medium, high or xhigh
 ```
 
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,

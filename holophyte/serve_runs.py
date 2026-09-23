@@ -596,7 +596,8 @@ def run_files(project, run_id):
 
 
 def active_routes(project):
-    """Current commands per seat; primary seats carry no fallback marker."""
+    """Current commands per seat; primary seats carry no fallback marker.
+    The critic is advice with no route to fall back to, so it is not one."""
     from holophyte.agent_routes import active_fallbacks, safe_command
     from holophyte.config import AGENT_CONFIG_KEYS
 
@@ -606,7 +607,7 @@ def active_routes(project):
              if key in AGENT_CONFIG_KEYS.values() and isinstance(value, (str, dict))}
     return {seat: {"command": fallback.get(seat, table.get(seat)),
                    **({"fallback": fallback[seat]} if seat in fallback else {})}
-            for seat in AGENT_CONFIG_KEYS.values()}
+            for seat in AGENT_CONFIG_KEYS.values() if seat != "critic"}
 
 
 RUN_TURNS_PATH = re.compile(r"^/runs/([^/]+)/turns$")
