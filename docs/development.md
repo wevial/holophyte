@@ -125,6 +125,10 @@ Each module, one line:
   and board label, then `_cut_worktree`/`reuse_leftover`,
   `run_worktree_setup` under `_setup_worktree`, and the mid-merge
   hand-off (`merge_conflicts`, `conflict_brief`, `_resolve_merge_conflict`).
+- `holophyte/freshness.py` — the claim's freshness check (KO-709):
+  `stale_reasons()` asks the `main` ref for each file a ticket names, and
+  `park_stale()` mirrors a stale ticket `needs_spec`, comments once and
+  moves it to Backlog.
 - `holophyte/environment_git.py` — excludes the filtered `.env` from Git
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from
