@@ -612,7 +612,8 @@ Use TOML literal strings for custom patterns, for example
 | `review_fixes` | Default: `false` | Boolean; with `approve = "human"`, set to `true` so fix commits a babysit pass pushes after the release (bot-thread answers, merges of main) get the covering review of that range before the run parks, and the park names the reviewed range and sha. A rejection parks with the findings and no approval. Non-boolean values are a startup error naming the key. |
 | `pr_style` | Default: `""` | String; set instructions for the title and description writer to follow repository conventions. |
 | `ui_paths` | Default: `[]` | List of non-empty repository-relative globs without `..`; set with ui_capture to identify changes needing visual evidence. |
-| `ui_capture_dir` | Default: `"e2e/capture"` | Directory named in the implementer brief for ticket capture scripts. |
+| `ui_capture_dir` | Default: `"e2e/capture"` | Directory named in the implementer brief for ticket capture scripts; the capture command receives it as `HOLOPHYTE_CAPTURE_DIR`. |
+| `ui_capture_local` | Default: `false` | Boolean; `true` keeps capture specs out of the project's repository. `ui_capture_dir` must then be a repository-relative directory without `..`. |
 | `ui_capture` | Default: `""` | Command string with shell-style quoting but no shell evaluation; set with ui_paths to capture evidence non-interactively. |
 | `capture_env_source` | Default: absent | Source dotenv path for the capture command only, with `~` expanded; relative paths resolve beside config.toml. Requires `capture_env_allow`. |
 | `capture_env_allow` | Default: absent | List of names matching `[A-Za-z_][A-Za-z0-9_]*`; requires `capture_env_source`. Missing names refuse startup, naming the variable. Exactly these values are added to the `ui_capture` command's environment, on the host and in a container; they are never written to the worktree and never reach agent turns or verify commands. Source values are redacted from output. |
@@ -816,10 +817,15 @@ PR descriptions. A ticket may list up to six states under optional `## Evidence`
 one per line. With capture configured, the implementer is told to add or update
 a script under `ui_capture_dir`, producing `01-slug.png`, `02-slug.png`, etc.
 in state order, plus a recording when the states describe a flow. The command
-receives `HOLOPHYTE_TICKET` and, only when states are listed,
+receives `HOLOPHYTE_TICKET`, `HOLOPHYTE_CAPTURE_DIR` set to `ui_capture_dir`
+and, only when states are listed,
 `HOLOPHYTE_EVIDENCE_STATES` joined with newlines, plus any
 `capture_env_allow` values. The project's own harness
-selects and runs that ticket's script. Numbered images receive state captions;
+selects and runs that ticket's script. With `ui_capture_local = true`, every
+worktree setup writes a `.gitignore` holding `*` into `ui_capture_dir`, so the
+directory ignores itself (in the worktree and in a container turn's clone),
+and the brief names the spec `<ui_capture_dir>/<ticket key>.capture.ts`, which
+stays in the worktree and is never committed. Numbered images receive state captions;
 missing images are marked "not captured" in the PR and reviewer prompt.
 Tickets without the section keep the default capture.
 

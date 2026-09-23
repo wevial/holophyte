@@ -381,6 +381,37 @@ class IsolationTests(unittest.TestCase):
         self.assertNotIn("alias.container-only", git(worktree, "config", "--list"))
         self.assertFalse(mounts[0].exists())
 
+    def test_clone_turn_commit_leaves_local_capture_spec_out(self):
+        from holophyte import isolation
+        from holophyte.claim import run_worktree_setup
+        from holophyte.isolation_git import git
+
+        main, worktree = self.make_worktree()
+        config = {"merge": {"ui_capture_dir": ".holophyte-capture",
+                            "ui_capture_local": True}}
+        target = SimpleNamespace(path=main, config=lambda: config,
+                                 config_path=self.root / "config.toml")
+        self.assertTrue(run_worktree_setup(target, worktree)[0])
+        script = ("echo spec > .holophyte-capture/KO-7.capture.ts; "
+                  "echo work > work.txt; git add -A; git commit -qm candidate")
+
+        def run(argv, cwd, timeout, *, env):
+            subprocess.run(argv[argv.index(isolation.Route().image) + 1:],
+                           cwd=cwd, env=env, check=True, capture_output=True)
+            return 0, "done"
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container"), \
+             patch.object(isolation, "run_capped", side_effect=run):
+            isolation.launch(isolation.Route("container"), worktree, {},
+                             ["sh", "-ec", script])
+        self.assertEqual(git(worktree, "log", "-1", "--format=%s"), "candidate")
+        tree = git(worktree, "ls-tree", "-r", "--name-only", "HEAD")
+        self.assertIn("work.txt", tree.split())
+        self.assertNotIn(".holophyte-capture", tree)
+        self.assertEqual(
+            (worktree / ".holophyte-capture/KO-7.capture.ts").read_text(), "spec\n")
+
     def test_real_timeout_returns_committed_and_dirty_clone_work(self):
         from holophyte import isolation
         from holophyte.gates import run_capped

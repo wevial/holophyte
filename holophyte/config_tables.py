@@ -389,6 +389,7 @@ MERGE_KEYS = {
     "missing_check_sec": 600, "retrigger_missing_checks": False,
     "pr_style": "", "pr_changes_log": False, "review_fixes": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
+    "ui_capture_local": False,
     "media_repo": "",
     "media_bucket": None, "media_max_file_mb": 10, "media_max_total_mb": 20,
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
@@ -435,6 +436,9 @@ def merge_config(target):
     values["retrigger_missing_checks"] = _merge_boolean(
         target, "retrigger_missing_checks", table.get(
             "retrigger_missing_checks", defaults.pop("retrigger_missing_checks")))
+    values["ui_capture_local"] = _merge_boolean(
+        target, "ui_capture_local",
+        table.get("ui_capture_local", defaults.pop("ui_capture_local")))
     for key, default in defaults.items():
         value = table.get(key, default)
         if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):
@@ -528,6 +532,14 @@ def _validate_ui(target, values):
     if any(not p.strip() or PurePosixPath(p).is_absolute()
            or ".." in PurePosixPath(p).parts for p in paths):
         raise SystemExit("[merge] ui_paths must be non-empty repository-relative globs")
+    directory = PurePosixPath(values["ui_capture_dir"])
+    if values["ui_capture_local"] and (
+            directory.is_absolute() or not directory.parts
+            or ".." in directory.parts):
+        raise SystemExit(
+            f"{target.config_path}: [merge] ui_capture_local needs ui_capture_dir"
+            " to be a repository-relative directory without `..`, got"
+            f" {values['ui_capture_dir']!r}")
     try:
         args = shlex.split(command)
     except ValueError as error:

@@ -350,7 +350,7 @@ class MergeConfigTests(ConfigTestCase):
         self.assertEqual(config[1:],
                          ("auto", "local", 5, "merge", 180, 300, 1800, 600, False,
                           "", False, False,
-                          (), "", "e2e/capture", "", None, 10, 20, "park",
+                          (), "", "e2e/capture", False, "", None, 10, 20, "park",
                           "act", (), "holophyte", (), (), ("devin-ai-integration",
                            "coderabbitai", "greptile-apps", "github-actions")))
 
