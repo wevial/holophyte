@@ -799,6 +799,37 @@ class ActiveRoutesTests(ServeTestCase):
         self.assertNotIn('fallback', body['active_routes']['implementer'])
 
 
+class RouteLabelsTests(ServeTestCase):
+    def labels(self, agents):
+        self.seed()
+        self.start(f"[agents]\n{agents}")
+        code, _, body = self.request('GET', '/status')
+        self.assertEqual(code, 200)
+        return body['route_labels']
+
+    def test_unset_seats_show_the_routes_the_loop_dispatches(self):
+        self.assertEqual(self.labels(
+            'implementer = "claude-implement --model opus"\n'
+            'review_model = "gpt-6-astra"\n'), {
+                "implementer": "claude-implement opus",
+                "reviewer": "codex gpt-6-astra",
+                "reviewer_fallback": None,
+                "adjudicator": "codex gpt-6-astra",
+                "writer": "claude-implement opus"})
+
+    def test_configured_seats_show_their_command_and_model(self):
+        self.assertEqual(self.labels(
+            'reviewer = "codex-review -m gpt-6-astra"\n'
+            'reviewer_fallback = "devin --model swe-1"\n'
+            'adjudicator = "codex-adjudicate --model gpt-6-astra"\n'
+            'writer = "claude-write --model sonnet"\n'), {
+                "implementer": "claude opus",
+                "reviewer": "codex-review gpt-6-astra",
+                "reviewer_fallback": "devin swe-1",
+                "adjudicator": "codex-adjudicate gpt-6-astra",
+                "writer": "claude-write sonnet"})
+
+
 class MigrationFeedTests(ServeTestCase):
     def test_now_includes_one_neutral_migration_and_respects_filters(self):
         self.seed()

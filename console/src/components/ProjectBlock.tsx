@@ -8,12 +8,17 @@ import { ReasonAction } from "./ReasonAction";
 import { RunRow } from "./RunRow";
 import { SettingsSheet } from "./SettingsSheet";
 
+/** The seats `/status` labels in `route_labels`, in the order the card reads them. */
+const ROUTE_SEATS = ["implementer", "reviewer", "reviewer_fallback", "adjudicator", "writer"] as const;
+
 /** One project's card: the daemon's host and supervisor line over a row
  *  per live run. The header's Settings entry opens the project's
  *  `SettingsSheet` over the page; closing it returns focus to the entry.
  *  Beside it, Hold for an `enabled` project, or the hold note and Release
  *  hold for a `held` one, each posting its reason to the daemon;
- *  `actionFetch` defaults to the page's own. */
+ *  `actionFetch` defaults to the page's own. Under the header, one line
+ *  names each seat's configured command and model when the daemon sends
+ *  `route_labels`. */
 export function ProjectBlock({
   group,
   expandedRun,
@@ -88,6 +93,11 @@ export function ProjectBlock({
           Settings
         </button>
       </header>
+      {status.route_labels && (
+        <p data-route-line className="border-t border-line px-4 py-1 font-mono text-[12px] text-faint">
+          {ROUTE_SEATS.map((seat) => `${seat.replace("_", " ")} ${status.route_labels?.[seat] ?? "none"}`).join(" · ")}
+        </p>
+      )}
       <ul>
         {group.runs.map((run) => {
           const key = runKey(group.base, run.id);
