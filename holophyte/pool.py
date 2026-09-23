@@ -227,7 +227,7 @@ def scheduler(target, provider, knobs):
         while True:
             state.check_schema(target)
             if (pool_handoff.prepare_restart(state, target, pool)
-                    and state.may_reexec()):
+                    and state.may_reexec(target)):
                 pool_handoff.save(target, pool)
                 _reexec(target, conn, project, state.reason,
                         prepared_sha=state.prepared_sha, can_ff=state.can_ff)
@@ -326,12 +326,14 @@ class _PoolState:
     def reason(self):
         return self.restart_reason or self.readable_reason
 
-    def may_reexec(self):
-        """Whether a prepared restart may exec now. Not for a readable store
-        move whose checkout cannot fast-forward: the code on disk is this
-        build, which would find the same moved store and restart again. That
-        restart is dropped and spawning resumes on this build."""
-        if self.can_ff or not self.readable_reason:
+    def may_reexec(self, target):
+        """Whether a prepared restart may exec now. For a readable store move,
+        only once the checkout has fast-forwarded: otherwise -- a failed
+        fetch, or a diverged main -- the code on disk is this build, which
+        would find the same moved store and restart again. That restart is
+        dropped and spawning resumes on this build."""
+        if not self.readable_reason or (
+                self.can_ff and pool_handoff._ff_main(target)):
             return True
         self.restart = False
         self.readable_reason = None

@@ -316,7 +316,7 @@ class LoopSchemaBumpTests(LoopFixture):
                       ' and is readable by this build; re-executing', out)
         self.assertIn(f'is additive (readable from {store.SCHEMA_VERSION})', out)
 
-    def test_readable_move_on_a_stuck_checkout_keeps_spawning(self):
+    def assert_stuck_checkout_keeps_spawning(self):
         def move_and_file_a_third():
             self.move()
             self.provider.queue.append(a_task(3))
@@ -324,7 +324,6 @@ class LoopSchemaBumpTests(LoopFixture):
         def finish():
             self.provider.queue.clear()
 
-        # The fixture's factory checkout has no origin: the fetch fails.
         workers, out = self.run_readable_move([
             (TICK, move_and_file_a_third), (TICK, None),
             (pool.WORKER_PARKED, finish), (pool.WORKER_PARKED, None),
@@ -334,3 +333,28 @@ class LoopSchemaBumpTests(LoopFixture):
         self.assertEqual(len(workers.spawned), 3)
         self.assertEqual(len(workers.reaped), 3)
         self.assertEqual(out.count('checkout not fast-forwarded'), 1)
+
+    def test_readable_move_on_a_stuck_checkout_keeps_spawning(self):
+        # The fixture's factory checkout has no origin: the fetch fails.
+        self.assert_stuck_checkout_keeps_spawning()
+
+    def test_readable_move_on_a_diverged_checkout_keeps_spawning(self):
+        """Fetched, on main and clean, but the fast-forward itself fails."""
+        origin = self.target.with_name('factory-origin')
+        self.git('clone', '-q', str(self.target), str(origin))
+        schema = origin / 'store' / 'schema.py'
+        schema.parent.mkdir()
+        schema.write_text(f'SCHEMA_VERSION = {store.SCHEMA_VERSION + 1}\n'
+                          f'READABLE_FROM = {store.SCHEMA_VERSION}\n')
+        identity = ('-c', 'user.email=factory@example.invalid',
+                    '-c', 'user.name=Factory Test')
+        self.git('add', '.', cwd=origin)
+        self.git(*identity, 'commit', '-qm', 'additive bump', cwd=origin)
+        self.git('remote', 'add', 'origin', str(origin))
+        (self.target / 'LOCAL.md').write_text('a commit origin lacks\n')
+        self.git('add', 'LOCAL.md')
+        self.git('commit', '-qm', 'diverge')
+        leaving = self.git('rev-parse', 'HEAD')
+
+        self.assert_stuck_checkout_keeps_spawning()
+        self.assertEqual(self.git('rev-parse', 'HEAD'), leaving)

@@ -162,10 +162,14 @@ def _fetch_main(target):
 
 
 def _ff_main(target):
-    """Best effort: a diverged checkout still executes the disk build."""
+    """Best effort: a diverged checkout still executes the disk build.
+
+    Returns whether the checkout now holds origin/main."""
     from holophyte.operator import sh
 
     try:
         sh(["git", "merge", "--ff-only", "origin/main"], factory_checkout())
     except (RuntimeError, OSError) as exc:
         _checkout_refused(exc)
+        return False
+    return True
