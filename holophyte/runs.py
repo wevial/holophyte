@@ -65,7 +65,9 @@ def review_round_cap(changed_lines, cfg):
 
 
 def open_store(target, path=None):
-    """Open the loop's store, creating and migrating the schema if needed.
+    """Open the loop's store through `store.open()`, which creates and
+    migrates an older or fresh schema and opens a readable newer one as it
+    is, its stamp never lowered.
 
     The store's directory is made here, on first need: `Project.locate()` only
     derives paths, and a `--report` against a target that has no store says
@@ -73,9 +75,7 @@ def open_store(target, path=None):
     """
     path = Path(path or target.store_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = store.open(str(path))
-    store.init(conn)
-    return conn
+    return store.open(str(path))
 
 
 def set_phase(conn, run_id, phase, note=None):
