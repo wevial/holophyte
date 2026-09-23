@@ -68,12 +68,17 @@ EXPECTED = [
     # `runs.prSeen*` columns in one statement, for `park()` and the loop's
     # reconcile alike.
     "record_pr_seen",
+    # KO-665: a project-level decision, recorded with no run.
+    "record_project_intervention",
     "record_review_round",
     "record_strike",
     "record_supervisor_heartbeat",
     "pause",
     "release",
     "release_hold",
+    # KO-665: a foreign key naming a dropped table, rewritten by API with a
+    # dry run and a recorded decision instead of by hand in `sqlite_master`.
+    "repair_references",
     # KO-297: the operator's `--repoint`, a parked candidate moved to a
     # rebuilt branch tip as a recorded intervention instead of raw SQL.
     "repoint",
@@ -292,7 +297,7 @@ class StoreSurfaceTests(unittest.TestCase):
 
     def test_operator_api_named_in_agents_md_is_present(self):
         names = operator_api_names()
-        self.assertEqual(len(names), 6, names)
+        self.assertEqual(len(names), 8, names)
         for name in names:
             with self.subTest(name=name):
                 self.assertIn(name, public_functions())

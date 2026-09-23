@@ -173,8 +173,11 @@ The store is its own package:
   file: claims and leases, run-phase transitions, review rounds and
   the ledger.
 - `store/operate.py` — the operator API: `release()`/`resume()`/
-  `requeue()`/`repoint()`/`approve()`/`babysit()`, `record_intervention()`
-  and the `runEvents` writers, re-exported from the package.
+  `requeue()`/`repoint()`/`approve()`/`babysit()`, `record_intervention()`,
+  `record_project_intervention()` and the `runEvents` writers,
+  re-exported from the package.
+- `store/repair.py` — `repair_references()`: a dry run, then a recorded
+  rewrite of foreign keys that name a dropped table.
 - `store/failure_kinds.py` — prefix-only backfill for historical run failures.
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
