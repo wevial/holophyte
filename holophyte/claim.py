@@ -66,7 +66,7 @@ from holophyte.environment_git import (
     stage_work,
     unstage_environment,
 )
-from holophyte.freshness import park_stale, stale_reasons
+from holophyte.freshness import park_stale, skip_labelled_stale, stale_reasons
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -755,6 +755,8 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
     if problem:
         mirror_task(conn, project_id, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")
+        return None
+    if skip_labelled_stale(conn, project_id, task):
         return None
     stale = [] if pr else stale_reasons(project.path, task.get("body"))
     if stale:
