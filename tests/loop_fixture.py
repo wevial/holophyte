@@ -167,6 +167,11 @@ class LoopFixture(unittest.TestCase):
                               holophyte.reconcile.GitHubBudget())
         budget.start()
         self.addCleanup(budget.stop)
+        # So are the verify passes a run may cite; every test's store
+        # starts its run ids at 1 on the same scripted commits.
+        passes = patch.object(holophyte.gates, "_PASSES", set())
+        passes.start()
+        self.addCleanup(passes.stop)
         root = Path(tmp.name)
         self.target = root / "repo"
         self.worktrees = root / "repo.worktrees"

@@ -4,7 +4,8 @@ Task-line parsing, the `&&`-clause instrumentation that makes a failure
 attributable, the four report builders, the process-group cap the gate and
 the agent dispatch both run under, `run_verify` itself, and the two failure
 classes the loop's close-out reads. Pure: strings in, report out, one
-subprocess call. Nothing here knows the loop, the store or the target; the
+subprocess call -- or none, for a run's repeat of a pass the per-process
+record cites. Nothing here knows the loop, the store or the target; the
 one constant it shares with worktree setup, `VERIFY_TIMEOUT`, stays in
 `holophyte.config`, which is the default `setup_timeout_sec` falls back to.
 
@@ -467,7 +468,34 @@ def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None
     from store.working import working
 
     with working(conn, run_id, verify=True):
-        return _run_verify(cmd, cwd, contracts, timeout, target=target)
+        return _run_verify(cmd, cwd, contracts, timeout, target=target,
+                           run_id=run_id)
+
+
+# Passes this process has seen: (run id, head sha, main's sha, command). A
+# command that passed on a clean tree answers the same on the same tree, so
+# a repeat for the same run -- the merge gate after an approving round, with
+# `main` unmoved -- is cited instead of run. Failures are never recorded; a
+# re-exec starts empty; nothing outlives the process.
+_PASSES = set()
+
+
+def _pass_key(run_id, cmd, cwd):
+    """The record's key for `cmd` in `cwd`, or None when a pass there must
+    not be reused: no run id, not a git worktree, or uncommitted or
+    untracked changes, which make the head's sha not name the tree."""
+    if run_id is None:
+        return None
+    try:
+        head, main = subprocess.run(
+            ["git", "rev-parse", "HEAD", "main"], cwd=cwd, capture_output=True,
+            text=True, check=True).stdout.split()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=cwd, capture_output=True,
+            text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return None
+    return None if dirty else (run_id, head, main, cmd)
 
 
 def _verify_command(target, command, cwd, timeout):
@@ -479,7 +507,8 @@ def _verify_command(target, command, cwd, timeout):
     return isolation.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped)
 
 
-def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
+def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None,
+                run_id=None):
     """Mechanical acceptance check. Returns (ok, output), with structured
     command facts on failed output's `failure` attribute. Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
@@ -487,6 +516,8 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
     Literal contracts run first. Reports reject drift and zero-test discovery.
     Timeout is a failed gate, after run_capped has reaped the process group;
     the caller receives the same (ok, output) tuple on every normal return.
+    A command that already passed for `run_id` on this clean tree, with
+    `main` where it was, is not run again (`_PASSES`).
 
     """
     drifted = contract_report(contracts, cwd)
@@ -496,6 +527,20 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
               if contracts else "")
     if not cmd:
         return True, passed + "(no verify command)"
+    key = _pass_key(run_id, cmd, cwd)
+    if key in _PASSES:
+        return True, passed + (
+            "[verify] not run again: passed earlier in this run at head"
+            f" {key[1][:12]} with main at {key[2][:12]}")
+    ok, out = _run_command(cmd, cwd, timeout, target)
+    if ok and key is not None:
+        _PASSES.add(key)
+    return ok, passed + out if ok else out
+
+
+def _run_command(cmd, cwd, timeout, target):
+    """Run a verify command once; (ok, output) as `_run_verify` returns it,
+    less the contract line."""
     # Complete, simple command lines can be marked without splitting the
     # shell: exported variables and cd still carry, and a newline block stops
     # at the first failing line. Compound lists force verbatim
@@ -534,7 +579,7 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
                           if VACUOUS_RE.search(text)), 1)
             return False, _verify_failure(vacuous, cmd, clauses, index, 0,
                                           per_clause.get(index, cleaned))
-        return True, passed + cleaned.strip()[-2000:]
+        return True, cleaned.strip()[-2000:]
     report = failure_report(cmd, clauses if marked else None,
                             per_clause, failed, returncode, cleaned)
     index = failed[0] if failed else max(per_clause, default=1)
