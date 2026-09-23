@@ -194,8 +194,15 @@ class CliReferenceTests(unittest.TestCase):
 
     def test_names_every_option_and_project_verb(self):
         text = self.PAGE.read_text()
-        missing = [opt for opt in parser_option_strings() if opt not in text]
-        self.assertEqual(missing, [])
+        # Exact option tokens from the tables' Invocation cells only, so a
+        # mention in the prose, or `--close` inside `--close-pr`, is no row.
+        cells = " ".join(re.split(r"(?<!\\)\|", line)[1]
+                         for line in text.splitlines()
+                         if line.startswith("| `"))
+        invoked = set(re.findall(r"--[a-z][\w-]*", cells))
+        missing = [opt for opt in parser_option_strings()
+                   if opt not in invoked]
+        self.assertEqual(missing, [], "flags with no row on the page")
         result = subprocess.run(
             [sys.executable, str(ROOT / "factory.py"), "project", "--help"],
             capture_output=True, text=True, cwd=ROOT)
@@ -204,8 +211,9 @@ class CliReferenceTests(unittest.TestCase):
         self.assertIsNotNone(choices, result.stdout)
         verbs = choices.group(1).split(",")
         self.assertIn("add", verbs)
-        self.assertEqual([v for v in verbs if f"`project {v}" not in text], [])
-        self.assertIn("--store", text)
+        self.assertEqual([v for v in verbs if f"`project {v} " not in cells],
+                         [], "project verbs with no row on the page")
+        self.assertIn("--store", invoked)
 
     def test_failure_lines_board_needs_and_exit_codes(self):
         text = self.PAGE.read_text()
