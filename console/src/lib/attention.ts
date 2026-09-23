@@ -6,9 +6,11 @@ import type { AttentionItem, Run, Status } from "./types";
  *  plus `unreachable`, which the console adds for a daemon that stopped
  *  answering (lib/hosts.ts `hostItems`). `pr_open` is a run parked on its
  *  pull request: nobody owes the factory an answer, the PR waits on a
- *  review or a merge, so it is its own kind and not a question. */
-export type Kind = "blocked" | "pr_open" | "stale_run" | "failed" | "supervisor" | "unreachable";
-export const KINDS: Kind[] = ["blocked", "pr_open", "stale_run", "failed", "supervisor", "unreachable"];
+ *  review or a merge, so it is its own kind and not a question. `paused`
+ *  is a ticket a pause parked (holophyte/serve_levers.py `paused_item()`),
+ *  waiting on a Resume. */
+export type Kind = "blocked" | "pr_open" | "paused" | "stale_run" | "failed" | "supervisor" | "unreachable";
+export const KINDS: Kind[] = ["blocked", "pr_open", "paused", "stale_run", "failed", "supervisor", "unreachable"];
 
 /** A chip: every kind, or one of them. */
 export type KindFilter = "all" | Kind;
@@ -17,6 +19,7 @@ export const CHIP_LABELS: Record<KindFilter, string> = {
   all: "All",
   blocked: "Questions",
   pr_open: "PRs",
+  paused: "Paused",
   stale_run: "Stale runs",
   failed: "Failed",
   supervisor: "Supervisor",
@@ -26,6 +29,7 @@ export const CHIP_LABELS: Record<KindFilter, string> = {
 export const PILL_TEXT: Record<Kind, string> = {
   blocked: "question",
   pr_open: "PR",
+  paused: "paused",
   stale_run: "stale run",
   failed: "failed",
   supervisor: "supervisor",
@@ -36,9 +40,14 @@ export const PILL_TEXT: Record<Kind, string> = {
  *  route behind it (components/AttentionRow.tsx). */
 export const OPEN_PR = "Open PR";
 
+/** The `paused` row's one action: a reason box posting to `/actions/resume`
+ *  (components/RowActions.tsx). */
+export const RESUME = "Resume";
+
 const ACTIONS: Record<Kind, string[]> = {
   blocked: ["Answer", "Requeue"],
   pr_open: [OPEN_PR],
+  paused: [RESUME],
   stale_run: ["Kill run", "Requeue"],
   failed: ["Requeue", "Mark needs_spec"],
   supervisor: ["Restart supervisor"],
@@ -125,7 +134,7 @@ export function collapseFailed(items: AttentionItem[]): BandEntry[] {
 export type Counts = Record<KindFilter, number>;
 
 export function countsByKind(items: AttentionItem[]): Counts {
-  const counts: Counts = { all: items.length, blocked: 0, pr_open: 0, stale_run: 0, failed: 0, supervisor: 0, unreachable: 0 };
+  const counts: Counts = { all: items.length, blocked: 0, pr_open: 0, paused: 0, stale_run: 0, failed: 0, supervisor: 0, unreachable: 0 };
   for (const item of items) {
     if ((KINDS as string[]).includes(item.kind)) counts[item.kind as Kind] += 1;
   }
@@ -340,6 +349,14 @@ export function describe(
         body: pr ? (reason.split("\n", 1)[0] ?? "") : reason,
         meta: joinMeta(runLabel(item), asked == null ? null : `parked at ${formatClock(asked)}`),
         ...(pr ? { facts: prFacts(pr) } : {}),
+      };
+    }
+    case "paused": {
+      const asked = num(item.asked_ms);
+      return {
+        ...base,
+        body: str(item.note) ?? "",
+        meta: joinMeta(runLabel(item), asked == null ? null : `paused at ${formatClock(asked)}`),
       };
     }
     case "stale_run": {

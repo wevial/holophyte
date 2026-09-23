@@ -22,6 +22,7 @@ export const runSchema = z.looseObject({
 export const statusSchema = z.looseObject({
   target: z.string(), project: z.string().optional(), schema_version: z.number().optional(),
   host: z.string(), now: z.number(),
+  admission: z.string().optional(), hold_note: z.string().nullable().optional(),
   daemon: z.looseObject({ started_ms: z.number(), pid: z.number() }).optional(),
   workers_on_previous_build: z.number().optional(),
   active_routes: z.record(z.string(), z.looseObject({
