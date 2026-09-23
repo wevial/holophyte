@@ -105,8 +105,11 @@ def _git(repo, *args):
 
 
 def _main_text(repo, path):
-    """`path`'s text on `main`, or None when main has no such file."""
-    r = subprocess.run(["git", "-C", str(repo), "show", f"main:{path}"],
+    """`path`'s text on `main`, or None when main has no such file -- a
+    directory included: `cat-file blob` refuses a tree, where `show` would
+    print its listing as if it were the file's text."""
+    r = subprocess.run(["git", "-C", str(repo), "cat-file", "blob",
+                        f"main:{path}"],
                        capture_output=True, text=True, errors="replace")
     return r.stdout if r.returncode == 0 else None
 

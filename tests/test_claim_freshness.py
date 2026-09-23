@@ -281,6 +281,17 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
 
         self.assert_claimed_without_comment(provider)
 
+    def test_a_function_under_a_named_directory_is_not_checked(self):
+        # main's `holophyte` is a tree: `git show` lists its names, which
+        # do not hold the function its `claim.py` defines.
+        self.commit_claim_to_main()
+        body = notes_body("Change `admit_ticket()` under `holophyte/`.")
+        provider = StubProvider(dict(a_task(1), body=body))
+
+        self.loop(Commit("the change"), APPROVE, provider=provider)
+
+        self.assert_claimed_without_comment(provider)
+
     def test_a_paragraph_after_the_notes_list_is_no_item(self):
         self.commit_claim_to_main()
         body = notes_body(f"Change `Claimer` and `admit_ticket()` in `{CLAIM}`."
