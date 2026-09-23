@@ -63,7 +63,7 @@ implementer's command and isolation settings.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string; override to select another implementer harness. |
+| `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"`) and optional `model` and `effort` (default `"opus"`, `"high"`); override to select another implementer harness. A table's adapter builds the argv, records the session id at dispatch and builds the resume argv. |
 | `reviewer` | Default: Hardened Codex review container | Non-empty command string; override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
@@ -72,8 +72,8 @@ implementer's command and isolation settings.
 | `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |
 | `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and target toolchain. Startup refuses a missing image and prints its build command. |
 | `implementer_credential` | Default: `{}` (no credential) | Either `{ env = "AGENT_API_KEY" }` to pass one named host variable, or `{ file = "~/.agent/auth.json", destination = "/home/implementer/.agent/auth.json" }` to mount one regular file read-only under the temporary home. |
-| `implementer_resume` | Default: absent (disabled) | Command string containing `{session}`; the findings prompt is appended as the last argv element. |
-| `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. |
+| `implementer_resume` | Default: absent (disabled) | Command string containing `{session}`; the findings prompt is appended as the last argv element. Refused beside a table implementer, whose adapter builds the resume. |
+| `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. Refused beside a table implementer, whose adapter assigns the session. |
 | `budget_scale` | Default: `1.0` | Finite number from 1.0 to 3.0; increase for a slower implementer harness. |
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
 | `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup reviewer. |
@@ -100,6 +100,28 @@ review_effort = "medium"
 budget_scale = 1.5
 ```
 
+A role can instead be a table naming a harness adapter in
+`holophyte/harness.py`. Only `implementer`, `reviewer` and `adjudicator` may
+be tables, and only for a role the harness supports; today that is `claude`
+for `implementer`. Unknown keys, an unknown harness or a role the harness
+does not serve are startup errors. `[agents.implementer] harness = "claude"`
+runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
+`U`, records `U` on the run before launch (a turn the budget kills keeps it),
+and resumes with `claude -p --resume U --model M --effort E PROMPT`. The
+binary is `claude` on PATH, or the absolute path in the top-level
+`[harnesses]` table. Under container isolation the image supplies the bare
+`claude`, `[harnesses]` is ignored and no session is recorded.
+
+```toml
+[agents.implementer]
+harness = "claude"
+model   = "opus"    # optional; passed to --model
+effort  = "high"    # optional; passed to --effort as written
+
+[harnesses]
+claude = "/opt/claude/bin/claude"   # optional; absolute path only
+```
+
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,
 bridge networking, the factory user's non-root UID/GID, a temporary home and
 `/workspace` mounted read-write. Only `[worktree] env_allow` values and the
@@ -115,12 +137,13 @@ for the configured implementer. `none` preserves existing host behavior.
 
 Set `[loop] fix_session = "resume"` to reuse the recorded session for review
 fix rounds, with e.g. `implementer_resume = "codex exec resume {session}"`
-in `[agents]` (include the model and sandbox flags for your implementer).
+in `[agents]` (include the model and sandbox flags for your implementer),
+or with a table implementer, whose adapter builds the resume argv itself.
 The resumed prompt contains reviewer findings and adjudication instructions;
 the original ticket is already in the session. `alternate` assigns odd store
 run ids to resume and even ids to fresh, consistently across their fix rounds.
-Resume requires this run's session id, a configured template and the primary
-implementer route. Otherwise the ordinary fresh prompt is used. A nonzero
+Resume requires this run's session id, a configured template (or a table
+implementer) and the primary implementer route. Otherwise the ordinary fresh prompt is used. A nonzero
 resume exit without a new commit gets one fresh retry, subject to the run
 budget; a timeout remains a budget failure. Resume launch errors also retry
 fresh once. With either experimental setting, each fix round records a
@@ -225,6 +248,17 @@ Executable resolution is separate from the live route probes described above.
 Relative paths with a directory in them (`./review.sh`) are refused: rounds run
 in a task worktree that does not exist yet, so the name would resolve somewhere
 neither startup nor the operator named.
+
+## `[harnesses]`
+
+Where a harness adapter finds its binary when a role in `[agents]` is written
+as a table. Keys are registered harness names; each value is an absolute
+path. Absent, the adapter runs the harness's own name from PATH. Ignored under
+`implementer_isolation = "container"`, where the image supplies the binary.
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `claude` | Default: `claude` on PATH | Absolute path to the Claude CLI; set when the binary the factory should run is not the first `claude` on PATH. A relative path is refused. |
 
 ## `[loop]`
 

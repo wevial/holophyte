@@ -86,6 +86,8 @@ Each module, one line:
 - `holophyte/files.py` — the files a run touched, read from git in the
   target's checkout under a timeout: what `/runs/N/files` answers.
 - `holophyte/loop.py` — the loop: `run_task`'s stages.
+- `holophyte/harness.py` — harness adapters: a table-form `[agents]` role's
+  turn argv, session id and resume argv, and the `[harnesses]` binary paths.
 - `holophyte/fix_session.py` — review fix-session arms, resume argv and fresh retry.
 - `holophyte/session_arms.py` — shared run-number assignment for session experiments.
 - `holophyte/review_session.py` — reviewer session-file capture and resume requests.
