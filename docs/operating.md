@@ -71,6 +71,19 @@ This adds the `abort` intervention action and the `runs.workerPid` column.
 The store widens its action check and adds the column in place, with no
 schema version change.
 
+`--abort KO-n --close-pr --note "wrong approach"` is the same abort when the
+candidate is dead: the intervention is recorded as `abort_close` instead, in
+the same transaction, before anything is killed, so whichever process
+finishes the abort -- the worker or the command -- also closes the pull
+request. Once the run has ended `abandoned` it posts one comment on the pull
+request, under the factory's comment header, giving the note, the short sha
+the branch was kept at and `--requeue KO-n` as the way to start again, and
+then closes it. The branch and worktree are kept. A refused comment or close
+does not undo the abort: it is a `warning` run event and a printed line. The
+reconcile leaves the closed pull request alone, since the run is no longer
+parked on it. `--close-pr` without `--abort` is refused. The `abort_close`
+action is schema version 35 (KO-611).
+
 A ticket parked `blocked_on_operator` by a merge gate conflict -- the gate's
 merge of `main` into the branch conflicted, the run failed and the branch
 was preserved -- comes back through `--requeue KO-n --note TEXT` once you
