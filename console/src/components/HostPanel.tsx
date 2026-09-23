@@ -12,6 +12,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 const NOUNS: Record<Kind, string> = {
   blocked: "question",
   pr_open: "open PR",
+  paused: "paused ticket",
   stale_run: "stale run",
   failed: "failed run",
   supervisor: "supervisor",

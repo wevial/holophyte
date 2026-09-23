@@ -19,6 +19,8 @@ import { InstructionCard } from "./InstructionCard";
 import { RoundTimeline } from "./RoundTimeline";
 import { RunTurns } from "./RunTurns";
 import { RunLog } from "./RunLog";
+import { ReasonAction } from "./ReasonAction";
+import type { RowDaemon } from "./RowActions";
 import { PrLink, Sha } from "./ShippedTable";
 
 /** Count independent reviews against their cap; other rounds have no review budget. */
@@ -33,7 +35,8 @@ export function roundLine(body: RunDetailBody): string {
 
 /** The expanded run's card: header line, round timeline, the newest
  *  round's open findings and the run log from `/runs/N`, the files touched
- *  from `/runs/N/files`; both read on expand and again each poll. */
+ *  from `/runs/N/files`; both read on expand and again each poll. Given
+ *  its `daemon`, a live run with no `stopRequested` has Pause in the footer. */
 export function RunDetail({
   base,
   id,
@@ -41,6 +44,8 @@ export function RunDetail({
   sinceMs = 0,
   polls,
   deps,
+  daemon,
+  stopRequested,
 }: {
   base: string;
   id: number;
@@ -50,6 +55,9 @@ export function RunDetail({
   sinceMs?: number;
   polls: number;
   deps?: { fetch: Fetch };
+  daemon?: RowDaemon;
+  /** The live run's pending stop request from `/status`, if any. */
+  stopRequested?: string | null;
 }) {
   const { detail, error, loading } = useRunDetail(base, id, polls, deps);
   const files = useRunFiles(base, id, polls, deps);
@@ -64,7 +72,8 @@ export function RunDetail({
           {error}
         </p>
       )}
-      {detail && <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs} />}
+      {detail && <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs}
+        pauseDaemon={stopRequested ? undefined : daemon} />}
       {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} polls={polls} deps={deps} />}
     </div>
   );
@@ -76,12 +85,14 @@ function Card({
   ledger,
   now,
   sinceMs,
+  pauseDaemon,
 }: {
   body: RunDetailBody;
   files: RunFilesState;
   ledger: LedgerRow[];
   now: number;
   sinceMs: number;
+  pauseDaemon?: RowDaemon;
 }) {
   const { run } = body;
   const rounds = [...body.rounds].sort((a, b) => a.started_ms - b.started_ms);
@@ -181,6 +192,7 @@ function Card({
       <footer className="mt-3 flex gap-2">
         <ActionButton>Kill run</ActionButton>
         <ActionButton>Requeue ticket</ActionButton>
+        {pauseDaemon && !finished && <ReasonAction daemon={pauseDaemon} route="/actions/pause" body={{ run: run.id }} label="Pause" />}
       </footer>
       <RunLog events={body.events} rounds={rounds} now={tickingNow} />
     </article>

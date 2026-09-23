@@ -71,6 +71,8 @@ export function Now({
             sinceMs={sinceSeen(group.seen_ms, now)}
             polls={polls}
             deps={deps}
+            daemon={{ base: group.base, actions: group.status.actions === true }}
+            stopRequested={run.stop_requested}
           />
         )}
       />
