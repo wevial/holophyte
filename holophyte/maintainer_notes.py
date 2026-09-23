@@ -1,8 +1,8 @@
 """Adapt private store instructions to the babysitter's addressed threads."""
-import json
 import re
 from dataclasses import replace
 
+from holophyte.findings import decode_findings
 from holophyte.pr import Thread
 from store import operator_notes
 
@@ -37,7 +37,8 @@ def requeue_context(conn, run_id):
     `requeue` intervention: the operator's note (read back from the event
     `record_intervention()` wrote, the only place it is kept), then the
     findings of its last review round unless that round passed, their
-    messages capped at `FINDINGS_CAP` characters in total.
+    messages capped at `FINDINGS_CAP` characters in total. A findings row
+    that does not decode to a list is skipped, so the note still arrives.
     """
     if conn is None or run_id is None:
         return ""
@@ -63,7 +64,8 @@ def requeue_context(conn, run_id):
         " ORDER BY round DESC LIMIT 1", (prev,)).fetchone()
     if last is not None and last[1] != "pass":
         messages = "\n".join(f"- {f.get('message', '')}"
-                              for f in json.loads(last[2]) if isinstance(f, dict))
+                              for f in decode_findings(last[2]) or ()
+                              if isinstance(f, dict))
         if messages:
             cut = len(messages) > FINDINGS_CAP
             messages = messages[:FINDINGS_CAP]

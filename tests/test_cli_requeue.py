@@ -337,6 +337,21 @@ class RequeuedClaimTests(LoopFixture):
         self.assertIn("fix the parser crash", opening)
         self.assertNotIn("findings", opening)
 
+    def test_unreadable_stored_findings_still_let_the_note_through(self):
+        run = self.fail_a_run(("changes_requested", ["lost"]),
+                              note="fix the parser crash")
+        conn = open_store(self.project)
+        self.addCleanup(conn.close)
+        conn.execute("UPDATE reviewRounds SET findings = '{not json'"
+                     " WHERE runId = ?", (run,))
+        conn.commit()
+
+        opening = self.implement_prompt().split(
+            "Implement this task in this repo:")[0]
+
+        self.assertIn(f"Context from the previous attempt (run {run})", opening)
+        self.assertIn("fix the parser crash", opening)
+
     def test_findings_past_the_cap_are_cut_and_say_so(self):
         long = ["x" * 1000, "y" * 1000]
         self.fail_a_run(("changes_requested", long), note="retry")
