@@ -42,7 +42,8 @@ class StoreEnumTests(unittest.TestCase):
         self.assertEqual(set(actual), set(enums.CONSTRAINED_COLUMNS))
         self.assertEqual(actual['runs', 'parkKind'],
                          "CHECK (parkKind IN ('pull_request', 'pull_request_closed', "
-                         "'thread', 'fix_declined', 'merge_lock', 'question'))")
+                         "'thread', 'fix_declined', 'merge_lock', 'question', "
+                         "'not_reproduced'))")
         for key, enum in enums.CONSTRAINED_COLUMNS.items():
             self.assertEqual(actual[key], enums.check_clause(key[1], enum), key)
 

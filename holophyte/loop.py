@@ -27,13 +27,11 @@ import review_runner
 import store
 import store.read
 import ticket_template
-from holophyte import board, failure_reason, pr_status
+from holophyte import board, failure_reason, pr_status, reproduce
 from holophyte import run as run_state
 from holophyte.agents import agent, record_session, review_refs, transport_failure
 from holophyte.babysitter import _babysit
-from holophyte.board import (
-    ledger,
-)
+from holophyte.board import ledger
 from holophyte.claim import (
     _cut_worktree,
     _setup_worktree,
@@ -41,9 +39,7 @@ from holophyte.claim import (
     conflict_brief,
     merge_conflicts,
 )
-from holophyte.config import (
-    budget_scale,
-)
+from holophyte.config import budget_scale
 from holophyte.config_tables import (
     loop_config,
     merge_config,
@@ -241,24 +237,27 @@ def _run_stages(run, task):
     # the implementer as the opening of its brief; empty on every other cut.
     conflicts = merge_conflicts(wt)
     resume = continuation(conn, run_id)
-    sha = start_sha if resume and resume["phase"] != "working" else _implement(
-                     target, conn, run_id, task_id, task, branch, wt, fresh,
-                     beat_s, start_sha, ticket, verify_cmd, budget_min,
-                     conflicts=conflicts)
+    sha, unreproduced = (
+        (start_sha, reproduce.routed(resume)) if resume and resume["phase"] != "working"
+        else _implement(target, conn, run_id, task_id, task, branch, wt, fresh,
+                        beat_s, start_sha, ticket, verify_cmd, budget_min,
+                        conflicts=conflicts))
 
     # 2. review rounds, up to the cap the candidate's size earns it. Verify
     # runs before each review and its result goes into the brief; every
     # round that is not a clean approval — the last one included — gets a
     # fix round, because a last-round blocker is the cheapest fix in the
     # loop and used to need a human to close it out.
+    # A declared not-reproduced defect gets an evidence check for round 1.
     cap = _review_cap(target, conn, run_id, provider, task_id, wt)
-    sha, rnd, approved = _review_rounds(
+    sha, rnd, approved = (reproduce.review_rounds if unreproduced else _review_rounds)(
         target, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
         sha, ticket, verify_cmd, contracts, criteria, budget_min, cap, resume=resume)
     if not approved:
         _terminal_adjudication(target, conn, run_id, provider, task_id, task,
                                branch, wt, beat_s, base_sha, sha, ticket,
-                               verify_cmd, contracts, cap, criteria, resume=resume)
+                               verify_cmd, contracts, max(cap, rnd), criteria,
+                               resume=resume)
 
     # 4. pre-merge verify (catches fix-round regressions), then merge. Both
     # happen under `merge_gate`: §4's gate node is the one edge out of a
@@ -550,7 +549,8 @@ def _transport_timed(target, conn, run_id, beat_s, wt, budget_min, goal):
 
 def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=()):
-    """Implement the ticket and return its SHA; open with reuse conflicts."""
+    """Implement the ticket, opening with reuse conflicts; return its SHA and
+    whether the reply declared the defect not reproduced (KO-657)."""
     commands = (f"\n\nThese verify commands must pass before review and again "
                 f"before merge:\n\n{verify_cmd}\n\nThe full unit suite runs "
                 f"as a pull request check; do not run it in the worktree. Run "
@@ -566,8 +566,9 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         "included; the task is done only when they hold. Commit your "
         "work with a clear message. Stay strictly on-scope; do not "
         "expand the task. Commit messages carry no tool attribution or co-author "
-        "lines for an AI." + _capture_brief(target, ticket, task_id))
-    stop_if_requested(conn, run_id, "verifying")
+        "lines for an AI." + _capture_brief(target, ticket, task_id)
+        + reproduce.BRIEF)
+    boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate
     # an earlier run left behind. An implementer handed finished work
@@ -642,7 +643,7 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         raise RunFailure(f"implementer exceeded the {budget_min} min budget"
                          f"{_scale_note(target, budget_min)}; work kept on "
                          f"{branch} at {head[:12]}", "budget")
-    return sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    return sh(["git", "rev-parse", "HEAD"], cwd=wt), reproduce.declared(out)
 
 
 def _verify_brief(verify_cmd, ok, out):
