@@ -4,7 +4,7 @@ import shlex
 
 import store
 from holophyte.agents import effective_role, routes
-from holophyte.config import check_command_path, config_table, loop_config
+from holophyte.config import check_command_path, config_table, harness_seat, loop_config
 from holophyte.gates import sh
 from holophyte.session_arms import select_arm
 
@@ -26,7 +26,10 @@ def resume_template(target):
 
 
 def resume_argv(target, conn, run_id):
-    """Return safe resume argv or the reason this turn must start fresh."""
+    """Return safe resume argv or the reason this turn must start fresh.
+
+    A table-form implementer's adapter builds the argv; a command string
+    goes through its `implementer_resume` template."""
     role = effective_role(target, 'implement')
     if role in routes(target).commands:
         return None, 'fallback implementer route'
@@ -34,6 +37,9 @@ def resume_argv(target, conn, run_id):
                         (run_id,)).fetchone() if conn is not None else None)
     if row is None or not row[0]:
         return None, 'no recorded session'
+    seat = harness_seat(target, 'implement')
+    if seat is not None:
+        return seat.resume(row[0]), None
     template = resume_template(target)
     if template is None:
         return None, 'no implementer_resume template'

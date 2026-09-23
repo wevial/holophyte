@@ -33,13 +33,16 @@ from holophyte.config import (
     IMPL_MODEL,
     IMPL_TIMEOUT,
     agent_command,
+    agent_session,
     budget_scale,
     carry_directories,
+    harness_seat,
     review_profile,
     review_route,
     sweep_config,
 )
 from holophyte.gates import GroupKill, InfraFailure, run_capped, sh
+from holophyte.harness import route_text
 from holophyte.redact import known_secrets, outbound
 from holophyte.redact import safe_print as print
 
@@ -242,14 +245,16 @@ def agent_route(target, role):
     """What ran `role`'s turn, named for the record the round leaves.
 
     The profile of the container route the config chooses (`codex-sol-medium`
-    by default), or the configured command when the target named one. A
+    by default), the configured command when the target named one, or the
+    harness when it wrote the role as a table. A
     `reviewRounds` row reading `codex-sol-medium` about a round some other
     harness or model ran would be evidence of something that did not happen,
     and the rows are what FINDINGS.md and the fingerprint are built from.
     """
     role = effective_role(target, role)
     command = (routes(target).commands.get(role)
-            or (target.config().get("agents") or {}).get(AGENT_CONFIG_KEYS[role])
+            or route_text((target.config().get("agents") or {}).get(
+                AGENT_CONFIG_KEYS[role]))
             or (DEFAULT_IMPLEMENTER if role == "implement" else
                 review_profile(*review_route(target))))
     return safe_command(target, command)
@@ -352,7 +357,8 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         record_pending_switch(target, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,
-                      run_id=run_id, argv=argv, review_round=review_round)
+                      run_id=run_id, argv=argv, review_round=review_round,
+                      session=requested_role == "implement")
 
         def launch():
             return recorded_turn(target, requested_role, role, conn, run_id,
@@ -368,7 +374,7 @@ def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 
 def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
-          review_round=None):
+          review_round=None, session=False):
     """Run one agent turn for a role. Returns combined output text.
 
     An `implement` turn runs in a process group of its own under `timeout`
@@ -398,6 +404,11 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     commits reach the reviewer as `refs/review/RUN/base` and
     `refs/review/RUN/candidate` — the names its prompt uses — the staged checkout
     on the default route, the task worktree on the configured one.
+
+    With `session` (an implement turn the loop asked for, not a writer
+    turn routed to the implementer), a table-form implementer's session id
+    is recorded before launch: the adapter chose it, so a turn the budget
+    kills leaves it on the run as surely as one that finishes.
     """
     if role not in AGENT_CONFIG_KEYS:
         raise ValueError(role)
@@ -407,9 +418,16 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     command = routes(target).commands.get(role)
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(target, role, goal))
+    session_id = (agent_session(target, role, cmd)
+                  if session and command is None and argv is None else None)
     if argv is not None:
         cmd = [outbound(arg, known_secrets(target.config())) for arg in argv] + [goal]
     dispatched_route = shlex.join(cmd[:-1]) if cmd is not None else DEFAULT_IMPLEMENTER
+    seat = harness_seat(target, role) if command is None else None
+    if seat is not None:
+        # Named by the harness, not a `[harnesses]` path: the outage
+        # signatures match on the route's name.
+        dispatched_route = shlex.join([seat.name, *cmd[1:-1]])
     if cmd is None:
         if role != "implement":
             from holophyte.runs import heartbeat_while
@@ -481,6 +499,9 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     # The hook is passed only when there is one, so a turn without a
     # sweep-time kill runs exactly the call it always did.
     hook = {"on_start": on_start} if on_start is not None else {}
+    if session_id is not None and conn is not None and run_id is not None:
+        import store
+        store.record_agent_session(conn, run_id, session_id, role, "primary")
     code, out = isolation.launch(isolation.route_for(target), cwd,
                                  isolation.environment(target), cmd,
                                  timeout=cap, runner=run_capped, target=target, **hook)

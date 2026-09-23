@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 from holophyte.config import AGENT_CONFIG_KEYS, DEFAULT_IMPLEMENTER
+from holophyte.harness import route_text
 from holophyte.redact import REDACTED, known_secrets, redact_prose
 
 
@@ -21,7 +22,10 @@ def command_secrets(target):
     table = target.config().get('agents') or {}
     for seat in AGENT_CONFIG_KEYS.values():
         for key in (seat, seat + '_fallback'):
-            for arg in shlex.split(table.get(key, ''))[1:]:
+            command = table.get(key, '')
+            if not isinstance(command, str):
+                continue  # A harness table carries no free-form arguments.
+            for arg in shlex.split(command)[1:]:
                 # An assignment's value may start with a dash; only bare
                 # option names are excluded from argument redaction.
                 if arg.startswith('-') and '=' not in arg:
@@ -81,8 +85,9 @@ class ActiveRoutes:
         commands = dict(self.commands)
         if self.writer_failed:
             commands['write'] = (commands.get('implement')
-                                 or (self.target.config().get('agents') or {}).get(
-                                     'implementer') or DEFAULT_IMPLEMENTER)
+                                 or route_text((self.target.config().get('agents')
+                                                or {}).get('implementer'))
+                                 or DEFAULT_IMPLEMENTER)
         json.dump({AGENT_CONFIG_KEYS[role]: safe_command(self.target, command)
                    for role, command in commands.items()}, self.stream)
         self.stream.flush()

@@ -19,6 +19,7 @@ import tomllib
 from pathlib import Path
 
 import review_runner
+from holophyte import harness
 from holophyte.config_tables import (
     AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
@@ -123,6 +124,8 @@ KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS) | frozenset(
 KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
 KNOWN_KEYS["questions"] = frozenset(("url", "key_env", "min_confidence"))
+# `[harnesses]` maps a registered harness to an absolute binary path.
+KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
 
 
 def check_config_keys(target):
@@ -160,6 +163,7 @@ def check_config(target):
         raise SystemExit(str(error)) from None
     verify_config(target)
     check_config_keys(target)
+    check_harnesses(target)
     budget_scale(target)
     implementer_session(target)
     from holophyte.fix_session import resume_template
@@ -195,6 +199,63 @@ def implementer_session(target):
     return pattern
 
 
+def check_harnesses(target):
+    """Parse every table-form `[agents]` role and the `[harnesses]` paths.
+
+    A table replaces the wrapper script the regex and resume template were
+    written against, so `implementer_session` or `implementer_resume` beside
+    a table implementer is refused as contradictory: the adapter assigns the
+    session and builds the resume, and a second answer to the same question
+    would be one the factory ignores.
+    """
+    where = f"[holo2] {target.config_path}"
+    harness.check_paths(where, config_table(target, "harnesses"))
+    for role in AGENT_CONFIG_KEYS:
+        harness_seat(target, role)
+        harness_seat(target, role, fallback=True)
+    if harness_seat(target, "implement") is None:
+        return
+    for key in ("implementer_session", "implementer_resume"):
+        if key in config_table(target, "agents"):
+            raise SystemExit(
+                f"{where}: [agents] {key} beside [agents.implementer]: the "
+                f"harness adapter records and resumes the session -- drop {key}")
+
+
+def harness_seat(target, role, *, fallback=False):
+    """The `harness.Seat` a table-form `[agents]` role resolves to, None for
+    a command string or an absent key.
+
+    Under `implementer_isolation = "container"` the binary is the bare
+    harness name, whatever `[harnesses]` says: the image supplies it.
+    """
+    key = AGENT_CONFIG_KEYS[role] + ("_fallback" if fallback else "")
+    table = config_table(target, "agents").get(key)
+    if not isinstance(table, dict):
+        return None
+    where = f"[holo2] {target.config_path}"
+    adapter = harness.parse_role(where, key, table)
+    from holophyte.isolation import route_for
+    binary = adapter.name
+    if route_for(target).backend != "container":
+        paths = config_table(target, "harnesses")
+        harness.check_paths(where, paths)
+        binary = paths.get(adapter.name, binary)
+    return harness.Seat(adapter, binary, table)
+
+
+def agent_session(target, role, argv):
+    """The session id a table-form `role`'s turn `argv` runs under, None
+    for a command string -- its session, if any, is read from its output
+    through `implementer_session` -- and for a container turn, which
+    records none."""
+    from holophyte.isolation import route_for
+    seat = harness_seat(target, role)
+    if seat is None or route_for(target).backend == "container":
+        return None
+    return seat.session(argv)
+
+
 def check_document(target):
     """`check_config()` plus the shape of the tables the loop's startup
     reads before it claims: `[board]` through `board_config()`, `[agents]`
@@ -224,6 +285,11 @@ def agent_command(target, role, goal, *, fallback=False):
     a shell string is the same rule `sh()` follows: task text is data, and it
     never gets to break quoting.
 
+    A table (`[agents.implementer] harness = "claude"`) is built here too,
+    by its `harness` adapter, under a fresh session id `agent_session()`
+    reads back, so every caller gets the adapter's argv without learning
+    about tables.
+
     A key that is present but unusable — a non-string, or a string that splits
     to nothing — is a startup error rather than a fallback to the default: the
     operator asked for a route, and quietly running the built-in one instead
@@ -233,6 +299,8 @@ def agent_command(target, role, goal, *, fallback=False):
     command = config_table(target, "agents").get(key)
     if command is None:
         return None
+    if isinstance(command, dict):
+        return harness_seat(target, role, fallback=fallback).turn(goal)
     if not isinstance(command, str):
         raise SystemExit(
             f"[holo2] {target.config_path}: [agents] {key} must be "
