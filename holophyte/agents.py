@@ -33,16 +33,15 @@ from holophyte.config import (
     IMPL_MODEL,
     IMPL_TIMEOUT,
     agent_command,
-    agent_session,
     budget_scale,
     carry_directories,
-    harness_seat,
     review_profile,
     review_route,
     sweep_config,
 )
 from holophyte.gates import GroupKill, InfraFailure, run_capped, sh
-from holophyte.harness import route_text
+from holophyte.harness import agent_session, route_text
+from holophyte.harness import seat as harness_seat
 from holophyte.redact import known_secrets, outbound
 from holophyte.redact import safe_print as print
 

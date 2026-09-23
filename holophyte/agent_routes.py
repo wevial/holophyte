@@ -37,7 +37,9 @@ def command_secrets(target):
 
 
 def safe_command(target, command):
-    """Public route identifier: executable only, never command arguments."""
+    """Public route identifier: executable only, never command arguments.
+    A table-form route is named by its harness."""
+    command = route_text(command)
     if not command:
         return command
     return redact_prose(shlex.split(command)[0], command_secrets(target))

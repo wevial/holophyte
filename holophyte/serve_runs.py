@@ -599,13 +599,11 @@ def active_routes(target):
     """Current commands per seat; primary seats carry no fallback marker."""
     from holophyte.agent_routes import active_fallbacks, safe_command
     from holophyte.config import AGENT_CONFIG_KEYS
-    from holophyte.harness import route_text
 
     fallback = active_fallbacks(target)
-    table = {key: safe_command(target, route_text(value))
+    table = {key: safe_command(target, value)
              for key, value in (target.config().get("agents") or {}).items()
-             if key in AGENT_CONFIG_KEYS.values()
-             and isinstance(route_text(value), str)}
+             if key in AGENT_CONFIG_KEYS.values() and isinstance(value, (str, dict))}
     return {seat: {"command": fallback.get(seat, table.get(seat)),
                    **({"fallback": fallback[seat]} if seat in fallback else {})}
             for seat in AGENT_CONFIG_KEYS.values()}

@@ -4,8 +4,9 @@ import shlex
 
 import store
 from holophyte.agents import effective_role, routes
-from holophyte.config import check_command_path, config_table, harness_seat, loop_config
+from holophyte.config import check_command_path, config_table, loop_config
 from holophyte.gates import sh
+from holophyte.harness import seat as harness_seat
 from holophyte.session_arms import select_arm
 
 
