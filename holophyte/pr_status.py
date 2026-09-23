@@ -39,6 +39,8 @@ RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
                    "startup_failure", "error"}
 # The app whose check runs are Actions jobs, with a log to read.
 ACTIONS_APP = "github-actions"
+# An Actions job's link, `https://HOST/OWNER/NAME/actions/runs/RUN/job/JOB`.
+WORKFLOW_RUN_RE = re.compile(r"/actions/runs/(\d+)/job/\d+")
 # Page size for the check-runs and rollup-context reads.
 CHECK_RUNS_PAGE = 100
 
@@ -482,19 +484,23 @@ def _state_of(node, threads, runs, required):
 class FailedCheck:
     """A check run on the head commit whose conclusion is red. `job_id` is
     the GitHub Actions job whose log `pr.job_log()` reads; None for a check
-    run another app made or a commit status, which have no such log."""
+    run another app made or a commit status, which have no such log.
+    `workflow_run_id` is the Actions workflow run in `url`
+    (`.../actions/runs/RUN/job/JOB`), None for a URL without one."""
 
     name: str
     conclusion: str
     url: str
     job_id: int | None = None
+    workflow_run_id: int | None = None
 
 
 def _failed_checks(runs):
     """A `FailedCheck` for each red row of `runs`."""
     return tuple(FailedCheck(name=r.get("name") or "",
                              conclusion=r["conclusion"],
-                             url=r.get("html_url") or "", job_id=_job_id(r))
+                             url=r.get("html_url") or "", job_id=_job_id(r),
+                             workflow_run_id=_workflow_run_id(r))
                  for r in (runs or ()) if isinstance(r, dict)
                  and r.get("conclusion") in RED_CONCLUSIONS)
 
@@ -519,6 +525,12 @@ def _job_id(run):
         return None
     job = run.get("id")
     return job if isinstance(job, int) and not isinstance(job, bool) else None
+
+
+def _workflow_run_id(run):
+    """The workflow run in a check run's `html_url`; None without one."""
+    match = WORKFLOW_RUN_RE.search(run.get("html_url") or "")
+    return int(match[1]) if match else None
 
 
 def _closed_by(node):

@@ -20,7 +20,7 @@ from holophyte.agents import agent_route, review_refs
 from holophyte.babysit_steps import record_step
 from holophyte.board import ledger
 from holophyte.bot_threads import route_bot_threads
-from holophyte.check_fix import check_fix_brief, fix_checks_or_park  # noqa: F401
+from holophyte.check_fix import CheckFix, fix_checks_or_park
 from holophyte.config_tables import merge_config
 from holophyte.gates import (
     InfraFailure,
@@ -449,7 +449,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         project, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
-    check_fixed = False  # One check fix per babysit: a red check cannot loop.
+    check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
     for pass_no in range(1, merge.pr_rounds + 1):
         stop_if_requested(conn, run_id, "merge_gate")
         retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
@@ -494,8 +494,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         if state.checks != "success":  # Parks unless one fix is due.
             sha, pushed_state = fix_checks_or_park(
                 replace(run, sha=sha), beat_s, pull, state, ticket, verify_cmd,
-                contracts, pass_no, reviewed, check_fixed)
-            check_fixed = True
+                contracts, pass_no, reviewed, check_fix)
             continue  # Settle the pushed fix; its review comes before merge.
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
