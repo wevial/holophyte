@@ -1,6 +1,6 @@
 """Table-form roles: the adapter's argv, its session and its resume -- a
-claude or codex implementer, and a codex or cursor reviewer in a throwaway
-candidate checkout.
+claude or codex implementer, and codex, cursor and devin reviewers in a
+throwaway candidate checkout.
 
 Run: python3 -m unittest tests.test_harness -v
 """
@@ -21,6 +21,7 @@ import holophyte.fix_session
 import holophyte.harness
 import holophyte.loop
 import holophyte.project
+import holophyte.runs
 import store
 
 # The fake harness: records its argv, then sleeps past the cap when the
@@ -189,7 +190,7 @@ class TableReviewCase(unittest.TestCase):
         store.init(self.conn)
         project = store.ensure_project(self.conn, "test", self.repo)
         ticket = store.mirror_ticket(self.conn, project, "KO-614", "KO-614",
-                                     "codex", acceptance_criteria=["review"],
+                                     self.BINARY, acceptance_criteria=["review"],
                                      verification_commands=["true"])
         self.run = store.claim(self.conn, project, ticket)
 
@@ -324,6 +325,77 @@ class CursorTableTests(TableReviewCase):
         self.assertEqual(self.events("review_session"),
                          [{"arm": arm, "requested": False,
                            "reason": "harness cannot resume"} for arm in runs])
+
+
+# The fake devin: records every call with its cwd's HEAD, sleeps past the
+# cap when the prompt asks it to, and answers `list --format json` with the
+# one session Devin keeps per directory.
+FAKE_DEVIN = """
+import json, os, subprocess, sys, time
+head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                      text=True).stdout.strip()
+with open(os.environ["FAKE_HARNESS_CALLS"], "a") as calls:
+    calls.write(json.dumps({"binary": sys.argv[0], "argv": sys.argv[1:],
+                            "cwd": os.getcwd(), "head": head}) + "\\n")
+if "stall" in sys.argv[-1]:
+    time.sleep(30)
+elif sys.argv[1:] == ["list", "--format", "json"]:
+    print(json.dumps([{"id": "amenable-astrodon", "short_id": "amenable-astrodon",
+                       "working_directory": os.getcwd(), "title": "review"}]))
+else:
+    print("APPROVE")
+"""
+
+DEVIN_CONFIG = ('[agents.reviewer]\nharness = "devin"\nmodel = "opus"\n'
+                '[loop]\nreview_session = "resume"\n')
+DEVIN_OPTIONS = ["--model", "opus", "--permission-mode", "dangerous",
+                 "--respect-workspace-trust", "false"]
+
+
+class DevinTableTests(TableReviewCase):
+    BINARY, FAKE, CONFIG = "devin", FAKE_DEVIN, DEVIN_CONFIG
+
+    def test_a_first_round_runs_in_a_candidate_checkout_and_lists_its_session(self):
+        self.dispatch("review", "review the candidate")
+        turn, listed = self.received()
+        self.assertEqual(turn["argv"], [*DEVIN_OPTIONS, "-p", "review the candidate"])
+        self.assert_in_a_candidate_checkout(turn)
+        self.assertEqual((listed["argv"], listed["cwd"]),
+                         (["list", "--format", "json"], turn["cwd"]))
+        [recorded] = self.events("agent_session")
+        self.assertEqual((recorded["session_id"], recorded["round"]),
+                         ("amenable-astrodon", 1))
+
+    def test_round_two_resumes_the_listed_session(self):
+        self.dispatch("review", "first look")
+        self.dispatch("review", "second look", review_round=2)
+        _, _, resumed, _ = self.received()
+        self.assertEqual(resumed["argv"], [*DEVIN_OPTIONS, "-r", "amenable-astrodon",
+                                           "-p", "second look"])
+        self.assert_in_a_candidate_checkout(resumed)
+
+    def test_a_turn_swept_mid_review_lists_and_records_no_session(self):
+        # A 3 s stale threshold beats every 1.5 s.
+        (self.holo / "config.toml").write_text(
+            self.CONFIG + "[supervisor]\nheartbeat_stale_min = 0.05\n")
+        real = holophyte.agents.run_capped
+
+        def run_capped(cmd, cwd, timeout, on_start=None, **kwargs):
+            def started(proc):
+                on_start(proc)
+                other = store.open(self.target.store_path)
+                try:
+                    store.release(other, self.run, "failed", "swept")
+                finally:
+                    other.close()
+            return real(cmd, cwd, timeout, on_start=started, **kwargs)
+
+        with patch.object(holophyte.agents, "run_capped", run_capped), \
+                self.assertRaises(holophyte.runs.RunSwept):
+            self.dispatch("review", "stall until swept")
+        [turn] = self.received()
+        self.assertEqual(turn["argv"][-1], "stall until swept")
+        self.assertEqual(self.events("agent_session"), [])
 
 
 # The fake codex implementer: records its argv, prints the banner to stderr

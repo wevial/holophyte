@@ -1,10 +1,11 @@
 """Live: a harness adapter's turn and resume argv against the real CLI.
 
 Opt in with `HOLOPHYTE_LIVE_HARNESS=claude` (an implementer turn and its
-resume), `HOLOPHYTE_LIVE_HARNESS=codex` (two review rounds through
-`holophyte.agents.agent()`, and an implementer turn through the loop's
-`_timed()` and its resume) or `HOLOPHYTE_LIVE_HARNESS=cursor` (one review
-round; `HOLOPHYTE_LIVE_MODEL` picks its model, `grok-4.7-high` by default) or
+resume), `HOLOPHYTE_LIVE_HARNESS=codex` or `devin` (two review rounds
+through `holophyte.agents.agent()`, and for `codex` an implementer turn
+through the loop's `_timed()` and its resume) or
+`HOLOPHYTE_LIVE_HARNESS=cursor` (one review round; `HOLOPHYTE_LIVE_MODEL`
+picks its model, `grok-4.7-high` by default) or
 `HOLOPHYTE_LIVE_HARNESS=critic` (the default `[agents.critic]` seat, `codex`, asked
 whether a small ticket is still relevant) on a host
 with that CLI signed in on PATH; without the variable the tests skip, and
@@ -13,6 +14,7 @@ verify block: the reviewer's container carries no agent credentials.
 
 Run: HOLOPHYTE_LIVE_HARNESS=claude python3 -m unittest tests.test_harness_live
      HOLOPHYTE_LIVE_HARNESS=codex python3 -m unittest tests.test_harness_live
+     HOLOPHYTE_LIVE_HARNESS=devin python3 -m unittest tests.test_harness_live
      HOLOPHYTE_LIVE_HARNESS=cursor python3 -m unittest tests.test_harness_live
      HOLOPHYTE_LIVE_HARNESS=critic python3 -m unittest tests.test_harness_live
 """
@@ -38,7 +40,7 @@ LIVE = os.environ.get("HOLOPHYTE_LIVE_HARNESS")
 TURN_TIMEOUT = 300
 # The review harnesses, which run through `agent()` rather than the
 # implementer's turn-and-resume case.
-REVIEW_HARNESSES = ("codex", "cursor")
+REVIEW_HARNESSES = ("codex", "cursor", "devin")
 # The seat, not a harness, that `HOLOPHYTE_LIVE_HARNESS=critic` asks for.
 CRITIC = "critic"
 
@@ -133,11 +135,21 @@ HEAD_GOAL = ("Run `git rev-parse HEAD` in the current checkout and reply with "
              "the full commit id it prints.")
 
 
-@unittest.skipUnless(LIVE == "codex",
-                     "set HOLOPHYTE_LIVE_HARNESS=codex for live review rounds")
-class LiveCodexReviewTests(LiveReviewCase):
-    CONFIG = ('[agents.reviewer]\nharness = "codex"\neffort = "low"\n'
-              '[loop]\nreview_session = "resume"\n')
+# The `[agents.reviewer]` table each resuming review harness's live rounds
+# run under; devin's is the maintainer's choice among the models its
+# account still has quota for (swe-2-max answers too, but slowly).
+RESUMING_REVIEW_TABLES = {
+    "codex": 'harness = "codex"\neffort = "low"\n',
+    "devin": 'harness = "devin"\nmodel = "swe-2-high"\n',
+}
+
+
+@unittest.skipUnless(LIVE in RESUMING_REVIEW_TABLES,
+                     "set HOLOPHYTE_LIVE_HARNESS=codex or devin for live review "
+                     "rounds")
+class LiveResumingReviewTests(LiveReviewCase):
+    CONFIG = ('[agents.reviewer]\n' + RESUMING_REVIEW_TABLES.get(LIVE, "")
+              + '[loop]\nreview_session = "resume"\n')
 
     def test_rounds_see_the_candidate_and_resume_the_session(self):
         word = "holo" + secrets.token_hex(3)

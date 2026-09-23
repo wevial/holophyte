@@ -395,31 +395,30 @@ class GroupKill:
     (`run_capped()`'s `on_start`), and calling the instance kills the whole
     group the way the timeout does, through `reap_group()`'s `SIGKILL`. The
     two can arrive in either order -- a sweep that lands before the turn's
-    process exists kills it as soon as `arm()` names it -- and the kill is
-    sent once. `fired` says whether a kill was sent, for the caller's log.
+    process exists kills it as soon as `arm()` names it -- and each process
+    armed, a retry or a session query after the turn, is killed once.
+    `fired` says a kill was sent; `wanted`, that one was asked for.
     """
 
     def __init__(self):
         self._lock = threading.Lock()
         self._proc = None
-        self._wanted = False
+        self.wanted = False
         self.fired = False
 
     def arm(self, proc):
         with self._lock:
             self._proc = proc
-            if self._wanted:
+            if self.wanted:
                 self._kill()
 
     def __call__(self):
         with self._lock:
-            self._wanted = True
+            self.wanted = True
             if self._proc is not None:
                 self._kill()
 
     def _kill(self):
-        if self.fired:
-            return
         self.fired = True
         try:
             os.killpg(self._proc.pid, signal.SIGKILL)
@@ -427,7 +426,8 @@ class GroupKill:
             self._proc.kill()
 
 
-def run_capped(cmd, cwd, timeout, on_start=None, *, env=None):
+def run_capped(cmd, cwd, timeout, on_start=None, *, env=None,
+               stderr=subprocess.STDOUT):
     """Run one command under a hard cap. Returns `(returncode, output)`,
     or raises `subprocess.TimeoutExpired` carrying whatever it printed first.
 
@@ -450,7 +450,7 @@ def run_capped(cmd, cwd, timeout, on_start=None, *, env=None):
     """
     environment = {} if env is None else {"env": env}
     with subprocess.Popen(cmd, shell=isinstance(cmd, str), cwd=str(cwd),
-                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          stdout=subprocess.PIPE, stderr=stderr,
                           text=True, start_new_session=True, **environment) as proc:
         if on_start is not None:
             on_start(proc)

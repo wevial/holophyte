@@ -6,20 +6,23 @@ command string. The adapter owns what a wrapper script on the writer host
 used to: the argv of a turn, the session id that turn runs under (chosen
 before launch, so the factory records it at dispatch rather than reading it
 back out of the output -- or, for a harness that chooses its own, read from
-the banner it prints) and the argv that resumes it. The binary is the
-adapter's `binary` -- the harness's own name unless its CLI is called
-something else -- looked up on PATH at launch, unless the top-level
-`[harnesses]` table names an absolute path for it.
+the banner it prints or the session list it keeps) and the argv that resumes
+it. The binary is the adapter's `binary` -- the harness's own name unless
+its CLI is called something else -- looked up on PATH at launch, unless the
+top-level `[harnesses]` table names an absolute path for it.
 
-Validation reads each adapter's `roles` and never names a harness or a role
-itself, so letting a harness serve another role is an addition to its set
-plus that role's argv. `holophyte.config` imports this module at load, so
-the target readers below (`check_target()`, `seat()`, `agent_session()`)
-import its tables inside the call.
+Validation reads each adapter's `roles`, `requires` and `refuses` and
+never names a harness or a role itself, so letting a harness serve
+another role is an addition to its set plus that role's argv.
+`holophyte.config` imports this module at load, so the target readers below
+(`check_target()`, `seat()`, `agent_session()`) import its tables inside the
+call.
 """
+import json
 import os
 import re
 import shlex
+import subprocess
 import uuid
 from dataclasses import dataclass
 
@@ -46,7 +49,7 @@ class Adapter:
     def binary(self):
         return self.name
 
-    def reported_session(self, output, role):
+    def reported_session(self, binary, output, role, run):
         return None
 
 
@@ -117,7 +120,7 @@ class Codex(Adapter):
         return [binary, "exec", "resume", *self.route(options),
                 "--dangerously-bypass-approvals-and-sandbox", session]
 
-    def reported_session(self, output, role):
+    def reported_session(self, binary, output, role, run):
         """The first banner's id; for the implementer, only a UUID, which
         is what `runs.providerSessionId` holds for a resume to name."""
         match = self.BANNER.search(output)
@@ -136,6 +139,61 @@ class Codex(Adapter):
         effort = options.get("effort", REVIEW_EFFORT)
         return ["-m", options.get("model", REVIEW_MODEL),
                 "-c", f"model_reasoning_effort={effort}"]
+
+
+class Devin(Adapter):
+    """Devin in print mode for the review roles, in the same throwaway
+    candidate checkout as `Codex`.
+
+    Print mode fails in a directory Devin has never trusted, and every
+    throwaway checkout is one, hence `--respect-workspace-trust false`;
+    `dangerous` lets the reviewer run git and tests without a prompt, the
+    checkout staying the write boundary. Devin chooses the session id and
+    prints none, so `reported_session()` asks `devin list` in the checkout,
+    which holds only this turn's session: a resumed one moves to the
+    directory it was resumed in. The question goes through the turn's own
+    runner, so it is held to what is left of the turn's cap and killed by
+    the sweep that would kill the turn. The factory has no Devin model to default
+    to, so `model` is required -- the maintainer's choice for the reviewer is
+    `swe-2-high`, the live test's model -- and the CLI has no effort flag.
+    """
+    name = "devin"
+    roles = frozenset({"reviewer", "adjudicator"})
+    requires = frozenset({"model"})
+    refuses = frozenset({"effort"})
+    LIST_TIMEOUT = 60
+
+    def turn(self, binary, options, role):
+        return [binary, *self.route(options), "-p"]
+
+    def session(self, argv):
+        return None
+
+    def resume(self, binary, options, session, role):
+        return [binary, *self.route(options), "-r", session, "-p"]
+
+    def reported_session(self, binary, output, role, run):
+        """The one session `devin list` shows in the turn's checkout, None
+        for any other answer -- a guess could resume someone else's
+        conversation -- and for a turn with no `run` to ask it through."""
+        if run is None:
+            return None
+        try:
+            code, listed = run([binary, "list", "--format", "json"],
+                               self.LIST_TIMEOUT)
+            sessions = json.loads(listed)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None
+        if code != 0 or not isinstance(sessions, list) \
+                or len(sessions) != 1 or not isinstance(sessions[0], dict):
+            return None
+        session = sessions[0].get("id")
+        return session if isinstance(session, str) else None
+
+    @staticmethod
+    def route(options):
+        return ["--model", options["model"], "--permission-mode", "dangerous",
+                "--respect-workspace-trust", "false"]
 
 
 class Cursor(Adapter):
@@ -174,7 +232,8 @@ class Cursor(Adapter):
         return [binary, "-p", "--model", options["model"], "--force", "--trust"]
 
 
-ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex(), Cursor())}
+ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex(), Cursor(),
+                                                  Devin())}
 
 
 @dataclass(frozen=True)
@@ -204,10 +263,14 @@ class Seat:
         """The argv that resumes `session`; the caller appends the prompt."""
         return self.adapter.resume(self.binary, self.options, session, self.role)
 
-    def reported_session(self, output):
-        """The session id a finished turn printed, for an adapter whose
-        harness chooses it; None when the output names none."""
-        return self.adapter.reported_session(output, self.role)
+    def reported_session(self, output, run=None):
+        """The session id a finished turn ran under, for an adapter whose
+        harness chooses it; None when the harness names none. A review turn
+        passes `run(argv, timeout)`, which runs `argv` in its checkout under
+        its cap and kill hook and returns `(returncode, stdout)`: a harness
+        that prints no id is asked through it (`Devin`)."""
+        return self.adapter.reported_session(self.binary, output, self.role,
+                                             run)
 
     def named(self, argv):
         """`argv` as a record names it: the harness first, not a
