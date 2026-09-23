@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import holophyte.claim as claim
 import holophyte.gates as gates
+import holophyte.merge_lock as merge_lock
 import store
 import store.read
 from tests.sweep_fixture import SweepTestCase
@@ -14,8 +15,10 @@ from tests.sweep_fixture import SweepTestCase
 class ClaimLockWaitTests(SweepTestCase):
     def setUp(self):
         super().setUp()
+        # A holder is live for 3 real seconds after its last beat, so a slow
+        # poll on a busy runner cannot make it look stale (KO-669).
         self.configure('[merge]\ncheck_wait_sec = 300\n'
-                       '[supervisor]\nheartbeat_stale_min = 0.001\n')
+                       '[supervisor]\nheartbeat_stale_min = 0.05\n')
         self.holder = self.a_run(phase='merge_gate')
         self.waiter = self.a_run()
         self.path = gates.merge_lock_path(self.tgt)
@@ -32,6 +35,12 @@ class ClaimLockWaitTests(SweepTestCase):
         self.enterContext(patch('holophyte.gates.MERGE_LOCK_POLL_SEC', 10))
         self.enterContext(patch('holophyte.merge_lock.CHECK_POLL_S', 10))
         self.enterContext(patch('holophyte.gates.sleep', self.poll))
+        # The waiter still beats every 30ms, so a wait of a few hundred
+        # milliseconds shows its heartbeat moving.
+        beat = merge_lock.heartbeat_while
+        self.enterContext(patch.object(
+            merge_lock, 'heartbeat_while',
+            lambda conn, run_id, interval_s: beat(conn, run_id, 0.03)))
         self.enterContext(patch.object(claim, 'sh', self.git))
         self.fetch = self.enterContext(patch.object(
             claim.subprocess, 'run', side_effect=self.fetched))
@@ -78,7 +87,8 @@ class ClaimLockWaitTests(SweepTestCase):
         store.set_phase(self.conn, self.waiter, 'verifying')
         self.assertEqual(store.run_phase(self.conn, self.waiter), 'verifying')
         self.assertGreaterEqual(self.elapsed(), 400)
-        self.assertGreater(len(set(self.beats)), 3)
+        # Three polls at least, even slow ones; a silent waiter shows two.
+        self.assertGreaterEqual(len(set(self.beats)), 3)
         self.assertLess(time.time() * 1000 - self.beats[-1], 100)
         self.assertEqual(self.fetch.call_args_list[0].args[0],
                          ['git', 'fetch', 'origin'])
@@ -112,3 +122,13 @@ class ClaimLockWaitTests(SweepTestCase):
                          ['begin', 'end'])
         self.fetch.assert_not_called()
         self.assertEqual(gates.read_merge_lock(self.path)[0], self.holder)
+
+
+class LoadedRunnerClaimLockWaitTests(ClaimLockWaitTests):
+    """Each poll oversleeps by 150ms of real time, as on a busy runner."""
+
+    def poll(self, seconds):
+        super().poll(seconds + 150)  # lock seconds: 150 of them is 150ms
+
+    # Only the live-holder tests; the ended holder is judged by its release.
+    test_ended_holder_fails_at_default_naming_fetch = None
