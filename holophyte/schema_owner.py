@@ -31,7 +31,11 @@ def wait_for_migration(target, stop, out):
 
 
 def migration_version(path):
-    """Read the stamp without writing; owners cannot use a newer schema."""
+    """Read the stamp without writing; `store.open()` judges a newer one.
+
+    A newer stamp has nothing to migrate, and whether this build may still
+    read it is its `readableFrom` floor's question, which only `open()`
+    answers."""
     if not path.exists():
         return 0
     conn = store.read.open_readonly(path)
@@ -39,8 +43,6 @@ def migration_version(path):
         version = conn.execute("PRAGMA user_version").fetchone()[0]
     finally:
         conn.close()
-    if version > store.SCHEMA_VERSION:
-        raise store.SchemaNewer(path, version)
     return version
 
 
@@ -191,9 +193,10 @@ def take_stale_lock(target, out):
 
 def migrate_store(target, out=None):
     """Run once at supervisor startup, including startup after exec."""
-    # A current store must reach the sweep even if a stale merge lock exists;
+    # A current (or newer) store must reach the sweep even if a stale merge
+    # lock exists, and `store.open()` judges a newer one by its floor there;
     # only a dead migrator's lock is this owner's to clear before it does.
-    if migration_version(target.store_path) == store.SCHEMA_VERSION:
+    if migration_version(target.store_path) >= store.SCHEMA_VERSION:
         _reclaim_on_current(target, out)
         return
     target.store_path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,7 +204,7 @@ def migrate_store(target, out=None):
     with merge_lock(target, MIGRATION_HOLDER, operation="migration"):
         # Another owner may have stamped the store while we waited.
         version = migration_version(target.store_path)
-        if version == store.SCHEMA_VERSION:
+        if version >= store.SCHEMA_VERSION:
             return
         def record(conn, from_version):
             # Inside init()'s transaction: the stamp never commits without it.

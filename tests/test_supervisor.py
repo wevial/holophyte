@@ -567,6 +567,20 @@ class MigrationStartupTests(SweepTestCase):
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 0)
 
+    def test_newer_store_at_this_builds_floor_is_left_to_store_open(self):
+        from tests.schema_fixture import move_ahead_additively
+
+        store.set_admission(self.conn, 1, "disabled", "retired")
+        move_ahead_additively(self.db, readableFrom=store.SCHEMA_VERSION)
+        newer = store.SCHEMA_VERSION + 1
+        # A lagging checkout's supervisor: nothing to migrate, and the store
+        # its build can still read must not be refused (and re-executed).
+        with patch.object(holophyte.supervisor, "acquire_supervisor_lock"):
+            holophyte.supervisor.supervise(self.project, out=io.StringIO())
+        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], newer)
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 0)
+
     def test_startup_migrates_under_merge_lock_once(self):
         import json
         from contextlib import contextmanager
