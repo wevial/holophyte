@@ -20,32 +20,44 @@ import holophyte.pr  # noqa: E402 - after the sys.path insert above
 QUEUE_SHA = "c0ffee" * 6 + "c0ff"
 # The merge-group commit the queue built from main plus the pull request.
 GROUP_SHA = "9a0b" * 10
+HEAD = MergeModeFixture.HEAD  # The fake serves the branch tip for it.
 UNIT = {"name": "unit", "status": "completed", "conclusion": "failure",
         "html_url": "https://github.com/example/repo/actions/runs/5/job/42",
         "id": 42, "app": {"slug": "github-actions"}}
 FAILED = "FAIL: test_x (tests.test_y.Case.test_x)"
 
 
-def queue_read(queued=True, merged=False, commit=True, group=None):
-    """The queue read's answer as GitHub gives it; `commit=False` is a merge
-    read before GitHub has named the merge commit, `group` the merge-group
-    commit of a queued entry."""
+def queue_read(queued=True, merged=False, commit=True):
+    """The queue read's answer as GitHub gives it, a queued entry's
+    `headCommit` the pull request's head; `commit=False` is a merge read
+    before GitHub has named the merge commit."""
     return {"data": {"repository": {"pullRequest": {
         "state": "MERGED" if merged else "OPEN", "merged": merged,
         "mergeCommit": {"oid": QUEUE_SHA} if merged and commit else None,
         "isInMergeQueue": queued,
-        "mergeQueueEntry": {"headCommit": {"oid": group}}
-        if queued and group else None}}}}
+        "mergeQueueEntry": {"headCommit": {"oid": HEAD}}
+        if queued else None}}}}
+
+
+def group_run(conclusion, created="2026-09-23T12:05:00Z"):
+    """An Actions workflow run of event `merge_group` on pull request 7's
+    queue branch, at `GROUP_SHA`."""
+    return {"event": "merge_group", "head_sha": GROUP_SHA,
+            "head_branch": "gh-readonly-queue/main/pr-7-" + "e" * 40,
+            "status": "completed", "conclusion": conclusion,
+            "created_at": created}
 
 
 class MergeQueueTests(MergeModeFixture):
     def land(self, reads, config='[merge]\nmode = "pr"\n', steps=(),
-             group_runs=()):
+             groups=(), group_runs=(), head_runs=()):
         """Run a green, quiet candidate to its landing, the fake agent
-        taking `steps` after it and `GROUP_SHA` reporting `group_runs`
-        (every other commit none); the naps taken."""
+        taking `steps` after it, the Actions runs read answering the
+        workflow runs `groups`, and `GROUP_SHA` reporting the check runs
+        `group_runs`; every other commit reports `head_runs` once queued,
+        none before. The naps taken."""
         self.configure(config)
-        self.fake_route(merge_queue=reads)
+        self.fake_route(merge_queue=reads, merge_groups=groups)
         self.job_log.write_text("".join(f"step {n}\n" for n in range(200))
                                 + FAILED)
         naps = []
@@ -53,8 +65,9 @@ class MergeQueueTests(MergeModeFixture):
                 patch.object(holophyte.merge_queue, "monotonic",
                              side_effect=lambda: sum(naps)), \
                 patch("holophyte.pr_status._check_runs_of",
-                      lambda target, pull, sha:
-                      list(group_runs) if sha == GROUP_SHA else []):
+                      lambda target, pull, sha: list(
+                          group_runs if sha == GROUP_SHA
+                          else head_runs if self.enqueued() else ())):
             self.fake, _ = self.loop(Commit("the scripted work"), APPROVE,
                                      Idle(""), *steps, provider=self.provider())
         return naps
@@ -112,10 +125,11 @@ class MergeQueueTests(MergeModeFixture):
 
     def test_a_removal_red_on_the_merge_group_gets_a_fix_turn_and_requeues(
             self):
-        self.land([queue_read(group=GROUP_SHA), queue_read(queued=False),
+        # The head is green; only the merge_group run at GROUP_SHA failed.
+        self.land([queue_read(), queue_read(queued=False),
                    queue_read(queued=False, merged=True)],
                   steps=(Commit("fix: the unit failure"), APPROVE, Idle("")),
-                  group_runs=[UNIT])
+                  groups=[group_run("failure")], group_runs=[UNIT])
 
         fake = self.fake
         self.assertEqual(fake.roles, ["implement", "review", "implement"] * 2)
@@ -131,9 +145,23 @@ class MergeQueueTests(MergeModeFixture):
                          [("merged", QUEUE_SHA)])
         self.assertFalse([c for c in self.recorded() if "rerun" in c])
 
-    def test_a_removal_with_a_green_merge_group_parks_unfixed(self):
-        self.land([queue_read(group=GROUP_SHA), queue_read(queued=False)],
-                  group_runs=[dict(UNIT, conclusion="success")])
+    def test_a_removal_with_a_green_merge_group_parks_unfixed_despite_a_red_head(
+            self):
+        self.land([queue_read(), queue_read(queued=False)],
+                  groups=[group_run("success")],
+                  group_runs=[dict(UNIT, conclusion="success")],
+                  head_runs=[UNIT])
+
+        self.assertEqual(self.fake.roles, ["implement", "review", "implement"])
+        self.assertIn("removed from the merge queue", self.question())
+        self.assertNotIn("unit", self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
+    def test_a_red_merge_group_from_before_the_enqueue_parks_unfixed(self):
+        self.land([queue_read(), queue_read(queued=False)],
+                  groups=[group_run("failure", "2026-09-23T11:59:59Z")],
+                  group_runs=[UNIT])
 
         self.assertEqual(self.fake.roles, ["implement", "review", "implement"])
         self.assertIn("removed from the merge queue", self.question())
@@ -142,10 +170,10 @@ class MergeQueueTests(MergeModeFixture):
 
     def test_a_second_red_removal_after_the_fix_turn_parks_naming_the_checks(
             self):
-        self.land([queue_read(group=GROUP_SHA), queue_read(queued=False),
-                   queue_read(group=GROUP_SHA), queue_read(queued=False)],
+        self.land([queue_read(), queue_read(queued=False),
+                   queue_read(), queue_read(queued=False)],
                   steps=(Commit("fix: the unit failure"), APPROVE, Idle("")),
-                  group_runs=[UNIT])
+                  groups=[group_run("cancelled")], group_runs=[UNIT])
 
         self.assertEqual(self.fake.roles,
                          ["implement", "review", "implement"] * 2)

@@ -6,8 +6,8 @@ refused or bypasses the queue, so two pull requests green against an older
 the pull request to the queue instead and waits there the way it waits for
 checks: the queue's merge commit is the run's merge sha, and a removal or a
 wait past `[merge] check_wait_sec` is `QueueLeft`, which parks the run --
-unless the removal's merge-group commit has red Actions checks (KO-714):
-that is `QueueRemoved`, which gets the babysit's one check fix turn.
+unless the merge group the queue last tested it on went red (KO-714): that
+is `QueueRemoved`, which gets the babysit's one check fix turn.
 """
 from time import monotonic
 
@@ -21,7 +21,7 @@ from holophyte.stop import stop_if_requested
 ENQUEUE_MUTATION = """
 mutation($pull: ID!, $sha: GitObjectID!) {
   enqueuePullRequest(input: {pullRequestId: $pull, expectedHeadOid: $sha}) {
-    mergeQueueEntry { position }
+    mergeQueueEntry { enqueuedAt }
   }
 }"""
 QUEUE_QUERY = """
@@ -29,19 +29,22 @@ query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       state merged mergeCommit { oid } isInMergeQueue
-      mergeQueueEntry { headCommit { oid } }
     }
   }
 }"""
 
 
+# A merge group's workflow run with one of these conclusions failed it.
+GROUP_RED = ("failure", "cancelled")
+
+
 class QueueLeft(Exception):
     """The pull request left the queue unmerged, or outstayed the wait;
-    `group` is the last merge-group commit named before a removal."""
+    `since` is GitHub's `enqueuedAt` for a removal, None otherwise."""
 
-    def __init__(self, why, group=None):
+    def __init__(self, why, since=None):
         super().__init__(why)
-        self.group = group
+        self.since = since
 
 
 class QueueRemoved(Exception):
@@ -54,14 +57,42 @@ class QueueRemoved(Exception):
         self.failed, self.group = failed, group
 
 
+def red_merge_group(target, pull, since):
+    """The merge-group commit the queue last tested the pull request on if
+    a workflow run there failed or was cancelled, else None. It is read off
+    the Actions runs of event `merge_group` on a `gh-readonly-queue/<base>/
+    pr-<number>-` branch created since `since`, the enqueue's `enqueuedAt`:
+    their head sha is the merge-group commit. `mergeQueueEntry.headCommit`
+    is not read: GitHub names it only "the head commit for this entry"."""
+    since_ms = pr_status._iso_ms(since)
+    if since_ms is None:
+        return None
+    answer = pr.rest(target, pull, "GET", f"repos/{pull.repo}/actions/runs"
+                     "?event=merge_group&per_page=100")
+    runs = answer.get("workflow_runs") if isinstance(answer, dict) else None
+    prefix = f"gh-readonly-queue/{pr.BASE}/pr-{pull.number}-"
+    ours = [r for r in runs or () if isinstance(r, dict)
+            and str(r.get("head_branch") or "").startswith(prefix)
+            and (pr_status._iso_ms(r.get("created_at")) or 0) >= since_ms]
+    if not ours:
+        return None
+    latest = max(ours, key=lambda r: pr_status._iso_ms(r["created_at"]))
+    group = latest.get("head_sha")
+    red = any(r.get("head_sha") == group and r.get("conclusion") in GROUP_RED
+              for r in ours)
+    return group if red and isinstance(group, str) and group else None
+
+
 def red_group(target, conn, run_id, pull, left):
-    """`QueueRemoved` for a removal `left` whose merge-group commit has red
-    checks, every one an Actions job; None when it parks instead: no
-    readable merge-group commit, no red check, or one without a job log."""
-    if left.group is None:
+    """`QueueRemoved` for a removal `left` whose merge group went red with
+    red checks there, every one an Actions job; None when it parks
+    instead: no red merge group found, no red check on it, or one without
+    a job log."""
+    if left.since is None:
         return None
     try:
-        runs = pr_status._check_runs_of(target, pull, left.group)
+        group = red_merge_group(target, pull, left.since)
+        runs = group and pr_status._check_runs_of(target, pull, group)
     except InfraFailure:
         return None
     failed = pr_status._failed_checks(runs)
@@ -71,8 +102,8 @@ def red_group(target, conn, run_id, pull, left):
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "merge_queue",
                            f"{pull.url} was removed from the merge queue:"
-                           f" {names} failed on merge group {left.group[:12]}")
-    return QueueRemoved(failed, left.group)
+                           f" {names} failed on merge group {group[:12]}")
+    return QueueRemoved(failed, group)
 
 
 def merge_queue_required(target, pull):
@@ -85,42 +116,43 @@ def merge_queue_required(target, pull):
 
 
 def enqueue_pull_request(target, pull, sha):
-    """Add the pull request to the queue pinned to head `sha`. GitHub's
-    refusal (an `errors` answer) is `MergeRefused`, as a REST merge's is."""
+    """Add the pull request to the queue pinned to head `sha`; GitHub's
+    `enqueuedAt` for it, None unnamed. GitHub's refusal (an `errors`
+    answer) is `MergeRefused`, as a REST merge's is."""
     node = pr.rest(target, pull, "GET",
                    f"repos/{pull.repo}/pulls/{pull.number}")["node_id"]
     try:
-        pr.graphql(target, pull, ENQUEUE_MUTATION, {"pull": node, "sha": sha})
+        data = pr.graphql(target, pull, ENQUEUE_MUTATION,
+                          {"pull": node, "sha": sha})
     except InfraFailure as e:
         if str(e).startswith("GitHub GraphQL refused"):
             raise pr.MergeRefused(str(e)) from None
         raise
+    entry = (data.get("enqueuePullRequest") or {}).get("mergeQueueEntry")
+    return (entry or {}).get("enqueuedAt")
 
 
 def land_through_queue(target, conn, run_id, pull, sha):
     """Enqueue at `sha`, then read the queue every `pr.CHECK_POLL_S` until
     the queue merges it; return the queue's merge commit."""
-    enqueue_pull_request(target, pull, sha)
+    since = enqueue_pull_request(target, pull, sha)
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "merge_queue",
                            f"added {pull.url} to the merge queue at {sha[:12]}")
     wait_s = merge_config(target).check_wait_sec
     deadline = monotonic() + wait_s
-    group = None  # The removal's entry is gone; keep the last one seen.
     while True:
         node = pr.graphql(target, pull, QUEUE_QUERY,
                           {"owner": pull.owner, "name": pull.name,
                            "number": pull.number}
                           )["repository"]["pullRequest"]
-        entry = (node.get("mergeQueueEntry") or {}).get("headCommit") or {}
-        group = entry.get("oid") or group
         # A merge can read before GitHub names its commit; read it again.
         oid = (node.get("mergeCommit") or {}).get("oid")
         if node.get("merged") and oid:
             return oid
         if not node.get("merged") and not node.get("isInMergeQueue"):
             raise QueueLeft("the pull request was removed from the merge queue"
-                            f" unmerged (state {node.get('state')})", group)
+                            f" unmerged (state {node.get('state')})", since)
         where = ("merged without a named merge commit" if node.get("merged")
                  else "still in the merge queue")
         remaining = deadline - monotonic()
