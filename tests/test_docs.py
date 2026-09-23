@@ -176,8 +176,68 @@ class UsageTests(unittest.TestCase):
         missing = [opt for opt in parser_option_strings()
                    if opt not in block.group(1)]
         self.assertEqual(missing, [])
+        self.assertIn("factory.py project", block.group(1))
         for name in TOPIC_DOCS:
             self.assertIn(f"docs/{name}.md", text)
+
+
+def section(text, title):
+    """The body under the `## title` heading, up to the next `## `."""
+    return text.split(f"\n## {title}\n", 1)[1].split("\n## ", 1)[0]
+
+
+class CliReferenceTests(unittest.TestCase):
+    """KO-626: `docs/reference/cli.md` has a row for every mode the parser
+    registers and every `project` verb the real entry point lists."""
+
+    PAGE = DOCS / "reference" / "cli.md"
+
+    def test_names_every_option_and_project_verb(self):
+        text = self.PAGE.read_text()
+        missing = [opt for opt in parser_option_strings() if opt not in text]
+        self.assertEqual(missing, [])
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "factory.py"), "project", "--help"],
+            capture_output=True, text=True, cwd=ROOT)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        choices = re.search(r"\{([\w,]+)\}", result.stdout)
+        self.assertIsNotNone(choices, result.stdout)
+        verbs = choices.group(1).split(",")
+        self.assertIn("add", verbs)
+        self.assertEqual([v for v in verbs if f"`project {v}" not in text], [])
+        self.assertIn("--store", text)
+
+    def test_failure_lines_board_needs_and_exit_codes(self):
+        text = self.PAGE.read_text()
+        for mode in ("`--report PROJECT`", "`--sweep PROJECT`"):
+            (row,) = [line for line in text.splitlines()
+                      if line.startswith(f"| {mode}")]
+            self.assertIn("`failures KIND: N`", row)
+        board = section(text, "Startup checks").split("need a `[board]`")[0]
+        for mode in ("`--close`", "`--worker`"):
+            self.assertIn(mode, board)
+        (exit_1,) = [line for line in text.splitlines()
+                     if line.startswith("| 1 |")]
+        for refusal in ("pause", "resume", "close-out", "hold", "`project`"):
+            self.assertIn(refusal, exit_1)
+
+
+class OperatingIntroTests(unittest.TestCase):
+    """KO-626: the pause section is about pausing; the merge-gate, re-point
+    and send-back notes that once followed the intro have their own heading."""
+
+    def test_pause_section_holds_only_pausing(self):
+        text = (DOCS / "operating.md").read_text()
+        pause = section(text, "Pause one run at its next safe point")
+        self.assertNotIn("--repoint", pause)
+        homes = [title for title in headings(text, 2)
+                 if "merge gate conflict" in section(text, title)]
+        self.assertEqual(len(homes), 1, homes)
+        notes = section(text, homes[0])
+        for flag in ("--repoint", "--babysit"):
+            self.assertIn(flag, notes)
+        self.assertNotIn("--pause", notes)
+        self.assertNotIn("--abort", notes)
 
 
 class PullRequestTemplateTests(unittest.TestCase):
