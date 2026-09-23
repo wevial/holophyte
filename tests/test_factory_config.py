@@ -300,9 +300,8 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
                                '[agents]\nimplementer = "harness run"\n').path
 
         self.assertEqual(self.project.config()["notifier"], {"channel": "#factory"})
-        self.assertEqual(holophyte.config.agent_command(self.project, "implement",
-                                                        "do it"),
-                         ["harness", "run", "do it"])
+        command = holophyte.config.agent_command(self.project, "implement", "do it")
+        self.assertEqual(command, ["harness", "run", "do it"])
         # And startup tolerates the table: a report against this config runs.
         with patch.object(holophyte.cli, "report") as report:
             holophyte.cli.cli([str(target), "--report"])
@@ -478,8 +477,7 @@ class LegacyAdoptionTests(ConfigTestCase):
         self.locate()
 
         self.assertEqual(self.project.store_path.read_bytes(), b"legacy store\n")
-        self.assertEqual(self.project.config()["agents"]["implementer"],
-                         "harness run")
+        self.assertEqual(self.project.config()["agents"]["implementer"], "harness run")
         self.assertFalse(holo.exists())
         self.assertIn(str(holo / "store.db"), self.printed)
         self.assertIn(str(self.project.store_path), self.printed)
@@ -494,8 +492,7 @@ class LegacyAdoptionTests(ConfigTestCase):
             self.project.holo_dir.joinpath("store.db-wal").read_bytes(), b"wal\n")
         self.assertEqual(
             self.project.holo_dir.joinpath("store.db-shm").read_bytes(), b"shm\n")
-        self.assertEqual(self.project.config()["agents"]["implementer"],
-                         "harness run")
+        self.assertEqual(self.project.config()["agents"]["implementer"], "harness run")
         self.assertEqual(sorted(p.name for p in self.root.iterdir()),
                          ["home", "repo"])
         self.assertIn(str(db), self.printed)
@@ -603,9 +600,8 @@ class AgentCommandTests(ConfigTestCase):
             holophyte.agents.agent(self.project, "review", "review it", self.WORKTREE,
                           base_sha="1" * 40, candidate_sha="2" * 40)
 
-        self.assertIsNone(
-            holophyte.config.agent_command(self.project, "implement",
-                                           "make the change"))
+        self.assertIsNone(holophyte.config.agent_command(
+            self.project, "implement", "make the change"))
         run.assert_called_once_with(
             ["claude", "-p", "make the change",
              "--model", "opus", "--effort", "high"],
@@ -622,8 +618,7 @@ class AgentCommandTests(ConfigTestCase):
         with patch.object(holophyte.agents, "run_capped") as run:
             run.return_value = (0, "implemented")
             result = holophyte.agents.agent(self.project, "implement",
-                                            "make the change",
-                                   self.WORKTREE)
+                                            "make the change", self.WORKTREE)
 
         self.assertEqual(result, "implemented")
         # The goal lands as the command's last argument — one argv element, so

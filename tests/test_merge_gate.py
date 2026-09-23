@@ -252,8 +252,7 @@ class StopOnFailureTests(LoopFixture):
         self.assertIn("continuing to the next ready ticket", out)
         self.assertEqual(self.read("SELECT status FROM tickets ORDER BY id"),
                          [("in_flight",), ("merged",)])
-        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
-                         [(None,)])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
         self.assertEqual(self.rc, 1)
 
     # One test per failure exit `main()` has: a `RunFailure`, an

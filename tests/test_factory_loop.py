@@ -1166,8 +1166,7 @@ class GateConflictImplementerTests(LoopFixture):
         sha = self.git("rev-parse", branch, cwd=wt).strip()
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        project_id = tickets.ensure_project(conn, StubProvider.TEAM,
-                                       str(self.target))
+        project_id = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
         ticket = holophyte.board.mirror_task(conn, project_id, a_task())
         run_id = store.claim(conn, project_id, ticket)
         tickets.transition(conn, ticket, "in_flight")
