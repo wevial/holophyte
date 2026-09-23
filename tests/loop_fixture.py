@@ -469,7 +469,8 @@ class MergeModeFixture(LoopFixture):
                 "nodes": nodes}}}}}
 
     def fake_route(self, push_exit=0, push_sh="", states=None,
-                   comments=(), open_pr=None, refuse_labels=False):
+                   comments=(), open_pr=None, close_exit=0,
+                   refuse_labels=False):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -491,7 +492,8 @@ class MergeModeFixture(LoopFixture):
         call's body kept a line each in `self.label_log`, and the label
         call refused when `refuse_labels` (KO-608).
         `push_exit` and `push_sh` control push failure and an optional
-        delay. A push
+        delay; a pull request's REST close (`PATCH`, KO-611) answers
+        closed, or fails with `close_exit`. A push
         the fake answers successfully also appends `REF SHA` to
         `self.push_log`: the refspec's source resolved in the pushing
         checkout at push time, which is the tip a real remote's branch
@@ -563,6 +565,9 @@ class MergeModeFixture(LoopFixture):
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
             '    *rules/branches/*) echo \'[]\'; exit 0;;\n'
+            '    *"--method PATCH repos/example/repo/pulls/"*) cat >/dev/null;'
+            f' [ {close_exit} -eq 0 ] || {{ echo "HTTP 422 refused" >&2;'
+            f' exit {close_exit}; }}; echo \'{{"state":"closed"}}\'; exit 0;;\n'
             f'    */issues/*/labels*) cat >> "{self.label_log}"; '
             f'echo >> "{self.label_log}"; '
             + ('echo "label refused" >&2; exit 1;;\n' if refuse_labels

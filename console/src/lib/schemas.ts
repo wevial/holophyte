@@ -9,7 +9,7 @@ export const supervisorSchema = z.looseObject({
 export const runSchema = z.looseObject({
   id: z.number(), ticket: z.string(), phase: z.string(),
   stop_requested: z.string().nullable().optional(),
-  stop_action: z.enum(["pause", "abort"]).nullable().optional(),
+  stop_action: z.enum(["pause", "abort", "abort_close"]).nullable().optional(),
   ticket_url: z.string().nullable().optional(), pr_url: z.string().nullable().optional(),
   heartbeat_age_ms: z.number(), elapsed_ms: z.number(),
   working_ms: z.number().nullable().optional(), work_started_ms: z.number().nullable().optional(),
@@ -22,6 +22,7 @@ export const runSchema = z.looseObject({
 export const statusSchema = z.looseObject({
   target: z.string(), project: z.string().optional(), schema_version: z.number().optional(),
   host: z.string(), now: z.number(),
+  admission: z.string().optional(), hold_note: z.string().nullable().optional(),
   daemon: z.looseObject({ started_ms: z.number(), pid: z.number() }).optional(),
   workers_on_previous_build: z.number().optional(),
   active_routes: z.record(z.string(), z.looseObject({

@@ -4,12 +4,16 @@ import { formatDuration } from "../lib/format";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { runKey, type ProjectGroup } from "../lib/runs";
 import type { Run } from "../lib/types";
+import { ReasonAction } from "./ReasonAction";
 import { RunRow } from "./RunRow";
 import { SettingsSheet } from "./SettingsSheet";
 
 /** One project's card: the daemon's host and supervisor line over a row
  *  per live run. The header's Settings entry opens the project's
- *  `SettingsSheet` over the page; closing it returns focus to the entry. */
+ *  `SettingsSheet` over the page; closing it returns focus to the entry.
+ *  Beside it, Hold for an `enabled` project, or the hold note and Release
+ *  hold for a `held` one, each posting its reason to the daemon;
+ *  `actionFetch` defaults to the page's own. */
 export function ProjectBlock({
   group,
   expandedRun,
@@ -17,6 +21,7 @@ export function ProjectBlock({
   renderDetail,
   deps = defaultPollDeps,
   sinceMs = 0,
+  actionFetch,
 }: {
   group: ProjectGroup;
   expandedRun: string | null;
@@ -25,6 +30,7 @@ export function ProjectBlock({
   deps?: { fetch: Fetch };
   /** Local milliseconds since `group.status` arrived, handed to each row. */
   sinceMs?: number;
+  actionFetch?: Fetch;
 }) {
   const { status } = group;
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -34,6 +40,7 @@ export function ProjectBlock({
     settingsButton.current?.focus();
   };
   const { supervisor, thresholds } = status;
+  const daemon = { base: group.base, actions: status.actions === true, fetch: actionFetch };
   const stale = isSupervisorStale(supervisor, thresholds.heartbeat_stale_ms);
   const dot = stale ? "bg-bad" : supervisor.state === "live" ? "bg-ok" : "bg-faint";
   const heartbeat = supervisor.heartbeat_age_ms == null ? "no hb" : `hb ${formatDuration(supervisor.heartbeat_age_ms)}`;
@@ -64,6 +71,13 @@ export function ProjectBlock({
             {seat}: fallback ({/devin/i.test(route.command ?? "") ? "Devin" : /codex/i.test(route.command ?? "") ? "Codex" : route.command})
           </span>
         ))}
+        {status.admission === "held" && (
+          <span data-hold-note className="text-[12px] font-semibold text-bad">
+            held{status.hold_note ? `: ${status.hold_note}` : ""}
+          </span>
+        )}
+        {status.admission === "enabled" && <ReasonAction daemon={daemon} route="/actions/hold" body={{}} label="Hold" />}
+        {status.admission === "held" && <ReasonAction daemon={daemon} route="/actions/release-hold" body={{}} label="Release hold" />}
         <button
           ref={settingsButton}
           type="button"
