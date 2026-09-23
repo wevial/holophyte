@@ -29,6 +29,7 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import finish_run
 from tests.ticket_url_fixture import assert_api_url
+from tests.transcript_fixture import TranscriptCase
 
 SLACK = test_serve.SLACK
 
@@ -113,8 +114,9 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
             rows = holophyte.report.report_rows(conn)
         finally:
             conn.close()
-        keys = ("ticket", "actual_min", "estimate_min", "ratio", "rounds",
-                "outcome", "host", "ended_ms", "merge_sha", "wall_min")
+        keys = ("ticket", "actual_min", "agent_min", "verify_min",
+                "estimate_min", "ratio", "rounds", "outcome", "host",
+                "ended_ms", "merge_sha", "wall_min")
         return [dict(zip(keys, row + (ended, sha, (ended - started) / MIN)),
                      ticket_url=None)
                 for row, ended, sha, started in zip(
@@ -167,6 +169,30 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
         self.assertIsNone(body["rows"][2]["estimate_min"])
         self.assertIsNone(body["rows"][2]["ratio"])
         self.assertAlmostEqual(body["rows"][0]["ratio"], 0.5)
+
+    def test_runs_split_actual_into_agent_and_verify(self):
+        self.seed_ended()
+        conn = store.open(str(self.db))
+        try:
+            # KO-2 was recorded before the store split out verify time.
+            for ident, working, verify in (("KO-1", 5 * MIN, 3 * MIN),
+                                           ("KO-2", 4 * MIN, None)):
+                conn.execute(
+                    "UPDATE runs SET workingMs = ?, verifyMs = ? WHERE ticketId ="
+                    " (SELECT id FROM tickets WHERE linearIdentifier = ?)",
+                    (working, verify, ident))
+            conn.commit()
+        finally:
+            conn.close()
+        self.start()
+
+        code, _headers, body = self.request("GET", "/runs")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(
+            [(r["actual_min"], r["agent_min"], r["verify_min"])
+             for r in body["rows"][:2]],
+            [(5, 2, 3), (4, 4, None)])
 
     def test_each_run_carries_its_end_as_ended_ms(self):
         self.seed_ended()
@@ -846,3 +872,55 @@ class ServeContractTests(ServeTestCase):
             with self.subTest(endpoint=name):
                 expected = json.loads((fixtures / f"{name}.json").read_text())
                 self.assertEqual(body, expected)
+
+
+class TurnTests(TranscriptCase):
+    def test_ordered_turns_and_default_off(self):
+        path = self.turns()
+        self.start()
+        code, _, body = self.request('GET', path)
+        self.assertEqual(code, 200)
+        rows = body['turns']
+        self.assertEqual([(r['role'], r['route'], r['seconds'], r['session_id'])
+                          for r in rows], [('implement', 'primary', 10, 'first'),
+                                           ('review', 'primary', 20, 'second'),
+                                           ('implement', 'fallback', 30, 'third')])
+        url = f"{path}/{rows[0]['id']}/transcript"
+        self.assertEqual(self.request('GET', url)[0], 404)
+
+    def test_no_turns_is_an_empty_list(self):
+        self.seed()
+        self.start()
+        self.assertEqual(self.request('GET', f'/runs/{self.run}/turns')[2],
+                         {'turns': []})
+
+    def test_transcripts_are_redacted_and_confined(self):
+        path = self.turns()
+        allowed = self.root / 'sessions'
+        file = self.transcript(allowed, 'registered-secret-value is here')
+        self.start(f'[serve]\ntranscripts = ["{allowed}"]\n'
+                   '[extra]\napi_key = "registered-secret-value"\n')
+        rows = self.request('GET', path)[2]['turns']
+        url = f"{path}/{rows[0]['id']}/transcript"
+        code, _, body = self.request('GET', url)
+        self.assertEqual(code, 200)
+        self.assertEqual(body, {'entries': [
+            {'speaker': 'assistant', 'text': '[redacted] is here'}]})
+        outside = self.root / file.name
+        file.rename(outside)
+        self.assertEqual(self.request('GET', url)[0], 404)
+        file.symlink_to(outside)
+        self.assertEqual(self.request('GET', url)[0], 404)
+        self.assertEqual(self.request('GET', f'{path}/999999/transcript')[0], 404)
+
+    def test_devin_export_under_a_single_configured_root(self):
+        path = self.turns()
+        folder = self.root / 'second'
+        folder.mkdir()
+        fixture = Path(__file__).parent / 'fixtures/transcripts/devin.json'
+        (folder / 'export.json').write_text(fixture.read_text())
+        self.start(f'[serve]\ntranscripts = "{self.root}"\n')
+        turn = self.request('GET', path)[2]['turns'][1]
+        code, _, body = self.request('GET', f"{path}/{turn['id']}/transcript")
+        self.assertEqual(code, 200)
+        self.assertIn('Exit code: 0', body['entries'][3]['text'])

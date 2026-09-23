@@ -1,5 +1,6 @@
 """Cooperative run stops and their durable continuation at stage boundaries."""
 import json
+import socket
 from contextvars import ContextVar
 from dataclasses import asdict
 
@@ -15,13 +16,15 @@ def stop_if_requested(conn, run_id, phase):
     if conn is None or run_id is None:
         return
     row = conn.execute(
-        "SELECT r.endedAt, r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl"
-        " FROM runs r JOIN projects p ON p.id = r.projectId"
+        "SELECT r.endedAt, r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl,"
+        " i.action FROM runs r JOIN projects p ON p.id = r.projectId"
         " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
         (run_id,)).fetchone()
     if row is None or row[0] is not None:
         return
-    _, branch, ticket_id, repo, note, pr_url = row
+    _, branch, ticket_id, repo, note, pr_url, action = row
+    if action == "abort":
+        end_aborted(conn, run_id)
     phase = "merge_gate" if pr_url else phase
     sha = preserve(Target.locate(repo), branch) if branch else None
     with _transaction(conn):
@@ -42,18 +45,61 @@ def stop_if_requested(conn, run_id, phase):
     raise store.RunEnded(run_id, "paused", note)
 
 
-def preserve(target, branch):
+class Aborted(store.RunEnded):
+    """This worker ended its own run `abandoned` for an operator's `--abort`."""
+
+
+def abort_requested(conn, run_id):
+    """Whether the live run carries an operator's pending abort."""
+    return conn.execute(
+        "SELECT 1 FROM runs r JOIN interventions i ON i.id = r.stopRequested"
+        " WHERE r.id = ? AND r.endedAt IS NULL AND i.action = 'abort'",
+        (run_id,)).fetchone() is not None
+
+
+def end_aborted(conn, run_id):
+    """Commit the tree as WIP, push it when a pull request is open, then end
+    the run `abandoned` with the note and park the ticket; the turn's
+    process group is the caller's to have killed. Merges, closes and
+    deletes nothing."""
+    from holophyte import pr
+    from holophyte.gates import InfraFailure
+    branch, ticket_id, repo, note, pr_url = conn.execute(
+        "SELECT r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl"
+        " FROM runs r JOIN projects p ON p.id = r.projectId"
+        " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
+        (run_id,)).fetchone()
+    target = Target.locate(repo)
+    sha = preserve(target, branch, "abort") if branch else None
+    if sha and pr_url:
+        try:
+            pr.push_branch(target, branch)
+        except InfraFailure as refused:
+            store.record_event(conn, run_id, "warning", f"abort push: {refused}")
+    with _transaction(conn):
+        ended, outcome, reason = conn.execute(
+            "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
+            (run_id,)).fetchone()
+        if ended is not None:
+            raise store.RunEnded(run_id, outcome, reason)
+        store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
+        store.walk_ticket(conn, ticket_id, "blocked_on_operator")
+        store.set_question(conn, ticket_id, note)
+    raise Aborted(run_id, "abandoned", note)
+
+
+def preserve(target, branch, why="pause"):
     """Reuse the reclaim path's environment exclusions and staging policy."""
     from holophyte.claim import paths, sh, stage_work, unstage_environment
+    from holophyte.environment_git import factory_identity
     wt = worktree_path(target, branch)
     if not wt.exists():
         return
     unstage_environment(target, wt)
     if sh(["git", "status", "--porcelain", "-uall", *paths(target)], cwd=wt):
         stage_work(target, wt)
-        sh(["git", "-c", "user.name=holophyte",
-            "-c", "user.email=holophyte@factory.invalid", "commit", "-m",
-            "WIP: preserve work at operator pause"], cwd=wt)
+        sh(["git", *factory_identity(wt), "commit", "-m",
+            f"WIP: preserve work at operator {why}"], cwd=wt)
 
     return sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
@@ -113,15 +159,63 @@ def command(target, identifier, note, *, resume=False):
         conn.close()
 
 
+def abort_command(target, identifier, note, *, provider):
+    """CLI adapter: record the abort, then end the run here when no worker
+    can still touch its tree, and project the park to the board as the
+    worker path does; otherwise a live worker ends it at its next heartbeat."""
+    from holophyte import board
+    from holophyte.operator import _operator_store, _ticket_by_identifier
+    conn = _operator_store(target)
+    try:
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        (run_id,) = conn.execute("SELECT COALESCE(activeRunId, lastRunId)"
+                                 " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+        if run_id is None:
+            raise ValueError(f"{identifier} has no run to abort")
+        store.abort(conn, run_id, note)
+        if not worker_gone(conn, run_id):
+            print(f"[holo2] {identifier}: abort requested; run {run_id} ends"
+                  " at its worker's next heartbeat (this host cannot confirm"
+                  " that worker gone; a silent one is the sweep's)")
+            return
+        try:
+            end_aborted(conn, run_id)
+        except Aborted:
+            board.mirror_push(conn, ticket_id, provider)
+            board.release_lease_label(target, conn, ticket_id, provider, run_id)
+        print(f"[holo2] {identifier}: run {run_id} had no live worker;"
+              " ended abandoned and parked")
+    except ValueError as refused:
+        raise SystemExit(f"[holo2] {refused}") from None
+    finally:
+        conn.close()
+
+
+def worker_gone(conn, run_id):
+    """Whether no worker can still write the run's tree: the run is parked,
+    or it was claimed on this host by a recorded process that no longer
+    exists. A stale heartbeat proves nothing -- a slow worker, another
+    host's pid, or a run with no recorded pid may still be writing -- so
+    those leave the abort pending rather than commit under a live writer."""
+    from holophyte.supervisor_lock import pid_alive
+    phase, host, pid = conn.execute(
+        "SELECT phase, host, workerPid FROM runs WHERE id = ?",
+        (run_id,)).fetchone()
+    if phase in store.PARKED_PHASES:
+        return True
+    return pid is not None and host == socket.gethostname() and not pid_alive(pid)
+
+
 def pending_requests(conn):
-    """Older read-only stores have no request column until their writer migrates."""
+    """Pending stops as run id -> (action, note); older read-only stores
+    have no request column until their writer migrates."""
     columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
     if "stopRequested" not in columns or not conn.execute(
             "SELECT 1 FROM sqlite_master WHERE name = 'interventions'").fetchone():
         return {}
-    return dict(conn.execute("SELECT r.id, i.guidance FROM runs r"
-                             " JOIN interventions i ON i.id = r.stopRequested"
-                             " WHERE r.endedAt IS NULL"))
+    return {run: (action, note) for run, action, note in conn.execute(
+        "SELECT r.id, i.action, i.guidance FROM runs r"
+        " JOIN interventions i ON i.id = r.stopRequested WHERE r.endedAt IS NULL")}
 
 
 def fix_state(sha, fixes, timed_out, addressed, model, pass_no, review_follows):

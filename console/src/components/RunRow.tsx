@@ -3,7 +3,7 @@ import { useRunDetail } from "../hooks/useRunDetail";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import type { ReactNode } from "react";
 import { isStale } from "../lib/derive";
-import { mergeLockNote, workingMs } from "../lib/runs";
+import { agentMs, boxClock, mergeLockNote } from "../lib/runs";
 import { formatDuration, formatSpan } from "../lib/format";
 import type { Run } from "../lib/types";
 import { PhasePill } from "./PhasePill";
@@ -66,13 +66,13 @@ export function RunRow({
         <span className="truncate font-mono text-[13px] font-semibold text-ink"><TicketLink ticket={run.ticket} ticket_url={run.ticket_url} /></span>
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[14px] text-body">{run.title ?? ""}</span>
-          {run.stop_requested && <span title={run.stop_requested} className="min-w-0 truncate text-[12px] text-muted">Pause requested: {run.stop_requested}</span>}
+          {run.stop_requested && <span title={run.stop_requested} className="min-w-0 truncate text-[12px] text-muted">{run.stop_action === "abort" ? "Abort" : "Pause"} requested: {run.stop_requested}</span>}
           <StrikePill strikes={run.strikes ?? 0} max={thresholds.strikes} />
         </span>
         <span>
           <PhasePill note={mergeLockNote(prDetail?.events)} phase={run.phase} pr_url={run.pr_url ?? prDetail?.run.pr_url} />
         </span>
-        <span><TimeBoxBar elapsedMs={workingMs(run, sinceMs)} boxMs={run.time_box_ms} />
+        <span><TimeBoxBar label={boxClock(run)} elapsedMs={agentMs(run, sinceMs)} boxMs={run.time_box_ms} />
           <span className="font-mono text-[12px] text-muted">wall {formatDuration(run.elapsed_ms + sinceMs)}</span></span>
         <span
           data-heartbeat={stale ? "stale" : "live"}

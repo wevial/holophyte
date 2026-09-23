@@ -1,4 +1,9 @@
-"""Expected store columns, independent of the schema DDL."""
+"""Expected store columns, independent of the schema DDL, and a store
+moved one version ahead the way a newer build's additive migration moves it."""
+import json
+import sqlite3
+
+import store
 
 DOCUMENTED_COLUMNS = {
     "projects": {
@@ -26,7 +31,7 @@ DOCUMENTED_COLUMNS = {
         "providerSessionId", "branch", "prUrl", "parkKind", "startedAt",
         "lastHeartbeat",
         "endedAt", "reviewRoundCount", "outcome", "outcomeReason", "failureKind",
-        "workingMs", "workStartedAt",
+        "workingMs", "workStartedAt", "verifyMs", "verifyStartedAt",
         # Store-owned: the merge commit a merged run landed on main as, so
         # the ticket-to-commit link is a column and not a grep of git log.
         "mergeSha",
@@ -41,10 +46,12 @@ DOCUMENTED_COLUMNS = {
         # saw, so `/attention`'s `pr_open` item carries them (KO-368).
         "prSeenChecks",
         "prSeenReview",
+        # Store-owned: the pull request's title the same read saw (KO-622).
+        "prSeenTitle",
         # Store-owned, not a documented field: §5 requires a resume to
         # "re-enter the phase it left" and leaves the mechanism to us, so
         # `resume()` reads the parked phase from this column.
-        "resumePhase", "stopRequested",
+        "resumePhase", "stopRequested", "workerPid",
         # Store-owned too: the ticket's estimate as it stood at the claim, so
         # a finished run's estimate-vs-actual does not move when the ticket's
         # own `timeBoxMs` is later re-mirrored.
@@ -88,3 +95,21 @@ DOCUMENTED_COLUMNS = {
     "loopRestarts": {"id", "projectId", "sha", "at", "returnedAt",
                      "reportedAt"},
 }
+
+
+def move_ahead_additively(path, **floor):
+    """Move the store at `path` to `SCHEMA_VERSION + 1` as an additive bump.
+
+    One nullable column added, the stamp raised and a `migrate` note written
+    in one transaction; `floor` is the note's `readableFrom=`, omitted for a
+    note without the key."""
+    newer = store.SCHEMA_VERSION + 1
+    note = json.dumps({"from": store.SCHEMA_VERSION, "to": newer, **floor,
+                       "build": "newer", "at": 0})
+    with sqlite3.connect(path) as conn:
+        conn.execute("ALTER TABLE runs ADD COLUMN futureNote TEXT")
+        conn.execute(
+            'INSERT INTO interventions (source, "trigger", action, note, at)'
+            " VALUES ('factory', 'manual', 'migrate', ?, 0)", (note,))
+        conn.execute(f"PRAGMA user_version = {newer}")
+    conn.close()

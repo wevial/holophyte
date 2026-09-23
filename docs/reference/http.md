@@ -309,9 +309,10 @@ What needs the operator, computed where the store is:
  "target": "/path/to/repo", "project": "/path/to/repo", "items": [
   {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000,
    "pr_url": null, "level": "attention"},
-  {"kind": "pr_open", "ticket": "KO-n", "run": 53, "pr_url": "https://github.com/example/repo/pull/2170",
-   "reason": "…", "asked_ms": 1788449000000,
-   "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2}, "level": "attention"},
+  {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
+   "pr_url": "https://github.com/example/repo/pull/2170", "reason": "…", "asked_ms": 1788449000000,
+   "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…"},
+   "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
    "pr_url": null, "level": "attention"},
   {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "attempt": 2,
@@ -333,8 +334,11 @@ the pull request as the loop's reconcile last read it: `number` from the
 URL, `checks` (`success`, `pending`, `failure`, null for a PR with no
 checks), `review` (GitHub's review decision lower-cased: `approved`,
 `changes_requested`, `review_required`, null when none is required) and
-`threads`, the review-thread count (`runs.prSeenChecks`, `prSeenReview`,
-`prSeenThreads`); all three facts are null for a run never polled. A `failed` item's `attempt` is the run's 1-based
+`threads`, the review-thread count, and `title`, the pull request's
+title (`runs.prSeenChecks`, `prSeenReview`, `prSeenThreads`,
+`prSeenTitle`); all four facts are null for a run never polled. The
+item's own `title` is the ticket's title, which the console shows when
+`pr.title` is null. A `failed` item's `attempt` is the run's 1-based
 attempt number. Every item that names a `run` carries its `pr_url`: the
 pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
 null when it opened none, so a console can link the parked question to
@@ -465,7 +469,10 @@ A daemon bound to anything but loopback runs with `[serve] token_file`
 Authorization: Bearer TOKEN
 ```
 
-The value is compared whole, in constant time; a missing header, another
+With `[serve] machine_token_file` also set, the contents of that file are
+accepted as `TOKEN` too, on every route that demands the project's token:
+one token for every daemon on the machine, beside the project's own.
+Each value is compared whole, in constant time; a missing header, another
 scheme or any other value is 401 with the body `{}` and no store access,
 and nothing about the attempt is logged. `GET /`, the console's files
 under it and `GET /peers` are served without the header, so the page can

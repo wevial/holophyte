@@ -52,7 +52,7 @@ test("/runs/N/files is requested on expand and again on each poll tick, alongsid
   await act(settle);
   expect(count("/runs/91/files")).toBe(1);
   expect(count("/runs/91")).toBe(1);
-  expect(result.current.files).toEqual({ files, error: null, status: null, loading: false });
+  expect(result.current.files).toEqual({ files, error: null, status: null, pending: false, loading: false });
 
   clock.now += 10_000;
   await act(async () => {
@@ -86,6 +86,7 @@ test("404 and 409 carry the daemon's own error text with their status; another s
     files: null,
     error: "branch refs/heads/task/ko-232 cannot be resolved",
     status: 409,
+    pending: false,
     loading: false,
   });
   const noRange = hook(json(409, "the run recorded neither a branch nor a merge commit"));
@@ -93,7 +94,7 @@ test("404 and 409 carry the daemon's own error text with their status; another s
   expect(noRange.result.current.error).toBe("the run recorded neither a branch nor a merge commit");
   const missing = hook(json(404, "no such run"));
   await act(settle);
-  expect(missing.result.current).toEqual({ files: null, error: "no such run", status: 404, loading: false });
+  expect(missing.result.current).toEqual({ files: null, error: "no such run", status: 404, pending: false, loading: false });
   const broken = hook(answer(504, JSON.stringify({ error: "git did not answer within 10s", run: 7 })));
   await act(settle);
   expect(broken.result.current.error).toBe(`${BASE}/runs/7/files answered 504`);
@@ -104,6 +105,7 @@ test("404 and 409 carry the daemon's own error text with their status; another s
     files: null,
     error: `${BASE}/runs/7/files answered 404`,
     status: 404,
+    pending: false,
     loading: false,
   });
 });

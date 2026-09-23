@@ -50,7 +50,12 @@ from holophyte.config_tables import (
     sweep_config,
 )
 from holophyte.dispatch import SWEPT
-from holophyte.environment_git import paths, stage_work, unstage_environment
+from holophyte.environment_git import (
+    factory_identity,
+    paths,
+    stage_work,
+    unstage_environment,
+)
 from holophyte.gates import (
     GroupKill,
     InfraFailure,
@@ -81,6 +86,8 @@ from holophyte.review import (
     criteria_brief,
     criteria_findings,
     evidence_brief,
+    scope_brief,
+    scope_files,
 )
 from holophyte.runs import (
     RunSwept,
@@ -89,8 +96,8 @@ from holophyte.runs import (
     review_round_cap,
     set_phase,
 )
-from holophyte.stop import boundary, continuation, stop_if_requested
-from store.working import effective_work
+from holophyte.stop import Aborted, boundary, continuation, stop_if_requested
+from store.working import agent_work
 
 # The paths a run works against, plus the config they carry, are a `Target`
 # (below): built once by `cli()` from the command line and passed to every
@@ -132,7 +139,7 @@ def run_task(target, task, conn=None, run_id=None, provider=None):
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused
     except store.RunEnded as ended:
-        if ended.outcome == "paused":
+        if ended.outcome == "paused" or isinstance(ended, Aborted):
             ticket_id = store.read.run_snapshot(run.conn, run.run_id).ticketId
             board.mirror_push(run.conn, ticket_id, run.provider)
             board.release_lease_label(run.target, run.conn, ticket_id,
@@ -456,7 +463,7 @@ def _open_findings(conn, run_id):
 
 
 def _check_run_cap(target, conn, run_id, budget_min, sha):
-    """Refuse dispatch when effective work plus the scaled turn exceeds the cap.
+    """Refuse dispatch when agent work plus the scaled turn exceeds the cap.
 
     The ceiling remains timeBoxMs × budget_scale × run_cap. Preserve candidate
     and findings diagnostics; unmeasured or storeless runs have no known spend."""
@@ -468,12 +475,12 @@ def _check_run_cap(target, conn, run_id, budget_min, sha):
     scale = budget_scale(target)
     cap = sweep_config(target).run_cap
     box_ms = run.timeBoxMs * scale
-    spent_ms = effective_work(run, int(time() * 1000))
+    spent_ms = agent_work(run, int(time() * 1000))
     if spent_ms is None:
         return
     if spent_ms + budget_min * scale * 60000 <= box_ms * cap:
         return
-    reason = (f"out of time: {spent_ms / 60000:.1f} min spent of a "
+    reason = (f"out of time: {spent_ms / 60000:.1f} min of agent work against a "
               f"{box_ms / 60000:.0f} min box (cap {cap:g}x); candidate "
               f"preserved at {sha[:12]}; open findings: "
               f"{_open_findings(conn, run_id)}")
@@ -531,7 +538,9 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=()):
     """Implement the ticket and return its SHA; open with reuse conflicts."""
     commands = (f"\n\nThese verify commands must pass before review and again "
-                f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
+                f"before merge:\n\n{verify_cmd}\n\nThe full unit suite runs "
+                f"as a pull request check; do not run it in the worktree. Run "
+                f"only the commands listed above." if verify_cmd else "")
     # A reclaimed run can already be old; refuse a turn that would exceed
     # its remaining budget.
     _check_run_cap(target, conn, run_id, budget_min, start_sha)
@@ -578,12 +587,9 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                    cwd=wt).splitlines()
         if dirty:
             stage_work(target, wt)
-            # The identity is pinned for the same reason the reuse WIP
-            # commit pins it: a rescue commit is the factory's, and a
-            # target with no committer configured must not make it raise.
-            sh(["git", "-c", "user.name=holophyte",
-                "-c", "user.email=holophyte@factory.invalid",
-                "commit", "-q", "-m",
+            # The identity is chosen as the reuse WIP commit's is: the
+            # target's configured one, the factory's pins when it has none.
+            sh(["git", *factory_identity(wt), "commit", "-q", "-m",
                 f"WIP: implementer budget fired mid-edit ({task_id});"
                 " not verified"], cwd=wt)
             head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
@@ -634,8 +640,9 @@ def _verify_brief(verify_cmd, ok, out):
     return (f"The ticket's verification commands and the target's baseline "
             f"({count} commands) were run and "
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n"
-            + ("The suite has been run by the factory at this commit; do not run "
-               "the full suite again, run only focused tests needed to check a "
+            + ("The ticket's checks and the target's baseline passed at this "
+               "commit; the full suite runs as a pull request check. Do not run "
+               "the full suite, run only focused tests needed to check a "
                "specific concern.\n" if ok else ""))
 
 
@@ -700,6 +707,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
             verdict = pending["verdict"]
         else:
             round_started = int(time() * 1000)
+            scope = scope_files(wt, ticket, base_sha, sha)
             with heartbeat_while(conn, run_id, beat_s):
                 verdict, decision, first_reply = _review_reply(target,
                     f"You are a READ-ONLY code reviewer. Review commit {sha} using "
@@ -711,6 +719,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f"{ticket}\n\n"
                     + _verify_brief(verify_cmd, ok, out)
                     + criteria_brief(criteria)
+                    + scope_brief(wt, ticket, base_sha, sha)
                     + evidence_brief(target, wt, task_id,
                                      ticket_template.parse(ticket).evidence_states)
                     + "Do not modify anything. End your reply with exactly one "
@@ -722,7 +731,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
             record_round(target, conn, run_id, rnd, "review", verdict, verify_cmd,
                          ok, out,
                          started_at=round_started, criteria=criteria, root=wt,
-                         prior_reply=first_reply)
+                         prior_reply=first_reply, scope=scope)
             if decision == "MALFORMED":
                 reason = "reviewer returned no verdict line twice"
                 print(f"[holo2] round {rnd}: {reason}")
@@ -730,7 +739,7 @@ def _review_rounds(target, conn, run_id, provider, task_id, branch, wt, beat_s,
                                    "review_route")
 
             # Unmet criteria or nonexistent named witnesses block approval.
-            unwitnessed = criteria_findings(verdict, criteria, wt)
+            unwitnessed = criteria_findings(verdict, criteria, wt, scope=scope)
             if unwitnessed:
                 print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
                       "witnessed; treating as REQUEST_CHANGES")

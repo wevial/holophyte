@@ -38,7 +38,8 @@ flowchart TB
 ```
 
 Solid arrows carry work. Dotted arrows are projections: the store is
-written by the loop and the supervisor only, and Linear, `FINDINGS.md`, the
+written by the loop, the supervisor and the serve daemon's action
+endpoints, all through the store API, and Linear, `FINDINGS.md`, the
 daemon's JSON and the drawer are all views of it. Everything in the box
 runs on one machine; splitting the drawer or the operator onto a second
 one is [Across machines](../operating/hosts.md).

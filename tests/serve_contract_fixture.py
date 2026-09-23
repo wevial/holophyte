@@ -21,7 +21,8 @@ def normalize_contract(value, key=""):
     if key in {"host", "target", "project"}:
         return "writer" if key == "host" else "/repo"
     if key in {"id", "event_id", "run_id", "pid", "now", "at", "started_ms",
-               "ended_ms", "work_started_ms", "approved_at"}:
+               "ended_ms", "work_started_ms", "verify_started_ms",
+               "approved_at"}:
         return 1 if key in {"id", "event_id", "run_id", "pid"} else NOW
     return value
 

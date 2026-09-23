@@ -111,6 +111,10 @@ CREATE TABLE IF NOT EXISTS runs (
     timeBoxMs         INTEGER,
     workingMs         INTEGER, -- NULL means historical/unmeasured
     workStartedAt     INTEGER, -- epoch milliseconds of the active work call
+    -- The verify part of `workingMs` (KO-635): the time box judges agent
+    -- work, `workingMs - verifyMs`. NULL for a run claimed before the column.
+    verifyMs          INTEGER,
+    verifyStartedAt   INTEGER, -- set with workStartedAt when the span is a verify
     -- The ticket's contract as it stood at the claim: its title and the two
     -- lists §2's pickability predicate reads, as one canonical JSON document
     -- (`contract_snapshot()` below). A run is worked to the ticket it was
@@ -144,6 +148,9 @@ CREATE TABLE IF NOT EXISTS runs (
     -- place "where is this run executing" can be answered from. Nullable:
     -- rows older than the column are not backfilled.
     host              TEXT,
+    -- The pid of the process that claimed the run and works it on `host`,
+    -- so `--abort` can tell a dead worker from a live one (KO-592).
+    workerPid         INTEGER,
     -- §5's "re-enters the phase it left": the phase a parked run goes back
     -- to, written by whoever parks it and consumed by `resume()`. Not a
     -- state-model field — the doc states the rule and leaves the mechanism
@@ -192,6 +199,10 @@ CREATE TABLE IF NOT EXISTS runs (
     prSeenThreads     INTEGER,
     prSeenChecks      TEXT,
     prSeenReview      TEXT,
+    -- The pull request's title as the same read saw it, so `/attention`'s
+    -- `pr_open` item names the pull request and not only its number
+    -- (KO-622). NULL until a read recorded one.
+    prSeenTitle       TEXT,
     UNIQUE (ticketId, attempt)
 );
 
@@ -338,7 +349,31 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 29 records typed run failure kinds with prefix backfill (KO-584).
 # Version 30 adds disabled project admission and registration (KO-586).
 # Version 31 types run park reasons and backfills legacy questions (KO-583).
-SCHEMA_VERSION = 32
+# Version 33 records the pull request title the reconcile read (KO-622).
+# Version 34 records verify time apart from agent work on runs (KO-635).
+SCHEMA_VERSION = 34
+
+# The oldest SCHEMA_VERSION whose builds can still read and write a store at
+# SCHEMA_VERSION (KO-661). Each migration records it in its `migrate` note,
+# and a build behind the store opens it unmigrated when its own version is at
+# or above the floor that note names. On each bump, keep it for an additive
+# change and raise it to the new version for any other:
+#
+# * Additive: a new table or index; a new column that is nullable, or
+#   NOT NULL with a DEFAULT (an older build's INSERTs name their columns);
+#   a backfill that writes only columns the same bump adds.
+# * Not additive: a dropped or renamed column or table; a new or tightened
+#   CHECK, UNIQUE or NOT NULL on an existing column; an enum value removed
+#   or renamed, since the newer CHECK rejects an older build's write.
+# * An added enum value is additive only on a column an older build records
+#   or displays and never branches on (`interventions.action`,
+#   `runEvents.level`, `ledger.kind`, `runs.failureKind`). It is not on
+#   `runs.phase` (bump 32's `paused` raises KeyError in an older
+#   `set_phase()`), `projects.admission` (bump 30's `disabled` is claimed
+#   on by a build that tests only for `held`), `tickets.status` (it decides
+#   pickability) or `runs.parkKind` (the claim and the serve daemon choose a
+#   path from it).
+READABLE_FROM = SCHEMA_VERSION
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -363,12 +398,15 @@ CREATE INDEX IF NOT EXISTS ledger_runId ON ledger (runId);
 class SchemaNewer(SystemExit):
     """A newer factory migrated this store; an old loop must re-execute."""
 
-    def __init__(self, path, version):
+    def __init__(self, path, version, floor=None):
         self.version = version
+        self.floor = floor
+        found = ("it records no readable-from floor" if floor is None
+                 else f"it is readable from version {floor} on")
         super().__init__(
             f"{path}: store schema version {version} is newer than the"
             f" version {SCHEMA_VERSION} this build understands; refusing"
-            " to open it with an older factory")
+            f" to open it with an older factory ({found})")
 
 
 class SchemaOlder(SystemExit):
@@ -380,6 +418,34 @@ class SchemaOlder(SystemExit):
             f"store at {path} is schema {version}; this build expects {expected};"
             " start the loop or the serve daemon to migrate it, or run the"
             " command from the build that wrote it")
+
+
+class SchemaError(sqlite3.DatabaseError):
+    """The store's schema names a table it does not have (KO-664).
+
+    A foreign key to a missing table fails every insert into its table, so
+    the store is refused as a whole, naming each dangling key, instead of
+    letting writes fail one by one."""
+
+    def __init__(self, dangling):
+        self.dangling = dangling
+        super().__init__("store schema references missing tables: " + "; ".join(
+            f"{table}.{column} references {parent}, which does not exist"
+            for table, column, parent in dangling))
+
+
+def _refuse_dangling_references(conn):
+    """Raise `SchemaError` if any foreign key names a table that is absent."""
+    tables = [name for (name,) in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")]
+    present = {name.lower() for name in tables}
+    dangling = [
+        (table, row[3], row[2])
+        for table in tables
+        for row in conn.execute(f'PRAGMA foreign_key_list("{table}")')
+        if row[2].lower() not in present]
+    if dangling:
+        raise SchemaError(dangling)
 
 
 class _Connection(sqlite3.Connection):
@@ -407,21 +473,57 @@ def _connect_with_version(path):
             time.sleep(2 ** attempt)
 
 
+def latest_migration_note(conn):
+    """The newest `migrate` note as JSON text, or None when there is none.
+
+    A store whose `interventions` table has no `note` column, or no such
+    table at all, has no migration history to read."""
+    if "note" not in {r[1] for r in conn.execute("PRAGMA table_info(interventions)")}:
+        return None
+    row = conn.execute(
+        "SELECT note FROM interventions WHERE action = 'migrate'"
+        " AND note IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
+    return None if row is None else row[0]
+
+
+def _readable_from(conn, version):
+    """The floor the migration to `version` recorded, or None.
+
+    A note that records another target version is not this version's
+    floor: a stamp moved without its migration record has none."""
+    note = latest_migration_note(conn)
+    try:
+        detail = json.loads(note) if note is not None else {}
+    except ValueError:
+        return None
+    if not isinstance(detail, dict) or detail.get("to") != version:
+        return None
+    floor = detail.get("readableFrom")
+    return floor if isinstance(floor, int) else None
+
+
 def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry point open()
     """Open the store at `path` in WAL mode and return the connection.
 
     Refuse a newer `user_version` with `SchemaNewer` (a `SystemExit`) before
-    writing. Migrate older stores with `init()` and create missing indexes.
-    With `migrate=False`, refuse older stores with `SchemaOlder` and skip
-    index creation. Require WAL so supervisor reads can overlap loop writes;
-    a filesystem that cannot enable it raises rather than silently degrading."""
+    writing, unless its migrate note's `readableFrom` floor is at or below
+    this build's version; such a store is opened as it is, never migrated or
+    indexed, so its stamp is never lowered. Migrate older stores with
+    `init()` and create missing indexes. With `migrate=False`, refuse older
+    stores with `SchemaOlder` and skip index creation. Refuse with
+    `SchemaError` a store whose foreign keys name a missing table. Require
+    WAL so supervisor reads can overlap loop writes; a filesystem that
+    cannot enable it raises rather than silently degrading."""
     # Before anything that writes, including the WAL switch below: a store a
     # newer module stamped is refused without touching it, so the file is
     # still exactly what that newer build left for it to reopen.
     conn, version = _connect_with_version(path)
-    if version > SCHEMA_VERSION:
-        conn.close()
-        raise SchemaNewer(path, version)
+    newer = version > SCHEMA_VERSION
+    if newer:
+        floor = _readable_from(conn, version)
+        if floor is None or floor > SCHEMA_VERSION:
+            conn.close()
+            raise SchemaNewer(path, version, floor)
     # Referential integrity is off by default in SQLite and is per-connection,
     # so it has to be asserted on every open, not once at init().
     conn.execute("PRAGMA foreign_keys = ON")
@@ -429,23 +531,27 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
     # `BEGIN IMMEDIATE` waits for on the write lock, and stating it on the
     # connection keeps it from depending on how sqlite3 applied the argument.
     conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_S * 1000}")
-    mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
-    if mode.lower() != "wal":
-        conn.close()
-        raise sqlite3.DatabaseError(
-            f"{path}: could not enable WAL mode (journal_mode is {mode!r})"
-        )
     try:
         if not migrate:
             if version < SCHEMA_VERSION:
                 raise SchemaOlder(path, version, SCHEMA_VERSION)
-            return conn
-        if version < SCHEMA_VERSION:
+        elif version < SCHEMA_VERSION:
             # 0 is every store made before the stamp existed, and a fresh
             # file; either way the ladder in init() carries it to the
             # current version and stamps it there, in one transaction.
+            # init() refuses a dangling key before it commits, so a store
+            # this refuses is left as it was found.
             init(conn)
-        conn.executescript(INDEXES)
+        # After migrating, not before: an older store may reference a table
+        # only the ladder creates. Read-only, ahead of the WAL switch and the
+        # index writes, both of which persist.
+        _refuse_dangling_references(conn)
+        mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+        if mode.lower() != "wal":
+            raise sqlite3.DatabaseError(
+                f"{path}: could not enable WAL mode (journal_mode is {mode!r})")
+        if migrate and not newer:
+            conn.executescript(INDEXES)
     except BaseException:
         conn.close()
         raise
@@ -462,6 +568,7 @@ def open(path, *, migrate=True):  # noqa: A001 - the ticket names this entry poi
 # rebuilding. The schema test compares migrated and fresh databases.
 ADDED_COLUMNS = (
     ("runs", "stopRequested", "stopRequested INTEGER REFERENCES interventions(id)"),
+    ("runs", "workerPid", "workerPid INTEGER"),
     ("runs", "parkKind", "parkKind TEXT "
      + _enums.check_clause("parkKind", _enums.ParkKind)),
     ('runs', 'failureKind', 'failureKind TEXT '
@@ -480,6 +587,8 @@ ADDED_COLUMNS = (
     ("interventions", "projectId", "projectId INTEGER REFERENCES projects (id)"),
     ("runs", "workingMs", "workingMs INTEGER"),
     ("runs", "workStartedAt", "workStartedAt INTEGER"),
+    ("runs", "verifyMs", "verifyMs INTEGER"),
+    ("runs", "verifyStartedAt", "verifyStartedAt INTEGER"),
     (
         "runs",
         "timeBoxMs",
@@ -557,6 +666,11 @@ ADDED_COLUMNS = (
         "prSeenReview TEXT",
     ),
     (
+        "runs",
+        "prSeenTitle",
+        "prSeenTitle TEXT",
+    ),
+    (
         "projects",
         "boardAskedAt",
         "boardAskedAt INTEGER",
@@ -600,17 +714,18 @@ def init(conn):
     tables inside one transaction with foreign keys checked before commit.
     Repeated initialization preserves existing rows and the schema version.
     """
-    conn.executescript(SCHEMA)
-    foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
     foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
     conn.execute("PRAGMA foreign_keys = OFF")
-    # Everything after the executescript rolls back together on failure: a
-    # migration that died must not leave an open transaction holding its
-    # half-done work, because the next caller's `executescript` would issue
-    # an implicit COMMIT and make the half-state durable — the exact hazard
-    # `_transaction()`'s docstring warns joined writers about.
+    # Everything rolls back together on failure, the tables SCHEMA creates
+    # included: a migration that died must not leave an open transaction
+    # holding its half-done work, because the next caller's `executescript`
+    # would issue an implicit COMMIT and make the half-state durable — the
+    # exact hazard `_transaction()`'s docstring warns joined writers about.
+    # The BEGIN opens the script because `executescript` commits whatever is
+    # pending before it runs, and would otherwise run SCHEMA in autocommit.
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        conn.executescript("BEGIN IMMEDIATE;\n" + SCHEMA)
+        foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.execute(_INTERVENTIONS_DDL)
         for table, column, ddl in ADDED_COLUMNS:
@@ -647,6 +762,9 @@ def init(conn):
         if version < SCHEMA_VERSION:
             _record_migration(conn, version)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION:d}")
+        # A migration that left a key naming a missing table rolls back here
+        # rather than committing a store that refuses its own writes.
+        _refuse_dangling_references(conn)
         if conn.execute("PRAGMA foreign_key_check").fetchall() != foreign_key_errors:
             raise sqlite3.IntegrityError("foreign key violation during migration")
         conn.commit()
@@ -712,7 +830,8 @@ def _record_migration(conn, version):
     except (OSError, subprocess.SubprocessError):
         build = "unknown"
     at = int(time.time() * 1000)
-    note = json.dumps({"from": version, "to": SCHEMA_VERSION, "build": build,
+    note = json.dumps({"from": version, "to": SCHEMA_VERSION,
+                       "readableFrom": READABLE_FROM, "build": build,
                        "pid": os.getpid(), "ppid": os.getppid(),
                        "argv": sys.argv, "user": getpass.getuser(), "at": at})
     conn.execute(
@@ -739,7 +858,8 @@ def _widen_interventions_action(conn):
                          "'restart_supervisor'", "'launch_loop'",
                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
                          "'migrate'", "'hold'", "'release_hold'",
-                         "'register_project'", "'disable'", "'pause'")):
+                         "'register_project'", "'disable'", "'pause'",
+                         "'abort'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —
@@ -752,18 +872,24 @@ def _widen_interventions_action(conn):
         raise sqlite3.IntegrityError(
             f"{orphans} interventions row(s) reference runs that do not"
             " exist; repair them before this store can migrate")
+    # Built beside the live table and renamed into place, never the live
+    # table renamed away: SQLite rewrites every key that points at a renamed
+    # table, so `runs.stopRequested` would follow it to a name the DROP
+    # then removes (KO-664).
     with _transaction(conn):
-        conn.execute("ALTER TABLE interventions RENAME TO interventions_old")
-        conn.execute(_INTERVENTIONS_DDL)
+        conn.execute(_INTERVENTIONS_DDL.replace(
+            "CREATE TABLE IF NOT EXISTS interventions (",
+            "CREATE TABLE interventions_new (", 1))
         conn.execute(
-            "INSERT INTO interventions"
+            "INSERT INTO interventions_new"
             ' (id, runId, source, "trigger", "action", question, guidance, at,'
             ' projectId, note)'
             ' SELECT id, runId, source, "trigger",'
             "   CASE \"action\" WHEN 'shepherd' THEN 'babysit'"
             '   ELSE "action" END, question, guidance, at, projectId, note'
-            " FROM interventions_old")
-        conn.execute("DROP TABLE interventions_old")
+            " FROM interventions")
+        conn.execute("DROP TABLE interventions")
+        conn.execute("ALTER TABLE interventions_new RENAME TO interventions")
 
 
 @contextlib.contextmanager
@@ -825,12 +951,13 @@ def _project_startup_events(conn):
     columns = conn.execute("PRAGMA table_info(runEvents)").fetchall()
     if not any(row[1] == "runId" and row[3] for row in columns):
         return
-    conn.execute("ALTER TABLE runEvents RENAME TO runEvents_old")
+    # Create, copy, drop, rename in: see `_widen_interventions_action()`.
     ddl = SCHEMA.split("CREATE TABLE IF NOT EXISTS runEvents (", 1)[1].split(
         ");", 1)[0]
-    conn.execute("CREATE TABLE runEvents (" + ddl + ")")
+    conn.execute("CREATE TABLE runEvents_new (" + ddl + ")")
     conn.execute(
-        "INSERT INTO runEvents (id, runId, seq, level, kind, summary, payload, at,"
-        " projectId) SELECT id, runId, seq, level, kind, summary, payload, at,"
-        " projectId FROM runEvents_old")
-    conn.execute("DROP TABLE runEvents_old")
+        "INSERT INTO runEvents_new (id, runId, seq, level, kind, summary,"
+        " payload, at, projectId) SELECT id, runId, seq, level, kind, summary,"
+        " payload, at, projectId FROM runEvents")
+    conn.execute("DROP TABLE runEvents")
+    conn.execute("ALTER TABLE runEvents_new RENAME TO runEvents")

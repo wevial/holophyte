@@ -1,4 +1,5 @@
 import { formatAge, formatClock, formatSpan } from "./format";
+import { agentMs } from "./runs";
 import type { AttentionItem, Run, Status } from "./types";
 
 /** The item kinds `/attention` sends today (holophyte/serve.py `attention()`),
@@ -174,6 +175,15 @@ export interface PrFacts {
   checks?: string | null;
   review?: string | null;
   threads?: number | null;
+  title?: string | null;
+}
+
+/** A `pr_open` item's name for its pull request: the title the reconcile
+ *  last read (`pr.title`), else the ticket's own `title`; null when the
+ *  daemon sent neither. */
+export function prTitle(item: AttentionItem): string | null {
+  const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PrFacts) : null;
+  return str(pr?.title) || str(item.title) || null;
 }
 
 const CHECKS: Record<string, Fact> = {
@@ -288,8 +298,9 @@ function joinMeta(...parts: (string | null)[]): string | null {
 function overTimeBox(item: AttentionItem, runs: Run[] | undefined): string {
   const id = num(item.run);
   const run = id == null ? undefined : runs?.find((candidate) => candidate.id === id);
-  if (!run || run.time_box_ms == null || !(run.working_ms != null && run.working_ms > run.time_box_ms)) return "";
-  return ` and ${formatSpan(run.working_ms! - run.time_box_ms)} over its ${formatAge(run.time_box_ms)} time box`;
+  const spent = run == null ? null : agentMs(run);
+  if (!run || run.time_box_ms == null || !(spent != null && spent > run.time_box_ms)) return "";
+  return ` and ${formatSpan(spent - run.time_box_ms)} over its ${formatAge(run.time_box_ms)} time box`;
 }
 
 /** One row's text from an `/attention` item. Fields a newer daemon adds

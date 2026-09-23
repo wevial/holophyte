@@ -217,5 +217,43 @@ class BabysitterTests(unittest.TestCase):
                          r"\*\*Babysitter\.\*\*")
 
 
+class ArchitectureTruthTests(unittest.TestCase):
+    """KO-593: the architecture pages say what the store and the daemon do.
+    The schema version is read from the constant, so a bump that leaves the
+    page behind fails here; the other checks are phrase present or absent."""
+
+    ARCH = DOCS / "architecture"
+    # What the pages said before the action endpoints and the per-ticket
+    # lease; each is false of the code now.
+    RETIRED = ("cannot write", "only writers", "supervisor only",
+               "one run per project")
+
+    def test_data_page_prints_the_current_schema_version(self):
+        import store.schema
+        text = (self.ARCH / "data.md").read_text()
+        printed = re.search(r"`PRAGMA user_version`, currently (\d+)", text)
+        self.assertIsNotNone(printed, "data.md prints no schema version")
+        self.assertEqual(int(printed.group(1)), store.schema.SCHEMA_VERSION)
+
+    def test_no_page_says_the_daemon_cannot_write_or_names_two_writers(self):
+        found = [f"{path.name}: {phrase}"
+                 for path in sorted(self.ARCH.glob("*.md"))
+                 for phrase in self.RETIRED
+                 if phrase in re.sub(r"\s+", " ", path.read_text())]
+        self.assertEqual(found, [])
+        data = (self.ARCH / "data.md").read_text()
+        self.assertRegex(data, r"\| `tickets` \|[^\n]*`activeRunId` is the lease")
+        self.assertNotRegex(data, r"\| `projects` \|[^\n]*`activeRunId` is the lease")
+        for name in ("processes.md", "components.md", "overview.md"):
+            text = re.sub(r"\s+", " ", (self.ARCH / name).read_text())
+            self.assertIn("store API", text, name)
+
+    def test_serve_unit_names_the_bearer_token_as_its_boundary(self):
+        unit = (ROOT / "deploy" / "holophyte-serve@.service").read_text()
+        self.assertIn("bearer token", unit)
+        self.assertIn("[serve] token_file", unit)
+        self.assertNotIn("no authentication", unit)
+
+
 if __name__ == "__main__":
     unittest.main()

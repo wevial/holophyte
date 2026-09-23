@@ -557,6 +557,34 @@ def pause(conn, run_id, note, source="human", now=None):
     return request
 
 
+def abort(conn, run_id, note, source="human", now=None):
+    """Record an emergency stop before marking the live run, atomically.
+
+    Shares `stopRequested` with `pause()`; the intervention's action tells the
+    two apart, and an abort supersedes a pending pause. A run that has ended,
+    or sits where the state model draws no edge to `failed`, is refused
+    before anything is written."""
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT r.endedAt, r.outcome, r.phase, r.stopRequested, i.action"
+            " FROM runs r LEFT JOIN interventions i ON i.id = r.stopRequested"
+            " WHERE r.id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no run {run_id}")
+        ended, outcome, phase, pending, action = row
+        if ended is not None:
+            raise ValueError(f"run {run_id} already ended with outcome {outcome}")
+        if TERMINAL_PHASES["abandoned"] not in RUN_PHASE_TRANSITIONS[phase]:
+            raise ValueError(f"run {run_id} is {phase}; it cannot end abandoned")
+        if action == "abort":
+            return pending
+        request = record_intervention(conn, run_id, "abort", note,
+                                      source=source, guidance=note, now=now)
+        conn.execute("UPDATE runs SET stopRequested = ? WHERE id = ?",
+                     (request, run_id))
+    return request
+
+
 def resume(conn, run_id, guidance=None, source="human", now=None):
     """Resume `run_id`, optionally with `guidance`; return the phase re-entered.
 
@@ -663,6 +691,16 @@ INTERVENTION_TRIGGERS = tuple(e.value for e in _enums.InterventionTrigger)
 INTERVENTION_ACTIONS = tuple(e.value for e in _enums.InterventionAction)
 
 
+def _validate_intervention(action, note, source, trigger):
+    for kind, value, allowed in (("action", action, INTERVENTION_ACTIONS),
+                                 ("source", source, INTERVENTION_SOURCES),
+                                 ("trigger", trigger, INTERVENTION_TRIGGERS)):
+        if value not in allowed:
+            raise ValueError(f"unknown intervention {kind} {value!r}")
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError(f"note must be non-empty text, got {note!r}")
+
+
 def record_intervention(conn, run_id, action, note, source="human",
                         trigger="manual", question=None, guidance=None,
                         now=None):
@@ -672,14 +710,7 @@ def record_intervention(conn, run_id, action, note, source="human",
     entry, while question/guidance retain their intervention meanings. Redirect
     requires a question. `now` defaults to current epoch milliseconds.
     An enclosing transaction joins the event and row to the caller's write."""
-    if action not in INTERVENTION_ACTIONS:
-        raise ValueError(f"unknown intervention action {action!r}")
-    if source not in INTERVENTION_SOURCES:
-        raise ValueError(f"unknown intervention source {source!r}")
-    if trigger not in INTERVENTION_TRIGGERS:
-        raise ValueError(f"unknown intervention trigger {trigger!r}")
-    if not isinstance(note, str) or not note.strip():
-        raise ValueError(f"note must be non-empty text, got {note!r}")
+    _validate_intervention(action, note, source, trigger)
     if action == "redirect" and (
             not isinstance(question, str) or not question.strip()):
         raise ValueError("a redirect records the question it asked;"
@@ -921,3 +952,31 @@ def _set_admission(conn, project_id, note, state, action):
         conn.execute("UPDATE projects SET admission = ?, holdNote = ? WHERE id = ?",
                      (state, note if state != "enabled" else None, project_id))
         return intervention
+
+
+def record_project_intervention(conn, action, note, source="human",
+                                trigger="manual", project_id=None, now=None):
+    """Record a decision that belongs to the project, not to one run (KO-665).
+
+    Validated like `record_intervention()`; `project_id` defaults to the
+    store's only project. Only `migrate` may be recorded with no project."""
+    _validate_intervention(action, note, source, trigger)
+    with _transaction(conn):
+        projects = [row[0] for row in conn.execute("SELECT id FROM projects")]
+        if project_id is None and len(projects) == 1:
+            project_id = projects[0]
+        if project_id is not None and project_id not in projects:
+            raise ValueError(f"no project {project_id}")
+        if project_id is None and action != "migrate":
+            raise ValueError(f"{action} needs a project and the store has"
+                             f" {len(projects)}; pass project_id")
+        return conn.execute(
+            'INSERT INTO interventions (projectId, source, "trigger", action,'
+            " note, at) VALUES (?, ?, ?, ?, ?, ?)",
+            (project_id, source, trigger, action, note,
+             now if now is not None else int(time.time() * 1000))).lastrowid
+
+
+# The schema repair lives beside this module for its size; it records its
+# decision through `record_project_intervention()` above.
+from .repair import repair_references  # noqa: E402,F401

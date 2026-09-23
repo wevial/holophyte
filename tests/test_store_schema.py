@@ -1,6 +1,7 @@
 """Schema bootstrap contract for the v2 store."""
 from __future__ import annotations
 
+import contextlib
 import getpass
 import json
 import os
@@ -8,6 +9,7 @@ import socket
 import sqlite3
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -16,7 +18,7 @@ from unittest.mock import Mock, call, patch
 import store
 import store.schema
 import store.tickets
-from tests.schema_fixture import DOCUMENTED_COLUMNS
+from tests.schema_fixture import DOCUMENTED_COLUMNS, move_ahead_additively
 from tests.ticket_url_fixture import assert_schema_url
 
 A_PROJECT = (
@@ -482,6 +484,66 @@ HOT_FOREIGN_KEYS = {
     ("reviewRounds", "runId"),
     ("runEvents", "runId"),
 }
+
+
+class ReadableFromTests(unittest.TestCase):
+    """A build one additive version behind keeps its store (KO-661)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+        conn = store.open(self.path)
+        project = store.ensure_project(conn, "team", "/repos/example")
+        ticket = store.mirror_ticket(conn, project, "issue", "KO-1", "test")
+        self.run = store.claim(conn, project, ticket, now=1000)
+        conn.close()
+
+    def schema_state(self):
+        with sqlite3.connect(self.path) as raw:
+            state = (raw.execute("PRAGMA user_version").fetchone(),
+                     raw.execute("SELECT type, name, tbl_name, sql"
+                                 " FROM sqlite_master ORDER BY name").fetchall())
+        raw.close()
+        return state
+
+    def test_a_fresh_store_records_this_builds_floor(self):
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+        note = json.loads(store.schema.latest_migration_note(conn))
+        self.assertEqual(note["readableFrom"], store.schema.READABLE_FROM)
+
+    def test_an_additive_bump_at_the_floor_opens_and_takes_heartbeats(self):
+        move_ahead_additively(self.path, readableFrom=store.SCHEMA_VERSION)
+        newer = store.SCHEMA_VERSION + 1
+        for beat, migrate in enumerate((True, False), start=2):
+            with self.subTest(migrate=migrate):
+                conn = store.open(self.path, migrate=migrate)
+                self.addCleanup(conn.close)
+                self.assertTrue(store.heartbeat(conn, self.run, now=beat * 1000))
+                conn.close()
+                with sqlite3.connect(self.path) as raw:
+                    self.assertEqual(
+                        raw.execute("PRAGMA user_version").fetchone(), (newer,))
+                    self.assertEqual(raw.execute(
+                        "SELECT lastHeartbeat FROM runs WHERE id = ?",
+                        (self.run,)).fetchone(), (beat * 1000,))
+                raw.close()
+
+    def test_a_floor_above_this_build_or_no_floor_is_refused_untouched(self):
+        cases = (("floor above", {"readableFrom": store.SCHEMA_VERSION + 1},
+                  f"readable from version {store.SCHEMA_VERSION + 1}"),
+                 ("no floor", {}, "no readable-from floor"))
+        for name, floor, found in cases:
+            with self.subTest(name):
+                self.setUp()
+                move_ahead_additively(self.path, **floor)
+                before = self.schema_state()
+                for migrate in (True, False):
+                    with self.assertRaises(store.SchemaNewer) as caught:
+                        store.open(self.path, migrate=migrate)
+                    self.assertIn(found, str(caught.exception))
+                self.assertEqual(self.schema_state(), before)
 
 
 class StoreSchemaVersionTests(unittest.TestCase):
@@ -1126,6 +1188,26 @@ class Version15MigrationTests(unittest.TestCase):
                 ' \'shepherd\', 1)', (run_id,))
 
 
+@contextlib.contextmanager
+def _this_threads_sleeps():
+    """Record the retry's back-off on the test thread; every other sleep is real.
+
+    Other threads sleep through the same `time.sleep`, and so does this one:
+    a fresh store's migration stamp runs `git` with a timeout, whose
+    `Popen.wait` polls in doubling sleeps when the child is slow to exit."""
+    recorded, real_sleep, test_thread = Mock(), time.sleep, threading.get_ident()
+    retry = store.schema._connect_with_version.__code__
+
+    def sleep(seconds):
+        if (threading.get_ident() != test_thread
+                or sys._getframe(1).f_code is not retry):
+            return real_sleep(seconds)
+        return recorded(seconds)
+
+    with patch("store.schema.time.sleep", sleep):
+        yield recorded
+
+
 class OpenRetryTests(unittest.TestCase):
     def test_first_statement_retries_close_connections_then_return_usable_store(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1136,7 +1218,7 @@ class OpenRetryTests(unittest.TestCase):
                 conn.execute.side_effect = sqlite3.OperationalError("locking protocol")
             with patch("store.schema.sqlite3.connect",
                        side_effect=[*failed, connect(path)]) as opening, \
-                    patch("store.schema.time.sleep") as sleep:
+                    _this_threads_sleeps() as sleep:
                 conn = store.open(path)
             self.addCleanup(conn.close)
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
@@ -1145,6 +1227,43 @@ class OpenRetryTests(unittest.TestCase):
             self.assertEqual(sleep.call_args_list, [call(1), call(2)])
             for failed_conn in failed:
                 failed_conn.close.assert_called_once()
+
+    def test_sleeps_other_than_the_retrys_are_real_and_unrecorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "store.db")
+            connect = sqlite3.connect
+            stop, napped, naps = threading.Event(), threading.Event(), []
+
+            def nap():
+                began = time.monotonic()
+                time.sleep(0.001)
+                naps.append(time.monotonic() - began)
+                napped.set()
+
+            def keep_napping():
+                while not stop.is_set():
+                    nap()
+
+            # The second failure's close naps on the test thread, as a
+            # subprocess wait inside store.open() does.
+            failed = [Mock(), Mock(**{"close.side_effect": nap})]
+            for conn in failed:
+                conn.execute.side_effect = sqlite3.OperationalError("locking protocol")
+
+            with patch("store.schema.sqlite3.connect",
+                       side_effect=[*failed, connect(path)]), \
+                    _this_threads_sleeps() as sleep:
+                background = threading.Thread(target=keep_napping)
+                background.start()
+                try:
+                    self.assertTrue(napped.wait(5))
+                    conn = store.open(path)
+                finally:
+                    stop.set()
+                    background.join()
+            self.addCleanup(conn.close)
+            self.assertEqual(sleep.call_args_list, [call(1), call(2)])
+            self.assertTrue(all(elapsed >= 0.001 for elapsed in naps), naps)
 
     def test_attempt_limit_and_nontransient_errors(self):
         for reason, attempts, sleeps in (
@@ -1157,7 +1276,7 @@ class OpenRetryTests(unittest.TestCase):
                     with patch("store.schema.sqlite3.connect", return_value=failed,
                                side_effect=(sqlite3.OperationalError(reason)
                                             if at_connect else None)) as opening, \
-                            patch("store.schema.time.sleep") as sleep:
+                            _this_threads_sleeps() as sleep:
                         with self.assertRaisesRegex(sqlite3.OperationalError, reason):
                             store.open("unused.db")
                     self.assertEqual(opening.call_count, attempts)
@@ -1246,7 +1365,9 @@ class Version26EnumMigrationTests(unittest.TestCase):
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
         after['runs'] = [tuple(value for column, value in zip(columns, row)
                                if column not in {'parkKind', 'failureKind',
-                                                 'stopRequested'})
+                                                 'stopRequested', 'workerPid',
+                                                 'prSeenTitle', 'verifyMs',
+                                                 'verifyStartedAt'})
                          for row in after['runs']]
         self.assertEqual(after, self.before)
         self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],
@@ -1332,6 +1453,108 @@ class ParkKindMigrationTests(unittest.TestCase):
                 "SELECT parkKind FROM runs WHERE id = 1").fetchone(),
                              ("pull_request",))
 
+
+
+class RebuildKeepsForeignKeysTests(unittest.TestCase):
+    """A rebuild that renamed the live table away made SQLite rewrite every
+    key pointing at it to the `_old` name, then dropped that table: on
+    2026-09-22 `runs.stopRequested` was left referencing
+    `interventions_old` and no claim could create a run (KO-664)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "store.sqlite3"
+        conn = store.open(self.path)
+        self.project = store.tickets.ensure_project(conn, "team-1", "/repos/h")
+        conn.commit()
+        conn.close()
+
+    def rebuild_on_open(self, *statements):
+        """Apply `statements` to the store as an older build left it, stamp
+        it one version back and reopen it with this build."""
+        raw = sqlite3.connect(self.path)
+        raw.executescript("".join(f"{sql};\n" for sql in statements))
+        raw.execute(f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1:d}")
+        raw.commit()
+        raw.close()
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+        return conn
+
+    @staticmethod
+    def parent_of(conn, table, column):
+        return [row[2] for row in conn.execute(
+            f"PRAGMA foreign_key_list({table})") if row[3] == column]
+
+    def test_widening_interventions_keeps_runs_referencing_it(self):
+        raw = sqlite3.connect(self.path)
+        (ddl,) = raw.execute("SELECT sql FROM sqlite_master"
+                             " WHERE name = 'interventions'").fetchone()
+        raw.close()
+        self.assertIn("'abort'", ddl)
+        narrowed = ddl.replace(", 'abort'", "").replace("'abort', ", "")
+        self.assertNotIn("'abort'", narrowed)
+
+        conn = self.rebuild_on_open("DROP TABLE interventions", narrowed)
+
+        self.assertIn("'abort'", conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'interventions'"
+        ).fetchone()[0])
+        self.assertEqual(self.parent_of(conn, "runs", "stopRequested"),
+                         ["interventions"])
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone(), (1,))
+        ticket = store.tickets.mirror_ticket(
+            conn, self.project, linear_issue_id="issue-1",
+            linear_identifier="KO-1", title="ticket 1")
+        run_id = store.claim(conn, self.project, ticket, now=1_700_000_000_000)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM runs WHERE id = ?",
+                                      (run_id,)).fetchone(), (1,))
+
+    def test_rebuilding_run_events_keeps_references_to_it(self):
+        raw = sqlite3.connect(self.path)
+        (ddl,) = raw.execute("SELECT sql FROM sqlite_master"
+                             " WHERE name = 'runEvents'").fetchone()
+        raw.close()
+        required = ddl.replace("runId   INTEGER REFERENCES runs (id)",
+                               "runId   INTEGER NOT NULL REFERENCES runs (id)")
+        self.assertNotEqual(required, ddl)
+
+        conn = self.rebuild_on_open(
+            "DROP TABLE runEvents", required,
+            "CREATE TABLE eventNotes (id INTEGER PRIMARY KEY,"
+            " eventId INTEGER REFERENCES runEvents (id))")
+
+        self.assertFalse(any(row[1] == "runId" and row[3] for row in
+                             conn.execute("PRAGMA table_info(runEvents)")))
+        self.assertEqual(self.parent_of(conn, "eventNotes", "eventId"),
+                         ["runEvents"])
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_open_refuses_a_schema_referencing_a_missing_table(self):
+        raw = sqlite3.connect(self.path)
+        # Not WAL, so the switch open() would make is a header write too.
+        raw.execute("PRAGMA journal_mode = DELETE")
+        raw.execute("CREATE TABLE strays (id INTEGER PRIMARY KEY,"
+                    " ghostId INTEGER REFERENCES ghosts (id))")
+        # A table the migration itself would create: refusing must not
+        # leave it behind either.
+        raw.execute("DROP TABLE loopRestarts")
+        raw.execute(f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1:d}")
+        raw.commit()
+        raw.close()
+        before = self.path.read_bytes()
+
+        with self.assertRaisesRegex(store.schema.SchemaError,
+                                    r"strays\.ghostId.*\bghosts\b"):
+            store.open(self.path)
+
+        self.assertEqual(self.path.read_bytes(), before)
+        raw = sqlite3.connect(self.path)
+        self.addCleanup(raw.close)
+        self.assertEqual(raw.execute("PRAGMA journal_mode").fetchone(),
+                         ("delete",))
 
 if __name__ == "__main__":
     unittest.main()

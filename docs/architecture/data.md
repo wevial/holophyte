@@ -1,10 +1,11 @@
 # Store and state
 
 The store is the source of truth. Linear, `FINDINGS.md`, the daemon's JSON
-and the drawer are views of it; the loop and the supervisor are its only
-writers. It is one SQLite file per target in WAL mode, at
+and the drawer are views of it; the loop, the supervisor and the serve
+daemon's action endpoints write it, all through the store API. It is one
+SQLite file per target in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 10) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 34) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -19,8 +20,8 @@ after a claim is contract drift.
 
 | Table | One row per | Written by | Notes |
 | --- | --- | --- | --- |
-| `projects` | target | loop | `activeRunId` is the lease: one run per project at a time |
-| `tickets` | Linear issue the loop has mirrored | loop | status machine below; `blockedQuestion` when parked for a human; the contract snapshot the merge gate compares against |
+| `projects` | target | loop | `activeRunId` is a legacy column, neither asserted nor written since the lease moved to `tickets` |
+| `tickets` | Linear issue the loop has mirrored | loop | `activeRunId` is the lease: held by one run at a time, renewed by that run's heartbeat; status machine below; `blockedQuestion` when parked for a human; the contract snapshot the merge gate compares against |
 | `runs` | attempt at a ticket | loop, supervisor (end only) | phase machine below; `lastHeartbeat`, `timeBoxMs`, `outcome`, `outcomeReason`, `outcomeClass` (`work` or `infra`), `resumePhase`, `host` |
 | `reviewRounds` | review or adjudication round | loop | verdict, structured findings, their fingerprint, the verify result shown to the reviewer, the agent route |
 | `runEvents` | narrative event | loop, supervisor | phase changes, warnings, sweeps; the story `FINDINGS.md` does not tell. `level` ∈ `narrative, detail`; a `detail` row of kind `crash` carries the traceback of a run that crashed in its `payload`, its summary the one-line reason |

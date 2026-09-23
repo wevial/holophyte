@@ -1,4 +1,4 @@
-import { workingMs } from "../lib/runs";
+import { agentMs, workingMs } from "../lib/runs";
 import { useState } from "react";
 import {
   CHIP_LABELS,
@@ -80,7 +80,7 @@ export function NeedsYou({
       sinceMs && typeof item.heartbeat_age_ms === "number"
         ? { ...item, heartbeat_age_ms: item.heartbeat_age_ms + sinceMs }
         : item;
-    const runs = sinceMs ? status.runs.map((run) => ({ ...run, elapsed_ms: run.elapsed_ms + sinceMs, working_ms: workingMs(run, sinceMs) })) : status.runs;
+    const runs = sinceMs ? status.runs.map((run) => ({ ...run, elapsed_ms: run.elapsed_ms + sinceMs, working_ms: workingMs(run, sinceMs), agent_ms: run.agent_ms == null ? run.agent_ms : agentMs(run, sinceMs) })) : status.runs;
     return describe(aged, status.thresholds, { now: status.now + sinceMs, runs });
   };
 

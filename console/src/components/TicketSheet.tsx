@@ -1,5 +1,5 @@
 import { formatDuration } from "../lib/format";
-import { workingMs } from "../lib/runs";
+import { agentMs, boxClock } from "../lib/runs";
 import { useEffect, useId, useRef } from "react";
 import type { BoardCard } from "../lib/board";
 import { STATE_LABELS } from "../lib/board";
@@ -87,7 +87,7 @@ export function TicketSheet({
           <h2 id={titleId} className="text-[15px] font-semibold leading-[1.35] text-ink">
             {title}
           </h2>
-          {card.run && <><span>working {workingMs(card.run) == null ? "n/a" : formatDuration(workingMs(card.run)!)} · wall {formatDuration(card.run.elapsed_ms)}</span><BoxBar elapsedMs={workingMs(card.run)} boxMs={card.run.time_box_ms} height={5} /></>}
+          {card.run && <><span>{boxClock(card.run)} {agentMs(card.run) == null ? "n/a" : formatDuration(agentMs(card.run)!)} · wall {formatDuration(card.run.elapsed_ms)}</span><BoxBar elapsedMs={agentMs(card.run)} boxMs={card.run.time_box_ms} height={5} /></>}
         </header>
         <div data-sheet-body className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-[13px] leading-[1.5] text-body">
           {state === "loading" ? (

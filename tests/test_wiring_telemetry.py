@@ -33,6 +33,7 @@ import holophyte.report  # noqa: E402 - after the sys.path insert above
 import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 from tests.phase_fixture import finish_run  # noqa: E402 - after sys.path setup
 
 
@@ -147,7 +148,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
                        conn=None, run_id=None, review_round=None):
             turns.append(role)
             if role != "implement":
-                return replies.pop(0)
+                return answer_scope(goal, replies.pop(0))
             n = sum(1 for turn in turns if turn == "implement")
             (Path(cwd) / f"change{n}.txt").write_text(f"work {n}\n")
             self.git("add", "-A", cwd=cwd)
@@ -303,11 +304,12 @@ class ReportTests(ReportStoreCase):
         # The host column is this machine's own name: the claim stamped it.
         host = socket.gethostname()
         self.assertEqual([line.split() for line in lines[:4]], [
-            ["ticket", "actual", "estimate", "ratio", "rounds", "outcome",
-             "rejected", "host"],
-            ["KO-1", "5.0", "25", "0.20", "2", "merged", "0", host],
-            ["KO-2", "40.0", "20", "2.00", "1", "failed", "0", host],
-            ["KO-3", "3.0", "25", "0.12", "0", "merged", "0", host],
+            ["ticket", "actual", "agent", "verify", "estimate", "ratio",
+             "rounds", "outcome", "rejected", "host"],
+            ["KO-1", "5.0", "5.0", "0.0", "25", "0.20", "2", "merged", "0", host],
+            ["KO-2", "40.0", "40.0", "0.0", "20", "2.00", "1", "failed", "0",
+             host],
+            ["KO-3", "3.0", "3.0", "0.0", "25", "0.12", "0", "merged", "0", host],
         ])
         # 0.20, 2.00 and 0.12: a mean the one blown budget carries, and a
         # median that says what a typical ticket actually costs.
@@ -323,8 +325,9 @@ class ReportTests(ReportStoreCase):
 
         lines = holophyte.report.report_lines(self.conn)[3:]
 
-        self.assertEqual(lines[4].split(), ["KO-4", "7.0", "n/a", "n/a", "0",
-                                            "merged", "0", socket.gethostname()])
+        self.assertEqual(lines[4].split(), ["KO-4", "7.0", "7.0", "0.0", "n/a",
+                                            "n/a", "0", "merged", "0",
+                                            socket.gethostname()])
         self.assertEqual(lines[5], "4 runs · 3 with an estimate · "
                                    "mean ratio 0.77 · median ratio 0.20")
 

@@ -25,6 +25,8 @@ import store.working
 # Alphabetical. Edit this list in the same change that adds or removes a
 # public function, and say why in the commit.
 EXPECTED = [
+    # KO-592: `--abort`, an emergency stop recorded before the run is marked.
+    "abort",
     # KO-258: the operator's `--approve`, the release of a run parked in
     # `awaiting_merge_approval`, one transaction like `requeue`.
     "approve",
@@ -66,12 +68,17 @@ EXPECTED = [
     # `runs.prSeen*` columns in one statement, for `park()` and the loop's
     # reconcile alike.
     "record_pr_seen",
+    # KO-665: a project-level decision, recorded with no run.
+    "record_project_intervention",
     "record_review_round",
     "record_strike",
     "record_supervisor_heartbeat",
     "pause",
     "release",
     "release_hold",
+    # KO-665: a foreign key naming a dropped table, rewritten by API with a
+    # dry run and a recorded decision instead of by hand in `sqlite_master`.
+    "repair_references",
     # KO-297: the operator's `--repoint`, a parked candidate moved to a
     # rebuilt branch tip as a recorded intervention instead of raw SQL.
     "repoint",
@@ -122,6 +129,9 @@ EXPECTED_CLASSES = [
 # them so `store.open()` still answers.
 EXPECTED_SCHEMA = [
     "init",
+    # KO-661: the newest migrate note, read by the report header and by
+    # open() for the floor an older build may open a newer store from.
+    "latest_migration_note",
     "open",
     "transaction",
 ]
@@ -235,7 +245,8 @@ class StoreSurfaceTests(unittest.TestCase):
         for module, expected in ((store, EXPECTED),
                                  (store.schema, EXPECTED_SCHEMA),
                                  # KO-457: persisted work boundaries and live read.
-                                 (store.working, ["effective_work", "settle_work",
+                                 (store.working, ["agent_work", "effective_work",
+                                                  "settle_work", "verify_work",
                                                   "working"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
@@ -290,7 +301,7 @@ class StoreSurfaceTests(unittest.TestCase):
 
     def test_operator_api_named_in_agents_md_is_present(self):
         names = operator_api_names()
-        self.assertEqual(len(names), 6, names)
+        self.assertEqual(len(names), 8, names)
         for name in names:
             with self.subTest(name=name):
                 self.assertIn(name, public_functions())

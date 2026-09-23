@@ -116,7 +116,10 @@ KNOWN_KEYS = {
 KNOWN_KEYS["supervisor"] = frozenset(SUPERVISOR_KEYS)
 KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
 KNOWN_KEYS["board"] = frozenset(BOARD_KEYS)
-KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS)
+# The capture allow-list stays out of `MERGE_KEYS`, which `merge_config()`
+# checks through `MERGE_VALUES`; `capture_environment()` checks it instead.
+KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS) | frozenset(
+    {"capture_env_source", "capture_env_allow"})
 KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
 KNOWN_KEYS["questions"] = frozenset(("url", "key_env", "min_confidence"))
@@ -538,20 +541,22 @@ def check_worktree_setup(target):
     exist yet, so there is nothing here to resolve them against. Startup
     settles the shape of the table; the worktree settles the rest. The cap
     the commands run under, the branch prefix and the carry list are
-    checked here too, for the same reason. `check_document()` runs the same
-    call over a `PUT /config` candidate, so the two cannot drift.
+    checked here too, for the same reason, and so is `[merge]`'s capture
+    allow-list, which shares the `[worktree]` reader. `check_document()` runs
+    the same call over a `PUT /config` candidate, so the two cannot drift.
     """
     setup_commands(target)
     setup_timeout(target)
     branch_prefix(target)
     carry_directories(target)
     worktree_environment(target)
+    capture_environment(target)
 
 
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def parse_environment(text):
+def parse_environment(text, label="env_source"):
     """Read dotenv assignments without evaluating or unquoting their values."""
     values = {}
     for number, line in enumerate(text.split("\n"), 1):
@@ -562,7 +567,7 @@ def parse_environment(text):
             line = line[7:].lstrip()
         name, separator, value = line.partition("=")
         if not separator or not ENV_NAME.fullmatch(name):
-            raise ValueError(f"env_source: invalid assignment on line {number}")
+            raise ValueError(f"{label}: invalid assignment on line {number}")
         values[name] = value
     return values
 
@@ -573,38 +578,56 @@ def worktree_environment(target):
     Relative sources resolve beside config.toml. All source values are held
     only in memory for redaction, including values excluded from the checkout.
     """
+    return allowed_environment(target, "worktree", "env_source", "env_allow")
+
+
+def capture_environment(target):
+    """`[merge]`'s capture-only allow-list, read like `[worktree]`'s.
+
+    Only `pr_media._capture()` adds these values to a command's environment:
+    they are never written to the worktree and never reach agent turns,
+    verify commands or `isolation.environment()`.
+    """
+    return allowed_environment(target, "merge", "capture_env_source",
+                               "capture_env_allow")
+
+
+def allowed_environment(target, name, source_key, allow_key):
+    """Both-or-neither `source_key`/`allow_key` in table `name`, read and
+    checked; None when neither is set. Every source value is registered for
+    redaction, and a refusal names keys and variables, never a value."""
     from holophyte.redact import register_values
 
-    table = config_table(target, "worktree")
-    if "env_source" not in table and "env_allow" not in table:
+    table = config_table(target, name)
+    if source_key not in table and allow_key not in table:
         return None
-    prefix = f"[holo2] {target.config_path}: [worktree] "
-    for key in ("env_source", "env_allow"):
+    prefix = f"[holo2] {target.config_path}: [{name}] "
+    for key in (source_key, allow_key):
         if key not in table:
             raise SystemExit(prefix + f"missing {key}; "
                              "both environment keys are required")
-    source, allow = table["env_source"], table["env_allow"]
+    source, allow = table[source_key], table[allow_key]
     if not isinstance(source, str) or not source.strip():
-        raise SystemExit(prefix + "env_source must be a non-empty path")
+        raise SystemExit(prefix + f"{source_key} must be a non-empty path")
     if not isinstance(allow, list) or any(
-            not isinstance(name, str) or not ENV_NAME.fullmatch(name)
-            for name in allow):
-        raise SystemExit(prefix + "env_allow must be a list of variable names matching "
-                         "[A-Za-z_][A-Za-z0-9_]*")
+            not isinstance(item, str) or not ENV_NAME.fullmatch(item)
+            for item in allow):
+        raise SystemExit(prefix + f"{allow_key} must be a list of variable names "
+                         "matching [A-Za-z_][A-Za-z0-9_]*")
     path = Path(source).expanduser()
     if not path.is_absolute():
         path = Path(target.config_path).parent / path
     try:
-        values = parse_environment(path.read_text(encoding="utf-8"))
+        values = parse_environment(path.read_text(encoding="utf-8"), source_key)
     except (OSError, UnicodeError):
-        raise SystemExit(prefix + "env_source could not be read as UTF-8") from None
+        raise SystemExit(prefix + f"{source_key} could not be read as UTF-8") from None
     except ValueError as error:
         raise SystemExit(prefix + str(error)) from None
     register_values(values.values())
-    missing = [name for name in allow if name not in values]
+    missing = [item for item in allow if item not in values]
     if missing:
-        raise SystemExit(prefix + "env_source lacks: " + ", ".join(missing))
-    return {name: values[name] for name in allow}
+        raise SystemExit(prefix + f"{source_key} lacks: " + ", ".join(missing))
+    return {item: values[item] for item in allow}
 
 
 def setup_timeout(target):
@@ -762,7 +785,9 @@ def console_config(target):
 # startup error; a loopback bind ignores it. The file, not the token, lives
 # in config, so the config can be committed to a host's notes and the
 # token cannot. `holophyte.serve` reads the file and holds it to a private
-# mode.
+# mode. `machine_token_file` (KO-647) names a second file, one token for
+# every daemon on the machine, accepted wherever the project's token is;
+# `token_file` stays for sharing one project without the machine.
 # `actions` opts the daemon into the three `POST /actions/...` routes
 # (KO-348): restart the supervisor unit, start the loop unit, requeue a
 # ticket. Off, every `/actions/` path is 404 and the daemon writes nothing.
@@ -776,28 +801,32 @@ def console_config(target):
 # which is command execution on the writer host at the next loop start.
 SERVE_KEYS = {
     "token_file": None,
+    "machine_token_file": None,
     "actions": False,
     "config_edit": False,
+    "transcripts": [],
     "name": None,
 }
 KNOWN_KEYS["serve"] = frozenset(SERVE_KEYS)
 ServeConfig = collections.namedtuple(
-    "ServeConfig", ("token_file", "actions", "name", "config_edit"))
+    "ServeConfig", ("token_file", "machine_token_file", "actions", "name",
+                    "config_edit", "transcripts"))
 
 
 def serve_config(target):
     """The target's `[serve]` knobs over the defaults.
 
-    An absent table (or key) is no token file; a present `token_file` must
-    be a non-empty string, the path as written -- `~` is expanded, a
-    relative path is taken against the config's directory, so the file
-    sits beside the config it is named in. Whether the daemon needs it at
-    all is `holophyte.serve`'s to decide from the bind address; this only
-    holds the value to its shape. `actions` is a boolean, false by
-    default, as is `config_edit`, which opens the `/config` routes (KO-356);
-    `name` is the systemd instance name the action routes
-    address, the target directory's name when absent (KO-348). Keys this
-    version does not know are refused by `check_config_keys()`.
+    An absent table (or key) is no token file; a present `token_file` or
+    `machine_token_file` must be a non-empty string, the path as written --
+    `~` is expanded, a relative path is taken against the config's
+    directory, so the file sits beside the config it is named in. Whether
+    the daemon needs it at all is `holophyte.serve`'s to decide from the
+    bind address; this only holds the value to its shape. `actions` is a
+    boolean, false by default, as is `config_edit`, which opens the
+    `/config` routes (KO-356); `name` is the systemd instance name the
+    action routes address, the target directory's name when absent
+    (KO-348). Keys this version does not know are refused by
+    `check_config_keys()`.
     """
     table = target.config().get("serve", {})
     if not isinstance(table, dict):
@@ -819,16 +848,26 @@ def serve_config(target):
         raise SystemExit(
             f"[holo2] {target.config_path}: [serve] name must be a non-empty "
             f"systemd instance name without '/', got {name!r}")
-    token_file = table.get("token_file", SERVE_KEYS["token_file"])
-    if token_file is None:
-        return ServeConfig(token_file=None, actions=actions, name=name,
-                           config_edit=config_edit)
-    if not isinstance(token_file, str) or not token_file.strip():
+    from holophyte.transcript_config import transcript_roots
+    transcripts = transcript_roots(target, table.get("transcripts", []))
+    return ServeConfig(
+        token_file=token_path(target, table, "token_file"),
+        machine_token_file=token_path(target, table, "machine_token_file"),
+        actions=actions, name=name, config_edit=config_edit,
+        transcripts=transcripts)
+
+
+def token_path(target, table, key):
+    """`[serve] KEY` as a path, or None when absent: a non-empty string,
+    `~` expanded, a relative path taken against the config's directory."""
+    value = table.get(key, SERVE_KEYS[key])
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
         raise SystemExit(
-            f"[holo2] {target.config_path}: [serve] token_file must be a "
-            f"non-empty path, got {token_file!r}")
-    path = Path(token_file).expanduser()
+            f"[holo2] {target.config_path}: [serve] {key} must be a "
+            f"non-empty path, got {value!r}")
+    path = Path(value).expanduser()
     if not path.is_absolute():
         path = Path(target.config_path).parent / path
-    return ServeConfig(token_file=path, actions=actions, name=name,
-                       config_edit=config_edit)
+    return path

@@ -18,8 +18,9 @@ ExecStart=/usr/bin/python3 factory.py ${HOLOPHYTE_TARGET} --serve ${HOLOPHYTE_SE
 Restart=on-failure
 RestartSec=5
 
-# Hardening: the listener has no authentication; the tailnet bind address is
-# its whole boundary. No new privileges, private tmp.
+# Hardening: on loopback the bind address is the boundary; beyond it the
+# bearer token read from `[serve] token_file` guards every JSON route but
+# /peers. No new privileges, private tmp.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

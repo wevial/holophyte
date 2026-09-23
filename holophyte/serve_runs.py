@@ -19,7 +19,7 @@ from holophyte.target import worktree_path
 from holophyte.thread_findings import normalize_thread
 from holophyte.thread_mentions import bot_author
 from store.operator_notes import round_notes
-from store.working import effective_work
+from store.working import agent_work, effective_work, verify_work
 
 # Accepted origins: https://HOST/OWNER/REPO and git@HOST:OWNER/REPO(.git).
 # Other origins carry no link. Each segment must be one
@@ -196,6 +196,8 @@ def commit_url(target, sha, origin):
 def runs(target, query=""):
     """The `/runs` answer: `--report` rows as JSON, oldest first, with a limit.
     Add ticket_url, ended_ms, merge_sha and wall_min to the report fields.
+    `agent_min` and `verify_min` split `actual_min`; `verify_min` is null for
+    a run recorded before the split.
     URLs and merge SHAs are null for older mirrors/runs without them.
     Host labels match `/status`; a missing recorded host stays null.
     """
@@ -216,13 +218,14 @@ def runs(target, query=""):
         rows = rows[:limit]
     return 200, {
         "rows": [{"ticket": ticket, "ticket_url": ticket_urls.get(ticket),
-                  "actual_min": actual,
+                  "actual_min": actual, "agent_min": agent,
+                  "verify_min": verify,
                   "estimate_min": estimate, "ratio": ratio,
                   "rounds": rounds, "outcome": outcome,
                   "host": json_host(target, host), "ended_ms": ended_at,
                   "merge_sha": merge_sha, "wall_min": wall_min}
-                 for ticket, actual, estimate, ratio, rounds, outcome, host,
-                 ended_at, merge_sha, wall_min in rows],
+                 for ticket, actual, agent, verify, estimate, ratio, rounds,
+                 outcome, host, ended_at, merge_sha, wall_min in rows],
         "limit": limit,
     }
 
@@ -239,6 +242,8 @@ def shipped(target, query=""):
     is the terminal's table, oldest first, and stays that. Each row is the
     run's `id`, `ticket`, `title`, `rounds`, `findings` (the count over its
     review rounds), `started_ms`, `ended_ms`, `actual_min`, `estimate_min`,
+    `working_ms`, `agent_ms` and `verify_ms` (its two parts, `verify_ms`
+    null for a run recorded before the split), `wall_min`,
     `merge_sha`, `commit_url` (the merge commit's page on `origin` when the
     sha has reached `origin/main`, `commit_url()`), `pr_url` (the pull
     request the run merged through, `runs.prUrl`, null when none) and
@@ -279,6 +284,8 @@ def shipped(target, query=""):
                   "actual_min": (effective_work(run, run.endedAt) / 60000
                                  if run.workingMs is not None else None),
                   "working_ms": effective_work(run, run.endedAt),
+                  "agent_ms": agent_work(run, run.endedAt),
+                  "verify_ms": verify_work(run, run.endedAt),
                   "wall_min": (run.endedAt - run.startedAt) / 60000,
                   "estimate_min": (run.timeBoxMs / 60000
                                    if run.timeBoxMs else None),
@@ -327,9 +334,11 @@ def locate_run(target, text):
 def run_detail(target, run_id, now=None):
     """Return `/runs/N`: run clocks, review rounds and narrative events.
 
-    Effective working_ms includes active work through `now`; elapsed_ms is wall
-    time, frozen at endedAt. The scaled time box matches `/status`. Live runs
-    carry heartbeat age (null after completion) and the recorded review cap;
+    Effective working_ms includes active work through `now`, split into
+    agent_ms (what the box judges) and verify_ms; verify_started_ms is set only
+    while the open span is a verify. elapsed_ms is wall time, frozen at
+    endedAt. The scaled time box matches `/status`. Live runs carry heartbeat
+    age (null after completion) and the recorded review cap;
     old rows use MAX_ROUNDS. locate_run supplies invalid/missing 400/404/503s.
     Rounds include the private operator notes they consumed.
     Rounds and events are oldest first; include implementer_output summaries
@@ -353,14 +362,17 @@ def run_detail(target, run_id, now=None):
     # `time_box_ms` is the box the run was counted against -- the estimate
     # scaled by `[agents] budget_scale` -- matching the box `/status` serves.
     scale = budget_scale(target)
+    clock = run.endedAt if not live else now
     return 200, {
         "run": {"id": run.id, "ticket": run.linearIdentifier,
                 "ticket_url": run.ticketUrl,
                 "title": run.title, "phase": run.phase,
                 "attempt": run.attempt, "started_ms": run.startedAt,
                 "ended_ms": run.endedAt, "outcome": run.outcome,
-                "elapsed_ms": (run.endedAt if not live else now) - run.startedAt,
-                "working_ms": effective_work(run, run.endedAt if not live else now),
+                "elapsed_ms": clock - run.startedAt,
+                "working_ms": effective_work(run, clock),
+                "agent_ms": agent_work(run, clock),
+                "verify_ms": verify_work(run, clock),
                 "time_box_ms": (int(run.timeBoxMs * scale)
                                 if run.timeBoxMs else run.timeBoxMs),
                 "branch": run.branch, "host": json_host(target, run.host),
@@ -369,6 +381,7 @@ def run_detail(target, run_id, now=None):
                 "commit_url": commit_url(target, run.mergeSha,
                                          origin_web_url(target)),
                 "pr_url": run.prUrl, "work_started_ms": run.workStartedAt,
+                "verify_started_ms": run.verifyStartedAt,
                 "approved_at": run.approvedAt, "approved_by": run.approvedBy,
                 # The cap the loop gave this run; a run recorded before the
                 # store carried one answers the constant.
@@ -562,6 +575,11 @@ def run_files(target, run_id):
         touched = touched_files(target.path, run.branch, run.mergeSha,
                                 worktree=worktree)
     except RangeError as error:
+        missing_branch = f"branch {run.branch} no longer exists in the repository"
+        if (run.endedAt is None and worktree is not None
+                and not worktree.is_dir() and str(error) == missing_branch):
+            return 409, {"error": f"branch {run.branch} not cut yet",
+                         "run": run.id, "pending": True}
         return 409, {"error": str(error), "run": run.id}
     except subprocess.TimeoutExpired:
         return 504, {"error": f"git did not answer within {GIT_TIMEOUT}s",
@@ -589,3 +607,55 @@ def active_routes(target):
     return {seat: {"command": fallback.get(seat, table.get(seat)),
                    **({"fallback": fallback[seat]} if seat in fallback else {})}
             for seat in AGENT_CONFIG_KEYS.values()}
+
+
+RUN_TURNS_PATH = re.compile(r"^/runs/([^/]+)/turns$")
+RUN_TRANSCRIPT_PATH = re.compile(r"^/runs/([^/]+/turns/[^/]+)/transcript$")
+
+
+def run_turns(target, text):
+    """Ordered turn telemetry remains readable even when transcripts are off."""
+    from holophyte.redact import known_secrets, outbound
+    from holophyte.transcripts import turns
+    failed, run = locate_run(target, text)
+    if failed is not None:
+        return failed
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        rows = conn.execute(
+            "SELECT seq, kind, payload FROM runEvents WHERE runId=? "
+            "AND kind IN ('agent_turn', 'agent_session') ORDER BY seq", (run.id,))
+        body = json.dumps({"turns": turns(rows)})
+        return 200, json.loads(outbound(body, known_secrets(target.config())))
+    finally:
+        conn.close()
+
+
+def run_transcript(target, segment):
+    """Render a turn's session within the opt-in roots, with outbound redaction."""
+    from holophyte.config import serve_config
+    from holophyte.redact import known_secrets, outbound
+    from holophyte.transcripts import locate, render
+    roots = serve_config(target).transcripts
+    missing = (404, {"error": "transcript unavailable"})
+    if not roots:
+        return missing
+    run_id, _, turn_id = segment.split('/')
+    code, body = run_turns(target, run_id)
+    if code != 200:
+        return code, body
+    turn = next((t for t in body['turns'] if str(t['id']) == turn_id), None)
+    if turn is None:
+        return missing
+    secrets = known_secrets(target.config())
+    for root in roots:
+        for kind in ('codex', 'devin'):
+            try:
+                path = locate(kind, turn['session_id'], root)
+                if path is not None:
+                    return 200, {"entries": [
+                        {"speaker": speaker, "text": outbound(text, secrets)}
+                        for speaker, text in render(path)]}
+            except (OSError, UnicodeError, RuntimeError):
+                continue
+    return missing

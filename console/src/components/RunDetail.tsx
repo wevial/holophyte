@@ -8,7 +8,7 @@ import { formatClock, formatSettled, formatSpan } from "../lib/format";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel, roundLabel } from "../lib/runs";
-import { workingMs } from "../lib/runs";
+import { agentMs, verifyMs } from "../lib/runs";
 import { buildTimeline } from "../lib/timeline";
 import type { Round, RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
@@ -17,6 +17,7 @@ import { FindingCard } from "./FindingCard";
 import { OperatorNoteCard } from "./OperatorNoteCard";
 import { InstructionCard } from "./InstructionCard";
 import { RoundTimeline } from "./RoundTimeline";
+import { RunTurns } from "./RunTurns";
 import { RunLog } from "./RunLog";
 import { PrLink, Sha } from "./ShippedTable";
 
@@ -64,6 +65,7 @@ export function RunDetail({
         </p>
       )}
       {detail && <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs} />}
+      {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} polls={polls} deps={deps} />}
     </div>
   );
 }
@@ -88,7 +90,8 @@ function Card({
   // live run keeps counting between polls and a finished one stays put —
   // and reads at settled granularity, its seconds done counting too.
   const tickingNow = now + sinceMs;
-  const work = workingMs(run, run.ended_ms == null ? sinceMs : 0);
+  const work = agentMs(run, run.ended_ms == null ? sinceMs : 0);
+  const verify = verifyMs(run, run.ended_ms == null ? sinceMs : 0);
   const remaining = work == null || run.time_box_ms == null ? null : run.time_box_ms - work;
   const over = remaining != null && remaining < 0;
   const finished = run.ended_ms != null;
@@ -112,6 +115,9 @@ function Card({
         >
           {run.time_box_ms == null ? "working box unknown" : remaining == null ? "working n/a" : over ? `${boxFigure(-remaining)} over the working box` : `${boxFigure(remaining)} left in working box`}
           {" · wall "}{boxFigure((run.ended_ms ?? tickingNow) - run.started_ms)}
+        </span>
+        <span data-clocks className="font-mono text-[12px] text-muted">
+          agent {work == null ? "n/a" : boxFigure(work)} · verify {verify == null ? "n/a" : boxFigure(verify)}
         </span>
       </header>
       {run.approved_at != null && (
@@ -170,7 +176,7 @@ function Card({
             </ul>
           )}
         </div>
-        <FilesTouched files={files.files} error={files.error} status={files.status} loading={files.loading} />
+        <FilesTouched files={files.files} error={files.error} status={files.status} pending={files.pending} loading={files.loading} />
       </div>
       <footer className="mt-3 flex gap-2">
         <ActionButton>Kill run</ActionButton>

@@ -36,6 +36,8 @@ CHECK_STATES = {None: "success", "SUCCESS": "success",
 # and the rest are not.
 RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
                    "startup_failure", "error"}
+# The app whose check runs are Actions jobs, with a log to read.
+ACTIONS_APP = "github-actions"
 # Page size for the check-runs and rollup-context reads.
 CHECK_RUNS_PAGE = 100
 
@@ -54,7 +56,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
-      state merged headRefOid mergeable mergeCommit { oid } updatedAt
+      state merged headRefOid mergeable mergeCommit { oid } updatedAt title
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
       comments(first: 100, after: $commentsAfter) {
         pageInfo { hasNextPage endCursor }
@@ -97,7 +99,7 @@ query($owner: String!, $name: String!, $number: Int!) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
       state merged mergeable mergeCommit { oid } mergedBy { login }
-      updatedAt
+      updatedAt title
       threadCount: reviewThreads { totalCount }
       reviewDecision
       %s
@@ -128,17 +130,18 @@ class PullStatus:
     rate_remaining: int | None = None
     rate_reset: str | None = None
     activity: tuple = ()
+    title: str | None = None
 
 
 def pull_status(target, pull):
     """One GraphQL read of the pull request's `state`, `merged`,
-    `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, review-thread
-    count, authored content, `reviewDecision` and head checks rollup, with the token's
-    `rateLimit` (`PULL_QUERY`): the loop's reconcile of a run parked on
-    its PR asks this once per pass. GitHub answering without the pull
-    request is `InfraFailure`, as every read here is; an answer without
-    the activity, fact or budget fields is one without them (None), not
-    an error."""
+    `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, `title`,
+    review-thread count, authored content, `reviewDecision` and head
+    checks rollup, with the token's `rateLimit` (`PULL_QUERY`): the loop's
+    reconcile of a run parked on its PR asks this once per pass. GitHub
+    answering without the pull request is `InfraFailure`, as every read
+    here is; an answer without the activity, fact or budget fields is one
+    without them (None), not an error."""
     data = graphql(target, pull, PULL_QUERY,
                    {"owner": pull.owner, "name": pull.name,
                     "number": pull.number})
@@ -153,7 +156,9 @@ def pull_status(target, pull):
     rate = data.get("rateLimit") or {}
     updated = node.get("updatedAt")
     decision = node.get("reviewDecision")
-    return PullStatus(activity=activities(target, pull, node,
+    title = node.get("title")
+    return PullStatus(title=title if isinstance(title, str) else None,
+                      activity=activities(target, pull, node,
                       (data.get("viewer") or {}).get("login"), graphql, rate),
                       merged=bool(node.get("merged")),
                       closed=node.get("state") == "CLOSED",
@@ -443,7 +448,39 @@ def _state_of(node, threads, runs, required):
                    pending_contexts=tuple(r["name"] for r in (runs or [])
                                           if isinstance(r, dict)
                                           and r.get("name")
-                                          and r.get("status") != "completed"))
+                                          and r.get("status") != "completed"),
+                   failed_checks=_failed_checks(runs))
+
+
+@dataclass(frozen=True)
+class FailedCheck:
+    """A check run on the head commit whose conclusion is red. `job_id` is
+    the GitHub Actions job whose log `pr.job_log()` reads; None for a check
+    run another app made or a commit status, which have no such log."""
+
+    name: str
+    conclusion: str
+    url: str
+    job_id: int | None = None
+
+
+def _failed_checks(runs):
+    """A `FailedCheck` for each red row of `runs`."""
+    return tuple(FailedCheck(name=r.get("name") or "",
+                             conclusion=r["conclusion"],
+                             url=r.get("html_url") or "", job_id=_job_id(r))
+                 for r in (runs or ()) if isinstance(r, dict)
+                 and r.get("conclusion") in RED_CONCLUSIONS)
+
+
+def _job_id(run):
+    """A GitHub Actions check run's `id`, which is its job's; None for any
+    other app's run and for a commit status."""
+    app = run.get("app")
+    if not isinstance(app, dict) or app.get("slug") != ACTIONS_APP:
+        return None
+    job = run.get("id")
+    return job if isinstance(job, int) and not isinstance(job, bool) else None
 
 
 def _closed_by(node):

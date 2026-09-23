@@ -76,7 +76,10 @@ API; imports `store.read`, `findings` and `gates`), `babysitter.py` (the
 thread verdicts of a PR pass; imports `pr.py`) and `files.py` (touched-file
 counts read from git for the daemon; imports `gates`, and is imported by
 `serve`). `config` imports `pr.py` lazily, at the startup route check only.
-Three rules hold the graph in this shape: `serve` imports `store.read` and never `store` (it cannot write);
+Three rules hold the graph in this shape: `serve` reads through
+`store.read`, and its action endpoints (`serve_actions`) write only through
+the store API (`store.record_intervention()`, `store.requeue()`,
+`store.operator_notes.send_back()`);
 `holophyte.config` never imports `factory` or the loop (no cycles); and
 nothing outside `store/` writes SQL.
 

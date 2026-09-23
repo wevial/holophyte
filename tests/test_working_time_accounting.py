@@ -4,8 +4,6 @@ import subprocess
 from contextlib import ExitStack, nullcontext
 from unittest.mock import patch
 
-from sweep_fixture import MINUTE, T0, SweepTestCase, no_network
-
 import store
 import store.read
 from holophyte import (
@@ -19,6 +17,7 @@ from holophyte import (
     pullrequest,
     supervisor,
 )
+from tests.sweep_fixture import MINUTE, T0, SweepTestCase, no_network
 
 
 class WorkingTimeTests(SweepTestCase):
@@ -119,6 +118,79 @@ class WorkingTimeTests(SweepTestCase):
                         self.assertEqual(
                             effective_work(self.snapshot(run), now[0]), total)
 
+    def test_verify_time_is_split_from_agent_work(self):
+        from store.working import agent_work, verify_work
+        run = self.a_run()
+        now = [T0]
+        step = {'minutes': 0, 'open': None}
+
+        def route(*args, **kwargs):
+            now[0] += step['minutes'] * MINUTE
+            if step['open'] is not None:
+                snap = self.snapshot(run)
+                step['open'].append((agent_work(snap, now[0]),
+                                     verify_work(snap, now[0])))
+            return 0, 'done'
+
+        def role():
+            agents.agent(self.tgt, 'review', 'goal', self.target,
+                         base_sha='base', candidate_sha='sha',
+                         conn=self.conn, run_id=run)
+
+        def verify():
+            gates.run_verify('echo done', self.target,
+                             conn=self.conn, run_id=run)
+
+        with patch('store.working.time', lambda: now[0] / 1000), \
+                patch.object(agents, 'run_capped', route), \
+                patch.object(gates, 'run_capped', route), \
+                patch.object(agents, 'agent_command', return_value=['script']), \
+                patch.object(agents, 'publish_review_refs'), \
+                patch.object(agents, 'check_review_refs'), \
+                patch.object(agents, 'review_scratch',
+                             lambda _: nullcontext(self.target)):
+            for call, minutes in ((role, 2), (verify, 3)):
+                step['minutes'] = minutes
+                call()
+            snap = self.snapshot(run)
+            self.assertEqual((snap.workingMs, snap.verifyMs),
+                             (5 * MINUTE, 3 * MINUTE))
+            self.assertEqual((agent_work(snap, now[0]), verify_work(snap, now[0])),
+                             (2 * MINUTE, 3 * MINUTE))
+            # One more open minute counts only to the open span's kind.
+            step['minutes'] = 1
+            for call, expected in ((verify, (2 * MINUTE, 4 * MINUTE)),
+                                   (role, (3 * MINUTE, 4 * MINUTE))):
+                step['open'] = []
+                call()
+                self.assertEqual(step['open'], [expected])
+
+    def test_verify_split_migration(self):
+        from store.working import agent_work, effective_work, verify_work
+        live = self.a_run(active_work=True)
+        self.conn.execute('UPDATE runs SET workingMs = ? WHERE id = ?',
+                          (4 * MINUTE, live))
+        # A store from the version before the split, opened by this build.
+        self.conn.execute('ALTER TABLE runs DROP COLUMN verifyMs')
+        self.conn.execute('ALTER TABLE runs DROP COLUMN verifyStartedAt')
+        self.conn.execute(f'PRAGMA user_version = {store.SCHEMA_VERSION - 1}')
+        self.conn.commit()
+        self.conn.close()
+        self.conn = store.open(str(self.db))
+        self.addCleanup(self.conn.close)
+        self.assertEqual(self.conn.execute('PRAGMA user_version').fetchone()[0],
+                         store.SCHEMA_VERSION)
+        old = self.snapshot(live)
+        now = T0 + 3 * MINUTE
+        self.assertIsNone(old.verifyMs)
+        self.assertIsNone(verify_work(old, now))
+        self.assertEqual(agent_work(old, now), effective_work(old, now))
+        self.assertEqual(agent_work(old, now), 7 * MINUTE)
+        store.release(self.conn, live, 'failed', now=now)
+        fresh = self.snapshot(self.a_run())
+        self.assertEqual(fresh.verifyMs, 0)
+        self.assertEqual(verify_work(fresh, now), 0)
+
     def exercise_controller_paths(self):
         """Drive the named callers through real role/verify boundaries."""
         run = self.a_run()
@@ -163,7 +235,9 @@ class WorkingTimeTests(SweepTestCase):
             for module in (loop, babysitter, merge_gate, claim, pullrequest):
                 for name, result in (('sh', 'after'), ('ledger', None),
                                      ('record_round', None),
-                                     ('merge_conflicts', [])):
+                                     ('merge_conflicts', []),
+                                     ('scope_files', []),
+                                     ('scope_brief', '')):
                     if hasattr(module, name):
                         stack.enter_context(patch.object(module, name,
                                                          return_value=result))

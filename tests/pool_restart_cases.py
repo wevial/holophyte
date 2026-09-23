@@ -17,15 +17,18 @@ import store.schema
 
 
 class PoolRestartCases:
-    def fetched_git(self, version, events):
+    def fetched_git(self, version, events, floor=None):
         original_sh = holophyte.operator.sh
+        schema = f'SCHEMA_VERSION = {version}\n'
+        if floor is not None:
+            schema += f'READABLE_FROM = {floor}\n'
 
         def fetched(args, cwd):
             if args[:2] == ['git', 'fetch']:
                 events.append('fetch')
                 return ''
             if args == ['git', 'show', 'origin/main:store/schema.py']:
-                return f'SCHEMA_VERSION = {version}\n'
+                return schema
             if args == ['git', 'rev-parse', '--short', 'origin/main']:
                 return 'new5678'
             if args[:2] == ['git', 'merge']:
@@ -53,7 +56,8 @@ class PoolRestartCases:
         with patch.object(holophyte.operator, "_fetch_main",
                           return_value=True) as update, \
                 patch.object(holophyte.pool_handoff, "fetched_schema",
-                             return_value=store.schema.SCHEMA_VERSION), \
+                             return_value=(store.schema.SCHEMA_VERSION,
+                                           store.schema.SCHEMA_VERSION)), \
                 patch.object(holophyte.operator, "_ff_main"), \
                 patch.object(holophyte.pool, "SPAWN", fake.spawn), \
                 patch.object(holophyte.pool, "WAIT", fake.wait), \
@@ -96,25 +100,63 @@ class PoolRestartCases:
         self.assertEqual(handoff["workers"], [])
 
 
-    def test_a_self_merge_re_execs_after_the_pool_drains(self):
+    def self_merge_under(self, version, floor, on_exec=None):
+        """`workers = 3`, self-hosted: the first worker merges with the
+        fetched schema at `version` readable from `floor`; returns the pool
+        and the order of fetch, merge, EXEC and worker exits."""
         provider = StubProvider(*(a_task(n) for n in range(1, 5)))
-        version = store.schema.SCHEMA_VERSION + 1
         events = []
-        with patch.object(holophyte.operator, "EXEC",
-                          lambda *args: events.append("EXEC")), \
+
+        def execute(*args):
+            events.append("EXEC")
+            if on_exec is not None:
+                on_exec()
+
+        with patch.object(holophyte.operator, "EXEC", execute), \
                 patch.object(holophyte.operator, "sh",
-                             self.fetched_git(version, events)), \
+                             self.fetched_git(version, events, floor)), \
                 patch.object(holophyte.operator, "self_hosted", return_value=True):
             pool = self.run_scheduler(3, provider, [
                 (holophyte.pool.WORKER_MERGED, lambda: events.append("exit")),
                 (holophyte.pool.WORKER_MERGED, lambda: events.append("exit")),
                 (holophyte.pool.WORKER_MERGED, lambda: events.append("exit")),
             ])
+        return pool, events
+
+    def test_a_self_merge_re_execs_after_the_pool_drains(self):
+        version = store.schema.SCHEMA_VERSION + 1
+        pool, events = self.self_merge_under(version, version)
 
         self.assertEqual(events, ["exit", "fetch", "exit", "exit", "merge", "EXEC"])
         self.assertIn(f"schema {version - 1} -> {version}; draining 2 worker(s)",
                       self.out)
         self.assertEqual(len(pool.spawned), 3)
+
+    def test_a_fetched_schema_without_a_floor_still_drains(self):
+        version = store.schema.SCHEMA_VERSION + 1
+        pool, events = self.self_merge_under(version, None)
+
+        self.assertEqual(events, ["exit", "fetch", "exit", "exit", "merge", "EXEC"])
+        self.assertIn(f"schema {version - 1} -> {version}; draining 2 worker(s)",
+                      self.out)
+
+    def test_an_additive_self_merge_hands_live_workers_to_the_new_build(self):
+        version = store.schema.SCHEMA_VERSION + 1
+        handed = []
+
+        def read_handoff():
+            handoff = self.tgt.store_path.with_name("pool.json").read_text()
+            handed.extend(json.loads(handoff)["workers"])
+
+        pool, events = self.self_merge_under(version, version - 1, read_handoff)
+
+        self.assertEqual(events, ["exit", "fetch", "merge", "EXEC"])
+        self.assertEqual(pool.alive, [5002, 5003])
+        self.assertEqual([(w["pid"], w["previous"]) for w in handed],
+                         [(5002, True), (5003, True)])
+        self.assertIn(f"schema {version - 1} -> {version} is additive (readable"
+                      f" from {version - 1}); fast-forwarding to new5678 under"
+                      " 2 live worker(s)", self.out)
 
     def test_a_failure_under_stop_on_failure_is_not_lost_to_a_self_merge(self):
         """`workers = 2`, `stop_on_failure = true`, self-hosted: one worker
