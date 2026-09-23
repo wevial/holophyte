@@ -72,7 +72,6 @@ from holophyte.gates import (
     run_verify,
     sh,
 )
-from holophyte.merge_lock import live_merge_lock
 from holophyte.redact import redact_values
 from holophyte.redact import safe_print as print
 from holophyte.run import Run
@@ -382,8 +381,8 @@ def _refresh_main(target, run_id=None, conn=None):
                               cwd=target.path, capture_output=True).returncode == 0
 
     beat_s = sweep_config(target).heartbeat_stale_ms / 2000
-    with live_merge_lock(target, conn, run_id, beat_s,
-                         operation="fetch before the cut", wait_phase="working"):
+    with target.locks.merge(conn, run_id, beat_s,
+                            operation="fetch before the cut", wait_phase="working"):
         fr = subprocess.run(["git", "fetch", "origin"], cwd=target.path,
                             capture_output=True, text=True)
         if fr.returncode != 0:
