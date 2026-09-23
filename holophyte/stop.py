@@ -9,6 +9,9 @@ from holophyte.target import Target, worktree_path
 from store.schema import _transaction
 
 _checkpoint = ContextVar("pause_checkpoint", default=None)
+# State every later checkpoint of one run carries, whichever boundary saved
+# it: the review route a not-reproduced declaration took (KO-657).
+_route = ContextVar("pause_route", default=None)
 
 # The intervention actions that end a run now; `abort_close` also closes the
 # run's pull request once the abort is finished (KO-611).
@@ -40,6 +43,9 @@ def stop_if_requested(conn, run_id, phase):
             raise store.RunEnded(run_id, outcome, reason)
         saved = _checkpoint.get()
         state = saved[3] if saved and saved[:3] == (conn, run_id, phase) else {}
+        route = _route.get()
+        if route and route[:2] == (conn, run_id):
+            state = {**route[2], **state}
         store.record_event(conn, run_id, "pause_checkpoint",
                            f"continuation at {phase}", level="detail",
                            payload=json.dumps(state))
@@ -154,6 +160,11 @@ def boundary(conn, run_id, phase, **state):
     """Save the continuation inputs before honoring a pending stop."""
     _checkpoint.set((conn, run_id, phase, state))
     stop_if_requested(conn, run_id, phase)
+
+
+def keep_route(conn, run_id, **state):
+    """Carry `state` in every checkpoint this run saves from now on."""
+    _route.set((conn, run_id, state))
 
 
 def continuation(conn, run_id):

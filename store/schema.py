@@ -352,7 +352,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 33 records the pull request title the reconcile read (KO-622).
 # Version 34 records verify time apart from agent work on runs (KO-635).
 # Version 35 admits the `abort_close` intervention action (KO-611).
-SCHEMA_VERSION = 35
+# Version 36 admits the `not_reproduced` run park kind (KO-657).
+SCHEMA_VERSION = 36
 
 # The oldest SCHEMA_VERSION whose builds can still read and write a store at
 # SCHEMA_VERSION (KO-661). Each migration records it in its `migrate` note,
@@ -755,7 +756,9 @@ def init(conn):
                          " WHERE t.lastRunId = runs.id"
                          " AND t.status = 'blocked_on_operator')"
                          " WHERE parkKind IS NULL")
-        if version < 32:
+        # Every CHECK is generated from store.enums: rebuilt at 32 for the
+        # `paused` phase, and at 36 for the `not_reproduced` park (KO-657).
+        if version < 36:
             _rebuild_enum_tables(conn)
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the

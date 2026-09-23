@@ -55,6 +55,7 @@ class ParkKind(str, Enum):
     FIX_DECLINED = 'fix_declined'
     MERGE_LOCK = 'merge_lock'
     QUESTION = 'question'
+    NOT_REPRODUCED = 'not_reproduced'
 
 
 class RunOutcome(str, Enum):
