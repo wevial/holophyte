@@ -59,6 +59,10 @@ Each module, one line:
   `SWEEP_HEADERS` table, the per-run and restart lines, `sweep_report()`
   as `--sweep`'s whole body, and the review-container and merge-lock
   sections.
+- `holophyte/store_import.py` — `--import-store PATH --dry-run` (KO-595):
+  `plan()` reads another store and the target's own, both read-only, and
+  says per table what an import would move — rows, id range, the remap
+  offset and a sha256 of the rows in id order; `render()` prints it.
 - `holophyte/supervisor_lock.py` — the one-supervisor-per-target lock
   (KO-396): the lockfile's path, read, acquire and release, the
   `SupervisorHeld` refusal and the `supervisor_running()` probe.
