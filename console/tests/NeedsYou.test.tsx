@@ -135,7 +135,7 @@ test("every action button of a daemon without actions is disabled: wired ones na
     "Requeue",
     "Mark needs_spec",
     "Restart supervisor",
-    "Kill run",
+    "Abort",
     "Requeue",
     "Answer",
     "Requeue",

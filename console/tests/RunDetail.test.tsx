@@ -155,7 +155,6 @@ test("the newest round's findings are cards pilled must, must, should, nit with 
   const actions = Array.from(document.querySelectorAll("footer button")) as HTMLButtonElement[];
   const buttons = actions.map((button) => [button.textContent, button.disabled]);
   expect(buttons).toEqual([
-    ["Kill run", true],
     ["Requeue ticket", true],
   ]);
 });
