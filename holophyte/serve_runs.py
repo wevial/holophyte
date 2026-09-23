@@ -69,13 +69,13 @@ def parse_run_id(text):
     return run_id if 0 <= run_id <= SQLITE_MAX_INT else None
 
 
-def no_store(target):
+def no_store(project):
     """The 503 body for a target whose store does not exist yet."""
     return {"error": "no store",
-            "detail": f"{target.path} has no store yet; nothing has run"
+            "detail": f"{project.path} has no store yet; nothing has run"
                       " against it on this host",
-            "project": str(target.path),
-            "target": str(target.path)}
+            "project": str(project.path),
+            "target": str(project.path)}
 
 
 # An optional sign and digits: what `int()` accepts minus its leniencies
@@ -148,13 +148,13 @@ def parse_before(query):
     return int(text)
 
 
-def json_host(target, host):
+def json_host(project, host):
     """`host_label()` for JSON: null, not the table's `?`, for a row older
     than the host column, label or not."""
-    return None if host is None else host_label(target, host)
+    return None if host is None else host_label(project, host)
 
 
-def origin_web_url(target):
+def origin_web_url(project):
     """`https://HOST/OWNER/REPO` for the target's `origin`, or None.
 
     Read once per request from `git remote get-url origin` in the target's
@@ -163,7 +163,7 @@ def origin_web_url(target):
     feeds carry no link rather than a bad one.
     """
     try:
-        code, out = git(target.path, "remote", "get-url", "origin")
+        code, out = git(project.path, "remote", "get-url", "origin")
     except (subprocess.TimeoutExpired, OSError):
         return None
     if code != 0:
@@ -175,7 +175,7 @@ def origin_web_url(target):
     return None
 
 
-def commit_url(target, sha, origin):
+def commit_url(project, sha, origin):
     """`ORIGIN/commit/SHA` when `sha` is an ancestor of `origin/main` in the
     target's checkout, else None.
 
@@ -187,14 +187,14 @@ def commit_url(target, sha, origin):
     if not sha or not origin:
         return None
     try:
-        code, _ = git(target.path, "merge-base", "--is-ancestor", sha,
+        code, _ = git(project.path, "merge-base", "--is-ancestor", sha,
                       "origin/main")
     except (subprocess.TimeoutExpired, OSError):
         return None
     return f"{origin}/commit/{sha}" if code == 0 else None
 
 
-def runs(target, query=""):
+def runs(project, query=""):
     """The `/runs` answer: `--report` rows as JSON, oldest first, with a limit.
     Add ticket_url, ended_ms, merge_sha and wall_min to the report fields.
     `agent_min` and `verify_min` split `actual_min`; `verify_min` is null for
@@ -206,9 +206,9 @@ def runs(target, query=""):
         limit = parse_limit(query)
     except ValueError as bad:
         return 400, {"error": str(bad)}
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    conn = store.read.open_readonly(target.store_path)
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
     try:
         rows = ended_rows(conn)
         ticket_urls = dict(conn.execute(
@@ -223,7 +223,7 @@ def runs(target, query=""):
                   "verify_min": verify,
                   "estimate_min": estimate, "ratio": ratio,
                   "rounds": rounds, "outcome": outcome,
-                  "host": json_host(target, host), "ended_ms": ended_at,
+                  "host": json_host(project, host), "ended_ms": ended_at,
                   "merge_sha": merge_sha, "wall_min": wall_min}
                  for ticket, actual, agent, verify, estimate, ratio, rounds,
                  outcome, host, ended_at, merge_sha, wall_min in rows],
@@ -235,7 +235,7 @@ SHIPPED_LIMIT = 50
 SHIPPED_CAP = 200
 
 
-def shipped(target, query=""):
+def shipped(project, query=""):
     """The `/shipped` answer: finished runs newest end first, one page.
 
     The console's Shipped view is the merge ledger scrolling back over
@@ -263,9 +263,9 @@ def shipped(target, query=""):
         outcome = parse_filter(query, "outcome", ("merged", "all"))
     except ValueError as bad:
         return 400, {"error": str(bad)}
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    conn = store.read.open_readonly(target.store_path)
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
     try:
         # One past the page tells whether there is a next one.
         runs = store.read.finished_runs(
@@ -275,7 +275,7 @@ def shipped(target, query=""):
         conn.close()
     more = len(runs) > limit
     runs = runs[:limit]
-    origin = origin_web_url(target)
+    origin = origin_web_url(project)
     return 200, {
         "rows": [{"id": run.id, "ticket": run.linearIdentifier,
                   "ticket_url": run.ticketUrl,
@@ -291,19 +291,19 @@ def shipped(target, query=""):
                   "estimate_min": (run.timeBoxMs / 60000
                                    if run.timeBoxMs else None),
                   "merge_sha": run.mergeSha,
-                  "commit_url": commit_url(target, run.mergeSha, origin),
+                  "commit_url": commit_url(project, run.mergeSha, origin),
                   "outcome": run.outcome,
                   "outcome_reason": (run.outcomeReason[:400]
                                      if run.outcomeReason is not None else None),
                   "pr_url": run.prUrl,
-                  "host": json_host(target, run.host)}
+                  "host": json_host(project, run.host)}
                  for run in runs],
         "next_before": runs[-1].id if more else None,
         "limit": limit,
     }
 
 
-def locate_run(target, text):
+def locate_run(project, text):
     """The run `/runs/N`-style path segment `text` names, for the routes
     under it: `(None, RunDetail)` when there is one, else `(status, body)`
     -- the 400, 503 and 404 the routes share, so each states them once.
@@ -318,11 +318,11 @@ def locate_run(target, text):
         run_id = parse_run_id(text)
     except ValueError as error:
         return (400, {"error": str(error)}), None
-    if not target.store_path.exists():
-        return (503, no_store(target)), None
+    if not project.store_path.exists():
+        return (503, no_store(project)), None
     if run_id is None:
         return (404, {"error": "no such run", "run": text}), None
-    conn = store.read.open_readonly(target.store_path)
+    conn = store.read.open_readonly(project.store_path)
     try:
         run = store.read.run_detail(conn, run_id)
     finally:
@@ -332,7 +332,7 @@ def locate_run(target, text):
     return None, run
 
 
-def run_detail(target, run_id, now=None):
+def run_detail(project, run_id, now=None):
     """Return `/runs/N`: run clocks, review rounds and narrative events.
 
     Effective working_ms includes active work through `now`, split into
@@ -346,10 +346,10 @@ def run_detail(target, run_id, now=None):
     for refusals and no-commit crashes, and operator_note_consumed timestamps
     for fix starts, keeping full payloads in the store."""
     now = int(time() * 1000) if now is None else now
-    failed, run = locate_run(target, run_id)
+    failed, run = locate_run(project, run_id)
     if failed is not None:
         return failed
-    conn = store.read.open_readonly(target.store_path)
+    conn = store.read.open_readonly(project.store_path)
     try:
         rounds = store.read.rounds_of(conn, run.id)
         notes = {r.round: round_notes(conn, run.id, r.round) for r in rounds}
@@ -358,11 +358,11 @@ def run_detail(target, run_id, now=None):
             detail_kinds=("implementer_output", "operator_note_consumed"))
     finally:
         conn.close()
-    merge = merge_config(target)
+    merge = merge_config(project)
     live = run.endedAt is None
     # `time_box_ms` is the box the run was counted against -- the estimate
     # scaled by `[agents] budget_scale` -- matching the box `/status` serves.
-    scale = budget_scale(target)
+    scale = budget_scale(project)
     clock = run.endedAt if not live else now
     return 200, {
         "run": {"id": run.id, "ticket": run.linearIdentifier,
@@ -376,11 +376,11 @@ def run_detail(target, run_id, now=None):
                 "verify_ms": verify_work(run, clock),
                 "time_box_ms": (int(run.timeBoxMs * scale)
                                 if run.timeBoxMs else run.timeBoxMs),
-                "branch": run.branch, "host": json_host(target, run.host),
+                "branch": run.branch, "host": json_host(project, run.host),
                 "heartbeat_age_ms": now - run.lastHeartbeat if live else None,
                 "merge_sha": run.mergeSha,
-                "commit_url": commit_url(target, run.mergeSha,
-                                         origin_web_url(target)),
+                "commit_url": commit_url(project, run.mergeSha,
+                                         origin_web_url(project)),
                 "pr_url": run.prUrl, "work_started_ms": run.workStartedAt,
                 "verify_started_ms": run.verifyStartedAt,
                 "approved_at": run.approvedAt, "approved_by": run.approvedBy,
@@ -438,7 +438,7 @@ def split_instructions(findings, bot_logins=MERGE_KEYS["bot_authors"]):
     return result
 
 
-def run_ledger(target, run_id):
+def run_ledger(project, run_id):
     """The `/runs/N/ledger` answer: `(http status, JSON-able body)`.
 
     The run's narrative as the store holds it (design note 9): `entries`
@@ -450,10 +450,10 @@ def run_ledger(target, run_id):
     (`locate_run()`): a non-integer is 400, an integer with no run is 404
     carrying `run`.
     """
-    failed, run = locate_run(target, run_id)
+    failed, run = locate_run(project, run_id)
     if failed is not None:
         return failed
-    conn = store.read.open_readonly(target.store_path)
+    conn = store.read.open_readonly(project.store_path)
     try:
         entries = store.read.ledger(conn, run.id)
     finally:
@@ -484,7 +484,7 @@ LEDGER_LIMIT = 200
 LEDGER_CAP = 1000
 
 
-def ledger(target, query):
+def ledger(project, query):
     """The `/ledger` answer: `(http status, JSON-able body)`.
 
     Read entries since the required epoch-ms cursor, narrowed by kind/ticket
@@ -499,9 +499,9 @@ def ledger(target, query):
         limit = parse_limit(query, default=LEDGER_LIMIT, cap=LEDGER_CAP)
     except ValueError as bad:
         return 400, {"error": str(bad)}
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    conn = store.read.open_readonly(target.store_path)
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
     try:
         entries = store.read.ledger_since(conn, since, kind=kind,
                                           ticket=ticket, limit=limit,
@@ -511,7 +511,7 @@ def ledger(target, query):
         feed = [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
                 for e in entries]
         if ticket is None and kind in (None, "intervention"):
-            feed.extend(migration_rows(conn, since, limit, str(target.path)))
+            feed.extend(migration_rows(conn, since, limit, str(project.path)))
         feed.sort(key=lambda row: row["at"], reverse=True)
     finally:
         conn.close()
@@ -522,7 +522,7 @@ def ledger(target, query):
 
 
 
-def migration_rows(conn, since, limit, project):
+def migration_rows(conn, since, limit, project_path):
     """Store-wide evidence has no ticket or run to join to the ledger."""
     from holophyte.report import migration_line
 
@@ -536,7 +536,7 @@ def migration_rows(conn, since, limit, project):
              "source": "factory", "action": "migrate", "tone": "neutral",
              "text": migration_line(note, detail["to"]),
              "schema_to": detail["to"], "schema_from": detail["from"],
-             "project": project,
+             "project": project_path,
              "cleared": None, "waited_ms": None} for note, at in rows
             for detail in [json.loads(note)]]
 
@@ -546,13 +546,13 @@ def route_down_rows(conn):
     from store import launch_backoff
 
     rows = []
-    for (project,) in conn.execute(
+    for (project_id,) in conn.execute(
             "SELECT id FROM projects WHERE launchBackoffReason IS NOT NULL"):
-        state = launch_backoff.current(conn, project)
+        state = launch_backoff.current(conn, project_id)
         started = datetime.fromtimestamp(
             state["since"] / 1000, timezone.utc).strftime("%H:%M")
         rows.append({
-            "project": project, "run": None, "ticket": None,
+            "project": project_id, "run": None, "ticket": None,
             "kind": "route_down", "source": "loop", "at": state["since"],
             "reason": state["reason"],
             "text": f"implementer route down since {started} UTC: {state['reason']}",
@@ -560,7 +560,7 @@ def route_down_rows(conn):
     return rows
 
 
-def run_files(target, run_id):
+def run_files(project, run_id):
     """Return paths changed by a run, with status and line counts.
 
     Live runs use their worktree against main's merge base, including
@@ -568,12 +568,12 @@ def run_files(target, run_id):
     surviving branch. Paths are sorted and capped at files.MAX_FILES.
     Invalid/missing runs return 400/404; missing stores return 503, absent
     ranges 409, and a Git timeout 504."""
-    failed, run = locate_run(target, run_id)
+    failed, run = locate_run(project, run_id)
     if failed is not None:
         return failed
-    worktree = worktree_path(target, run.branch) if run.branch else None
+    worktree = worktree_path(project, run.branch) if run.branch else None
     try:
-        touched = touched_files(target.path, run.branch, run.mergeSha,
+        touched = touched_files(project.path, run.branch, run.mergeSha,
                                 worktree=worktree)
     except RangeError as error:
         missing_branch = f"branch {run.branch} no longer exists in the repository"
@@ -596,14 +596,14 @@ def run_files(target, run_id):
     }
 
 
-def active_routes(target):
+def active_routes(project):
     """Current commands per seat; primary seats carry no fallback marker."""
     from holophyte.agent_routes import active_fallbacks, safe_command
     from holophyte.config import AGENT_CONFIG_KEYS
 
-    fallback = active_fallbacks(target)
-    table = {key: safe_command(target, value)
-             for key, value in (target.config().get("agents") or {}).items()
+    fallback = active_fallbacks(project)
+    table = {key: safe_command(project, value)
+             for key, value in (project.config().get("agents") or {}).items()
              if key in AGENT_CONFIG_KEYS.values() and isinstance(value, (str, dict))}
     return {seat: {"command": fallback.get(seat, table.get(seat)),
                    **({"fallback": fallback[seat]} if seat in fallback else {})}
@@ -614,41 +614,41 @@ RUN_TURNS_PATH = re.compile(r"^/runs/([^/]+)/turns$")
 RUN_TRANSCRIPT_PATH = re.compile(r"^/runs/([^/]+/turns/[^/]+)/transcript$")
 
 
-def run_turns(target, text):
+def run_turns(project, text):
     """Ordered turn telemetry remains readable even when transcripts are off."""
     from holophyte.redact import known_secrets, outbound
     from holophyte.transcripts import turns
-    failed, run = locate_run(target, text)
+    failed, run = locate_run(project, text)
     if failed is not None:
         return failed
-    conn = store.read.open_readonly(target.store_path)
+    conn = store.read.open_readonly(project.store_path)
     try:
         rows = conn.execute(
             "SELECT seq, kind, payload FROM runEvents WHERE runId=? "
             "AND kind IN ('agent_turn', 'agent_session') ORDER BY seq", (run.id,))
         body = json.dumps({"turns": turns(rows)})
-        return 200, json.loads(outbound(body, known_secrets(target.config())))
+        return 200, json.loads(outbound(body, known_secrets(project.config())))
     finally:
         conn.close()
 
 
-def run_transcript(target, segment):
+def run_transcript(project, segment):
     """Render a turn's session within the opt-in roots, with outbound redaction."""
     from holophyte.config import serve_config
     from holophyte.redact import known_secrets, outbound
     from holophyte.transcripts import locate, render
-    roots = serve_config(target).transcripts
+    roots = serve_config(project).transcripts
     missing = (404, {"error": "transcript unavailable"})
     if not roots:
         return missing
     run_id, _, turn_id = segment.split('/')
-    code, body = run_turns(target, run_id)
+    code, body = run_turns(project, run_id)
     if code != 200:
         return code, body
     turn = next((t for t in body['turns'] if str(t['id']) == turn_id), None)
     if turn is None:
         return missing
-    secrets = known_secrets(target.config())
+    secrets = known_secrets(project.config())
     for root in roots:
         for kind in ('codex', 'devin'):
             try:
