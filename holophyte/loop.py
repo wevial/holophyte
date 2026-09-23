@@ -50,7 +50,12 @@ from holophyte.config_tables import (
     sweep_config,
 )
 from holophyte.dispatch import SWEPT
-from holophyte.environment_git import paths, stage_work, unstage_environment
+from holophyte.environment_git import (
+    factory_identity,
+    paths,
+    stage_work,
+    unstage_environment,
+)
 from holophyte.gates import (
     GroupKill,
     InfraFailure,
@@ -92,7 +97,7 @@ from holophyte.runs import (
     set_phase,
 )
 from holophyte.stop import Aborted, boundary, continuation, stop_if_requested
-from store.working import effective_work
+from store.working import agent_work
 
 # The paths a run works against, plus the config they carry, are a `Target`
 # (below): built once by `cli()` from the command line and passed to every
@@ -458,7 +463,7 @@ def _open_findings(conn, run_id):
 
 
 def _check_run_cap(target, conn, run_id, budget_min, sha):
-    """Refuse dispatch when effective work plus the scaled turn exceeds the cap.
+    """Refuse dispatch when agent work plus the scaled turn exceeds the cap.
 
     The ceiling remains timeBoxMs × budget_scale × run_cap. Preserve candidate
     and findings diagnostics; unmeasured or storeless runs have no known spend."""
@@ -470,12 +475,12 @@ def _check_run_cap(target, conn, run_id, budget_min, sha):
     scale = budget_scale(target)
     cap = sweep_config(target).run_cap
     box_ms = run.timeBoxMs * scale
-    spent_ms = effective_work(run, int(time() * 1000))
+    spent_ms = agent_work(run, int(time() * 1000))
     if spent_ms is None:
         return
     if spent_ms + budget_min * scale * 60000 <= box_ms * cap:
         return
-    reason = (f"out of time: {spent_ms / 60000:.1f} min spent of a "
+    reason = (f"out of time: {spent_ms / 60000:.1f} min of agent work against a "
               f"{box_ms / 60000:.0f} min box (cap {cap:g}x); candidate "
               f"preserved at {sha[:12]}; open findings: "
               f"{_open_findings(conn, run_id)}")
@@ -580,12 +585,9 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                    cwd=wt).splitlines()
         if dirty:
             stage_work(target, wt)
-            # The identity is pinned for the same reason the reuse WIP
-            # commit pins it: a rescue commit is the factory's, and a
-            # target with no committer configured must not make it raise.
-            sh(["git", "-c", "user.name=holophyte",
-                "-c", "user.email=holophyte@factory.invalid",
-                "commit", "-q", "-m",
+            # The identity is chosen as the reuse WIP commit's is: the
+            # target's configured one, the factory's pins when it has none.
+            sh(["git", *factory_identity(wt), "commit", "-q", "-m",
                 f"WIP: implementer budget fired mid-edit ({task_id});"
                 " not verified"], cwd=wt)
             head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
