@@ -198,9 +198,17 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         log, witness = self.lock_witness()
         self.fake_route(push_sh=f"  {witness('push')}")
-        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                  provider=StubProvider(dict(a_task(), body=self.BODY,
-                                             verify=witness("verify"))))
+        gate = holophyte.loop._merge_gate
+
+        def reexeced(*args, **kwargs):
+            # A re-exec'd run cites no pass (KO-646), so the gate's runs.
+            holophyte.gates._PASSES.clear()
+            return gate(*args, **kwargs)
+
+        with patch.object(holophyte.loop, "_merge_gate", reexeced):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=StubProvider(dict(a_task(), body=self.BODY,
+                                                 verify=witness("verify"))))
         # The review round's verify, then the gate's, then the push.
         self.assertEqual(log.read_text().splitlines(),
                          ["verify free", "verify free", "push locked"])
@@ -219,6 +227,7 @@ class MergeModePullRequestTests(MergeModeFixture):
             # Run 7 takes the lock as this run enters the gate; the claim's
             # own fetch, under the same lock, is long done.
             holophyte.gates.merge_lock_path(self.tgt).write_text("7 0\n")
+            holophyte.gates._PASSES.clear()  # as after a re-exec (KO-646)
             return gate(*args, **kwargs)
 
         with (patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0),

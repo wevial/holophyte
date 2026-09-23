@@ -74,8 +74,11 @@ class LockFailureWordingTests(LoopFixture):
         path = holophyte.gates.merge_lock_path(self.tgt)
         verify = (f"if [ -e {shlex.quote(str(path))} ]; then echo locked;"
                   f" else echo free; fi >> {shlex.quote(str(log))}")
-        self.loop(Commit("candidate"), APPROVE,
-                  provider=StubProvider(dict(a_task(), verify=verify)))
+        # With no earlier pass to cite, as when `main` has moved: the
+        # gate's verify runs rather than repeating the round's answer.
+        with patch.object(holophyte.gates, "_pass_key", return_value=None):
+            self.loop(Commit("candidate"), APPROVE,
+                      provider=StubProvider(dict(a_task(), verify=verify)))
         # The review round's verify, then the gate's.
         self.assertEqual(log.read_text().splitlines(), ["free", "locked"])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
@@ -903,8 +906,10 @@ class VerifyBaselineTests(LoopFixture):
                        f'before_merge = ["echo gate >> {log}; exit 1"]\n')
         task = dict(a_task(), verify=f"echo ticket >> {log}")
         self.loop(Commit("candidate"), APPROVE, provider=StubProvider(task))
+        # The gate cites the round's passes on the unchanged tree and runs
+        # only the tier the round did not.
         self.assertEqual(log.read_text().splitlines(),
-                         ["ticket", "always", "ticket", "always", "gate"])
+                         ["ticket", "always", "gate"])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         rows = json.loads(self.read(
             "SELECT verificationResults FROM reviewRounds "
@@ -912,13 +917,32 @@ class VerifyBaselineTests(LoopFixture):
         self.assertEqual(rows[-1]["tier"], "before_merge")
         self.assertEqual(rows[-1]["exitCode"], 1)
 
-    def test_no_baseline_only_runs_ticket_at_review_and_gate(self):
+    def test_no_baseline_runs_only_the_ticket_command(self):
         log = self.target.parent / "commands.log"
         task = dict(a_task(), verify=f"echo ticket >> {log}")
         self.loop(Commit("candidate"), APPROVE, provider=StubProvider(task))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-        self.assertEqual(log.read_text().splitlines(), ["ticket", "ticket"])
+        self.assertEqual(log.read_text().splitlines(), ["ticket"])
         rows = json.loads(self.read(
             "SELECT verificationResults FROM reviewRounds LIMIT 1")[0][0])
         self.assertEqual(set(rows[0]), {"source", "command", "exitCode", "output"})
         self.assertTrue(all(r["source"] == "ticket" for r in rows))
+
+    def test_the_gate_cites_the_rounds_pass_instead_of_repeating_it(self):
+        """Approved in round 1 with `main` unmoved, the gate's tree is the
+        round's: the ticket command ran once, and the gate's row for it
+        is a pass naming the head it was earned on."""
+        log = self.target.parent / "commands.log"
+        self.configure('[verify]\nbefore_merge = ["true"]\n')
+        task = dict(a_task(), verify=f"echo ticket >> {log}")
+        self.loop(Commit("candidate"), APPROVE, provider=StubProvider(task))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(log.read_text().splitlines(), ["ticket"])
+        head = self.git("rev-parse", "main^2").strip()
+        rows = json.loads(self.read(
+            "SELECT verificationResults FROM reviewRounds "
+            "ORDER BY round DESC LIMIT 1")[0][0])
+        gate = [row for row in rows if row["source"] == "ticket"][-1]
+        self.assertEqual(gate["exitCode"], 0)
+        self.assertIn(head[:12], gate["output"])
+        self.assertEqual(rows[-1]["tier"], "before_merge")
