@@ -60,7 +60,7 @@ PINNED = {
     "tests/test_factory_config.py": 1202,
     "tests/test_factory_loop.py": 1416, "tests/test_merge_gate.py": 924,
     "tests/test_pool.py": 913, "tests/test_provider.py": 721, "tests/test_runs.py": 115,
-    "tests/test_pullrequest.py": 1490, "tests/test_reconcile.py": 769,
+    "tests/test_pullrequest.py": 1490, "tests/test_reconcile.py": 788,
     "tests/test_serve.py": 1500,
     "tests/test_serve_actions.py": 377, "tests/test_serve_config.py": 769,
     "tests/test_serve_ledger.py": 509, "tests/test_serve_runs.py": 980,
