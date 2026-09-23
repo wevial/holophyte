@@ -785,7 +785,9 @@ def console_config(target):
 # startup error; a loopback bind ignores it. The file, not the token, lives
 # in config, so the config can be committed to a host's notes and the
 # token cannot. `holophyte.serve` reads the file and holds it to a private
-# mode.
+# mode. `machine_token_file` (KO-647) names a second file, one token for
+# every daemon on the machine, accepted wherever the project's token is;
+# `token_file` stays for sharing one project without the machine.
 # `actions` opts the daemon into the three `POST /actions/...` routes
 # (KO-348): restart the supervisor unit, start the loop unit, requeue a
 # ticket. Off, every `/actions/` path is 404 and the daemon writes nothing.
@@ -799,6 +801,7 @@ def console_config(target):
 # which is command execution on the writer host at the next loop start.
 SERVE_KEYS = {
     "token_file": None,
+    "machine_token_file": None,
     "actions": False,
     "config_edit": False,
     "transcripts": [],
@@ -806,22 +809,24 @@ SERVE_KEYS = {
 }
 KNOWN_KEYS["serve"] = frozenset(SERVE_KEYS)
 ServeConfig = collections.namedtuple(
-    "ServeConfig", ("token_file", "actions", "name", "config_edit", "transcripts"))
+    "ServeConfig", ("token_file", "machine_token_file", "actions", "name",
+                    "config_edit", "transcripts"))
 
 
 def serve_config(target):
     """The target's `[serve]` knobs over the defaults.
 
-    An absent table (or key) is no token file; a present `token_file` must
-    be a non-empty string, the path as written -- `~` is expanded, a
-    relative path is taken against the config's directory, so the file
-    sits beside the config it is named in. Whether the daemon needs it at
-    all is `holophyte.serve`'s to decide from the bind address; this only
-    holds the value to its shape. `actions` is a boolean, false by
-    default, as is `config_edit`, which opens the `/config` routes (KO-356);
-    `name` is the systemd instance name the action routes
-    address, the target directory's name when absent (KO-348). Keys this
-    version does not know are refused by `check_config_keys()`.
+    An absent table (or key) is no token file; a present `token_file` or
+    `machine_token_file` must be a non-empty string, the path as written --
+    `~` is expanded, a relative path is taken against the config's
+    directory, so the file sits beside the config it is named in. Whether
+    the daemon needs it at all is `holophyte.serve`'s to decide from the
+    bind address; this only holds the value to its shape. `actions` is a
+    boolean, false by default, as is `config_edit`, which opens the
+    `/config` routes (KO-356); `name` is the systemd instance name the
+    action routes address, the target directory's name when absent
+    (KO-348). Keys this version does not know are refused by
+    `check_config_keys()`.
     """
     table = target.config().get("serve", {})
     if not isinstance(table, dict):
@@ -845,16 +850,24 @@ def serve_config(target):
             f"systemd instance name without '/', got {name!r}")
     from holophyte.transcript_config import transcript_roots
     transcripts = transcript_roots(target, table.get("transcripts", []))
-    token_file = table.get("token_file", SERVE_KEYS["token_file"])
-    if token_file is None:
-        return ServeConfig(token_file=None, actions=actions, name=name,
-                           config_edit=config_edit, transcripts=transcripts)
-    if not isinstance(token_file, str) or not token_file.strip():
+    return ServeConfig(
+        token_file=token_path(target, table, "token_file"),
+        machine_token_file=token_path(target, table, "machine_token_file"),
+        actions=actions, name=name, config_edit=config_edit,
+        transcripts=transcripts)
+
+
+def token_path(target, table, key):
+    """`[serve] KEY` as a path, or None when absent: a non-empty string,
+    `~` expanded, a relative path taken against the config's directory."""
+    value = table.get(key, SERVE_KEYS[key])
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
         raise SystemExit(
-            f"[holo2] {target.config_path}: [serve] token_file must be a "
-            f"non-empty path, got {token_file!r}")
-    path = Path(token_file).expanduser()
+            f"[holo2] {target.config_path}: [serve] {key} must be a "
+            f"non-empty path, got {value!r}")
+    path = Path(value).expanduser()
     if not path.is_absolute():
         path = Path(target.config_path).parent / path
-    return ServeConfig(token_file=path, actions=actions, name=name,
-                       config_edit=config_edit, transcripts=transcripts)
+    return path

@@ -887,6 +887,7 @@ supervisor does not pick up an edit.
 | --- | --- | --- |
 | `transcripts` | Default: `[]` | Allowed transcript roots (a path or list of paths), relative to the config directory or absolute, with home expansion. Empty disables transcript reads; turn metadata remains available. Codex roots contain rollout JSONL files; durable Devin exports belong below a directory named for the session id. The operator must preserve review exports before scratch cleanup. |
 | `token_file` | Default: Absent | Non-empty path string, relative to the config directory or absolute, with home expansion; set for non-loopback reads or any enabled write routes. |
+| `machine_token_file` | Default: Absent | Non-empty path string, resolved as `token_file` is; set to accept one machine-wide token beside the project's own wherever `token_file` is demanded. |
 | `actions` | Default: `false` | Boolean; enable to expose authenticated daemon action routes. |
 | `config_edit` | Default: `false` | Boolean; enable to read and edit config through authenticated daemon routes. |
 | `name` | Default: Target directory name | Non-empty string without `/`; change to match the deployed systemd instance. |
@@ -897,6 +898,9 @@ supervisor does not pick up an edit.
 # present as `Authorization: Bearer ...`. Required when `--serve` names a
 # host other than loopback; ignored when it binds loopback.
 token_file = "~/.holophyte/holophyte/serve.token"
+# A second file whose contents are accepted wherever `token_file`'s are:
+# one token for every daemon on this machine. Optional.
+machine_token_file = "~/.holophyte/machine.token"
 # Answer `POST /actions/restart-supervisor`, `/actions/launch-loop` and
 # `/actions/requeue` behind the token, on every bind (so `token_file` is
 # required with this on). Off, every `/actions/` path is 404.
@@ -928,6 +932,17 @@ against the config's directory. A loopback bind ignores the key for its
 reads: `--serve 7710` is as open as it always was, unless `actions` is on
 (below). One token per target, no rotation: to change it, write the file
 and restart the unit.
+
+`machine_token_file` names a second token file, read wherever `token_file`
+is read and held to the same rules; a missing, empty or group- or
+world-readable file is the same startup error, naming `[serve]
+machine_token_file`. Every route that demands the project's token accepts
+this one too, each compared in constant time, so the daemons on one
+machine can share a single token that is rotated in one place and kept in
+one copy on the operator's machine, while `token_file` stays the token to
+hand out for one project alone. It does not stand in for `token_file`:
+the binds and routes that need that key still need it. Absent, the daemon
+accepts the project's token alone, as before.
 
 `actions` opts the daemon into the three `POST /actions/...` routes, off by
 default: `restart-supervisor` and `launch-loop` run `systemctl --user`
