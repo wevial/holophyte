@@ -104,6 +104,9 @@ Each module, one line:
   (KO-424): `main` merged into the branch, the pre-merge verify and the
   drift check under the merge lock, the park for a human's approval, the
   approved candidate's resumed run, and the `--no-ff` merge onto main.
+- `holophyte/reproduce.py` — a reported defect the implementer could not
+  reproduce (KO-657): the `OUTCOME: NOT_REPRODUCED` declaration, the
+  evidence check in place of round 1, and the `not_reproduced` park.
 - `holophyte/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
 - `holophyte/locks.py` — the `Locks` protocol a `Target` carries as
