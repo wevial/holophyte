@@ -11,8 +11,8 @@ from loop_fixture import FakePool, StubProvider, a_task
 import holophyte.operator
 import holophyte.pool
 import holophyte.pool_handoff
+import holophyte.project
 import holophyte.serve_runs
-import holophyte.target
 import store.schema
 
 
@@ -210,7 +210,7 @@ class PreviousBuildCases:
     def test_previous_build_count_clears_when_inherited_child_is_reaped(self):
         self.seed()
         self.start()
-        target = holophyte.target.Target.locate(self.target)
+        target = holophyte.project.Project.locate(self.target)
         child = subprocess.Popen([sys.executable, "-c",
                                   "import sys; sys.stdin.read()"],
                                  stdin=subprocess.PIPE)

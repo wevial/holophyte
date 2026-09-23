@@ -6,8 +6,8 @@ import store.read
 from holophyte import pr, pr_status
 from holophyte.files import git
 from holophyte.gates import InfraFailure
+from holophyte.project import worktree_path
 from holophyte.runs import heartbeat_while
-from holophyte.target import worktree_path
 
 
 def _just_pushed_state(target, conn, run_id, provider, task_id, branch,

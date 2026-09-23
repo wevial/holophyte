@@ -32,8 +32,8 @@ class LiveReportTests(ReportStoreCase):
             self.completed_run(1, 5, 25, 0, "merged")
 
     def test_failure_counts_in_report_and_sweep(self):
+        from holophyte.project import Project
         from holophyte.sweep_report import sweep_report
-        from holophyte.target import Target
 
         for number, kind in enumerate(('verify', 'infra', 'verify', 'budget'), 20):
             run = self.live_run(number, NOW - 1000, 'working')
@@ -44,7 +44,7 @@ class LiveReportTests(ReportStoreCase):
                           if line.startswith('failures ')], expected)
         out = io.StringIO()
         with patch('holophyte.sweep_report.review_container_lines', return_value=[]):
-            sweep_report(Target.locate(self.target), conn=self.conn, out=out, now=NOW)
+            sweep_report(Project.locate(self.target), conn=self.conn, out=out, now=NOW)
         for line in expected:
             self.assertIn(line, out.getvalue().splitlines())
 

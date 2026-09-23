@@ -1,6 +1,6 @@
 """Per-table config keys, defaults and validated readers.
 
-The key sets are registered in config.KNOWN_KEYS; readers take a Target and
+The key sets are registered in config.KNOWN_KEYS; readers take a Project and
 refuse invalid values with the table, key and constraint. Importing runs no
 host checks. The loop and daemon share these readers (KO-397).
 """

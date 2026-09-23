@@ -18,7 +18,7 @@ from unittest.mock import patch
 import holophyte.agents
 import holophyte.fix_session
 import holophyte.loop
-import holophyte.target
+import holophyte.project
 import store
 
 # The fake harness: records its argv, then sleeps past the cap when the
@@ -51,7 +51,7 @@ class ClaudeTableTests(unittest.TestCase):
         holo = root / "holo"
         holo.mkdir()
         (holo / "config.toml").write_text(CONFIG + '[loop]\nfix_session = "resume"\n')
-        self.target = holophyte.target.Target(
+        self.target = holophyte.project.Project(
             path=self.repo, holo_dir=holo, store_path=holo / "store.db",
             config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
         bin_dir = root / "bin"
@@ -163,7 +163,7 @@ class CodexTableTests(unittest.TestCase):
         self.holo = root / "holo"
         self.holo.mkdir()
         (self.holo / "config.toml").write_text(CODEX_CONFIG)
-        self.target = holophyte.target.Target(
+        self.target = holophyte.project.Project(
             path=self.repo, holo_dir=self.holo, store_path=self.holo / "store.db",
             config_path=self.holo / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -232,7 +232,7 @@ class CodexTableTests(unittest.TestCase):
         (self.holo / "config.toml").write_text(
             '[agents]\nimplementer_isolation = "container"\n' + CODEX_CONFIG
             + f'[harnesses]\ncodex = "{pinned}"\n')
-        self.target = holophyte.target.Target(
+        self.target = holophyte.project.Project(
             path=self.repo, holo_dir=self.holo, store_path=self.target.store_path,
             config_path=self.target.config_path, worktrees=self.target.worktrees)
         self.dispatch("review", "review the candidate")

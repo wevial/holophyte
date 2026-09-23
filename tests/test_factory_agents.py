@@ -19,15 +19,15 @@ import holophyte.agent_routes  # noqa: E402 - after the sys.path insert above
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.redact  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import review_runner  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 
 
 def bare_target(case, path):
-    """A `Target` at `path` whose state directory holds no config.
+    """A `Project` at `path` whose state directory holds no config.
 
     The routes these tests pin are the defaults, so the config the value
     would read has to be absent -- in a directory of the test's own, not
@@ -37,7 +37,7 @@ def bare_target(case, path):
     path = Path(path)
     holo = Path(tempfile.mkdtemp())
     case.addCleanup(shutil.rmtree, holo, ignore_errors=True)
-    return holophyte.target.Target(
+    return holophyte.project.Project(
         path=path, holo_dir=holo, store_path=holo / "store.db",
         config_path=holo / "config.toml",
         worktrees=path.parent / f"{path.name}.worktrees")
@@ -559,7 +559,7 @@ class ReviewLoopTests(unittest.TestCase):
         self.worktrees = root / "repo.worktrees"
         self.branch = "task/ko-116-add-a-thing"
         self.wt = self.worktrees / "ko-116-add-a-thing"
-        self.tgt = holophyte.target.Target(
+        self.tgt = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=self.worktrees)
         self.linear = FakeLinear()

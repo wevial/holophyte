@@ -72,11 +72,11 @@ from holophyte.gates import (
     run_verify,
     sh,
 )
+from holophyte.project import worktree_path
 from holophyte.redact import redact_values
 from holophyte.redact import safe_print as print
 from holophyte.run import Run
 from holophyte.runs import heartbeat_while, set_phase
-from holophyte.target import worktree_path
 
 
 def timeout_report(cmd, expired):
@@ -568,7 +568,7 @@ def retire_worktree(target, branch):
     Keep the branch. A remote read must succeed before its tip is trusted;
     stale remote-tracking refs are not evidence that work is still backed up.
     """
-    from holophyte.target import worktree_path
+    from holophyte.project import worktree_path
 
     wt = worktree_path(target, branch)
     if wt.resolve() == target.worktrees.resolve() or wt.is_symlink():

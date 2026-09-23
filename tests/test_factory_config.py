@@ -22,11 +22,11 @@ import holophyte.config
 import holophyte.gates
 import holophyte.loop
 import holophyte.operator
+import holophyte.project
 import holophyte.redact
 import holophyte.runs
 import holophyte.supervisor
 import holophyte.supervisor_lock
-import holophyte.target
 import review_runner
 import store
 
@@ -182,7 +182,7 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
     def test_an_absent_config_file_loads_as_empty(self):
         target = self.locate().path
         self.assertEqual(self.tgt.config_path,
-                         holophyte.target.state_dir(target) / "config.toml")
+                         holophyte.project.state_dir(target) / "config.toml")
         self.assertFalse(self.tgt.config_path.exists())
         self.assertEqual(self.tgt.config(), {})
 
@@ -213,7 +213,7 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         for name in ("one", "two"):
             path = self.root / name / "repo"
             path.mkdir(parents=True)
-            target = holophyte.target.Target.locate(path)
+            target = holophyte.project.Project.locate(path)
             target.config_path.parent.mkdir(parents=True)
             target.config_path.write_text(
                 f'[agents]\nimplementer = "harness-{name} run"\n')
@@ -252,11 +252,11 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         home = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, home)
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}), \
-                patch.object(holophyte.target, "load_config",
+                patch.object(holophyte.project, "load_config",
                              side_effect=AssertionError("config read")) as load, \
-                patch.object(holophyte.target.Target, "locate",
+                patch.object(holophyte.project.Project, "locate",
                              autospec=True) as locate, \
-                patch.object(holophyte.target, "adopt_legacy_state",
+                patch.object(holophyte.project, "adopt_legacy_state",
                              autospec=True) as adopt:
             with contextlib.redirect_stdout(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised:
@@ -277,9 +277,9 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         self.addCleanup(shutil.rmtree, home)
         stderr = io.StringIO()
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}), \
-                patch.object(holophyte.target.Target, "locate",
+                patch.object(holophyte.project.Project, "locate",
                              autospec=True) as locate, \
-                patch.object(holophyte.target, "adopt_legacy_state",
+                patch.object(holophyte.project, "adopt_legacy_state",
                              autospec=True) as adopt:
             with contextlib.redirect_stderr(stderr), \
                     self.assertRaises(SystemExit) as raised:
@@ -366,7 +366,7 @@ class KnownKeyTests(ConfigTestCase):
 class StateDirectoryTests(ConfigTestCase):
     """Every per-target artifact lives under one `HOLOPHYTE_HOME/SLUG/`.
 
-    `Target.locate()` derives the directory and the three paths in it
+    `Project.locate()` derives the directory and the three paths in it
     together, so the tests go through it and look at what it derived.
     """
 
@@ -393,8 +393,8 @@ class StateDirectoryTests(ConfigTestCase):
         one.parent.mkdir()
         two.parent.mkdir()
 
-        first = holophyte.target.Target.locate(one).holo_dir
-        second = holophyte.target.Target.locate(two).holo_dir
+        first = holophyte.project.Project.locate(one).holo_dir
+        second = holophyte.project.Project.locate(two).holo_dir
 
         self.assertNotEqual(first, second)
         self.assertEqual(first.parent, second.parent)
@@ -431,7 +431,7 @@ class LegacyAdoptionTests(ConfigTestCase):
 
     KO-165 changed the address without moving what was at the old one, and a
     run against the new empty store shadowed fifteen runs and the target's
-    agent routes. These go through `Target.locate()` for that reason:
+    agent routes. These go through `Project.locate()` for that reason:
     adoption that is not wired into the path a run takes is adoption that
     never runs.
     """
@@ -448,7 +448,7 @@ class LegacyAdoptionTests(ConfigTestCase):
     def locate(self, config=None):
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            self.tgt = holophyte.target.Target.locate(self.target)
+            self.tgt = holophyte.project.Project.locate(self.target)
         self.printed = printed.getvalue()
         return self.tgt
 
@@ -500,7 +500,7 @@ class LegacyAdoptionTests(ConfigTestCase):
 
     def test_two_stores_are_refused_rather_than_one_shadowing_the_other(self):
         holo = self.legacy_directory()
-        new = holophyte.target.state_dir(self.target)
+        new = holophyte.project.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "store.db").write_bytes(b"new store\n")
 
@@ -525,7 +525,7 @@ class LegacyAdoptionTests(ConfigTestCase):
         """
         holo = self.legacy_directory()
         (holo / "config.toml").unlink()
-        new = holophyte.target.state_dir(self.target)
+        new = holophyte.project.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "config.toml").write_text("[agents]\n")
 
@@ -537,7 +537,7 @@ class LegacyAdoptionTests(ConfigTestCase):
 
     def test_a_file_already_at_the_new_address_is_refused_not_overwritten(self):
         holo = self.legacy_directory()
-        new = holophyte.target.state_dir(self.target)
+        new = holophyte.project.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "config.toml").write_text("[agents]\nimplementer = \"new\"\n")
 
@@ -554,7 +554,7 @@ class LegacyAdoptionTests(ConfigTestCase):
         self.assertTrue((holo / "config.toml").exists())
 
     def test_deriving_paths_without_adopting_leaves_the_target_alone(self):
-        """`Target.locate(..., adopt=False)` derives the paths and nothing else.
+        """`Project.locate(..., adopt=False)` derives the paths and nothing else.
 
         Adoption is a side effect the caller asks for: a value built for a
         target nobody is about to run against -- a daemon enumerating a
@@ -563,11 +563,11 @@ class LegacyAdoptionTests(ConfigTestCase):
         `cli()` asks; nothing else does.
         """
         holo = self.legacy_directory()
-        new = holophyte.target.state_dir(self.target)
+        new = holophyte.project.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "store.db").write_bytes(b"new store\n")
 
-        target = holophyte.target.Target.locate(self.target, adopt=False)
+        target = holophyte.project.Project.locate(self.target, adopt=False)
 
         self.assertEqual((holo / "store.db").read_bytes(), b"legacy store\n")
         self.assertEqual(target.store_path.read_bytes(), b"new store\n")

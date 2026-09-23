@@ -24,8 +24,8 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -107,7 +107,7 @@ class RenderedWindowTests(unittest.TestCase):
         self.addCleanup(self.conn.close)
         store.init(self.conn)
         self.project = tickets.ensure_project(self.conn, "team-1", self.root / "repo")
-        self.tgt = holophyte.target.Target.locate(self.root / "repo", adopt=False)
+        self.tgt = holophyte.project.Project.locate(self.root / "repo", adopt=False)
 
     def complete_run(self, n, merge_sha=None):
         """One merged run of its own ticket, stamped a minute apart per `n`."""
@@ -260,9 +260,9 @@ class CloseOutRegenerationTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
-        # The `Target` the loop is handed, with the store and the worktrees
+        # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.target.Target(
+        self.tgt = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")

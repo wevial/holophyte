@@ -1,12 +1,12 @@
-"""Where a target's state lives, and the `Target` value that carries it.
+"""Where a project's state lives, and the `Project` value that carries it.
 
-`HOLOPHYTE_HOME/<basename>-<hash>` is the address; `Target.locate()` derives
+`HOLOPHYTE_HOME/<basename>-<hash>` is the address; `Project.locate()` derives
 it, adopts whatever a pre-home layout left beside the checkout, and hands the
 loop one value holding every path a run works against. Nothing here knows
 the loop, the gates or the store.
 
 First slice of the phase-2 module split; moved verbatim from `factory.py`,
-which imports `Target` back for its remaining call sites.
+which imports `Project` back for its remaining call sites.
 """
 import contextlib
 import dataclasses
@@ -139,7 +139,7 @@ def adopt_legacy_state(target, destination, out=None):
 
 
 @dataclasses.dataclass
-class Target:
+class Project:
     """The repository a run works against, and the paths derived from it.
 
     Built once by `cli()` for whatever the command line names and passed to
@@ -173,11 +173,11 @@ class Target:
 
     @classmethod
     def locate(cls, path, adopt=True):
-        """The `Target` for the repository at `path`, with its state located.
+        """The `Project` for the repository at `path`, with its state located.
 
         Called by `cli()` for whatever the command line names; nothing else
         derives these paths, so a caller that wants a different target builds
-        another `Target` here instead of patching one path and leaving the
+        another `Project` here instead of patching one path and leaving the
         other two pointing at the last one. The config is derived from the
         target too, so it lives on the value and moves with it.
 
@@ -186,7 +186,7 @@ class Target:
         to run against -- a daemon enumerating a host's targets, a test naming
         a directory -- must not move that target's state, and where the target
         has two stores must not exit. The same rule `config()` follows, and
-        the reason importing this module builds no `Target` at all: nothing
+        the reason importing this module builds no `Project` at all: nothing
         target-specific happens before `cli()` has picked a target.
         """
         path = Path(path)
@@ -218,7 +218,7 @@ class Target:
             worktrees=path.parent / f"{path.name}.worktrees")
 
     def config(self):
-        """The target's parsed config, read once per `Target`.
+        """The target's parsed config, read once per `Project`.
 
         Read on demand rather than by `locate()`: parsing there would make a
         malformed `config.toml` an error for every value built, including one

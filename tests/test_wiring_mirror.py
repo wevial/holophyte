@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import merged_task  # noqa: E402 - after sys.path setup
@@ -113,9 +113,9 @@ class MirrorPushTests(unittest.TestCase):
             subprocess.run(["git", "config", key, value],
                            cwd=self.target, check=True)
         self.db = root / "repo.holophyte.db"
-        # The `Target` the loop is handed, with the store and the worktrees
+        # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.target.Target(
+        self.tgt = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")

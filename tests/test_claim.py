@@ -45,7 +45,7 @@ import holophyte.claim  # noqa: E402 - after the sys.path insert above
 import holophyte.environment_git  # noqa: E402
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -1628,7 +1628,7 @@ class FactoryCommitIdentityTests(unittest.TestCase):
         self.git("init", "-q", "-b", "main")
         (self.repo / "README.md").write_text("base\n")
         self.setup_commit("base")
-        self.tgt = holophyte.target.Target(
+        self.tgt = holophyte.project.Project(
             path=self.repo, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=root / "wts")
         self.branch = "task/ko-656"

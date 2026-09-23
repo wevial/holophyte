@@ -773,9 +773,9 @@ class ActiveRoutesTests(ServeTestCase):
     def test_status_shows_only_live_fallbacks_and_resets_to_primary(self):
         from holophyte.agent_routes import reset
         from holophyte.agents import ProbeResult, activate_fallback
-        from holophyte.target import Target
+        from holophyte.project import Project
         self.seed()
-        target = Target.locate(self.target)
+        target = Project.locate(self.target)
         target._config = {'agents': {'implementer': 'codex exec',
                                     'implementer_fallback': 'devin -p'}}
         self.addCleanup(reset, target)
@@ -786,7 +786,7 @@ class ActiveRoutesTests(ServeTestCase):
                               probe=ProbeResult(['devin', '-p'], 0, 'ready', 90))
         finally:
             conn.close()
-        # The daemon constructs its own Target, proving the indicator is not
+        # The daemon constructs its own Project, proving the indicator is not
         # accidentally reading the loop's in-memory route map.
         self.start()
         code, _, body = self.request('GET', '/status')
@@ -838,7 +838,7 @@ class MigrationFeedTests(ServeTestCase):
             store.record_intervention(conn, self.run, "migrate", "operator note")
         finally:
             conn.close()
-        target = holophyte.target.Target.locate(self.target)
+        target = holophyte.project.Project.locate(self.target)
         status, body = holophyte.serve_runs.ledger(target, "since=0")
         self.assertEqual(status, 200)
         rows = [r for r in body["entries"] if r.get("action") == "migrate"]

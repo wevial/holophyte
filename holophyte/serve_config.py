@@ -272,7 +272,7 @@ def implementer_of(text):
 def probe_changed_implementer(target, before, after):
     """`probe_implementer().to_json()` for the `after` document when its
     `[agents] implementer` differs from `before`'s; None otherwise. The
-    probed target carries `after` parsed, not the file: the `Target`
+    probed target carries `after` parsed, not the file: the `Project`
     the server was bound with read its config once, at bind."""
     if implementer_of(after) == implementer_of(before):
         return None
