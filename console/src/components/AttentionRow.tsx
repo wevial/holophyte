@@ -1,6 +1,6 @@
 import { PrFacts } from "./PrFacts";
 import { TicketLink } from "./TicketLink";
-import { useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { Description } from "../lib/attention";
 import { formatAge } from "../lib/format";
 import type { ThreadRow } from "../lib/threads";
@@ -29,15 +29,6 @@ export interface AttemptsProps {
 }
 
 export { NO_PR_URL, type RowDaemon } from "./RowActions";
-
-/** A question clamps to four lines (KO-717); one past four text lines, or
- *  longer than four lines of this column hold, gets "more". */
-const CLAMP_LINES = 4;
-const CLAMP_CHARS = 320;
-
-function runsLong(text: string): boolean {
-  return text.length > CLAMP_CHARS || text.split("\n").length > CLAMP_LINES;
-}
 
 /** One item: pill, ticket over project, body over meta, age, actions. A
  *  row given `thread` toggles its thread card on click; one given
@@ -77,8 +68,23 @@ export function AttentionRow({
 }) {
   const { pill, ticket, body, meta, ageMs, actions, facts } = description;
   const [expanded, setExpanded] = useState(false);
+  // A question clamps to four rendered lines (KO-717) and offers "more"
+  // when the clamp hides some of it: measured, since wrapping, not the
+  // text's length or newlines, decides how many lines it takes.
+  const question = kind === "blocked";
   const [more, setMore] = useState(false);
-  const clamped = kind === "blocked" && runsLong(body) && !more;
+  const [overflows, setOverflows] = useState(false);
+  const bodyRef = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    const element = bodyRef.current;
+    if (!question || more || !element) return;
+    const measure = () => setOverflows(element.scrollHeight > element.clientHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [question, more, body]);
   const failed = kind === "failed" && runId != null && daemon != null && !thread && !attempts;
   const card = thread ?? attempts ?? (failed ? { open: expanded, onToggle: () => setExpanded((value) => !value) } : undefined);
   const toggle = card?.onToggle;
@@ -121,8 +127,9 @@ export function AttentionRow({
         </div>
         <div className="min-w-0">
           <p
+            ref={bodyRef}
             data-body
-            className={`text-[13px] leading-[1.4] text-body ${kind === "blocked" ? "whitespace-pre-line break-words" : ""} ${clamped ? "line-clamp-4" : ""}`}
+            className={`text-[13px] leading-[1.4] text-body ${question ? "whitespace-pre-line break-words" : ""} ${question && !more ? "line-clamp-4" : ""}`}
           >
             {prUrl && leadsWithLink && (
               <span onClick={(event) => event.stopPropagation()} className="mr-2">
@@ -136,7 +143,7 @@ export function AttentionRow({
               </span>
             )}
           </p>
-          {kind === "blocked" && runsLong(body) && (
+          {question && (overflows || more) && (
             <button
               type="button"
               aria-expanded={more}

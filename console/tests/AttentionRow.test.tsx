@@ -348,28 +348,52 @@ test("a send-back the daemon answers 500 shows its error under the box, not Fail
   expect(screen.getByRole("textbox", { name: "Maintainer's note" })).toBeTruthy();
 });
 
-test("a question past four lines is clamped with more, which shows the whole text; a short one is not", () => {
-  const question = [
-    "PR open: https://github.com/OWNER/NAME/pull/235",
-    "a thread needs a human's answer; nothing was posted on it:",
-    "holophyte/merge_queue.py:116 by @greptile-apps[bot] (https://github.com/OWNER/NAME/pull/235#discussion_r9):",
-    "P1 **Queue entry is read before the merge settles**",
-    "",
-    "`merge_queue.py:116` reads the entry once; a dequeued pull request is then reported as merged.",
-  ].join("\n");
+/** happy-dom lays nothing out, so the row's paragraph gets a stand-in
+ *  layout: a 60-character column at 18px a line, cut to four lines while
+ *  `line-clamp-4` is on. */
+function wrapAt60(run: () => void) {
+  const line = 18;
+  const lines = (element: HTMLElement) =>
+    (element.textContent ?? "").split("\n").reduce((sum, text) => sum + Math.max(1, Math.ceil(text.length / 60)), 0);
+  const saved = ["scrollHeight", "clientHeight"].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)] as const);
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return lines(this) * line;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return Math.min(lines(this), this.classList.contains("line-clamp-4") ? 4 : Infinity) * line;
+    },
+  });
+  try {
+    run();
+  } finally {
+    for (const [name, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name];
+    }
+  }
+}
+
+test("a question wrapping past four lines is clamped with more, which shows the whole text; one that fits gets no more", () => {
+  // Four 76-character lines, 307 characters: eight lines once wrapped.
+  const question = ["a", "b", "c", "d"].map((letter) => letter.repeat(76)).join("\n");
   const item = (text: string): AttentionItem => ({ kind: "blocked", level: "attention", ticket: "KO-714", question: text });
-  renderRow(item(question), fakeFetch({}).fetchImpl);
-  const body = document.querySelector("[data-body]")!;
-  expect(body.className).toContain("line-clamp-4");
-  expect(body.textContent).toBe(question);
+  wrapAt60(() => {
+    renderRow(item(question), fakeFetch({}).fetchImpl);
+    const body = document.querySelector("[data-body]")!;
+    expect(body.className).toContain("line-clamp-4");
 
-  fireEvent.click(screen.getByRole("button", { name: "more" }));
-  expect(body.className).not.toContain("line-clamp-4");
-  expect(body.textContent).toBe(question);
-  expect(screen.queryByRole("button", { name: "more" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "more" }));
+    expect(body.className).not.toContain("line-clamp-4");
+    expect(body.textContent).toBe(question);
+    expect(screen.queryByRole("button", { name: "more" })).toBeNull();
 
-  cleanup();
-  renderRow(item("Which branch?"), fakeFetch({}).fetchImpl);
-  expect(document.querySelector("[data-body]")!.className).not.toContain("line-clamp-4");
-  expect(screen.queryByRole("button", { name: "more" })).toBeNull();
+    cleanup();
+    renderRow(item("Which branch?"), fakeFetch({}).fetchImpl);
+    expect(screen.queryByRole("button", { name: "more" })).toBeNull();
+  });
 });
