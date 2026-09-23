@@ -148,6 +148,13 @@ class RepeatedPassTests(unittest.TestCase):
                 self.assertEqual(self.runs(), 2)
                 (self.wt / "scratch").unlink(missing_ok=True)
 
+    def test_an_untracked_file_counts_when_status_hides_them(self):
+        self.git("config", "status.showUntrackedFiles", "no")
+        self.assertTrue(self.verify()[0])
+        (self.wt / "scratch").write_text("x")
+        self.assertTrue(self.verify()[0])
+        self.assertEqual(self.runs(), 2)
+
     def test_a_failure_is_not_recorded(self):
         cmd = self.cmd + "; exit 1"
         self.assertFalse(self.verify(cmd=cmd)[0])

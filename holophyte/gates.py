@@ -490,9 +490,11 @@ def _pass_key(run_id, cmd, cwd):
         head, main = subprocess.run(
             ["git", "rev-parse", "HEAD", "main"], cwd=cwd, capture_output=True,
             text=True, check=True).stdout.split()
+        # Untracked files asked for explicitly: `status.showUntrackedFiles
+        # = no` would otherwise hide a tree the head does not name.
         dirty = subprocess.run(
-            ["git", "status", "--porcelain"], cwd=cwd, capture_output=True,
-            text=True, check=True).stdout.strip()
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError, ValueError):
         return None
     return None if dirty else (run_id, head, main, cmd)
