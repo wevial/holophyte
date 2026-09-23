@@ -403,6 +403,18 @@ class AgentRouteTests(unittest.TestCase):
             holophyte.agent_routes.safe_command(self.tgt, "ghost-agent --check"),
             holophyte.redact.REDACTED)
 
+    def test_an_argument_named_executable_holding_a_credential_is_whole(self):
+        # The exact-argument check reads the name before credential
+        # redaction rewrites it, or only the credential part is hidden.
+        self.tgt.config_path.write_text(
+            '[linear]\napi_key = "example-credential"\n'
+            '[agents]\nimplementer = "runner --as private-example-credential-agent"\n')
+
+        self.assertEqual(
+            holophyte.agent_routes.safe_command(
+                self.tgt, "private-example-credential-agent --check"),
+            holophyte.redact.REDACTED)
+
     @patch.object(review_runner, "run_review")
     def test_a_reviewer_runner_failure_is_an_infra_failure(self, run_review):
         # The container did not start, so no candidate was judged: the run

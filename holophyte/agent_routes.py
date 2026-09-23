@@ -45,9 +45,10 @@ def safe_command(target, command):
     command = route_text(command)
     if not command:
         return command
-    secrets = known_secrets(target.config())
-    name = redact_prose(shlex.split(command)[0], secrets)
-    return REDACTED if name in command_secrets(target) - secrets else name
+    name = shlex.split(command)[0]
+    if name in command_secrets(target):
+        return REDACTED
+    return redact_prose(name, known_secrets(target.config()))
 
 
 def route_prose(target, text):
