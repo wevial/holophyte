@@ -31,8 +31,11 @@ class ClaimLockWaitTests(SweepTestCase):
         self.live = True
         self.beats = []
         self.phases = []
-        self.started = time.monotonic()
-        # 180 lock seconds take 180ms; heartbeat timers keep real time.
+        # Lock time is what the polls slept, oversleep included: 180 lock
+        # seconds take 180ms of polls, and a scheduling delay between polls
+        # cannot carry the waiter past its ceiling before it extends
+        # (KO-671). Heartbeats and holder liveness keep real time.
+        self.clock = 0
         for name in ('holophyte.gates.monotonic',
                      'holophyte.merge_lock.monotonic'):
             self.enterContext(patch(name, self.elapsed))
@@ -50,7 +53,7 @@ class ClaimLockWaitTests(SweepTestCase):
             claim.subprocess, 'run', side_effect=self.fetched))
 
     def elapsed(self):
-        return (time.monotonic() - self.started) * 1000
+        return self.clock
 
     def within(self, expected):
         """`expected` lock ms, one delayed poll and 500ms of scheduling."""
@@ -62,6 +65,7 @@ class ClaimLockWaitTests(SweepTestCase):
         # Sampled at both ends, so even two slow polls show a moving beat.
         self.beats.append(self.last_beat())
         time.sleep((seconds + self.delay_ms) / 1000)
+        self.clock += seconds + self.delay_ms
         self.beats.append(self.last_beat())
         self.phases.append(store.run_phase(self.conn, self.waiter))
         # Released only once the waiter is waiting past the default: a
