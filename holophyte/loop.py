@@ -538,7 +538,9 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=()):
     """Implement the ticket and return its SHA; open with reuse conflicts."""
     commands = (f"\n\nThese verify commands must pass before review and again "
-                f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
+                f"before merge:\n\n{verify_cmd}\n\nThe full unit suite runs "
+                f"as a pull request check; do not run it in the worktree. Run "
+                f"only the commands listed above." if verify_cmd else "")
     # A reclaimed run can already be old; refuse a turn that would exceed
     # its remaining budget.
     _check_run_cap(target, conn, run_id, budget_min, start_sha)
@@ -638,8 +640,9 @@ def _verify_brief(verify_cmd, ok, out):
     return (f"The ticket's verification commands and the target's baseline "
             f"({count} commands) were run and "
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n"
-            + ("The suite has been run by the factory at this commit; do not run "
-               "the full suite again, run only focused tests needed to check a "
+            + ("The ticket's checks and the target's baseline passed at this "
+               "commit; the full suite runs as a pull request check. Do not run "
+               "the full suite, run only focused tests needed to check a "
                "specific concern.\n" if ok else ""))
 
 
