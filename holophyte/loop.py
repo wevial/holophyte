@@ -256,7 +256,8 @@ def _run_stages(run, task):
     if not approved:
         _terminal_adjudication(target, conn, run_id, provider, task_id, task,
                                branch, wt, beat_s, base_sha, sha, ticket,
-                               verify_cmd, contracts, cap, criteria, resume=resume)
+                               verify_cmd, contracts, max(cap, rnd), criteria,
+                               resume=resume)
 
     # 4. pre-merge verify (catches fix-round regressions), then merge. Both
     # happen under `merge_gate`: §4's gate node is the one edge out of a

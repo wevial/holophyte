@@ -98,7 +98,7 @@ def review_rounds(*args, resume=None):
     fixes, head = _fix(loop, frame, _reasons(reply), ok, out)
     frame = replace(frame, sha=head)
     if not declared(fixes):
-        return loop._review_rounds(*frame.args(), resume={"rnd": 2})
+        return _hand_on(loop, frame, {"rnd": 2})
     ok, out = _verify(frame, 2)
     if not ok:
         return _set_aside(loop, frame, 2, out)
@@ -111,8 +111,20 @@ def review_rounds(*args, resume=None):
     _event(frame, "not_reproduced_refused",
            f"second evidence check: {decision}; round 2 is an ordinary review",
            reply)
-    return loop._review_rounds(*frame.args(), resume={
-        "phase": "reviewing", "rnd": 2, "ok": ok, "out": out})
+    return _hand_on(loop, frame, {"phase": "reviewing", "rnd": 2, "ok": ok,
+                                  "out": out})
+
+
+def _hand_on(loop, frame, pending):
+    """`_review_rounds()` from `pending`, whose ordinary round the evidence
+    check's round 1 must not take from a one-round cap: the cap rises to
+    that round, on the run too, and the loop numbers its terminal
+    adjudication after the round it returns."""
+    if frame.cap < pending["rnd"]:
+        frame = replace(frame, cap=pending["rnd"])
+        if frame.conn is not None and frame.run_id is not None:
+            store.set_review_round_cap(frame.conn, frame.run_id, frame.cap)
+    return loop._review_rounds(*frame.args(), resume=pending)
 
 
 def _verify(frame, rnd):
@@ -134,8 +146,8 @@ def _set_aside(loop, frame, rnd, out):
     _event(frame, "not_reproduced_set_aside",
            f"not-reproduced declaration at {frame.sha[:12]} set aside: verify"
            f" failed; round {rnd} is an ordinary review", str(out))
-    return loop._review_rounds(*frame.args(), resume={
-        "phase": "reviewing", "rnd": rnd, "ok": False, "out": out})
+    return _hand_on(loop, frame, {"phase": "reviewing", "rnd": rnd,
+                                  "ok": False, "out": out})
 
 
 def _check(loop, frame, rnd, ok, out):

@@ -110,6 +110,19 @@ class NotReproducedTests(LoopFixture):
             "SELECT COUNT(*) FROM runEvents WHERE kind = 'not_reproduced'"),
             [(0,)])
 
+    def test_a_one_round_cap_still_gets_the_ordinary_round_two(self):
+        self.configure("[loop]\nreview_rounds = 1\nreview_rounds_max = 1\n")
+        fake, _ = self.loop(Declare("test the modal"), REFUSED,
+                            Commit("fix the modal"), REQUEST_CHANGES,
+                            Commit("fix again"), Reply("Mergeable.\nVERDICT: PASS"))
+
+        self.assertEqual(fake.roles, ["implement", "adjudicate", "implement",
+                                      "review", "implement", "adjudicate"])
+        self.assertIn("READ-ONLY code reviewer", fake.turns[3].goal)
+        self.assertEqual(self.read("SELECT round, verdict FROM reviewRounds"),
+                         [(1, "changes_requested"), (2, "changes_requested"),
+                          (3, "pass")])
+
     def test_a_declaration_whose_verify_fails_is_set_aside(self):
         provider = StubProvider(dict(a_task(), verify="false"))
         fake, _ = self.loop(Declare("test the modal"), REQUEST_CHANGES, Idle(),
