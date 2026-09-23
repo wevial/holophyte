@@ -123,7 +123,8 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertEqual(code, 204)
         self.assertEqual(raw, b"")
         self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
-        self.assertIn("POST", headers["Access-Control-Allow-Methods"])
+        self.assertEqual(headers["Access-Control-Allow-Methods"],
+                         "GET, POST, PUT")
         allowed = headers["Access-Control-Allow-Headers"].lower()
         self.assertIn("authorization", allowed)
         self.assertIn("content-type", allowed)

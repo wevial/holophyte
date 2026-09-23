@@ -69,7 +69,9 @@ Each module, one line:
 - `holophyte/supervisor_lock.py` — the one-supervisor-per-project lock
   (KO-396): the lockfile's path, read, acquire and release, the
   `SupervisorHeld` refusal and the `supervisor_running()` probe.
-- `holophyte/serve.py` — `--serve PORT|HOST:PORT`, the read-only HTTP daemon.
+- `holophyte/serve.py` — `--serve PORT|HOST:PORT`, the HTTP daemon: it
+  reads by default and writes only through `[serve] actions` and
+  `config_edit`.
 - `holophyte/serve_config.py` — the daemon's `/config` routes (KO-394):
   `GET`'s redacted read and `PUT`'s validated, recorded and backed-up
   write, `text` and `{"patch": ...}` bodies alike.
