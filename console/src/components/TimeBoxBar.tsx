@@ -25,13 +25,14 @@ export function BoxBar({ elapsedMs, boxMs, height = 6 }: { elapsedMs: number | n
 }
 
 /** Elapsed against the time box: a 6px bar that turns amber at 70 % and
- *  red at 100 %, with `ELAPSED / BOX` beneath. */
-export function TimeBoxBar({ elapsedMs, boxMs }: { elapsedMs: number | null; boxMs: number | null }) {
+ *  red at 100 %, with `LABEL ELAPSED / BOX` beneath, the label naming the
+ *  clock the caller measured. */
+export function TimeBoxBar({ label = "working", elapsedMs, boxMs }: { label?: string; elapsedMs: number | null; boxMs: number | null }) {
   return (
     <span className="block min-w-0">
       <BoxBar elapsedMs={elapsedMs} boxMs={boxMs} />
       <span className="mt-1 block font-mono text-[12px] text-muted">
-        working {elapsedMs == null ? "n/a" : formatDuration(elapsedMs)} / {boxMs == null ? "n/a" : formatAge(boxMs)}
+        {label} {elapsedMs == null ? "n/a" : formatDuration(elapsedMs)} / {boxMs == null ? "n/a" : formatAge(boxMs)}
       </span>
     </span>
   );

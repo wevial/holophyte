@@ -126,6 +126,22 @@ export function workingMs(run: { working_ms?: number | null; work_started_ms?: n
   return run.working_ms == null ? null : run.working_ms + (run.work_started_ms != null ? sinceMs : 0);
 }
 
+/** The clock the time box judges: agent turns without verify, which counts
+ *  on between polls only while a turn (not a verify) is open. A daemon too
+ *  old to serve `agent_ms` falls back to `workingMs()`. */
+export function agentMs(
+  run: { agent_ms?: number | null; working_ms?: number | null; work_started_ms?: number | null; verify_started_ms?: number | null },
+  sinceMs = 0,
+): number | null {
+  if (run.agent_ms == null) return workingMs(run, sinceMs);
+  return run.agent_ms + (run.work_started_ms != null && run.verify_started_ms == null ? sinceMs : 0);
+}
+
+/** The name of the clock `agentMs()` reads for this run. */
+export function boxClock(run: { agent_ms?: number | null }): "agent" | "working" {
+  return run.agent_ms == null ? "working" : "agent";
+}
+
 /** One-based ordinal among this run's recorded review rounds. */
 export function roundLabel(ordinal: number, cap?: number): string {
   return `Round ${ordinal}${cap == null ? "" : ` of ${cap}`}`;

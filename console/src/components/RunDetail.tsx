@@ -8,7 +8,7 @@ import { formatClock, formatSettled, formatSpan } from "../lib/format";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel, roundLabel } from "../lib/runs";
-import { workingMs } from "../lib/runs";
+import { agentMs } from "../lib/runs";
 import { buildTimeline } from "../lib/timeline";
 import type { Round, RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
@@ -90,7 +90,7 @@ function Card({
   // live run keeps counting between polls and a finished one stays put —
   // and reads at settled granularity, its seconds done counting too.
   const tickingNow = now + sinceMs;
-  const work = workingMs(run, run.ended_ms == null ? sinceMs : 0);
+  const work = agentMs(run, run.ended_ms == null ? sinceMs : 0);
   const remaining = work == null || run.time_box_ms == null ? null : run.time_box_ms - work;
   const over = remaining != null && remaining < 0;
   const finished = run.ended_ms != null;
