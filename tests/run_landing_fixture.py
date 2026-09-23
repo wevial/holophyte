@@ -22,7 +22,7 @@ def landing_path(case, mode):
 
     def capture(run, verify):
         claimed = claims[-1]
-        for name in ("target", "conn", "provider", "run_id", "task_id", "issue_id",
+        for name in ("project", "conn", "provider", "run_id", "task_id", "issue_id",
                      "task", "branch", "wt", "started", "started_at", "budget_min"):
             case.assertEqual(getattr(run, name), getattr(claimed, name), name)
         row = run.conn.execute(
@@ -53,7 +53,7 @@ def landing_path(case, mode):
             script.append(Idle(''))
         case.loop(*script, provider=case.provider())
         if mode == 'approved':
-            holophyte.operator.approve(case.tgt, 'KO-131', 'ok', out=io.StringIO())
+            holophyte.operator.approve(case.project, 'KO-131', 'ok', out=io.StringIO())
             case.loop(provider=case.provider())
     case.assertEqual(len(landed), 1)
     run = landed[0]

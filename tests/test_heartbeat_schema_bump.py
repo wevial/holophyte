@@ -222,7 +222,7 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
 
 class LoopSchemaBumpTests(LoopFixture):
     def test_pass_reexecutes_before_claiming_when_store_moves(self):
-        conn = runs.open_store(self.tgt)
+        conn = runs.open_store(self.project)
         self.addCleanup(conn.close)
         conn.execute(f'PRAGMA user_version = {store.SCHEMA_VERSION + 1}')
         provider = StubProvider(a_task())
@@ -232,7 +232,7 @@ class LoopSchemaBumpTests(LoopFixture):
                 patch.object(operator, '_reconcile_at_startup'), \
                 patch.object(operator, '_claim_next') as claim, \
                 patch.object(operator, 'EXEC') as execute, redirect_stdout(out):
-            operator._serial(self.tgt, provider, loop_config(self.tgt))
+            operator._serial(self.project, provider, loop_config(self.project))
         execute.assert_called_once()
         claim.assert_not_called()
         self.assertIn(f'store schema moved to {store.SCHEMA_VERSION + 1}'
@@ -257,7 +257,7 @@ class LoopSchemaBumpTests(LoopFixture):
                 patch.object(pool, 'WAIT', workers.wait), \
                 patch.object(operator, 'EXEC', side_effect=execute) as reexec, \
                 redirect_stdout(out):
-            operator.main(self.tgt, provider)
+            operator.main(self.project, provider)
         reexec.assert_called_once()
         self.assertEqual(len(workers.spawned), 2)
         self.assertEqual(len(workers.reaped), 2)
@@ -274,7 +274,7 @@ class LoopSchemaBumpTests(LoopFixture):
 
         def execute(*args):
             self.handed.append((list(workers.alive), json.loads(
-                self.tgt.store_path.with_name('pool.json').read_text())))
+                self.project.store_path.with_name('pool.json').read_text())))
 
         out = io.StringIO()
         with ExitStack() as stack:
@@ -284,7 +284,7 @@ class LoopSchemaBumpTests(LoopFixture):
             stack.enter_context(patch.object(pool, 'WAIT', workers.wait))
             stack.enter_context(patch.object(operator, 'EXEC', execute))
             stack.enter_context(redirect_stdout(out))
-            operator.main(self.tgt, self.provider)
+            operator.main(self.project, self.provider)
         return workers, out.getvalue()
 
     def move(self):

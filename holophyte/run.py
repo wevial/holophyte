@@ -12,8 +12,8 @@ import store.read
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config
 from holophyte.gates import MergeParked
+from holophyte.project import Project
 from holophyte.redact import safe_print as print
-from holophyte.target import Target
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,7 @@ class Run:
     retain the monotonic elapsed-time calculation, including storeless callers.
     A PR pass returns its merge SHA without moving the local main checkout.
     """
-    target: Target
+    project: Project
     conn: Connection | None
     run_id: int | None
     provider: Any
@@ -54,17 +54,17 @@ def land(run: Run, verify: bool):
         return _landed_pr(run.conn, run.run_id, run.provider, run.task_id,
                           run.task, run.branch, run.pr_url, run.merge_sha,
                           run.started, run.budget_min, run.rnd)
-    target, conn, run_id, provider = run.target, run.conn, run.run_id, run.provider
+    project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
     task_id, task, branch, wt = run.task_id, run.task, run.branch, run.wt
     sha, started, budget_min, rnd = run.sha, run.started, run.budget_min, run.rnd
-    merge_sha = _merge(target, conn, run_id, provider, task_id, task, branch,
+    merge_sha = _merge(project, conn, run_id, provider, task_id, task, branch,
                        wt, sha)
     # Still under the merge lock, so the checkout the commands see is the
     # main this merge left and no sibling's merge moves it under them. A
     # failure parks the run rather than failing it: the merge has landed,
     # and a failed run would send the loop back to redo work main holds.
-    _run_after(target, conn, run_id, provider, task_id, merge_sha,
-               merge_config(target).after)
+    _run_after(project, conn, run_id, provider, task_id, merge_sha,
+               merge_config(project).after)
     # Nothing tells Linear the ticket is done here any more. The merge makes
     # the ticket `merged` in the store, and `main()` projects that status onto
     # the board through `mirror_push()` once the run has been released — one
@@ -92,7 +92,7 @@ def land(run: Run, verify: bool):
 AFTER_TAIL_LINES = 20
 
 
-def _run_after(target, conn, run_id, provider, task_id, merge_sha, commands):
+def _run_after(project, conn, run_id, provider, task_id, merge_sha, commands):
     """`[merge] after` (KO-347): run `commands` in order in the main checkout
     once the merge commit exists, each printed with its exit code. The first
     nonzero exit stops the list and parks the run `blocked_on_operator` with
@@ -101,7 +101,7 @@ def _run_after(target, conn, run_id, provider, task_id, merge_sha, commands):
     Nothing here touches the merge commit: main keeps it either way.
     """
     for cmd in commands:
-        done = subprocess.run(cmd, shell=True, cwd=target.path,
+        done = subprocess.run(cmd, shell=True, cwd=project.path,
                               capture_output=True, text=True)
         print(f"[holo2] after: {cmd} -> exit {done.returncode}")
         if done.returncode == 0:

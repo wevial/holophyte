@@ -43,7 +43,7 @@ export function trayImageFile(level: Level): string | null {
 /** One poll's answer for one path on one daemon. A 401 is not a failure to
  *  reach the daemon: it is up and wants a token `console.json` does not
  *  carry for it, or carries out of date. Any other non-2xx keeps its status (a 404 on `/attention`
- *  is a daemon older than the path; a 503 is a target with no store yet)
+ *  is a daemon older than the path; a 503 is a project with no store yet)
  *  and its JSON body when there was one. */
 export type FetchResult<T> =
   | { ok: true; body: T }
@@ -58,7 +58,6 @@ export type Run = {
 };
 export type Status = {
   project?: string;
-  target?: string;
   host?: string;
   now?: number;
   error?: string;
@@ -131,7 +130,7 @@ function cut(text: unknown, limit: number): string {
 /** What the tray calls a daemon: the last path segment of its project,
  *  the address before `/status` has named one. */
 export function projectName(address: string, status: Status | null): string {
-  const project = status?.project ?? status?.target;
+  const project = status?.project;
   if (!project) return address;
   const segments = project.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? project;

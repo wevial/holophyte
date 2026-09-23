@@ -33,14 +33,14 @@ class Retrigger:
         """The pushed head's state, or None when `[merge]
         retrigger_missing_checks` is off or the head is itself a retrigger."""
         run = self.run
-        if (not merge_config(run.target).retrigger_missing_checks
+        if (not merge_config(run.project).retrigger_missing_checks
                 or retriggered(run.wt, self.sha)):
             return None
         stop_if_requested(run.conn, run.run_id, "merge_gate")
         listed = ", ".join(names)
         sh(["git", *factory_identity(run.wt), "commit", "--allow-empty", "-m",
             f"{SUBJECT}{listed}"], cwd=run.wt)
-        pr.push_branch(run.target, run.branch)
+        pr.push_branch(run.project, run.branch)
         sha = sh(["git", "rev-parse", run.branch], run.wt)
         if run.conn is not None and run.run_id is not None:
             store.record_event(run.conn, run.run_id, "pull_request",
@@ -53,7 +53,7 @@ class Retrigger:
             self.reviewed = sha
         self.sha = sha
         return _just_pushed_state(
-            run.target, run.conn, run.run_id, run.provider, run.task_id,
+            run.project, run.conn, run.run_id, run.provider, run.task_id,
             run.branch, sha, self.beat_s, self.pull, self.reviewed)
 
 

@@ -4,7 +4,8 @@ Task-line parsing, the `&&`-clause instrumentation that makes a failure
 attributable, the four report builders, the process-group cap the gate and
 the agent dispatch both run under, `run_verify` itself, and the two failure
 classes the loop's close-out reads. Pure: strings in, report out, one
-subprocess call. Nothing here knows the loop, the store or the target; the
+subprocess call -- or none, for a run's repeat of a pass the per-process
+record cites. Nothing here knows the loop, the store or the target; the
 one constant it shares with worktree setup, `VERIFY_TIMEOUT`, stays in
 `holophyte.config`, which is the default `setup_timeout_sec` falls back to.
 
@@ -213,6 +214,15 @@ def failure_report(cmd, clauses, per_clause, failed, returncode, cleaned):
     return f"{head}\n" + "\n".join(lines)[-2000:]
 
 
+TIMEOUT_HEAD = "[verify] FAILED: verify timed out after "
+
+
+def verify_timed_out(out):
+    """Whether a failed verify's report is `timeout_failure_report()`'s: the
+    command ran past its cap, which no change to the candidate can shorten."""
+    return str(out).startswith(TIMEOUT_HEAD)
+
+
 def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
     """Name the cap a command ran past and, for a marked chain, the clause
     that was running when it fired. Same shape as `failure_report()`, so a
@@ -224,7 +234,7 @@ def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
     stops at the first failure, so the highest marker seen is the one that
     never finished."""
     running = max(per_clause) if per_clause else None
-    head = f"[verify] FAILED: verify timed out after {timeout:g}s"
+    head = f"{TIMEOUT_HEAD}{timeout:g}s"
     if not (clauses and running and 1 <= running <= len(clauses)):
         body = cleaned.strip() or "(no output before the timeout)"
         return (f"{head}\n"
@@ -330,11 +340,11 @@ def contract_report(contracts, cwd):
         problem = ticket_template.contract_path_problem(path)
         if problem is None and not literal:
             problem = "declaration has an empty expected literal"
-        target = root / path
-        if problem is None and not target.is_file():
+        declared = root / path
+        if problem is None and not declared.is_file():
             problem = "declared file does not exist"
         if problem is None:
-            if literal in target.read_text(errors="replace"):
+            if literal in declared.read_text(errors="replace"):
                 continue
             problem = "expected literal is absent from the file"
         return (f"[verify] FAILED: contract check — {problem}\n"
@@ -453,24 +463,54 @@ def run_capped(cmd, cwd, timeout, on_start=None, *, env=None):
 
 
 def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None,
-               target=None):
+               project=None):
     """Account for a mechanical verification, preserving its tuple interface."""
     from store.working import working
 
     with working(conn, run_id, verify=True):
-        return _run_verify(cmd, cwd, contracts, timeout, target=target)
+        return _run_verify(cmd, cwd, contracts, timeout, project=project,
+                           run_id=run_id)
 
 
-def _verify_command(target, command, cwd, timeout):
+# Passes this process has seen: (run id, worktree, head, main, command). A
+# repeat for the same run on the same clean tree -- the merge gate after an
+# approving round, `main` unmoved -- is cited instead of run. The worktree
+# keeps another store's run 1 on the same commits from matching. Failures
+# are never recorded; a re-exec starts empty; nothing outlives the process.
+_PASSES = set()
+
+
+def _pass_key(run_id, cmd, cwd):
+    """The record's key for `cmd` in `cwd`, or None when a pass there must
+    not be reused: no run id, not a git worktree, or uncommitted or
+    untracked changes, which make the head's sha not name the tree."""
+    if run_id is None:
+        return None
+    try:
+        head, main = subprocess.run(
+            ["git", "rev-parse", "HEAD", "main"], cwd=cwd, capture_output=True,
+            text=True, check=True).stdout.split()
+        # Untracked files asked for explicitly: `status.showUntrackedFiles
+        # = no` would otherwise hide a tree the head does not name.
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return None
+    return None if dirty else (run_id, str(Path(cwd).resolve()), head, main, cmd)
+
+
+def _verify_command(project, command, cwd, timeout):
     from holophyte import isolation
 
-    route = isolation.route_for(target) if target is not None else isolation.Route()
+    route = isolation.route_for(project) if project is not None else isolation.Route()
     argv = ['/bin/sh', '-c', command] if route.backend == 'container' else command
-    env = isolation.environment(target) if target is not None else None
+    env = isolation.environment(project) if project is not None else None
     return isolation.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped)
 
 
-def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
+def _run_verify(cmd, cwd, contracts=None, timeout=None, *, project=None,
+                run_id=None):
     """Mechanical acceptance check. Returns (ok, output), with structured
     command facts on failed output's `failure` attribute. Runs via shell on
     purpose: the command is author-supplied on the ticket, not agent output.
@@ -478,6 +518,8 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
     Literal contracts run first. Reports reject drift and zero-test discovery.
     Timeout is a failed gate, after run_capped has reaped the process group;
     the caller receives the same (ok, output) tuple on every normal return.
+    A command that already passed for `run_id` on this clean tree, with
+    `main` where it was, is not run again (`_PASSES`).
 
     """
     drifted = contract_report(contracts, cwd)
@@ -487,6 +529,20 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
               if contracts else "")
     if not cmd:
         return True, passed + "(no verify command)"
+    key = _pass_key(run_id, cmd, cwd)
+    if key in _PASSES:
+        return True, passed + (
+            "[verify] not run again: passed earlier in this run at head"
+            f" {key[2][:12]} with main at {key[3][:12]}")
+    ok, out = _run_command(cmd, cwd, timeout, project)
+    if ok and key is not None:
+        _PASSES.add(key)
+    return ok, passed + out if ok else out
+
+
+def _run_command(cmd, cwd, timeout, project):
+    """Run a verify command once; (ok, output) as `_run_verify` returns it,
+    less the contract line."""
     # Complete, simple command lines can be marked without splitting the
     # shell: exported variables and cd still carry, and a newline block stops
     # at the first failing line. Compound lists force verbatim
@@ -504,7 +560,7 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
     marked = bool(clauses) and len(clauses) > 1
     try:
         returncode, out = _verify_command(
-            target,
+            project,
             instrumented_script(clauses, stop_on_failure=True) if marked else cmd,
             cwd, VERIFY_TIMEOUT if timeout is None else timeout)
     except subprocess.TimeoutExpired as expired:
@@ -525,7 +581,7 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, target=None):
                           if VACUOUS_RE.search(text)), 1)
             return False, _verify_failure(vacuous, cmd, clauses, index, 0,
                                           per_clause.get(index, cleaned))
-        return True, passed + cleaned.strip()[-2000:]
+        return True, cleaned.strip()[-2000:]
     report = failure_report(cmd, clauses if marked else None,
                             per_clause, failed, returncode, cleaned)
     index = failed[0] if failed else max(per_clause, default=1)
@@ -635,10 +691,10 @@ MERGE_LOCK_WAIT_SEC = 180
 MERGE_LOCK_POLL_SEC = 1.0
 
 
-def merge_lock_path(target):
-    """The merge lock for `target`, beside its store in the state directory
+def merge_lock_path(project):
+    """The merge lock for `project`, beside its store in the state directory
     -- never in the repository, where a task's `git add -A` could commit it."""
-    return target.holo_dir / "merge.lock"
+    return project.holo_dir / "merge.lock"
 
 
 def read_merge_lock(path):
@@ -663,9 +719,9 @@ def read_merge_lock(path):
 
 
 @contextlib.contextmanager
-def merge_lock(target, run_id, wait=None, poll=None, on_wait=None,
+def merge_lock(project, run_id, wait=None, poll=None, on_wait=None,
                extend_wait=None, operation="gate"):
-    """Hold `target`'s merge lock for the block; raise `MergeLockHeld` if it
+    """Hold `project`'s merge lock for the block; raise `MergeLockHeld` if it
     cannot be had within `wait` seconds. `extend_wait(holder, elapsed)` may
     return a positive poll delay to keep waiting past that default bound.
 
@@ -683,7 +739,7 @@ def merge_lock(target, run_id, wait=None, poll=None, on_wait=None,
 
     wait = MERGE_LOCK_WAIT_SEC if wait is None else wait
     poll = MERGE_LOCK_POLL_SEC if poll is None else poll
-    path = merge_lock_path(target)
+    path = merge_lock_path(project)
     path.parent.mkdir(parents=True, exist_ok=True)
     stamp = f"{run_id if run_id is not None else '-'} {time():.3f}\n"
     started = monotonic()
@@ -785,11 +841,11 @@ class VerificationOutput(str):
         return value
 
 
-def run_baseline(target, wt, tier, conn=None, run_id=None):
+def run_baseline(project, wt, tier, conn=None, run_id=None):
     """Run one baseline tier in order, stopping at its first failed command."""
     from holophyte.config_tables import verify_config
 
-    config = verify_config(target)
+    config = verify_config(project)
     if tier not in ("always", "before_merge"):
         raise ValueError(f"unknown verify tier: {tier}")
     results, reports = [], []
@@ -797,7 +853,7 @@ def run_baseline(target, wt, tier, conn=None, run_id=None):
     failure = None
     for command in getattr(config, tier):
         ok, out = run_verify(command, wt, timeout=config.timeout_sec,
-                             conn=conn, run_id=run_id, target=target)
+                             conn=conn, run_id=run_id, project=project)
         results.append({"source": "baseline", "tier": tier,
                         "command": command, "exitCode": 0 if ok else 1,
                         "output": str(out)})
@@ -808,7 +864,7 @@ def run_baseline(target, wt, tier, conn=None, run_id=None):
     return ok, VerificationOutput("\n".join(reports), results, failure=failure)
 
 
-def with_baseline(target, wt, command, ok, out, conn=None, run_id=None,
+def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
                   *, before_merge=False):
     """Complete a ticket verify with the applicable target baseline tiers.
 
@@ -828,7 +884,7 @@ def with_baseline(target, wt, command, ok, out, conn=None, run_id=None,
     for tier in (("always", "before_merge") if before_merge else ("always",)):
         if not ok:
             break
-        ok, baseline = run_baseline(target, wt, tier, conn, run_id)
+        ok, baseline = run_baseline(project, wt, tier, conn, run_id)
         failure = baseline.failure
         results.extend(baseline.results)
         if baseline:

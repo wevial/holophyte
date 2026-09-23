@@ -8,7 +8,7 @@
 `--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
 loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
-`holophyte.supervisor`, `holophyte.status` and `holophyte.serve`; the `Target`
+`holophyte.supervisor`, `holophyte.status` and `holophyte.serve`; the `Project`
 is built once from the command line and handed down, and the board
 (`LinearProvider`) is built here and never reached for by name below.
 Importing this module locates no target, reads no config and touches no
@@ -43,6 +43,7 @@ from holophyte.operator import (
     requeue,
 )
 from holophyte.pool import worker
+from holophyte.project import Project
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.startup import eager_import
 from holophyte.status import status_report
@@ -50,7 +51,6 @@ from holophyte.store_import import dry_run
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
-from holophyte.target import Target
 from provider import LinearProvider
 
 # The entry point the loop's spawned supervisor is started through: the
@@ -220,9 +220,9 @@ def _legacy_cli(argv):
              "a 'requeue' intervention on that run carrying --note and walks "
              "the ticket to ready and clears its question in one transaction; "
              "accepts in_flight or blocked_on_operator after a failed or "
-             "rejected run; refuses live runs and other states or outcomes; "
-             "for parked candidates use --approve or --babysit, for parked "
-             "pull requests use --babysit; refusals write nothing")
+             "rejected run, or a not_reproduced park (ended abandoned, no "
+             "strike); refuses live runs, other states or outcomes and other "
+             "parks (use --approve or --babysit); refusals write nothing")
     # The operator's answer to `merge?`: the same rung-3 pair as `--requeue`
     # for a ticket parked by `[merge] approve = "human"`, so the loop's next
     # claim takes the preserved candidate straight to the merge gate.
@@ -393,7 +393,7 @@ def _legacy_cli(argv):
     # A dry run writes nothing, and adopting legacy state moves files: it
     # locates the target without adopting, so a store still in a legacy
     # layout is reported absent rather than moved.
-    target = Target.locate(args.target, adopt=args.import_store is None)
+    target = Project.locate(args.target, adopt=args.import_store is None)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.

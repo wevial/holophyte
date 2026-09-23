@@ -55,7 +55,7 @@ export function hostOf(status: Status, attention: Attention, base = "http://writ
     address: addressOf(base),
     base,
     label: addressOf(base),
-    project: status.project ?? status.target,
+    project: status.project,
     status,
     attention,
     polled_ms: polledMs,

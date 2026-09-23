@@ -63,7 +63,7 @@ implementer's command and isolation settings.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"`) and optional `model` and `effort` (default `"opus"`, `"high"`); override to select another implementer harness. A table's adapter builds the argv, records the session id at dispatch and builds the resume argv. |
+| `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"` or `"codex"`) and optional `model` and `effort` (`claude`: default `"opus"`, `"high"`; `codex`: default `"gpt-5.6-sol"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); override to select another implementer harness. A table's adapter builds the argv, records the session id (`claude` at dispatch, `codex` from its banner after the turn) and builds the resume argv. |
 | `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` (`"codex"`) and optional `model` and `effort` (default `"gpt-5.6-sol"`, `"medium"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
@@ -73,7 +73,7 @@ implementer's command and isolation settings.
 | `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and the project's toolchain. Startup refuses a missing image and prints its build command. |
 | `implementer_credential` | Default: `{}` (no credential) | Either `{ env = "AGENT_API_KEY" }` to pass one named host variable, or `{ file = "~/.agent/auth.json", destination = "/home/implementer/.agent/auth.json" }` to mount one regular file read-only under the temporary home. |
 | `implementer_resume` | Default: absent (disabled) | Command string containing `{session}`; the findings prompt is appended as the last argv element. Refused beside a table implementer, whose adapter builds the resume. |
-| `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. Refused beside a table implementer, whose adapter assigns the session. |
+| `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. Refused beside a table implementer, whose adapter records the session. |
 | `budget_scale` | Default: `1.0` | Finite number from 1.0 to 3.0; increase for a slower implementer harness. |
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
 | `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup reviewer. |
@@ -103,7 +103,8 @@ budget_scale = 1.5
 A role can instead be a table naming a harness adapter in
 `holophyte/harness.py`. Only `implementer`, `reviewer` and `adjudicator` may
 be tables, and only for a role the harness supports; today that is `claude`
-for `implementer` and `codex` for `reviewer` and `adjudicator`. Unknown keys,
+for `implementer` and `codex` for `implementer`, `reviewer` and
+`adjudicator`. Unknown keys,
 an unknown harness or a role the harness does not serve are startup errors. `[agents.implementer] harness = "claude"`
 runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
 `U`, records `U` on the run before launch (a turn the budget kills keeps it),
@@ -144,6 +145,25 @@ model   = "gpt-5.6-sol"   # optional; passed to -m
 effort  = "medium"        # optional; low, medium, high or xhigh
 ```
 
+`[agents.implementer] harness = "codex"` replaces the three hand-matched
+strings `implementer`, `implementer_session` and `implementer_resume`. Each
+turn runs in the task worktree as `codex exec
+--dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -m M -c
+model_reasoning_effort=E PROMPT`, with `M` and `E` defaulting to the review
+defaults above. Codex chooses the session id, so after every implement and
+fix turn, a timed-out one included, the UUID on the first `session id:` line
+of the combined output is recorded on the run as for `implementer_session`.
+A fix round under `[loop] fix_session = "resume"` runs `codex exec resume U
+--dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -m M -c
+model_reasoning_effort=E PROMPT`, keeping the turn's model and effort.
+
+```toml
+[agents.implementer]
+harness = "codex"
+model   = "gpt-5.6-sol"   # optional; passed to -m
+effort  = "medium"        # optional; low, medium, high or xhigh
+```
+
 `[agents.reviewer] harness = "cursor"` (and the same for `adjudicator`) runs
 the Cursor CLI in the same throwaway candidate checkout, as
 `cursor-agent -p --model M --force --trust PROMPT`. `model` is required and
@@ -174,7 +194,8 @@ for the configured implementer. `none` preserves existing host behavior.
 Set `[loop] fix_session = "resume"` to reuse the recorded session for review
 fix rounds, with e.g. `implementer_resume = "codex exec resume {session}"`
 in `[agents]` (include the model and sandbox flags for your implementer),
-or with a table implementer, whose adapter builds the resume argv itself.
+or with a table implementer, whose adapter builds the resume argv itself
+(for `codex`, with the model and effort of the turn it resumes).
 The resumed prompt contains reviewer findings and adjudication instructions;
 the original ticket is already in the session. `alternate` assigns odd store
 run ids to resume and even ids to fresh, consistently across their fix rounds.
@@ -624,6 +645,7 @@ Use TOML literal strings for custom patterns, for example
 | `missing_check_sec` | Default: `600` seconds | Integer at least 1; how long a status check the base branch's ruleset requires may report nothing on the pull request's head before the babysitter stops waiting for it. Checks that reported and are merely slow wait for `check_wait_sec` instead. |
 | `retrigger_missing_checks` | Default: `false` | Boolean; set to `true` to push one empty commit ("Retrigger missing checks: NAMES") to the candidate branch when a required check has reported nothing for `missing_check_sec`, then keep waiting on the new head. Otherwise, or when the check still reports nothing on that new head, the run parks naming the missing checks. |
 | `pr_changes_log` | Default: `false` | Boolean; set to `true` to retain an ordered "Changes since first review" list across approved fix rounds. Otherwise the next successful description refresh removes any existing list, preserving Evidence, the Linear line and appended blocks. Non-boolean values are a startup error naming the key. |
+| `review_fixes` | Default: `false` | Boolean; with `approve = "human"`, set to `true` so fix commits a babysit pass pushes after the release (bot-thread answers, merges of main) get the covering review of that range before the run parks, and the park names the reviewed range and sha. A rejection parks with the findings and no approval. Non-boolean values are a startup error naming the key. |
 | `pr_style` | Default: `""` | String; set instructions for the title and description writer to follow repository conventions. |
 | `ui_paths` | Default: `[]` | List of non-empty repository-relative globs without `..`; set with ui_capture to identify changes needing visual evidence. |
 | `ui_capture_dir` | Default: `"e2e/capture"` | Directory named in the implementer brief for ticket capture scripts; the capture command receives it as `HOLOPHYTE_CAPTURE_DIR`. |

@@ -289,20 +289,14 @@ class BabysitterTests(unittest.TestCase):
 class ProjectWordTests(unittest.TestCase):
     """KO-618: the manual calls the repository the factory works on a
     project, as `factory.py project add` and the store's `projects` table
-    do. Mermaid node names follow the code, and the code type `Target`, its
-    module and the JSON alias key `target` keep the old word until later
-    tickets rename them; `docs/design/` holds dated records."""
+    do. Mermaid node names follow the code; `docs/design/` holds dated
+    records. The code type and its module left the old word in KO-619, and
+    the daemon's JSON alias key in KO-634, which retired their exceptions
+    here."""
 
     maxDiff = None
     OLD_WORD = re.compile(r"\btargets?\b", re.IGNORECASE)
-    # `holophyte/target.py` is permitted beyond the ticket's three forms:
-    # the ticket leaves the module path to the type rename
-    # (394-project-rename-c-type.md), and DevelopmentDocTests requires
-    # development.md to name every module that exists. That rename retires
-    # this exception.
-    PERMITTED = re.compile(
-        r"```mermaid\n.*?```|`Target`|`target`|\"target\""
-        r"|`holophyte/target\.py`", re.DOTALL)
+    PERMITTED = re.compile(r"```mermaid\n.*?```", re.DOTALL)
 
     def test_the_old_word_is_gone_outside_the_design_notes(self):
         found = []
@@ -321,7 +315,8 @@ class ProjectWordTests(unittest.TestCase):
     def test_the_glossary_defines_project_and_the_board_as_linear(self):
         text = (DOCS / "reference" / "glossary.md").read_text()
         self.assertRegex(text, r"\*\*Project\.\*\*")
-        self.assertNotRegex(text, r"\*\*Target\.\*\*")
+        self.assertNotRegex(
+            text, re.compile(r"\*\*target\.\*\*", re.IGNORECASE))
         board = re.search(r"\*\*Board\.\*\*(.*?)\n\n", text, re.DOTALL)
         self.assertIsNotNone(board, "glossary has no Board entry")
         self.assertIn("Linear project", board.group(1))
@@ -338,7 +333,7 @@ class ProjectWordTests(unittest.TestCase):
                  if not row.split(" | ")[0].endswith(" PROJECT`")]
         self.assertEqual(wrong, [])
 
-    def test_the_http_page_names_project_the_key_and_target_its_alias(self):
+    def test_the_http_page_names_project_the_repository_key(self):
         text = re.sub(r"\s+", " ",
                       (DOCS / "reference" / "http.md").read_text())
         for route in ("/status", "/attention"):
@@ -346,8 +341,10 @@ class ProjectWordTests(unittest.TestCase):
             self.assertIn('"project": "/path/to/repo"', section, route)
             self.assertRegex(section, r"`project` is the (?:project path|"
                              r"repository the daemon serves)", route)
-            self.assertRegex(section, r"`target` (?:is )?(?:its |a )?"
-                             r"deprecated alias[^.]*same value", route)
+        (no_store,) = [row for row in text.split(" | ")
+                       if "no store yet" in row]
+        self.assertRegex(no_store, r"`project`, the repository the daemon"
+                         r" serves")
 
 
 class ArchitectureTruthTests(unittest.TestCase):

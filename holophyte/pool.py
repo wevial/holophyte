@@ -13,7 +13,7 @@ import store
 import store.tickets
 from holophyte import admission, pool_handoff
 from holophyte.config_tables import loop_config
-from holophyte.findings import commit_findings, refresh_findings
+from holophyte.findings import commit_findings, findings_off, refresh_findings
 from holophyte.gates import MergeLockHeld, merge_lock
 from holophyte.reconcile import _reconcile_at_startup
 from holophyte.redact import safe_print as print
@@ -147,8 +147,11 @@ def _render_findings_locked(target, conn, run_id, task, commit=None):
     failed run's close-out passes `refresh=False` and renders here
     instead. A lock that cannot be had within the gate's wait leaves the
     window unrendered and says so: the next close-out in this checkout
-    renders these rows with its own.
+    renders these rows with its own. A target with the file off has no
+    write and no commit to serialise, so it does not wait on the lock.
     """
+    if findings_off(target):
+        return
     try:
         with merge_lock(target, run_id):
             refresh_findings(target, conn)

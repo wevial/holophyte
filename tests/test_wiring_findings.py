@@ -24,8 +24,8 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -106,17 +106,18 @@ class RenderedWindowTests(unittest.TestCase):
         self.conn = store.open(str(self.root / "holophyte.db"))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = tickets.ensure_project(self.conn, "team-1", self.root / "repo")
-        self.tgt = holophyte.target.Target.locate(self.root / "repo", adopt=False)
+        self.project_id = tickets.ensure_project(self.conn, "team-1",
+                                                 self.root / "repo")
+        self.project = holophyte.project.Project.locate(self.root / "repo", adopt=False)
 
     def complete_run(self, n, merge_sha=None):
         """One merged run of its own ticket, stamped a minute apart per `n`."""
         ticket = tickets.mirror_ticket(
-            self.conn, self.project,
+            self.conn, self.project_id,
             linear_issue_id=f"issue-{n}", linear_identifier=f"KO-{n}",
             title=f"ticket {n}", time_box_ms=25 * 60 * 1000)
         at = 1_700_000_000_000 + n * 60_000
-        run_id = store.claim(self.conn, self.project, ticket, now=at)
+        run_id = store.claim(self.conn, self.project_id, ticket, now=at)
         finish_run(self.conn, run_id, "merged", now=at + 30_000,
                       merge_sha=merge_sha)
         return run_id
@@ -198,10 +199,10 @@ class RenderedWindowTests(unittest.TestCase):
         path.write_text(preamble)
         self.complete_run(1)
 
-        holophyte.findings.write_findings(self.tgt, self.conn, path)
+        holophyte.findings.write_findings(self.project, self.conn, path)
         first = path.read_text()
         self.complete_run(2)
-        holophyte.findings.write_findings(self.tgt, self.conn, path)
+        holophyte.findings.write_findings(self.project, self.conn, path)
         second = path.read_text()
 
         # Untouched, and still the top of the file after a second pass that
@@ -227,8 +228,8 @@ class RenderedWindowTests(unittest.TestCase):
         path.write_text(preamble)
         self.complete_run(1)
 
-        holophyte.findings.write_findings(self.tgt, self.conn, path)
-        holophyte.findings.write_findings(self.tgt, self.conn, path)
+        holophyte.findings.write_findings(self.project, self.conn, path)
+        holophyte.findings.write_findings(self.project, self.conn, path)
 
         rendered = path.read_text()
         self.assertTrue(rendered.startswith(preamble), rendered[:300])
@@ -260,9 +261,9 @@ class CloseOutRegenerationTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
-        # The `Target` the loop is handed, with the store and the worktrees
+        # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.target.Target(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -292,10 +293,10 @@ class CloseOutRegenerationTests(unittest.TestCase):
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.tgt, provider)
+                holophyte.operator.main(self.project, provider)
 
     def test_a_close_out_renders_and_commits_the_runs_entries(self):
-        self.tgt.config_path.write_text('[report]\nfindings = "repo"\n')
+        self.project.config_path.write_text('[report]\nfindings = "repo"\n')
         self.loop("- store.py:7: the migration is missing\n"
                   "VERDICT: REQUEST_CHANGES",
                   "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
@@ -325,7 +326,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
                          r" \(branch task/ko-131-add-a-thing deleted\)\.\n"
                          r"actual: \d+\.\d min · "
                          r"estimate: 5 min · rounds: 2\n")
-        conn = store.open(str(self.tgt.store_path))
+        conn = store.open(str(self.project.store_path))
         try:
             self.assertEqual(
                 conn.execute("SELECT mergeSha FROM runs"
@@ -355,7 +356,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
 
         # The merge happened: the run is merged in the store and main has
         # the `--no-ff` merge commit on top of the base.
-        conn = store.open(str(self.tgt.store_path))
+        conn = store.open(str(self.project.store_path))
         try:
             self.assertEqual(
                 conn.execute("SELECT outcome FROM runs").fetchall(),

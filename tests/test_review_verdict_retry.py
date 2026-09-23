@@ -77,7 +77,7 @@ class ReviewVerdictRetryTests(LoopFixture):
                 with patch.object(review_runner, "run_review",
                                   side_effect=runner) as run:
                     reply, actual, evidence = holophyte.loop._review_reply(
-                        self.tgt, "Review this candidate.", self.target,
+                        self.project, "Review this candidate.", self.target,
                         self.base, self.base, None, None)
                 self.assertEqual(run.call_count, 2)
                 self.assertEqual(actual, decision)
@@ -96,7 +96,7 @@ class ReviewVerdictRetryTests(LoopFixture):
                                  (3, "src/b.py", "same boilerplate"),
                                  (4, "src/b.py", "different boilerplate")):
             holophyte.runs.record_round(
-                self.tgt, conn, run_id, rnd, "review",
+                self.project, conn, run_id, rnd, "review",
                 f"- [P1] {path}:12 — Broken boundary\nVERDICT: REQUEST_CHANGES",
                 "echo ok", True, "ok", prior_reply=prior)
             if rnd == 2:

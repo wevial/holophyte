@@ -25,7 +25,7 @@ class ClaimLockWaitTests(SweepTestCase):
                        '[supervisor]\nheartbeat_stale_min = 0.05\n')
         self.holder = self.a_run(phase='merge_gate')
         self.waiter = self.a_run()
-        self.path = gates.merge_lock_path(self.tgt)
+        self.path = gates.merge_lock_path(self.project)
         self.path.write_text(f'{self.holder} {time.time()}\n')
         self.release_from = None
         self.live = True
@@ -102,7 +102,7 @@ class ClaimLockWaitTests(SweepTestCase):
         return SimpleNamespace(returncode=0 if args[1] == 'fetch' else 1)
 
     def cut(self):
-        return claim._cut_worktree(self.tgt, self.conn, self.waiter, None,
+        return claim._cut_worktree(self.project, self.conn, self.waiter, None,
                                    'KO-2', 'task', 'task/test', self.root / 'wt')
 
     def test_live_holder_waits_past_default_with_heartbeat_and_event(self):

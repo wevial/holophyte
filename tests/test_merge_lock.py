@@ -15,7 +15,7 @@ class LiveMergeLockTests(SweepTestCase):
         self.configure('[merge]\ncheck_wait_sec = 300\n')
         self.holder = self.a_run(phase="merge_gate")
         self.waiter = self.a_run(phase="reviewing")
-        self.path = gates.merge_lock_path(self.tgt)
+        self.path = gates.merge_lock_path(self.project)
         self.path.write_text(f"{self.holder} {T0 / 1000}\n")
         self.elapsed = 0
         self.release_at = None
@@ -54,7 +54,7 @@ class LiveMergeLockTests(SweepTestCase):
             self.assertEqual(holder[0], self.holder)
 
     def acquire(self):
-        return gate._gate_lock(self.tgt, self.conn, self.waiter, None,
+        return gate._gate_lock(self.project, self.conn, self.waiter, None,
                                'KO-2', 'task/test', 'abc', 60)
 
     def events(self):

@@ -29,8 +29,8 @@ import holophyte.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.report  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -122,9 +122,9 @@ class CloseOutTelemetryTests(unittest.TestCase):
         self.git("commit", "-q", "-m", "base")
 
         self.db = root / "repo.holophyte.db"
-        # The `Target` the loop is handed, with the store and the worktrees
+        # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.target.Target(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -162,7 +162,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
                           "then the run row carries its timing"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.tgt, provider)
+                holophyte.operator.main(self.project, provider)
         return provider
 
     def test_close_out_stamps_the_run_row_and_the_window_reads_it_back(self):
@@ -173,7 +173,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
         file that says a run took two rounds while the row says four is the
         drift this ticket exists to remove.
         """
-        self.tgt.config_path.write_text('[report]\nfindings = "repo"\n')
+        self.project.config_path.write_text('[report]\nfindings = "repo"\n')
         self.loop("- factory.py:1: name the estimate\nVERDICT: REQUEST_CHANGES",
                   "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
             "VERDICT: APPROVE")
@@ -236,26 +236,26 @@ class ReportStoreCase(unittest.TestCase):
         self.root = Path(tmp.name)
         self.target = self.root / "repo"
         self.target.mkdir()
-        # Where `cli()`'s `Target` will look: the target's directory under a
+        # Where `cli()`'s `Project` will look: the target's directory under a
         # HOLOPHYTE_HOME of this test's own, never the operator's real one.
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.target.state_dir(self.target) / "store.db"
+        self.db = holophyte.project.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
         self.worktrees = self.root / "repo.worktrees"
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = store.tickets.ensure_project(self.conn, "team-1", self.target)
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1", self.target)
 
     def completed_run(self, n, actual_min, estimate_min, rounds, outcome):
         ticket = store.tickets.mirror_ticket(
-            self.conn, self.project, linear_issue_id=f"issue-{n}",
+            self.conn, self.project_id, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}",
             time_box_ms=estimate_min and estimate_min * 60 * 1000)
         at = 1_700_000_000_000 + n * 3_600_000
-        run_id = store.claim(self.conn, self.project, ticket, now=at)
+        run_id = store.claim(self.conn, self.project_id, ticket, now=at)
         for number in range(1, rounds + 1):
             store.record_review_round(self.conn, run_id, number, "pass",
                                       "codex-sol-medium", started_at=at)
@@ -401,7 +401,7 @@ class ReportTests(ReportStoreCase):
             holophyte.cli.cli(["--report", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse(holophyte.target.state_dir(self.root / "elsewhere").exists())
+        self.assertFalse(holophyte.project.state_dir(self.root / "elsewhere").exists())
 
 
 class HostLabelTests(ReportStoreCase):
@@ -413,7 +413,7 @@ class HostLabelTests(ReportStoreCase):
         super().setUp()
         (self.db.parent / "config.toml").write_text(
             f'[report]\nhost_label = "{self.LABEL}"\n')
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.project = holophyte.project.Project.locate(self.target)
 
     def test_the_report_and_findings_show_the_label_and_never_the_hostname(self):
         self.three_runs()

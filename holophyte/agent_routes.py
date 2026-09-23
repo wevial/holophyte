@@ -16,10 +16,10 @@ from holophyte.harness import route_text
 from holophyte.redact import REDACTED, known_secrets, redact_prose
 
 
-def command_secrets(target):
+def command_secrets(project):
     """Treat command arguments as private, including values echoed by a CLI."""
-    secrets = set(known_secrets(target.config()))
-    table = target.config().get('agents') or {}
+    secrets = set(known_secrets(project.config()))
+    table = project.config().get('agents') or {}
     for seat in AGENT_CONFIG_KEYS.values():
         for key in (seat, seat + '_fallback'):
             command = table.get(key, '')
@@ -36,7 +36,7 @@ def command_secrets(target):
     return secrets
 
 
-def safe_command(target, command):
+def safe_command(project, command):
     """Public route identifier: executable only, never command arguments.
     A table-form route is named by its harness.
 
@@ -46,12 +46,12 @@ def safe_command(target, command):
     if not command:
         return command
     name = shlex.split(command)[0]
-    if name in command_secrets(target):
+    if name in command_secrets(project):
         return REDACTED
-    return redact_prose(name, known_secrets(target.config()))
+    return redact_prose(name, known_secrets(project.config()))
 
 
-def route_prose(target, text):
+def route_prose(project, text):
     """Hide arbitrary argument echoes without damaging surrounding words.
 
     Command arguments are not necessarily credentials: `exec` must not eat
@@ -60,9 +60,9 @@ def route_prose(target, text):
     flag name or value entropy. Known credentials still redact substrings.
     Command fields use safe_command instead and never expose arguments.
     """
-    secrets = known_secrets(target.config())
+    secrets = known_secrets(project.config())
     text = redact_prose(text, secrets)
-    arguments = command_secrets(target) - secrets
+    arguments = command_secrets(project) - secrets
     if arguments:
         pattern = r'(?<!\w)(?:' + '|'.join(
             re.escape(value) for value in sorted(arguments, key=len, reverse=True)
@@ -72,31 +72,31 @@ def route_prose(target, text):
 
 
 class ActiveRoutes:
-    def __init__(self, target):
+    def __init__(self, project):
         self.commands = {}
         self.pending = {}
-        self.project = None
+        self.project_id = None
         self.failed = False
         self.writer_failed = False
         self.stream = None
-        self.target = target
+        self.project = project
 
     def publish(self):
         if self.stream is None:
-            self.target.holo_dir.mkdir(parents=True, exist_ok=True)
+            self.project.holo_dir.mkdir(parents=True, exist_ok=True)
             self.stream = tempfile.NamedTemporaryFile(
                 mode='w+', prefix='active-routes-', suffix='.json',
-                dir=self.target.holo_dir)
+                dir=self.project.holo_dir)
             fcntl.flock(self.stream, fcntl.LOCK_EX)
         self.stream.seek(0)
         self.stream.truncate()
         commands = dict(self.commands)
         if self.writer_failed:
             commands['write'] = (commands.get('implement')
-                                 or route_text((self.target.config().get('agents')
+                                 or route_text((self.project.config().get('agents')
                                                 or {}).get('implementer'))
                                  or DEFAULT_IMPLEMENTER)
-        json.dump({AGENT_CONFIG_KEYS[role]: safe_command(self.target, command)
+        json.dump({AGENT_CONFIG_KEYS[role]: safe_command(self.project, command)
                    for role, command in commands.items()}, self.stream)
         self.stream.flush()
 
@@ -107,25 +107,25 @@ class ActiveRoutes:
         self.pending.clear()
 
 
-def routes(target):
-    state = vars(target).get('_active_agent_routes')
+def routes(project):
+    state = vars(project).get('_active_agent_routes')
     if state is None:
-        state = ActiveRoutes(target)
-        target._active_agent_routes = state
+        state = ActiveRoutes(project)
+        project._active_agent_routes = state
     return state
 
 
-def reset(target):
-    previous = vars(target).get('_active_agent_routes')
+def reset(project):
+    previous = vars(project).get('_active_agent_routes')
     if previous is not None:
         previous.close()
-    target._active_agent_routes = ActiveRoutes(target)
+    project._active_agent_routes = ActiveRoutes(project)
 
 
-def active_fallbacks(target):
+def active_fallbacks(project):
     """Read only snapshots whose process still owns its lock."""
     active = {}
-    for path in target.holo_dir.glob('active-routes-*.json'):
+    for path in project.holo_dir.glob('active-routes-*.json'):
         try:
             with Path(path).open() as stream:
                 try:

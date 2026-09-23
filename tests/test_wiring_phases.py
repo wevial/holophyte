@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -102,9 +102,9 @@ class RunPhaseTests(unittest.TestCase):
         self.db = root / "repo.holophyte.db"
         from tests.test_store_phase_gate import audit_loop_store
         self.addCleanup(audit_loop_store, self)
-        # The `Target` the loop is handed, with the store and the worktrees
+        # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.target.Target(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -135,7 +135,7 @@ class RunPhaseTests(unittest.TestCase):
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.tgt, provider)
+                holophyte.operator.main(self.project, provider)
         return provider
 
     def read(self, sql):
@@ -262,7 +262,7 @@ class RunPhaseTests(unittest.TestCase):
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(holophyte.loop, "agent", boom):
-                rc = holophyte.operator.main(self.tgt, provider)
+                rc = holophyte.operator.main(self.project, provider)
 
         # Contained, not propagated — and the run row still says the work
         # stopped under review, with the error text as the reason.
@@ -366,11 +366,11 @@ class ReleaseTests(unittest.TestCase):
         self.conn = store.open(Path(tmp.name) / "store.sqlite3")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = tickets.ensure_project(self.conn, "team", f"{tmp.name}/repo")
+        self.project_id = tickets.ensure_project(self.conn, "team", f"{tmp.name}/repo")
         ticket = tickets.mirror_ticket(
-            self.conn, self.project, "iss-1", "HOL-1", "a ticket"
+            self.conn, self.project_id, "iss-1", "HOL-1", "a ticket"
         )
-        self.run_id = store.claim(self.conn, self.project, ticket, now=1000)
+        self.run_id = store.claim(self.conn, self.project_id, ticket, now=1000)
 
     def run_row(self):
         return self.conn.execute(

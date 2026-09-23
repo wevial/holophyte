@@ -20,22 +20,33 @@ those writing routes. A project with no store answers 503.
 
 ```json
 {
-  "target": "/path/to/repo",
   "project": "/path/to/repo",
+  "schema_version": 35,
+  "admission": "enabled",
+  "hold_note": null,
+  "active_routes": {"implementer": {"command": "claude"},
+                    "reviewer": {"command": "claude", "fallback": "claude"},
+                    "adjudicator": {"command": "codex"},
+                    "writer": {"command": null}},
+  "route_labels": {"implementer": "claude opus", "reviewer": "codex gpt-5.6-sol",
+                   "reviewer_fallback": null, "adjudicator": "codex gpt-5.6-sol",
+                   "writer": "claude opus"},
+  "workers_on_previous_build": 0,
   "host": "writer-1",
   "now": 1788450534491,
   "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
-  "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2},
+  "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2, "run_cap": 3.0},
   "actions": false,
   "config_edit": false,
-  "route_labels": {"implementer": "claude opus", "reviewer": "codex gpt-5.6-sol",
-                   "reviewer_fallback": null, "adjudicator": "codex gpt-5.6-sol",
-                   "writer": "claude opus"},
   "runs": [
-    {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease", "phase": "working",
+    {"id": 52, "ticket": "KO-219", "ticket_url": "https://linear.app/example/issue/KO-219",
+     "title": "The sweep frees a silent lease", "phase": "working",
      "started_ms": 1788450461675, "heartbeat_age_ms": 71989, "elapsed_ms": 72816,
-     "time_box_ms": 1500000, "round": 0, "strikes": 0, "host": "writer-1"}
+     "working_ms": 61200, "work_started_ms": 1788450511675,
+     "agent_ms": 61200, "verify_ms": 0, "verify_started_ms": null,
+     "time_box_ms": 1500000, "round": 0, "strikes": 0, "host": "writer-1",
+     "stop_requested": null, "stop_action": null}
   ]
 }
 ```
@@ -46,10 +57,35 @@ daemon against its own `now`, so a client compares one number to
 host about the time. `started_ms` is the run's start as epoch
 milliseconds; `round` is the review rounds recorded so far; `strikes` is
 the sweep's tally for the run, 0 when it is not under suspicion.
+`ticket_url` is the ticket's page on the board (`tickets.url`), null when
+the store has none. `elapsed_ms` is wall time since `started_ms`.
+`working_ms` is the work the run has recorded plus, while a span of work
+is open, the time since that span began, null for a run whose work was
+never measured; `work_started_ms` is when the open span began, as epoch
+milliseconds, and null while no span is open,
+so a client interpolates work between polls only from `work_started_ms`
+and never from `elapsed_ms`. `agent_ms` is the part of `working_ms` the
+time box is judged against and `verify_ms` the rest, the time spent in the
+ticket's verify commands; `agent_ms` is null when `working_ms` is, and
+`verify_ms` is null for a run recorded before the split, whose work all
+counts as `agent_ms`; `verify_started_ms` is set only while the open span is a
+verify, else null. `time_box_ms` is the box the run is counted
+against, the estimate scaled by `[agents] budget_scale`, null for a
+ticket with no estimate; `thresholds.run_cap` is the hard ceiling in
+multiples of that box, so a time-box bar can draw it. `stop_requested` is
+the note of a pause or abort the operator has asked of the run and the
+loop has not yet acted on, and `stop_action` that request's action
+(`pause`, `abort` or `abort_close`); both
+are null when none is pending.
 `supervisor.state` is `live`, `stale` or `none`. `daemon` describes the
 serving process: its pid and when it started. `project` is the
-repository the daemon serves, as a path; `target` is a deprecated alias
-carrying the same value, kept for one release. `actions` is whether
+repository the daemon serves, as a path. `schema_version` is the
+store's schema version (its `PRAGMA user_version`). `admission` is the
+project's admission state (`store/enums.py` `ProjectAdmission`): `enabled`,
+`held` or `disabled`; while it is `disabled`, `runs` is empty.
+`hold_note` is the note of the latest admission change, null when there
+is none.
+`actions` is whether
 `[serve] actions = true` opened the `POST /actions/...` routes of [The daemon's actions](daemon.md); the
 console draws its action buttons disabled while it is `false`.
 `config_edit` is whether `[serve] config_edit = true` opened `GET /config`
@@ -58,7 +94,14 @@ key, while it is `false`. `route_labels` names what each seat is configured
 to run, labelled as a recorded turn is: the command's first word plus its
 `-m`/`--model` value. A seat left unset shows the default the loop
 dispatches, an unset `writer` the implementer's label, and an unset
-`reviewer_fallback` null. Every `host` passes through `[report] host_label`.
+`reviewer_fallback` null. `active_routes` holds one entry per seat
+(`implementer`, `reviewer`, `adjudicator`, `writer`) naming what the seat
+runs now: `command` is the executable alone, never its arguments, null for
+a seat left unset in `[agents]`; while a running loop has switched the seat
+to its fallback, `command` is the fallback's and the entry also carries
+`fallback`, naming it. `workers_on_previous_build` counts the workers a
+restarted loop inherited from the build it replaced and still owns, 0
+when there are none. Every `host` passes through `[report] host_label`.
 
 ## `GET /runs?limit=N`
 
@@ -129,23 +172,44 @@ opened, so its last path segment is the PR number.
 ## `GET /runs/N`
 
 ```json
-{"run": {"id": 52, "ticket": "KO-219", "title": "The sweep frees a silent lease",
+{"run": {"id": 52, "ticket": "KO-219", "ticket_url": "https://linear.app/example/issue/KO-219",
+         "title": "The sweep frees a silent lease",
          "phase": "done", "attempt": 1, "started_ms": 1788450461675,
-         "ended_ms": 1788451661675, "outcome": "merged", "time_box_ms": 1500000,
+         "ended_ms": 1788451661675, "outcome": "merged",
+         "elapsed_ms": 1200000, "working_ms": 912000, "agent_ms": 840000,
+         "verify_ms": 72000, "time_box_ms": 1500000,
          "branch": "task/ko-219-the-sweep-frees-a-silent-lease", "host": "writer-1",
          "heartbeat_age_ms": null,
          "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
          "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
          "pr_url": "https://github.com/example/repo/pull/2170",
+         "work_started_ms": null, "verify_started_ms": null,
+         "approved_at": 1788451561675, "approved_by": "operator",
          "max_rounds": 2},
  "rounds": [
   {"round": 1, "started_ms": 1788450761675, "ended_ms": 1788450941675,
    "verdict": "changes_requested", "reviewer_model": "reviewer-model",
    "findings": [{"path": "holophyte/serve.py", "line": 12, "severity": "p1",
-                 "criterion": "AC1", "message": "the route is unmatched"}]},
+                 "criterion": "AC1", "message": "the route is unmatched"},
+                {"path": "holophyte/serve.py", "line": 40, "severity": "p1",
+                 "criterion": null, "message": "Validate input", "kind": "thread",
+                 "author": "review-bot", "author_kind": "bot",
+                 "summary": "Validate input", "verdict": "ADDRESS",
+                 "raw": "Please validate input",
+                 "url": "https://github.com/example/repo/pull/2170#discussion_r1"}],
+   "instructions": [{"kind": "instruction", "path": "holophyte/serve.py", "line": null,
+                     "author": "operator", "severity": "nit",
+                     "message": "Keep validation", "request": "Keep validation",
+                     "url": "https://github.com/example/repo/pull/2170#discussion_r2",
+                     "outcome": "changed", "reply": "Validation retained"}],
+   "operator_notes": [{"note": "Keep validation", "author": "operator",
+                       "kind": "operator_note", "event_id": 7, "consumed": true,
+                       "run_id": 52, "round": 1}]},
   {"round": 2, "started_ms": 1788451061675, "ended_ms": 1788451181675,
-   "verdict": "pass", "reviewer_model": "reviewer-model", "findings": []}
+   "verdict": "pass", "reviewer_model": "reviewer-model", "findings": [],
+   "instructions": [], "operator_notes": []}
  ],
+ "findings": [{"tone": "advisory", "message": "https://github.com/example/repo/pull/2170#discussion_r3: Consider a cache"}],
  "events": [
   {"at": 1788450461675, "kind": "phase_change", "summary": "claimed"},
   {"at": 1788450941675, "kind": "review", "summary": "round 1 asked for changes"}
@@ -162,6 +226,33 @@ recomputing it; a run recorded before the store carried the cap answers
 the loop's base of 2. `rounds` lists the run's review rounds oldest
 first, each with its `findings` decoded into objects (`path`, `line`,
 `severity`, `criterion`, `message`) rather than the stored JSON string.
+A finding decoded from a pull-request review thread also carries `kind`
+(`thread`), `author` (the thread's last commenter), `author_kind` (`bot`
+for a login `[merge] bot_authors` or `bot_logins` names, else `user` or
+`unknown` as GitHub reported it), `summary` (the finding's one-line gist,
+which `message` repeats), `verdict` (the adjudication: `ADDRESS`,
+`FOLLOW_UP` or `DECLINE`), `raw` (the comment's text, redacted and cut at
+20,000 characters) and `url` (the thread's page). A round's `instructions` are the requests a human
+reviewer addressed to the factory on the pull request, split out of
+`findings`: each an object with `kind` (`instruction`), `path`, `line`
+(null when the thread has none), `author`, `request` (the ask), `url` and,
+where the round recorded them, `severity`, `message`, `outcome` (`changed`
+or `asked`) and `reply`, the factory's answer on the thread. A round's
+`operator_notes` are the private operator notes (`--babysit KO-n --note
+TEXT` on a parked pull request) that round consumed: each with the
+`note`, its `author`, `kind` (`operator_note`), `event_id` (the run event
+that recorded it),
+`consumed`, and the `run_id` and `round` that consumed it. Top-level
+`findings` are the advisory bot threads the factory noted on the pull
+request without acting on: each with `tone` (`advisory`) and `message`,
+the thread's URL and first line; empty when there are none.
+`elapsed_ms`, `working_ms`, `agent_ms`, `verify_ms`, `work_started_ms`,
+`verify_started_ms`, `time_box_ms` and `ticket_url` are as `/status`
+carries them, except that a run's clocks stop at `ended_ms` once it has
+ended. `approved_at` (epoch milliseconds) and `approved_by` (the
+operator's login) record the approval (`--approve`) that released a
+parked candidate to merge; both are null for a run no one approved, and a
+`--requeue` clears them.
 `events` is the `narrative` level of the run's event stream, oldest
 first; `detail` events and their payloads are not served. An `N` that is
 not an integer is 400; an integer with no run behind it is 404 carrying
@@ -315,7 +406,7 @@ What needs the operator, computed where the store is:
 
 ```json
 {"level": "attention", "now": 1788450534491,
- "target": "/path/to/repo", "project": "/path/to/repo", "items": [
+ "project": "/path/to/repo", "items": [
   {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000,
    "pr_url": null, "level": "attention"},
   {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
@@ -334,10 +425,12 @@ A `blocked` item's `run` is the run parked for the ticket and `asked_ms`
 when the question was asked: the newest `redirect` intervention on that
 run, else the run's last heartbeat (both null only for a ticket parked
 with no run behind it). A `pr_open` item is a `blocked_on_operator`
-ticket whose run has a `pr_url` and whose question opens with `PR open:`,
-the line a park under `[merge] mode = "pr"` writes first: the run waits
-on a review or a merge, not on an answer, so the item carries `pr_url`
-and `reason` (the question with that first line removed) in place of
+ticket whose parked run has a `pr_url` and whose recorded park kind
+(`runs.parkKind`, one of `store/enums.py` `ParkKind`) is `pull_request`,
+as a park under `[merge] mode = "pr"` records it; the question's wording
+plays no part. The run waits on a review or a merge, not on an answer,
+so the item carries `pr_url` and `reason` (the question with its first
+line removed, or the whole question when it has one line) in place of
 `question`; its `run` and `asked_ms` are as on `blocked`. Its `pr` is
 the pull request as the loop's reconcile last read it: `number` from the
 URL, `checks` (`success`, `pending`, `failure`, null for a PR with no
@@ -351,8 +444,7 @@ item's own `title` is the ticket's title, which the console shows when
 attempt number. Every item that names a `run` carries its `pr_url`: the
 pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
 null when it opened none, so a console can link the parked question to
-the PR it waits on. `project` is the project path and `target` its
-deprecated alias with the same value, as on `/status`.
+the PR it waits on. `project` is the project path, as on `/status`.
 
 `level` is `none`, `working`, `attention` or `critical`; with no items it
 is `working` if any run is live. Items come in this order: `blocked` and
@@ -519,5 +611,5 @@ but `/config`, both in [The daemon's actions](daemon.md).
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
 | 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and `PUT` outside `/config`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
-| 503 | the project has no store yet |
+| 503 | the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path |
 | 504 | `/runs/N/files` when git does not answer within its cap |

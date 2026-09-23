@@ -29,7 +29,7 @@ describe("quiet template", () => {
     expect(svg).not.toContain("fill-rule");
     const paths = svg.match(/<path[^>]*>/g) ?? [];
     expect(paths).toHaveLength(2);
-    const [veins, leaf] = paths;
+    const [veins = "", leaf] = paths;
     const mask = svg.match(/<mask id="([^"]*)">(.*?)<\/mask>/);
     expect(mask).toBeTruthy();
     const [, maskId, maskBody] = mask ?? [];
@@ -76,7 +76,7 @@ describe("state glyphs", () => {
       expect(svg).not.toContain("fill-rule");
       const paths = svg.match(/<path[^>]*>/g) ?? [];
       expect(paths).toHaveLength(3);
-      const [veins, leaf, disc] = paths;
+      const [veins = "", leaf, disc] = paths;
       const mask = svg.match(/<mask id="([^"]*)">(.*?)<\/mask>/);
       expect(mask).toBeTruthy();
       const [, maskId, maskBody] = mask ?? [];

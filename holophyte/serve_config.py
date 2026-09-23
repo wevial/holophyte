@@ -46,25 +46,25 @@ TOMLKIT_MISSING = ("[holo2] the daemon needs the tomlkit module to edit the"
                    " python3 -m pip install --user -r requirements.txt")
 
 
-def config_text(target):
+def config_text(project):
     """The target's config file as written, `""` when there is none yet."""
     try:
-        return target.config_path.read_text()
+        return project.config_path.read_text()
     except FileNotFoundError:
         return ""
 
 
-def read_config(target):
+def read_config(project):
     """`GET /config`: the file's text, secrets redacted, the same text as
     parsed `values` with the check-wait default, its path and applicability. A
     text `redact()` cannot vouch for is 500 with its sentence and no text:
     better no page than a secret on it."""
     try:
-        text = redact(config_text(target))
+        text = redact(config_text(project))
     except RedactionError as bad:
         return 500, {"error": str(bad)}
     return 200, {"text": text, "values": config_values(text),
-                 "path": str(target.config_path), "applies": CONFIG_APPLIES}
+                 "path": str(project.config_path), "applies": CONFIG_APPLIES}
 
 
 def config_values(text):
@@ -85,8 +85,8 @@ def config_values(text):
     return json.loads(json.dumps(document, default=str))
 
 
-def validate_config(target, text):
-    """Hold `text` to what startup would accept for `target`: parsed as
+def validate_config(project, text):
+    """Hold `text` to what startup would accept for `project`: parsed as
     TOML and run through `config.check_document()` on a copy of the target
     carrying the parsed document instead of the file's. The refusal, when
     there is one, is the loader's own sentence -- naming the file, the
@@ -95,7 +95,7 @@ def validate_config(target, text):
         document = tomllib.loads(text)
     except tomllib.TOMLDecodeError as bad:
         return f"malformed TOML: {bad}"
-    candidate = dataclasses.replace(target, _config=document)
+    candidate = dataclasses.replace(project, _config=document)
     try:
         check_document(candidate)
     except SystemExit as refused:
@@ -103,7 +103,7 @@ def validate_config(target, text):
     return None
 
 
-def write_config(target, body, now=None):
+def write_config(project, body, now=None):
     """`PUT /config`: replace the target's config with `body["text"]`
     after validating it: `(http status, JSON-able body)`.
 
@@ -132,16 +132,16 @@ def write_config(target, body, now=None):
     with, and the operator fixes the key or restores the backup.
     """
     if "patch" in body:
-        return patch_config(target, body["patch"], now)
+        return patch_config(project, body["patch"], now)
     text = body.get("text")
     if not isinstance(text, str):
         return 400, {"ok": False, "error": "text must be the file's new"
                                             " contents as a string"}
     with CONFIG_LOCK:
-        current = config_text(target)
-        code, reply, written = _write_config(target, text, now, current)
+        current = config_text(project)
+        code, reply, written = _write_config(project, text, now, current)
     if written is not None:
-        reply["probe"] = probe_changed_implementer(target, current, written)
+        reply["probe"] = probe_changed_implementer(project, current, written)
     return code, reply
 
 
@@ -149,7 +149,7 @@ class PatchError(ValueError):
     """A `patch` the daemon cannot apply: its sentence names the key."""
 
 
-def patch_config(target, patch, now):
+def patch_config(project, patch, now):
     """`PUT /config` with `{"patch": {...}}` (KO-364): the current file
     edited in place with `tomlkit`, then held, recorded, backed up and
     written exactly as a `text` is. `patch` is a flat object of dotted
@@ -167,17 +167,17 @@ def patch_config(target, patch, now):
         return 400, {"ok": False, "error": "patch must be an object of"
                                             " dotted table.key to value"}
     with CONFIG_LOCK:
-        current = config_text(target)
+        current = config_text(project)
         try:
             text = apply_patch(current, patch)
         except PatchError as bad:
             return 400, {"ok": False, "error": str(bad)}
         code, reply, written = _write_config(
-            target, text, now, current,
+            project, text, now, current,
             how=f"patched {{path}} from the console (PUT /config patch:"
                 f" {', '.join(patch)})")
     if written is not None:
-        reply["probe"] = probe_changed_implementer(target, current, written)
+        reply["probe"] = probe_changed_implementer(project, current, written)
     return code, reply
 
 
@@ -269,19 +269,19 @@ def implementer_of(text):
     return agents.get("implementer") if isinstance(agents, dict) else None
 
 
-def probe_changed_implementer(target, before, after):
+def probe_changed_implementer(project, before, after):
     """`probe_implementer().to_json()` for the `after` document when its
     `[agents] implementer` differs from `before`'s; None otherwise. The
-    probed target carries `after` parsed, not the file: the `Target`
+    probed target carries `after` parsed, not the file: the `Project`
     the server was bound with read its config once, at bind."""
     if implementer_of(after) == implementer_of(before):
         return None
-    candidate = dataclasses.replace(target, _config=tomllib.loads(after))
+    candidate = dataclasses.replace(project, _config=tomllib.loads(after))
     result = probe_implementer(candidate)
     return None if result is None else result.to_json()
 
 
-def _write_config(target, text, now, current,
+def _write_config(project, text, now, current,
                   how="replaced {path} from the console (PUT /config)"):
     """`(status, reply, written)` under the lock: `written` is the text
     on disk after a `200`, None when nothing was. `how` opens the
@@ -290,10 +290,10 @@ def _write_config(target, text, now, current,
         text = restore(text, current)
     except ValueError as bad:
         return 400, {"ok": False, "error": str(bad)}, None
-    refused = validate_config(target, text)
+    refused = validate_config(project, text)
     if refused is not None:
         return 400, {"ok": False, "error": refused}, None
-    path = target.config_path
+    path = project.config_path
     path.parent.mkdir(parents=True, exist_ok=True)
     backup = None
     if path.exists():
@@ -303,7 +303,7 @@ def _write_config(target, text, now, current,
             f" applies at the {CONFIG_APPLIES}; previous text in "
             + (str(backup) if backup else "no backup: there was no file"))
     from holophyte.serve_actions import record_action_intervention
-    recorded = record_action_intervention(target, CONFIG_ACTION, note)
+    recorded = record_action_intervention(project, CONFIG_ACTION, note)
     if recorded is None:
         return 503, {"ok": False, "error": "the store holds no run to record"
                                             " the intervention against;"

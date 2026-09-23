@@ -198,7 +198,7 @@ class CoveringScopeQuestionTests(unittest.TestCase):
                 patch.object(babysitter, "run_verify", return_value=(True, "ok")))
             with self.assertRaises(Captured):
                 babysitter._review_fix(
-                    target=Mock(config=Mock(
+                    project=Mock(config=Mock(
                         return_value={"merge": {"approve": "auto"}})),
                     conn=None, run_id=602, provider=None, task_id=1,
                     branch="task", wt=self.root, sha=self.head,
@@ -259,3 +259,46 @@ class CoveringAfterMainMergeTests(unittest.TestCase):
         scope = review.scope_files(self.root, "Fix `holophyte/fix.py`.",
                                    self.approved, self.head, candidate_only=True)
         self.assertEqual(scope, ["shared.py"])
+
+
+class CoveringAgainstLaggingMainTests(CoveringAfterMainMergeTests):
+    """KO-676: local `main` held back while the candidate merged `origin/main`."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name) / "work"
+        remote = Path(tmp.name) / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)],
+                       check=True)
+        self.root.mkdir()
+        for args in (("init", "-q", "-b", "main"),
+                     ("config", "user.name", "Test reviewer"),
+                     ("config", "user.email", "reviewer@example.test"),
+                     ("remote", "add", "origin", str(remote))):
+            self.git(*args)
+        self.commit("base", {"shared.py": "a\nb\nc\nd\ne\n"})
+        self.git("push", "-q", "origin", "main")
+        self.git("checkout", "-qb", "task")
+        self.approved = self.commit("candidate fix", {"holophyte/fix.py": "x\n"})
+        # Another pull request lands on the remote; local `main` stays put.
+        self.git("checkout", "-qb", "elsewhere", "main")
+        self.commit("main moves on", {"other.py": "main\n",
+                                      "shared.py": "main\nb\nc\nd\ne\n"})
+        self.git("push", "-q", "origin", "elsewhere:main")
+        self.git("checkout", "-q", "task")
+        self.git("branch", "-qD", "elsewhere")
+        self.git("fetch", "-q", "origin")
+        self.commit("candidate touches shared", {"shared.py": "a\nb\nc\nd\ntask\n"})
+        self.git("merge", "--no-ff", "-qm", "Merge main into task", "origin/main")
+        self.head = self.git("rev-parse", "HEAD")
+
+    def test_main_only_changes_leave_the_covering_scope(self):
+        self.assertNotEqual(self.git("rev-parse", "main"),
+                            self.git("rev-parse", "origin/main"))
+        lagging = review.covering_scope(self.root, self.approved, self.head, "pr")
+        super().test_main_only_changes_leave_the_covering_scope()
+        self.git("branch", "-f", "main", "origin/main")
+        self.assertEqual(
+            review.covering_scope(self.root, self.approved, self.head, "pr"),
+            lagging)

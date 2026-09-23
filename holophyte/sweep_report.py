@@ -214,7 +214,7 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
 
 def debris_lines(target, conn):
     """Final tickets' factory checkout paths, reported only, even with --act."""
-    from holophyte.target import worktree_path
+    from holophyte.project import worktree_path
 
     rows = conn.execute(
         "SELECT DISTINCT t.linearIdentifier, t.status, r.branch, p.repoPath"

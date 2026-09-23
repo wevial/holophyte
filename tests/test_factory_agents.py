@@ -19,15 +19,15 @@ import holophyte.agent_routes  # noqa: E402 - after the sys.path insert above
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.redact  # noqa: E402 - after the sys.path insert above
 import holophyte.review  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import review_runner  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 
 
 def bare_target(case, path):
-    """A `Target` at `path` whose state directory holds no config.
+    """A `Project` at `path` whose state directory holds no config.
 
     The routes these tests pin are the defaults, so the config the value
     would read has to be absent -- in a directory of the test's own, not
@@ -37,7 +37,7 @@ def bare_target(case, path):
     path = Path(path)
     holo = Path(tempfile.mkdtemp())
     case.addCleanup(shutil.rmtree, holo, ignore_errors=True)
-    return holophyte.target.Target(
+    return holophyte.project.Project(
         path=path, holo_dir=holo, store_path=holo / "store.db",
         config_path=holo / "config.toml",
         worktrees=path.parent / f"{path.name}.worktrees")
@@ -209,7 +209,7 @@ class SeatProbeTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.repo = Path(tmp.name) / "repo"
         self.repo.mkdir()
-        self.tgt = bare_target(self, self.repo)
+        self.project = bare_target(self, self.repo)
         self.git("init", "-q")
         self.git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
                  "commit", "--allow-empty", "-qm", "probe base")
@@ -219,9 +219,9 @@ class SeatProbeTests(unittest.TestCase):
         return subprocess.check_output(["git", *args], cwd=self.repo, text=True)
 
     def configure(self, seat, script):
-        self.tgt = bare_target(self, self.repo)
+        self.project = bare_target(self, self.repo)
         command = shlex.join([sys.executable, "-c", script])
-        self.tgt.config_path.write_text(
+        self.project.config_path.write_text(
             f"[agents]\n{seat} = {json.dumps(command)}\n")
 
     def test_review_seats_require_command_output(self):
@@ -242,7 +242,7 @@ class SeatProbeTests(unittest.TestCase):
                         self.configure(seat + ("_fallback" if fallback else ""),
                                        script)
                         result = holophyte.agents.probe_seat(
-                            self.tgt, role, fallback=fallback)
+                            self.project, role, fallback=fallback)
                         self.assertEqual(result.ok, passes, result.describe())
                         self.assertNotIn(self.sha, result.command[-1])
                         if passes:
@@ -255,7 +255,7 @@ class SeatProbeTests(unittest.TestCase):
     def test_default_container_review_seats_receive_command_goal(self):
         self.configure("reviewer_fallback", "print('ready')")
         # The default route is probed when a fallback is configured.
-        with self.tgt.config_path.open("a") as config:
+        with self.project.config_path.open("a") as config:
             config.write('adjudicator_fallback = "false"\n')
         def run_review(**kwargs):
             self.assertIn("git rev-parse HEAD", kwargs["prompt"])
@@ -266,9 +266,9 @@ class SeatProbeTests(unittest.TestCase):
         for role in ("review", "adjudicate"):
             with self.subTest(role=role), patch.object(
                     review_runner, "run_review", side_effect=run_review):
-                self.assertTrue(holophyte.agents.probe_seat(self.tgt, role).ok)
+                self.assertTrue(holophyte.agents.probe_seat(self.project, role).ok)
             with patch.object(review_runner, "run_review", return_value="ready"):
-                self.assertFalse(holophyte.agents.probe_seat(self.tgt, role).ok)
+                self.assertFalse(holophyte.agents.probe_seat(self.project, role).ok)
 
     def test_implementer_retains_text_only_goal_and_pass_rule(self):
         for fallback in (False, True):
@@ -281,20 +281,20 @@ class SeatProbeTests(unittest.TestCase):
                         "assert sys.argv[-1] == 'Reply with the single word: ready'; "
                         f"print({output!r}); sys.exit({code})")
                     result = holophyte.agents.probe_seat(
-                        self.tgt, "implement", fallback=fallback)
+                        self.project, "implement", fallback=fallback)
                     self.assertEqual(result.ok, passes, result.describe())
 
 
 class AgentRouteTests(unittest.TestCase):
     def setUp(self):
         self.worktree = Path("/tmp/holophyte-agent-contract")
-        self.tgt = bare_target(self, self.worktree)
+        self.project = bare_target(self, self.worktree)
 
     @patch.object(holophyte.agents, "run_capped")
     def test_implementer_uses_claude_opus_at_high_effort(self, run_capped):
         run_capped.return_value = (0, "implemented\n")
 
-        result = holophyte.agents.agent(self.tgt, "implement",
+        result = holophyte.agents.agent(self.project, "implement",
                                         "make the focused change", self.worktree)
 
         self.assertEqual(result, "implemented")
@@ -312,9 +312,9 @@ class AgentRouteTests(unittest.TestCase):
     ):
         run_capped.return_value = (0, "")
 
-        holophyte.agents.agent(self.tgt, "implement", "goal", self.worktree,
+        holophyte.agents.agent(self.project, "implement", "goal", self.worktree,
                                timeout=300)
-        holophyte.agents.agent(self.tgt, "implement", "goal", self.worktree,
+        holophyte.agents.agent(self.project, "implement", "goal", self.worktree,
                                timeout=7200)
 
         self.assertEqual([c.args[2] for c in run_capped.call_args_list],
@@ -328,7 +328,7 @@ class AgentRouteTests(unittest.TestCase):
         candidate = "2" * 40
 
         result = holophyte.agents.agent(
-            self.tgt, "review",
+            self.project, "review",
             "review the candidate",
             self.worktree,
             base_sha=base,
@@ -351,68 +351,68 @@ class AgentRouteTests(unittest.TestCase):
             carry=[],
             on_start=ANY,
         )
-        self.assertEqual(holophyte.agents.agent_route(self.tgt, "review"),
+        self.assertEqual(holophyte.agents.agent_route(self.project, "review"),
                          "codex-sol-medium")
 
     @patch.object(review_runner, "run_review")
     def test_reviewer_runs_the_configured_model_and_effort(self, run_review):
         # `[agents] review_model` / `review_effort` choose the pair the
         # container runs, and the round records the route that actually ran.
-        self.tgt.config_path.write_text(
+        self.project.config_path.write_text(
             '[agents]\nreview_model = "gpt-6-astra"\nreview_effort = "medium"\n')
         run_review.return_value = "VERDICT: APPROVE"
 
-        holophyte.agents.agent(self.tgt, "review", "review the candidate",
+        holophyte.agents.agent(self.project, "review", "review the candidate",
                                self.worktree, base_sha="1" * 40,
                                candidate_sha="2" * 40)
 
         kwargs = run_review.call_args.kwargs
         self.assertEqual((kwargs["model"], kwargs["effort"], kwargs["profile"]),
                          ("gpt-6-astra", "medium", "codex-astra-medium"))
-        self.assertEqual(holophyte.agents.agent_route(self.tgt, "review"),
+        self.assertEqual(holophyte.agents.agent_route(self.project, "review"),
                          "codex-astra-medium")
-        self.assertEqual(holophyte.agents.agent_route(self.tgt, "adjudicate"),
+        self.assertEqual(holophyte.agents.agent_route(self.project, "adjudicate"),
                          "codex-astra-medium")
 
     def test_a_short_argument_does_not_redact_the_reviewer_model_name(self):
         # KO-603: `high` is an implementer argument; the container route's
         # name `codex-astra-high` is the header's attribution, not its echo.
-        self.tgt.config_path.write_text(
+        self.project.config_path.write_text(
             '[agents]\nimplementer = "claude-implement --model opus --effort high"\n'
             'review_model = "gpt-6-astra"\nreview_effort = "high"\n')
 
-        self.assertEqual(holophyte.agents.agent_route(self.tgt, "adjudicate"),
+        self.assertEqual(holophyte.agents.agent_route(self.project, "adjudicate"),
                          "codex-astra-high")
 
     def test_a_credential_inside_the_executable_path_is_still_redacted(self):
-        self.tgt.config_path.write_text(
+        self.project.config_path.write_text(
             '[linear]\napi_key = "lin-cred-7f3a"\n'
             '[agents]\nimplementer = "/opt/lin-cred-7f3a/bin/claude -p"\n')
 
         self.assertEqual(
             holophyte.agent_routes.safe_command(
-                self.tgt, "/opt/lin-cred-7f3a/bin/claude -p"),
+                self.project, "/opt/lin-cred-7f3a/bin/claude -p"),
             f"/opt/{holophyte.redact.REDACTED}/bin/claude")
 
     def test_an_executable_named_exactly_as_an_argument_is_redacted(self):
-        self.tgt.config_path.write_text(
+        self.project.config_path.write_text(
             '[agents]\nimplementer = "runner --as ghost-agent"\n'
             'reviewer = "ghost-agent --check"\n')
 
         self.assertEqual(
-            holophyte.agent_routes.safe_command(self.tgt, "ghost-agent --check"),
+            holophyte.agent_routes.safe_command(self.project, "ghost-agent --check"),
             holophyte.redact.REDACTED)
 
     def test_an_argument_named_executable_holding_a_credential_is_whole(self):
         # The exact-argument check reads the name before credential
         # redaction rewrites it, or only the credential part is hidden.
-        self.tgt.config_path.write_text(
+        self.project.config_path.write_text(
             '[linear]\napi_key = "example-credential"\n'
             '[agents]\nimplementer = "runner --as private-example-credential-agent"\n')
 
         self.assertEqual(
             holophyte.agent_routes.safe_command(
-                self.tgt, "private-example-credential-agent --check"),
+                self.project, "private-example-credential-agent --check"),
             holophyte.redact.REDACTED)
 
     @patch.object(review_runner, "run_review")
@@ -424,7 +424,7 @@ class AgentRouteTests(unittest.TestCase):
             "Codex CLI is not installed")
 
         with self.assertRaises(holophyte.gates.InfraFailure) as raised:
-            holophyte.agents.agent(self.tgt, "review", "review the candidate",
+            holophyte.agents.agent(self.project, "review", "review the candidate",
                                    self.worktree, base_sha="1" * 40,
                                    candidate_sha="2" * 40)
 
@@ -439,7 +439,7 @@ class AgentRouteTests(unittest.TestCase):
         run_review.return_value = "no verdict here"
 
         result = holophyte.agents.agent(
-            self.tgt, "adjudicate",
+            self.project, "adjudicate",
             "adjudicate the candidate",
             self.worktree,
             base_sha="1" * 40,
@@ -559,7 +559,7 @@ class ReviewLoopTests(unittest.TestCase):
         self.worktrees = root / "repo.worktrees"
         self.branch = "task/ko-116-add-a-thing"
         self.wt = self.worktrees / "ko-116-add-a-thing"
-        self.tgt = holophyte.target.Target(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=self.worktrees)
         self.linear = FakeLinear()
@@ -609,7 +609,7 @@ class ReviewLoopTests(unittest.TestCase):
 
         with patch.object(holophyte.loop, "agent", fake_agent):
             try:
-                return holophyte.loop.run_task(self.tgt, {
+                return holophyte.loop.run_task(self.project, {
                     "id": "KO-116", "title": "add a thing",
                     "verify": "echo ok", "budget_min": budget_min,
                     "contracts": [], **task,

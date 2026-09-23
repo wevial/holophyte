@@ -143,7 +143,7 @@ class FixSessionConfigCases:
             with self.subTest(setting=setting):
                 self.locate(setting)
                 with self.assertRaisesRegex(SystemExit, key):
-                    config.check_document(self.tgt)
+                    config.check_document(self.project)
         self.locate('[agents]\nimplementer_resume = "cli resume {session}"\n'
                     '[loop]\nfix_session = "alternate"\n')
-        config.check_document(self.tgt)
+        config.check_document(self.project)

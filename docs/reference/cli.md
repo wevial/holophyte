@@ -76,6 +76,6 @@ after the store.
 
 | Variable | Read by | Purpose |
 | --- | --- | --- |
-| `HOLOPHYTE_HOME` | `Target` | the state root, default `~/.holophyte`; tests point it at a temp dir |
+| `HOLOPHYTE_HOME` | `Project` | the state root, default `~/.holophyte`; tests point it at a temp dir |
 | `LINEAR_API_KEY` | `linear_provider` | the board's API key; env or `.env` beside the module |
 | `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the serve unit | one daemon instance's project, bind address, port |

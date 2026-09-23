@@ -846,3 +846,21 @@ test("an unavailable transcript explains the missing file or opt-in inside the p
   const alert = await within(screen.getByRole("region", { name: "Transcript" })).findByRole("alert");
   expect(alert.textContent).toContain("Transcript unavailable");
 });
+
+test("the header shows the implementer and reviewer the run's turns used as chips, and no reviewer for a run never reviewed", async () => {
+  const header = async (turns: object[]) => {
+    cleanup();
+    const fetch: Fetch = async url => url.endsWith("/turns") ? Response.json({ turns }) : answering(DETAIL)(url);
+    render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
+    const card = await screen.findByRole("article", { name: "run 91" });
+    await within(screen.getByRole("region", { name: "Turns" })).findAllByRole("listitem");
+    return card.querySelector("header")!;
+  };
+  const chips = (header: Element) => [...header.querySelectorAll("[data-seat]")].map((chip) => chip.textContent);
+  const implement = { id: 1, role: "implement", label: "claude-implement opus", route: "primary", seconds: 40, session_id: null };
+  const review = { id: 2, role: "review", label: "codex-review gpt-6-astra", route: "primary", seconds: 9, session_id: null };
+  expect(chips(await header([implement, review]))).toEqual(["Implementer Claude · Opus", "Reviewer Codex · GPT-6 Astra"]);
+  const unreviewed = await header([implement]);
+  expect(chips(unreviewed)).toEqual(["Implementer Claude · Opus"]);
+  expect(unreviewed.textContent).not.toContain("Reviewer");
+});

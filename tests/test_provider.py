@@ -517,7 +517,7 @@ class LabelGatePassTests(LoopFixture):
         out = io.StringIO()
         with patch.object(linear_provider, "_gql", board.gql), \
                 no_agent_processes(), patch.object(sys, "stdout", out):
-            self.rc = holophyte.operator.main(self.tgt, provider)
+            self.rc = holophyte.operator.main(self.project, provider)
 
         self.assertIsNone(self.rc)
         self.assertIn("[holo2] Linear has no ready tickets. done.",

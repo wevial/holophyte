@@ -25,10 +25,10 @@ class Route:
     writable: bool = True
 
 
-def route_for(target):
+def route_for(project):
     from holophyte.config import config_table
 
-    table = config_table(target, "agents")
+    table = config_table(project, "agents")
     value = table.get("implementer_isolation", "none")
     options = value if isinstance(value, dict) else {"backend": value}
     if set(options) - {"backend", "memory", "writable"}:
@@ -78,12 +78,12 @@ def validate_credential(value):
         )
 
 
-def environment(target):
+def environment(project):
     from holophyte.config import worktree_environment
 
-    if route_for(target).backend == "none":
+    if route_for(project).backend == "none":
         return None
-    return worktree_environment(target) or {}
+    return worktree_environment(project) or {}
 
 
 def image_ready(route):
@@ -177,7 +177,7 @@ def unwinding_on_signal(name):
 
 
 def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
-           target=None):
+           project=None):
     """Preserve host process semantics; always remove isolated descendants."""
     hook = {"on_start": on_start} if on_start is not None else {}
     if route.backend == "none":
@@ -189,7 +189,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
 
     image_ready(route)
     name = "holophyte-implement-" + uuid.uuid4().hex
-    checkout = (turn_clone(worktree, target) if route.writable
+    checkout = (turn_clone(worktree, project) if route.writable
                 else contextlib.nullcontext((worktree, {})))
     with unwinding_on_signal(name), checkout as (workspace, git_env):
         command, host_env = container_command(

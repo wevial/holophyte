@@ -38,6 +38,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     REQUEST_CHANGES,
     Commit,
 )
+from heartbeat_fixture import LOADED_MS, patch_beats  # noqa: E402 - same
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
     Boom,
@@ -56,10 +57,10 @@ import holophyte.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.merge_gate  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.project  # noqa: E402 - after the sys.path insert above
 import holophyte.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
-import holophyte.target  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -70,17 +71,20 @@ class LockFailureWordingTests(LoopFixture):
         only pull-request mode's verify out): the gate's verify merges
         `main` into the branch and judges what lands on main next."""
         log = self.target.parent / "lock.log"
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         verify = (f"if [ -e {shlex.quote(str(path))} ]; then echo locked;"
                   f" else echo free; fi >> {shlex.quote(str(log))}")
-        self.loop(Commit("candidate"), APPROVE,
-                  provider=StubProvider(dict(a_task(), verify=verify)))
+        # With no earlier pass to cite, as when `main` has moved: the
+        # gate's verify runs rather than repeating the round's answer.
+        with patch.object(holophyte.gates, "_pass_key", return_value=None):
+            self.loop(Commit("candidate"), APPROVE,
+                      provider=StubProvider(dict(a_task(), verify=verify)))
         # The review round's verify, then the gate's.
         self.assertEqual(log.read_text().splitlines(), ["free", "locked"])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_gate_lock_timeout_records_typed_park(self):
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("7 0\n")
         with patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0):
@@ -92,13 +96,13 @@ class LockFailureWordingTests(LoopFixture):
 
     def test_gate_lock_failure_keeps_gate_wording(self):
         gates = holophyte.gates
-        path = gates.merge_lock_path(self.tgt)
+        path = gates.merge_lock_path(self.project)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("7 0\n")
         with patch.object(gates, 'MERGE_LOCK_WAIT_SEC', 0):
             with self.assertRaises(gates.MergeLockHeld) as caught:
                 with holophyte.merge_gate._gate_lock(
-                        self.tgt, None, 8, None, 'KO-2', 'task/test', 'abc', 60):
+                        self.project, None, 8, None, 'KO-2', 'task/test', 'abc', 60):
                     self.fail('entered a held lock')
         self.assertEqual(str(caught.exception),
                          f"merge lock {path} held by run 7 for longer than the"
@@ -248,8 +252,7 @@ class StopOnFailureTests(LoopFixture):
         self.assertIn("continuing to the next ready ticket", out)
         self.assertEqual(self.read("SELECT status FROM tickets ORDER BY id"),
                          [("in_flight",), ("merged",)])
-        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
-                         [(None,)])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
         self.assertEqual(self.rc, 1)
 
     # One test per failure exit `main()` has: a `RunFailure`, an
@@ -319,7 +322,7 @@ class MergeApprovalTests(LoopFixture):
         self.loop(Commit("the scripted work"), APPROVE)
 
         import holophyte.serve
-        code, body = holophyte.serve.attention(self.tgt)
+        code, body = holophyte.serve.attention(self.project)
         self.assertEqual(code, 200)
         blocked = [item for item in body["items"] if item["kind"] == "blocked"]
         # The item names the parked run; this path records no `redirect`
@@ -369,7 +372,7 @@ class MergeApprovalTests(LoopFixture):
                   provider=StubProvider(dict(task)))
         marker.unlink()
         out = io.StringIO()
-        holophyte.operator.approve(self.tgt, "KO-131", "ok", out=out)
+        holophyte.operator.approve(self.project, "KO-131", "ok", out=out)
         self.assertIn("KO-131 approved: run 1", out.getvalue())
 
         fake, guard = self.loop(provider=StubProvider(dict(task)))
@@ -403,7 +406,7 @@ class MergeApprovalTests(LoopFixture):
         on this path as on a fresh cut."""
         self.configure('[merge]\napprove = "human"\n')
         self.loop(Commit("the scripted work"), APPROVE)
-        holophyte.operator.approve(self.tgt, "KO-131", "ok", out=io.StringIO())
+        holophyte.operator.approve(self.project, "KO-131", "ok", out=io.StringIO())
         seen = []
         real = holophyte.merge_gate.set_phase
 
@@ -434,9 +437,10 @@ class MergeApprovalTests(LoopFixture):
                   provider=StubProvider(a_task()))
         with self.assertRaises(SystemExit) as refused:
             holophyte.operator.babysit_ticket(
-                self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+                self.project, "KO-131", "sent back to the babysitter",
+                out=io.StringIO())
         self.assertIn("no pull request", str(refused.exception))
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         try:
             store.record_intervention(conn, 1, "babysit", "look again")
             store.release(conn, 1, "abandoned", "released by hand")
@@ -475,7 +479,7 @@ class MergeApprovalTests(LoopFixture):
                 wt = self.worktrees / "ko-131-add-a-thing"
                 self.loop(Commit("the scripted work"), APPROVE)
                 approved = self.git("rev-parse", "HEAD", cwd=wt).strip()
-                holophyte.operator.approve(self.tgt, "KO-131", "ok",
+                holophyte.operator.approve(self.project, "KO-131", "ok",
                                        out=io.StringIO())
                 (wt / "later.txt").write_text("added after the approval\n")
                 if tamper == "commit":
@@ -528,7 +532,7 @@ class MergeApprovalTests(LoopFixture):
                  cwd=clone)
         theirs = self.git("rev-parse", "HEAD", cwd=clone).strip()
         self.git("fetch", "-q", str(clone), f"{BRANCH}:{BRANCH}", cwd=bare)
-        holophyte.operator.approve(self.tgt, "KO-131", "ok", out=io.StringIO())
+        holophyte.operator.approve(self.project, "KO-131", "ok", out=io.StringIO())
 
         fake, _ = self.loop()
 
@@ -694,7 +698,7 @@ class SelfHostingTests(LoopFixture):
         self.addCleanup(shutil.rmtree, holo, ignore_errors=True)
 
         def target(path):
-            return holophyte.target.Target(
+            return holophyte.project.Project(
                 path=path, holo_dir=holo, store_path=holo / "store.db",
                 config_path=holo / "config.toml", worktrees=holo / "wt")
 
@@ -731,13 +735,18 @@ class HeartbeatTests(LoopFixture):
     from inside its wait the way the supervisor would.
     """
 
-    def test_an_implementer_slower_than_the_stale_budget_is_not_tripped(self):
-        # 0.01 min is 600 ms; two strikes make a 1.2 s budget. The turn
-        # below sweeps every 400 ms for 2 s.
-        self.configure("[supervisor]\nheartbeat_stale_min = 0.01\n")
-        knobs = holophyte.config_tables.sweep_config(self.tgt)
+    def slow_turn(self, delay_ms=0, silent=False):
+        """Run a ticket whose implementer outlasts the stale budget, each
+        beat `delay_ms` late or `silent`; return the turn's sightings."""
+        # 0.05 min is a 3 s window: a beat 1.5 s apart, even 400 ms late on
+        # a busy runner, is not stale (KO-674). One strike holds the budget
+        # to 3 s, so the turn below sweeps every 400 ms for only 5 s.
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n"
+                       "stale_strikes = 1\n")
+        patch_beats(self, delay_ms, silent)
+        knobs = holophyte.config_tables.sweep_config(self.project)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
-        db, tgt = self.db, self.tgt
+        db, project = self.db, self.project
         sightings = []
 
         class SlowCommit(Commit):
@@ -751,7 +760,7 @@ class HeartbeatTests(LoopFixture):
                     while time.monotonic() < deadline:
                         time.sleep(0.4)
                         result = holophyte.supervisor.sweep(
-                            tgt, conn, int(time.time() * 1000), knobs=knobs)
+                            project, conn, int(time.time() * 1000), knobs=knobs)
                         sightings.append((
                             result.trips,
                             conn.execute("SELECT phase, lastHeartbeat FROM"
@@ -761,8 +770,10 @@ class HeartbeatTests(LoopFixture):
                 return super().play(cwd, turn)
 
         fake, guard = self.loop(SlowCommit("the slow work"), APPROVE)
-
         self.assertEqual(guard.spawned, [])
+        return sightings
+
+    def assert_kept_beating(self, sightings):
         self.assertGreaterEqual(len(sightings), 4, sightings)
         self.assertEqual([trips for trips, _ in sightings if trips], [])
         # The heartbeat moved during the turn while the phase did not: the
@@ -771,8 +782,20 @@ class HeartbeatTests(LoopFixture):
         beats = [beat for _, (_, beat) in sightings]
         self.assertEqual(phases, {"working"})
         self.assertGreater(beats[-1], beats[0])
+
+    def test_an_implementer_slower_than_the_stale_budget_is_not_tripped(self):
+        self.assert_kept_beating(self.slow_turn())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertIn("the slow work", self.subjects())
+
+    def test_beats_each_late_on_a_loaded_runner_are_not_tripped(self):
+        self.assert_kept_beating(self.slow_turn(delay_ms=LOADED_MS))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_silent_heartbeat_under_the_slow_turn_fails_the_check(self):
+        sightings = self.slow_turn(silent=True)
+        with self.assertRaises(AssertionError):
+            self.assert_kept_beating(sightings)
 
 
 class EndedRunTests(LoopFixture):
@@ -883,8 +906,10 @@ class VerifyBaselineTests(LoopFixture):
                        f'before_merge = ["echo gate >> {log}; exit 1"]\n')
         task = dict(a_task(), verify=f"echo ticket >> {log}")
         self.loop(Commit("candidate"), APPROVE, provider=StubProvider(task))
+        # The gate cites the round's passes on the unchanged tree and runs
+        # only the tier the round did not.
         self.assertEqual(log.read_text().splitlines(),
-                         ["ticket", "always", "ticket", "always", "gate"])
+                         ["ticket", "always", "gate"])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         rows = json.loads(self.read(
             "SELECT verificationResults FROM reviewRounds "
@@ -892,13 +917,32 @@ class VerifyBaselineTests(LoopFixture):
         self.assertEqual(rows[-1]["tier"], "before_merge")
         self.assertEqual(rows[-1]["exitCode"], 1)
 
-    def test_no_baseline_only_runs_ticket_at_review_and_gate(self):
+    def test_no_baseline_runs_only_the_ticket_command(self):
         log = self.target.parent / "commands.log"
         task = dict(a_task(), verify=f"echo ticket >> {log}")
         self.loop(Commit("candidate"), APPROVE, provider=StubProvider(task))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-        self.assertEqual(log.read_text().splitlines(), ["ticket", "ticket"])
+        self.assertEqual(log.read_text().splitlines(), ["ticket"])
         rows = json.loads(self.read(
             "SELECT verificationResults FROM reviewRounds LIMIT 1")[0][0])
         self.assertEqual(set(rows[0]), {"source", "command", "exitCode", "output"})
         self.assertTrue(all(r["source"] == "ticket" for r in rows))
+
+    def test_the_gate_cites_the_rounds_pass_instead_of_repeating_it(self):
+        """Approved in round 1 with `main` unmoved, the gate's tree is the
+        round's: the ticket command ran once, and the gate's row for it
+        is a pass naming the head it was earned on."""
+        log = self.target.parent / "commands.log"
+        self.configure('[verify]\nbefore_merge = ["true"]\n')
+        task = dict(a_task(), verify=f"echo ticket >> {log}")
+        self.loop(Commit("candidate"), APPROVE, provider=StubProvider(task))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(log.read_text().splitlines(), ["ticket"])
+        head = self.git("rev-parse", "main^2").strip()
+        rows = json.loads(self.read(
+            "SELECT verificationResults FROM reviewRounds "
+            "ORDER BY round DESC LIMIT 1")[0][0])
+        gate = [row for row in rows if row["source"] == "ticket"][-1]
+        self.assertEqual(gate["exitCode"], 0)
+        self.assertIn(head[:12], gate["output"])
+        self.assertEqual(rows[-1]["tier"], "before_merge")

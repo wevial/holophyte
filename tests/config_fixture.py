@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli
-import holophyte.target
+import holophyte.project
 
 
 class FakeChild:
@@ -20,16 +20,17 @@ class FakeChild:
 
 
 class ConfigTestCase(unittest.TestCase):
-    """Build a `Target` at a throwaway repository, optionally with a config.
+    """Build a `Project` at a throwaway repository, optionally with a config.
 
-    `Target.locate()` is the only thing that derives a target's paths, so the
-    tests go through it rather than assembling a `Target` by hand: a test
+    `Project.locate()` is the only thing that derives a target's paths, so the
+    tests go through it rather than assembling a `Project` by hand: a test
     that set the config path itself would pass even if the file were never
     wired into the path `cli()` derives at all.
     """
 
     def locate(self, config=None):
-        """The `Target` for a fresh repository under a fresh home, as `self.tgt`."""
+        """The `Project` for a fresh repository under a fresh home, as
+        `self.project`."""
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
@@ -37,11 +38,11 @@ class ConfigTestCase(unittest.TestCase):
         self.set_home(self.home)
         self.target = self.root / "repo"
         self.target.mkdir()
-        self.tgt = holophyte.target.Target.locate(self.target)
+        self.project = holophyte.project.Project.locate(self.target)
         if config is not None:
             self.write_config(config)
         self.stub_supervisor_spawn()
-        return self.tgt
+        return self.project
 
     def stub_supervisor_spawn(self):
         """Replace the `Popen` seam the loop path starts a supervisor through.
@@ -67,10 +68,10 @@ class ConfigTestCase(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def write_config(self, config):
-        """Put `config` where `self.tgt` will look for it.
+        """Put `config` where `self.project` will look for it.
 
-        Before anything has read it: a `Target` parses its config once, so a
+        Before anything has read it: a `Project` parses its config once, so a
         file written after the first read would be a file nobody reads.
         """
-        self.tgt.config_path.parent.mkdir(parents=True, exist_ok=True)
-        self.tgt.config_path.write_text(config)
+        self.project.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.project.config_path.write_text(config)

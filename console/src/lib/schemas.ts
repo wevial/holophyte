@@ -19,10 +19,10 @@ export const runSchema = z.looseObject({
   started_ms: z.number().optional(), round: z.number().optional(), strikes: z.number().optional(),
 });
 
-// `target` is the older name for `project`: either one may be missing, not both,
-// and the parsed status always carries the path as `project`.
+// A daemon from before 2026-09-05 names its path only `target`; without
+// `project` its status is a contract error, the signal to upgrade it.
 export const statusSchema = z.looseObject({
-  target: z.string().optional(), project: z.string().optional(), schema_version: z.number().optional(),
+  project: z.string(), schema_version: z.number().optional(),
   host: z.string(), now: z.number(),
   admission: z.string().optional(), hold_note: z.string().nullable().optional(),
   daemon: z.looseObject({ started_ms: z.number(), pid: z.number() }).optional(),
@@ -35,11 +35,6 @@ export const statusSchema = z.looseObject({
   thresholds: z.looseObject({ heartbeat_stale_ms: z.number(), strikes: z.number() }),
   actions: z.boolean().optional(), config_edit: z.boolean().optional(),
   runs: z.array(runSchema),
-}).transform((status, ctx) => {
-  const project = status.project ?? status.target;
-  if (project !== undefined) return { ...status, project };
-  ctx.issues.push({ code: "custom", message: "project is required", path: ["project"], input: status });
-  return z.NEVER;
 });
 
 export const threadFindingFieldsSchema = z.looseObject({

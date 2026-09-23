@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch
 
 import holophyte.board
 import holophyte.cli
-import holophyte.target
+import holophyte.project
 import store
 import store.tickets
 from holophyte.runs import open_store
@@ -44,18 +44,18 @@ class RepointFlagTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        self.target = holophyte.target.Target.locate(self.repo)
+        self.target = holophyte.project.Project.locate(self.repo)
         conn = open_store(self.target)
         self.addCleanup(conn.close)
         self.conn = conn
-        self.project = store.tickets.ensure_project(conn, "team-1", self.repo)
+        self.project_id = store.tickets.ensure_project(conn, "team-1", self.repo)
         self.ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id="issue-1",
+            conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
         store.tickets.transition(conn, self.ticket, "in_flight")
-        self.run = store.claim(conn, self.project, self.ticket, now=T0)
+        self.run = store.claim(conn, self.project_id, self.ticket, now=T0)
         for phase in ("working", "verifying", "reviewing", "merge_gate"):
             store.set_phase(conn, self.run, phase, now=T0 + MINUTE)
 
@@ -102,7 +102,7 @@ class RepointFlagTests(unittest.TestCase):
         git("init", "-q", "-b", "main")
         git("-c", "user.email=t@example.invalid", "-c", "user.name=t",
             "commit", "-q", "--allow-empty", "-m", "base")
-        wt = holophyte.target.worktree_path(self.target, "task/ko-1")
+        wt = holophyte.project.worktree_path(self.target, "task/ko-1")
         git("worktree", "add", "-q", "-b", "task/ko-1", str(wt))
         (wt / "edit.txt").write_text("unsaved\n")
         store.set_branch(self.conn, self.run, "task/ko-1")
@@ -186,7 +186,7 @@ class RepointFlagTests(unittest.TestCase):
     def test_project_add_registers_once_without_runs(self):
         repo = self.root / "fresh"
         subprocess.run(["git", "init", "-q", str(repo)], check=True)
-        target = holophyte.target.Target.locate(repo)
+        target = holophyte.project.Project.locate(repo)
         with self.assertRaisesRegex(SystemExit, "configuration naming a team"):
             holophyte.cli.cli(["project", "add", str(repo)])
         self.assertFalse(target.store_path.exists())

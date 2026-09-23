@@ -231,7 +231,7 @@ def parse_address(text):
                          f" got {text!r}") from None
 
 
-def status(target, now=None, started_ms=None):
+def status(project, now=None, started_ms=None):
     """Return target status, process-owned routes and independent run clocks.
 
     Read-only; a missing store returns 503. Ages and effective working_ms use
@@ -240,13 +240,14 @@ def status(target, now=None, started_ms=None):
     agent_ms is the part of working_ms the time box is judged against, verify_ms
     the rest; verify_started_ms is set only while the open span is a verify.
     Runs include title, phase, round, heartbeat age and sweep strikes. The scaled
-    time box and thresholds agree with the loop's budget checks. `project` aliases
-    `target`; `actions` and `config_edit` advertise authenticated daemon mutations."""
+    time box and thresholds agree with the loop's budget checks. `project` is the
+    repository path; `actions` and `config_edit` advertise authenticated daemon
+    mutations."""
     now = int(time() * 1000) if now is None else now
     started_ms = now if started_ms is None else started_ms
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    conn = store.read.open_readonly(target.store_path)
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
     try:
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
         from holophyte.stop import pending_requests
@@ -254,13 +255,13 @@ def status(target, now=None, started_ms=None):
         strikes = {run.id: store.read.strike(conn, run.id) for run in runs}
         beat = store.read.supervisor_beat(conn)
         from holophyte.admission import state
-        admission, hold_note = state(conn, target)
+        admission, hold_note = state(conn, project)
         if admission == "disabled":
             runs = []
         schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
     finally:
         conn.close()
-    knobs = sweep_config(target)
+    knobs = sweep_config(project)
     # `time_box_ms` is the box the run is counted against -- the estimate
     # scaled by `[agents] budget_scale` -- so the console's time-box bar and
     # the sweep agree with the cap the loop armed. `thresholds.run_cap` is
@@ -269,24 +270,23 @@ def status(target, now=None, started_ms=None):
     from holophyte.agent_turns import route_labels
     from holophyte.serve_runs import active_routes, workers_on_previous_build
 
-    scale = budget_scale(target)
+    scale = budget_scale(project)
     return 200, {
-        "target": str(target.path),
-        "project": str(target.path),
+        "project": str(project.path),
         "admission": admission, "hold_note": hold_note,
         "schema_version": schema_version,
-        "active_routes": active_routes(target),
-        "route_labels": route_labels(target),
-        "workers_on_previous_build": workers_on_previous_build(target),
-        "host": host_label(target, socket.gethostname()),
+        "active_routes": active_routes(project),
+        "route_labels": route_labels(project),
+        "workers_on_previous_build": workers_on_previous_build(project),
+        "host": host_label(project, socket.gethostname()),
         "now": now,
         "daemon": {"started_ms": started_ms, "pid": os.getpid()},
-        "supervisor": supervisor_view(target, beat, now, knobs),
+        "supervisor": supervisor_view(project, beat, now, knobs),
         "thresholds": {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                        "strikes": knobs.stale_strikes,
                        "run_cap": knobs.run_cap},
-        "actions": serve_config(target).actions,
-        "config_edit": serve_config(target).config_edit,
+        "actions": serve_config(project).actions,
+        "config_edit": serve_config(project).config_edit,
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,
                   "ticket_url": run.ticketUrl,
                   "title": run.title,
@@ -306,12 +306,12 @@ def status(target, now=None, started_ms=None):
                   "round": run.reviewRoundCount,
                   "strikes": (strikes[run.id].strikes
                               if strikes[run.id] is not None else 0),
-                  "host": json_host(target, run.host)}
+                  "host": json_host(project, run.host)}
                  for run in runs],
     }
 
 
-def supervisor_view(target, beat, now, knobs):
+def supervisor_view(project, beat, now, knobs):
     """`/status`'s `supervisor` object for `beat` (None when none was ever
     written): `live` under the stale threshold, `stale` at or past it."""
     if beat is None:
@@ -320,7 +320,7 @@ def supervisor_view(target, beat, now, knobs):
     age = now - beat.lastBeat
     return {"state": "live" if age < knobs.heartbeat_stale_ms else "stale",
             "pid": beat.pid, "heartbeat_age_ms": age,
-            "host": host_label(target, beat.host)}
+            "host": host_label(project, beat.host)}
 
 
 def parked_item(ticket):
@@ -358,7 +358,7 @@ def parked_item(ticket):
             "pr_url": ticket.prUrl, "level": "attention"}
 
 
-def attention(target, now=None):
+def attention(project, now=None):
     """The `/attention` answer: `(http status, JSON-able body)`.
 
     `items` is what needs the operator, in the order they should read it:
@@ -378,9 +378,9 @@ def attention(target, now=None):
     threshold, the supervisor at it.
     """
     now = int(time() * 1000) if now is None else now
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    conn = store.read.open_readonly(target.store_path)
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
     try:
         blocked = store.read.blocked_tickets(conn)
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
@@ -388,7 +388,7 @@ def attention(target, now=None):
         beat = store.read.supervisor_beat(conn)
     finally:
         conn.close()
-    knobs = sweep_config(target)
+    knobs = sweep_config(project)
     items = [parked_item(ticket) for ticket in blocked
              if ticket.boardState not in ("Backlog", "Canceled", "Done")]
     for run in runs:
@@ -409,7 +409,7 @@ def attention(target, now=None):
                  and run.activeRunId is None
                  and run.ticketStatus in ("ready", "in_flight", "blocked_on_operator")
                  and run.boardState not in ("Backlog", "Canceled", "Done"))
-    supervisor = supervisor_view(target, beat, now, knobs)
+    supervisor = supervisor_view(project, beat, now, knobs)
     if supervisor["state"] != "live":
         items.append({"kind": "supervisor", "state": supervisor["state"],
                       "heartbeat_age_ms": supervisor["heartbeat_age_ms"],
@@ -419,7 +419,7 @@ def attention(target, now=None):
     else:
         level = "working" if runs else "none"
     return 200, {"level": level, "items": items, "now": now,
-                 "target": str(target.path), "project": str(target.path)}
+                 "project": str(project.path)}
 
 
 # The path to merge, left to right: the columns `/board` answers, in order,
@@ -428,7 +428,7 @@ BOARD_STATES = ("needs_spec", "blocked_on_deps", "ready",
                 "blocked_on_operator", "in_flight")
 
 
-def board(target, now=None):
+def board(project, now=None):
     """The `/board` answer: `(http status, JSON-able body)`.
 
     `columns` is one entry per open state in `BOARD_STATES` order, each
@@ -442,9 +442,9 @@ def board(target, now=None):
     the provider.
     """
     now = int(time() * 1000) if now is None else now
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    conn = store.read.open_readonly(target.store_path)
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
     try:
         tickets = store.read.open_tickets(conn)
     finally:
@@ -463,13 +463,13 @@ def board(target, now=None):
                  "now": now}
 
 
-def ticket_detail(target, identifier):
+def ticket_detail(project, identifier):
     """The `/tickets/KO-n` answer: `(http status, JSON-able body)`.
     Serve the mirrored contract, URL and active run without calling Linear.
     An unknown identifier returns 404 with an empty object."""
-    if not target.store_path.exists():
-        return 503, no_store(target)
-    conn = store.read.open_readonly(target.store_path)
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
     try:
         ticket = store.read.ticket_by_identifier(conn, identifier)
     finally:
@@ -539,7 +539,7 @@ def load_tokens(knobs):
     return tokens
 
 
-def resolve_token(target, host):
+def resolve_token(project, host):
     """The tokens `--serve` on `host` accepts, or None when the bind is
     loopback.
 
@@ -551,17 +551,17 @@ def resolve_token(target, host):
     """
     if is_loopback(host):
         return None
-    knobs = serve_config(target)
+    knobs = serve_config(project)
     if knobs.token_file is None:
         raise SystemExit(
-            f"[holo2] {target.config_path}: --serve {host} binds beyond"
+            f"[holo2] {project.config_path}: --serve {host} binds beyond"
             f" loopback, which needs {TOKEN_KEY} = \"PATH\" naming a"
             " file whose contents every request presents as"
             " `Authorization: Bearer ...`")
     return load_tokens(knobs)
 
 
-def resolve_action_token(target, knobs, token):
+def resolve_action_token(project, knobs, token):
     """The tokens `POST /actions/...` and the `/config` routes accept, or
     None when neither `[serve] actions` nor `[serve] config_edit` is on.
 
@@ -581,7 +581,7 @@ def resolve_action_token(target, knobs, token):
         return token
     if knobs.token_file is None:
         raise SystemExit(
-            f"[holo2] {target.config_path}: [serve] {' and '.join(on)} = true"
+            f"[holo2] {project.config_path}: [serve] {' and '.join(on)} = true"
             f" needs {TOKEN_KEY} = \"PATH\" on every bind, loopback"
             " included: the routes it opens answer only to"
             " `Authorization: Bearer ...`")
@@ -634,7 +634,7 @@ def static_file(console_dir, path):
 
 
 # The JSON routes with a path segment to capture, each with the handler
-# that takes `(target, segment)`. Every one is behind the token; `dispatch`
+# that takes `(project, segment)`. Every one is behind the token; `dispatch`
 # tries them in this order after the fixed paths.
 SHAPED_ROUTES = (
     (RUN_PATH, run_detail),
@@ -721,28 +721,28 @@ class StatusHandler(BaseHTTPRequestHandler):
         """Answer `path` from its route: the JSON ones by name, `/peers`
         from config, anything else as a console file."""
         if path == "/status":
-            code, body = status(self.server.target,
+            code, body = status(self.server.project,
                                 started_ms=self.server.started_ms)
         elif path == "/runs":
-            code, body = runs(self.server.target, query)
+            code, body = runs(self.server.project, query)
         elif path == "/shipped":
-            code, body = shipped(self.server.target, query)
+            code, body = shipped(self.server.project, query)
         elif path == "/ledger":
-            code, body = ledger(self.server.target, query)
+            code, body = ledger(self.server.project, query)
         elif path == "/attention":
-            code, body = attention(self.server.target)
+            code, body = attention(self.server.project)
         elif path == "/board":
-            code, body = board(self.server.target)
+            code, body = board(self.server.project)
         elif path == "/peers":
             code, body = 200, {"self": self.server.self_address,
                                "peers": list(self.server.peers)}
         elif path == CONFIG_PATH:
             code, body = ((404, {"error": "not found", "path": path})
                           if not self.server.config_edit
-                          else read_config(self.server.target))
+                          else read_config(self.server.project))
         elif (shaped := shaped_route(path)) is not None:
             handler, segment = shaped
-            code, body = handler(self.server.target, segment)
+            code, body = handler(self.server.project, segment)
         else:
             found = static_file(self.server.console_dir, path)
             if isinstance(found[0], bytes):
@@ -779,20 +779,20 @@ class StatusHandler(BaseHTTPRequestHandler):
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"error": str(bad)})
-        target = self.server.target
+        project = self.server.project
         try:
             if action == "send-back":
                 code, body = send_back_action(
-                    target, body.get("run"), body.get("note"),
+                    project, body.get("run"), body.get("note"),
                     body.get("author", "maintainer"))
             elif action == REQUEUE_ACTION:
-                code, body = requeue_action(target, body)
+                code, body = requeue_action(project, body)
             elif action in LEVERS:
-                code, body = LEVERS[action](target, body)
+                code, body = LEVERS[action](project, body)
             else:
-                code, body = unit_action(target, action, self.server.unit_name)
+                code, body = unit_action(project, action, self.server.unit_name)
         except (Exception, SystemExit) as failure:
-            code, body = action_failure(target, action, failure)
+            code, body = action_failure(project, action, failure)
         self.answer(code, body)
 
     def do_PUT(self):
@@ -815,7 +815,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"ok": False, "error": str(bad)})
-        self.answer(*write_config(self.server.target, body))
+        self.answer(*write_config(self.server.project, body))
 
     def read_body(self):
         """The request body as a JSON object (`parse_action_body()`);
@@ -915,16 +915,16 @@ class StatusServer(InFlight, ThreadingHTTPServer):
     # its `CodeWatch`.
     code_check = None
 
-    def __init__(self, target, address, console_dir=CONSOLE_DIR, token=None):
-        self.target = target
+    def __init__(self, project, address, console_dir=CONSOLE_DIR, token=None):
+        self.project = project
         self.console_dir = Path(console_dir)
         self.token = token
-        self.peers = console_config(target).daemons
-        knobs = serve_config(target)
+        self.peers = console_config(project).daemons
+        knobs = serve_config(project)
         self.actions = knobs.actions
         self.config_edit = knobs.config_edit
         self.unit_name = knobs.name
-        self.action_token = resolve_action_token(target, knobs, token)
+        self.action_token = resolve_action_token(project, knobs, token)
         self.started_ms = int(time() * 1000)
         super().__init__(address, StatusHandler)
         host, port = self.server_address[:2]
@@ -935,8 +935,8 @@ class StatusServer(InFlight, ThreadingHTTPServer):
             self.code_check()
 
 
-def make_server(target, host, port, console_dir=CONSOLE_DIR, token=None):
-    """Bind a `StatusServer` for `target` at `host:port` and return it.
+def make_server(project, host, port, console_dir=CONSOLE_DIR, token=None):
+    """Bind a `StatusServer` for `project` at `host:port` and return it.
 
     Port 0 binds an ephemeral port; the address actually bound is
     `server.server_address`. The caller runs `serve_forever()` and closes it.
@@ -945,14 +945,14 @@ def make_server(target, host, port, console_dir=CONSOLE_DIR, token=None):
     is the tuple of bearer values every JSON route accepts; `serve()` resolves it
     from the bind address and the config through `resolve_token()`.
     """
-    return StatusServer(target, (host, port), console_dir, token)
+    return StatusServer(project, (host, port), console_dir, token)
 
 
 class _Stopped(Exception):
     """Raised inside `serve_forever()` by the signal handler to unwind it."""
 
 
-def serve(target, address, out=None, interval=CODE_CHECK_SEC):
+def serve(project, address, out=None, interval=CODE_CHECK_SEC):
     """`--serve`'s whole body: bind, announce, answer until SIGINT/SIGTERM
     or until the factory code moves, then re-execute.
 
@@ -967,8 +967,8 @@ def serve(target, address, out=None, interval=CODE_CHECK_SEC):
     out = out or sys.stdout
     require_tomlkit()
     host, port = parse_address(address)
-    token = resolve_token(target, host)
-    server = make_server(target, host, port, token=token)
+    token = resolve_token(project, host)
+    server = make_server(project, host, port, token=token)
     watch = server.code_check = CodeWatch(interval, out, factory_revision)
 
     def on_signal(signum, _frame):
@@ -984,7 +984,7 @@ def serve(target, address, out=None, interval=CODE_CHECK_SEC):
                   if on]
         mode = f"with {' and '.join(opened)}" if opened else "read-only"
         print(f"[holo2] serving {bound_host}:{bound_port} {mode} for"
-              f" {target.path}, {guard}", file=out)
+              f" {project.path}, {guard}", file=out)
         try:
             server.serve_forever(poll_interval=min(0.5, interval))
         except _Stopped:

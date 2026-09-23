@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 import holophyte.board
 import holophyte.cli
-import holophyte.target
+import holophyte.project
 import linear_provider
 import store
 import store.read
@@ -61,19 +61,19 @@ class RequeueCliTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        self.target = holophyte.target.Target.locate(self.repo)
+        self.target = holophyte.project.Project.locate(self.repo)
         self.with_board()
         conn = open_store(self.target)
         self.addCleanup(conn.close)
         self.conn = conn
-        self.project = store.tickets.ensure_project(conn, "team-1", self.repo)
+        self.project_id = store.tickets.ensure_project(conn, "team-1", self.repo)
         self.ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id="issue-1",
+            conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
         store.tickets.transition(conn, self.ticket, "in_flight")
-        self.run = store.claim(conn, self.project, self.ticket, now=T0)
+        self.run = store.claim(conn, self.project_id, self.ticket, now=T0)
 
     def with_board(self):
         self.target.config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,7 +113,7 @@ class RequeueCliTests(unittest.TestCase):
                 task = linear_provider.parse_task({
                     "identifier": "KO-1", "id": "issue-1", "title": "a ticket",
                     "description": "", "state": {"name": state}})
-                holophyte.board.mirror_task(self.conn, self.project, task)
+                holophyte.board.mirror_task(self.conn, self.project_id, task)
                 before = list(self.conn.iterdump())
                 with self.assertRaisesRegex(SystemExit, state):
                     self.cli("--requeue", "KO-1", "--note", "retry")
@@ -196,8 +196,11 @@ class RequeueCliTests(unittest.TestCase):
         self.assertIn("lock released", store.read.ledger(self.conn, self.run)[-1].text)
 
     def test_requeue_refuses_parked_candidates_and_pull_requests_without_writes(self):
+        # Only a `not_reproduced` park is admitted (KO-658); a merge question
+        # still names the command that answers it.
         park_run(self.conn, self.run, "awaiting_merge_approval",
-                   "merge?", candidate_sha="a" * 40, now=T0)
+                   "merge?", candidate_sha="a" * 40, now=T0,
+                   park_kind="question")
         store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
         self.conn.execute("UPDATE tickets SET blockedQuestion = 'merge?' WHERE id = ?",
                           (self.ticket,))

@@ -54,32 +54,15 @@ test("working.json extended with the daemon fields renders one live block and ru
   expect(row!.querySelector("[data-strike]")).toBeNull();
 });
 
-test("route_labels draw one route line under the header, a null seat as none", () => {
+test("a status with route_labels draws no route line on the project card", () => {
   const labels = {
     implementer: "claude-implement opus", reviewer: "codex gpt-6-astra", reviewer_fallback: null,
     adjudicator: "codex gpt-6-astra", writer: "claude-implement opus",
   };
   render(<Floor daemons={on({ ...extended, route_labels: labels })} project="all" expandedRun={null} onToggleRun={noop} />);
   const block = screen.getByRole("region", { name: "writer" });
-  expect(block.querySelector("[data-route-line]")?.textContent).toBe(
-    "implementer claude-implement opus · reviewer codex gpt-6-astra · reviewer fallback none · "
-      + "adjudicator codex gpt-6-astra · writer claude-implement opus",
-  );
-});
-
-test("a status without route_labels draws no route line and the same header", () => {
-  const labels = { implementer: "claude opus", reviewer: "codex", reviewer_fallback: null, adjudicator: "codex", writer: "claude opus" };
-  const header = (status: Status) => {
-    cleanup();
-    render(<Floor daemons={on(status)} project="all" expandedRun={null} onToggleRun={noop} />);
-    const block = screen.getByRole("region", { name: "writer" });
-    return { line: block.querySelector("[data-route-line]"), header: block.querySelector("header")!.outerHTML };
-  };
-  const without = header(extended);
-  expect(without.line).toBeNull();
-  const withLabels = header({ ...extended, route_labels: labels });
-  expect(withLabels.line).not.toBeNull();
-  expect(without.header).toBe(withLabels.header);
+  expect(block.querySelector("[data-route-line]")).toBeNull();
+  expect(block.textContent).not.toContain("codex gpt-6-astra");
 });
 
 test("strike 2/3 is red, 1/3 amber, 0 absent", () => {

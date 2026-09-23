@@ -24,7 +24,7 @@ test("a fresh supervisor heartbeat is not shown; one past the threshold reads su
   // working.json: hb 12s against a 3m threshold; stale_supervisor.json: hb 4m past it.
   const card = mountCard([
     hostOf(working, NO_ATTENTION, "http://writer:7710"),
-    hostOf({ ...staleSupervisor, target: "/srv/dev/relos" }, NO_ATTENTION, "http://writer:7711"),
+    hostOf({ ...staleSupervisor, project: "/srv/dev/relos" }, NO_ATTENTION, "http://writer:7711"),
   ]);
 
   const fresh = row("writer:7710");
@@ -65,14 +65,14 @@ test("the foot says how long the daemons have been up: the shortest when they di
   const HOUR = 3_600_000;
   const card = mountCard([
     hostOf(withDaemon(working, 12 * HOUR + 20_000), NO_ATTENTION, "http://writer:7710"),
-    hostOf(withDaemon({ ...working, target: "/srv/dev/relos" }, 12 * HOUR), NO_ATTENTION, "http://writer:7711"),
+    hostOf(withDaemon({ ...working, project: "/srv/dev/relos" }, 12 * HOUR), NO_ATTENTION, "http://writer:7711"),
   ]);
   expect(card.querySelector("[data-foot]")!.textContent).toBe("daemons up 12h");
   cleanup();
 
   const skewed = mountCard([
     hostOf(withDaemon(working, 12 * HOUR), NO_ATTENTION, "http://writer:7710"),
-    hostOf(withDaemon({ ...working, target: "/srv/dev/relos" }, 3 * HOUR), NO_ATTENTION, "http://writer:7711"),
+    hostOf(withDaemon({ ...working, project: "/srv/dev/relos" }, 3 * HOUR), NO_ATTENTION, "http://writer:7711"),
   ]);
   expect(skewed.querySelector("[data-foot]")!.textContent).toBe("daemons up 3h");
   cleanup();

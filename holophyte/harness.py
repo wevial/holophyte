@@ -5,8 +5,8 @@ optional `model` and `effort` -- names an adapter here instead of carrying a
 command string. The adapter owns what a wrapper script on the writer host
 used to: the argv of a turn, the session id that turn runs under (chosen
 before launch, so the factory records it at dispatch rather than reading it
-back out of the output -- or, for a review harness that chooses its own,
-read from the banner it prints) and the argv that resumes it. The binary is the
+back out of the output -- or, for a harness that chooses its own, read from
+the banner it prints) and the argv that resumes it. The binary is the
 adapter's `binary` -- the harness's own name unless its CLI is called
 something else -- looked up on PATH at launch, unless the top-level
 `[harnesses]` table names an absolute path for it.
@@ -34,8 +34,8 @@ TABLE_KEYS = ("harness", "model", "effort")
 class Adapter:
     """What an adapter declares unless it says otherwise: the binary is its
     name, no table key is required or refused beyond `parse_role()`'s
-    shape checks, the harness can resume a session, and a review turn's
-    output names no session."""
+    shape checks, the harness can resume a session, and a turn's output
+    names no session."""
     requires = frozenset()
     refuses = frozenset()
     efforts = None
@@ -45,7 +45,7 @@ class Adapter:
     def binary(self):
         return self.name
 
-    def reported_session(self, output):
+    def reported_session(self, output, role):
         return None
 
 
@@ -57,14 +57,14 @@ class Claude(Adapter):
     name = "claude"
     roles = frozenset({"implementer"})
 
-    def turn(self, binary, options):
+    def turn(self, binary, options, role):
         return [binary, "-p", "--session-id", str(uuid.uuid4()),
                 *self.route(options)]
 
     def session(self, argv):
         return argv[argv.index("--session-id") + 1]
 
-    def resume(self, binary, options, session):
+    def resume(self, binary, options, session, role):
         return [binary, "-p", "--resume", session, *self.route(options)]
 
     @staticmethod
@@ -77,40 +77,64 @@ class Claude(Adapter):
 
 
 class Codex(Adapter):
-    """`codex exec` for the review roles, with Codex's own sandbox bypassed.
+    """`codex exec` with Codex's own sandbox bypassed.
 
     The read-only sandbox cannot start under a systemd user unit with
-    PrivateTmp, so the factory runs the turn in a throwaway detached
+    PrivateTmp, so the factory runs a review turn in a throwaway detached
     checkout of the candidate (`agents.table_review()`) and that checkout is
-    the write boundary. `resume` takes no `-C`, which is why the caller sets
+    the write boundary; an implementer turn runs in the task worktree like
+    any implementer. `resume` takes no `-C`, which is why the caller sets
     the process cwd rather than the argv naming it. Codex chooses the
     session id itself and prints it in its `session id:` banner, which
-    `reported_session()` reads back out of the output.
+    `reported_session()` reads back out of the output -- after the turn, so
+    `session()` has none to give at dispatch. The implementer's argv is the
+    flag set the maintainer ran it under as a command string, and its resume
+    carries the turn's model and effort.
     """
     name = "codex"
-    roles = frozenset({"reviewer", "adjudicator"})
+    roles = frozenset({"implementer", "reviewer", "adjudicator"})
     # `REVIEW_EFFORTS`, read at its source: `holophyte.config` imports this
     # module at load.
     efforts = review_runner.EFFORTS
     BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
+    IMPLEMENTER = ["--dangerously-bypass-approvals-and-sandbox",
+                   "--skip-git-repo-check"]
 
-    def turn(self, binary, options):
-        return [binary, "exec", *self.route(options)]
+    def turn(self, binary, options, role):
+        if role == "implementer":
+            return [binary, "exec", *self.IMPLEMENTER, *self.route(options)]
+        return [binary, "exec", *self.route(options),
+                "--dangerously-bypass-approvals-and-sandbox"]
 
-    def resume(self, binary, options, session):
-        return [binary, "exec", "resume", *self.route(options), session]
+    def session(self, argv):
+        return None
 
-    def reported_session(self, output):
+    def resume(self, binary, options, session, role):
+        if role == "implementer":
+            return [binary, "exec", "resume", session, *self.IMPLEMENTER,
+                    *self.route(options)]
+        return [binary, "exec", "resume", *self.route(options),
+                "--dangerously-bypass-approvals-and-sandbox", session]
+
+    def reported_session(self, output, role):
+        """The first banner's id; for the implementer, only a UUID, which
+        is what `runs.providerSessionId` holds for a resume to name."""
         match = self.BANNER.search(output)
-        return match.group(1) if match else None
+        if match is None:
+            return None
+        if role == "implementer":
+            try:
+                uuid.UUID(match.group(1))
+            except ValueError:
+                return None
+        return match.group(1)
 
     @staticmethod
     def route(options):
         from holophyte.config import REVIEW_EFFORT, REVIEW_MODEL
         effort = options.get("effort", REVIEW_EFFORT)
         return ["-m", options.get("model", REVIEW_MODEL),
-                "-c", f"model_reasoning_effort={effort}",
-                "--dangerously-bypass-approvals-and-sandbox"]
+                "-c", f"model_reasoning_effort={effort}"]
 
 
 class Cursor(Adapter):
@@ -143,7 +167,7 @@ class Cursor(Adapter):
     refuses = frozenset({"effort"})
     resumes = False
 
-    def turn(self, binary, options):
+    def turn(self, binary, options, role):
         return [binary, "-p", "--model", options["model"], "--force", "--trust"]
 
 
@@ -152,10 +176,13 @@ ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex(), Cursor())}
 
 @dataclass(frozen=True)
 class Seat:
-    """One table-form role, resolved: its adapter, binary and options."""
+    """One table-form role, resolved: its adapter, binary and options, and
+    the `[agents]` role (`implementer`, `reviewer`, `adjudicator`) it fills,
+    which the adapter's argv may differ by."""
     adapter: object
     binary: str
     options: dict
+    role: str
 
     @property
     def name(self):
@@ -163,20 +190,21 @@ class Seat:
 
     def turn(self, goal):
         """A fresh turn's argv, the goal last, under a new session id."""
-        return self.adapter.turn(self.binary, self.options) + [goal]
+        return self.adapter.turn(self.binary, self.options, self.role) + [goal]
 
     def session(self, argv):
-        """The session id `argv`, built by `turn()`, runs under."""
+        """The session id `argv`, built by `turn()`, runs under; None for an
+        adapter whose harness chooses it (`reported_session()`)."""
         return self.adapter.session(argv)
 
     def resume(self, session):
         """The argv that resumes `session`; the caller appends the prompt."""
-        return self.adapter.resume(self.binary, self.options, session)
+        return self.adapter.resume(self.binary, self.options, session, self.role)
 
     def reported_session(self, output):
         """The session id a finished turn printed, for an adapter whose
         harness chooses it; None when the output names none."""
-        return self.adapter.reported_session(output)
+        return self.adapter.reported_session(output, self.role)
 
     def named(self, argv):
         """`argv` as a record names it: the harness first, not a
@@ -261,7 +289,7 @@ def check_target(target):
 
     A table replaces the wrapper script the regex and resume template were
     written against, so `implementer_session` or `implementer_resume` beside
-    a table implementer is refused as contradictory: the adapter assigns the
+    a table implementer is refused as contradictory: the adapter records the
     session and builds the resume, and a second answer to the same question
     would be one the factory ignores.
     """
@@ -302,14 +330,15 @@ def seat(target, role, *, fallback=False):
         paths = config_table(target, "harnesses")
         check_paths(where, paths)
         binary = paths.get(adapter.name, binary)
-    return Seat(adapter, binary, table)
+    return Seat(adapter, binary, table, AGENT_CONFIG_KEYS[role])
 
 
 def agent_session(target, role, argv):
     """The session id a table-form `role`'s turn `argv` runs under, None
     for a command string -- its session, if any, is read from its output
-    through `implementer_session` -- and for a container turn, which
-    records none."""
+    through `implementer_session` -- for an adapter that learns it from the
+    output (`agents.record_session()` reads that), and for a container
+    turn, which records none."""
     from holophyte.isolation import route_for
     resolved = seat(target, role)
     if resolved is None or route_for(target).backend == "container":

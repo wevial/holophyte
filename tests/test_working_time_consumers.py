@@ -19,14 +19,14 @@ class WorkingConsumers(SweepTestCase):
             )
         now = T0 + 100 * MINUTE
         self.heartbeat_at(run, now)
-        trip, = supervisor.sweep(self.tgt, self.conn, now).trips
+        trip, = supervisor.sweep(self.project, self.conn, now).trips
         self.assertEqual(trip.condition, supervisor.TIME_BOX)
         with patch("store.working.time", return_value=now / 1000):
-            self.assertTrue(supervisor.still_tripped(self.tgt, self.conn, trip))
+            self.assertTrue(supervisor.still_tripped(self.project, self.conn, trip))
         # Settlement leaves 50 minutes: over one turn's 45-minute allowance,
         # but below the 90 minutes earned by the recorded review rounds.
         settle_work(self.conn, run, now=T0 + 50 * MINUTE)
-        outcome = supervisor.act_on_trip(self.tgt, self.conn, trip)
+        outcome = supervisor.act_on_trip(self.project, self.conn, trip)
         self.assertFalse(outcome.acted)
         snapshot = store.read.run_snapshot(self.conn, run)
         self.assertIsNone(snapshot.endedAt)
@@ -44,27 +44,28 @@ class WorkingConsumers(SweepTestCase):
                 settle_work(self.conn, run, now=now)
                 self.heartbeat_at(run, now)
                 with patch.object(loop, "time", return_value=now / 1000):
-                    loop._check_run_cap(self.tgt, self.conn, run, 10, "abc")
+                    loop._check_run_cap(self.project, self.conn, run, 10, "abc")
         for wait in (0, 200 * MINUTE):
             now = T0 + 2 * MINUTE + wait
             self.heartbeat_at(run, now)
             with patch.object(loop, "time", return_value=now / 1000):
-                loop._check_run_cap(self.tgt, self.conn, run, 10, "abc")
-            self.assertFalse(supervisor.sweep(self.tgt, self.conn, now).trips)
+                loop._check_run_cap(self.project, self.conn, run, 10, "abc")
+            self.assertFalse(supervisor.sweep(self.project, self.conn, now).trips)
         # A hung call is visible while its context is still open.
         with patch("store.working.time", return_value=T0 / 1000):
             with working(self.conn, run):
                 now = T0 + 200 * MINUTE
                 self.heartbeat_at(run, now)
-                trips = supervisor.sweep(self.tgt, self.conn, now).trips
+                trips = supervisor.sweep(self.project, self.conn, now).trips
                 self.assertEqual(trips[0].condition, supervisor.TIME_BOX)
                 with patch.object(loop, "time", return_value=now / 1000):
                     with self.assertRaisesRegex(loop.RunFailure, "out of time"):
-                        loop._check_run_cap(self.tgt, self.conn, run, 10, "abc")
+                        loop._check_run_cap(self.project, self.conn, run, 10, "abc")
             # Settlement can invalidate previously observed in-flight evidence.
-            self.assertFalse(supervisor.still_tripped(self.tgt, self.conn, trips[0]))
-        supervisor.sweep(self.tgt, self.conn, now + 100 * MINUTE)
-        trips = supervisor.sweep(self.tgt, self.conn, now + 200 * MINUTE).trips
+            self.assertFalse(supervisor.still_tripped(self.project, self.conn,
+                                                      trips[0]))
+        supervisor.sweep(self.project, self.conn, now + 100 * MINUTE)
+        trips = supervisor.sweep(self.project, self.conn, now + 200 * MINUTE).trips
         self.assertEqual(trips[0].condition, supervisor.STALE_HEARTBEAT)
         finish_run(self.conn, run, "merged", now=now)
         other = self.a_run(budget_min=10)
@@ -89,21 +90,21 @@ class WorkingConsumers(SweepTestCase):
                 settle_work(self.conn, run, now=start + 2 * MINUTE)
             now = start + 2 * MINUTE
             self.heartbeat_at(run, now)
-            self.assertFalse(supervisor.sweep(self.tgt, self.conn, now).trips)
+            self.assertFalse(supervisor.sweep(self.project, self.conn, now).trips)
             with patch.object(loop, "time", return_value=now / 1000):
-                loop._check_run_cap(self.tgt, self.conn, run, 10, "abc")
+                loop._check_run_cap(self.project, self.conn, run, 10, "abc")
             with working(self.conn, run):
                 now = start + 25 * MINUTE
                 self.heartbeat_at(run, now)
-                trip, = supervisor.sweep(self.tgt, self.conn, now).trips
+                trip, = supervisor.sweep(self.project, self.conn, now).trips
                 self.assertEqual(trip.condition, supervisor.TIME_BOX)
                 self.assertIn("27.0 min of agent work", trip.evidence)
                 with patch("store.working.time", return_value=now / 1000):
                     self.assertTrue(
-                        supervisor.still_tripped(self.tgt, self.conn, trip))
+                        supervisor.still_tripped(self.project, self.conn, trip))
                 with patch.object(loop, "time", return_value=now / 1000):
                     with self.assertRaisesRegex(loop.RunFailure, "out of time"):
-                        loop._check_run_cap(self.tgt, self.conn, run, 10, "abc")
+                        loop._check_run_cap(self.project, self.conn, run, 10, "abc")
 
     def test_run_answers_split_agent_from_verify_time(self):
         run = self.a_run(budget_min=10)
@@ -113,8 +114,8 @@ class WorkingConsumers(SweepTestCase):
         start = T0 + 5 * MINUTE
 
         def answers(now):
-            return (serve.status(self.tgt, now=now)[1]["runs"][0],
-                    serve_runs.run_detail(self.tgt, str(run), now=now)[1]["run"])
+            return (serve.status(self.project, now=now)[1]["runs"][0],
+                    serve_runs.run_detail(self.project, str(run), now=now)[1]["run"])
 
         with patch("store.working.time", return_value=start / 1000):
             with working(self.conn, run, verify=True):
@@ -135,7 +136,7 @@ class WorkingConsumers(SweepTestCase):
                         (3 * MINUTE, 3 * MINUTE, start, None))
                 settle_work(self.conn, run, now=start + MINUTE)
         finish_run(self.conn, run, "merged", now=start + 2 * MINUTE)
-        shipped = serve_runs.shipped(self.tgt)[1]["rows"][0]
+        shipped = serve_runs.shipped(self.project)[1]["rows"][0]
         self.assertEqual(
             (shipped["working_ms"], shipped["actual_min"],
              shipped["agent_ms"], shipped["verify_ms"]),
@@ -189,7 +190,7 @@ class WorkingConsumers(SweepTestCase):
             ):
                 with self.assertRaises(loop.MergeParked):
                     babysitter._babysit(
-                        self.tgt,
+                        self.project,
                         None,
                         None,
                         None,
@@ -221,7 +222,7 @@ class WorkingConsumers(SweepTestCase):
             patch.object(pr, "SLEEP") as sleep,
         ):
             self.assertIs(
-                babysitter._settled_state(self.tgt, None, None, 10, pull), thread
+                babysitter._settled_state(self.project, None, None, 10, pull), thread
             )
             sleep.assert_called_once_with(pr.CHECK_POLL_S)
 
@@ -233,23 +234,23 @@ class WorkingConsumers(SweepTestCase):
         )
         self.conn.commit()
         now = T0 + 10 * MINUTE
-        live = serve.status(self.tgt, now=now)[1]["runs"][0]
+        live = serve.status(self.project, now=now)[1]["runs"][0]
         self.assertEqual(
             (live["working_ms"], live["elapsed_ms"]), (4 * MINUTE, 10 * MINUTE)
         )
-        detail = serve_runs.run_detail(self.tgt, str(run), now=now)[1]["run"]
+        detail = serve_runs.run_detail(self.project, str(run), now=now)[1]["run"]
         self.assertEqual(detail["working_ms"], live["working_ms"])
         store.working.settle_work(self.conn, run, now=now)
-        waiting = serve.status(self.tgt, now=now + 20 * MINUTE)[1]["runs"][0]
+        waiting = serve.status(self.project, now=now + 20 * MINUTE)[1]["runs"][0]
         self.assertEqual(
             (waiting["working_ms"], waiting["elapsed_ms"], waiting["work_started_ms"]),
             (4 * MINUTE, 30 * MINUTE, None),
         )
         finish_run(self.conn, run, "merged", now=now + 20 * MINUTE)
-        shipped = serve_runs.shipped(self.tgt)[1]["rows"][0]
+        shipped = serve_runs.shipped(self.project)[1]["rows"][0]
         self.assertEqual((shipped["actual_min"], shipped["wall_min"]), (4, 30))
         self.assertEqual(report.report_rows(self.conn)[0][1:6], (4, 4, 0, 10, 0.4))
         self.conn.execute("UPDATE runs SET workingMs = NULL WHERE id = ?", (run,))
         self.conn.commit()
-        self.assertIsNone(serve_runs.shipped(self.tgt)[1]["rows"][0]["actual_min"])
+        self.assertIsNone(serve_runs.shipped(self.project)[1]["rows"][0]["actual_min"])
         self.assertIn("n/a", "\n".join(report.report_lines(self.conn)))

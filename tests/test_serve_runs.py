@@ -65,13 +65,13 @@ class LivePullRequestTests(MergeModeFixture):
         self.loop(Commit("candidate"), APPROVE, Idle(""),
                   provider=self.provider())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         observed = []
         babysit = holophyte.pullrequest.babysitter._babysit
 
         def observe_resume(run, *args, **kwargs):
             observed.append(holophyte.serve_runs.run_detail(
-                run.target, str(run.run_id)))
+                run.project, str(run.run_id)))
             return babysit(run, *args, **kwargs)
 
         with patch.object(holophyte.pullrequest.babysitter, "_babysit",
@@ -91,14 +91,14 @@ class LivePullRequestTests(MergeModeFixture):
 class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
     def test_consuming_round_lists_private_note_and_report_cites_event(self):
         run_id, event_id = self.operator_note_pass(False)
-        code, body = holophyte.serve_runs.run_detail(self.tgt, str(run_id))
+        code, body = holophyte.serve_runs.run_detail(self.project, str(run_id))
         self.assertEqual(code, 200)
         notes = [n for r in body["rounds"] for n in r["operator_notes"]]
         self.assertEqual(len(notes), 1)
         self.assertEqual(notes[0]["kind"], "operator_note")
         self.assertEqual(notes[0]["note"], "remove the subheader")
         self.assertEqual(notes[0]["event_id"], event_id)
-        with store.open(str(self.tgt.store_path)) as conn:
+        with store.open(str(self.project.store_path)) as conn:
             report = "\n".join(holophyte.report.report_lines(conn))
         self.assertIn(f"Run {run_id} round 1: operator_note event {event_id}", report)
         self.assertIn("remove the subheader", report)
@@ -773,9 +773,9 @@ class ActiveRoutesTests(ServeTestCase):
     def test_status_shows_only_live_fallbacks_and_resets_to_primary(self):
         from holophyte.agent_routes import reset
         from holophyte.agents import ProbeResult, activate_fallback
-        from holophyte.target import Target
+        from holophyte.project import Project
         self.seed()
-        target = Target.locate(self.target)
+        target = Project.locate(self.target)
         target._config = {'agents': {'implementer': 'codex exec',
                                     'implementer_fallback': 'devin -p'}}
         self.addCleanup(reset, target)
@@ -786,7 +786,7 @@ class ActiveRoutesTests(ServeTestCase):
                               probe=ProbeResult(['devin', '-p'], 0, 'ready', 90))
         finally:
             conn.close()
-        # The daemon constructs its own Target, proving the indicator is not
+        # The daemon constructs its own Project, proving the indicator is not
         # accidentally reading the loop's in-memory route map.
         self.start()
         code, _, body = self.request('GET', '/status')
@@ -838,7 +838,7 @@ class MigrationFeedTests(ServeTestCase):
             store.record_intervention(conn, self.run, "migrate", "operator note")
         finally:
             conn.close()
-        target = holophyte.target.Target.locate(self.target)
+        target = holophyte.project.Project.locate(self.target)
         status, body = holophyte.serve_runs.ledger(target, "since=0")
         self.assertEqual(status, 200)
         rows = [r for r in body["entries"] if r.get("action") == "migrate"]
@@ -878,13 +878,13 @@ class FailurePayloadTests(MergeModeFixture):
         self.assertEqual(facts['command'], command)
         self.assertEqual(facts['exit_status'], 3)
         self.assertEqual(facts['last_output_line'], 'boom')
-        code, body = holophyte.serve_runs.shipped(self.tgt, 'outcome=all')
+        code, body = holophyte.serve_runs.shipped(self.project, 'outcome=all')
         self.assertEqual(code, 200)
         self.assertEqual(body['rows'][0]['outcome_reason'], reason)
         self.assertIsInstance(body['rows'][0]['outcome_reason'], str)
         self.assertIn('command 2', reason)
         self.assertIn('exit 3; boom', reason)
-        code, body = holophyte.serve.attention(self.tgt)
+        code, body = holophyte.serve.attention(self.project)
         self.assertEqual(code, 200)
         (card,) = [item for item in body['items'] if item['kind'] == 'failed']
         self.assertEqual(card['reason'], reason)

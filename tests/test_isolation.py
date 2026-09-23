@@ -22,7 +22,7 @@ class IsolationTests(unittest.TestCase):
         )
 
     def test_none_preserves_process_call(self):
-        from holophyte.target import state_dir
+        from holophyte.project import state_dir
 
         for backend in (None, "none"):
             if backend:
@@ -569,11 +569,11 @@ class IsolationTests(unittest.TestCase):
              patch.object(isolation, "run_capped", side_effect=run):
             commit_environment = False
             isolation.launch(isolation.Route("container"), worktree, {}, ["agent"],
-                             target=self.target)
+                             project=self.target)
             commit_environment = True
             with self.assertRaisesRegex(InfraFailure, "contains .env"):
                 isolation.launch(isolation.Route("container"), worktree, {}, ["agent"],
-                                 target=self.target)
+                                 project=self.target)
         self.assertEqual(git(worktree, "rev-parse", "HEAD"), before)
         self.assertEqual((worktree / ".env").read_text(), "host secret")
 

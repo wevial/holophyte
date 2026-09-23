@@ -22,9 +22,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli
+import holophyte.project
 import holophyte.report
 import holophyte.serve_runs
-import holophyte.target
 import store
 import store.read
 import store.tickets
@@ -48,23 +48,23 @@ class ApproveCliTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        self.target = holophyte.target.Target.locate(self.repo)
+        self.target = holophyte.project.Project.locate(self.repo)
         self.target.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.target.config_path.write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n')
         conn = open_store(self.target)
         self.addCleanup(conn.close)
         self.conn = conn
-        self.project = store.tickets.ensure_project(conn, "team-1", self.repo)
+        self.project_id = store.tickets.ensure_project(conn, "team-1", self.repo)
         self.ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id="issue-1",
+            conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
 
     def claim(self):
         store.tickets.transition(self.conn, self.ticket, "in_flight")
-        self.run = store.claim(self.conn, self.project, self.ticket, now=T0)
+        self.run = store.claim(self.conn, self.project_id, self.ticket, now=T0)
         return self.run
 
     def park(self, pr_url=None):
