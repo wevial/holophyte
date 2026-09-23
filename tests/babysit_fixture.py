@@ -127,9 +127,9 @@ class BabysitHelpers:
         self.assertIn("Instruction from @operator", brief)
         calls = self.api_calls()
         self.assertEqual([kind for kind, _ in calls],
-                         ["state", "state", "conversation", "state"])
+                         ["state", "state", "react", "conversation", "state"])
         self.assertEqual(calls[1][1]["commentsAfter"], "c1")
-        body = calls[2][1]["body"]
+        body = calls[3][1]["body"]
         self.assertIn("> @holophyte fix: move the button\n> Put it beside Save.", body)
         self.assertIn("Moved the button beside Save.", body)
         self.assertIn(self.git("rev-parse", BRANCH).strip(), body)

@@ -4,7 +4,9 @@ import os
 import re
 from dataclasses import replace
 
-from holophyte import questions, redact
+import store
+from holophyte import pr, questions, redact
+from holophyte.gates import InfraFailure
 
 REFUSAL = "Only listed maintainers may instruct the factory here"
 
@@ -37,7 +39,7 @@ def classify(thread, handle, accounts=()):
                        intent="unmarked", triage=None)
     if thread.triage is not None:
         return thread
-    pattern = re.compile(r"(?<![\w@-])@" + re.escape(handle) + r"(?![\w-])", re.I)
+    pattern = _mention(handle)
     latest = thread.comments[-1]
     if handle and pattern.search(latest.body):
         request = pattern.sub("", latest.body).strip()
@@ -50,6 +52,32 @@ def classify(thread, handle, accounts=()):
             thread, classification="MENTIONED", request=request, intent=intent
         )
     return thread
+
+
+def _mention(handle):
+    return re.compile(r"(?<![\w@-])@" + re.escape(handle) + r"(?![\w-])", re.I)
+
+
+def acknowledge(target, conn, run_id, pull, threads, merge):
+    """React EYES once to the latest comment of each thread that mentions
+    `merge.mention_handle` (KO-679). One the route's account already reacted
+    to, or a bot's (`bot_author()`), is left alone; a refused reaction is a
+    run event, never fatal."""
+    handle = merge.mention_handle
+    bots = (*merge.bot_authors, *merge.bot_logins)
+    pattern = _mention(handle)
+    for thread in threads:
+        comment = next((c for c in reversed(thread.comments)
+                        if handle and pattern.search(c.body)), None)
+        if (comment is None or not comment.node_id or comment.acknowledged
+                or bot_author(comment.author, bots, comment.author_kind)):
+            continue
+        try:
+            pr.react_eyes(target, pull, comment.node_id)
+        except InfraFailure as e:
+            if conn is not None and run_id is not None:
+                store.record_event(conn, run_id, "pull_request",
+                                   f"EYES reaction on {thread.url} failed: {e}")
 
 
 def classified(threads, merge):
