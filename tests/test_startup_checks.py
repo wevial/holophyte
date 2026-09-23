@@ -98,12 +98,12 @@ class StartupCheckTests(ConfigTestCase):
         self.repo(origin=False)
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.config.check_agent_commands(self.tgt)
+            holophyte.config.check_agent_commands(self.project)
 
         message = str(raised.exception)
         self.assertIn("[merge] mode", message)
         self.assertIn("origin", message)
-        self.assertIn(str(self.tgt.config_path), message)
+        self.assertIn(str(self.project.config_path), message)
 
     def test_pr_mode_probes_gh_auth_and_refuses_a_failed_one(self):
         """With `origin` in place the route is `gh auth status`: a stub that
@@ -113,12 +113,12 @@ class StartupCheckTests(ConfigTestCase):
         self.locate('[merge]\nmode = "pr"\n')
         self.repo(origin=True)
         self.stub(bindir / "gh", 'if [ "$1" = auth ]; then exit 0; fi\nexit 1\n')
-        self.assertIsNone(holophyte.config.check_agent_commands(self.tgt))
+        self.assertIsNone(holophyte.config.check_agent_commands(self.project))
 
         self.stub(bindir / "gh", 'echo "You are not logged into any GitHub '
                                  'hosts" >&2\nexit 1\n')
         with self.assertRaises(SystemExit) as raised:
-            holophyte.config.check_agent_commands(self.tgt)
+            holophyte.config.check_agent_commands(self.project)
         self.assertIn("gh auth status", str(raised.exception))
         self.assertIn("not logged into", str(raised.exception))
 
@@ -128,13 +128,13 @@ class StartupCheckTests(ConfigTestCase):
         with patch.object(holophyte.pr, "GH", "gh-absent-under-test"), \
                 patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": ""}):
             with self.assertRaises(SystemExit) as raised:
-                holophyte.config.check_agent_commands(self.tgt)
+                holophyte.config.check_agent_commands(self.project)
             self.assertIn("'gh-absent-under-test' on PATH",
                           str(raised.exception))
             self.assertIn("GH_TOKEN or GITHUB_TOKEN", str(raised.exception))
             with patch.dict(os.environ, {"GITHUB_TOKEN": "ghp_test"}):
                 self.assertIsNone(
-                    holophyte.config.check_agent_commands(self.tgt))
+                    holophyte.config.check_agent_commands(self.project))
 
     def test_a_startup_check_of_a_resolvable_command_passes(self):
         # `sh` is on PATH everywhere the factory runs; a bare name is the
@@ -142,14 +142,14 @@ class StartupCheckTests(ConfigTestCase):
         self.locate('[agents]\nimplementer = "sh -c"\n'
                       f'reviewer = "{Path(sys.executable)} -c"\n')
 
-        self.assertIsNone(holophyte.config.check_agent_commands(self.tgt))
+        self.assertIsNone(holophyte.config.check_agent_commands(self.project))
 
     def test_an_absent_agents_table_passes_when_the_default_routes_answer(self):
         self.locate()
 
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            self.assertIsNone(holophyte.config.check_agent_commands(self.tgt))
+            self.assertIsNone(holophyte.config.check_agent_commands(self.project))
 
         # A built image is nothing to remark on.
         self.assertEqual(printed.getvalue(), "")
@@ -162,7 +162,7 @@ class StartupCheckTests(ConfigTestCase):
 
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            self.assertIsNone(holophyte.config.check_agent_commands(self.tgt))
+            self.assertIsNone(holophyte.config.check_agent_commands(self.project))
 
         self.assertIn(review_runner.IMAGE, printed.getvalue())
         self.assertIn(str(review_runner.DOCKERFILE), printed.getvalue())
@@ -208,12 +208,12 @@ class StartupCheckTests(ConfigTestCase):
     def test_the_review_route_is_the_configured_pair_or_the_default(self):
         self.locate('[agents]\nreview_model = "gpt-6-astra"\n'
                       'review_effort = "xhigh"\n')
-        self.assertEqual(holophyte.config.review_route(self.tgt),
+        self.assertEqual(holophyte.config.review_route(self.project),
                          ("gpt-6-astra", "xhigh"))
-        self.assertIsNone(holophyte.config.check_agent_commands(self.tgt))
+        self.assertIsNone(holophyte.config.check_agent_commands(self.project))
 
         self.locate()
-        self.assertEqual(holophyte.config.review_route(self.tgt),
+        self.assertEqual(holophyte.config.review_route(self.project),
                          ("gpt-5.6-sol", "medium"))
 
     def test_a_missing_docker_is_a_startup_error_naming_the_override_key(self):
@@ -221,7 +221,7 @@ class StartupCheckTests(ConfigTestCase):
         self.locate()
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.config.check_agent_commands(self.tgt)
+            holophyte.config.check_agent_commands(self.project)
 
         message = str(raised.exception)
         self.assertIn("docker", message)
@@ -249,7 +249,7 @@ class StartupCheckTests(ConfigTestCase):
         with patch.object(holophyte.config, "DOCKER_PROBE_TIMEOUT", 1):
             start = time.monotonic()
             with self.assertRaises(SystemExit) as raised:
-                holophyte.config.check_agent_commands(self.tgt)
+                holophyte.config.check_agent_commands(self.project)
 
         self.assertLess(time.monotonic() - start, 10)
         self.assertIn("did not answer `docker info` within 1s",
@@ -262,7 +262,7 @@ class StartupCheckTests(ConfigTestCase):
         self.locate('[agents]\nreviewer = "sh -c"\n')
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.config.check_agent_commands(self.tgt)
+            holophyte.config.check_agent_commands(self.project)
 
         message = str(raised.exception)
         self.assertIn("[agents] adjudicator not set", message)
@@ -275,16 +275,16 @@ class StartupCheckTests(ConfigTestCase):
         self.locate('[agents]\nimplementer = "sh -c"\n'
                       'reviewer = "sh -c"\nadjudicator = "sh -c"\n')
 
-        self.assertIsNone(holophyte.config.check_agent_commands(self.tgt))
+        self.assertIsNone(holophyte.config.check_agent_commands(self.project))
 
     def test_a_program_that_is_not_on_path_is_a_startup_error(self):
         self.locate('[agents]\nreviewer = "holophyte-no-such-reviewer --diff"\n')
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.config.check_agent_commands(self.tgt)
+            holophyte.config.check_agent_commands(self.project)
 
         message = str(raised.exception)
-        self.assertIn(str(self.tgt.config_path), message)
+        self.assertIn(str(self.project.config_path), message)
         # The key the operator wrote, and the word that did not resolve.
         self.assertIn("reviewer", message)
         self.assertIn("holophyte-no-such-reviewer", message)
@@ -298,7 +298,7 @@ class StartupCheckTests(ConfigTestCase):
         self.locate(f'[agents]\nadjudicator = "{tool} --final"\n')
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.config.check_agent_commands(self.tgt)
+            holophyte.config.check_agent_commands(self.project)
 
         self.assertIn("adjudicator", str(raised.exception))
 
@@ -308,7 +308,7 @@ class StartupCheckTests(ConfigTestCase):
         self.locate('[agents]\nreviewer = "./review.sh --diff"\n')
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.config.check_agent_commands(self.tgt)
+            holophyte.config.check_agent_commands(self.project)
 
         self.assertIn("relative", str(raised.exception))
 
@@ -318,7 +318,7 @@ class StartupCheckTests(ConfigTestCase):
         self.locate('[agents]\nimplementer = ["claude", "-p"]\n')
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.config.check_agent_commands(self.tgt)
+            holophyte.config.check_agent_commands(self.project)
 
         self.assertIn("command string", str(raised.exception))
 
@@ -343,7 +343,7 @@ class StartupCheckTests(ConfigTestCase):
         with patch.object(holophyte.cli, "report") as report:
             holophyte.cli.cli([str(target), "--report"])
 
-        report.assert_called_once_with(self.tgt)
+        report.assert_called_once_with(self.project)
 
     def test_read_only_modes_do_not_probe_the_default_routes(self):
         # `--report` and `--sweep` dispatch nobody, so a host with no `claude`
@@ -356,10 +356,10 @@ class StartupCheckTests(ConfigTestCase):
         with patch.object(holophyte.cli, "sweep_report") as sweep_report:
             holophyte.cli.cli([str(target), "--sweep"])
 
-        report.assert_called_once_with(self.tgt)
+        report.assert_called_once_with(self.project)
         # The board is handed down from `cli()`, never reached for by name;
         # building it reads no config and opens no connection.
-        sweep_report.assert_called_once_with(self.tgt, act=False, provider=ANY)
+        sweep_report.assert_called_once_with(self.project, act=False, provider=ANY)
         self.assertIsInstance(sweep_report.call_args.kwargs["provider"],
                               LinearProvider)
 
@@ -453,7 +453,7 @@ class BoardConfigTests(StartupCheckTests):
 
         self.assertNotEqual(raised.exception.code, 0)
         self.assertIn("[board] project_id", str(raised.exception))
-        self.assertIn(str(self.tgt.config_path), str(raised.exception))
+        self.assertIn(str(self.project.config_path), str(raised.exception))
         self.assertNotIn("HOLO2_", str(raised.exception))
         self.assertNotIn("[board] table absent", printed.getvalue())
         main.assert_not_called()
@@ -468,7 +468,7 @@ class BoardConfigTests(StartupCheckTests):
                 patch.object(holophyte.cli, "sweep_report") as sweep_report:
             holophyte.cli.cli([str(target), "--sweep"])
 
-        sweep_report.assert_called_once_with(self.tgt, act=False, provider=None)
+        sweep_report.assert_called_once_with(self.project, act=False, provider=None)
 
     def test_a_misspelt_key_is_a_startup_error_naming_it(self):
         target = self.locate('[board]\nprojet_id = "x"\n').path
@@ -546,7 +546,7 @@ class SupervisorSpawnTests(StartupCheckTests):
         return out
 
     def hold_lock(self, pid):
-        lock = holophyte.supervisor_lock.supervisor_lock_path(self.tgt)
+        lock = holophyte.supervisor_lock.supervisor_lock_path(self.project)
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text(f"host {pid} 1\n")
         return lock
@@ -562,7 +562,7 @@ class SupervisorSpawnTests(StartupCheckTests):
         self.assertEqual(argv[-2:], ["--supervise", str(target)])
         self.assertTrue(argv[-3].endswith("factory.py"), argv)
         self.assertTrue(kwargs["start_new_session"])
-        log = self.tgt.holo_dir / "supervisor.log"
+        log = self.project.holo_dir / "supervisor.log"
         self.assertEqual(Path(kwargs["stdout"].name), log)
         self.assertEqual(Path(kwargs["stderr"].name), log)
         self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)

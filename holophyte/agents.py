@@ -162,13 +162,13 @@ class ProbeResult:
                 "timeout": self.timeout, "output": self.tail()}
 
 
-def probe_diagnostic(target, probe):
+def probe_diagnostic(project, probe):
     """Safe diagnostic for terminal output and persisted route evidence."""
-    safe = replace(probe, command=[safe_command(target, shlex.join(probe.command))])
-    return route_prose(target, safe.describe())
+    safe = replace(probe, command=[safe_command(project, shlex.join(probe.command))])
+    return route_prose(project, safe.describe())
 
 
-def probe_implementer(target, timeout=None):
+def probe_implementer(project, timeout=None):
     """Run the configured `[agents] implementer` once, with `PROBE_GOAL` as
     the goal, and say whether it answered. `None` when the table names no
     implementer or fallback: unconfigured defaults are not probed here.
@@ -186,46 +186,46 @@ def probe_implementer(target, timeout=None):
     so that too is a failed result naming the reason, not an exception: the
     daemon's config write has already landed by the time it probes.
     """
-    return probe_seat(target, "implement", timeout=timeout)
+    return probe_seat(project, "implement", timeout=timeout)
 
 
-def probe_seat(target, role, *, fallback=False, timeout=None):
+def probe_seat(project, role, *, fallback=False, timeout=None):
     """Probe the exact command, in a scratch checkout for review wrappers."""
     goal = REVIEW_PROBE_GOAL if role in ("review", "adjudicate") else PROBE_GOAL
-    cmd = agent_command(target, role, goal, fallback=fallback)
+    cmd = agent_command(project, role, goal, fallback=fallback)
     default = cmd is None
     if default:
-        if fallback or (agent_command(target, role, "", fallback=True) is None
+        if fallback or (agent_command(project, role, "", fallback=True) is None
                         and not (role == "implement" and
-                                 isolation.route_for(target).backend == "container")):
+                                 isolation.route_for(project).backend == "container")):
             return None
         cmd = ([DEFAULT_IMPLEMENTER, "-p", PROBE_GOAL, "--model", IMPL_MODEL,
                 "--effort", IMPL_EFFORT] if role == "implement" else
-               ["default-review", review_profile(*review_route(target))])
+               ["default-review", review_profile(*review_route(project))])
     cap = PROBE_TIMEOUT if timeout is None else timeout
     sha = None
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
             if role in ("review", "adjudicate"):
                 sh(["git", "clone", "--shared", "--quiet",
-                    str(target.path), scratch])
+                    str(project.path), scratch])
                 sha = sh(["git", "rev-parse", "HEAD"], cwd=scratch).strip()
                 publish_review_refs(Path(scratch), sha, sha)
             if default and role != "implement":
                 out = review_runner.run_review(
                     repo=Path(scratch), base_sha=sha, candidate_sha=sha,
-                    prompt=goal, model=review_route(target)[0],
-                    effort=review_route(target)[1],
-                    profile=review_profile(*review_route(target)),
-                    timeout=cap, verdicts=None, carry=carry_directories(target))
+                    prompt=goal, model=review_route(project)[0],
+                    effort=review_route(project)[1],
+                    profile=review_profile(*review_route(project)),
+                    timeout=cap, verdicts=None, carry=carry_directories(project))
                 code = 0
             elif role == "implement":
                 code, out = isolation.launch(
-                    replace(isolation.route_for(target), writable=False), scratch,
-                    isolation.environment(target), cmd, timeout=cap,
+                    replace(isolation.route_for(project), writable=False), scratch,
+                    isolation.environment(project), cmd, timeout=cap,
                     runner=run_capped)
             else:
-                code, out = probe_configured_review(target, role, fallback, goal,
+                code, out = probe_configured_review(project, role, fallback, goal,
                                                     cmd, scratch, cap)
         except subprocess.TimeoutExpired as expired:
             partial = expired.output or ""
@@ -240,11 +240,11 @@ def probe_seat(target, role, *, fallback=False, timeout=None):
                        expected_commit=sha)
 
 
-def probe_configured_review(target, role, fallback, goal, cmd, clone, cap):
+def probe_configured_review(project, role, fallback, goal, cmd, clone, cap):
     """A configured review route's probe turn in the probe's clone: a
     command string runs there, a table in `table_review()`'s throwaway
     checkout of the clone's candidate ref -- the path its turns take."""
-    seat = harness_seat(target, role, fallback=fallback)
+    seat = harness_seat(project, role, fallback=fallback)
     if seat is None:
         return run_capped(cmd, clone, cap)
     env = {key: value for key, value in os.environ.items()
@@ -256,7 +256,7 @@ def probe_configured_review(target, role, fallback, goal, cmd, clone, cap):
     return output.exit_code, output
 
 
-def agent_route(target, role):
+def agent_route(project, role):
     """What ran `role`'s turn, named for the record the round leaves.
 
     The profile of the container route the config chooses (`codex-sol-medium`
@@ -266,13 +266,13 @@ def agent_route(target, role):
     harness or model ran would be evidence of something that did not happen,
     and the rows are what FINDINGS.md and the fingerprint are built from.
     """
-    role = effective_role(target, role)
-    command = (routes(target).commands.get(role)
-            or route_text((target.config().get("agents") or {}).get(
+    role = effective_role(project, role)
+    command = (routes(project).commands.get(role)
+            or route_text((project.config().get("agents") or {}).get(
                 AGENT_CONFIG_KEYS[role]))
             or (DEFAULT_IMPLEMENTER if role == "implement" else
-                review_profile(*review_route(target))))
-    return safe_command(target, command)
+                review_profile(*review_route(project))))
+    return safe_command(project, command)
 
 
 def review_refs(run_id):
@@ -316,7 +316,7 @@ def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
         sh(["git", "update-ref", name, sha], cwd=repo)
 
 
-def record_session(target, conn, run_id, role, output):
+def record_session(project, conn, run_id, role, output):
     """Persist host implementer session handles from completed or capped turns.
 
     A table implementer's adapter reads the id its harness printed (none for
@@ -327,14 +327,14 @@ def record_session(target, conn, run_id, role, output):
 
     if role != "implement" or conn is None or run_id is None:
         return
-    if isolation.route_for(target).backend == "container":
+    if isolation.route_for(project).backend == "container":
         return
-    fallback = role in routes(target).commands
-    seat = None if fallback else harness_seat(target, role)
+    fallback = role in routes(project).commands
+    seat = None if fallback else harness_seat(project, role)
     if seat is not None:
         session = seat.reported_session(output)
     else:
-        pattern = implementer_session(target)
+        pattern = implementer_session(project)
         match = pattern.search(output) if pattern is not None else None
         session = match.group(1) if match else None
     if session:
@@ -342,22 +342,22 @@ def record_session(target, conn, run_id, role, output):
                                    "fallback" if fallback else "primary")
 
 
-def effective_role(target, role):
+def effective_role(project, role):
     """An absent or startup-refused writer follows the active implementer."""
-    if role == "write" and (routes(target).writer_failed
-                            or agent_command(target, role, "") is None):
+    if role == "write" and (routes(project).writer_failed
+                            or agent_command(project, role, "") is None):
         return "implement"
     return role
 
 
-def writer_turn(target, goal, cwd, timeout, on_start):
+def writer_turn(project, goal, cwd, timeout, on_start):
     """Like a configured adjudicator: text-only prompt, host command, scratch.
 
     The configured wrapper supplies its own read-only sandbox. No review refs
     are needed: the writing prompt already carries the bounded diff.
     """
-    goal = outbound(goal, known_secrets(target.config()))
-    cmd = agent_command(target, "write", goal)
+    goal = outbound(goal, known_secrets(project.config()))
+    cmd = agent_command(project, "write", goal)
     cap = min(timeout, 1800) if timeout is not None else 1800
     with review_scratch(cwd) as scratch:
         env = dict(os.environ, HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
@@ -366,38 +366,38 @@ def writer_turn(target, goal, cwd, timeout, on_start):
     return AgentOutput(output.strip(), shlex.join(cmd[:-1]), exit_code=code)
 
 
-def agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
+def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
           review_round=None):
     """Account for one role call, including timeout and exceptional returns."""
     from store.working import working
 
     requested_role = role
-    role = effective_role(target, role)
+    role = effective_role(project, role)
     with working(conn, run_id):
         if role == "write":
-            return recorded_turn(target, requested_role, role, conn, run_id,
+            return recorded_turn(project, requested_role, role, conn, run_id,
                                  lambda: writer_turn(
-                                     target, goal, cwd, timeout, on_start))
-        record_pending_switch(target, role, conn, run_id)
+                                     project, goal, cwd, timeout, on_start))
+        record_pending_switch(project, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,
                       run_id=run_id, argv=argv, review_round=review_round,
                       session=requested_role == "implement")
 
         def launch():
-            return recorded_turn(target, requested_role, role, conn, run_id,
-                                 lambda: _agent(target, role, goal, cwd, **kwargs))
+            return recorded_turn(project, requested_role, role, conn, run_id,
+                                 lambda: _agent(project, role, goal, cwd, **kwargs))
         output = launch()
-        command = getattr(output, "command", agent_route(target, role))
+        command = getattr(output, "command", agent_route(project, role))
         reason = outage_reason(command, output)
         if (argv is None and reason
-                and activate_fallback(target, role, reason, conn, run_id)):
+                and activate_fallback(project, role, reason, conn, run_id)):
             return launch()
         return output
 
 
-def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
+def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
           review_round=None, session=False):
     """Run one agent turn for a role. Returns combined output text.
@@ -441,26 +441,26 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         raise ValueError(role)
     if role in ("review", "adjudicate") and not (base_sha and candidate_sha):
         raise ValueError(f"{role} requires exact base_sha and candidate_sha")
-    goal = outbound(goal, known_secrets(target.config()))
-    command = routes(target).commands.get(role)
+    goal = outbound(goal, known_secrets(project.config()))
+    command = routes(project).commands.get(role)
     cmd = (shlex.split(command) + [goal] if command else
-           agent_command(target, role, goal))
-    session_id = (agent_session(target, role, cmd)
+           agent_command(project, role, goal))
+    session_id = (agent_session(project, role, cmd)
                   if session and command is None and argv is None else None)
     if argv is not None:
-        cmd = [outbound(arg, known_secrets(target.config())) for arg in argv] + [goal]
-    seat = harness_seat(target, role) if command is None else None
+        cmd = [outbound(arg, known_secrets(project.config())) for arg in argv] + [goal]
+    seat = harness_seat(project, role) if command is None else None
     dispatched_route = (seat.named(cmd) if seat is not None else
                         shlex.join(cmd[:-1]) if cmd is not None else
                         DEFAULT_IMPLEMENTER)
     if cmd is None:
         if role != "implement":
             from holophyte.runs import heartbeat_while
-            model, effort = review_route(target)
+            model, effort = review_route(project)
             # An abort or a sweep kills the container's client; the runner
             # then removes the container (KO-592).
             kill = GroupKill()
-            beat_s = sweep_config(target).heartbeat_stale_ms / 2000
+            beat_s = sweep_config(project).heartbeat_stale_ms / 2000
             try:
                 with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
                     return AgentOutput(review_runner.run_review(
@@ -474,7 +474,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                         profile=review_profile(model, effort),
                         timeout=1800,
                         verdicts=None,
-                        carry=carry_directories(target),
+                        carry=carry_directories(project),
                         on_start=kill.arm,
                     ), review_profile(model, effort))
             except review_runner.ReviewBoundaryError as e:
@@ -493,7 +493,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         # avoid a cycle at module load time.
         from holophyte.runs import heartbeat_while
 
-        beat_s = sweep_config(target).heartbeat_stale_ms / 2000
+        beat_s = sweep_config(project).heartbeat_stale_ms / 2000
         cap = 1800 if timeout is None else min(timeout, 1800)
         # A sweep or an operator's abort mid-review kills the reviewer's
         # process group, as it kills an implementer's (KO-592).
@@ -505,8 +505,8 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                     os.environ, HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1],
                     HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
                 from holophyte.review_session import prepare_environment, record_session
-                route = 'fallback' if role in routes(target).commands else 'primary'
-                prepare_environment(target, env, conn, run_id, role, route,
+                route = 'fallback' if role in routes(project).commands else 'primary'
+                prepare_environment(project, env, conn, run_id, role, route,
                                     review_round)
                 try:
                     if seat is not None:
@@ -522,7 +522,7 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     # `IMPL_TIMEOUT` is the scaled thirty minutes on this target: the
     # caller's `timeout` already carries `[agents] budget_scale`, and the
     # ceiling it is held under stretches with it.
-    cap = IMPL_TIMEOUT * budget_scale(target)
+    cap = IMPL_TIMEOUT * budget_scale(project)
     if timeout is not None:
         cap = min(timeout, cap)
     # The hook is passed only when there is one, so a turn without a
@@ -531,9 +531,10 @@ def _agent(target, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     if session_id is not None and conn is not None and run_id is not None:
         import store
         store.record_agent_session(conn, run_id, session_id, role, "primary")
-    code, out = isolation.launch(isolation.route_for(target), cwd,
-                                 isolation.environment(target), cmd,
-                                 timeout=cap, runner=run_capped, target=target, **hook)
+    code, out = isolation.launch(isolation.route_for(project), cwd,
+                                 isolation.environment(project), cmd,
+                                 timeout=cap, runner=run_capped, project=project,
+                                 **hook)
     return ImplementerOutput(out.strip(), code, dispatched_route)
 
 
@@ -648,47 +649,47 @@ def outage_reason(command, output):
                  if any(sig in line for sig in signatures)), None)
 
 
-def record_pending_switch(target, role, conn, run_id):
+def record_pending_switch(project, role, conn, run_id):
     """Startup has no run; attach its switch to the first turn it affects."""
     import store
 
-    state = routes(target)
+    state = routes(project)
     if conn is not None and run_id is not None and role in state.pending:
         evidence = state.pending[role]
         store.record_event(conn, run_id, "route_fallback", json.dumps(evidence))
         del state.pending[role]
 
 
-def activate_fallback(target, role, reason, conn=None, run_id=None, *, probe=None):
+def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=None):
     """Probe, record and switch once; a failed fallback never becomes active."""
     from holophyte.runs import open_store
     from store.agent_routes import switched
 
-    state = routes(target)
-    command = (target.config().get("agents") or {}).get(
+    state = routes(project)
+    command = (project.config().get("agents") or {}).get(
         AGENT_CONFIG_KEYS[role] + "_fallback")
     if not command or role in state.commands:
         return False
-    probe = probe or probe_seat(target, role, fallback=True)
+    probe = probe or probe_seat(project, role, fallback=True)
     if not probe.ok:
         state.failed = True
-        diagnostic = probe_diagnostic(target, probe)
+        diagnostic = probe_diagnostic(project, probe)
         print(diagnostic)
         raise InfraFailure(
             diagnostic, "infra" if role == "implement" else "review_route")
     evidence = {"seat": AGENT_CONFIG_KEYS[role],
-                "reason": route_prose(target, reason),
-                "command": safe_command(target, command)}
+                "reason": route_prose(project, reason),
+                "command": safe_command(project, command)}
     owned = conn is None
-    conn = open_store(target) if owned else conn
+    conn = open_store(project) if owned else conn
     try:
-        project = state.project
+        project_id = state.project_id
         if run_id is not None:
-            project, = conn.execute("SELECT projectId FROM runs WHERE id=?",
-                                    (run_id,)).fetchone()
-        if project is None:
+            project_id, = conn.execute("SELECT projectId FROM runs WHERE id=?",
+                                       (run_id,)).fetchone()
+        if project_id is None:
             raise InfraFailure("fallback requires a project or run context")
-        switched(conn, project, evidence, run_id)
+        switched(conn, project_id, evidence, run_id)
     finally:
         if owned:
             conn.close()
@@ -701,52 +702,52 @@ def activate_fallback(target, role, reason, conn=None, run_id=None, *, probe=Non
           f"using fallback: {evidence['command']}")
     return True
 
-def startup_routes(target, provider, implementer_probe=None, *, activate=True):
+def startup_routes(project, provider, implementer_probe=None, *, activate=True):
     """Probe seats; schedulers use activate=False to leave route state alone."""
     import store
     from holophyte.operator import _record_startup_probe
     from holophyte.runs import open_store
 
-    table = target.config().get("agents") or {}
+    table = project.config().get("agents") or {}
     for role, seat in AGENT_CONFIG_KEYS.items():
         if role != "implement" and seat + "_fallback" not in table:
             continue
-        probe = ((implementer_probe or probe_implementer)(target)
+        probe = ((implementer_probe or probe_implementer)(project)
                  if role == "implement" else
-                 probe_seat(target, role))
+                 probe_seat(project, role))
         if probe is None:
             continue
-        print(probe_diagnostic(target, probe))
+        print(probe_diagnostic(project, probe))
         if not probe.ok and seat + "_fallback" in table:
-            fallback = probe_seat(target, role, fallback=True)
+            fallback = probe_seat(project, role, fallback=True)
             if fallback.ok and activate:
-                conn = open_store(target)
+                conn = open_store(project)
                 try:
-                    routes(target).project = store.ensure_project(
-                        conn, provider.team, target.path)
-                    activate_fallback(target, role, probe_diagnostic(target, probe),
+                    routes(project).project_id = store.ensure_project(
+                        conn, provider.team, project.path)
+                    activate_fallback(project, role, probe_diagnostic(project, probe),
                                       conn, probe=fallback)
                 finally:
                     conn.close()
             elif not fallback.ok:
-                print(probe_diagnostic(target, fallback))
+                print(probe_diagnostic(project, fallback))
             probe = fallback
-        _record_startup_probe(target, provider, probe)
+        _record_startup_probe(project, provider, probe)
         if not probe.ok:
             return False
-    probe_writer(target, activate=activate)
+    probe_writer(project, activate=activate)
     return True
 
 
-def probe_writer(target, *, activate):
+def probe_writer(project, *, activate):
     """A prose route failure is reported but never prevents implementation."""
-    probe = probe_seat(target, "write")
+    probe = probe_seat(project, "write")
     if probe is None:
         return
-    print(probe_diagnostic(target, probe))
+    print(probe_diagnostic(project, probe))
     if not probe.ok:
         print("[holo2] writer route down; using implementer for PR text")
     if activate:
-        state = routes(target)
+        state = routes(project)
         state.writer_failed = not probe.ok
         state.publish()

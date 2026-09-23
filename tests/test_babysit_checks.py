@@ -76,7 +76,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
                           lambda *a, **k: self.pr_state(checks="SUCCESS")
                           ["data"]), \
                 patch.object(holophyte.pr_status, "rest", raising_rest):
-            state = holophyte.pr_status.pr_state(self.tgt, pull)
+            state = holophyte.pr_status.pr_state(self.project, pull)
 
         self.assertEqual(state.checks, "pending")
         self.assertEqual(state.head_sha, self.HEAD)
@@ -190,7 +190,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         for path in self.api_dir.iterdir():
             path.unlink()
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            self.project, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
             out=io.StringIO())
         marker.write_text("")
 

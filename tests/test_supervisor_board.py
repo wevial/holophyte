@@ -30,7 +30,7 @@ class FakeProvider:
 class SupervisorBoardTests(SweepTestCase):
     def seed(self, status="needs_spec"):
         ticket = store.tickets.mirror_ticket(
-            self.conn, self.project, "issue-1", "KO-1", "do the thing",
+            self.conn, self.project_id, "issue-1", "KO-1", "do the thing",
             body="unfinished", now=T0)
         store.tickets.walk_ticket(self.conn, ticket, status)
         return ticket
@@ -41,7 +41,7 @@ class SupervisorBoardTests(SweepTestCase):
     def ask(self, provider, now=T0):
         out = io.StringIO()
         with patch("holophyte.supervisor.linear_budget_low", return_value=False):
-            owed = board_ready(self.conn, self.project, provider, out,
+            owed = board_ready(self.conn, self.project_id, provider, out,
                                now=now, board_ask_ms=1000)
         return owed, out.getvalue()
 

@@ -28,7 +28,7 @@ class ReexecTests(LoopFixture):
 
         out = io.StringIO()
         with redirect_stdout(out):
-            wait_for_supervisor(self.tgt, wait=stamp)
+            wait_for_supervisor(self.project, wait=stamp)
         self.assertEqual(waits, [1])
         self.assertIn("waiting for the supervisor", out.getvalue())
         store.open(self.db).close()
@@ -41,7 +41,7 @@ class ReexecTests(LoopFixture):
         out = io.StringIO()
 
         def sh(args, cwd):
-            self.assertEqual(cwd, self.tgt.path)
+            self.assertEqual(cwd, self.project.path)
             events.append(args)
             if args == ['git', 'rev-parse', '--short', 'HEAD']:
                 return head[0]
@@ -68,7 +68,7 @@ class ReexecTests(LoopFixture):
                 patch.object(operator.store, 'record_loop_restart', note), \
                 patch.object(operator, 'EXEC', lambda *a: events.append('EXEC')), \
                 redirect_stdout(out):
-            operator._reexec(self.tgt, conn, 1, worker_pids=workers or {})
+            operator._reexec(self.project, conn, 1, worker_pids=workers or {})
         return events, out.getvalue()
 
     def test_unchanged_schema_fast_forwards_under_two_live_workers(self):
@@ -168,10 +168,10 @@ class SeparateCheckoutTests(LoopFixture):
 
     def test_schema_gate_reads_factory_remote(self):
         with redirect_stdout(io.StringIO()):
-            can_ff, changed = pool_handoff._prepare_reexec(self.tgt, {})
+            can_ff, changed = pool_handoff._prepare_reexec(self.project, {})
         self.assertTrue(can_ff)
         self.assertTrue(changed)
-        self.assertEqual(pool_handoff.fetched_schema(self.tgt),
+        self.assertEqual(pool_handoff.fetched_schema(self.project),
                          (SCHEMA_VERSION + 1, None))
 
     def test_restart_moves_only_factory_and_reports_its_shas(self):
@@ -185,9 +185,10 @@ class SeparateCheckoutTests(LoopFixture):
                 out = io.StringIO()
                 with redirect_stdout(out), patch.object(operator, "EXEC"), \
                         patch.object(operator.store, "record_loop_restart") as note:
-                    self.assertFalse(pool_handoff.prepare_restart(state, self.tgt, {}))
+                    self.assertFalse(pool_handoff.prepare_restart(state, self.project,
+                                                                  {}))
                     self.assertTrue(state.can_ff)
-                    operator._reexec(self.tgt, Mock(), 1,
+                    operator._reexec(self.project, Mock(), 1,
                                      prepared_sha=state.prepared_sha,
                                      can_ff=state.can_ff)
                 self.assertEqual(self.git("rev-parse", "main").strip(), self.base)

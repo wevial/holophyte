@@ -152,7 +152,7 @@ class FailedAttentionTests(ServeTestCase):
                 count = self.conn.execute(
                     "SELECT COUNT(*) FROM interventions").fetchone()[0]
                 code, body = holophyte.serve_actions.requeue_action(
-                    self.tgt, {"ticket": "KO-7", "run": self.run})
+                    self.project, {"ticket": "KO-7", "run": self.run})
                 self.assertEqual(code, 200)
                 self.assertIs(body["ok"], False)
                 self.assertEqual(body["detail"],

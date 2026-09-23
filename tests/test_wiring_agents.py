@@ -48,7 +48,7 @@ class ConfiguredHeartbeatTests(ConfigTestCase):
         self.conn = store.open(self.repo / "store.db", migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = store.tickets.ensure_project(
+        self.project_id = store.tickets.ensure_project(
             self.conn, "team", str(self.repo))
         # The window is 3 s so no beat judged against it is late, and the
         # beat every 30 ms rather than every 1.5 s, as in
@@ -64,12 +64,12 @@ class ConfiguredHeartbeatTests(ConfigTestCase):
         self.locate(f'[agents]\n{key} = "{sys.executable} {self.command}"\n'
                     '[supervisor]\nheartbeat_stale_min = 0.05\n')
         ticket = store.tickets.mirror_ticket(
-            self.conn, self.project, role, role, "Review heartbeat",
+            self.conn, self.project_id, role, role, "Review heartbeat",
             acceptance_criteria=["beats during the command"],
             verification_commands=["true"])
-        run_id = store.claim(self.conn, self.project, ticket)
+        run_id = store.claim(self.conn, self.project_id, ticket)
         reply = holophyte.agents.agent(
-            self.tgt, role, "review it", self.repo,
+            self.project, role, "review it", self.repo,
             base_sha=self.sha, candidate_sha=self.sha,
             conn=self.conn, run_id=run_id)
         beats, verdict = reply.splitlines()

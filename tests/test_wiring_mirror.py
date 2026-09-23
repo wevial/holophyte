@@ -116,7 +116,7 @@ class MirrorPushTests(unittest.TestCase):
         store.open(self.db, migrate="owner").close()
         # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.project.Project(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -140,7 +140,7 @@ class MirrorPushTests(unittest.TestCase):
         provider = provider or StubProvider(a_task())
         with patch.object(holophyte.loop, "run_task",
                           side_effect=merged_task if merged else lambda *a: False):
-            holophyte.operator.main(self.tgt, provider)
+            holophyte.operator.main(self.project, provider)
         return provider
 
     def test_the_claim_pushes_in_progress_exactly_once(self):
@@ -157,7 +157,7 @@ class MirrorPushTests(unittest.TestCase):
 
         provider = StubProvider(a_task())
         with patch.object(holophyte.loop, "run_task", spy):
-            holophyte.operator.main(self.tgt, provider)
+            holophyte.operator.main(self.project, provider)
 
         self.assertEqual(seen["states"], [(ISSUE_UUID, "In Progress")])
         self.assertEqual(seen["status"], "in_flight")
@@ -217,7 +217,7 @@ class MirrorPushTests(unittest.TestCase):
         provider = StubProvider(a_task())
         with patch.object(holophyte.loop, "run_task") as run_task, \
                 patch("builtins.print") as printed:
-            holophyte.operator.main(self.tgt, provider)
+            holophyte.operator.main(self.project, provider)
 
         run_task.assert_not_called()
         self.assertEqual(self.read("SELECT id FROM runs"), runs)
@@ -240,7 +240,7 @@ class MirrorPushTests(unittest.TestCase):
         with patch.object(holophyte.loop, "run_task"), \
                 patch.object(store.tickets, "pickable",
                              return_value=store.tickets.Pickability(True, None)):
-            holophyte.operator.main(self.tgt, StubProvider(a_task()))
+            holophyte.operator.main(self.project, StubProvider(a_task()))
 
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"),
                          [(None,)])

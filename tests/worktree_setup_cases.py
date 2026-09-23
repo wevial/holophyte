@@ -91,7 +91,7 @@ class WorktreeSetupCases:
         _git(wt, "add", "-A")
         _git(wt, "commit", "-m", "candidate after interrupted setup")
         self.assertNotIn("sentinel-interrupted-value", _git(wt, "log", "-p"))
-        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
         self.assertEqual((wt / ".env").read_text(),
                          "PUBLIC=sentinel-interrupted-value\n")
 
@@ -101,10 +101,12 @@ class WorktreeSetupCases:
         self.assertTrue(directory.is_dir())
         self.assertTrue(symlink.is_symlink())
         # The primary checkout must never sweep the shared Git directory.
-        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, self.target)[0])
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.project,
+                                                           self.target)[0])
         stale = self.target / ".git" / "holophyte-env" / ".env-interrupted"
         stale.write_text("interrupted primary checkout write")
-        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, self.target)[0])
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.project,
+                                                           self.target)[0])
         self.assertFalse(stale.exists())
         self.assertEqual(shared.read_text(), "another writer")
         self.assertEqual(sibling_temp.read_text(), "another worktree")
@@ -143,12 +145,12 @@ class WorktreeSetupCases:
                 with patch.object(module, "refuse_environment_history",
                                   move_after_check):
                     if operation == "push":
-                        holophyte.pr.push_branch(self.tgt, branch)
+                        holophyte.pr.push_branch(self.project, branch)
                         landed = _git(remote, "rev-parse", f"refs/heads/{branch}")
                     else:
                         with patch.object(module, "set_phase"), patch.object(
                                 module, "commit_findings"):
-                            module._merge(self.tgt, None, None, None, "KO-131",
+                            module._merge(self.project, None, None, None, "KO-131",
                                           "task", branch, wt, safe)
                         landed = self.git("rev-parse", "main^2").strip()
                 self.assertEqual(landed, safe)
@@ -197,11 +199,11 @@ class WorktreeSetupCases:
                 wt = self.target.parent / recovery
                 branch = f"task/{recovery}"
                 self.git("worktree", "add", "-b", branch, str(wt), "main")
-                self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+                self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
                 _git(wt, "add", "-f", ".env")
                 if recovery == "leftover":
                     ok, reason = holophyte.claim.reuse_leftover(
-                        self.tgt, wt, branch, sync_origin=False)
+                        self.project, wt, branch, sync_origin=False)
                     self.assertTrue(ok, reason)
                 else:
                     # A killed staging process can leave its lock behind too.
@@ -213,11 +215,11 @@ class WorktreeSetupCases:
                             return_value=("", True)):
                         with self.assertRaises(holophyte.gates.RunFailure):
                             holophyte.loop._implement(
-                                self.tgt, None, None, "KO-131", "task", branch,
+                                self.project, None, None, "KO-131", "task", branch,
                                 wt, False, 1, self.base, "ticket", "", 5)
                 self.assertEqual(_git(wt, "ls-files", "--", ".env"), "")
                 self.assertEqual(_git(wt, "rev-parse", "HEAD").strip(), self.base)
-                self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+                self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
 
     def test_environment_stays_out_of_reclaim_and_candidate_commits(self):
         source = self.target.parent / "source.env"
@@ -226,7 +228,7 @@ class WorktreeSetupCases:
                        'env_allow = ["PUBLIC"]\n')
         wt = self.target.parent / "reused"
         self.git("worktree", "add", "-b", BRANCH, str(wt), "main")
-        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
         self.assertEqual(_git(wt, "check-ignore", ".env").strip(), ".env")
         # Reclaim must protect it even if the local exclusion is lost.
         exclude = Path(_git(wt, "rev-parse", "--git-path", "info/exclude").strip())
@@ -234,11 +236,11 @@ class WorktreeSetupCases:
         _git(wt, "add", "-f", ".env")
         (wt / "work.txt").write_text("preserved work\n")
         ok, reason = holophyte.claim.reuse_leftover(
-            self.tgt, wt, BRANCH, sync_origin=False)
+            self.project, wt, BRANCH, sync_origin=False)
         self.assertTrue(ok, reason)
         self.assertNotIn(".env",
                          _git(wt, "ls-tree", "--name-only", "HEAD").splitlines())
-        self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+        self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
         (wt / "work.txt").write_text("candidate work\n")
         _git(wt, "add", "-A")
         _git(wt, "commit", "-m", "candidate")
@@ -246,11 +248,11 @@ class WorktreeSetupCases:
         _git(wt, "add", "-f", ".env")
         _git(wt, "commit", "-m", "unsafe candidate")
         with self.assertRaisesRegex(holophyte.gates.InfraFailure, r"\.env"):
-            holophyte.pr.push_branch(self.tgt, BRANCH)
+            holophyte.pr.push_branch(self.project, BRANCH)
         _git(wt, "rm", ".env")
         _git(wt, "commit", "-m", "remove unsafe file")
         with self.assertRaisesRegex(holophyte.gates.InfraFailure, r"\.env"):
-            holophyte.pr.push_branch(self.tgt, BRANCH)
+            holophyte.pr.push_branch(self.project, BRANCH)
 
     def test_source_disappearing_after_startup_releases_run(self):
         source = self.target.parent / "source.env"
@@ -276,7 +278,7 @@ class WorktreeSetupCases:
             with self.subTest(present=present):
                 self.configure('[worktree]\nsetup = ["mkdir .githooks"]\n'
                                if present else '')
-                self.assertTrue(holophyte.claim.run_worktree_setup(self.tgt, wt)[0])
+                self.assertTrue(holophyte.claim.run_worktree_setup(self.project, wt)[0])
                 result = subprocess.run(
                     ["git", "config", "--get", "core.hooksPath"],
                     cwd=wt, capture_output=True, text=True)

@@ -66,14 +66,14 @@ class RequeueCliTests(unittest.TestCase):
         conn = store.open(self.target.store_path, migrate="owner")
         self.addCleanup(conn.close)
         self.conn = conn
-        self.project = store.tickets.ensure_project(conn, "team-1", self.repo)
+        self.project_id = store.tickets.ensure_project(conn, "team-1", self.repo)
         self.ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id="issue-1",
+            conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
         store.tickets.transition(conn, self.ticket, "in_flight")
-        self.run = store.claim(conn, self.project, self.ticket, now=T0)
+        self.run = store.claim(conn, self.project_id, self.ticket, now=T0)
 
     def with_board(self):
         self.target.config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,7 +113,7 @@ class RequeueCliTests(unittest.TestCase):
                 task = linear_provider.parse_task({
                     "identifier": "KO-1", "id": "issue-1", "title": "a ticket",
                     "description": "", "state": {"name": state}})
-                holophyte.board.mirror_task(self.conn, self.project, task)
+                holophyte.board.mirror_task(self.conn, self.project_id, task)
                 before = list(self.conn.iterdump())
                 with self.assertRaisesRegex(SystemExit, state):
                     self.cli("--requeue", "KO-1", "--note", "retry")

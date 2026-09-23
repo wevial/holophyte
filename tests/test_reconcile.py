@@ -495,7 +495,7 @@ class RejectedPullRequestTests(MergeModeFixture):
         helpers.fake_client(self, dict(helpers.CLOSED_PULL, timelineItems={
             "nodes": [{"actor": {"login": "alice"}}]}))
         provider = StubProvider()
-        label = holophyte.board.lease_label(self.tgt)
+        label = holophyte.board.lease_label(self.project)
         provider.labels["iss-131"] = [label]
         provider.closed = {"KO-131": "canceled"}
         self.main_output(provider=provider)
@@ -538,7 +538,7 @@ class ContentWakeTests(MergeModeFixture):
         self.addCleanup(conn.close)
         with patch.object(pr_status, 'graphql', return_value={
                 'repository': {'pullRequest': dict(node, updatedAt=H.T1)}}):
-            reconcile._pr_seen(self.tgt, pr_status.parse_pr_url(self.URL),
+            reconcile._pr_seen(self.project, pr_status.parse_pr_url(self.URL),
                                conn, store.read.blocked_tickets(conn)[0].runId)
         H.fake_client(self, node)
         self.main_output(provider=StubProvider())
@@ -585,7 +585,7 @@ class ContentWakeTests(MergeModeFixture):
                 with patch.object(ps, 'graphql', return_value={
                         'viewer': {'login': 'factory'},
                         'repository': {'pullRequest': node}}):
-                    status = ps.pull_status(self.tgt, pull)
+                    status = ps.pull_status(self.project, pull)
                 with patch.object(store, 'babysit') as wake:
                     _rebabysit(conn, ticket, pull, status, 0)
                     if expected:
@@ -654,15 +654,15 @@ class ContentWakeTests(MergeModeFixture):
         answer = {'repository': {'pullRequest': node},
                   'viewer': {'login': 'factory'}}
         with patch.object(pr_status, 'graphql', return_value=answer):
-            reconcile._pr_seen(self.tgt, pull, conn, ticket.runId)
+            reconcile._pr_seen(self.project, pull, conn, ticket.runId)
             with patch.object(store, 'babysit') as wake:
                 reconcile._rebabysit(conn, ticket, pull,
-                                     pr_status.pull_status(self.tgt, pull), 0)
+                                     pr_status.pull_status(self.project, pull), 0)
                 wake.assert_not_called()
                 node['commits']['nodes'].append({'commit': {
                     'oid': 'newly-pushed', 'committedDate': '2020-01-01T09:00:00Z',
                     'author': {'user': {'login': 'person'}}}})
-                status = pr_status.pull_status(self.tgt, pull)
+                status = pr_status.pull_status(self.project, pull)
                 reconcile._rebabysit(conn, ticket, pull, status, 0)
                 wake.assert_called_once()
                 self.assertIn('commit', wake.call_args.args[2])
@@ -702,7 +702,7 @@ class ContentWakeTests(MergeModeFixture):
                         patch.object(reconcile, 'GITHUB_BUDGET', budget), \
                         patch.object(store, 'babysit') as wake:
                     reconcile._reconcile_pull_requests(
-                        self.tgt, conn,
+                        self.project, conn,
                         conn.execute("SELECT id FROM projects").fetchone()[0],
                         StubProvider())
                     wake.assert_not_called()

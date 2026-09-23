@@ -171,7 +171,7 @@ class WiringClaimTests(unittest.TestCase):
         self.db = Path(tmp.name) / "store.db"
         store.open(self.db, migrate="owner").close()
         self.worktrees = Path(tmp.name) / "repo.worktrees"
-        self.tgt = holophyte.project.Project(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=Path(tmp.name), store_path=self.db,
             config_path=Path(tmp.name) / "config.toml",
             worktrees=self.worktrees)
@@ -184,15 +184,15 @@ class WiringClaimTests(unittest.TestCase):
 
     def hold_the_lease(self):
         """Leave HOL-0 with an active run, as a second loop would find it."""
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
-        ticket = tickets.mirror_ticket(conn, project, "HOL-0", "HOL-0", "in flight")
-        return store.claim(conn, project, ticket)
+        project_id = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
+        ticket = tickets.mirror_ticket(conn, project_id, "HOL-0", "HOL-0", "in flight")
+        return store.claim(conn, project_id, ticket)
 
     def test_loop_start_creates_a_wal_store_with_the_schema(self):
         # no ready tickets: bootstrap and stop
-        holophyte.operator.main(self.tgt, StubProvider())
+        holophyte.operator.main(self.project, StubProvider())
 
         self.assertTrue(self.db.exists())
         self.assertEqual(self.read("PRAGMA journal_mode")[0][0].lower(), "wal")
@@ -209,7 +209,7 @@ class WiringClaimTests(unittest.TestCase):
         sidecars out of a task's `git add -A` is living outside the repo.
         """
         # bootstrap the store, no ready tickets
-        holophyte.operator.main(self.tgt, StubProvider())
+        holophyte.operator.main(self.project, StubProvider())
 
         self.assertTrue(self.db.exists())
         self.assertFalse(self.db.is_relative_to(self.target))
@@ -251,7 +251,7 @@ class WiringClaimTests(unittest.TestCase):
             return merged_task(target, task, conn, run_id, provider)
 
         with patch.object(holophyte.loop, "run_task", spy):
-            holophyte.operator.main(self.tgt, StubProvider(a_task()))
+            holophyte.operator.main(self.project, StubProvider(a_task()))
 
         (project_id, project_lease), = seen["projects"]
         (ticket_id, ticket_project, issue_id, identifier, title,
@@ -278,8 +278,8 @@ class WiringClaimTests(unittest.TestCase):
         row count is the assertion, not a refreshed label.
         """
         with patch.object(holophyte.loop, "run_task", side_effect=merged_task):
-            holophyte.operator.main(self.tgt, StubProvider(a_task()))
-            holophyte.operator.main(self.tgt,
+            holophyte.operator.main(self.project, StubProvider(a_task()))
+            holophyte.operator.main(self.project,
                                 StubProvider(a_task(identifier="HOL-1-renamed")))
 
         self.assertEqual(self.read("SELECT linearIssueId, status FROM tickets"),
@@ -288,7 +288,7 @@ class WiringClaimTests(unittest.TestCase):
     def test_a_provider_without_a_uuid_still_mirrors_under_its_identifier(self):
         """A UUID-less provider keeps working, keyed on the id it does have."""
         with patch.object(holophyte.loop, "run_task", side_effect=merged_task):
-            holophyte.operator.main(self.tgt, StubProvider(a_task(issue_id=None)))
+            holophyte.operator.main(self.project, StubProvider(a_task(issue_id=None)))
 
         self.assertEqual(
             self.read("SELECT linearIssueId, linearIdentifier FROM tickets"),
@@ -302,7 +302,8 @@ class WiringClaimTests(unittest.TestCase):
 
         with patch.object(holophyte.loop, "run_task") as run_task:
             holophyte.operator.main(
-                self.tgt, StubProvider(a_task(identifier="HOL-0", issue_id="HOL-0")))
+                self.project, StubProvider(a_task(identifier="HOL-0",
+                                                  issue_id="HOL-0")))
 
         run_task.assert_not_called()
         self.assertFalse(self.worktrees.exists())
@@ -314,7 +315,7 @@ class WiringClaimTests(unittest.TestCase):
         held = self.hold_the_lease()
 
         with patch.object(holophyte.loop, "run_task", side_effect=merged_task):
-            holophyte.operator.main(self.tgt, StubProvider(a_task()))
+            holophyte.operator.main(self.project, StubProvider(a_task()))
 
         self.assertEqual(
             self.read("SELECT t.linearIdentifier, r.id, r.outcome FROM runs r"
@@ -340,7 +341,7 @@ class WiringClaimTests(unittest.TestCase):
                         issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
         with patch.object(holophyte.loop, "run_task", return_value=False):
             # fails: mirror stays in_flight
-            holophyte.operator.main(self.tgt, StubProvider(first))
+            holophyte.operator.main(self.project, StubProvider(first))
         self.assertEqual(self.read("SELECT linearIdentifier, status FROM tickets"),
                          [("HOL-1", "in_flight")])
         before = self.read("SELECT id, ticketId FROM runs")
@@ -348,7 +349,7 @@ class WiringClaimTests(unittest.TestCase):
         with patch.object(holophyte.loop, "run_task",
                           side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
-            holophyte.operator.main(self.tgt, StubProvider(first, second))
+            holophyte.operator.main(self.project, StubProvider(first, second))
 
         run_task.assert_called_once()
         self.assertEqual(run_task.call_args.args[1]["id"], "HOL-2")
@@ -374,10 +375,10 @@ class WiringClaimTests(unittest.TestCase):
         the offer arrives with the verify command edited out. Claiming on the
         stale row would open a run and hand `run_task()` an empty contract."""
         stale = a_task()
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
-        tickets.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+        project_id = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
+        tickets.mirror_ticket(conn, project_id, linear_issue_id=ISSUE_UUID,
                             linear_identifier=stale["id"], title=stale["title"],
                             acceptance_criteria=stale["criteria"],
                             verification_commands=[stale["verify"]])
@@ -387,7 +388,7 @@ class WiringClaimTests(unittest.TestCase):
         with patch.object(holophyte.loop, "run_task",
                           side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
-            holophyte.operator.main(self.tgt, StubProvider(live))
+            holophyte.operator.main(self.project, StubProvider(live))
 
         run_task.assert_not_called()
         self.assertEqual(self.read("SELECT id FROM runs"), [])
@@ -403,17 +404,17 @@ class WiringClaimTests(unittest.TestCase):
         list: the provider does not parse one, so the store's is the only
         copy. A re-mirror that reset it to `[]` would make a blocked ticket
         pickable in the very row the gate reads next."""
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
+        project_id = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
         dep = a_task(identifier="HOL-0", title="the prerequisite",
                      issue_id="5e0d1c2b-3a49-4f58-8e67-76543210fedc")
-        tickets.mirror_ticket(conn, project, linear_issue_id=dep["issue_id"],
+        tickets.mirror_ticket(conn, project_id, linear_issue_id=dep["issue_id"],
                             linear_identifier=dep["id"], title=dep["title"],
                             acceptance_criteria=dep["criteria"],
                             verification_commands=[dep["verify"]])
         offered = a_task()
-        tickets.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+        tickets.mirror_ticket(conn, project_id, linear_issue_id=ISSUE_UUID,
                             linear_identifier=offered["id"],
                             title=offered["title"],
                             acceptance_criteria=offered["criteria"],
@@ -424,7 +425,7 @@ class WiringClaimTests(unittest.TestCase):
         with patch.object(holophyte.loop, "run_task",
                           side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
-            holophyte.operator.main(self.tgt, StubProvider(offered))
+            holophyte.operator.main(self.project, StubProvider(offered))
 
         run_task.assert_not_called()
         self.assertEqual(self.read("SELECT id FROM runs"), [])
@@ -449,7 +450,7 @@ class WiringClaimTests(unittest.TestCase):
 
         with patch.object(holophyte.loop, "run_task",
                           side_effect=merged_task) as run_task:
-            holophyte.operator.main(self.tgt, StubProvider(unspecced, second))
+            holophyte.operator.main(self.project, StubProvider(unspecced, second))
 
         run_task.assert_called_once()
         self.assertEqual(run_task.call_args.args[1]["id"], "HOL-2")
@@ -467,11 +468,11 @@ class WiringClaimTests(unittest.TestCase):
         a ticket the store already holds as `ready` whose description has
         since been edited into an unfilled template is refused and its
         mirror follows the body to `needs_spec`, with no run row."""
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        project = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
+        project_id = tickets.ensure_project(conn, StubProvider.TEAM, self.target)
         was_valid = a_task(identifier="HOL-1", issue_id=ISSUE_UUID)
-        tickets.mirror_ticket(conn, project, linear_issue_id=ISSUE_UUID,
+        tickets.mirror_ticket(conn, project_id, linear_issue_id=ISSUE_UUID,
                             linear_identifier=was_valid["id"],
                             title=was_valid["title"],
                             acceptance_criteria=was_valid["criteria"],
@@ -484,7 +485,7 @@ class WiringClaimTests(unittest.TestCase):
         with patch.object(holophyte.loop, "run_task",
                           side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
-            holophyte.operator.main(self.tgt, StubProvider(now_invalid))
+            holophyte.operator.main(self.project, StubProvider(now_invalid))
 
         run_task.assert_not_called()
         self.assertEqual(
@@ -512,7 +513,7 @@ class WiringClaimTests(unittest.TestCase):
         with patch.object(holophyte.loop, "run_task",
                           side_effect=merged_task) as run_task, \
                 patch("builtins.print") as printed:
-            holophyte.operator.main(self.tgt, StubProvider(invalid, valid))
+            holophyte.operator.main(self.project, StubProvider(invalid, valid))
 
         run_task.assert_called_once()
         self.assertEqual(run_task.call_args.args[1]["id"], "HOL-2")
@@ -533,7 +534,7 @@ class WiringClaimTests(unittest.TestCase):
 
     def test_a_merged_run_gives_the_lease_back(self):
         with patch.object(holophyte.loop, "run_task", side_effect=merged_task):
-            holophyte.operator.main(self.tgt, StubProvider(a_task()))
+            holophyte.operator.main(self.project, StubProvider(a_task()))
 
         (run_id, phase, outcome, ended), = self.read(
             "SELECT id, phase, outcome, endedAt FROM runs")
@@ -544,7 +545,7 @@ class WiringClaimTests(unittest.TestCase):
 
     def test_a_failed_run_gives_the_lease_back(self):
         with patch.object(holophyte.loop, "run_task", return_value=False):
-            holophyte.operator.main(self.tgt, StubProvider(a_task()))
+            holophyte.operator.main(self.project, StubProvider(a_task()))
 
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
@@ -554,7 +555,7 @@ class WiringClaimTests(unittest.TestCase):
         boom = RuntimeError("merge blew up")
 
         with patch.object(holophyte.loop, "run_task", side_effect=boom):
-            rc = holophyte.operator.main(self.tgt, StubProvider(a_task()))
+            rc = holophyte.operator.main(self.project, StubProvider(a_task()))
 
         # Contained, not propagated: the crash is this run's failure, exit 1.
         self.assertEqual(rc, 1)

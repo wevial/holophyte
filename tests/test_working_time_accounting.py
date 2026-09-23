@@ -100,11 +100,11 @@ class WorkingTimeTests(SweepTestCase):
                             elif path in ('review', 'adjudicate',
                                           'PR-thread-adjudicate'):
                                 role = 'review' if path == 'review' else 'adjudicate'
-                                agents.agent(self.tgt, role, 'goal', self.target,
+                                agents.agent(self.project, role, 'goal', self.target,
                                              base_sha='base', candidate_sha='sha',
                                              conn=self.conn, run_id=run)
                             else:
-                                loop._timed(self.tgt, self.conn, run, 100,
+                                loop._timed(self.project, self.conn, run, 100,
                                             self.target, 1, path)
                         except (RuntimeError, subprocess.TimeoutExpired):
                             if failure is None:
@@ -133,7 +133,7 @@ class WorkingTimeTests(SweepTestCase):
             return 0, 'done'
 
         def role():
-            agents.agent(self.tgt, 'review', 'goal', self.target,
+            agents.agent(self.project, 'review', 'goal', self.target,
                          base_sha='base', candidate_sha='sha',
                          conn=self.conn, run_id=run)
 
@@ -200,7 +200,7 @@ class WorkingTimeTests(SweepTestCase):
         pull = pr.PullRequest('example.invalid', 'owner', 'repo', 1, 'pull-url')
         thread = pr.Thread('thread', 'code.py', 1, 'bot', 'fix this', 'url',
                            author_kind='bot')
-        values = dict(project=self.tgt, conn=self.conn, run_id=run, provider=None,
+        values = dict(project=self.project, conn=self.conn, run_id=run, provider=None,
                       task_id='KO-1', issue_id='issue-1', task='task', branch='task',
                       wt=self.target, fresh=True, beat_s=100, start_sha='base',
                       base_sha='base', sha='before', ticket='ticket',
@@ -294,7 +294,7 @@ class WorkingTimeTests(SweepTestCase):
                 # loop imported this function; script just its diagnosis.
                 with patch.object(loop, 'transport_failure',
                                   side_effect=['ECONNRESET', None]):
-                    loop._transport_timed(self.tgt, self.conn, run, 100,
+                    loop._transport_timed(self.project, self.conn, run, 100,
                                           self.target, 25, 'retry')
             stack.enter_context(patch.object(pr, 'SLEEP', nap))
             pending = pr.PrState((), 'pending', 'after')
@@ -302,7 +302,7 @@ class WorkingTimeTests(SweepTestCase):
             with patch.object(babysitter.pr_status, 'pr_state',
                               side_effect=[pending, quiet, quiet]), \
                     patch.object(babysitter, '_quiet_left', side_effect=[1000, 0]):
-                babysitter._settled_state(self.tgt, self.conn, run, 100, pull)
+                babysitter._settled_state(self.project, self.conn, run, 100, pull)
             self.assertEqual(self.snapshot(run).workingMs, (len(calls) - before) * 10)
             self.assertGreater(now[0] - T0, 30_000)
 
@@ -329,12 +329,12 @@ class WorkingTimeTests(SweepTestCase):
                 foreign.close()
             with working(self.conn, run):
                 now[0] = T0 + 6 * MINUTE
-                supervisor.sweep(self.tgt, self.conn, now[0])
+                supervisor.sweep(self.project, self.conn, now[0])
                 now[0] = T0 + 12 * MINUTE
                 other = store.open(str(self.db), migrate="owner")
                 try:
                     with no_network():
-                        result = supervisor.sweep(self.tgt, other, now[0], act=True)
+                        result = supervisor.sweep(self.project, other, now[0], act=True)
                     self.assertTrue(result.outcomes[0].acted)
                     swept = store.read.run_detail(other, run)
                 finally:

@@ -29,9 +29,9 @@ CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
 STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
 
 
-def implementer_brief(target, ticket, task_id):
+def implementer_brief(project, ticket, task_id):
     states = ticket_template.parse(ticket).evidence_states
-    cfg = merge_config(target)
+    cfg = merge_config(project)
     if not states or not cfg.ui_capture:
         return ""
     if cfg.ui_capture_local:
@@ -60,22 +60,22 @@ def media_url(repo, branch, name, private):
     return f'https://raw.githubusercontent.com/{path}'
 
 
-def repo_is_private(target, repo=None):
+def repo_is_private(project, repo=None):
     """Read the evidence repository visibility using the PR transport."""
     if repo:
         owner, name = repo.split("/")
         pull = pr.PullRequest("github.com", owner, name, 0, "")
     else:
-        pull = pr._origin_pull(target)
+        pull = pr._origin_pull(project)
     if pull is None:
         raise ValueError('origin does not name a GitHub repository')
     if shutil.which(pr.GH) is None:
-        answer = pr.rest(target, pull, 'GET', f'repos/{pull.repo}')
+        answer = pr.rest(project, pull, 'GET', f'repos/{pull.repo}')
         field = 'private'
     else:
         result = subprocess.run(
             [pr.GH, 'repo', 'view', pull.repo, '--json', 'isPrivate'],
-            cwd=target.path, capture_output=True, text=True, timeout=pr.PR_TIMEOUT)
+            cwd=project.path, capture_output=True, text=True, timeout=pr.PR_TIMEOUT)
         if result.returncode:
             raise InfraFailure('gh repo view failed')
         answer = json.loads(result.stdout)
@@ -92,13 +92,13 @@ def matches(wt, patterns):
                for path in paths.split('\0') for pattern in patterns)
 
 
-def _tail(output, target):
+def _tail(output, project):
     """The last `TAIL_LINES` non-empty lines of a capture's output, redacted,
     as a fenced block to follow the failure sentence; empty when it printed
     nothing."""
     if isinstance(output, bytes):
         output = output.decode(errors='replace')
-    document = target.config() if target is not None else None
+    document = project.config() if project is not None else None
     text = redact.outbound(output or '', redact.known_secrets(document))
     lines = [line for line in text.splitlines() if line.strip()][-TAIL_LINES:]
     if not lines:
@@ -108,23 +108,23 @@ def _tail(output, target):
     return f'\n\n{fence}\n{body}\n{fence}'
 
 
-def _failed(command, code, output, target):
+def _failed(command, code, output, project):
     if code is None:
         sentence = f'Capture command `{command}` failed: timed out after 300 seconds.'
     else:
         sentence = f'Capture command `{command}` failed (exit {code}).'
-    return sentence + _tail(output, target)
+    return sentence + _tail(output, project)
 
 
-def _capture(command, wt, output, task_id, states, *, target=None):
-    route = isolation.route_for(target) if target is not None else isolation.Route()
+def _capture(command, wt, output, task_id, states, *, project=None):
+    route = isolation.route_for(project) if project is not None else isolation.Route()
     if route.backend == 'container':
-        env = dict(isolation.environment(target) or {})
+        env = dict(isolation.environment(project) or {})
     else:
         env = dict(os.environ)
-    if target is not None:
-        env.update(capture_environment(target) or {})
-        env['HOLOPHYTE_CAPTURE_DIR'] = merge_config(target).ui_capture_dir
+    if project is not None:
+        env.update(capture_environment(project) or {})
+        env['HOLOPHYTE_CAPTURE_DIR'] = merge_config(project).ui_capture_dir
     env['HOLOPHYTE_TICKET'] = task_id
     env.pop("HOLOPHYTE_EVIDENCE_STATES", None)
     if states:
@@ -136,8 +136,8 @@ def _capture(command, wt, output, task_id, states, *, target=None):
             code, printed = isolation.launch(route, wt, env, argv,
                                              timeout=CAPTURE_TIMEOUT)
         except subprocess.TimeoutExpired as expired:
-            return _failed(command, None, expired.output, target)
-        return _failed(command, code, printed, target) if code else ''
+            return _failed(command, None, expired.output, project)
+        return _failed(command, code, printed, project) if code else ''
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen(shlex.split(command) + [str(output)],
                                    cwd=wt, env=env, stdin=subprocess.DEVNULL,
@@ -151,7 +151,7 @@ def _capture(command, wt, output, task_id, states, *, target=None):
         if code == 0:
             return ''
         log.seek(0)
-        return _failed(command, code, log.read(), target)
+        return _failed(command, code, log.read(), project)
 
 
 def _push(wt, output, files, task_id):
@@ -241,13 +241,13 @@ def _push_repo(wt, output, files, task_id, repo):
             git("reset", "--hard", "FETCH_HEAD", cwd=stage)
 
 
-def _publish_git(target, wt, output, files, task_id, note, media_repo):
-    repo = media_repo or pr.repo_of(pr.origin_url(target))
+def _publish_git(project, wt, output, files, task_id, note, media_repo):
+    repo = media_repo or pr.repo_of(pr.origin_url(project))
     if repo is None:
         raise ValueError('origin does not name a GitHub repository')
     try:
-        private = (repo_is_private(target, media_repo) if media_repo
-                   else repo_is_private(target))
+        private = (repo_is_private(project, media_repo) if media_repo
+                   else repo_is_private(project))
         visibility = 'private' if private else 'public'
         form = 'blob-with-raw' if private else 'raw host'
         text = (f'Evidence visibility read: {repo} is {visibility}; '
@@ -271,8 +271,8 @@ def _publish_git(target, wt, output, files, task_id, note, media_repo):
     return f'Media lives in `{repo}` on `{branch}`.', urls
 
 
-def _publish_bucket(target, output, files, task_id, config):
-    prefix = f'{target.path.name}/{task_id}/{secrets.token_urlsafe(16)}'
+def _publish_bucket(project, output, files, task_id, config):
+    prefix = f'{project.path.name}/{task_id}/{secrets.token_urlsafe(16)}'
     urls = {file: media_store.upload(
         config, f'{prefix}/{file.relative_to(output).as_posix()}', file)
         for file in files}
@@ -323,15 +323,15 @@ def _missing(section, states):
     return "\n\n".join([section, *lines])
 
 
-def _produce(target, wt, task_id, command, note, cfg, states):
-    isolated = isolation.route_for(target).backend == 'container'
+def _produce(project, wt, task_id, command, note, cfg, states):
+    isolated = isolation.route_for(project).backend == 'container'
     directory = ({'dir': Path(wt).resolve(), 'prefix': '.holophyte-capture-'}
                  if isolated else {'prefix': 'pr-media-'})
     with tempfile.TemporaryDirectory(**directory) as tmp:
         output = Path(tmp)
         if isolated:
             (output / '.gitignore').write_text('*\n')
-        error = _capture(command, wt, output, task_id, states, target=target)
+        error = _capture(command, wt, output, task_id, states, project=project)
         if error:
             note.write_text(error)
             # `refresh()` folds the failure onto one line: the sentence only.
@@ -353,10 +353,10 @@ def _produce(target, wt, task_id, command, note, cfg, states):
             return _missing('\n\n'.join(lines), states), error
         if cfg.media_bucket:
             description, urls = _publish_bucket(
-                target, output, files, task_id, cfg.media_bucket)
+                project, output, files, task_id, cfg.media_bucket)
         else:
             description, urls = _publish_git(
-                target, wt, output, files, task_id, note, cfg.media_repo)
+                project, wt, output, files, task_id, note, cfg.media_repo)
         lines.append(description)
         state_lines, matched = _state_media(states, urls)
         lines.extend(state_lines)
@@ -369,10 +369,10 @@ def _produce(target, wt, task_id, command, note, cfg, states):
         return '\n\n'.join(lines), ''
 
 
-def _execution_fingerprint(target):
+def _execution_fingerprint(project):
     """Hash execution inputs without storing raw environment values in receipts."""
-    route = isolation.route_for(target)
-    env = (dict(isolation.environment(target) or {}) if route.backend == 'container'
+    route = isolation.route_for(project)
+    env = (dict(isolation.environment(project) or {}) if route.backend == 'container'
            else dict(os.environ))
     credential_digest = None
     if route.backend == 'container':
@@ -389,13 +389,13 @@ def _execution_fingerprint(target):
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
 
 
-def prepare(target, wt, task_id, record_note=None, evidence_states=()):
+def prepare(project, wt, task_id, record_note=None, evidence_states=()):
     """Reuse evidence only for this exact candidate, base, and configuration.
 
     Keep the receipt in the worktree's git directory, outside candidate files.
     Both the pre-PR review and PR creation call this entry point.
     """
-    return _prepare(target, wt, task_id, record_note, evidence_states)[0]
+    return _prepare(project, wt, task_id, record_note, evidence_states)[0]
 
 
 def _stamp(section, sha):
@@ -404,17 +404,17 @@ def _stamp(section, sha):
                            f'## Evidence\n\nCaptured at {sha[:12]}\n\n', 1)
 
 
-def _prepare(target, wt, task_id, record_note, evidence_states):
+def _prepare(project, wt, task_id, record_note, evidence_states):
     """`prepare()`'s section with why its capture failed, empty on success."""
-    cfg = merge_config(target)
+    cfg = merge_config(project)
     if not cfg.ui_paths or not matches(wt, cfg.ui_paths):
         return '', ''
     revisions = sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt)
     identity = [RECEIPT_VERSION, revisions,
-                task_id, cfg.ui_paths, cfg.ui_capture, pr.origin_url(target),
+                task_id, cfg.ui_paths, cfg.ui_capture, pr.origin_url(project),
                 cfg.media_repo, cfg.media_bucket, cfg.media_max_file_mb,
                 cfg.media_max_total_mb, list(evidence_states),
-                _execution_fingerprint(target)]
+                _execution_fingerprint(project)]
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
     receipt = git_dir / f'pr-media-{key}.txt'
@@ -422,7 +422,7 @@ def _prepare(target, wt, task_id, record_note, evidence_states):
     failed = receipt.with_suffix('.failed')
     if not receipt.exists():
         try:
-            section, failure = _produce(target, wt, task_id, cfg.ui_capture, note,
+            section, failure = _produce(project, wt, task_id, cfg.ui_capture, note,
                                         cfg, evidence_states)
         except (InfraFailure, OSError, RuntimeError, ValueError,
                 subprocess.TimeoutExpired) as error:
@@ -454,7 +454,7 @@ def _touched(wt, captured, patterns):
                for path in paths.split('\0') for pattern in patterns)
 
 
-def refresh(target, wt, task_id, evidence, record_note=None, evidence_states=()):
+def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()):
     """The Evidence section after a fix round moved the candidate, or None
     when `evidence`, the pull request's current section, still stands.
 
@@ -462,13 +462,13 @@ def refresh(target, wt, task_id, evidence, record_note=None, evidence_states=())
     touches `ui_paths`. When that capture fails, the old section stays,
     headed by one line naming both shas and the failure.
     """
-    cfg = merge_config(target)
+    cfg = merge_config(project)
     if not cfg.ui_paths:
         return None
     captured = CAPTURED.search(evidence)
     if captured and not _touched(wt, captured[1], cfg.ui_paths):
         return None
-    section, failure = _prepare(target, wt, task_id, record_note, evidence_states)
+    section, failure = _prepare(project, wt, task_id, record_note, evidence_states)
     if not section:
         return None
     if not failure or not evidence:

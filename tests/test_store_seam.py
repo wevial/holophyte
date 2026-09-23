@@ -28,7 +28,7 @@ class StoreSeamTests(unittest.TestCase):
                     "UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
                     ("old question", ticket))
             if i == 1:
-                self.project, self.ticket, self.run = project, ticket, run
+                self.project_id, self.ticket, self.run = project, ticket, run
         self.reader = store.open(self.path)
         self.addCleanup(self.reader.close)
 
@@ -59,8 +59,8 @@ class StoreSeamTests(unittest.TestCase):
              "runs", self.run, {"prUrl": "url-only"}),
             ("set_outcome_reason", (self.run, "wake breaker"),
              "runs", self.run, {"outcomeReason": "wake breaker"}),
-            ("stamp_board_ask", (self.project, 123456),
-             "projects", self.project, {"boardAskedAt": 123456}),
+            ("stamp_board_ask", (self.project_id, 123456),
+             "projects", self.project_id, {"boardAskedAt": 123456}),
         ]
 
     def test_writers_commit_only_the_intended_row_columns(self):

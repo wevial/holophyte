@@ -180,9 +180,9 @@ class ActionsTests(UnitActionCases, ServeTestCase):
     def test_actions_without_a_token_file_are_a_startup_error_on_loopback(self):
         self.seed()
         (self.db.parent / "config.toml").write_text("[serve]\nactions = true\n")
-        tgt = holophyte.project.Project.locate(self.target)
+        project = holophyte.project.Project.locate(self.target)
         with self.assertRaises(SystemExit) as raised:
-            holophyte.serve.serve(tgt, "127.0.0.1:0", out=io.StringIO())
+            holophyte.serve.serve(project, "127.0.0.1:0", out=io.StringIO())
         message = str(raised.exception)
         self.assertIn("[serve] token_file", message)
         self.assertIn("actions", message)

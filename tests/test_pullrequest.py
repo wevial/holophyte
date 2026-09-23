@@ -83,7 +83,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
         self.assertEqual(len(edits), 1)
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         fake, _ = self.loop(provider=self.provider())
         self.assertEqual(fake.roles, [])
         self.assertEqual(self.pr_body.read_text(), body)
@@ -186,7 +186,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         """A log, and the shell line that appends whether the merge lock
         file exists at the moment it runs, for the verify and the push."""
         log = self.db.parent / "lock.log"
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         return log, lambda who: (
             f"if [ -e {shlex.quote(str(path))} ]; then echo {who} locked;"
             f" else echo {who} free; fi >> {shlex.quote(str(log))}")
@@ -226,7 +226,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         def taken_by_run_7(*args, **kwargs):
             # Run 7 takes the lock as this run enters the gate; the claim's
             # own fetch, under the same lock, is long done.
-            holophyte.gates.merge_lock_path(self.tgt).write_text("7 0\n")
+            holophyte.gates.merge_lock_path(self.project).write_text("7 0\n")
             holophyte.gates._PASSES.clear()  # as after a re-exec (KO-646)
             return gate(*args, **kwargs)
 
@@ -436,13 +436,13 @@ class MergeModePullRequestTests(MergeModeFixture):
                 self.configure(config + '[merge]\npr_style = "Use plain prose."\n')
                 with patch.object(holophyte.loop, "agent", agents.agent):
                     title, body = holophyte.pullrequest._written_pr_text(
-                        self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                        self.project, None, None, "KO-131", "add a thing", BRANCH,
                         self.BODY, 60, self.target, monotonic(), 5, None)
                     with patch.object(holophyte.pr, "rest",
                                       return_value={"body": body}), \
                             patch.object(holophyte.pr, "edit_pr_body") as edit:
                         holophyte.pullrequest.refresh_pr_text(
-                            self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                            self.project, None, None, "KO-131", "add a thing", BRANCH,
                             self.BODY, 60, self.target, 5, pull,
                             "ADDRESS: replace correlated subquery")
                 self.assertEqual(title, "Faster search")
@@ -478,7 +478,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                     agents, "run_capped", side_effect=bounded), patch(
                     "sys.stdout", new_callable=io.StringIO) as out:
                 result = holophyte.pullrequest._written_pr_text(
-                    self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                    self.project, None, None, "KO-131", "add a thing", BRANCH,
                     self.BODY, 60, self.target, monotonic(), 5, None)
                 self.assertIn("could not be written", result[1])
                 self.assertEqual(out.getvalue().count("written PR text refused"), 1)
@@ -589,7 +589,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                               "The two forms now ask.\n"))
         with patch.object(holophyte.loop, "agent", turn):
             holophyte.pullrequest._written_pr_text(
-                self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                self.project, None, None, "KO-131", "add a thing", BRANCH,
                 self.BODY.strip(), 60, wt, monotonic(), 5,
                 "https://linear.app/example/issue/KO-131/add-a-thing")
         filled = turn.turns[0].goal
@@ -606,7 +606,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                           side_effect=answer if callable(answer) else
                           lambda *args, **kwargs: answer) as turn:
             holophyte.pullrequest.refresh_pr_text(
-                self.tgt, None, None, "KO-131", "add a thing", BRANCH,
+                self.project, None, None, "KO-131", "add a thing", BRANCH,
                 self.BODY, 60, self.target, 5,
                 holophyte.pr_status.parse_pr_url(self.URL), answered)
         return turn.call_args.args[-1]
@@ -799,7 +799,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
                        "[supervisor]\nheartbeat_stale_min = 0.01\n")
         patch_beats(self, delay_ms, silent)
-        knobs = holophyte.config_tables.sweep_config(self.tgt)
+        knobs = holophyte.config_tables.sweep_config(self.project)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
         samples = self.db.parent / "heartbeats.log"
         sampler = heartbeat_sampler(self.db, samples, budget_s * 5 / 3)
@@ -913,7 +913,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.git("config", "user.email", "person@example.invalid", cwd=clone)
         self.git("config", "user.name", "A Person", cwd=clone)
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         return approved, bare, clone
 
     def publish(self, clone, bare, force=False):
@@ -1029,7 +1029,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.calls.unlink()
         for path in self.api_dir.iterdir():
             path.unlink()
-        holophyte.operator.approve(self.tgt, "KO-131", "looks fine",
+        holophyte.operator.approve(self.project, "KO-131", "looks fine",
                                out=io.StringIO())
 
         fake, guard = self.loop(provider=self.provider())
@@ -1060,7 +1060,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
 
         fake, _ = self.loop(provider=self.provider())
 
@@ -1449,7 +1449,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         with patch.object(holophyte.pool, "SPAWN", pool.spawn), \
                 patch.object(holophyte.pool, "WAIT", pool.wait), \
                 patch.object(sys, "stdout", out):
-            rc = holophyte.operator.main(self.tgt, provider)
+            rc = holophyte.operator.main(self.project, provider)
         self.assertEqual(rc, 0)
         self.assertEqual(len(asked), 2)
         self.assertEqual(pool.timeouts, [30, 30])

@@ -203,17 +203,17 @@ class LedgerWaitTests(ServeTestCase):
     def open_store(self):
         conn = store.open(str(self.db), migrate="owner")
         store.init(conn)
-        self.project = store.tickets.ensure_project(conn, "team-1", self.target)
+        self.project_id = store.tickets.ensure_project(conn, "team-1", self.target)
         return conn
 
     def claim(self, conn, n, now):
         ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id=f"issue-{n}",
+            conn, self.project_id, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}",
             acceptance_criteria=[f"Given ticket {n}, then worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MIN)
         store.tickets.transition(conn, ticket, "in_flight")
-        return ticket, store.claim(conn, self.project, ticket, now=now)
+        return ticket, store.claim(conn, self.project_id, ticket, now=now)
 
     @staticmethod
     def ask(conn, run, now):

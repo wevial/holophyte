@@ -25,10 +25,11 @@ class TicketLeaseTests(unittest.TestCase):
         self.path = Path(tmp.name) / "store.sqlite3"
         self.conn = self.open()
         store.init(self.conn)
-        self.project = store.tickets.ensure_project(self.conn, "team_abc", "/repos/x")
+        self.project_id = store.tickets.ensure_project(self.conn, "team_abc",
+                                                       "/repos/x")
         self.tickets = {
             ident: store.tickets.mirror_ticket(
-                self.conn, self.project, f"iss_{ident}", ident, f"ticket {ident}",
+                self.conn, self.project_id, f"iss_{ident}", ident, f"ticket {ident}",
                 acceptance_criteria=["it works"], verification_commands=["true"])
             for ident in ("KO-1", "KO-2")}
 
@@ -45,8 +46,8 @@ class TicketLeaseTests(unittest.TestCase):
     def test_two_connections_claim_two_tickets_of_one_project(self):
         other = self.open()
 
-        first = store.claim(self.conn, self.project, self.tickets["KO-1"])
-        second = store.claim(other, self.project, self.tickets["KO-2"])
+        first = store.claim(self.conn, self.project_id, self.tickets["KO-1"])
+        second = store.claim(other, self.project_id, self.tickets["KO-2"])
 
         self.assertNotEqual(first, second)
         self.assertEqual(
@@ -59,11 +60,11 @@ class TicketLeaseTests(unittest.TestCase):
         self.assertEqual(self.run_of(self.conn, "KO-2"), second)
 
     def test_a_claim_on_a_leased_ticket_is_refused_by_name_and_opens_no_run(self):
-        holder = store.claim(self.conn, self.project, self.tickets["KO-1"])
+        holder = store.claim(self.conn, self.project_id, self.tickets["KO-1"])
         other = self.open()
 
         with self.assertRaises(store.ClaimConflict) as refused:
-            store.claim(other, self.project, self.tickets["KO-1"])
+            store.claim(other, self.project_id, self.tickets["KO-1"])
 
         self.assertEqual(str(refused.exception),
                          f"ticket KO-1: lease already held by run {holder}")
@@ -73,7 +74,7 @@ class TicketLeaseTests(unittest.TestCase):
         # The refusal is the ticket's alone: the project's other ticket is
         # still there for the second connection to take.
         self.assertIsNotNone(
-            store.claim(other, self.project, self.tickets["KO-2"]))
+            store.claim(other, self.project_id, self.tickets["KO-2"]))
 
 
 if __name__ == "__main__":

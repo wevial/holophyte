@@ -55,16 +55,16 @@ class ApproveCliTests(unittest.TestCase):
         conn = store.open(self.target.store_path, migrate="owner")
         self.addCleanup(conn.close)
         self.conn = conn
-        self.project = store.tickets.ensure_project(conn, "team-1", self.repo)
+        self.project_id = store.tickets.ensure_project(conn, "team-1", self.repo)
         self.ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id="issue-1",
+            conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)
 
     def claim(self):
         store.tickets.transition(self.conn, self.ticket, "in_flight")
-        self.run = store.claim(self.conn, self.project, self.ticket, now=T0)
+        self.run = store.claim(self.conn, self.project_id, self.ticket, now=T0)
         return self.run
 
     def park(self, pr_url=None):

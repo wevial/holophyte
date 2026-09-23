@@ -108,7 +108,7 @@ class ReviewRoundRowTests(unittest.TestCase):
         store.open(self.db, migrate="owner").close()
         # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.project.Project(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -140,7 +140,7 @@ class ReviewRoundRowTests(unittest.TestCase):
              "criteria": list(criteria)})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.tgt, provider)
+                holophyte.operator.main(self.project, provider)
         return provider
 
     def rounds(self):

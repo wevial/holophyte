@@ -187,7 +187,7 @@ class ResumedRouteTests(LoopFixture):
 
     def resume(self, *script):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
-        command(self.tgt, "KO-131", None, resume=True)
+        command(self.project, "KO-131", None, resume=True)
         fake, _ = self.loop(*script)
         self.assertEqual(self.read(
             "SELECT outcome, parkKind FROM runs ORDER BY id"),
@@ -220,7 +220,7 @@ class AnsweredParkTests(LoopFixture):
     def test_requeue_after_added_detail_is_a_fresh_attempt_without_a_strike(self):
         self.loop(Declare("test the modal"), REPRODUCED)
 
-        holophyte.operator.requeue(self.tgt, "KO-131",
+        holophyte.operator.requeue(self.project, "KO-131",
                                    "the name empties after a second rename",
                                    out=io.StringIO())
 
@@ -250,7 +250,7 @@ class AnsweredParkTests(LoopFixture):
         self.configure('[merge]\nmode = "local"\n')
         self.loop(Declare("test the modal"), REPRODUCED)
         test_commit = self.git("rev-parse", BRANCH).strip()
-        holophyte.operator.approve(self.tgt, "KO-131", "keep the guard",
+        holophyte.operator.approve(self.project, "KO-131", "keep the guard",
                                    out=io.StringIO())
 
         fake, _ = self.loop()
@@ -269,7 +269,7 @@ class AnsweredParkPullRequestTests(MergeModeFixture):
         self.loop(Declare("test the modal"), REPRODUCED,
                   provider=self.provider())
         self.assertEqual(self.recorded(), [])
-        holophyte.operator.approve(self.tgt, "KO-131", "keep the guard",
+        holophyte.operator.approve(self.project, "KO-131", "keep the guard",
                                    out=io.StringIO())
 
         fake, _ = self.loop(
@@ -295,7 +295,7 @@ class StorelessTests(LoopFixture):
         with no_agent_processes(), \
                 patch.object(holophyte.loop, "agent", fake), \
                 self.assertRaises(MergeParked) as parked:
-            holophyte.loop.run_task(self.tgt, a_task(),
+            holophyte.loop.run_task(self.project, a_task(),
                                     provider=StubProvider(a_task()))
 
         head = self.git("rev-parse", BRANCH).strip()

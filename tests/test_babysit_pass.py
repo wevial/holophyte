@@ -58,7 +58,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         from holophyte.stop import command
         preserved = self.git("rev-parse", BRANCH).strip()
         self.serve(self.pr_state())
-        command(self.tgt, "KO-131", None, resume=True)
+        command(self.project, "KO-131", None, resume=True)
         # Only a covering review and PR text remain; a fix replay fails the script.
         self.loop(APPROVE, Idle(''), provider=self.provider())
         self.assertEqual(self.pushed()[-1][1], preserved)
@@ -269,7 +269,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                 patch.dict(os.environ, {holophyte.pool.WORKER_SLOT_ENV: ""}), \
                 patch.object(sys, "stdout", io.StringIO()), \
                 patch.object(sys, "stderr", io.StringIO()):
-            code = holophyte.pool.worker(self.tgt, self.provider())
+            code = holophyte.pool.worker(self.project, self.provider())
         self.assertEqual(code, holophyte.pool.WORKER_MERGED)
         self.assertEqual(self.read("SELECT phase, outcome, mergeSha FROM runs"),
                          [("done", "merged", self.MERGE_SHA)])
@@ -283,12 +283,12 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(moves[-1], ["merge_gate", "done"])
         import store
         with closing(store.open(self.db)) as conn:
-            project = conn.execute("SELECT id FROM projects").fetchone()[0]
+            project_id = conn.execute("SELECT id FROM projects").fetchone()[0]
             ticket = store.tickets.mirror_ticket(
-                conn, project, linear_issue_id="issue-replay",
+                conn, project_id, linear_issue_id="issue-replay",
                 linear_identifier="KO-9653", title="replay",
                 acceptance_criteria=["Given a replay, then it is legal"])
-            run = store.claim(conn, project, ticket)
+            run = store.claim(conn, project_id, ticket)
             for old, new in moves:
                 self.assertEqual(store.set_phase(conn, run, new), old)
 
@@ -375,7 +375,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         for path in self.api_dir.iterdir():
             path.unlink()
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            self.project, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
             out=io.StringIO())
 
         fake, _ = self.loop(provider=self.provider())
@@ -391,7 +391,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     def rejected_resume_with_stale_approval(self):
         self.resume_rejected_fix()
         import store
-        with closing(store.open(self.tgt.store_path, migrate="owner")) as conn:
+        with closing(store.open(self.project.store_path, migrate="owner")) as conn:
             # Legacy carried approval metadata must not override a rejection.
             conn.execute("UPDATE runs SET approvedSha = candidateSha WHERE id = 1")
             conn.commit()
@@ -437,7 +437,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                   Reply("THREAD 1: ADDRESS -- a real crash"), Commit("thread fix"),
                   REQUEST_CHANGES, provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
-        holophyte.operator.approve(self.tgt, "KO-131", "accept this candidate",
+        holophyte.operator.approve(self.project, "KO-131", "accept this candidate",
                                    out=io.StringIO())
         out = self.main_output(provider=self.provider())
         self.assertEqual(self.last_fake.roles, [])
@@ -451,10 +451,10 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            self.project, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
             out=io.StringIO())
         import store
-        with closing(store.open(self.tgt.store_path, migrate="owner")) as conn:
+        with closing(store.open(self.project.store_path, migrate="owner")) as conn:
             store.record_intervention(conn, 1, "launch_loop", "resume",
                                       source="supervisor")
         for path in self.api_dir.iterdir():
@@ -534,7 +534,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                       provider=self.provider())
             if babysit_again:
                 holophyte.operator.babysit_ticket(
-                    self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+                    self.project, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
                     out=io.StringIO())
                 self.loop(provider=self.provider())
         tip = self.pushed()[-1][1]

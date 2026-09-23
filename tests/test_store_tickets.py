@@ -22,7 +22,7 @@ class MirroredBodyTests(unittest.TestCase):
         self.path = Path(tmp.name) / "store.sqlite3"
         self.conn = store.open(self.path, migrate="owner")
         self.addCleanup(self.conn.close)
-        self.project = store.tickets.ensure_project(self.conn, "team-1",
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1",
                                             "/repos/holophyte")
 
     def mirror(self, body, **overrides):
@@ -31,7 +31,8 @@ class MirroredBodyTests(unittest.TestCase):
                     acceptance_criteria=["Given KO-1, then it is worked"],
                     verification_commands=["echo ok"], time_box_ms=1_500_000)
         args.update(overrides)
-        return store.tickets.mirror_ticket(self.conn, self.project, body=body, **args)
+        return store.tickets.mirror_ticket(self.conn, self.project_id, body=body,
+                                           **args)
 
     def test_board_mirror_stores_and_refreshes_url(self):
         assert_mirror_url(self)
@@ -63,7 +64,7 @@ class MirroredBodyTests(unittest.TestCase):
     def test_a_claimed_ticket_names_its_active_run(self):
         ticket_id = self.mirror("body")
         store.tickets.transition(self.conn, ticket_id, "in_flight")
-        run_id = store.claim(self.conn, self.project, ticket_id,
+        run_id = store.claim(self.conn, self.project_id, ticket_id,
                              now=1_700_000_000_000)
         self.assertEqual(
             store.read.ticket_by_identifier(self.conn, "KO-1").activeRunId,

@@ -172,7 +172,7 @@ class MergeLockTests(unittest.TestCase):
         home.start()
         self.addCleanup(home.stop)
         holophyte.project.state_dir(root / "repo").mkdir(parents=True)
-        self.tgt = holophyte.project.Project.locate(root / "repo")
+        self.project = holophyte.project.Project.locate(root / "repo")
 
     def test_the_second_gate_waits_for_the_first_to_release(self):
         """Two runs reach the gate together: one holds the lock while the
@@ -181,7 +181,7 @@ class MergeLockTests(unittest.TestCase):
         spans = {}
 
         def gate(run_id, hold):
-            with holophyte.gates.merge_lock(self.tgt, run_id, wait=10,
+            with holophyte.gates.merge_lock(self.project, run_id, wait=10,
                                             poll=0.01):
                 entered = time.monotonic()
                 if run_id == 1:
@@ -199,14 +199,14 @@ class MergeLockTests(unittest.TestCase):
 
         self.assertEqual(sorted(spans), [1, 2])
         self.assertGreaterEqual(spans[2][0], spans[1][1])
-        self.assertFalse(holophyte.gates.merge_lock_path(self.tgt).exists())
+        self.assertFalse(holophyte.gates.merge_lock_path(self.project).exists())
 
     def test_a_lock_held_past_the_bound_names_its_holder(self):
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         path.write_text(f"7 {time.time():.3f}\n")
 
         with self.assertRaises(holophyte.gates.MergeLockHeld) as caught:
-            with holophyte.gates.merge_lock(self.tgt, 8, wait=0.05, poll=0.01):
+            with holophyte.gates.merge_lock(self.project, 8, wait=0.05, poll=0.01):
                 self.fail("the gate entered under another run's lock")
 
         self.assertIn("run 7", str(caught.exception))
@@ -236,10 +236,10 @@ class BaselineTests(LoopFixture):
             with self.subTest(setting=setting):
                 self.configure('[verify]\n' + setting + '\n')
                 with self.assertRaisesRegex(SystemExit, r"\[verify\]"):
-                    check_document(self.tgt)
+                    check_document(self.project)
         self.configure('[verify]\nalways = ["missing-program"]\n'
                        'before_merge = ["exit 1"]\ntimeout_sec = 12\n')
-        check_document(self.tgt)
+        check_document(self.project)
 
 
 class BaselineBriefTests(unittest.TestCase):

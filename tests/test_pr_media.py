@@ -239,7 +239,7 @@ class MediaTests(unittest.TestCase):
             with patch.object(pr_media.subprocess, 'Popen') as popen:
                 popen.return_value.wait.return_value = 0
                 error = pr_media._capture('python3 capture.py', self.repo, self.root,
-                                          'KO-530', ['Open'], target=self.target)
+                                          'KO-530', ['Open'], project=self.target)
             self.assertEqual(error, '')
             popen.assert_called_once_with(
                 ['python3', 'capture.py', str(self.root)], cwd=self.repo,
@@ -262,7 +262,7 @@ class MediaTests(unittest.TestCase):
             os.environ.pop('OTHER', None)
             popen.return_value.wait.return_value = 0
             error = pr_media._capture('python3 capture.py', self.repo, self.root,
-                                      'KO-530', [], target=self.target)
+                                      'KO-530', [], project=self.target)
             self.assertNotIn('CAPTURE_KEY', os.environ)
             popen.assert_called_once_with(
                 ['python3', 'capture.py', str(self.root)], cwd=self.repo,

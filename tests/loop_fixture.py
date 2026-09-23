@@ -201,9 +201,9 @@ class LoopFixture(unittest.TestCase):
         self.db.parent.mkdir(parents=True)
         import store
         store.open(self.db, migrate="owner").close()
-        self.tgt = holophyte.project.Project.locate(self.target)
-        assert self.tgt.store_path == self.db
-        assert self.tgt.worktrees == self.worktrees
+        self.project = holophyte.project.Project.locate(self.target)
+        assert self.project.store_path == self.db
+        assert self.project.worktrees == self.worktrees
 
     def git(self, *args, cwd=None):
         return subprocess.run(["git", *args], cwd=str(cwd or self.target),
@@ -217,7 +217,7 @@ class LoopFixture(unittest.TestCase):
         A fresh value, too: a `Project` parses its config once.
         """
         (self.db.parent / "config.toml").write_text(toml)
-        self.tgt = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.project.Project.locate(self.target)
 
     def loop(self, *script, provider=None, fake=None):
         """Run `main()` over the queued tasks with the script answering agents.
@@ -234,7 +234,7 @@ class LoopFixture(unittest.TestCase):
         with no_agent_processes() as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
                 with patch.object(holophyte.loop, "agent", fake):
-                    self.rc = holophyte.operator.main(self.tgt, provider)
+                    self.rc = holophyte.operator.main(self.project, provider)
         return fake, guard
 
     def main_output(self, *script, provider=None):

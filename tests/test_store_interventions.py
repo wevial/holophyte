@@ -43,15 +43,15 @@ class InterventionFixture(unittest.TestCase):
         self.conn = store.open(str(self.root / "store.sqlite3"), migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = store.tickets.ensure_project(self.conn, "team-1",
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1",
                                             self.root / "repo")
         self.ticket = self.a_ticket("KO-1")
         store.tickets.transition(self.conn, self.ticket, "in_flight")
-        self.run = store.claim(self.conn, self.project, self.ticket, now=T0)
+        self.run = store.claim(self.conn, self.project_id, self.ticket, now=T0)
 
     def a_ticket(self, identifier):
         return store.tickets.mirror_ticket(
-            self.conn, self.project, linear_issue_id=f"issue-{identifier}",
+            self.conn, self.project_id, linear_issue_id=f"issue-{identifier}",
             linear_identifier=identifier, title=f"ticket {identifier}",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * MINUTE)

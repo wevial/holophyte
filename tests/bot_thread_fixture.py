@@ -15,7 +15,7 @@ class BotThreadCases:
         self.fake_route(states=[self.pr_state([self.DEFECT, person])])
         self.git("branch", BRANCH)
         pull = pr_status.parse_pr_url(self.URL)
-        state = babysitter._settled_state(self.tgt, None, None, 1, pull)
+        state = babysitter._settled_state(self.project, None, None, 1, pull)
         self.assertEqual([thread.body for thread in state.threads], [person[3]])
         calls = self.api_calls()
         replies = [data for kind, data in calls if kind == "reply"]
@@ -99,7 +99,7 @@ class BotConfigCases:
             self.locate(f'[merge]\nmention_accounts = {value}\n')
             with self.assertRaisesRegex(
                     SystemExit, "mention_accounts.*list of strings"):
-                check_document(self.tgt)
+                check_document(self.project)
         for config, open_notice in (("", False),
                                    ('human_threads = "act"', True),
                                    ('human_threads = "act"\n'
@@ -107,23 +107,23 @@ class BotConfigCases:
                                    ('human_threads = "act"\n'
                                     'mention_accounts = ["Operator"]', False)):
             self.locate("[merge]\n" + config + "\n")
-            check_document(self.tgt)
+            check_document(self.project)
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                banner(self.tgt)
+                banner(self.project)
             self.assertEqual(
                 output.getvalue().count("mentions are open to any account"),
                 int(open_notice))
-        self.assertEqual(merge_config(self.tgt).mention_accounts, ("Operator",))
+        self.assertEqual(merge_config(self.project).mention_accounts, ("Operator",))
 
     def test_bot_thread_config_validation(self):
         from holophyte.config_tables import merge_config
         self.locate('[merge]\nbot_threads = "sometimes"\n')
         with self.assertRaisesRegex(SystemExit, '"act" or "advisory"'):
-            merge_config(self.tgt)
+            merge_config(self.project)
         self.locate('[merge]\nbot_logins = [42]\n')
         with self.assertRaisesRegex(SystemExit, 'bot_logins must be a list of strings'):
-            merge_config(self.tgt)
+            merge_config(self.project)
 
 
 class BotFindingCases:

@@ -1506,7 +1506,7 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "store.sqlite3"
         conn = store.open(self.path, migrate="owner")
-        self.project = store.tickets.ensure_project(conn, "team-1", "/repos/h")
+        self.project_id = store.tickets.ensure_project(conn, "team-1", "/repos/h")
         conn.commit()
         conn.close()
 
@@ -1546,9 +1546,9 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
         self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone(), (1,))
         ticket = store.tickets.mirror_ticket(
-            conn, self.project, linear_issue_id="issue-1",
+            conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="ticket 1")
-        run_id = store.claim(conn, self.project, ticket, now=1_700_000_000_000)
+        run_id = store.claim(conn, self.project_id, ticket, now=1_700_000_000_000)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM runs WHERE id = ?",
                                       (run_id,)).fetchone(), (1,))
 

@@ -71,7 +71,7 @@ class LockFailureWordingTests(LoopFixture):
         only pull-request mode's verify out): the gate's verify merges
         `main` into the branch and judges what lands on main next."""
         log = self.target.parent / "lock.log"
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         verify = (f"if [ -e {shlex.quote(str(path))} ]; then echo locked;"
                   f" else echo free; fi >> {shlex.quote(str(log))}")
         # With no earlier pass to cite, as when `main` has moved: the
@@ -84,7 +84,7 @@ class LockFailureWordingTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_gate_lock_timeout_records_typed_park(self):
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("7 0\n")
         with patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0):
@@ -96,13 +96,13 @@ class LockFailureWordingTests(LoopFixture):
 
     def test_gate_lock_failure_keeps_gate_wording(self):
         gates = holophyte.gates
-        path = gates.merge_lock_path(self.tgt)
+        path = gates.merge_lock_path(self.project)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("7 0\n")
         with patch.object(gates, 'MERGE_LOCK_WAIT_SEC', 0):
             with self.assertRaises(gates.MergeLockHeld) as caught:
                 with holophyte.merge_gate._gate_lock(
-                        self.tgt, None, 8, None, 'KO-2', 'task/test', 'abc', 60):
+                        self.project, None, 8, None, 'KO-2', 'task/test', 'abc', 60):
                     self.fail('entered a held lock')
         self.assertEqual(str(caught.exception),
                          f"merge lock {path} held by run 7 for longer than the"
@@ -252,8 +252,7 @@ class StopOnFailureTests(LoopFixture):
         self.assertIn("continuing to the next ready ticket", out)
         self.assertEqual(self.read("SELECT status FROM tickets ORDER BY id"),
                          [("in_flight",), ("merged",)])
-        self.assertEqual(self.read("SELECT activeRunId FROM projects"),
-                         [(None,)])
+        self.assertEqual(self.read("SELECT activeRunId FROM projects"), [(None,)])
         self.assertEqual(self.rc, 1)
 
     # One test per failure exit `main()` has: a `RunFailure`, an
@@ -323,7 +322,7 @@ class MergeApprovalTests(LoopFixture):
         self.loop(Commit("the scripted work"), APPROVE)
 
         import holophyte.serve
-        code, body = holophyte.serve.attention(self.tgt)
+        code, body = holophyte.serve.attention(self.project)
         self.assertEqual(code, 200)
         blocked = [item for item in body["items"] if item["kind"] == "blocked"]
         # The item names the parked run; this path records no `redirect`
@@ -373,7 +372,7 @@ class MergeApprovalTests(LoopFixture):
                   provider=StubProvider(dict(task)))
         marker.unlink()
         out = io.StringIO()
-        holophyte.operator.approve(self.tgt, "KO-131", "ok", out=out)
+        holophyte.operator.approve(self.project, "KO-131", "ok", out=out)
         self.assertIn("KO-131 approved: run 1", out.getvalue())
 
         fake, guard = self.loop(provider=StubProvider(dict(task)))
@@ -407,7 +406,7 @@ class MergeApprovalTests(LoopFixture):
         on this path as on a fresh cut."""
         self.configure('[merge]\napprove = "human"\n')
         self.loop(Commit("the scripted work"), APPROVE)
-        holophyte.operator.approve(self.tgt, "KO-131", "ok", out=io.StringIO())
+        holophyte.operator.approve(self.project, "KO-131", "ok", out=io.StringIO())
         seen = []
         real = holophyte.merge_gate.set_phase
 
@@ -438,9 +437,10 @@ class MergeApprovalTests(LoopFixture):
                   provider=StubProvider(a_task()))
         with self.assertRaises(SystemExit) as refused:
             holophyte.operator.babysit_ticket(
-                self.tgt, "KO-131", "sent back to the babysitter", out=io.StringIO())
+                self.project, "KO-131", "sent back to the babysitter",
+                out=io.StringIO())
         self.assertIn("no pull request", str(refused.exception))
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         try:
             store.record_intervention(conn, 1, "babysit", "look again")
             store.release(conn, 1, "abandoned", "released by hand")
@@ -479,7 +479,7 @@ class MergeApprovalTests(LoopFixture):
                 wt = self.worktrees / "ko-131-add-a-thing"
                 self.loop(Commit("the scripted work"), APPROVE)
                 approved = self.git("rev-parse", "HEAD", cwd=wt).strip()
-                holophyte.operator.approve(self.tgt, "KO-131", "ok",
+                holophyte.operator.approve(self.project, "KO-131", "ok",
                                        out=io.StringIO())
                 (wt / "later.txt").write_text("added after the approval\n")
                 if tamper == "commit":
@@ -532,7 +532,7 @@ class MergeApprovalTests(LoopFixture):
                  cwd=clone)
         theirs = self.git("rev-parse", "HEAD", cwd=clone).strip()
         self.git("fetch", "-q", str(clone), f"{BRANCH}:{BRANCH}", cwd=bare)
-        holophyte.operator.approve(self.tgt, "KO-131", "ok", out=io.StringIO())
+        holophyte.operator.approve(self.project, "KO-131", "ok", out=io.StringIO())
 
         fake, _ = self.loop()
 
@@ -744,9 +744,9 @@ class HeartbeatTests(LoopFixture):
         self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n"
                        "stale_strikes = 1\n")
         patch_beats(self, delay_ms, silent)
-        knobs = holophyte.config_tables.sweep_config(self.tgt)
+        knobs = holophyte.config_tables.sweep_config(self.project)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
-        db, tgt = self.db, self.tgt
+        db, project = self.db, self.project
         sightings = []
 
         class SlowCommit(Commit):
@@ -760,7 +760,7 @@ class HeartbeatTests(LoopFixture):
                     while time.monotonic() < deadline:
                         time.sleep(0.4)
                         result = holophyte.supervisor.sweep(
-                            tgt, conn, int(time.time() * 1000), knobs=knobs)
+                            project, conn, int(time.time() * 1000), knobs=knobs)
                         sightings.append((
                             result.trips,
                             conn.execute("SELECT phase, lastHeartbeat FROM"

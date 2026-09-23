@@ -36,7 +36,7 @@ class BabysitHelpers:
         self.fake_route(states=[self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
         older = "The non-blocking observations are FOLLOW_UP, not for this round."
-        with store.open(str(self.tgt.store_path), migrate="owner") as conn:
+        with store.open(str(self.project.store_path), migrate="owner") as conn:
             run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
             send_back(conn, run_id, older, "maintainer")
         for path in self.api_dir.iterdir():
@@ -89,7 +89,7 @@ class BabysitHelpers:
             self.assertIn(f"{thread[0]}:{thread[1]}", question)
             self.assertIn(sentence, question)
         newer = "Address both accepted threads now; this supersedes FOLLOW_UP."
-        with store.open(str(self.tgt.store_path), migrate="owner") as conn:
+        with store.open(str(self.project.store_path), migrate="owner") as conn:
             send_back(conn, run_id, newer, "maintainer")
         for path in self.api_dir.iterdir():
             path.unlink()
@@ -154,7 +154,7 @@ class BabysitHelpers:
         self.fake_route(states=[initial_state or self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
         holophyte.operator.babysit_ticket(
-            self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+            self.project, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
             out=io.StringIO())
         for path in self.api_dir.iterdir():
             path.unlink()
@@ -211,7 +211,7 @@ class BabysitHelpers:
         for path in self.api_dir.iterdir():
             path.unlink()
         # Supervisor context remains available to re-review fix rounds.
-        conn = holophyte.runs.open_store(self.tgt)
+        conn = holophyte.runs.open_store(self.project)
         try:
             ticket = store.read.ticket_by_identifier(conn, "KO-131")
             store.babysit(conn, ticket.id, "repair the pin", source="supervisor")
@@ -276,7 +276,7 @@ class BabysitHelpers:
                           lambda *a, **k: self.pr_state(checks="SUCCESS")
                           ["data"]), \
                 patch.object(holophyte.pr_status, "rest", rest):
-            return holophyte.pr_status.pr_state(self.tgt, pull)
+            return holophyte.pr_status.pr_state(self.project, pull)
 
 
 class ConflictRefusalCases(BabysitHelpers):
@@ -377,7 +377,7 @@ class ConflictRefusalCases(BabysitHelpers):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.loop(Commit("candidate"), review, Idle(""), provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
-        holophyte.operator.approve(self.tgt, "KO-131", "merge this candidate",
+        holophyte.operator.approve(self.project, "KO-131", "merge this candidate",
                                    out=io.StringIO())
         fake, _ = self.loop(provider=self.provider())
         self.assertEqual(fake.roles, [])
@@ -523,7 +523,7 @@ class OperatorNoteCase:
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + config)
         self.fake_route(states=[self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
-        with store.open(str(self.tgt.store_path), migrate="owner") as conn:
+        with store.open(str(self.project.store_path), migrate="owner") as conn:
             run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
             note_id = send_back(conn, run_id, note, "maintainer")
         for path in self.api_dir.iterdir():
@@ -552,7 +552,7 @@ class OperatorNoteCase:
             self.assertNotIn("THREAD 3 --", fake.turns[0].goal)
             self.assertTrue(all("remove the subheader" not in str(value)
                                 for _, value in posts))
-        with store.open(str(self.tgt.store_path), migrate="owner") as conn:
+        with store.open(str(self.project.store_path), migrate="owner") as conn:
             current = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
             instruction, = notes(conn, current)
             self.assertTrue(instruction["consumed"])

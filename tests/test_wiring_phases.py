@@ -105,7 +105,7 @@ class RunPhaseTests(unittest.TestCase):
         self.addCleanup(audit_loop_store, self)
         # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.tgt = holophyte.project.Project(
+        self.project = holophyte.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -136,7 +136,7 @@ class RunPhaseTests(unittest.TestCase):
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.tgt, provider)
+                holophyte.operator.main(self.project, provider)
         return provider
 
     def read(self, sql):
@@ -263,7 +263,7 @@ class RunPhaseTests(unittest.TestCase):
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
             with patch.object(holophyte.loop, "agent", boom):
-                rc = holophyte.operator.main(self.tgt, provider)
+                rc = holophyte.operator.main(self.project, provider)
 
         # Contained, not propagated — and the run row still says the work
         # stopped under review, with the error text as the reason.
@@ -367,11 +367,11 @@ class ReleaseTests(unittest.TestCase):
         self.conn = store.open(Path(tmp.name) / "store.sqlite3", migrate="owner")
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        self.project = tickets.ensure_project(self.conn, "team", f"{tmp.name}/repo")
+        self.project_id = tickets.ensure_project(self.conn, "team", f"{tmp.name}/repo")
         ticket = tickets.mirror_ticket(
-            self.conn, self.project, "iss-1", "HOL-1", "a ticket"
+            self.conn, self.project_id, "iss-1", "HOL-1", "a ticket"
         )
-        self.run_id = store.claim(self.conn, self.project, ticket, now=1000)
+        self.run_id = store.claim(self.conn, self.project_id, ticket, now=1000)
 
     def run_row(self):
         return self.conn.execute(

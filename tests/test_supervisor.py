@@ -53,10 +53,10 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
         store.set_admission(self.conn, 1, "disabled", "retired")
         out = io.StringIO()
         with patch.object(holophyte.supervisor, "acquire_supervisor_lock") as lock:
-            holophyte.supervisor.supervise(self.tgt, out=out)
+            holophyte.supervisor.supervise(self.project, out=out)
             with (contextlib.chdir(self.target),
-                  patch.object(self.tgt, "path", Path("."))):
-                holophyte.supervisor.supervise(self.tgt, out=out)
+                  patch.object(self.project, "path", Path("."))):
+                holophyte.supervisor.supervise(self.project, out=out)
         lock.assert_not_called()
         self.assertIn("disabled: retired", out.getvalue())
 
@@ -64,10 +64,10 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
         store.set_admission(self.conn, 1, "disabled", "retired")
         self.conn.execute(f"PRAGMA user_version = {store.SCHEMA_VERSION - 1}")
         with patch.object(holophyte.supervisor, "acquire_supervisor_lock") as lock:
-            holophyte.supervisor.supervise(self.tgt, out=io.StringIO())
+            holophyte.supervisor.supervise(self.project, out=io.StringIO())
         lock.assert_not_called()
         # A non-owner open, as `project enable` makes, is no longer refused.
-        store.open(self.tgt.store_path).close()
+        store.open(self.project.store_path).close()
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 1)
 
@@ -81,7 +81,7 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
     def sweep_at_46(self, run_id):
         at = T0 + 46 * MINUTE
         self.heartbeat_at(run_id, at)
-        return holophyte.supervisor.sweep(self.tgt, self.conn, at).trips
+        return holophyte.supervisor.sweep(self.project, self.conn, at).trips
 
     def test_a_fix_round_after_a_review_is_not_swept_as_overtime(self):
         run_id = self.a_run(active_work=True, budget_min=30, phase="addressing")
@@ -113,7 +113,7 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
 
         at = T0 + 140 * MINUTE  # past 3 turns × 30 × 1.5 = 135, inside 4 turns
         self.heartbeat_at(run_id, at)
-        trip, = holophyte.supervisor.sweep(self.tgt, self.conn, at).trips
+        trip, = holophyte.supervisor.sweep(self.project, self.conn, at).trips
 
         self.assertEqual(trip.condition, "time_box")
         self.assertIn(f"× {1 + holophyte.supervisor.MAX_ROUNDS} turns",
@@ -132,7 +132,7 @@ class MergeLockSweepTests(SweepTestCase):
         self.addCleanup(build.stop)
 
     def lock_for(self, run_id):
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         path.write_text(f"{run_id} {T0 / 1000:.3f}\n")
         return path
 
@@ -171,8 +171,8 @@ class MergeLockSweepTests(SweepTestCase):
         run_id = self.a_run(phase="merge_gate")
         store.release(self.conn, run_id, "failed", "judged dead early",
                       now=T0 + MINUTE)
-        path = holophyte.gates.merge_lock_path(self.tgt)
-        with holophyte.gates.merge_lock(self.tgt, run_id):
+        path = holophyte.gates.merge_lock_path(self.project)
+        with holophyte.gates.merge_lock(self.project, run_id):
             stamp = path.read_text()
             acted = self.run_sweep(T0 + 2 * MINUTE, "--act")
             self.assertEqual(path.read_text(), stamp)
@@ -200,7 +200,7 @@ class MergeLockSweepTests(SweepTestCase):
             target=lambda: lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act")))
 
         def gate():
-            with holophyte.gates.merge_lock(self.tgt, live, wait=10, poll=0.01):
+            with holophyte.gates.merge_lock(self.project, live, wait=10, poll=0.01):
                 entered.set()
                 lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act"))
         gating = threading.Thread(target=gate)
@@ -245,7 +245,7 @@ class UnavailableStoreTests(SweepTestCase):
                         patch.object(holophyte.supervisor, "factory_revision",
                                      return_value="unchanged"):
                     code = holophyte.supervisor.supervise(
-                        self.tgt, interval=7, wait=wait, out=out)
+                        self.project, interval=7, wait=wait, out=out)
                 self.assertEqual(code, expected_code)
                 self.assertEqual(run_pass.call_count, len(outcomes))
                 lines = [line for line in out.getvalue().splitlines()
@@ -272,7 +272,7 @@ class MigrationStartupTests(SweepTestCase):
                 yield
 
         with patch('holophyte.schema_owner.merge_lock', lock):
-            migrate_store(self.tgt)
+            migrate_store(self.project)
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 0)
 
@@ -284,9 +284,9 @@ class MigrationStartupTests(SweepTestCase):
         with patch('holophyte.schema_owner.event',
                    side_effect=sqlite3.OperationalError("disk I/O error")):
             with self.assertRaises(sqlite3.OperationalError):
-                migrate_store(self.tgt)
+                migrate_store(self.project)
         self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], older)
-        migrate_store(self.tgt)
+        migrate_store(self.project)
         self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0],
                          store.SCHEMA_VERSION)
         self.assertEqual(self.conn.execute(
@@ -296,12 +296,12 @@ class MigrationStartupTests(SweepTestCase):
         run_id = self.a_run(phase="merge_gate")
         store.release(self.conn, run_id, "failed", "died at the gate",
                       now=T0 + MINUTE)
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         path.write_text(f"{run_id} {T0 / 1000:.3f}\n")
 
         def first_pass(*args, **kwargs):
             holophyte.supervisor.sweep(
-                self.tgt, self.conn, T0 + 2 * MINUTE, act=True)
+                self.project, self.conn, T0 + 2 * MINUTE, act=True)
             self.assertFalse(path.exists())
             signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
 
@@ -310,7 +310,7 @@ class MigrationStartupTests(SweepTestCase):
                 patch('holophyte.supervisor.factory_revision', return_value='same'), \
                 patch('holophyte.supervisor.supervise_pass', first_pass):
             self.assertEqual(holophyte.supervisor.supervise(
-                self.tgt, out=io.StringIO()), 0)
+                self.project, out=io.StringIO()), 0)
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 0)
 
@@ -322,7 +322,7 @@ class MigrationStartupTests(SweepTestCase):
                       now=T0 + MINUTE)
         older = store.SCHEMA_VERSION - 1
         self.conn.execute(f"PRAGMA user_version = {older}")
-        path = holophyte.gates.merge_lock_path(self.tgt)
+        path = holophyte.gates.merge_lock_path(self.project)
         path.write_text(f"{run_id} {T0 / 1000:.3f}\n")
         out = io.StringIO()
 
@@ -335,7 +335,7 @@ class MigrationStartupTests(SweepTestCase):
                    side_effect=AssertionError("startup waited on a stale lock")), \
                 patch('holophyte.supervisor.factory_revision', return_value='same'), \
                 patch('holophyte.supervisor.supervise_pass', first_pass):
-            self.assertEqual(holophyte.supervisor.supervise(self.tgt, out=out), 0)
+            self.assertEqual(holophyte.supervisor.supervise(self.project, out=out), 0)
         self.assertFalse(path.exists())
         self.assertIn(f"taking over stale merge lock before migration: run {run_id}"
                       " ended", out.getvalue())
@@ -358,7 +358,7 @@ class MigrationStartupTests(SweepTestCase):
             signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
 
         # The store says the run ended, but its lock's flock is still held.
-        with holophyte.gates.merge_lock(self.tgt, run_id) as path:
+        with holophyte.gates.merge_lock(self.project, run_id) as path:
             stamp = path.read_text()
             with patch('holophyte.gates.monotonic', side_effect=lambda: clock[0]), \
                     patch('holophyte.gates.sleep', side_effect=sleep), \
@@ -366,7 +366,7 @@ class MigrationStartupTests(SweepTestCase):
                           return_value='same'), \
                     patch('holophyte.supervisor.supervise_pass') as run:
                 self.assertEqual(holophyte.supervisor.supervise(
-                    self.tgt, out=io.StringIO()), 0)
+                    self.project, out=io.StringIO()), 0)
             run.assert_not_called()
             self.assertEqual(path.read_text(), stamp)
         self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], older)
@@ -378,7 +378,7 @@ class MigrationStartupTests(SweepTestCase):
         self.conn.execute(f"PRAGMA user_version = {older}")
         clock = [0]
         out = io.StringIO()
-        holder = holophyte.gates.merge_lock(self.tgt, None)
+        holder = holophyte.gates.merge_lock(self.project, None)
         path = holder.__enter__()
         self.addCleanup(holder.__exit__, None, None, None)
         stamp = path.read_text()
@@ -405,12 +405,12 @@ class MigrationStartupTests(SweepTestCase):
                 patch('holophyte.supervisor.factory_revision', return_value='same'), \
                 patch('holophyte.supervisor.supervise_pass',
                       side_effect=first_pass) as run:
-            self.assertEqual(holophyte.supervisor.supervise(self.tgt, out=out), 0)
+            self.assertEqual(holophyte.supervisor.supervise(self.project, out=out), 0)
         run.assert_called_once()
         self.assertIn("waiting for merge lock before migration", out.getvalue())
         row, = self.conn.execute(
             "SELECT runId, projectId, summary FROM runEvents WHERE kind='migration'")
-        self.assertEqual(row[:2], (None, self.project))
+        self.assertEqual(row[:2], (None, self.project_id))
         self.assertEqual(json.loads(row[2]),
                          {"from": older, "to": store.SCHEMA_VERSION})
         self.assertFalse(path.exists())
@@ -424,7 +424,7 @@ class MigrationStartupTests(SweepTestCase):
             clock[0] += 181
             signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
 
-        with holophyte.gates.merge_lock(self.tgt, None) as path:
+        with holophyte.gates.merge_lock(self.project, None) as path:
             stamp = path.read_text()
             with patch('holophyte.gates.monotonic', side_effect=lambda: clock[0]), \
                     patch('holophyte.gates.sleep', side_effect=sleep), \
@@ -432,7 +432,7 @@ class MigrationStartupTests(SweepTestCase):
                           return_value='same'), \
                     patch('holophyte.supervisor.supervise_pass') as run:
                 self.assertEqual(holophyte.supervisor.supervise(
-                    self.tgt, out=io.StringIO()), 0)
+                    self.project, out=io.StringIO()), 0)
             run.assert_not_called()
             self.assertEqual(path.read_text(), stamp)
         self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], older)
@@ -464,11 +464,11 @@ class MigrationStartupTests(SweepTestCase):
 
         with patch('holophyte.schema_owner.merge_lock', lock), \
                 patch('holophyte.schema_owner.store.open', opening):
-            migrate_store(self.tgt)
-            migrate_store(self.tgt)
+            migrate_store(self.project)
+            migrate_store(self.project)
         row, = self.conn.execute(
             "SELECT runId, projectId, summary FROM runEvents WHERE kind='migration'")
-        self.assertEqual(row[:2], (None, self.project))
+        self.assertEqual(row[:2], (None, self.project_id))
         self.assertEqual(json.loads(row[2]),
                          {"from": older, "to": store.SCHEMA_VERSION})
 
@@ -484,7 +484,7 @@ class MigrationStartupTests(SweepTestCase):
         with patch('holophyte.supervisor.factory_revision', return_value='same'), \
                 patch('holophyte.supervisor.supervise_pass', first_pass):
             with self.assertRaisesRegex(RuntimeError, "stop after startup"):
-                holophyte.supervisor.supervise(self.tgt, out=io.StringIO())
+                holophyte.supervisor.supervise(self.project, out=io.StringIO())
 
 
 if __name__ == "__main__":

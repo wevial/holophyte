@@ -15,21 +15,21 @@ from holophyte.config import (
 from holophyte.redact import known_secrets, outbound
 
 
-def turn_label(target, role):
+def turn_label(project, role):
     """First command word plus the first -m/--model value, if configured."""
-    active = routes(target).commands.get(role)
-    argv = shlex.split(active) if active else agent_command(target, role, "")
+    active = routes(project).commands.get(role)
+    argv = shlex.split(active) if active else agent_command(project, role, "")
     if not active and argv is not None:
         argv = argv[:-1]  # The appended prompt is never label material.
     if argv is None:
-        argv = default_argv(target, role)
-    return outbound(argv_label(argv), known_secrets(target.config()))
+        argv = default_argv(project, role)
+    return outbound(argv_label(argv), known_secrets(project.config()))
 
 
-def default_argv(target, role):
+def default_argv(project, role):
     """The route the loop dispatches for a role the config leaves unset."""
     return ([DEFAULT_IMPLEMENTER, "--model", IMPL_MODEL] if role == "implement"
-            else ["codex", "--model", review_route(target)[0]])
+            else ["codex", "--model", review_route(project)[0]])
 
 
 def argv_label(argv):
@@ -40,22 +40,22 @@ def argv_label(argv):
     return argv[0]
 
 
-def route_labels(target):
+def route_labels(project):
     """The configured label per seat, as `turn_label()` would record it.
 
     An unset seat gets the default the loop dispatches; an unset writer
     follows the implementer, as `effective_role()` sends it; an unset
     reviewer fallback is None."""
-    secrets = known_secrets(target.config())
+    secrets = known_secrets(project.config())
 
     def label(role, fallback=False):
-        argv = agent_command(target, role, "", fallback=fallback)
+        argv = agent_command(project, role, "", fallback=fallback)
         if argv is not None:
             argv = argv[:-1]  # The appended prompt is never label material.
         elif fallback:
             return None
         else:
-            argv = default_argv(target, role)
+            argv = default_argv(project, role)
         return outbound(argv_label(argv), secrets)
 
     implementer = label("implement")
@@ -63,16 +63,16 @@ def route_labels(target):
             "reviewer": label("review"),
             "reviewer_fallback": label("review", fallback=True),
             "adjudicator": label("adjudicate"),
-            "writer": (implementer if agent_command(target, "write", "") is None
+            "writer": (implementer if agent_command(project, "write", "") is None
                        else label("write"))}
 
 
-def recorded_turn(target, role, routed_role, conn, run_id, launch):
+def recorded_turn(project, role, routed_role, conn, run_id, launch):
     """Record each attempt, excluding fallback probing and route-switch time."""
     if conn is None or run_id is None:
         return launch()
-    payload = dict(role=role, label=turn_label(target, routed_role),
-                   route="fallback" if routed_role in routes(target).commands
+    payload = dict(role=role, label=turn_label(project, routed_role),
+                   route="fallback" if routed_role in routes(project).commands
                    else "primary", exit_status=None, timed_out=False)
     started = monotonic()
     try:
