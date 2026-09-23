@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ACTIONS_OFF, NOT_WIRED, ROUTES, postAction } from "../lib/actions";
-import { OPEN_PR, RESUME } from "../lib/attention";
+import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME } from "../lib/attention";
 import type { Fetch } from "../lib/poll";
 import { ActionButton } from "./ActionButton";
 import { ReasonAction } from "./ReasonAction";
@@ -63,6 +63,8 @@ export function RowActions({ kind, actions, ticket, prUrl, daemon, runId }: {
       <div className="flex gap-1.5">
         {actions.map((action) => action === RESUME && daemon && ticket != null ? (
           <ReasonAction key={action} daemon={daemon} route="/actions/resume" body={{ ticket }} label={action} />
+        ) : (action === ABORT || action === ABORT_CLOSE) && daemon && runId != null ? (
+          <ReasonAction key={action} daemon={daemon} route={ROUTES[action]!} body={{ run: runId, close: action === ABORT_CLOSE }} label={action} />
         ) : (
           <ActionButton key={action} onAct={act(action)} title={titleFor(action)}>
             {action}

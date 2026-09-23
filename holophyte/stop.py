@@ -220,11 +220,8 @@ def resume_paused(target, conn, ticket_id, note):
 
 
 def abort_command(target, identifier, note, *, provider, close=False):
-    """CLI adapter: record the abort (`close`: and the pull request's close),
-    then end the run here when no worker can still touch its tree, and
-    project the park to the board as the worker path does; otherwise a live
-    worker ends it at its next heartbeat."""
-    from holophyte import board
+    """CLI adapter: `abort_run()` on the ticket's latest run, printing
+    whether it ended here or waits for its worker's next heartbeat."""
     from holophyte.operator import _operator_store, _ticket_by_identifier
     conn = _operator_store(target)
     try:
@@ -233,23 +230,39 @@ def abort_command(target, identifier, note, *, provider, close=False):
                                  " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         if run_id is None:
             raise ValueError(f"{identifier} has no run to abort")
-        store.abort(conn, run_id, note, close=close)
-        if not worker_gone(conn, run_id):
+        if not abort_run(target, conn, run_id, note, provider=provider,
+                         close=close):
             print(f"[holo2] {identifier}: abort requested; run {run_id} ends"
                   " at its worker's next heartbeat (this host cannot confirm"
                   " that worker gone; a silent one is the sweep's)")
             return
-        try:
-            end_aborted(conn, run_id)
-        except Aborted:
-            board.mirror_push(conn, ticket_id, provider)
-            board.release_lease_label(target, conn, ticket_id, provider, run_id)
         print(f"[holo2] {identifier}: run {run_id} had no live worker;"
               " ended abandoned and parked")
     except ValueError as refused:
         raise SystemExit(f"[holo2] {refused}") from None
     finally:
         conn.close()
+
+
+def abort_run(target, conn, run_id, note, *, provider, close=False):
+    """Record the abort (`close`: and the pull request's close), then end
+    the run here when no worker can still touch its tree, and project the
+    park to the board as the worker path does; True when it ended here,
+    False when a live worker ends it at its next heartbeat. `--abort` and
+    `POST /actions/abort` both call this (KO-612); ValueError, before any
+    write, when the store refuses the abort."""
+    from holophyte import board
+    store.abort(conn, run_id, note, close=close)
+    if not worker_gone(conn, run_id):
+        return False
+    try:
+        end_aborted(conn, run_id)
+    except Aborted:
+        (ticket_id,) = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
+                                    (run_id,)).fetchone()
+        board.mirror_push(conn, ticket_id, provider)
+        board.release_lease_label(target, conn, ticket_id, provider, run_id)
+    return True
 
 
 def worker_gone(conn, run_id):

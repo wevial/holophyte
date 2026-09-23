@@ -8,6 +8,9 @@ import { withToken } from "./token";
 export const ROUTES: Record<string, string> = {
   "Restart supervisor": "/actions/restart-supervisor",
   Requeue: "/actions/requeue",
+  // Reason boxes (components/ReasonAction.tsx), not one-click posts.
+  Abort: "/actions/abort",
+  "Abort and close": "/actions/abort",
 };
 
 /** The title of a button whose daemon has no `[serve] actions = true`. */

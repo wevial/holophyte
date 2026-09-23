@@ -36,7 +36,8 @@ export function roundLine(body: RunDetailBody): string {
 /** The expanded run's card: header line, round timeline, the newest
  *  round's open findings and the run log from `/runs/N`, the files touched
  *  from `/runs/N/files`; both read on expand and again each poll. Given
- *  its `daemon`, a live run with no `stopRequested` has Pause in the footer. */
+ *  its `daemon`, a live run has Abort in the footer, Abort and close too
+ *  when it has a pull request, and Pause when it has no `stopRequested`. */
 export function RunDetail({
   base,
   id,
@@ -73,7 +74,7 @@ export function RunDetail({
         </p>
       )}
       {detail && <Card body={detail} files={files} ledger={ledger} now={now} sinceMs={sinceMs}
-        pauseDaemon={stopRequested ? undefined : daemon} />}
+        daemon={daemon} pauseDaemon={stopRequested ? undefined : daemon} />}
       {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} polls={polls} deps={deps} />}
     </div>
   );
@@ -85,6 +86,7 @@ function Card({
   ledger,
   now,
   sinceMs,
+  daemon,
   pauseDaemon,
 }: {
   body: RunDetailBody;
@@ -92,6 +94,7 @@ function Card({
   ledger: LedgerRow[];
   now: number;
   sinceMs: number;
+  daemon?: RowDaemon;
   pauseDaemon?: RowDaemon;
 }) {
   const { run } = body;
@@ -190,7 +193,8 @@ function Card({
         <FilesTouched files={files.files} error={files.error} status={files.status} pending={files.pending} loading={files.loading} />
       </div>
       <footer className="mt-3 flex gap-2">
-        <ActionButton>Kill run</ActionButton>
+        {daemon && !finished && <ReasonAction daemon={daemon} route="/actions/abort" body={{ run: run.id, close: false }} label="Abort" />}
+        {daemon && !finished && run.pr_url && <ReasonAction daemon={daemon} route="/actions/abort" body={{ run: run.id, close: true }} label="Abort and close" />}
         <ActionButton>Requeue ticket</ActionButton>
         {pauseDaemon && !finished && <ReasonAction daemon={pauseDaemon} route="/actions/pause" body={{ run: run.id }} label="Pause" />}
       </footer>
