@@ -221,7 +221,10 @@ def requeue(conn, ticket_id, note, now=None):
     is admitted too (KO-497), unless its run awaits merge approval. Clear
     its question in the same transaction as the intervention and walk.
     Candidates and pull requests still awaiting approval name the operator
-    command that applies instead.
+    command that applies instead -- except a `not_reproduced` park (KO-658),
+    whose question offers `--requeue` once the maintainer has added detail:
+    in the same transaction, after the intervention, its run is ended
+    `abandoned` (never a strike) the way `_release_parked()` ends one.
 
     Refuses, with `RequeueRefused` and no write, anything else: an unknown
     ticket, one shelved on the board, one with an active run,
@@ -244,32 +247,46 @@ def requeue(conn, ticket_id, note, now=None):
             raise RequeueRefused(
                 f"{identifier}: run {active_run_id} is still live;"
                 " a requeue is for a ticket whose run has ended")
-        run = (conn.execute("SELECT outcome, phase, prUrl FROM runs"
+        run = (conn.execute("SELECT outcome, phase, prUrl, parkKind FROM runs"
                             " WHERE id = ?", (last_run_id,)).fetchone()
                if last_run_id is not None else None)
-        parked = status == "blocked_on_operator"
-        if parked and run is not None and run[1] == "awaiting_merge_approval":
-            command = "--babysit" if run[2] else "--approve or --babysit"
-            raise RequeueRefused(
-                f"{identifier} is parked awaiting merge approval; use {command}")
-        if status != "in_flight" and not (
-                parked and run is not None and run[0] in ("failed", "rejected")):
-            raise RequeueRefused(
-                f"{identifier} is {status}, not in_flight; nothing to requeue")
-        if run is None:
-            raise RequeueRefused(
-                f"{identifier} has no ended run to requeue after")
-        if run[0] not in ("failed", "rejected"):
-            raise RequeueRefused(
-                f"{identifier}: run {last_run_id} ended {run[0]},"
-                " not failed or rejected; nothing to requeue")
+        unreproduced = _requeue_admits(identifier, status, last_run_id, run)
         record_intervention(conn, last_run_id, "requeue", note, now=now)
+        if unreproduced:
+            release(conn, last_run_id, "abandoned",
+                    "not reproduced; requeued for another attempt", now=now)
         conn.execute("UPDATE tickets SET blockedQuestion = NULL"
                      " WHERE id = ?", (ticket_id,))
         conn.execute("UPDATE runs SET approvedAt = NULL, approvedBy = NULL"
                      " WHERE id = ?", (last_run_id,))
         walk_ticket(conn, ticket_id, "ready")
     return last_run_id
+
+
+def _requeue_admits(identifier, status, last_run_id, run):
+    """`requeue()`'s refusals, before any write: raise `RequeueRefused`
+    naming the reason, or return whether the admitted run is a
+    `not_reproduced` park still to be ended. `run` is the newest run's
+    `(outcome, phase, prUrl, parkKind)`, None when the ticket has none."""
+    parked = status == "blocked_on_operator"
+    if parked and run is not None and run[1] == "awaiting_merge_approval":
+        if run[3] == _enums.ParkKind.NOT_REPRODUCED.value:
+            return True
+        command = "--babysit" if run[2] else "--approve or --babysit"
+        raise RequeueRefused(
+            f"{identifier} is parked awaiting merge approval; use {command}")
+    if status != "in_flight" and not (
+            parked and run is not None and run[0] in ("failed", "rejected")):
+        raise RequeueRefused(
+            f"{identifier} is {status}, not in_flight; nothing to requeue")
+    if run is None:
+        raise RequeueRefused(
+            f"{identifier} has no ended run to requeue after")
+    if run[0] not in ("failed", "rejected"):
+        raise RequeueRefused(
+            f"{identifier}: run {last_run_id} ended {run[0]},"
+            " not failed or rejected; nothing to requeue")
+    return False
 
 
 class ApproveRefused(Exception):

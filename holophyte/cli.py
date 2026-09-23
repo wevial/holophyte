@@ -220,9 +220,9 @@ def _legacy_cli(argv):
              "a 'requeue' intervention on that run carrying --note and walks "
              "the ticket to ready and clears its question in one transaction; "
              "accepts in_flight or blocked_on_operator after a failed or "
-             "rejected run; refuses live runs and other states or outcomes; "
-             "for parked candidates use --approve or --babysit, for parked "
-             "pull requests use --babysit; refusals write nothing")
+             "rejected run, or a not_reproduced park (ended abandoned, no "
+             "strike); refuses live runs, other states or outcomes and other "
+             "parks (use --approve or --babysit); refusals write nothing")
     # The operator's answer to `merge?`: the same rung-3 pair as `--requeue`
     # for a ticket parked by `[merge] approve = "human"`, so the loop's next
     # claim takes the preserved candidate straight to the merge gate.
