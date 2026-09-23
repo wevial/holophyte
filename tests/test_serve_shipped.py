@@ -123,7 +123,8 @@ class CommitUrlTests(ServeTestCase):
         self.assertEqual(
             set(by_sha[self.local]),
             {"id", "ticket", "ticket_url", "title", "rounds", "findings", "started_ms",
-             "ended_ms", "actual_min", "working_ms", "wall_min",
+             "ended_ms", "actual_min", "working_ms", "agent_ms", "verify_ms",
+             "wall_min",
              "estimate_min", "merge_sha",
              "commit_url", "pr_url", "host", "outcome", "outcome_reason"})
 
