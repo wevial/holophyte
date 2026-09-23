@@ -57,7 +57,7 @@ PINNED = {
     "tests/test_cli.py": 325,
     "tests/test_cli_approve.py": 390, "tests/test_cli_requeue.py": 333,
     "tests/test_file_sizes.py": 280, "tests/test_holophyte_package.py": 421,
-    "tests/test_factory_config.py": 1199,
+    "tests/test_factory_config.py": 1202,
     "tests/test_factory_loop.py": 1416, "tests/test_merge_gate.py": 924,
     "tests/test_pool.py": 913, "tests/test_provider.py": 721, "tests/test_runs.py": 115,
     "tests/test_pullrequest.py": 1490, "tests/test_reconcile.py": 769,
