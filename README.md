@@ -27,6 +27,7 @@ python3 factory.py --report /path/to/repo         # estimate-vs-actual table
 python3 factory.py /path/to/repo --hold --note TEXT # stop new admission; existing runs continue
 python3 factory.py /path/to/repo --release-hold --note TEXT # enable admission again
 python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails them
+python3 factory.py --import-store PATH --dry-run /path/to/repo # what importing another store would move; writes nothing
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
 python3 factory.py --serve 7710 /path/to/repo         # read-only JSON daemon on loopback, the console at /; HOST:PORT to bind elsewhere
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
@@ -54,7 +55,8 @@ naming any blocker it added with a `+`, or exits 1 with the problem and nothing
 changed when the file is invalid and 2 with the identifier and the problem
 when the stored body is.
 
-`--report`, `--sweep` and `--serve` read the store and call nobody; the loop
+`--report`, `--sweep`, `--import-store --dry-run` and `--serve` read the
+store and call nobody; the loop
 and `--supervise` need a `[board]` table. `--help` is safe: the command line
 is parsed, not indexed.
 
