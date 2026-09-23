@@ -126,6 +126,8 @@ class CoveringRangeTests(unittest.TestCase):
         (self.root / "tests/test_check.py").write_text(
             "def test_check():\n    pass\n")
         self.approved = self.commit("approved candidate")
+        # The candidate's fixes land on its own branch, apart from `main`.
+        self.git("checkout", "-qb", "task")
 
     def git(self, *args):
         return subprocess.check_output(["git", *args], cwd=self.root, text=True).strip()
