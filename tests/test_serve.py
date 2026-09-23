@@ -164,9 +164,13 @@ class TokenTests(ServeTestCase):
                 self.assertEqual(body, {})
                 self.assertEqual(response["Content-Type"], "application/json")
                 opened.assert_not_called()
-        code, _, body = self.request("GET", "/status", self.BEARER)
-        self.assertEqual(code, 200)
-        self.assertEqual(body["project"], str(self.target))
+        # KO-634: with the token, both bodies name the path once, as project.
+        for path in ("/status", "/attention"):
+            with self.subTest(path=path):
+                code, _, body = self.request("GET", path, self.BEARER)
+                self.assertEqual(code, 200)
+                self.assertEqual(body["project"], str(self.target))
+                self.assertNotIn("target", body)
         # Every store-reading route is behind it, the run routes included.
         for path in ("/runs", "/shipped", "/ledger?since=0", "/attention",
                      "/board", f"/runs/{self.run}", f"/runs/{self.run}/files",
