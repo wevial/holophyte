@@ -4,10 +4,10 @@
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
-`--sweep [--act]`, `--supervise`, `--serve PORT|HOST:PORT`, the internal
-`--worker` and the loop itself
+`--sweep [--act]`, `--status [--json]`, `--supervise`,
+`--serve PORT|HOST:PORT`, the internal `--worker` and the loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
-`holophyte.supervisor` and `holophyte.serve`; the `Target`
+`holophyte.supervisor`, `holophyte.status` and `holophyte.serve`; the `Target`
 is built once from the command line and handed down, and the board
 (`LinearProvider`) is built here and never reached for by name below.
 Importing this module locates no target, reads no config and touches no
@@ -44,6 +44,7 @@ from holophyte.operator import (
 from holophyte.pool import worker
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.startup import eager_import
+from holophyte.status import status_report
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
@@ -126,6 +127,16 @@ def _note_checks(parser, args):
         parser.error("--note with --approve, --babysit or --close is the operator's "
                      "own words; leave it off for the default rather than "
                      "blank")
+
+
+def _modifier_checks(parser, args):
+    """Refuse `--act` without `--sweep` and `--json` without `--status`."""
+    if args.act and not args.sweep:
+        parser.error("--act says what --sweep does with the runs it finds; "
+                     "it has nothing to act on by itself")
+    if args.json and not args.status:
+        parser.error("--json says how --status prints; it prints nothing "
+                     "by itself")
 
 
 def _close_checks(parser, args):
@@ -261,6 +272,13 @@ def _legacy_cli(argv):
              "(dead heartbeat, blown time box, stuck review) and exit; acts "
              "on none of them unless --act says to")
     modes.add_argument(
+        "--status", action="store_true",
+        help="print what the factory is doing now -- projects, live and "
+             "parked runs, ready tickets, schema, lock holders -- and exit; "
+             "reads only")
+    parser.add_argument("--json", action="store_true",
+                        help="with --status: print it as one JSON object")
+    modes.add_argument(
         "--supervise", action="store_true",
         help="run the acting sweep on an interval ([supervisor] "
              "sweep_interval_sec, default %ds) until SIGINT/SIGTERM, as the "
@@ -334,9 +352,7 @@ def _legacy_cli(argv):
     args = parser.parse_args(argv)
     eager_import()
     _file_ticket_only(parser, args)
-    if args.act and not args.sweep:
-        parser.error("--act says what --sweep does with the runs it finds; "
-                     "it has nothing to act on by itself")
+    _modifier_checks(parser, args)
     _note_checks(parser, args)
     _close_checks(parser, args)
     target = Target.locate(args.target)
@@ -355,6 +371,8 @@ def _legacy_cli(argv):
     check_config(target)
     if args.report:
         return report(target)
+    if args.status:
+        return status_report(target, as_json=args.json)
     # Same window as `--report`: a read-only daemon calls nobody, so no board
     # is built and no route has to resolve.
     if args.serve is not None:
