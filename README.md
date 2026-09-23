@@ -43,6 +43,7 @@ python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # recor
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
+python3 factory.py project add|list|enable|hold|disable [--store PATH] # register projects and change their admission
 ```
 
 `--file-ticket` validates the file against the project, creates the issue,
