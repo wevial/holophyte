@@ -273,7 +273,26 @@ def _check_reads(target, pull, sha):
         required = _required_contexts(rest(
             target, pull, "GET",
             f"repos/{pull.owner}/{pull.name}/rules/branches/main"))
+    if required is not None:
+        required += _protected_contexts(target, pull)
     return runs, required
+
+
+def _protected_contexts(target, pull):
+    """The contexts main's branch protection rule requires, beside the
+    rulesets' (KO-652): read off the branch itself, which a token that may
+    read the repository may read. No answer, or one without them, is no
+    requirement known."""
+    try:
+        branch = rest(target, pull, "GET",
+                      f"repos/{pull.owner}/{pull.name}/branches/main")
+    except InfraFailure:
+        return []
+    for key in ("protection", "required_status_checks"):
+        branch = branch.get(key) if isinstance(branch, dict) else None
+    contexts = branch.get("contexts") if isinstance(branch, dict) else None
+    return [c for c in contexts if isinstance(c, str) and c] \
+        if isinstance(contexts, list) else []
 
 
 def _check_runs_of(target, pull, sha):
@@ -449,7 +468,8 @@ def _state_of(node, threads, runs, required):
                                           if isinstance(r, dict)
                                           and r.get("name")
                                           and r.get("status") != "completed"),
-                   failed_checks=_failed_checks(runs))
+                   failed_checks=_failed_checks(runs),
+                   missing_checks=_missing_checks(runs, required))
 
 
 @dataclass(frozen=True)
@@ -471,6 +491,18 @@ def _failed_checks(runs):
                              url=r.get("html_url") or "", job_id=_job_id(r))
                  for r in (runs or ()) if isinstance(r, dict)
                  and r.get("conclusion") in RED_CONCLUSIONS)
+
+
+def _missing_checks(runs, required):
+    """The contexts `required` names that nothing on the head reported --
+    no check run and no status, or only GitHub's "expected" placeholder
+    (KO-652). Either read unreadable is none known missing: a check the
+    babysitter cannot see is not one it can call absent."""
+    if runs is None or required is None:
+        return ()
+    reported = {r.get("name") for r in runs if isinstance(r, dict)
+                and r.get("conclusion") != "expected"}
+    return tuple(c for c in dict.fromkeys(required) if c not in reported)
 
 
 def _job_id(run):
