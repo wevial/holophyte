@@ -216,6 +216,33 @@ class FileTicketCliTests(unittest.TestCase):
         self.assertIn(str(self.ticket), printed)
         self.assertEqual(linear.mutations(), [])
 
+    def test_a_file_that_discovers_the_whole_suite_creates_nothing_and_exits_1(self):
+        self.with_board()
+        command = "python3 -m unittest discover -s tests"
+        self.ticket.write_text(TICKET.replace(
+            ".venv/bin/python -m unittest test_orders_export", command))
+        linear = FakeLinear()
+
+        status, printed = self.cli(linear=linear)
+
+        self.assertEqual(status, 1)
+        self.assertIn(command, printed)
+        self.assertEqual(linear.mutations(), [])
+
+    def test_a_literal_schema_version_is_neither_filed_nor_updated(self):
+        self.with_board()
+        line = "Bump SCHEMA_VERSION to 12 beside the migration."
+        self.ticket.write_text(TICKET.replace(
+            "Endpoint lives beside the other order routes.", line))
+
+        for args in ((), ("--update", "KO-7000")):
+            with self.subTest(args=args):
+                linear = FakeLinear()
+                status, printed = self.cli(*args, linear=linear)
+                self.assertEqual(status, 1)
+                self.assertIn(line, printed)
+                self.assertEqual(linear.mutations(), [])
+
     def test_a_stored_body_that_fails_validation_prints_the_id_and_exits_2(self):
         self.with_board()
         rewritten = TICKET.replace("**What:**", "What:").replace(

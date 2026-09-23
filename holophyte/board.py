@@ -818,8 +818,9 @@ def post_ledger_comment(task_id, text, provider):
 FILE_TICKET_PRIORITIES = {"urgent": 1, "high": 2, "medium": 3, "low": 4}
 
 def _ticket_problems(text, repo):
-    """The blocking template violations of `text`, checked against `repo`."""
-    return ticket_template.blocking(
+    """What filing refuses in `text`, checked against `repo`: the blocking
+    template violations plus the advisories `filing_refusals()` names."""
+    return ticket_template.filing_refusals(
         ticket_template.validate(ticket_template.parse(text), repo=repo))
 
 
@@ -837,6 +838,9 @@ def file_ticket(target, path, state, board, out=None, priority=None,
     identifier *and* the first problem printed when the body Linear stored
     fails it: the ticket exists then, and the operator has to fix it there,
     so its identifier is printed before the problem and is never lost.
+    Both passes refuse `filing_refusals()`: a verify line discovering the
+    whole suite and a literal schema version are refused here, where they
+    are cheapest to fix, and stay advisories at claim (KO-708).
 
     The re-read is the point of the command. Every ticket the loop refused
     as `needs_spec` this week was valid on disk and broken in transfer -- a
