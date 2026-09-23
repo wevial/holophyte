@@ -12,7 +12,7 @@ import signal
 import subprocess
 import tempfile
 from dataclasses import asdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
 import ticket_template
@@ -29,13 +29,23 @@ CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
 STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
 
 
-def implementer_brief(target, ticket):
+def implementer_brief(target, ticket, task_id):
     states = ticket_template.parse(ticket).evidence_states
     cfg = merge_config(target)
     if not states or not cfg.ui_capture:
         return ""
-    return (f"\n\nAdd or update a capture script under `{cfg.ui_capture_dir}` "
-            f"for this ticket, runnable by `{cfg.ui_capture}`. Produce one image "
+    if cfg.ui_capture_local:
+        # The name the bundled runner reads (capture_playwright.py).
+        spec = PurePosixPath(cfg.ui_capture_dir, f"{task_id}.capture.ts")
+        where = (f"\n\nWrite the capture spec `{spec}` for this ticket, "
+                 f"runnable by `{cfg.ui_capture}`. The file stays in the "
+                 "worktree and is never committed: its directory ignores "
+                 "itself.")
+    else:
+        where = (f"\n\nAdd or update a capture script under "
+                 f"`{cfg.ui_capture_dir}` for this ticket, runnable by "
+                 f"`{cfg.ui_capture}`.")
+    return (where + " Produce one image "
             "per state, named NN-slug.png in state order (01, 02, ...), plus "
             "a recording when the states describe a flow. The harness receives "
             "HOLOPHYTE_TICKET and newline-joined HOLOPHYTE_EVIDENCE_STATES.\n"
@@ -114,6 +124,7 @@ def _capture(command, wt, output, task_id, states, *, target=None):
         env = dict(os.environ)
     if target is not None:
         env.update(capture_environment(target) or {})
+        env['HOLOPHYTE_CAPTURE_DIR'] = merge_config(target).ui_capture_dir
     env['HOLOPHYTE_TICKET'] = task_id
     env.pop("HOLOPHYTE_EVIDENCE_STATES", None)
     if states:
