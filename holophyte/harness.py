@@ -221,8 +221,10 @@ def seat(target, role, *, fallback=False):
     """The `Seat` a table-form `[agents]` role resolves to, None for
     a command string or an absent key.
 
-    Under `implementer_isolation = "container"` the binary is the bare
-    harness name, whatever `[harnesses]` says: the image supplies it.
+    Under `implementer_isolation = "container"` an implementer's binary
+    is the bare harness name, whatever `[harnesses]` says: the image
+    supplies it. Review roles run on the host either way, so they keep the
+    `[harnesses]` path.
     """
     from holophyte.config import AGENT_CONFIG_KEYS, config_table
     key = AGENT_CONFIG_KEYS[role] + ("_fallback" if fallback else "")
@@ -233,7 +235,7 @@ def seat(target, role, *, fallback=False):
     adapter = parse_role(where, key, table)
     from holophyte.isolation import route_for
     binary = adapter.name
-    if route_for(target).backend != "container":
+    if role != "implement" or route_for(target).backend != "container":
         paths = config_table(target, "harnesses")
         check_paths(where, paths)
         binary = paths.get(adapter.name, binary)

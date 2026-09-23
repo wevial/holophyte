@@ -5,6 +5,7 @@ Run: python3 -m unittest tests.test_harness -v
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -127,8 +128,8 @@ import json, os, subprocess, sys
 head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
                       text=True).stdout.strip()
 with open(os.environ["FAKE_HARNESS_CALLS"], "a") as calls:
-    calls.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(),
-                            "head": head}) + "\\n")
+    calls.write(json.dumps({"binary": sys.argv[0], "argv": sys.argv[1:],
+                            "cwd": os.getcwd(), "head": head}) + "\\n")
 if sys.argv[2] == "resume" and os.environ.get("FAKE_NO_ROLLOUT"):
     print("Error: thread/resume failed: no rollout found for thread id x")
     sys.exit(1)
@@ -222,6 +223,21 @@ class CodexTableTests(unittest.TestCase):
         [recorded] = self.events("agent_session")
         self.assertEqual((recorded["session_id"], recorded["role"],
                           recorded["round"]), ("codex-1", "review", 1))
+
+    def test_a_container_implementer_leaves_the_reviewer_its_harness_path(self):
+        pinned = self.holo / "pinned" / "codex"
+        pinned.parent.mkdir()
+        shutil.copy2(shutil.which("codex"), pinned)
+        (self.holo / "config.toml").write_text(
+            '[agents]\nimplementer_isolation = "container"\n' + CODEX_CONFIG
+            + f'[harnesses]\ncodex = "{pinned}"\n')
+        self.target = holophyte.target.Target(
+            path=self.repo, holo_dir=self.holo, store_path=self.target.store_path,
+            config_path=self.target.config_path, worktrees=self.target.worktrees)
+        self.dispatch("review", "review the candidate")
+        [call] = self.received()
+        self.assertEqual(call["binary"], str(pinned))
+        self.assert_fresh_turn_in_a_candidate_checkout(call, "review the candidate")
 
     def test_round_two_resumes_the_recorded_id_or_runs_fresh_without_a_rollout(self):
         self.dispatch("review", "first look")

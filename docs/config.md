@@ -275,8 +275,9 @@ neither startup nor the operator named.
 
 Where a harness adapter finds its binary when a role in `[agents]` is written
 as a table. Keys are registered harness names; each value is an absolute
-path. Absent, the adapter runs the harness's own name from PATH. Ignored under
-`implementer_isolation = "container"`, where the image supplies the binary.
+path. Absent, the adapter runs the harness's own name from PATH. Ignored for
+the implementer under `implementer_isolation = "container"`, where the image
+supplies the binary; review roles run on the host and keep their path.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
