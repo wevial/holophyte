@@ -59,6 +59,9 @@ Each module, one line:
   `SWEEP_HEADERS` table, the per-run and restart lines, `sweep_report()`
   as `--sweep`'s whole body, and the review-container and merge-lock
   sections.
+- `holophyte/status.py` — `--status [--json]` (KO-596): what the target is
+  doing now — projects and admission, live and parked runs, the ready
+  count, the schema version and the lock holders — read only, no network.
 - `holophyte/supervisor_lock.py` — the one-supervisor-per-target lock
   (KO-396): the lockfile's path, read, acquire and release, the
   `SupervisorHeld` refusal and the `supervisor_running()` probe.
