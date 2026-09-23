@@ -253,5 +253,65 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertIn(BRANCH, self.branches())
 
 
+class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
+    """A red Actions check gets one fix turn per babysit; anything else parks."""
+    UNIT = {"name": "unit", "status": "completed", "conclusion": "failure",
+            "html_url": "https://github.com/example/repo/actions/runs/5/job/42",
+            "id": 42, "app": {"slug": "github-actions"}}
+    FAILED = "FAIL: test_x (tests.test_y.Case.test_x)"
+
+    def red_check(self, run, log="", *, until_fixed=False):
+        """`run` red on every head, or the first alone; `log` its job's log."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.job_log.write_text(log)
+        heads = []
+        def check_runs(target, pull, sha):
+            heads.extend([sha] if sha not in heads else [])
+            green = until_fixed and sha != heads[0]
+            return [dict(run, conclusion="success") if green else run]
+        self.enterContext(patch("holophyte.pr_status._check_runs_of", check_runs))
+
+    def assert_parked_on_checks(self):
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("checks failure on the head commit", self.question())
+
+    def test_a_red_actions_check_is_fixed_verified_reviewed_and_merged(self):
+        self.red_check(self.UNIT, "".join(f"step {n}\n" for n in range(200))
+                       + self.FAILED, until_fixed=True)
+        verified = self.worktrees.parent / "verified.log"
+        task = dict(a_task(), body=self.BODY,
+                    verify=f"git rev-parse HEAD >> {verified}")
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Commit("fix: the unit failure"), APPROVE, Idle(""),
+                            provider=StubProvider(task))
+        self.assertEqual(fake.roles, ["implement", "review", "implement"] * 2)
+        for part in ("CHECK unit", self.UNIT["html_url"], self.FAILED, "step 199"):
+            self.assertIn(part, fake.turns[3].goal)
+        self.assertNotIn("step 100\n", fake.turns[3].goal)  # The log's tail.
+        fixed = self.pushed()[-1][1]
+        self.assertIn("fix: the unit", self.git("log", "-1", "--format=%s", fixed))
+        self.assertIn(fixed, verified.read_text().split())
+        self.assertEqual(fake.turns[4].candidate_sha, fixed)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [fixed])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_check_still_red_after_its_one_fix_parks(self):
+        self.red_check(self.UNIT, self.FAILED)
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Commit("fix: the unit failure"), provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "implement"])
+        self.assert_parked_on_checks()
+
+    def test_a_red_status_that_is_not_an_actions_job_parks_unfixed(self):
+        # A commit status as `status_contexts_of()` normalises it: no job id.
+        self.red_check({"name": "ci/x", "status": "completed", "conclusion": "error"})
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        self.assert_parked_on_checks()
+
 if __name__ == "__main__":
     unittest.main()
