@@ -1,6 +1,7 @@
+import { Fragment } from "react";
 import type { ProjectChoice } from "../lib/attention";
-import { hostName, visibleHosts, type HostRecord } from "../lib/hosts";
-import { HostPanel } from "./HostPanel";
+import { groupByHost, hostName, visibleHosts, type HostRecord } from "../lib/hosts";
+import { HostAgents, HostPanel } from "./HostPanel";
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
@@ -13,7 +14,8 @@ export function hostsSubtitle(hosts: HostRecord[]): string {
   return `${plural(names.size, "host")} · ${plural(hosts.length, "daemon")}${on}`;
 }
 
-/** The Hosts view: one card per daemon in view, two to a row. */
+/** The Hosts view: one card per daemon in view, two to a row, each host's
+ *  daemons followed by its Agents table across the row. */
 export function Hosts({ hosts, project, now }: { hosts: HostRecord[]; project: ProjectChoice; now: number }) {
   const shown = visibleHosts(hosts, project);
   return (
@@ -30,8 +32,13 @@ export function Hosts({ hosts, project, now }: { hosts: HostRecord[]; project: P
         <p className="mt-3 text-[13px] text-muted">No daemon answered yet</p>
       ) : (
         <div className="mt-4 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-4">
-          {shown.map((host) => (
-            <HostPanel key={host.address} host={host} now={now} />
+          {groupByHost(shown).map((group) => (
+            <Fragment key={group.label}>
+              {group.hosts.map((host) => (
+                <HostPanel key={host.address} host={host} now={now} />
+              ))}
+              <HostAgents label={group.label} hosts={group.hosts} />
+            </Fragment>
           ))}
         </div>
       )}

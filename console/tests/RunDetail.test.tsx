@@ -847,7 +847,7 @@ test("an unavailable transcript explains the missing file or opt-in inside the p
   expect(alert.textContent).toContain("Transcript unavailable");
 });
 
-test("the header names the implementer and reviewer the run's turns used, and no reviewer for a run never reviewed", async () => {
+test("the header shows the implementer and reviewer the run's turns used as chips, and no reviewer for a run never reviewed", async () => {
   const header = async (turns: object[]) => {
     cleanup();
     const fetch: Fetch = async url => url.endsWith("/turns") ? Response.json({ turns }) : answering(DETAIL)(url);
@@ -856,11 +856,11 @@ test("the header names the implementer and reviewer the run's turns used, and no
     await within(screen.getByRole("region", { name: "Turns" })).findAllByRole("listitem");
     return card.querySelector("header")!;
   };
-  const implement = { id: 1, role: "implement", label: "claude opus", route: "primary", seconds: 40, session_id: null };
-  const review = { id: 2, role: "review", label: "codex astra", route: "primary", seconds: 9, session_id: null };
-  const reviewed = await header([implement, review]);
-  expect(within(reviewed).getByText("Implementer claude opus · Reviewer codex astra")).toBeTruthy();
+  const chips = (header: Element) => [...header.querySelectorAll("[data-seat]")].map((chip) => chip.textContent);
+  const implement = { id: 1, role: "implement", label: "claude-implement opus", route: "primary", seconds: 40, session_id: null };
+  const review = { id: 2, role: "review", label: "codex-review gpt-6-astra", route: "primary", seconds: 9, session_id: null };
+  expect(chips(await header([implement, review]))).toEqual(["Implementer Claude · Opus", "Reviewer Codex · GPT-6 Astra"]);
   const unreviewed = await header([implement]);
-  expect(within(unreviewed).getByText("Implementer claude opus")).toBeTruthy();
+  expect(chips(unreviewed)).toEqual(["Implementer Claude · Opus"]);
   expect(unreviewed.textContent).not.toContain("Reviewer");
 });
