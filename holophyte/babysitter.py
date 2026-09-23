@@ -43,6 +43,7 @@ from holophyte.review import (
     criteria_brief,
     criteria_findings,
     evidence_brief,
+    main_merge_base,
     parse_findings,
     scope_brief,
     scope_files,
@@ -639,7 +640,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
         recovered = _fix_answers(conn, run_id, _next_round(conn, run_id), fix_note)
         answered = "\n".join(part for part in (fix_context, recovered) if part)
         if not answered:
-            base = reviewed or sh(["git", "merge-base", "main", sha], cwd=wt)
+            base = reviewed or main_merge_base(wt, sha)
             answered = sh(["git", "log", "--format=%s", f"{base}..{sha}"], cwd=wt)
         refresh_pr_text(target, conn, run_id, task_id, ticket.splitlines()[0],
                         branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
@@ -650,7 +651,7 @@ def _review_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                     reviewed=reviewed)
     set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
     record_step(conn, run_id, "covering_review")
-    base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
+    base_sha = main_merge_base(wt, sha)
     rnd = _next_round(conn, run_id)
     round_started = int(time() * 1000)
     # Only what the covered range changes, less what a merged `main` alone
@@ -842,7 +843,7 @@ def _answer_threads(target, conn, run_id, provider, task_id, branch, wt, sha,
     merge = merge_config(target)
     record_step(conn, run_id, "threads")
     threads = thread_mentions.classified(state.threads, merge)
-    base_sha = sh(["git", "merge-base", "main", sha], cwd=wt)
+    base_sha = main_merge_base(wt, sha)
     round_started = int(time() * 1000)
     # Park unmentioned human threads unless human_threads = "act".
     act = merge.human_threads == "act"
