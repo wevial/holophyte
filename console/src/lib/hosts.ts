@@ -228,6 +228,22 @@ export function runCounts(status: Status): { active: number; stale: number } {
   return { active: status.runs.length - stale, stale };
 }
 
+/** A host card's Toil cell: `24h 0.50 · 7d 1.25`, each window's
+ *  interventions per merged run, `—` for a window with no merges; and the
+ *  week's two most frequent actions, ties by name, as `requeue 5 · babysit
+ *  3`, null when the week has none. */
+export function toilLines(toil: NonNullable<Status["toil"]>): { rates: string; actions: string | null } {
+  const rate = (perMerge: number | null) => (perMerge == null ? "—" : perMerge.toFixed(2));
+  const top = Object.entries(toil["7d"].by_action)
+    .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
+    .slice(0, 2)
+    .map(([action, count]) => `${action} ${count}`);
+  return {
+    rates: `24h ${rate(toil["24h"].per_merge)} · 7d ${rate(toil["7d"].per_merge)}`,
+    actions: top.length === 0 ? null : top.join(" · "),
+  };
+}
+
 /** The oldest `polled_ms` across hosts, null before the first poll. */
 export function oldestPoll(hosts: HostRecord[]): number | null {
   if (hosts.length === 0) return null;

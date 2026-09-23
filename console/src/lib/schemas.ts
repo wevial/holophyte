@@ -19,6 +19,13 @@ export const runSchema = z.looseObject({
   started_ms: z.number().optional(), round: z.number().optional(), strikes: z.number().optional(),
 });
 
+// One window of the daemon's operator interventions per merged run;
+// `per_merge` is null for a window with no merges.
+export const toilWindowSchema = z.looseObject({
+  interventions: z.number(), merged: z.number(), per_merge: z.number().nullable(),
+  by_action: z.record(z.string(), z.number()),
+});
+
 // A daemon from before 2026-09-05 names its path only `target`; without
 // `project` its status is a contract error, the signal to upgrade it.
 export const statusSchema = z.looseObject({
@@ -31,6 +38,7 @@ export const statusSchema = z.looseObject({
     command: z.string().nullable(), fallback: z.string().optional(),
   })).optional(),
   route_labels: z.record(z.string(), z.string().nullable()).optional(),
+  toil: z.looseObject({ "24h": toilWindowSchema, "7d": toilWindowSchema }).optional(),
   supervisor: supervisorSchema,
   thresholds: z.looseObject({ heartbeat_stale_ms: z.number(), strikes: z.number() }),
   actions: z.boolean().optional(), config_edit: z.boolean().optional(),
