@@ -108,7 +108,6 @@ import signal
 import socket
 import stat
 import sys
-import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from time import time
@@ -125,7 +124,6 @@ from holophyte.config_tables import (
     sweep_config,
 )
 from holophyte.pr_status import PR_URL_RE
-from holophyte.redact import known_secrets, outbound
 from holophyte.reexec import reexec_self
 from holophyte.report import host_label
 from holophyte.serve_actions import (
@@ -133,6 +131,7 @@ from holophyte.serve_actions import (
     ACTIONS_PREFIX,
     MAX_BODY,
     REQUEUE_ACTION,
+    action_failure,
     parse_action_body,
     requeue_action,
     send_back_action,
@@ -761,7 +760,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         demanded on a loopback bind as much as any other; with actions off
         the bind's read token applies, so a non-loopback daemon is 401
         before it is 404. The body is JSON (`parse_action_body()`), 400
-        when it is not. A handler that raises is 500 (`action_failed()`).
+        when it is not. A handler that raises is 500 (`action_failure()`).
         """
         path = urlsplit(self.path).path
         if not path.startswith(ACTIONS_PREFIX):
@@ -778,42 +777,21 @@ class StatusHandler(BaseHTTPRequestHandler):
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"error": str(bad)})
-        # `SystemExit` too: the store's `SchemaNewer` is one, and escaping
-        # here it closes the connection unanswered.
-        try:
-            code, body = self.run_action(action, body)
-        except (Exception, SystemExit) as failure:
-            code, body = self.action_failed(action, failure)
-        self.answer(code, body)
-
-    def run_action(self, action, body):
-        """`(code, body)` from the handler for the known `action`."""
         target = self.server.target
-        if action == "send-back":
-            return send_back_action(target, body.get("run"), body.get("note"),
-                                    body.get("author", "maintainer"))
-        if action == REQUEUE_ACTION:
-            return requeue_action(target, body)
-        if action in LEVERS:
-            return LEVERS[action](target, body)
-        return unit_action(target, action, self.server.unit_name)
-
-    def action_failed(self, action, failure):
-        """The 500 for an action handler that raised `failure`, its
-        traceback logged once: the `error` names the exception's type and
-        message, both redacted as the other outbound text is, so the
-        console shows the one line the daemon had instead of "Failed to
-        fetch"."""
         try:
-            secrets = known_secrets(self.server.target.config())
-        except (Exception, SystemExit):
-            # The config may be what failed; registered values still go.
-            secrets = known_secrets(None)
-        print(outbound(f"[holo2] action {action} failed:\n"
-                       + traceback.format_exc(), secrets),
-              file=sys.stderr, end="")
-        return 500, {"error": outbound(
-            f"{type(failure).__name__}: {failure}", secrets)}
+            if action == "send-back":
+                code, body = send_back_action(
+                    target, body.get("run"), body.get("note"),
+                    body.get("author", "maintainer"))
+            elif action == REQUEUE_ACTION:
+                code, body = requeue_action(target, body)
+            elif action in LEVERS:
+                code, body = LEVERS[action](target, body)
+            else:
+                code, body = unit_action(target, action, self.server.unit_name)
+        except (Exception, SystemExit) as failure:
+            code, body = action_failure(target, action, failure)
+        self.answer(code, body)
 
     def do_PUT(self):
         """`PUT /config` when `[serve] config_edit = true`; 405 on any
