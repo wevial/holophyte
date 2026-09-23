@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import holophyte.board
 import ticket_template as tt
 from tests.test_ticket_template import FILLED
 
@@ -30,7 +31,7 @@ class RepositoryChecksTests(unittest.TestCase):
     def missing(self, body):
         return [p for p in self.everything(body) if 'does not exist' in p]
 
-    def test_missing_paths_are_advisories_in_all_three_places(self):
+    def test_missing_prose_paths_are_advisories(self):
         advisory = tt.ADVISORY_PREFIX + 'path does not exist in '
         for label, anchor, replacement in (
             ('Acceptance criteria #1', 'then 4 lines including header.',
@@ -38,14 +39,27 @@ class RepositoryChecksTests(unittest.TestCase):
             ('Implementation notes',
              'Endpoint lives beside the other order routes.',
              'Use `tests/test_missing.py`.'),
-            ('verify command', '.venv/bin/python -m unittest tests.test_a',
-             'ruff check tests/test_a.py tests/test_missing.py'),
         ):
             with self.subTest(label=label):
                 body = self.body.replace(anchor, replacement)
                 self.assertEqual(self.missing(body), [
                     f'{advisory}{label}: tests/test_missing.py'])
                 self.assertEqual(self.problems(body), [])
+                self.assertIsNone(
+                    holophyte.board.body_problem({'body': body}, self.repo))
+
+    def test_missing_verify_path_blocks_unless_declared_new(self):
+        # REL-137: `TransactionTable.tsx` was a directory's name, not a file.
+        body = self.body.replace('.venv/bin/python -m unittest tests.test_a',
+                                 'ruff check tests/test_a.py tests/test_missing.py')
+        blocker = 'path does not exist in verify command: tests/test_missing.py'
+        self.assertEqual(self.problems(body), [blocker])
+        self.assertEqual(
+            holophyte.board.body_problem({'body': body}, self.repo), blocker)
+        declared = body.replace('Endpoint lives beside the other order routes.',
+                                'Add a new test file `tests/test_missing.py`.')
+        self.assertEqual(self.missing(declared), [])
+        self.assertEqual(self.problems(declared), [])
 
     def test_new_declarations_silence_the_advisory(self):
         anchor = 'then 4 lines including header.'
