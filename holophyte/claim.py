@@ -66,7 +66,7 @@ from holophyte.environment_git import (
     stage_work,
     unstage_environment,
 )
-from holophyte.freshness import park_stale, stale_reasons
+from holophyte.freshness import STALE_LABEL, park_stale, stale_reasons
 from holophyte.gates import (
     InfraFailure,
     RunFailure,
@@ -755,6 +755,14 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
     if problem:
         mirror_task(conn, project_id, task, specced=False)
         print(f"[holo2] {task['id']} skipped: {problem}")
+        return None
+    # A `stale` label is the maintainer's mark that the body is still out
+    # of date (KO-716): skipped without asking main again and without a
+    # second comment, until the maintainer fixes the body and removes it.
+    if STALE_LABEL in (task.get("labels") or []):
+        mirror_task(conn, project_id, task, specced=False)
+        print(f"[holo2] {task['id']} skipped: labelled {STALE_LABEL};"
+              " fix the body and remove the label")
         return None
     stale = [] if pr else stale_reasons(project.path, task.get("body"))
     if stale:
