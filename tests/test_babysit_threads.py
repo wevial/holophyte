@@ -857,8 +857,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertLess(goal.index(self.DEFECT[3]), goal.index(follow_up))
         self.assertIn("@ko", goal)
         question = self.question()
-        self.assertIn(f"> {self.DEFECT[3]}", question)
-        self.assertIn(f"> {follow_up}", question)
+        self.assertIn(self.DEFECT[3], question)
+        self.assertIn(follow_up, question)
         self.assertIn("@ko", question)
 
     def test_a_thread_with_a_second_page_of_comments_is_read_to_the_end(self):
@@ -916,7 +916,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         question = self.question()
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
-        self.assertIn(f"> {asks[3]}", question)
+        self.assertIn(asks[3], question)
         self.assertIn("src/app.py:30 by @ko", question)
         self.assertEqual(
             self.read("SELECT verdict, reviewerModel FROM reviewRounds"
@@ -964,7 +964,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         question = self.question()
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
-        self.assertIn(f"> {person[3]}", question)
+        self.assertIn(person[3], question)
         self.assertIn("src/app.py:30 by @wevial", question)
 
     def test_under_act_a_person_s_address_is_fixed_replied_and_left_open(self):
@@ -1052,7 +1052,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         question = self.question()
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
-        self.assertIn(f"> {person[3]}", question)
+        self.assertIn(person[3], question)
         self.assertIn("src/app.py:30 by @wevial", question)
         self.assertNotIn(self.DEFECT[3], question)
 
@@ -1077,8 +1077,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         question = self.question()
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
         self.assertIn("needs a human's answer", question)
-        self.assertIn(f"> {asks[3]}", question)
-        self.assertNotIn(f"> {self.DEFECT[3]}", question)
+        self.assertIn(asks[3], question)
+        self.assertNotIn("src/app.py:10 by @review-bot", question)
 
 
 class OperatorNoteCitationTests(LoopFixture):
@@ -1111,6 +1111,48 @@ class OperatorNoteCitationTests(LoopFixture):
         result = cite_commits(self.target, self.base, fixed, self.ADDRESSED, self.sh)
         self.assertEqual(result, fixed)
         self.assertEqual(self.git("rev-parse", "HEAD").strip(), fixed)
+
+
+class ParkQuestionQuoteTests(unittest.TestCase):
+    """`babysitter.quoted()`: a bot's thread reads as plain text in the park."""
+    URL = "https://github.com/OWNER/NAME/pull/235#discussion_r9"
+    # The shape of Greptile's P1 thread on pull request 235 (KO-714, run 624).
+    GREPTILE = (
+        '<a href="#"><img alt="P1" src="https://greptile-static-assets.s3'
+        '.amazonaws.com/badges/p1.svg" align="top"></a> **Queue entry is'
+        ' read before the merge settles**\n\n'
+        "`merge_queue.py:116` reads the entry once; a dequeued pull request"
+        " is then reported as merged.\n\n"
+        "<details><summary>Prompt To Fix With AI</summary>\n\n"
+        "`````markdown\nThis is a comment left during a code review.\n"
+        "Path: holophyte/merge_queue.py\nLine: 116\n\n"
+        "> Queue entry is read before the merge settles\n`````\n\n"
+        "</details>\n\n")
+
+    def quote(self, body):
+        from holophyte import babysitter
+        return babysitter.quoted(holophyte.pr.Thread(
+            "1", "holophyte/merge_queue.py", 116, "greptile-apps[bot]", body,
+            self.URL, author_kind="bot"))
+
+    def test_a_greptile_comment_reads_as_its_badge_title_and_paragraph(self):
+        text = self.quote(self.GREPTILE)
+        self.assertIn("P1", text)
+        self.assertIn("Queue entry is read before the merge settles", text)
+        self.assertIn("reads the entry once; a dequeued pull request", text)
+        self.assertNotRegex(text, r"<[a-zA-Z/][^>]*>")
+        self.assertNotIn("details", text)
+        self.assertNotIn("Prompt To Fix With AI", text)
+        self.assertNotIn("This is a comment left during a code review", text)
+        self.assertEqual([line for line in text.splitlines()
+                          if line.lstrip().startswith(">")], [])
+
+    def test_a_long_comment_is_cut_to_600_characters_under_its_url(self):
+        text = self.quote("x" * 900)
+        header, body = text.split("\n", 1)
+        self.assertIn(self.URL, header)
+        self.assertEqual(len(body), 600)
+        self.assertTrue(body.endswith("…"))
 
 
 if __name__ == "__main__":

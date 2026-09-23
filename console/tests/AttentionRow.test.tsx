@@ -347,3 +347,29 @@ test("a send-back the daemon answers 500 shows its error under the box, not Fail
   expect(shown).not.toContain("Failed to fetch");
   expect(screen.getByRole("textbox", { name: "Maintainer's note" })).toBeTruthy();
 });
+
+test("a question past four lines is clamped with more, which shows the whole text; a short one is not", () => {
+  const question = [
+    "PR open: https://github.com/OWNER/NAME/pull/235",
+    "a thread needs a human's answer; nothing was posted on it:",
+    "holophyte/merge_queue.py:116 by @greptile-apps[bot] (https://github.com/OWNER/NAME/pull/235#discussion_r9):",
+    "P1 **Queue entry is read before the merge settles**",
+    "",
+    "`merge_queue.py:116` reads the entry once; a dequeued pull request is then reported as merged.",
+  ].join("\n");
+  const item = (text: string): AttentionItem => ({ kind: "blocked", level: "attention", ticket: "KO-714", question: text });
+  renderRow(item(question), fakeFetch({}).fetchImpl);
+  const body = document.querySelector("[data-body]")!;
+  expect(body.className).toContain("line-clamp-4");
+  expect(body.textContent).toBe(question);
+
+  fireEvent.click(screen.getByRole("button", { name: "more" }));
+  expect(body.className).not.toContain("line-clamp-4");
+  expect(body.textContent).toBe(question);
+  expect(screen.queryByRole("button", { name: "more" })).toBeNull();
+
+  cleanup();
+  renderRow(item("Which branch?"), fakeFetch({}).fetchImpl);
+  expect(document.querySelector("[data-body]")!.className).not.toContain("line-clamp-4");
+  expect(screen.queryByRole("button", { name: "more" })).toBeNull();
+});

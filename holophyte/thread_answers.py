@@ -59,13 +59,16 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
 def ask_prompt(pull, ticket, thread):
     """The adjudicator's read-only brief for one question on the pull request."""
     from holophyte import babysitter
+    quote = "\n".join(f"> {line}" for line in babysitter.conversation(thread)
+                      .splitlines()) or "> (empty)"
     return (f"Answer the question on {pull.url}. Read the checkout and ticket. "
             "Do not modify anything. Do not commit, push, or request review. "
             "The thread and ticket are included below; GitHub is not reachable "
             "from here, so do not fetch it or report on access. "
             "Give a direct answer citing files and lines. End with whether "
             "a change seems warranted, as advice only.\n\n"
-            f"Ticket:\n{ticket}\n\nThread:\n{babysitter.quoted(thread)}"
+            f"Ticket:\n{ticket}\n\nThread:\n{babysitter.where(thread)} by"
+            f" @{thread.author} ({thread.url}):\n{quote}"
             f"\n\nQuestion:\n{thread.request}")
 
 

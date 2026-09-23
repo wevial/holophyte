@@ -34,6 +34,7 @@ from holophyte.gates import (
 )
 from holophyte.main_checkout import detached_main
 from holophyte.missing_checks import Retrigger, unreported
+from holophyte.plain_text import readable
 from holophyte.pr import NO_AUTHOR
 from holophyte.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
@@ -262,10 +263,10 @@ def open_threads_question(pull, why, threads):
 
 
 def quoted(thread):
-    """A thread quoted whole, follow-ups included, for the parked question."""
-    body = "\n".join(f"> {line}" for line in conversation(thread)
-                     .splitlines()) or "> (empty)"
-    return f"{where(thread)} by @{thread.author} ({thread.url}):\n{body}"
+    """A thread whole, follow-ups included, as plain text for the question."""
+    body = "\n\n".join([readable(thread.body)] + [
+        f"@{c.author} replied:\n{readable(c.body)}" for c in thread.replies])
+    return f"{where(thread)} by @{thread.author} ({thread.url}):\n{body or '(empty)'}"
 
 
 def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
