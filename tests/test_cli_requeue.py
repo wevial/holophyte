@@ -24,6 +24,7 @@ from unittest.mock import patch
 import holophyte.board
 import holophyte.cli
 import holophyte.project
+import holophyte.stop
 import linear_provider
 import store
 import store.read
@@ -197,6 +198,44 @@ class RequeueCliTests(unittest.TestCase):
         self.assertEqual(self.interventions(), [(self.run, "requeue")])
         self.assertEqual(self.board.unlabelled[0][0], "issue-1")
         self.assertIn("lock released", store.read.ledger(self.conn, self.run)[-1].text)
+
+    def test_requeue_walks_an_aborted_ticket_to_ready_and_clears_its_question(self):
+        """KO-719: `--abort` ends the run `abandoned` and parks the ticket
+        with the note as its question; `--requeue` is the way back."""
+        store.abort(self.conn, self.run, "claimed before the body was fixed",
+                    now=T0 + MINUTE)
+        with self.assertRaises(holophyte.stop.Aborted):
+            holophyte.stop.end_aborted(self.conn, self.run)
+        self.assertEqual(self.conn.execute(
+            "SELECT status, blockedQuestion FROM tickets WHERE id = ?",
+            (self.ticket,)).fetchone(),
+            ("blocked_on_operator", "claimed before the body was fixed"))
+
+        out, _ = self.cli("--requeue", "KO-1", "--note", "body corrected")
+
+        self.assertEqual(out.strip(), f"[holo2] KO-1 requeued after run {self.run}")
+        self.assertEqual(self.conn.execute(
+            "SELECT status, blockedQuestion FROM tickets WHERE id = ?",
+            (self.ticket,)).fetchone(), ("ready", None))
+        self.assertEqual(self.interventions(),
+                         [(self.run, "abort"), (self.run, "requeue")])
+        self.assertIn("body corrected",
+                      store.read.ledger(self.conn, self.run)[-1].text)
+
+    def test_requeue_refuses_an_abandoned_run_that_was_not_aborted(self):
+        store.release(self.conn, self.run, "abandoned", "canceled on the board",
+                      now=T0 + MINUTE)
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+        self.conn.commit()
+        before = list(self.conn.iterdump())
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "retry")
+
+        self.assertIn("not aborted", str(raised.exception))
+        self.assertNotEqual(raised.exception.code, 0)
+        self.assertEqual(list(self.conn.iterdump()), before)
+        self.assertEqual(StubBoard.instance.unlabelled, [])
 
     def test_requeue_refuses_parked_candidates_and_pull_requests_without_writes(self):
         # Only a `not_reproduced` park is admitted (KO-658); a merge question
