@@ -23,6 +23,14 @@ the raised cap as `handed_on`), and `routed()` sends the continuation back
 here. A storeless run takes the same route and parks by raising
 `MergeParked` with nothing recorded.
 
+A ticket with a `## Reproduce` section is a bug ticket, and `first_turn()`
+asks before any fix exists: a reproduce turn on the implementer seat, a third
+of the estimate (3 to 10 minutes), commits a failing test only, and the
+ticket's verify runs at that commit. A failure is a `reproduced` event and a
+`Reproduction` whose `opening()` leads the implement turn built on it; a pass
+sends the test commit straight to `review_rounds()` above, with no implement
+turn; no commit is a ledger note and the implement turn as before (KO-659).
+
 The loop's `agent`, `_timed`, `_check_run_cap`, `_verify_brief` and
 `_review_rounds` are read off `holophyte.loop` at call time, so a test that
 patches the loop's `agent` answers these turns too.
@@ -34,6 +42,7 @@ from time import time
 import review_runner
 import store
 import store.read
+import ticket_template
 from holophyte import failure_reason
 from holophyte.agents import review_refs
 from holophyte.board import block_ticket, ledger
@@ -51,6 +60,9 @@ BRIEF = ("\n\nIf the ticket reports a defect and a test built from the real "
          f"your reply with exactly this line:\n{DECLARATION}")
 
 # Appended to the evidence check's reasons for the one fix turn after a FAIL.
+# The reproduce turn's budget bounds, in minutes (KO-659).
+FIRST_MIN, FIRST_MAX = 3, 10
+
 REDECLARE = ("If, once the tests exercise the reported path, the defect "
              "still does not reproduce, commit the tests only and end your "
              f"reply with exactly this line:\n{DECLARATION}")
@@ -86,6 +98,62 @@ class Frame:
 
     def args(self):
         return tuple(getattr(self, field.name) for field in fields(self))
+
+
+@dataclass(frozen=True)
+class Reproduction:
+    """The reproduce turn's test commit and the verify command it made fail,
+    None when the ticket's verify still passed there."""
+
+    sha: str
+    failing: object = None
+
+    def opening(self):
+        """The implement brief's first line for a reproduced defect."""
+        return (f"A reproduce turn committed a test at {self.sha} that makes "
+                f"the ticket's verify fail at `{self.failing}`. Build the fix "
+                "on top of that commit and keep the test.\n\n")
+
+
+def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
+               ticket, body, verify_cmd, budget_min):
+    """A bug ticket's reproduce turn and the verify at its commit, or None:
+    no `## Reproduce` section or verify to run it with, or no commit."""
+    from holophyte import loop
+
+    if not verify_cmd or "Reproduce" not in ticket_template.parse(body).order:
+        return None
+    budget = min(FIRST_MAX, max(FIRST_MIN, budget_min / 3))
+    loop._check_run_cap(target, conn, run_id, budget, start_sha)
+    loop._timed(
+        target, conn, run_id, beat_s, wt, budget,
+        "Reproduce the defect this ticket reports; do not fix it:\n\n"
+        f"{ticket}\n\nThe ticket's verify commands:\n\n{verify_cmd}\n\n"
+        "Write the smallest test that shows the reported behaviour, where "
+        "those commands run it, and commit it. Change no application code: "
+        "the fix is a later turn's. Commit messages carry no tool attribution"
+        " or co-author lines for an AI.")
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if head == start_sha:
+        ledger(conn, run_id, task_id, "note",
+               "No reproduction was committed: the reproduce turn added no "
+               "commit, so the implement turn starts from the ticket alone.",
+               provider)
+        return None
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, out = run_verify(verify_cmd, wt, conn=conn, run_id=run_id,
+                             target=target)
+    if ok:
+        print(f"[holo2] verify passes at the reproduce commit {head[:12]}")
+        return Reproduction(head)
+    failing = (getattr(out, "failure", None) or {}).get("command") or verify_cmd
+    summary = f"reproduced at {head[:12]}: `{failing}` fails"
+    print(f"[holo2] {summary}")
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "reproduced", summary, level="detail",
+                           payload=json.dumps({"sha": head, "command": failing,
+                                               "output": str(out)[-2000:]}))
+    return Reproduction(head, failing)
 
 
 def routed(resume):

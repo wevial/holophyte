@@ -51,14 +51,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Every section the template defines, in order. Literal checks and visual
-# evidence are optional; the rest are required.
+# Every section the template defines, in order. A bug's reproduction,
+# literal checks and visual evidence are optional; the rest are required.
 TEMPLATE_ORDER = [
-    "Summary", "What / Why / How", "In scope", "Out of scope",
+    "Summary", "What / Why / How", "Reproduce", "In scope", "Out of scope",
     "Acceptance criteria", "Verify command(s)", "Contract checks", "Evidence",
     "Implementation notes", "Estimate & dependencies", "Open questions",
 ]
-OPTIONAL_SECTIONS = {"Contract checks", "Evidence"}
+OPTIONAL_SECTIONS = {"Reproduce", "Contract checks", "Evidence"}
 SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
 # Mechanical scope caps. Module-level so a future per-project config can
 # override them without touching validate().
@@ -271,6 +271,9 @@ class Ticket:
         self.verify_commands = []
         self.contract_checks = []
         self.evidence_states = []
+        # A bug ticket's steps and where the behaviour was seen, comments
+        # dropped; "" when the section is absent or empty (KO-659).
+        self.reproduce = ""
         self.notes = []
         self.estimate_min = None
         self.depends_on = None
@@ -310,6 +313,7 @@ def parse(text):
         if m:
             kv[m.group(1)] = _clean(m.group(2))
     t.what, t.why, t.how = kv.get("What", ""), kv.get("Why", ""), kv.get("How", "")
+    t.reproduce = COMMENT_RE.sub("", t.sections.get("Reproduce", "")).strip()
     t.in_scope = _list_items(t.sections.get("In scope", ""))
     t.out_of_scope = _list_items(t.sections.get("Out of scope", ""))
     (t.acceptance, t.acceptance_done, t.acceptance_other,
@@ -343,6 +347,8 @@ def _labeled_texts(t):
     for label, v in (("What:", t.what), ("Why:", t.why), ("How:", t.how)):
         if v:
             yield label, v
+    if t.reproduce:
+        yield "Reproduce", t.reproduce
     lists = (("In scope", t.in_scope), ("Out of scope", t.out_of_scope),
              ("Acceptance criteria", t.acceptance),
              ("Implementation notes", t.notes), ("Evidence", t.evidence_states))
@@ -754,6 +760,9 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
 
     if len(t.evidence_states) > 6:
         p.append("'Evidence' has more than 6 states; the limit is 6")
+    if "Reproduce" in t.order and not t.reproduce:
+        p.append("'Reproduce' is empty; give the steps and where the "
+                 "behaviour was seen, or omit the section")
     if "Evidence" in t.order and not t.evidence_states:
         p.append("'Evidence' is empty; list states or omit the section")
     for index, state in enumerate(t.evidence_states, 1):
