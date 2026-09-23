@@ -774,7 +774,7 @@ def _settled_state(target, conn, run_id, beat_s, pull, state=None, refresh=None,
                and state.mergeable != "CONFLICTING"):
             if state.checks == "pending":
                 late = unreported(state, absent, merge.missing_check_sec,
-                                  monotonic())
+                                  monotonic)
                 if late:
                     state = retrigger(late) if retrigger else None
                     if state is None:

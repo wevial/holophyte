@@ -53,13 +53,18 @@ class Retrigger:
             run.branch, sha, self.beat_s, self.pull, self.reviewed)
 
 
-def unreported(state, absent, limit_s, now):
+def unreported(state, absent, limit_s, clock):
     """The required checks the head has carried no report of for `limit_s`
-    seconds at monotonic `now`; `absent` keeps when each (head, check) was
-    first seen so, and forgets it once the check reports or the head moves."""
+    seconds by `clock`; `absent` keeps when each (head, check) was first
+    seen so, and forgets it once the check reports or the head moves. The
+    clock is read only when a check is missing, so a wait with none missing
+    reads it as it did before."""
     for key in [k for k in absent if k[0] != state.head_sha
                 or k[1] not in state.missing_checks]:
         del absent[key]
+    if not state.missing_checks:
+        return ()
+    now = clock()
     return tuple(name for name in state.missing_checks
                  if now - absent.setdefault((state.head_sha, name), now)
                  >= limit_s)
