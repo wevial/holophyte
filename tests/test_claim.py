@@ -186,6 +186,27 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
         self.assertNotIn(".holophyte-capture", tree)
         self.assertTrue(spec.is_file())
 
+    def test_local_capture_setup_refuses_to_write_through_a_symlink(self):
+        self.configure('[merge]\nui_capture_dir = "specs/capture"\n'
+                       "ui_capture_local = true\n")
+        outside = self.target.parent / "outside"
+        outside.mkdir()
+        (outside / ".gitignore").write_text("kept\n")
+        for name, link, points_at in (
+                ("ancestor", "specs", outside),
+                ("file", "specs/capture/.gitignore", outside / ".gitignore")):
+            with self.subTest(name):
+                wt = self.target.parent / f"capture-{name}"
+                self.git("worktree", "add", "--detach", str(wt), "main")
+                (wt / link).parent.mkdir(parents=True, exist_ok=True)
+                (wt / link).symlink_to(points_at)
+                ok, report = holophyte.claim.run_worktree_setup(self.tgt, wt)
+                self.assertFalse(ok)
+                self.assertIn("symlink", report)
+                self.assertEqual(sorted(p.name for p in outside.iterdir()),
+                                 [".gitignore"])
+                self.assertEqual((outside / ".gitignore").read_text(), "kept\n")
+
     def test_capture_directory_untouched_without_local_key(self):
         wt = self.target.parent / "capture-kept"
         self.git("worktree", "add", "--detach", str(wt), "main")

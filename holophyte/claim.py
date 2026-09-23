@@ -116,13 +116,35 @@ def write_worktree_environment(target, wt):
 
 def write_capture_ignore(target, wt):
     """Make a local `ui_capture_dir` ignore itself: unlike `info/exclude`,
-    its `.gitignore` travels into a container turn's clone."""
+    its `.gitignore` travels into a container turn's clone.
+
+    A checkout can carry tracked symlinks, so no component of the path is
+    followed: a symlinked directory or `.gitignore` is refused, and the file
+    is replaced rather than written through, which also spares a hardlink."""
     cfg = merge_config(target)
     if not cfg.ui_capture_local:
         return
-    directory = Path(wt) / cfg.ui_capture_dir
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / ".gitignore").write_text("*\n")
+    root = Path(wt).resolve()
+    directory = root
+    for part in Path(cfg.ui_capture_dir).parts:
+        directory = directory / part
+        if directory.is_symlink():
+            raise OSError(f"{directory.relative_to(root)} is a symlink")
+        directory.mkdir(exist_ok=True)
+    ignore = directory / ".gitignore"
+    if ignore.is_symlink():
+        raise OSError(f"{ignore.relative_to(root)} is a symlink")
+    if not directory.resolve().is_relative_to(root):
+        raise OSError(f"{cfg.ui_capture_dir} resolves outside the worktree")
+    fd, temporary = tempfile.mkstemp(prefix=".gitignore-", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o644)
+            stream.write("*\n")
+        os.replace(temporary, ignore)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def run_worktree_setup(target, wt, conn=None, run_id=None):
