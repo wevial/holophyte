@@ -132,11 +132,14 @@ def _note_checks(parser, args):
 
 
 def _close_checks(parser, args):
-    """Require the landing reference only for an external close-out."""
+    """Require the landing reference only for an external close-out, and
+    let `--close-pr` modify an `--abort` alone."""
     if args.close is not None and not (args.landed or "").strip():
         parser.error("--close requires --landed URL")
     if args.landed is not None and args.close is None:
         parser.error("--landed belongs to --close")
+    if args.close_pr and not args.abort:
+        parser.error("--close-pr belongs to --abort")
 
 
 def _modifier_checks(parser, args):
@@ -198,6 +201,10 @@ def _legacy_cli(argv):
                        help="end a run now: kill its turn, commit its tree as"
                        " WIP, push an open pull request's branch, park the"
                        " ticket; requires --note")
+    # `--close` is the external close-out's, so the modifier is `--close-pr`.
+    parser.add_argument("--close-pr", action="store_true",
+                        help="with --abort: then comment the note on the run's"
+                        " pull request and close it; the branch is kept")
     modes.add_argument(
         "--report", action="store_true",
         help="print the target store's estimate-vs-actual table and exit; "
@@ -496,7 +503,7 @@ def _store_verb(args, target, board):
     if args.abort:
         from holophyte.stop import abort_command
         abort_command(target, args.abort, args.note,
-                      provider=require_board(target, board))
+                      provider=require_board(target, board), close=args.close_pr)
         return True
     if args.pause or args.resume:
         from holophyte.stop import command

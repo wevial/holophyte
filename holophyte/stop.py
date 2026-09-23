@@ -10,6 +10,10 @@ from store.schema import _transaction
 
 _checkpoint = ContextVar("pause_checkpoint", default=None)
 
+# The intervention actions that end a run now; `abort_close` also closes the
+# run's pull request once the abort is finished (KO-611).
+ABORTS = ("abort", "abort_close")
+
 
 def stop_if_requested(conn, run_id, phase):
     """Preserve work and end a marked run at its next phase; never kill a turn."""
@@ -23,7 +27,7 @@ def stop_if_requested(conn, run_id, phase):
     if row is None or row[0] is not None:
         return
     _, branch, ticket_id, repo, note, pr_url, action = row
-    if action == "abort":
+    if action in ABORTS:
         end_aborted(conn, run_id)
     stopped_at, phase = phase, "merge_gate" if pr_url else phase
     target = Target.locate(repo)
@@ -57,22 +61,27 @@ def abort_requested(conn, run_id):
     """Whether the live run carries an operator's pending abort."""
     return conn.execute(
         "SELECT 1 FROM runs r JOIN interventions i ON i.id = r.stopRequested"
-        " WHERE r.id = ? AND r.endedAt IS NULL AND i.action = 'abort'",
+        " WHERE r.id = ? AND r.endedAt IS NULL"
+        " AND i.action IN ('abort', 'abort_close')",
         (run_id,)).fetchone() is not None
 
 
 def end_aborted(conn, run_id):
     """Commit the tree as WIP, push it when a pull request is open, then end
     the run `abandoned` with the note and park the ticket; the turn's
-    process group is the caller's to have killed. Merges, closes and
-    deletes nothing."""
+    process group is the caller's to have killed. An `abort_close` then
+    comments on and closes the pull request; nothing is merged or deleted,
+    and the branch and worktree are kept."""
     from holophyte import pr
     from holophyte.gates import InfraFailure
-    branch, ticket_id, repo, note, pr_url = conn.execute(
-        "SELECT r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl"
-        " FROM runs r JOIN projects p ON p.id = r.projectId"
-        " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
-        (run_id,)).fetchone()
+    branch, ticket_id, repo, note, pr_url, action, source, identifier = \
+        conn.execute(
+            "SELECT r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl,"
+            " i.action, i.source, t.linearIdentifier"
+            " FROM runs r JOIN projects p ON p.id = r.projectId"
+            " JOIN tickets t ON t.id = r.ticketId"
+            " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
+            (run_id,)).fetchone()
     target = Target.locate(repo)
     sha = preserve(target, branch, "abort") if branch else None
     if sha and pr_url:
@@ -89,7 +98,40 @@ def end_aborted(conn, run_id):
         store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
         store.walk_ticket(conn, ticket_id, "blocked_on_operator")
         store.set_question(conn, ticket_id, note)
+    # Closed only once the run has ended, so a reconcile that sees the pull
+    # request closed never finds a parked run to reject. Signed by the
+    # factory, not a model: the operator decided this.
+    if pr_url and action == "abort_close":
+        from holophyte.babysitter import COMMENT_HEADER
+        who = "the operator" if source == "human" else f"the {source}"
+        kept = f"WIP commit {sha[:7]} on" if sha else "the"
+        close_pull(target, conn, run_id, pr_url, (
+            f"{COMMENT_HEADER.format(model='holophyte')}\n\n"
+            f"Aborted by {who}: {note}\n\n"
+            f"The work is kept as {kept} branch `{branch}`; start again with"
+            f" `factory.py <repo> --requeue {identifier} --note TEXT`."))
     raise Aborted(run_id, "abandoned", note)
+
+
+def close_pull(target, conn, run_id, pr_url, body):
+    """Post `body` on the pull request, then close it. A refusal of either
+    is a warning event on the run and a printed line; the abort stands."""
+    from holophyte import pr
+    from holophyte.gates import InfraFailure
+    from holophyte.pr_status import parse_pr_url
+    pull = parse_pr_url(pr_url)
+    steps = (("comment", lambda: pr.comment_on_pull(target, pull, body)),
+             ("close", lambda: pr.rest(
+                 target, pull, "PATCH",
+                 f"repos/{pull.repo}/pulls/{pull.number}", {"state": "closed"})))
+    for step, call in steps if pull else ():
+        try:
+            call()
+        except InfraFailure as refused:
+            store.record_event(conn, run_id, "warning",
+                               f"abort {step} of {pr_url}: {refused}")
+            print(f"[holo2] run {run_id}: abort {step} of {pr_url} failed:"
+                  f" {refused}", flush=True)
 
 
 def preserve(target, branch, why="pause"):
@@ -177,10 +219,11 @@ def resume_paused(target, conn, ticket_id, note):
     return run_id
 
 
-def abort_command(target, identifier, note, *, provider):
-    """CLI adapter: record the abort, then end the run here when no worker
-    can still touch its tree, and project the park to the board as the
-    worker path does; otherwise a live worker ends it at its next heartbeat."""
+def abort_command(target, identifier, note, *, provider, close=False):
+    """CLI adapter: record the abort (`close`: and the pull request's close),
+    then end the run here when no worker can still touch its tree, and
+    project the park to the board as the worker path does; otherwise a live
+    worker ends it at its next heartbeat."""
     from holophyte import board
     from holophyte.operator import _operator_store, _ticket_by_identifier
     conn = _operator_store(target)
@@ -190,7 +233,7 @@ def abort_command(target, identifier, note, *, provider):
                                  " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         if run_id is None:
             raise ValueError(f"{identifier} has no run to abort")
-        store.abort(conn, run_id, note)
+        store.abort(conn, run_id, note, close=close)
         if not worker_gone(conn, run_id):
             print(f"[holo2] {identifier}: abort requested; run {run_id} ends"
                   " at its worker's next heartbeat (this host cannot confirm"

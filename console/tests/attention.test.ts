@@ -52,5 +52,5 @@ test("newer-daemon fields show only when present", () => {
 });
 
 test("the fixture's counts are one per kind", () => {
-  expect(countsByKind(allKinds.attention.items)).toEqual({ all: 4, blocked: 1, pr_open: 0, stale_run: 1, failed: 1, supervisor: 1, unreachable: 0 });
+  expect(countsByKind(allKinds.attention.items)).toEqual({ all: 4, blocked: 1, pr_open: 0, paused: 0, stale_run: 1, failed: 1, supervisor: 1, unreachable: 0 });
 });

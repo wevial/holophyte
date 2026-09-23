@@ -152,6 +152,7 @@ class InterventionAction(str, Enum):
     DISABLE = 'disable'
     PAUSE = 'pause'
     ABORT = 'abort'
+    ABORT_CLOSE = 'abort_close'
 
 
 # Line breaks are part of the existing sqlite_master SQL contract.
