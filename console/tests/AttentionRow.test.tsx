@@ -331,3 +331,19 @@ test("parked run sends a private maintainer note to its daemon", async () => {
     authorization: `Bearer ${TOKEN}`, body: { run: 47, note: "remove the subheader" } }]);
   expect(screen.getByRole("status").textContent).toBe("Sent back");
 });
+
+test("a send-back the daemon answers 500 shows its error under the box, not Failed to fetch", async () => {
+  const item: AttentionItem = { kind: "pr_open", level: "attention", run: 47, ticket: "KO-7", pr_url: "https://github.com/o/r/pull/7" };
+  const error = "SchemaNewer: store.db: store schema version 99 is newer than the version 98 this build understands";
+  const { fetchImpl } = fakeFetch(() => Response.json({ error }, { status: 500 }));
+  render(<ul><AttentionRow kind="pr_open" project="repo" runId={47}
+    description={describe(item, thresholds, { now: allKinds.status.now })}
+    daemon={{ base: BASE, actions: true, fetch: fetchImpl }} /></ul>);
+  await act(async () => { fireEvent.click(button("Send back with note")); });
+  fireEvent.change(screen.getByRole("textbox", { name: "Maintainer's note" }), { target: { value: "remove the subheader" } });
+  await act(async () => { fireEvent.click(button("Send")); await settle(); });
+  const shown = screen.getByRole("status").textContent!;
+  expect(shown).toContain(error);
+  expect(shown).not.toContain("Failed to fetch");
+  expect(screen.getByRole("textbox", { name: "Maintainer's note" })).toBeTruthy();
+});
