@@ -449,10 +449,9 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
     check_fixed = False  # One check fix per babysit: a red check cannot loop.
-    woken = set()  # Heads an empty retrigger commit made: never retriggered.
     for pass_no in range(1, merge.pr_rounds + 1):
         stop_if_requested(conn, run_id, "merge_gate")
-        retrigger = Retrigger(run, beat_s, pull, sha, reviewed, woken)
+        retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
         state = _settled_or_park(
             target, conn, run_id, beat_s, pull, pushed_state, provider,
             task_id, branch, sha, reviewed, refresh, retrigger)
@@ -530,7 +529,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
                     "ready to merge; waiting for a human to say merge"
                     " ([merge] approve = \"human\")", (), reviewed=reviewed)
-    retrigger = Retrigger(run, beat_s, pull, sha, reviewed, woken)
+    retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
     state = _settled_or_park(
         target, conn, run_id, beat_s, pull, pushed_state, provider,
         task_id, branch, sha, reviewed, refresh, retrigger)

@@ -5,13 +5,18 @@ no status -- is not a slow check: the babysitter's wait notices it after
 `[merge] missing_check_sec`, wakes it with one empty commit per candidate
 when `[merge] retrigger_missing_checks` is on, and otherwise parks naming it.
 """
+import subprocess
+
 import store
 from holophyte import pr
 from holophyte.config_tables import merge_config
+from holophyte.environment_git import factory_identity
 from holophyte.gates import sh
 from holophyte.pr_head import _just_pushed_state
 from holophyte.redact import safe_print as print
 from holophyte.stop import stop_if_requested
+
+SUBJECT = "Retrigger missing checks: "
 
 
 class Retrigger:
@@ -20,21 +25,21 @@ class Retrigger:
     later pushes stay fast-forward. `sha` and `reviewed` follow the push:
     an empty commit changes no tree the last review covered."""
 
-    def __init__(self, run, beat_s, pull, sha, reviewed, woken):
+    def __init__(self, run, beat_s, pull, sha, reviewed):
         self.run, self.beat_s, self.pull = run, beat_s, pull
-        self.sha, self.reviewed, self.woken = sha, reviewed, woken
+        self.sha, self.reviewed = sha, reviewed
 
     def __call__(self, names):
         """The pushed head's state, or None when `[merge]
         retrigger_missing_checks` is off or the head is itself a retrigger."""
         run = self.run
         if (not merge_config(run.target).retrigger_missing_checks
-                or self.sha in self.woken):
+                or retriggered(run.wt, self.sha)):
             return None
         stop_if_requested(run.conn, run.run_id, "merge_gate")
         listed = ", ".join(names)
-        sh(["git", "commit", "--allow-empty", "-m",
-            f"Retrigger missing checks: {listed}"], cwd=run.wt)
+        sh(["git", *factory_identity(run.wt), "commit", "--allow-empty", "-m",
+            f"{SUBJECT}{listed}"], cwd=run.wt)
         pr.push_branch(run.target, run.branch)
         sha = sh(["git", "rev-parse", run.branch], run.wt)
         if run.conn is not None and run.run_id is not None:
@@ -47,10 +52,22 @@ class Retrigger:
         if self.reviewed == self.sha:
             self.reviewed = sha
         self.sha = sha
-        self.woken.add(sha)
         return _just_pushed_state(
             run.target, run.conn, run.run_id, run.provider, run.task_id,
             run.branch, sha, self.beat_s, self.pull, self.reviewed)
+
+
+def retriggered(wt, sha):
+    """Whether `sha` is itself a retrigger: an empty commit carrying the
+    retrigger subject. Read off the commit rather than remembered, so a
+    babysit resumed on a parked retrigger head cannot push a second one."""
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=wt, capture_output=True,
+                              text=True)
+    subject = git("log", "-1", "--format=%s", sha)
+    return (subject.returncode == 0
+            and subject.stdout.startswith(SUBJECT)
+            and git("diff", "--quiet", f"{sha}^", sha, "--").returncode == 0)
 
 
 def unreported(state, absent, limit_s, clock):

@@ -520,7 +520,8 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         return patch.object(holophyte.pr_status, "rest", rest)
 
     def wait_on_missing_check(self, config, reports_after_retrigger=False,
-                              protection=False):
+                              protection=False, work=None,
+                              babysit_again=False):
         self.configure('[merge]\nmode = "pr"\nmissing_check_sec = 120\n' + config)
         self.fake_route(states=[self.pr_state()])
         naps = []
@@ -529,8 +530,13 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                 patch.object(holophyte.pr, "SLEEP", naps.append), \
                 patch.object(holophyte.babysitter, "monotonic",
                              side_effect=lambda: sum(naps)):
-            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+            self.loop(work or Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
+            if babysit_again:
+                holophyte.operator.babysit_ticket(
+                    self.tgt, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+                    out=io.StringIO())
+                self.loop(provider=self.provider())
         tip = self.pushed()[-1][1]
         return tip, self.git("log", "-1", "--format=%s", tip).strip()
 
@@ -563,6 +569,37 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertIn("required checks never reported on the head commit:"
                       " vercel", self.question())
         self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_a_babysit_resumed_on_a_parked_retrigger_does_not_push_another(self):
+        tip, _ = self.wait_on_missing_check(
+            "retrigger_missing_checks = true\n", babysit_again=True)
+        self.assertEqual(len(self.pushed()), 2)
+        self.assertEqual(len(self.retriggers()), 1)
+        self.assertEqual(self.read("SELECT candidateSha FROM runs"
+                                   " ORDER BY id DESC LIMIT 1"), [(tip,)])
+        self.assertIn("required checks never reported on the head commit:"
+                      " vercel", self.question())
+
+    def test_a_retrigger_commits_on_a_target_with_no_git_identity(self):
+        fixture = self
+
+        class CommitThenForgetIdentity(Commit):
+            def play(self, cwd, turn):
+                done = super().play(cwd, turn)
+                fixture.git("config", "--unset", "user.name")
+                fixture.git("config", "--unset", "user.email")
+                fixture.git("config", "user.useConfigOnly", "true")
+                return done
+
+        with patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull,
+                                     "GIT_CONFIG_NOSYSTEM": "1"}):
+            tip, subject = self.wait_on_missing_check(
+                "retrigger_missing_checks = true\n",
+                work=CommitThenForgetIdentity("the scripted work"))
+        self.assertEqual(subject, "Retrigger missing checks: vercel")
+        self.assertEqual(self.git("log", "-1", "--format=%ae", tip).strip(),
+                         "holophyte@factory.invalid")
+        self.assertEqual(len(self.retriggers()), 1)
 
     def test_a_missing_required_check_parks_without_a_retrigger_when_off(self):
         _, subject = self.wait_on_missing_check("")
