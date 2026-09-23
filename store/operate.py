@@ -588,8 +588,9 @@ def abort(conn, run_id, note, source="human", now=None, close=False):
     return request
 
 
-def resume(conn, run_id, guidance=None, source="human", now=None):
+def resume(conn, run_id, guidance=None, source="human", now=None, note=None):
     """Resume `run_id`, optionally with `guidance`; return the phase re-entered.
+    `note`, the operator's reason, lands on the interventions row (KO-609).
 
     State-model §5. Two rules, and the first one is the point of the ticket:
 
@@ -681,9 +682,9 @@ def resume(conn, run_id, guidance=None, source="human", now=None):
             )
         conn.execute(
             'INSERT INTO interventions'
-            ' (runId, source, "trigger", "action", guidance, at)'
-            " VALUES (?, ?, 'manual', 'resume', ?, ?)",
-            (run_id, source, guidance, now),
+            ' (runId, source, "trigger", "action", guidance, note, at)'
+            " VALUES (?, ?, 'manual', 'resume', ?, ?, ?)",
+            (run_id, source, guidance, note, now),
         )
     return target
 

@@ -51,21 +51,19 @@ on the machine, accepted beside the project's own on every route that
 demands a bearer, so a single project can still be shared without it.
 
 `[serve] actions = true` (KO-348) is the one exception to read-only: it
-opens four `POST /actions/...` routes behind the token, each a legal
-rung of the operator ladder -- `restart-supervisor` and `launch-loop` run
+opens `POST /actions/...` routes behind the token, each a legal rung of
+the operator ladder -- `restart-supervisor` and `launch-loop` run
 `systemctl --user` against the deploy units named by `[serve] name`, and
 `requeue` is `store.requeue()`, what `--requeue KO-n --note TEXT` does.
-`send-back` records a private maintainer note and releases the parked
-candidate for another babysit pass, without posting the note to GitHub.
+`send-back` releases a parked candidate with a private maintainer note;
+`hold`, `release-hold`, `pause` and `resume` are `holophyte.serve_levers`.
 The actions demand the token on every bind, loopback included -- a bind
 address guards reads, not a hand on the units -- so the opt-in needs
-`[serve] token_file` and binding without one is a startup error. Each
-records its `store.record_intervention()` row before it acts. Unit actions
-and requeue answer `{"action", "ok", "detail"}`; send-back success returns
-`{"ok", "run", "event_id"}`. A `systemctl` that fails is `ok: false`
-carrying its stderr, never a 500, and an action that cannot be recorded
-does not run. Off, every `/actions/` path is 404 and this module still
-opens no write connection.
+`[serve] token_file`. Each records its interventions row before it acts
+and answers `{"action", "ok", "detail"}` (send-back: `{"ok", "run",
+"event_id"}`); a failed `systemctl` or a store refusal is `ok: false`,
+never a 500, and an action that cannot be recorded does not run. Off,
+every `/actions/` path is 404 and no write connection is opened.
 
 `[serve] config_edit = true` (KO-356) opens the target's own `config.toml`
 the same way: `GET /config` is the file's text with the value of every key
@@ -144,6 +142,7 @@ from holophyte.serve_config import (
     require_tomlkit,
     write_config,
 )
+from holophyte.serve_levers import LEVERS, paused_item
 from holophyte.serve_runs import (
     RUN_FILES_PATH,
     RUN_LEDGER_PATH,
@@ -322,16 +321,18 @@ def supervisor_view(target, beat, now, knobs):
 
 
 def parked_item(ticket):
-    """One `blocked_on_operator` ticket as an `/attention` item. A ticket
-    whose run has a `prUrl` and `parkKind = pull_request` is `pr_open`: the run waits
-    on a review or a merge, not on an answer, so the item carries the URL, the
-    `reason` (the question with that first line removed) and `pr`: the
-    pull request's `number` from the URL (null when the URL is not of
-    GitHub's shape) and the `checks`, `review`, `threads` and `title` the
-    reconcile last saw on it (`runs.prSeenChecks`, `prSeenReview`,
-    `prSeenThreads`, `prSeenTitle`; KO-368, KO-622), each null for a run
-    never polled; the item's own `title` is the ticket's, for the console
-    to fall back on. Every other ticket is `blocked` with its `question`."""
+    """One `blocked_on_operator` ticket as an `/attention` item. A ticket a
+    pause parked is `paused` (`paused_item()`, KO-609). One whose run has a
+    `prUrl` and `parkKind = pull_request` is `pr_open`: it waits on a review
+    or a merge, not an answer, so the item carries the URL, the `reason`
+    (the question less its first line) and `pr`: the `number` from the URL
+    (null when not GitHub's shape) and the `checks`, `review`, `threads` and
+    `title` the reconcile last saw (`runs.prSeen*`; KO-368, KO-622), each
+    null for a run never polled; the item's own `title` is the ticket's,
+    for the console to fall back on. Any other is `blocked` with its
+    `question`."""
+    if ticket.outcome == "paused":
+        return paused_item(ticket)
     question = ticket.blockedQuestion or ""
     if ticket.prUrl and ticket.parkKind == "pull_request":
         _, separator, reason = question.partition("\n")
@@ -359,18 +360,15 @@ def attention(target, now=None):
 
     `items` is what needs the operator, in the order they should read it:
     every ticket parked `blocked_on_operator` with its question, as
-    `pr_open` when the park is a pull request waiting on a review or a
-    merge (`parked_item()`); every live
+    `paused` or `pr_open` when it is one (`parked_item()`); every live
     run whose heartbeat age exceeds `heartbeat_stale_ms`; every run that
     ended `failed` within `FAILED_WINDOW_MS` and is its ticket's latest
-    attempt, with no different active run; then the supervisor when it is not
-    live. Each item that names a run carries the run's `pr_url`
-    (`runs.prUrl`, null when it opened none). Each item carries its
-    `level`. `level` on the body is the worst
-    over the items -- `attention` when there is any -- else `working` when
-    a run is live, else `none`. `critical` is in the enum for a client to
-    rank above `attention` (a daemon it cannot reach); nothing here is
-    that bad, since the daemon answering is the proof.
+    attempt, with no different active run; then a supervisor not live.
+    Each item that names a run carries the run's `pr_url` (`runs.prUrl`,
+    null when it opened none), and each its `level`. `level` on the body
+    is the worst over the items -- `attention` when there is any -- else
+    `working` when a run is live, else `none`. `critical`, a client's rank
+    for a daemon it cannot reach, is never answered: answering is proof.
 
     The stale-run and supervisor rules are `/status`'s numbers compared the
     way the drawer compared them: a run is stale strictly past the
@@ -784,6 +782,8 @@ class StatusHandler(BaseHTTPRequestHandler):
                                           body.get("author", "maintainer"))
         elif action == REQUEUE_ACTION:
             code, body = requeue_action(self.server.target, body)
+        elif action in LEVERS:
+            code, body = LEVERS[action](self.server.target, body)
         else:
             code, body = unit_action(self.server.target, action,
                                      self.server.unit_name)

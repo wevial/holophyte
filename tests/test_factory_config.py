@@ -58,6 +58,25 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         self.locate("[agents]\nimplementer_session = 'session id: ([0-9a-f-]{36})'\n")
         holophyte.config.check_document(self.tgt)
 
+    def test_harness_table_refusals_name_the_key(self):
+        table = '[agents.implementer]\nharness = "claude"\n'
+        for config, message in (
+            ('[agents.implementer]\nharness = "opencode"\n',
+             r"\[agents\.implementer\] harness"),
+            (table + 'sandbox = "none"\n', r"\[agents\.implementer\] sandbox"),
+            ('[agents.reviewer]\nharness = "claude"\n',
+             r"\[agents\.reviewer\] harness: 'claude' supports implementer,"),
+            (table + '[harnesses]\nclaude = "bin/claude"\n', r"\[harnesses\] claude"),
+            ("[agents]\nimplementer_session = 'id: (.+)'\n" + table,
+             r"\[agents\] implementer_session"),
+        ):
+            with self.subTest(config=config):
+                self.locate(config)
+                with self.assertRaisesRegex(SystemExit, message):
+                    holophyte.config.check_document(self.tgt)
+        self.locate(table + '[harnesses]\nclaude = "/opt/claude/bin/claude"\n')
+        holophyte.config.check_document(self.tgt)
+
     def test_worktree_environment_refusals(self):
         self.locate("")
         source = self.tgt.config_path.parent / "source.env"

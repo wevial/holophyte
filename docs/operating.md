@@ -25,8 +25,9 @@ request note. Babysit fixes stop before their push or thread replies; resuming
 an open PR finishes a saved fix step (including its pending push and replies)
 before returning through the gate to read current checks and threads.
 
-`factory.py TARGET --resume KO-n` uses the store resume path and returns the
-ticket to ready. The next claim reuses the worktree and continues from the
+`factory.py TARGET --resume KO-n --note TEXT` uses the store resume path,
+recording the note on the resume intervention, and returns the ticket to
+ready (`POST /actions/resume` on the daemon is the same call). The next claim reuses the worktree and continues from the
 recorded boundary. Implementation is skipped when it already finished; review
 continuations retain the verification result and findings they need. A pause
 does not grant merge approval: targets requiring a human still require it.

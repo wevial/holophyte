@@ -180,32 +180,43 @@ def command(target, identifier, note, *, resume=False):
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
-        with _transaction(conn):
-            row = conn.execute("SELECT COALESCE(activeRunId, lastRunId)"
-                               " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
-            run_id = row[0]
-            if not resume:
-                store.pause(conn, run_id, note)
-            else:
-                old = conn.execute("SELECT outcome, resumePhase FROM runs WHERE id = ?",
-                                   (run_id,)).fetchone()
-                if old is None or old[0] != "paused":
-                    raise ValueError(f"run {run_id}: --resume requires paused outcome")
-                phase = store.resume(conn, run_id)
-                # resume owns the re-entry decision; a new claim owns execution.
-                store.release(conn, run_id, "paused", "released to resume",
-                              resume_phase=phase)
-                store.walk_ticket(conn, ticket_id, "ready")
-                store.set_question(conn, ticket_id, None)
         if resume:
-            from holophyte import pause_notice
-            pause_notice.unmark(target, conn, run_id)
+            resume_paused(target, conn, ticket_id, note)
+        else:
+            (run_id,) = conn.execute("SELECT COALESCE(activeRunId, lastRunId)"
+                                     " FROM tickets WHERE id = ?",
+                                     (ticket_id,)).fetchone()
+            store.pause(conn, run_id, note)
         message = "ready to resume" if resume else "pause requested"
         print(f"[holo2] {identifier}: {message}")
     except (ValueError, store.ResumeRefused) as refused:
         raise SystemExit(f"[holo2] {refused}") from None
     finally:
         conn.close()
+
+
+def resume_paused(target, conn, ticket_id, note):
+    """Release the ticket's paused run to claim, `note` on its resume
+    intervention, then clear its pull request's pause notice; the run's
+    id. `--resume` and `POST /actions/resume` both call this (KO-609);
+    ValueError or `store.ResumeRefused`, before any write, when the
+    ticket's latest run did not end paused."""
+    with _transaction(conn):
+        (run_id,) = conn.execute("SELECT COALESCE(activeRunId, lastRunId)"
+                                 " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+        old = conn.execute("SELECT outcome FROM runs WHERE id = ?",
+                           (run_id,)).fetchone()
+        if old is None or old[0] != "paused":
+            raise ValueError(f"run {run_id}: resume requires paused outcome")
+        phase = store.resume(conn, run_id, note=note)
+        # resume owns the re-entry decision; a new claim owns execution.
+        store.release(conn, run_id, "paused", "released to resume",
+                      resume_phase=phase)
+        store.walk_ticket(conn, ticket_id, "ready")
+        store.set_question(conn, ticket_id, None)
+    from holophyte import pause_notice
+    pause_notice.unmark(target, conn, run_id)
+    return run_id
 
 
 def abort_command(target, identifier, note, *, provider, close=False):
