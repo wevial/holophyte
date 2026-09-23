@@ -314,6 +314,63 @@ class MigrationStartupTests(SweepTestCase):
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM runEvents WHERE kind='migration'").fetchone()[0], 0)
 
+    def test_previous_schema_takes_over_merge_lock_of_ended_run(self):
+        import json
+
+        run_id = self.a_run(phase="merge_gate")
+        store.release(self.conn, run_id, "failed", "died at the gate",
+                      now=T0 + MINUTE)
+        older = store.SCHEMA_VERSION - 1
+        self.conn.execute(f"PRAGMA user_version = {older}")
+        path = holophyte.gates.merge_lock_path(self.tgt)
+        path.write_text(f"{run_id} {T0 / 1000:.3f}\n")
+        out = io.StringIO()
+
+        def first_pass(*args, **kwargs):
+            self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0],
+                             store.SCHEMA_VERSION)
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+        with patch('holophyte.merge_lock.lock_nap',
+                   side_effect=AssertionError("startup waited on a stale lock")), \
+                patch('holophyte.supervisor.factory_revision', return_value='same'), \
+                patch('holophyte.supervisor.supervise_pass', first_pass):
+            self.assertEqual(holophyte.supervisor.supervise(self.tgt, out=out), 0)
+        self.assertFalse(path.exists())
+        self.assertIn(f"taking over stale merge lock before migration: run {run_id}"
+                      " ended", out.getvalue())
+        summary, = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE kind='migration'").fetchone()
+        self.assertEqual(json.loads(summary), {
+            "from": older, "to": store.SCHEMA_VERSION,
+            "staleLock": {"run": run_id, "why": "ended"}})
+
+    def test_ended_run_lock_held_by_a_live_process_is_not_taken(self):
+        run_id = self.a_run(phase="merge_gate")
+        store.release(self.conn, run_id, "failed", "died at the gate",
+                      now=T0 + MINUTE)
+        older = store.SCHEMA_VERSION - 1
+        self.conn.execute(f"PRAGMA user_version = {older}")
+        clock = [0]
+
+        def sleep(_seconds):
+            clock[0] += 181
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+        # The store says the run ended, but its lock's flock is still held.
+        with holophyte.gates.merge_lock(self.tgt, run_id) as path:
+            stamp = path.read_text()
+            with patch('holophyte.gates.monotonic', side_effect=lambda: clock[0]), \
+                    patch('holophyte.gates.sleep', side_effect=sleep), \
+                    patch('holophyte.supervisor.factory_revision',
+                          return_value='same'), \
+                    patch('holophyte.supervisor.supervise_pass') as run:
+                self.assertEqual(holophyte.supervisor.supervise(
+                    self.tgt, out=io.StringIO()), 0)
+            run.assert_not_called()
+            self.assertEqual(path.read_text(), stamp)
+        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], older)
+
     def test_startup_waits_through_long_merge_before_migrating(self):
         import json
 

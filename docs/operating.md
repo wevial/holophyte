@@ -351,7 +351,12 @@ The supervisor alone migrates the store, under the merge lock at startup and
 again after its own re-execution, and records a `migration` event with `from`
 and `to` versions in the migration's own transaction. A disabled project's
 supervisor still migrates, then exits without sweeping or dispatching, so
-`project enable` can open the store. Other writable opens refuse older schemas
+`project enable` can open the store. A merge lock naming a run that has
+ended is taken over under the sweep's stale-lock rule, since `--sweep --act`
+cannot open an older store; the takeover is printed and carried in the
+`migration` event as `staleLock`. A lock whose process still holds it is
+waited out. Initializing a fresh store creates no project row: `project add
+PATH` still registers it after the supervisor has started. Other writable opens refuse older schemas
 and name the supervisor as the owner. The loop keeps its schema-bump worker drain and waits
 for the supervisor's stamp after re-execution. The read-only daemon can serve
 an adjacent newer schema during this window; `/status` reports `schema_version`

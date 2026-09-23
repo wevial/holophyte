@@ -54,7 +54,7 @@ PINNED = {
     "tests/test_babysit_threads.py": 1012, "tests/test_babysit_checks.py": 317,
     "tests/test_babysitter.py": 674, "tests/test_config_tables.py": 558,
     "tests/test_claim.py": 1692, "tests/test_claim_mirror.py": 238,
-    "tests/test_cli.py": 333,
+    "tests/test_cli.py": 341,
     "tests/test_cli_approve.py": 390, "tests/test_cli_requeue.py": 333,
     "tests/test_file_sizes.py": 280, "tests/test_holophyte_package.py": 421,
     "tests/test_factory_config.py": 1204,

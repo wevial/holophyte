@@ -9,6 +9,7 @@ import contextlib
 import io
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -20,6 +21,7 @@ from unittest.mock import Mock, patch
 import holophyte.board
 import holophyte.cli
 import holophyte.project
+import holophyte.supervisor
 import store
 import store.tickets
 from holophyte.runs import open_store
@@ -201,8 +203,14 @@ class RepointFlagTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "start the supervisor"):
             holophyte.cli.cli(["project", "add", str(repo)])
         self.assertFalse(target.store_path.exists())
-        target.store_path.parent.mkdir(parents=True, exist_ok=True)
-        store.open(target.store_path, migrate="owner").close()
+        # The real supervisor start, one real pass, then a stop: it creates
+        # the store but leaves the project row to registration.
+        def stop(_interval):
+            signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+        with patch("holophyte.supervisor.factory_revision", return_value="same"):
+            self.assertEqual(holophyte.supervisor.supervise(
+                target, wait=stop, out=io.StringIO()), 0)
         with contextlib.redirect_stdout(io.StringIO()):
             holophyte.cli.cli(["project", "add", str(repo)])
         conn = open_store(target)

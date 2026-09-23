@@ -786,7 +786,7 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
     from holophyte.admission import disabled_startup
     if disabled_startup(target, out):
         # Migrating is not dispatch: `project enable` needs the owner's stamp.
-        wait_for_migration(target, provider, threading.Event(), out)
+        wait_for_migration(target, threading.Event(), out)
         return
     return _supervise(target, provider, interval, wait, out)
 
@@ -846,7 +846,7 @@ def _supervise(target, provider=None, interval=None, wait=None, out=None):
     previous = {signum: signal.signal(signum, on_signal)
                 for signum in STOP_SIGNALS}
     try:
-        wait_for_migration(target, provider, stop, out)
+        wait_for_migration(target, stop, out)
         print(f"[holo2] supervising {target.path} as pid {pid} on"
               f" {host_label(target, socket.gethostname())}: acting sweep"
               f" every {interval}s,"
