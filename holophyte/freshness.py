@@ -92,9 +92,11 @@ WARNINGS = {}
 
 
 # A code span naming a function (`name()`, `module.name()`; group 1 is the
-# name searched for) or a CapWords class (`Name`).
+# name searched for) or a CapWords class (`Name`, `HTTPServer`): a capital,
+# then letters and digits with at least one lowercase, so an all-caps word
+# or constant (`HTTP`, `MAX_RUNS`) is not one.
 FUNCTION_SPAN_RE = re.compile(r"(?:[A-Za-z_]\w*\.)*([A-Za-z_]\w*)\(\)")
-CLASS_SPAN_RE = re.compile(r"[A-Z][a-z][A-Za-z0-9]*")
+CLASS_SPAN_RE = re.compile(r"[A-Z][A-Z0-9]*[a-z][A-Za-z0-9]*")
 
 
 def _git(repo, *args):

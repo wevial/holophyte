@@ -246,6 +246,18 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
         self.assertIn(CLAIM, comments[0])
         self.assertIn("KO-131 skipped", out)
 
+    def test_a_class_beginning_with_an_acronym_main_lacks_is_parked(self):
+        self.commit_claim_to_main()
+        body = notes_body(f"Serve the claim from `HTTPServer` in `{CLAIM}`.")
+        provider = StubProvider(dict(a_task(1), body=body), a_task(2))
+
+        self.main_output(Commit("second ticket"), APPROVE, provider=provider)
+
+        self.assertEqual(self.runs_by_ticket(), [("KO-132",)])
+        comments = self.stale_comments(provider)
+        self.assertEqual(len(comments), 1)
+        self.assertIn("`HTTPServer`", comments[0])
+
     def test_a_function_on_a_wrapped_line_of_the_item_is_checked(self):
         self.commit_claim_to_main()
         body = notes_body(f"In `{CLAIM}`, change the admission\n"
