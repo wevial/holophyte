@@ -11,6 +11,7 @@ import inspect
 import unittest
 from pathlib import Path
 
+import holophyte.agent_routes
 import holophyte.claim
 import holophyte.run
 import holophyte.serve_runs
@@ -80,6 +81,20 @@ class ProjectNamesTest(unittest.TestCase):
                 self.assertEqual(params(fn)[2], "project_id")
         self.assertEqual(params(holophyte.claim._park_unlisted),
                          ["conn", "project_id", "listed"])
+
+    def test_the_config_and_agent_modules_spell_the_project_project(self):
+        self.assert_no_old_names(
+            "holophyte/config.py", "holophyte/config_tables.py",
+            "holophyte/agents.py", "holophyte/agent_routes.py",
+            "holophyte/agent_turns.py", "holophyte/isolation.py",
+            "holophyte/isolation_clone.py", "holophyte/pr_media.py")
+
+    def test_active_routes_hold_a_project_and_a_project_id(self):
+        project = object()
+        state = holophyte.agent_routes.ActiveRoutes(project)
+        self.assertIs(state.project, project)
+        self.assertIsNone(state.project_id)
+        self.assertFalse(hasattr(state, "target"))
 
 
 if __name__ == "__main__":
