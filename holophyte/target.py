@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from holophyte.config import load_config
+from holophyte.locks import FileLocks
 
 DEFAULT_HOLOPHYTE_HOME = "~/.holophyte"
 # The sidecars SQLite keeps beside a WAL-mode database. They are part of the
@@ -159,6 +160,16 @@ class Target:
     worktrees: Path
     _config: dict | None = dataclasses.field(
         default=None, repr=False, compare=False)
+    # How the target's locks are held (`holophyte.locks`); the lock files
+    # under `holo_dir` unless the caller supplies another `Locks`.
+    locks: object = dataclasses.field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        # A `FileLocks` copied in by `dataclasses.replace()` still names the
+        # target it was built for; the new value gets its own.
+        if self.locks is None or (isinstance(self.locks, FileLocks)
+                                  and self.locks.target is not self):
+            self.locks = FileLocks(self)
 
     @classmethod
     def locate(cls, path, adopt=True):

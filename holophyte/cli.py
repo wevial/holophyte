@@ -4,8 +4,9 @@
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
-`--sweep [--act]`, `--status [--json]`, `--supervise`,
-`--serve PORT|HOST:PORT`, the internal `--worker` and the loop itself
+`--sweep [--act]`, `--status [--json]`, `--import-store PATH --dry-run`,
+`--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
+loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
 `holophyte.supervisor`, `holophyte.status` and `holophyte.serve`; the `Target`
 is built once from the command line and handed down, and the board
@@ -45,6 +46,7 @@ from holophyte.pool import worker
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.startup import eager_import
 from holophyte.status import status_report
+from holophyte.store_import import dry_run
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
@@ -129,22 +131,32 @@ def _note_checks(parser, args):
                      "blank")
 
 
-def _modifier_checks(parser, args):
-    """Refuse `--act` without `--sweep` and `--json` without `--status`."""
-    if args.act and not args.sweep:
-        parser.error("--act says what --sweep does with the runs it finds; "
-                     "it has nothing to act on by itself")
-    if args.json and not args.status:
-        parser.error("--json says how --status prints; it prints nothing "
-                     "by itself")
-
-
 def _close_checks(parser, args):
     """Require the landing reference only for an external close-out."""
     if args.close is not None and not (args.landed or "").strip():
         parser.error("--close requires --landed URL")
     if args.landed is not None and args.close is None:
         parser.error("--landed belongs to --close")
+
+
+def _modifier_checks(parser, args):
+    """Refuse a mode's modifier without its mode -- `--act` without
+    `--sweep`, `--json` without `--status`, `--dry-run` without
+    `--import-store` -- and `--import-store` without `--dry-run`, the only
+    form of it that exists yet."""
+    if args.act and not args.sweep:
+        parser.error("--act says what --sweep does with the runs it finds; "
+                     "it has nothing to act on by itself")
+    if args.json and not args.status:
+        parser.error("--json says how --status prints; it prints nothing "
+                     "by itself")
+    if args.import_store is not None and not args.dry_run:
+        parser.error("--import-store has only its dry run yet: add --dry-run "
+                     "to see what it would move; applying the import is a "
+                     "later ticket built on that report (after KO-595)")
+    if args.dry_run and args.import_store is None:
+        parser.error("--dry-run says what --import-store does with the store "
+                     "it names; it has nothing to run by itself")
 
 
 def cli(argv=None):
@@ -271,6 +283,15 @@ def _legacy_cli(argv):
         help="print the live runs that have tripped a mechanical condition "
              "(dead heartbeat, blown time box, stuck review) and exit; acts "
              "on none of them unless --act says to")
+    # Read-only on both stores for now: the apply step is a later ticket
+    # built on this report, so the mode runs only with `--dry-run` said.
+    modes.add_argument(
+        "--import-store", metavar="PATH",
+        help="with --dry-run: open the store at PATH and the target's own "
+             "store read-only and print, per table, the rows an import "
+             "would move, their id range, the offset a remap would add and "
+             "a sha256 of the rows; refuses stores at different schema "
+             "versions, and writes nothing")
     modes.add_argument(
         "--status", action="store_true",
         help="print what the factory is doing now -- projects, live and "
@@ -313,6 +334,12 @@ def _legacy_cli(argv):
         "--act", action="store_true",
         help="with --sweep: fail each tripped run and release its leases, "
              "leaving its branch and worktree for a human")
+    # `--import-store`'s modifier, as `--act` is `--sweep`'s, and for now
+    # its required one: the apply step without it does not exist yet.
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="with --import-store: report what the import would do and "
+             "write nothing; required, as only the dry run exists yet")
     # Required with `--requeue` and `--repoint`, optional with `--approve`
     # and `--babysit`/`--close`, and meaningless without one of them: the
     # intervention row is the point of these modes, and a requeue or
@@ -355,7 +382,10 @@ def _legacy_cli(argv):
     _modifier_checks(parser, args)
     _note_checks(parser, args)
     _close_checks(parser, args)
-    target = Target.locate(args.target)
+    # A dry run writes nothing, and adopting legacy state moves files: it
+    # locates the target without adopting, so a store still in a legacy
+    # layout is reported absent rather than moved.
+    target = Target.locate(args.target, adopt=args.import_store is None)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.
@@ -369,14 +399,11 @@ def _legacy_cli(argv):
     # same window: a typo the factory ignored would leave the operator
     # believing a knob is set that is not.
     check_config(target)
-    if args.report:
-        return report(target)
-    if args.status:
-        return status_report(target, as_json=args.json)
-    # Same window as `--report`: a read-only daemon calls nobody, so no board
-    # is built and no route has to resolve.
-    if args.serve is not None:
-        return serve(target, args.serve)
+    # The modes that read the store and call nobody, in their own function
+    # so the dispatch stays under the complexity bound with all of them in it.
+    read_only = _read_only_mode(args, target)
+    if read_only is not None:
+        return read_only()
     # The board, built once here from the target's `[board]` table and handed
     # down: nothing below reaches for Linear by name. Construction touches
     # neither the network nor the module, so a read-only sweep still calls
@@ -441,6 +468,23 @@ def _legacy_cli(argv):
     if loop_config(target).spawn_supervisor:
         start_supervisor(target)
     return main(target, require_board(target, board))
+
+
+def _read_only_mode(args, target):
+    """Return the read-only mode the command line names as a call to make,
+    or None when it names none. `--report`, `--status`, `--import-store
+    --dry-run` and `--serve` read the store and call nobody, so no board is
+    built and no route has to resolve."""
+    if args.report:
+        return lambda: report(target)
+    if args.status:
+        return lambda: status_report(target, as_json=args.json)
+    if args.import_store is not None:
+        return lambda: dry_run(target, args.import_store)
+    # Same window as `--report`: a read-only daemon calls nobody.
+    if args.serve is not None:
+        return lambda: serve(target, args.serve)
+    return None
 
 
 def _store_verb(args, target, board):

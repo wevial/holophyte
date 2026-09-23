@@ -62,6 +62,10 @@ Each module, one line:
 - `holophyte/status.py` — `--status [--json]` (KO-596): what the target is
   doing now — projects and admission, live and parked runs, the ready
   count, the schema version and the lock holders — read only, no network.
+- `holophyte/store_import.py` — `--import-store PATH --dry-run` (KO-595):
+  `plan()` reads another store and the target's own, both read-only, and
+  says per table what an import would move — rows, id range, the remap
+  offset and a sha256 of the rows in id order; `render()` prints it.
 - `holophyte/supervisor_lock.py` — the one-supervisor-per-target lock
   (KO-396): the lockfile's path, read, acquire and release, the
   `SupervisorHeld` refusal and the `supervisor_running()` probe.
@@ -97,6 +101,9 @@ Each module, one line:
   approved candidate's resumed run, and the `--no-ff` merge onto main.
 - `holophyte/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
+- `holophyte/locks.py` — the `Locks` protocol a `Target` carries as
+  `target.locks`, and `FileLocks`, whose `merge()` is `live_merge_lock()`
+  unchanged (KO-594).
 - `holophyte/operator.py` — the operator commands and the entry point:
   `main` (the serial pass or the pool's scheduler) and the self-merge
   re-exec, `report`, and the `--requeue`/`--approve`/`--babysit`/

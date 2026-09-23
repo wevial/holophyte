@@ -8,7 +8,7 @@ import { formatClock, formatSettled, formatSpan } from "../lib/format";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel, roundLabel } from "../lib/runs";
-import { agentMs } from "../lib/runs";
+import { agentMs, verifyMs } from "../lib/runs";
 import { buildTimeline } from "../lib/timeline";
 import type { Round, RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
@@ -91,6 +91,7 @@ function Card({
   // and reads at settled granularity, its seconds done counting too.
   const tickingNow = now + sinceMs;
   const work = agentMs(run, run.ended_ms == null ? sinceMs : 0);
+  const verify = verifyMs(run, run.ended_ms == null ? sinceMs : 0);
   const remaining = work == null || run.time_box_ms == null ? null : run.time_box_ms - work;
   const over = remaining != null && remaining < 0;
   const finished = run.ended_ms != null;
@@ -114,6 +115,9 @@ function Card({
         >
           {run.time_box_ms == null ? "working box unknown" : remaining == null ? "working n/a" : over ? `${boxFigure(-remaining)} over the working box` : `${boxFigure(remaining)} left in working box`}
           {" · wall "}{boxFigure((run.ended_ms ?? tickingNow) - run.started_ms)}
+        </span>
+        <span data-clocks className="font-mono text-[12px] text-muted">
+          agent {work == null ? "n/a" : boxFigure(work)} · verify {verify == null ? "n/a" : boxFigure(verify)}
         </span>
       </header>
       {run.approved_at != null && (
