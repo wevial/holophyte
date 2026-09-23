@@ -710,3 +710,97 @@ class ContentWakeTests(MergeModeFixture):
                     self.assertEqual(budget.reset_at, reset)
                     self.assertIn('rateLimit { remaining resetAt }',
                                   read.call_args.args[2])
+
+
+class CanceledParkedPullRequestTests(MergeModeFixture):
+    """KO-660: a ticket canceled on the board is finished even when its
+    newest run holds a pull request; a Done one is still GitHub's."""
+
+    def parked_on_pr(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+        H.parked_on_pr(self)
+        return H
+
+    def board_says(self, state):
+        """A provider whose board-state read holds KO-131 in `state`."""
+        provider = StubProvider()
+        provider.live["KO-131"] = {"board_state": state}
+        return provider
+
+    def test_a_canceled_ticket_whose_pr_was_closed_is_abandoned(self):
+        H = self.parked_on_pr()
+        H.fake_client(self, H.CLOSED_PULL)
+        self.main_output(provider=StubProvider())
+        self.assertEqual(self.read("SELECT outcome, parkKind FROM runs"),
+                         [("rejected", "pull_request_closed")])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+
+        printed = self.main_output(provider=self.board_says("Canceled"))
+
+        self.assertNotIn("left KO-131 to its pull request", printed)
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("abandoned",)])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("rejected",)])
+
+    def test_a_canceled_ticket_parked_on_an_open_pr_is_closed_out(self):
+        H = self.parked_on_pr()
+        H.fake_client(self, H.OPEN_PULL)
+
+        printed = self.main_output(provider=self.board_says("Canceled"))
+
+        (run_id,) = self.read("SELECT id FROM runs")[0]
+        self.assertEqual(
+            self.read('SELECT runId, "action", source, "trigger"'
+                      " FROM interventions WHERE runId IS NOT NULL"),
+            [(run_id, "close_out", "supervisor", "linear_cancelled")])
+        phase, outcome, reason, ended = self.read(
+            "SELECT phase, outcome, outcomeReason, endedAt FROM runs")[0]
+        self.assertEqual((phase, outcome), ("failed", "abandoned"))
+        self.assertIsNotNone(ended)
+        self.assertIn("canceled on the board", reason)
+        self.assertIn(self.URL, reason)
+        # Record before acting: the intervention's event precedes the end.
+        seqs = dict(self.read(
+            "SELECT kind, seq FROM runEvents WHERE kind = 'intervention'"
+            " UNION ALL SELECT 'ended', seq FROM runEvents"
+            " WHERE summary LIKE '%outcome abandoned%'"))
+        self.assertLess(seqs["intervention"], seqs["ended"])
+        self.assertEqual(self.read("SELECT status, activeRunId FROM tickets"),
+                         [("abandoned", None)])
+        self.assertNotIn("left KO-131 to its pull request", printed)
+        line = next(line for line in printed.splitlines()
+                    if "canceled on the board" in line)
+        self.assertIn(f"{self.URL} left open", line)
+
+    def test_a_done_ticket_parked_on_an_open_pr_is_left_to_it(self):
+        H = self.parked_on_pr()
+        H.fake_client(self, H.OPEN_PULL)
+
+        printed = self.main_output(provider=self.board_says("Done"))
+
+        self.assertIn("reconcile left KO-131 to its pull request", printed)
+        self.assertEqual(self.read("SELECT phase, endedAt FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+        self.assertEqual(self.read("SELECT id FROM interventions"
+                                   " WHERE runId IS NOT NULL"), [])
+
+    def test_a_pr_merged_after_the_pull_request_read_lands_not_abandons(self):
+        """PR #216 review: the pull request merged between the pass's pull
+        request read and the cancel; the cancel asks again and lands it."""
+        H = self.parked_on_pr()
+        asked = H.fake_client(self, H.OPEN_PULL, H.MERGED_PULL)
+
+        printed = self.main_output(provider=self.board_says("Canceled"))
+
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(
+            self.read("SELECT phase, outcome, mergeSha FROM runs"),
+            [("done", "merged", self.MERGE_SHA)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+        self.assertEqual(self.read('SELECT "action" FROM interventions'
+                                   " WHERE runId IS NOT NULL"), [("approve",)])
+        self.assertNotIn("left open", printed)
