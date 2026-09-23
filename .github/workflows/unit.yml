@@ -3,10 +3,13 @@ name: unit
 # Runs every Python test module as a pull request check, one process per
 # module and four at a time (GitHub-hosted runners for public repositories
 # have four vCPUs), through tests/run_modules.py. Ruff, typecheck and the
-# console's bun tests stay in local verify.
+# console's bun tests stay in local verify. The merge_group trigger lets a
+# merge queue require this check; it takes no filters, since a queue entry
+# waits on every required check it names.
 
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
 
