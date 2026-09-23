@@ -13,6 +13,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -21,8 +22,10 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
     Commit,
+    FakeAgent,
     Idle,
     Reply,
+    no_agent_processes,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
@@ -32,7 +35,10 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+from holophyte.gates import MergeParked  # noqa: E402 - after the sys.path insert
+from holophyte.stop import command  # noqa: E402 - after the sys.path insert above
 
 # Spelled out rather than imported: the loop's parse is what is under test.
 DECLARED = "OUTCOME: NOT_REPRODUCED"
@@ -48,6 +54,41 @@ class Declare(Commit):
 
     def play(self, cwd, turn):
         return f"{super().play(cwd, turn)}\nThe test passes on main.\n{DECLARED}"
+
+
+def pause_live_run(db, note):
+    """Ask for a cooperative stop of the open run, as `--pause` does."""
+    conn = store.open(str(db))
+    try:
+        (run,) = conn.execute("SELECT id FROM runs WHERE endedAt IS NULL"
+                              " ORDER BY id DESC LIMIT 1").fetchone()
+        store.pause(conn, run, note)
+    finally:
+        conn.close()
+
+
+class DeclareThenPause(Declare):
+    """The declaring implement turn, with a pause requested while it ran."""
+
+    def __init__(self, db):
+        super().__init__("test the modal")
+        self.db = db
+
+    def play(self, cwd, turn):
+        pause_live_run(self.db, "reboot writer")
+        return super().play(cwd, turn)
+
+
+class RefuseThenPause(Reply):
+    """The evidence check's FAIL, with a pause requested while it ran."""
+
+    def __init__(self, db):
+        super().__init__(REFUSED.text)
+        object.__setattr__(self, "db", db)
+
+    def play(self, cwd, turn):
+        pause_live_run(self.db, "review checkpoint")
+        return super().play(cwd, turn)
 
 
 class NotReproducedTests(LoopFixture):
@@ -135,6 +176,54 @@ class NotReproducedTests(LoopFixture):
         self.assertIn("set aside: verify failed", summary)
         self.assertEqual(self.read("SELECT round, verdict FROM reviewRounds"),
                          [(1, "changes_requested")])
+
+
+class ResumedRouteTests(LoopFixture):
+    """A pause on the not-reproduced route resumes on it, not in an
+    ordinary review."""
+
+    def resume(self, *script):
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+        command(self.tgt, "KO-131", None, resume=True)
+        fake, _ = self.loop(*script)
+        self.assertEqual(self.read(
+            "SELECT outcome, parkKind FROM runs ORDER BY id"),
+            [("paused", None), (None, "not_reproduced")])
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        self.assertEqual(holophyte.board.failure_history(conn, 1), [])
+        return fake
+
+    def test_a_pause_after_the_declaring_turn_resumes_at_the_evidence_check(self):
+        self.loop(DeclareThenPause(self.db))
+
+        fake = self.resume(REPRODUCED)
+
+        self.assertEqual(fake.roles, ["adjudicate"])
+
+    def test_a_pause_during_the_check_resumes_the_fix_that_may_redeclare(self):
+        self.loop(Declare("test the modal"), RefuseThenPause(self.db))
+
+        fake = self.resume(Declare("open the modal in the test"), REPRODUCED)
+
+        self.assertEqual(fake.roles, ["implement", "adjudicate"])
+        self.assertIn(REASON, fake.turns[0].goal)
+
+
+class StorelessTests(LoopFixture):
+
+    def test_a_storeless_run_parks_by_raising_merge_parked(self):
+        fake = FakeAgent(Declare("test the modal"), REPRODUCED)
+        with no_agent_processes(), \
+                patch.object(holophyte.loop, "agent", fake), \
+                self.assertRaises(MergeParked) as parked:
+            holophyte.loop.run_task(self.tgt, a_task(),
+                                    provider=StubProvider(a_task()))
+
+        head = self.git("rev-parse", BRANCH).strip()
+        self.assertIn(head[:12], str(parked.exception))
+        self.assertEqual(fake.roles, ["implement", "adjudicate"])
+        self.assertFalse(self.db.exists())
 
 
 if __name__ == "__main__":

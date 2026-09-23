@@ -17,6 +17,12 @@ with no verdict line) is round 1 `changes_requested`, its reasons go to one
 fix turn, and a fix turn that declares again gets one more check before an
 ordinary round 2 (KO-657).
 
+A pause anywhere on this route resumes on it: every checkpoint the run
+saves once the route is taken carries `unreproduced` (and, once handed on,
+the raised cap as `handed_on`), and `routed()` sends the continuation back
+here. A storeless run takes the same route and parks by raising
+`MergeParked` with nothing recorded.
+
 The loop's `agent`, `_timed`, `_check_run_cap`, `_verify_brief` and
 `_review_rounds` are read off `holophyte.loop` at call time, so a test that
 patches the loop's `agent` answers these turns too.
@@ -35,7 +41,7 @@ from holophyte.gates import MergeParked, RunFailure, run_verify, sh, with_baseli
 from holophyte.redact import safe_print as print
 from holophyte.review import raw_finding
 from holophyte.runs import heartbeat_while, record_round, set_phase
-from holophyte.stop import boundary
+from holophyte.stop import boundary, keep_route
 
 DECLARATION = "OUTCOME: NOT_REPRODUCED"
 
@@ -82,24 +88,49 @@ class Frame:
         return tuple(getattr(self, field.name) for field in fields(self))
 
 
+def routed(resume):
+    """Whether a continuation resumes on this route."""
+    return bool(resume and resume.get("unreproduced"))
+
+
 def review_rounds(*args, resume=None):
     """`_review_rounds()` for a candidate declared not reproduced: park it on
-    a passing evidence check, else hand back for ordinary rounds."""
+    a passing evidence check, else hand back for ordinary rounds. `resume`
+    is a checkpoint this route saved, and picks up where it paused."""
     from holophyte import loop
 
-    frame = Frame(*args)
-    ok, out = _verify(frame, 1)
-    if not ok:
-        return _set_aside(loop, frame, 1, out)
-    reply, decision, started = _check(loop, frame, 1, ok, out)
-    _record(frame, 1, reply, decision, ok, out, started)
-    if decision == "PASS":
-        _park(frame)
-    fixes, head = _fix(loop, frame, _reasons(reply), ok, out)
-    frame = replace(frame, sha=head)
-    if not declared(fixes):
+    frame, pending = Frame(*args), resume or {}
+    if "handed_on" in pending:
+        # Paused in the ordinary rounds this route had already handed on to.
+        return _hand_on(loop, frame, pending, pending["handed_on"])
+    keep_route(frame.conn, frame.run_id, unreproduced=True)
+    if pending.get("phase") == "addressing":
+        ok, out = _verified(frame, 1, pending)
+        set_phase(frame.conn, frame.run_id, "reviewing",
+                  "round 1: the evidence check's FAIL, kept from the pause")
+        reasons = pending["verdict"]
+    elif pending.get("rnd", 1) == 2:
+        return _second(loop, frame, pending)
+    else:
+        ok, out = _verified(frame, 1, pending)
+        if not ok:
+            return _set_aside(loop, frame, 1, out)
+        reply, decision, started = _check(loop, frame, 1, ok, out)
+        _record(frame, 1, reply, decision, ok, out, started)
+        if decision == "PASS":
+            _park(frame)
+        reasons = _reasons(reply)
+    fixes, head = _fix(loop, frame, reasons, ok, out)
+    return _second(loop, replace(frame, sha=head),
+                   {"declared": declared(fixes)})
+
+
+def _second(loop, frame, pending):
+    """After round 1's fix turn: one more evidence check for a fix that
+    declared again, an ordinary round 2 for one that did not."""
+    if not pending.get("declared"):
         return _hand_on(loop, frame, {"rnd": 2})
-    ok, out = _verify(frame, 2)
+    ok, out = _verified(frame, 2, pending)
     if not ok:
         return _set_aside(loop, frame, 2, out)
     reply, decision, started = _check(loop, frame, 2, ok, out)
@@ -115,16 +146,30 @@ def review_rounds(*args, resume=None):
                                   "out": out})
 
 
-def _hand_on(loop, frame, pending):
+def _hand_on(loop, frame, pending, floor=None):
     """`_review_rounds()` from `pending`, whose ordinary round the evidence
     check's round 1 must not take from a one-round cap: the cap rises to
-    that round, on the run too, and the loop numbers its terminal
-    adjudication after the round it returns."""
-    if frame.cap < pending["rnd"]:
-        frame = replace(frame, cap=pending["rnd"])
+    that round (or to `floor`, the cap a resumed hand-on had risen to), on
+    the run too, and the loop numbers its terminal adjudication after the
+    round it returns. Later checkpoints carry the risen cap."""
+    cap = max(frame.cap, floor or pending["rnd"])
+    if cap != frame.cap:
+        frame = replace(frame, cap=cap)
         if frame.conn is not None and frame.run_id is not None:
             store.set_review_round_cap(frame.conn, frame.run_id, frame.cap)
+    keep_route(frame.conn, frame.run_id, unreproduced=True, handed_on=cap)
     return loop._review_rounds(*frame.args(), resume=pending)
+
+
+def _verified(frame, rnd, pending):
+    """Round `rnd`'s verify at the declared candidate, or the result a pause
+    after it kept -- the phase walked through either way."""
+    boundary(frame.conn, frame.run_id, "verifying", rnd=rnd, declared=True)
+    if pending.get("phase") in ("reviewing", "addressing"):
+        set_phase(frame.conn, frame.run_id, "verifying",
+                  f"round {rnd}: verify kept from the pause")
+        return pending.get("ok", False), pending.get("out", "")
+    return _verify(frame, rnd)
 
 
 def _verify(frame, rnd):
@@ -153,7 +198,7 @@ def _set_aside(loop, frame, rnd, out):
 def _check(loop, frame, rnd, ok, out):
     """One evidence-check turn; return its reply, decision and start time."""
     boundary(frame.conn, frame.run_id, "reviewing", rnd=rnd, ok=ok,
-             out=str(out))
+             out=str(out), declared=True)
     set_phase(frame.conn, frame.run_id, "reviewing",
               f"round {rnd}: not-reproduced evidence check")
     base, candidate = review_refs(frame.run_id)
@@ -217,7 +262,8 @@ def _fix(loop, frame, reasons, ok, out):
         frame.target, frame.conn, frame.run_id, frame.beat_s, frame.wt,
         frame.budget_min, frame.ticket, f"{reasons}\n\n{REDECLARE}",
         frame.sha, timed=loop._timed, check_cap=loop._check_run_cap)
-    boundary(frame.conn, frame.run_id, "verifying", rnd=2)
+    boundary(frame.conn, frame.run_id, "verifying", rnd=2,
+             declared=declared(fixes))
     ledger(frame.conn, frame.run_id, frame.task_id, "round",
            "Round 1: not-reproduced evidence check FAIL -> fix round\n"
            f"Evidence check:\n{reasons}\n\nImplementer response:\n{fixes}",
@@ -254,17 +300,11 @@ def _park(frame):
         f"- add detail to its body, then `--requeue {task_id} --note TEXT`;\n"
         f"- `--approve {task_id}` to keep the tests as a regression guard"
         " (a tests-only pull request under [merge] mode = \"pr\").")
-    store.record_event(conn, run_id, "not_reproduced", first, level="detail",
-                       payload=json.dumps({"base": frame.base_sha,
-                                           "candidate": frame.sha}))
-    ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-    if not block_ticket(conn, ticket_id, frame.provider, question,
-                        park_kind="not_reproduced"):
-        print(f"[holo2] {task_id} could not be moved to blocked_on_operator;"
-              " parking the run anyway")
-    store.park(conn, run_id, "awaiting_merge_approval",
-               f"{first}; {frame.branch} waits on the maintainer",
-               candidate_sha=frame.sha, park_kind="not_reproduced")
+    if conn is None or run_id is None:
+        # A storeless run records nothing: the question is printed instead.
+        print(f"[holo2] no store to park the run in:\n{question}")
+    else:
+        _park_in_store(frame, first, question)
     print(f"[holo2] {first}; parked {frame.branch} for the maintainer")
     ledger(conn, run_id, task_id, "note",
            f"NOT REPRODUCED: the evidence check passed; branch {frame.branch}"
@@ -272,3 +312,19 @@ def _park(frame):
            frame.provider)
     raise MergeParked(f"not reproduced; branch {frame.branch} preserved"
                       f" at {frame.sha[:12]}")
+
+
+def _park_in_store(frame, first, question):
+    """The park's store writes: the event, the ticket's question, the run."""
+    conn, run_id = frame.conn, frame.run_id
+    store.record_event(conn, run_id, "not_reproduced", first, level="detail",
+                       payload=json.dumps({"base": frame.base_sha,
+                                           "candidate": frame.sha}))
+    ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+    if not block_ticket(conn, ticket_id, frame.provider, question,
+                        park_kind="not_reproduced"):
+        print(f"[holo2] {frame.task_id} could not be moved to"
+              " blocked_on_operator; parking the run anyway")
+    store.park(conn, run_id, "awaiting_merge_approval",
+               f"{first}; {frame.branch} waits on the maintainer",
+               candidate_sha=frame.sha, park_kind="not_reproduced")

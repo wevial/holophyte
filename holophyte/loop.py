@@ -238,7 +238,7 @@ def _run_stages(run, task):
     conflicts = merge_conflicts(wt)
     resume = continuation(conn, run_id)
     sha, unreproduced = (
-        (start_sha, False) if resume and resume["phase"] != "working"
+        (start_sha, reproduce.routed(resume)) if resume and resume["phase"] != "working"
         else _implement(target, conn, run_id, task_id, task, branch, wt, fresh,
                         beat_s, start_sha, ticket, verify_cmd, budget_min,
                         conflicts=conflicts))
@@ -567,7 +567,7 @@ def _implement(target, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         "work with a clear message. Stay strictly on-scope; do not "
         "expand the task. Commit messages carry no tool attribution or co-author "
         "lines for an AI." + _capture_brief(target, ticket) + reproduce.BRIEF)
-    stop_if_requested(conn, run_id, "verifying")
+    boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch whose tip already differs from main carries a candidate
     # an earlier run left behind. An implementer handed finished work
