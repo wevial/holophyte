@@ -12,6 +12,14 @@
 
 **How:** <Intended technical direction, important constraints, and existing patterns to reuse — without over-specifying incidental implementation details.>
 
+## Reproduce
+
+<!-- OPTIONAL: keep only for a bug report; its presence makes this a bug
+     ticket, whose first turn commits a failing test before any fix.
+     Delete the whole section otherwise. -->
+
+<Steps that show the reported behaviour, and where it was seen: the deployment, URL or commit.>
+
 ## In scope
 
 <!-- Scope caps, enforced by ticket_template.py: max 3 entries here, 5 acceptance criteria, 30 min estimate. Every list entry counts, whatever its marker. Split anything larger. -->
