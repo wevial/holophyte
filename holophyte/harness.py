@@ -7,7 +7,8 @@ used to: the argv of a turn, the session id that turn runs under (chosen
 before launch, so the factory records it at dispatch rather than reading it
 back out of the output -- or, for a review harness that chooses its own,
 read from the banner it prints) and the argv that resumes it. The binary is the
-harness's own name, looked up on PATH at launch, unless the top-level
+adapter's `binary` -- the harness's own name unless its CLI is called
+something else -- looked up on PATH at launch, unless the top-level
 `[harnesses]` table names an absolute path for it.
 
 Validation reads each adapter's `roles` and never names a harness or a role
@@ -30,14 +31,31 @@ TABLE_ROLES = ("implementer", "reviewer", "adjudicator")
 TABLE_KEYS = ("harness", "model", "effort")
 
 
-class Claude:
+class Adapter:
+    """What an adapter declares unless it says otherwise: the binary is its
+    name, no table key is required or refused beyond `parse_role()`'s
+    shape checks, the harness can resume a session, and a review turn's
+    output names no session."""
+    requires = frozenset()
+    refuses = frozenset()
+    efforts = None
+    resumes = True
+
+    @property
+    def binary(self):
+        return self.name
+
+    def reported_session(self, output):
+        return None
+
+
+class Claude(Adapter):
     """Claude Code in print mode, under a session id the factory assigns.
 
     `effort` is passed through as written: the CLI owns its list of levels.
     """
     name = "claude"
     roles = frozenset({"implementer"})
-    efforts = None
 
     def turn(self, binary, options):
         return [binary, "-p", "--session-id", str(uuid.uuid4()),
@@ -58,7 +76,7 @@ class Claude:
                 "--effort", options.get("effort", IMPL_EFFORT)]
 
 
-class Codex:
+class Codex(Adapter):
     """`codex exec` for the review roles, with Codex's own sandbox bypassed.
 
     The read-only sandbox cannot start under a systemd user unit with
@@ -95,7 +113,41 @@ class Codex:
                 "--dangerously-bypass-approvals-and-sandbox"]
 
 
-ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex())}
+class Cursor(Adapter):
+    """`cursor-agent` in print mode for the review roles; it cannot resume.
+
+    The flags are the ones `cursor-agent --help` lists for CLI version
+    2026.09.10-fd3934a on the writer host:
+
+    - `-p` / `--print`: non-interactive print mode, "for scripts or
+      non-interactive use", with access to all tools including shell;
+    - `--model <model>`: the model -- required here, since the CLI's own
+      default is whatever its account settings say today;
+    - `-f` / `--force`: "force allow commands unless explicitly denied", so
+      print mode runs `git` without an approval prompt; `--trust` beside
+      it "trusts the current workspace without prompting", and every turn
+      runs in a fresh throwaway checkout the CLI has never seen;
+    - `--resume [chatId]`: resume by id -- unused: the adapter declares no
+      resume until a live turn shows how to learn a chat id, so capture
+      and resume wait for a follow-up.
+
+    The CLI has no effort flag (a model's effort is a bracket override in
+    its name), so `effort` is refused rather than dropped. The throwaway
+    candidate checkout (`agents.table_review()`) is the write boundary, as
+    for Codex.
+    """
+    name = "cursor"
+    binary = "cursor-agent"
+    roles = frozenset({"reviewer", "adjudicator"})
+    requires = frozenset({"model"})
+    refuses = frozenset({"effort"})
+    resumes = False
+
+    def turn(self, binary, options):
+        return [binary, "-p", "--model", options["model"], "--force", "--trust"]
+
+
+ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex(), Cursor())}
 
 
 @dataclass(frozen=True)
@@ -140,8 +192,9 @@ def parse_role(where, key, table):
     key outside `TABLE_ROLES`, a key outside `TABLE_KEYS`, a harness with no
     adapter, a harness whose `roles` do not hold `key` -- the message names
     the roles it does serve -- a `model` or `effort` that is not a
-    non-empty string, and an `effort` outside the adapter's `efforts` when
-    it declares them.
+    non-empty string, a key the adapter `requires` that is absent or one
+    it `refuses` that is present, and an `effort` outside the adapter's
+    `efforts` when it declares them.
     """
     if key not in TABLE_ROLES:
         raise SystemExit(
@@ -168,6 +221,16 @@ def parse_role(where, key, table):
             raise SystemExit(
                 f"{where}: [agents.{key}] {option} must be a non-empty string, "
                 f"got {value!r}")
+    missing = sorted(adapter.requires - table.keys())
+    if missing:
+        raise SystemExit(
+            f"{where}: [agents.{key}] {missing[0]} is required for harness "
+            f"{name!r}")
+    refused = sorted(adapter.refuses & table.keys())
+    if refused:
+        raise SystemExit(
+            f"{where}: [agents.{key}] {refused[0]}: harness {name!r} takes no "
+            f"{refused[0]} -- drop {refused[0]}")
     effort = table.get("effort")
     if adapter.efforts and effort is not None and effort not in adapter.efforts:
         raise SystemExit(
@@ -234,7 +297,7 @@ def seat(target, role, *, fallback=False):
     where = f"[holo2] {target.config_path}"
     adapter = parse_role(where, key, table)
     from holophyte.isolation import route_for
-    binary = adapter.name
+    binary = adapter.binary
     if role != "implement" or route_for(target).backend != "container":
         paths = config_table(target, "harnesses")
         check_paths(where, paths)

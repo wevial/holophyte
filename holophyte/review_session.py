@@ -3,6 +3,7 @@ import json
 
 import store
 from holophyte.config import loop_config
+from holophyte.harness import seat as harness_seat
 from holophyte.session_arms import select_arm
 
 
@@ -38,6 +39,13 @@ def first_session(conn, run_id):
     return None
 
 
+def resumable(target):
+    """False for a table reviewer whose adapter declares it cannot resume;
+    a command string's wrapper answers the resume protocol itself."""
+    seat = harness_seat(target, 'review')
+    return seat is None or seat.adapter.resumes
+
+
 def prepare_environment(target, env, conn, run_id, role, route, round_number):
     """Request a resume only on an eligible re-review, recording the decision."""
     env.pop('HOLOPHYTE_REVIEW_RESUME', None)
@@ -51,6 +59,8 @@ def prepare_environment(target, env, conn, run_id, role, route, round_number):
         reason = 'fresh arm'
     elif route == 'fallback':
         reason = 'fallback reviewer route'
+    elif not resumable(target):
+        reason = 'harness cannot resume'
     else:
         session = first_session(conn, run_id)
         reason = None if session else 'no recorded session'

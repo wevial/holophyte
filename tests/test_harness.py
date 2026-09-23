@@ -147,7 +147,11 @@ OPTIONS = ["-m", "gpt-5.6-luna", "-c", "model_reasoning_effort=low",
            "--dangerously-bypass-approvals-and-sandbox"]
 
 
-class CodexTableTests(unittest.TestCase):
+class TableReviewCase(unittest.TestCase):
+    """A repository with a base and a candidate commit, and a fake review
+    harness `BINARY` running `FAKE` on PATH under `CONFIG`."""
+    BINARY = FAKE = CONFIG = None
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -161,15 +165,15 @@ class CodexTableTests(unittest.TestCase):
         self.candidate = self.git("rev-parse", "HEAD")
         self.holo = root / "holo"
         self.holo.mkdir()
-        (self.holo / "config.toml").write_text(CODEX_CONFIG)
+        (self.holo / "config.toml").write_text(self.CONFIG)
         self.target = holophyte.target.Target(
             path=self.repo, holo_dir=self.holo, store_path=self.holo / "store.db",
             config_path=self.holo / "config.toml",
             worktrees=root / "repo.worktrees")
         bin_dir = root / "bin"
         bin_dir.mkdir()
-        fake = bin_dir / "codex"
-        fake.write_text(f"#!{sys.executable}\n{FAKE_CODEX}")
+        fake = bin_dir / self.BINARY
+        fake.write_text(f"#!{sys.executable}\n{self.FAKE}")
         fake.chmod(0o755)
         self.calls = root / "calls.jsonl"
         env = patch.dict(os.environ, {
@@ -204,13 +208,20 @@ class CodexTableTests(unittest.TestCase):
             candidate_sha=self.candidate, timeout=60, conn=self.conn,
             run_id=self.run, review_round=review_round)
 
-    def assert_fresh_turn_in_a_candidate_checkout(self, call, goal):
-        self.assertEqual(call["argv"], ["exec", *OPTIONS, goal])
+    def assert_in_a_candidate_checkout(self, call):
         self.assertEqual(call["head"], self.candidate)
         self.assertNotEqual(Path(call["cwd"]).resolve(), self.repo.resolve())
         worktrees = self.git("worktree", "list", "--porcelain").splitlines()
         self.assertEqual([line for line in worktrees if line.startswith("worktree ")],
                          [f"worktree {self.repo.resolve()}"])
+
+
+class CodexTableTests(TableReviewCase):
+    BINARY, FAKE, CONFIG = "codex", FAKE_CODEX, CODEX_CONFIG
+
+    def assert_fresh_turn_in_a_candidate_checkout(self, call, goal):
+        self.assertEqual(call["argv"], ["exec", *OPTIONS, goal])
+        self.assert_in_a_candidate_checkout(call)
 
     def test_review_and_adjudicator_tables_run_codex_in_a_candidate_checkout(self):
         for role in ("review", "adjudicate"):
@@ -254,6 +265,44 @@ class CodexTableTests(unittest.TestCase):
         self.assertEqual([event.get("reason") for event in
                           self.events("review_session")],
                          [None, None, "no rollout found"])
+
+
+# The fake cursor-agent: records its argv, its cwd's HEAD and whether the
+# factory asked it to resume.
+FAKE_CURSOR = """
+import json, os, subprocess, sys
+head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                      text=True).stdout.strip()
+with open(os.environ["FAKE_HARNESS_CALLS"], "a") as calls:
+    calls.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(),
+                            "head": head, "resume":
+                            os.environ.get("HOLOPHYTE_REVIEW_RESUME")}) + "\\n")
+print("APPROVE")
+"""
+
+
+class CursorTableTests(TableReviewCase):
+    BINARY, FAKE = "cursor-agent", FAKE_CURSOR
+    CONFIG = ('[agents.reviewer]\nharness = "cursor"\nmodel = "gpt-5"\n'
+              '[loop]\nreview_session = "resume"\n')
+
+    def test_review_table_runs_cursor_agent_in_a_candidate_checkout(self):
+        self.dispatch("review", "review the candidate")
+        [call] = self.received()
+        self.assertEqual(call["argv"], ["-p", "--model", "gpt-5", "--force",
+                                        "--trust", "review the candidate"])
+        self.assert_in_a_candidate_checkout(call)
+
+    def test_round_two_runs_fresh_because_cursor_cannot_resume(self):
+        self.dispatch("review", "first look")
+        self.dispatch("review", "second look", review_round=2)
+        first, second = self.received()
+        self.assertEqual(second["argv"], first["argv"][:-1] + ["second look"])
+        self.assertIsNone(second["resume"])
+        self.assert_in_a_candidate_checkout(second)
+        self.assertEqual(self.events("review_session"),
+                         [{"arm": "resume", "requested": False,
+                           "reason": "harness cannot resume"}])
 
 
 if __name__ == "__main__":

@@ -73,6 +73,10 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
              r"\[agents\.reviewer\] effort"),
             ('[agents]\nreview_model = "m"\n[agents.reviewer]\nharness = "codex"\n',
              r"\[agents\] review_model"),
+            ('[agents.reviewer]\nharness = "cursor"\n',
+             r"\[agents\.reviewer\] model is required"),
+            ('[agents.adjudicator]\nharness = "cursor"\nmodel = "m"\n'
+             'effort = "high"\n', r"\[agents\.adjudicator\] effort: harness"),
         ):
             with self.subTest(config=config):
                 self.locate(config)
