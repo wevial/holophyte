@@ -334,7 +334,9 @@ prints that store's rows instead: name, path, admission, note and newest run,
 ordered by name and path. The admission commands accept `--store PATH` to
 select one database explicitly; this does not combine stores. Without it, `add`
 uses the added repository's store and the other commands use the current
-repository's store.
+repository's store. `add --store` naming any other database registers there
+only and leaves `host.toml` alone: the registry holds paths, and the host
+reads each project's own store.
 
 `project hold NAME --note TEXT` stops new admission while workers drain.
 `project disable NAME --note TEXT` also stops admission; a disabled supervisor

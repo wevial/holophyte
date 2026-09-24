@@ -92,11 +92,17 @@ def _paths(document, source):
 
 
 def _entry(path):
+    """The entry for `path`; a config that cannot give a name -- refused as
+    written, unreadable, not UTF-8 -- is this entry's `error`, never the
+    registry's, so one bad project does not hide the others."""
     target = Project.locate(path, adopt=False)
     try:
         return HostProject(serve_config(target).name, path, target)
     except SystemExit as bad:
         return HostProject(None, path, target, str(bad))
+    except Exception as bad:
+        return HostProject(None, path, target,
+                           f"{target.config_path}: {type(bad).__name__}: {bad}")
 
 
 class Host:
@@ -146,11 +152,12 @@ class Host:
         stamp = _stamp(self.path)
         if stamp == self._stamp and stamp is not None:
             return
-        text = self.path.read_text() if stamp is not None else ""
         try:
+            text = self.path.read_text() if stamp is not None else ""
             table = tomllib.loads(text)
-        except tomllib.TOMLDecodeError as bad:
-            raise HostError(f"[holo2] malformed {self.path}: {bad}") from None
+        except (OSError, UnicodeDecodeError,
+                tomllib.TOMLDecodeError) as bad:
+            raise HostError(f"[holo2] unreadable {self.path}: {bad}") from None
         entries = tuple(_entry(path) for path in _paths(table, self.path))
         _refuse_duplicates(entries, self.path)
         self._stamp, self._table, self._projects = stamp, table, entries

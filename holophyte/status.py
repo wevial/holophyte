@@ -20,7 +20,6 @@ With no project, `host_status_report()` is the host form: the registry
 each registered project's snapshot, one project's failure its own `error`.
 """
 import json
-import sqlite3
 import sys
 from time import time
 
@@ -167,16 +166,19 @@ def _host_project(entry, now):
            "error": entry.error}
     if entry.error:
         return row
-    if not entry.target.store_path.exists():
-        row["error"] = f"no store at {entry.target.store_path}"
-        return row
+    # The project boundary: whatever reading this one project raises -- a
+    # locked or corrupt store, an unreadable lock file -- is its `error`,
+    # and the report goes on to the next.
     try:
+        if not entry.target.store_path.exists():
+            row["error"] = f"no store at {entry.target.store_path}"
+            return row
         conn = store.read.open_readonly(entry.target.store_path)
         try:
             row["store"] = snapshot(entry.target, conn, now)
         finally:
             conn.close()
-    except sqlite3.Error as bad:
+    except Exception as bad:
         row["error"] = f"{type(bad).__name__}: {bad}"
     return row
 

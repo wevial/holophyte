@@ -4,6 +4,10 @@
 (`holophyte.host`); `remove` drops the registry entry and touches no store;
 `list` prints the registry with each project's admission read from its own
 store, or, with `--store`, that one store's rows.
+
+The registry holds paths only, and the host reads each project's own store,
+so `add --store` naming any other database registers in that store alone,
+as before the registry, and leaves `host.toml` untouched.
 """
 import argparse
 import subprocess
@@ -44,8 +48,7 @@ def project_cli(argv):
                   " host registry; its store is untouched")
             return
         if args.command == "list" and args.store is None:
-            _list_host(Host.locate())
-            return
+            return _list_host(Host.locate())
         path = args.path if args.command == "add" else Path.cwd()
         target = Project.locate(path.resolve())
         _run(args, target)
@@ -54,10 +57,9 @@ def project_cli(argv):
 
 
 def _run(args, target):
-    host = Host.locate() if args.command == "add" else None
-    settings = None
+    host = Host.locate() if _host_add(args, target) else None
+    settings = _validate(target) if args.command == "add" else None
     if host is not None:
-        settings = _validate(target)
         check_new(host, target)
     conn = open_store(target, args.store)
     try:
@@ -67,6 +69,18 @@ def _run(args, target):
     if host is not None:
         register(host, target)
         print(f"[holo2] {target.path} registered in {host.path}")
+    elif args.command == "add":
+        print(f"[holo2] {target.path} registered in {args.store} only; the"
+              f" host registry reads its store at {target.store_path}, so"
+              " host.toml is untouched")
+
+
+def _host_add(args, target):
+    """Whether this is an `add` the host registry can record: one against
+    the project's own store, the only store the registry can find again."""
+    return args.command == "add" and (
+        args.store is None
+        or args.store.resolve() == target.store_path.resolve())
 
 
 def _validate(target):
@@ -84,22 +98,38 @@ def _validate(target):
 
 def _list_host(host):
     """One line per registry entry: name, path, admission and hold note
-    from the project's own store, read-only; `-` where it has none."""
+    from the project's own store, read-only; `-` where it has none. A
+    project whose config or store cannot be read is listed with its
+    `error=` and the others still are; the exit is then 1."""
+    failed = False
     for entry in host.projects():
         admission = note = "-"
-        if entry.target.store_path.exists():
-            conn = store.read.open_readonly(entry.target.store_path)
-            try:
-                row = conn.execute(
-                    "SELECT admission, holdNote FROM projects WHERE repoPath = ?",
-                    (str(entry.path),)).fetchone()
-            finally:
-                conn.close()
-            if row is not None:
-                admission = row[0]
-                note = " ".join((row[1] or "-").splitlines())
+        error = entry.error
+        try:
+            row = _admission(entry)
+        except Exception as bad:
+            row, error = None, error or f"{type(bad).__name__}: {bad}"
+        if row is not None:
+            admission = row[0]
+            note = " ".join((row[1] or "-").splitlines())
+        failed = failed or error is not None
         print(f"{entry.name or '-'}\t{entry.path}\t{admission}\t{note}"
-              + (f"\terror={entry.error}" if entry.error else ""))
+              + (f"\terror={error}" if error else ""))
+    return 1 if failed else 0
+
+
+def _admission(entry):
+    """`(admission, holdNote)` from the entry's own store, None when it has
+    no store or no row for the entry's path."""
+    if not entry.target.store_path.exists():
+        return None
+    conn = store.read.open_readonly(entry.target.store_path)
+    try:
+        return conn.execute(
+            "SELECT admission, holdNote FROM projects WHERE repoPath = ?",
+            (str(entry.path),)).fetchone()
+    finally:
+        conn.close()
 
 
 def _dispatch(conn, args, target, settings):

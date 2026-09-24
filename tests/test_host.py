@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 import holophyte.cli
 import store
+from holophyte.gates import merge_lock_path
 from holophyte.host import Host, HostError
 from holophyte.project import Project
 from holophyte.supervisor_lock import (
@@ -130,6 +131,21 @@ class HostRegistryTests(HostFixture):
                      "--store", str(target.store_path))
         self.assertEqual(self.registered(), [("alpha", alpha)])
 
+    def test_add_against_another_store_leaves_the_registry_alone(self):
+        # The registry records a path and the host reads that project's own
+        # store; a registration written elsewhere is one it could never find.
+        alpha = self.repo("alpha")
+        other = self.root / "other.db"
+        _, out = self.cli("project", "add", str(alpha), "--store", str(other))
+        self.assertIn(f"registered in {other} only", out)
+        self.assertEqual(self.registered(), [])
+        self.assertEqual(self.interventions(other, "register_project"), 1)
+        self.assertFalse(Project.locate(alpha).store_path.exists())
+        # Named explicitly, the project's own store is the default one.
+        self.cli("project", "add", str(alpha),
+                 "--store", str(Project.locate(alpha).store_path))
+        self.assertEqual(self.registered(), [("alpha", alpha)])
+
     def test_two_adds_through_the_exclusive_temp_file_keep_both(self):
         alpha, beta = self.repo("alpha"), self.repo("beta")
         self.home.mkdir(parents=True, exist_ok=True)
@@ -214,6 +230,54 @@ class HostStatusTests(HostFixture):
                     self.assertRaises(SystemExit) as raised:
                 holophyte.cli.cli(argv)
             self.assertEqual(raised.exception.code, 2)
+
+
+class HostFaultIsolationTests(HostFixture):
+    """One project's config, store or lock that cannot be read is that
+    project's error in `--status` and `project list`; the others stay
+    whole and the exit is 1."""
+
+    def setUp(self):
+        super().setUp()
+        self.names = ("alpha", "beta", "gamma", "delta")
+        for name in self.names:
+            self.cli("project", "add", str(self.repo(name)))
+        targets = {name: Project.locate(self.root / name)
+                   for name in self.names}
+        # beta: a config that is not UTF-8.
+        targets["beta"].config_path.write_bytes(b"\xff\xfe[board]\n")
+        # gamma: a store that is not a database.
+        for suffix in ("", "-wal", "-shm"):
+            Path(str(targets["gamma"].store_path) + suffix).unlink(
+                missing_ok=True)
+        targets["gamma"].store_path.write_bytes(b"not a database " * 256)
+        # delta: a merge lock that cannot be read as a file.
+        merge_lock_path(targets["delta"]).mkdir()
+
+    def test_host_status_reports_each_failure_as_its_project_error(self):
+        code, out = self.cli("--status", "--json")
+        self.assertEqual(code, 1)
+        projects = {p["path"]: p for p in json.loads(out)["projects"]}
+        alpha = projects[str(self.root / "alpha")]
+        self.assertIsNone(alpha["error"])
+        self.assertEqual([row["admission"] for row in alpha["store"]["projects"]],
+                         ["enabled"])
+        for name, error in (("beta", "UnicodeDecodeError"),
+                            ("gamma", "DatabaseError"),
+                            ("delta", "IsADirectoryError")):
+            with self.subTest(name=name):
+                self.assertIn(error, projects[str(self.root / name)]["error"])
+
+    def test_project_list_lists_every_project_past_a_failure(self):
+        code, out = self.cli("project", "list")
+        self.assertEqual(code, 1)
+        lines = {line.split("\t")[1]: line for line in out.splitlines()}
+        self.assertEqual(sorted(lines),
+                         sorted(str(self.root / name) for name in self.names))
+        self.assertTrue(lines[str(self.root / "alpha")].endswith(
+            "\tenabled\t-"))
+        self.assertIn("error=", lines[str(self.root / "beta")])
+        self.assertIn("error=DatabaseError", lines[str(self.root / "gamma")])
 
 
 if __name__ == "__main__":
