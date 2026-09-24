@@ -311,7 +311,8 @@ def _reconcile_pull_requests(target, conn, project, provider):
     Since KO-722 the pass then asks, on the same budget, about each ticket
     whose last run ended failed, abandoned or killed holding a pull
     request, and closes out a merged one as `--close` does
-    (`_close_failed_pull_requests()`).
+    (`_close_failed_pull_requests()`), skipping a ticket this pass just
+    sent back, whose pull request it has already read.
     """
     from holophyte.admission import held_line
     sent = set()
@@ -344,7 +345,8 @@ def _reconcile_pull_requests(target, conn, project, provider):
                 sent.add(issue)
         if low:
             return sent
-    _close_failed_pull_requests(target, conn, project, provider, poll_ms)
+    _close_failed_pull_requests(target, conn, project, provider, poll_ms,
+                                sent)
     return sent
 
 
@@ -412,12 +414,13 @@ def _closable_run(conn, ticket):
 
 
 def _failed_pull_requests(conn, project):
-    """`(ticket id, identifier, run id, prUrl)` for each open ticket of the
-    project with no live run whose last run ended failed, abandoned or
-    killed holding a pull request."""
+    """`(ticket id, identifier, Linear id, run id, prUrl)` for each open
+    ticket of the project with no live run whose last run ended failed,
+    abandoned or killed holding a pull request."""
     marks = ", ".join("?" * len(FAILED_PR_OUTCOMES))
     return conn.execute(
-        "SELECT t.id, t.linearIdentifier, r.id, r.prUrl FROM tickets t"
+        "SELECT t.id, t.linearIdentifier, t.linearIssueId, r.id, r.prUrl"
+        " FROM tickets t"
         " JOIN runs r ON r.id = t.lastRunId"
         " WHERE t.projectId = ? AND t.status NOT IN ('merged', 'abandoned')"
         " AND t.activeRunId IS NULL AND r.endedAt IS NOT NULL"
@@ -425,7 +428,8 @@ def _failed_pull_requests(conn, project):
         (project, *FAILED_PR_OUTCOMES)).fetchall()
 
 
-def _close_failed_pull_requests(target, conn, project, provider, poll_ms):
+def _close_failed_pull_requests(target, conn, project, provider, poll_ms,
+                                sent):
     """Close out each ticket whose failed run's pull request a person merged
     on GitHub afterwards, as `--close` would (KO-722).
 
@@ -434,9 +438,13 @@ def _close_failed_pull_requests(target, conn, project, provider, poll_ms):
     nothing else asks GitHub about it. One read per pull request, under the
     same budget as the parked reads and at most once per `pr_poll_sec`. An
     open pull request, or one closed without merging, changes nothing.
+    A ticket in `sent` was just sent back to the babysitter off a read of
+    this same pull request, so it is not asked about again.
     """
-    for ticket_id, identifier, run_id, url in _failed_pull_requests(conn,
-                                                                     project):
+    for ticket_id, identifier, issue, run_id, url in _failed_pull_requests(
+            conn, project):
+        if issue in sent:
+            continue
         pull = pr_status.parse_pr_url(url)
         key, now_ms = (str(target.store_path), run_id), time() * 1000
         asked = _FAILED_ASKED.get(key)
