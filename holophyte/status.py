@@ -153,7 +153,7 @@ SWEEP_STATE = "sweep.json"
 def _sweep_state(home):
     """`sweep.json` as written, None when absent, `{"error"}` unreadable."""
     try:
-        return json.loads((home / SWEEP_STATE).read_text())
+        return json.loads((home / SWEEP_STATE).read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as bad:
