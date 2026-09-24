@@ -657,5 +657,63 @@ assert not lp.LINEAR_BUDGET.low(now={deadline})
         self.assertTrue(self.budget.low(now=1_799_999_999_000))
 
 
+class LinearRetryTests(unittest.TestCase):
+    """KO-721: a transient failure of a read is tried again; a mutation is not."""
+
+    linear = linear_provider
+    READ = "query { viewer { id } }"
+
+    def setUp(self):
+        self.slept = []
+        for name, value in (("LINEAR_BUDGET", self.linear.LinearBudget()),
+                            ("sleep", self.slept.append)):
+            patcher = patch.object(self.linear, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _run(self, query, code, failures, final=None):
+        """Run `_gql(query)` against a Linear that refuses with `code`
+        `failures` times and then answers `final`; its calls and outcome."""
+        calls = []
+
+        def urlopen(req, timeout):
+            calls.append(req)
+            if len(calls) <= failures:
+                raise urllib.error.HTTPError(
+                    self.linear.GRAPHQL, code, "refused", {}, None)
+            return _answer(final, {})
+
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "key"}), \
+                patch.object(self.linear.urllib.request, "urlopen", urlopen):
+            try:
+                return calls, self.linear._gql(query)
+            except Exception as e:  # noqa: BLE001 -- the outcome under test
+                return calls, e
+
+    def test_a_read_outlasts_two_503s(self):
+        calls, data = self._run(self.READ, 503, 2,
+                                {"data": {"viewer": {"id": "u1"}}})
+        self.assertEqual(data, {"viewer": {"id": "u1"}})
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(self.slept, [2, 5])
+
+    def test_a_read_that_keeps_failing_raises_the_503_after_three_calls(self):
+        calls, raised = self._run(self.READ, 503, 5)
+        self.assertIsInstance(raised, urllib.error.HTTPError)
+        self.assertEqual((raised.code, len(calls)), (503, 3))
+
+    def test_a_mutation_and_a_429_are_sent_once(self):
+        calls, raised = self._run(
+            'mutation { commentCreate(input: {issueId: "i", body: "b"}) '
+            '{ success } }', 503, 5)
+        self.assertIsInstance(raised, urllib.error.HTTPError)
+        self.assertEqual((raised.code, len(calls)), (503, 1))
+
+        calls, raised = self._run(self.READ, 429, 5)
+        self.assertIsInstance(raised, self.linear.LinearBudgetExhausted)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.slept, [])
+
+
 if __name__ == "__main__":
     unittest.main()
