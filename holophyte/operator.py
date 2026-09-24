@@ -15,7 +15,7 @@ from holophyte.agents import (
     probe_implementer,
     startup_routes,
 )
-from holophyte.board import mirror_push, post_ledger_comment, release_lease_label
+from holophyte.board import release_lease_label
 from holophyte.claim import _claim_next
 from holophyte.config_tables import loop_config, report_config
 from holophyte.findings import commit_findings
@@ -23,8 +23,10 @@ from holophyte.gates import sh
 from holophyte.pool import scheduler
 from holophyte.pool_handoff import _fetch_main, _ff_main, _prepare_reexec  # noqa: F401
 from holophyte.reconcile import (
+    CloseRefused,
     _reconcile_at_startup,
     _reconcile_pull_requests,
+    close_out_landed,
 )
 from holophyte.reexec import reexec_self
 from holophyte.report import migration_header, report_lines
@@ -439,35 +441,11 @@ def close_ticket(target, identifier, landed, note=None, out=None, provider=None)
     if note:
         message += f"\n\n{note}"
     try:
-        with store.transaction(conn):
-            ticket_id = _ticket_by_identifier(target, conn, identifier)
-            ticket = store.read.ticket_by_id(conn, ticket_id)
-            if ticket.status == "merged":
-                raise SystemExit(f"[holo2] {identifier}: already merged")
-            live = conn.execute(
-                "SELECT id FROM runs WHERE ticketId = ? AND endedAt IS NULL",
-                (ticket_id,)).fetchone()
-            if ticket.activeRunId is not None or live is not None:
-                raise SystemExit(f"[holo2] {identifier}: has a live run")
-            run_id = ticket.lastRunId
-            run = conn.execute(
-                "SELECT outcome, endedAt FROM runs WHERE id = ?",
-                (run_id,)).fetchone()
-            if run is None or run[1] is None or run[0] not in (
-                    "rejected", "failed", "abandoned", "killed"):
-                raise SystemExit(
-                    f"[holo2] {identifier}: last run must have ended rejected,"
-                    " failed, abandoned or killed")
-            store.record_intervention(conn, run_id, "close_out", message)
-            ledger_text = conn.execute(
-                "SELECT text FROM ledger WHERE runId = ? ORDER BY id DESC LIMIT 1",
-                (run_id,)).fetchone()[0]
-            store.set_question(conn, ticket_id, None)
-            store.walk_ticket(conn, ticket_id, "merged")
-            store.clear_merge_sha(conn, run_id)
-        release_lease_label(target, conn, ticket_id, provider, run_id)
-        mirror_push(conn, ticket_id, provider)
-        post_ledger_comment(ticket.linearIssueId, ledger_text, provider)
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        try:
+            close_out_landed(target, conn, ticket_id, message, provider)
+        except CloseRefused as refused:
+            raise SystemExit(f"[holo2] {identifier}: {refused}") from None
         print(f"[holo2] {identifier} closed: {landed}; no factory merge",
               file=out)
     finally:

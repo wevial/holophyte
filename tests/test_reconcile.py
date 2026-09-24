@@ -28,6 +28,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -514,6 +515,74 @@ class RejectedPullRequestTests(MergeModeFixture):
         self.assertEqual(provider.states, [])
         self.assertEqual(store.read.failed_attempts_since(conn, ticket, 0), before)
         self.assertEqual(self.git("rev-parse", branch).strip(), sha)
+
+
+class FailedRunPullRequestTests(MergeModeFixture):
+    """KO-722: a run that failed in a pull-request project leaves its pull
+    request open and the ticket `in_flight`; a person merging it later is
+    the landing `--close` would record."""
+
+    def failed_with_pr(self, pull):
+        from test_pullrequest import MergeModePullRequestTests as H
+        H.parked_on_pr(self)
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        # What REL-138 run 64 left: the run ended failed with its pull
+        # request URL kept, the ticket in flight with no live run.
+        with conn:
+            conn.execute("UPDATE runs SET phase = 'failed', outcome = 'failed',"
+                         " outcomeReason = 'babysit rounds exhausted',"
+                         " endedAt = COALESCE(endedAt, lastHeartbeat)")
+            conn.execute("UPDATE tickets SET status = 'in_flight',"
+                         " blockedQuestion = NULL")
+        H.fake_client(self, pull)
+        provider = StubProvider()
+        label = holophyte.board.lease_label(self.project)
+        provider.labels["iss-131"] = [label]
+        before = self.read("SELECT id FROM interventions")
+        out = io.StringIO()
+        with patch.object(sys, "stdout", out):
+            holophyte.reconcile._reconcile_pull_requests(
+                self.project, conn,
+                conn.execute("SELECT id FROM projects").fetchone()[0], provider)
+        return provider, before, out.getvalue()
+
+    def test_merged_pull_request_closes_the_ticket_out(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+        merged = dict(H.MERGED_PULL, mergedBy={"login": "maintainer"})
+        provider, before, out = self.failed_with_pr(merged)
+        self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
+                         [("merged", None)])
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("failed", None)])
+        last = max((i for (i,) in before), default=0)
+        self.assertEqual(self.read("SELECT runId, action FROM interventions"
+                                   f" WHERE id > {last}"), [(1, "close_out")])
+        ((note,),) = self.read("SELECT summary FROM runEvents WHERE summary"
+                               " LIKE 'human close_out:%'")
+        self.assertIn(self.URL, note)
+        self.assertIn(self.MERGE_SHA[:12], note)
+        self.assertIn("maintainer", note)
+        self.assertIn(("iss-131", "Done"), provider.states)
+        self.assertEqual(len(provider.comments), 1)
+        self.assertIn("KO-131", out)
+
+    def assert_unchanged(self, pull):
+        provider, before, _ = self.failed_with_pr(pull)
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("in_flight",)])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("failed", "failed")])
+        self.assertEqual(self.read("SELECT id FROM interventions"), before)
+        self.assertEqual(provider.states, [])
+
+    def test_open_pull_request_changes_nothing(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+        self.assert_unchanged(H.OPEN_PULL)
+
+    def test_pull_request_closed_unmerged_changes_nothing(self):
+        from test_pullrequest import MergeModePullRequestTests as H
+        self.assert_unchanged(H.CLOSED_PULL)
 
 
 class ContentWakeTests(MergeModeFixture):
