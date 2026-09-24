@@ -14,15 +14,20 @@ queried with the reads the sweep, `/status` and `/attention` already make
 `ready_tickets()`); the locks are read with `read_supervisor_lock()` and
 `read_merge_lock()` and judged, never removed. Nothing here calls Linear or
 GitHub.
+
+With no project, `host_status_report()` is the host form: the registry
+(`holophyte.host`), the build, the home's sweep lock and `sweep.json`, and
+each registered project's snapshot, one project's failure its own `error`.
 """
 import json
+import sqlite3
 import sys
 from time import time
 
 import store.read
 from holophyte.gates import merge_lock_path, read_merge_lock
 from holophyte.serve_runs import json_host
-from holophyte.supervisor import SWEEPABLE_PHASES
+from holophyte.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.supervisor_lock import (
     pid_alive,
     read_supervisor_lock,
@@ -56,18 +61,18 @@ def snapshot(target, conn, now=None):
                     "question": ticket.blockedQuestion}
                    for ticket in store.read.blocked_tickets(conn)],
         "ready": len(store.read.ready_tickets(conn)),
-        "supervisor_lock": _supervisor_holder(target),
+        "supervisor_lock": _supervisor_holder(supervisor_lock_path(target)),
         "merge_lock": _merge_holder(target, conn),
     }
 
 
-def _supervisor_holder(target):
-    """`{"pid", "stale"}` for the supervisor lock, None with no lock file.
+def _supervisor_holder(path):
+    """`{"pid", "stale"}` for the supervisor lock at `path`, None with no
+    lock file: a project's, or the host sweep's in the home.
 
     A file that names no pid is reported with a null pid and a null
     `stale`: a lock, but not one whose holder can be judged.
     """
-    path = supervisor_lock_path(target)
     if not path.exists():
         return None
     holder = read_supervisor_lock(path)
@@ -136,3 +141,98 @@ def status_report(target, as_json=False, out=None, now=None):
         conn.close()
     print(json.dumps(snap) if as_json else "\n".join(render(snap)), file=out)
     return 0
+
+
+# The host form: `factory.py --status` with no project reads the registry,
+# the home's sweep lock and `sweep.json`, then each registered project's
+# store as the project form does. One project's missing store, bad config
+# or unreadable file is that project's `error`, never the report.
+HOME_LOCK = "supervisor.lock"
+SWEEP_STATE = "sweep.json"
+
+
+def _sweep_state(home):
+    """`sweep.json` as written, None when absent, `{"error"}` unreadable."""
+    try:
+        return json.loads((home / SWEEP_STATE).read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as bad:
+        return {"error": str(bad)}
+
+
+def _host_project(entry, now):
+    """One registry entry as `{"name", "path", "store", "error"}`."""
+    row = {"name": entry.name, "path": str(entry.path), "store": None,
+           "error": entry.error}
+    if entry.error:
+        return row
+    if not entry.target.store_path.exists():
+        row["error"] = f"no store at {entry.target.store_path}"
+        return row
+    try:
+        conn = store.read.open_readonly(entry.target.store_path)
+        try:
+            row["store"] = snapshot(entry.target, conn, now)
+        finally:
+            conn.close()
+    except sqlite3.Error as bad:
+        row["error"] = f"{type(bad).__name__}: {bad}"
+    return row
+
+
+def host_snapshot(host, now=None):
+    """The host's state as one JSON-able dict: the build this checkout is
+    at and the one the last sweep ran, the home lock, `sweep.json`, and
+    every registered project's snapshot or error."""
+    sweep = _sweep_state(host.home)
+    return {
+        "home": str(host.home),
+        "registry": str(host.path),
+        "build": {"head": factory_revision(),
+                  "sweep": (sweep or {}).get("revision")},
+        "sweep": sweep,
+        "home_lock": _supervisor_holder(host.home / HOME_LOCK),
+        "projects": [_host_project(entry, now) for entry in host.projects()],
+    }
+
+
+def render_host(snap):
+    """The host snapshot as the lines `--status` prints; a project's lines
+    are its project-form lines, each prefixed with `[NAME]`."""
+    build = snap["build"]
+    sweep = snap["sweep"]
+    lines = [f"host {snap['home']}: {len(snap['projects'])} projects in"
+             f" {snap['registry']}",
+             f"build head {build['head'] or 'unknown'},"
+             f" sweep {build['sweep'] or 'none'}"]
+    if sweep is None:
+        lines.append("sweep: none")
+    else:
+        lines.append("sweep: " + ", ".join(
+            f"{key} {sweep[key]}" for key in
+            ("started", "ended", "revision", "exit", "error") if key in sweep))
+    lines.append(_lock_line("home", snap["home_lock"], "pid"))
+    for project in snap["projects"]:
+        prefix = f"[{project['name'] or project['path']}]"
+        if project["store"] is None:
+            lines.append(f"{prefix} project {project['path']}:"
+                         f" {project['error']}")
+            continue
+        lines.extend(f"{prefix} {line}" for line in render(project["store"]))
+    return lines
+
+
+def host_status_report(host, as_json=False, out=None, now=None):
+    """`--status` with no project: exit 1 when there is no registry or any
+    project could not be read, so a script is not handed a partial answer
+    as a whole one."""
+    out = out or sys.stdout
+    if not host.path.exists():
+        print(f"[holo2] no host registry at {host.path}; `factory.py project"
+              " add PATH` registers a project", file=out)
+        return 1
+    snap = host_snapshot(host, now)
+    print(json.dumps(snap) if as_json else "\n".join(render_host(snap)),
+          file=out)
+    return 1 if any(project["error"] for project in snap["projects"]) else 0

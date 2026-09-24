@@ -206,7 +206,9 @@ class RepointFlagTests(unittest.TestCase):
         self.assertEqual(conn.execute(
             "SELECT action FROM interventions WHERE projectId IS NOT NULL"
         ).fetchall(), [("register_project",)])
-        with self.assertRaisesRegex(SystemExit, "project 1 already registered"):
+        with self.assertRaisesRegex(
+                SystemExit,
+                re.escape(f"fresh {repo.resolve()} is already registered in")):
             holophyte.cli.cli(["project", "add", str(repo)])
 
     def test_note_is_required(self):
@@ -313,10 +315,11 @@ class HelpWordTests(unittest.TestCase):
             return done.stdout
         loop = help_of()
         add = help_of("project", "add")
-        # The usage block's last word is the positional argument.
+        # The usage block's last word is the positional argument, optional
+        # because `--status` alone is the host form.
         usage = loop.split("\n\n", 1)[0]
         self.assertTrue(usage.startswith("usage: factory.py"), usage)
-        self.assertEqual(usage.split()[-1], "project")
+        self.assertEqual(usage.split()[-1], "[project]")
         for text in (loop, add):
             self.assertIsNone(re.search(r"(?i)\btarget\b", text), text)
 

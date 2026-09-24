@@ -10,6 +10,9 @@ Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
 - `holophyte/cli_project.py` — project registration, listing and admission commands.
+- `holophyte/host.py` — the host registry, `HOLOPHYTE_HOME/host.toml`: the
+  projects a host serves and sweeps, by path, reloaded when the file changes;
+  its one writer path is an exclusive temporary file and a rename.
 - `holophyte/cli.py` — the argument parser and mode dispatch: `--report`,
   `--requeue`, `--approve`, `--babysit`, `--repoint`, `--file-ticket`,
   `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.

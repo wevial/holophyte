@@ -7,7 +7,7 @@ commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
 [--update KO-n]`, `--approve KO-n`, `--babysit KO-n`,
 `--repoint KO-n SHA`, `--pause KO-n`, `--resume KO-n`, `--abort KO-n
 [--close-pr]`, `--close KO-n --landed URL`, `--hold`, `--release-hold` and
-`factory.py project add|list|enable|hold|disable`) are described by
+`factory.py project add|remove|list|enable|hold|disable`) are described by
 `factory.py --help` and the [CLI reference](reference/cli.md), and the
 escalation ladder they sit on in the [runbook](operating/runbook.md). Back
 to the [README](index.md).
@@ -311,8 +311,12 @@ convention, nothing else; splitting the drawer onto a second machine is
 ### Registering and disabling projects
 
 `python3 factory.py project add PATH` validates a repository root and its
-existing `[board]` configuration, then registers it without starting a run.
-A second add refuses and names the existing row. Configuration remains in its
+existing `[board]` configuration, then registers it without starting a run,
+in its store and in the host registry, `HOLOPHYTE_HOME/host.toml`. A second
+add of the same path, or of a project whose `[serve] name` is already
+registered, refuses and names the entry; a store row the loop wrote for the
+same team and path is adopted rather than refused. `project remove NAME`
+drops a registry entry and leaves its store alone. Configuration remains in its
 existing per-project file; registration does not move it. New registrations,
 including implicit loop registration, store canonical absolute repository paths.
 If a legacy row has a relative path, registration and admission checks refuse
@@ -323,11 +327,14 @@ interpret it relative to the current working directory. This refusal applies
 across the store because the ambiguous row could identify any project.
 `project list` remains available to inspect the rows.
 
-From the repository directory, use `python3 factory.py project list` to print
-name, path, admission, note and newest run, ordered by name and path. All project
-commands accept `--store PATH` to select one database explicitly; this does not
-combine stores. Without it, `add` uses the added repository's store and the other
-commands use the current repository's store.
+`python3 factory.py project list` prints each registered project's name,
+path, admission and note from its own store; `python3 factory.py --status`
+with no project reports every one of them. With `--store PATH`, `project list`
+prints that store's rows instead: name, path, admission, note and newest run,
+ordered by name and path. The admission commands accept `--store PATH` to
+select one database explicitly; this does not combine stores. Without it, `add`
+uses the added repository's store and the other commands use the current
+repository's store.
 
 `project hold NAME --note TEXT` stops new admission while workers drain.
 `project disable NAME --note TEXT` also stops admission; a disabled supervisor

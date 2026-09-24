@@ -4,7 +4,8 @@
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
-`--sweep [--act]`, `--status [--json]`, `--import-store PATH --dry-run`,
+`--sweep [--act]`, `--status [--json]` (with no project, the host's),
+`--import-store PATH --dry-run`,
 `--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
 loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
@@ -46,7 +47,7 @@ from holophyte.pool import worker
 from holophyte.project import Project
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.startup import eager_import
-from holophyte.status import status_report
+from holophyte.status import host_status_report, status_report
 from holophyte.store_import import dry_run
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
@@ -188,8 +189,9 @@ def _legacy_cli(argv):
     # one machine. A missing target is an argparse error, the same way a
     # mistyped flag is.
     parser.add_argument(
-        "target", metavar="project",
-        help="repository the loop works in")
+        "target", metavar="project", nargs="?",
+        help="repository the loop works in; left out, --status reports the "
+             "host: every project in HOLOPHYTE_HOME/host.toml")
     # The read-only modes, exclusive of each other: each one prints its table
     # and exits, so a command line naming both is a mistake argparse should
     # answer rather than a silent choice between them.
@@ -390,6 +392,8 @@ def _legacy_cli(argv):
     _modifier_checks(parser, args)
     _note_checks(parser, args)
     _close_checks(parser, args)
+    if args.target is None:
+        return _host_mode(parser, args)
     # A dry run writes nothing, and adopting legacy state moves files: it
     # locates the target without adopting, so a store still in a legacy
     # layout is reported absent rather than moved.
@@ -476,6 +480,19 @@ def _legacy_cli(argv):
     if loop_config(target).spawn_supervisor:
         start_supervisor(target)
     return main(target, require_board(target, board))
+
+
+def _host_mode(parser, args):
+    """The flags with no project mean the host; `--status` is the one host
+    form so far. Anything else still needs the project it acts on."""
+    if not args.status:
+        parser.error("the following arguments are required: project (only "
+                     "--status has a host form)")
+    from holophyte.host import Host, HostError
+    try:
+        return host_status_report(Host.locate(), as_json=args.json)
+    except HostError as bad:
+        raise SystemExit(str(bad)) from None
 
 
 def _read_only_mode(args, target):

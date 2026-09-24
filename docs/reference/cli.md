@@ -2,7 +2,7 @@
 
 `python3 factory.py [MODE] PROJECT`. The command line is parsed, not
 indexed, so `--help` is safe. Modes are mutually exclusive; the project is
-always the repository path. `python3 factory.py project VERB` is a separate
+always the repository path, except in the [host forms](#host-forms). `python3 factory.py project VERB` is a separate
 command family, [below](#project-commands).
 
 | Invocation | Does | Touches |
@@ -32,8 +32,9 @@ command family, [below](#project-commands).
 
 ## Project commands
 
-`python3 factory.py project VERB [--store PATH]` registers projects and
-changes their admission in one store. `--store PATH` names the database;
+`python3 factory.py project VERB [--store PATH]` registers projects in the
+host registry, `HOLOPHYTE_HOME/host.toml`, and changes their admission in
+one store. A project's `NAME` in the registry is its `[serve] name`. `--store PATH` names the database;
 without it `project add` uses the added repository's store and the other
 verbs the store of the repository the command runs in. `NAME` is the
 repository directory's basename; a name that matches no row, or more than
@@ -41,11 +42,23 @@ one, is refused. See [Operating](../operating.md#registering-and-disabling-proje
 
 | Invocation | Does | Touches |
 | --- | --- | --- |
-| `project add PATH [--store PATH]` | validates `PATH` as a repository root whose `config.toml` passes and has a `[board]` table naming a team, then registers it enabled, recorded as `register_project`, without starting a run; refuses a second add, naming the existing row | store |
-| `project list [--store PATH]` | prints each project's name, path, admission, note and newest run | store, read-only |
+| `project add PATH [--store PATH]` | validates `PATH` as a repository root whose `config.toml` passes and has a `[board]` table naming a team, then registers it enabled, recorded as `register_project`, without starting a run, and adds its resolved path to `host.toml`; a row the loop already wrote for the same team at the same path is adopted, and a row is recorded as `register_project` once however often it is adopted; refuses a path or name already in `host.toml`, naming the entry, and the same team at another path, naming the row. `host.toml` is rewritten whole through `host.toml.tmp`, created exclusively, and a rename, so two adds at once keep both | store, `host.toml` |
+| `project remove NAME` | drops `NAME`'s entry from `host.toml`; touches no store; refuses a name the registry does not hold, listing the ones it does | `host.toml` |
+| `project list [--store PATH]` | without `--store`, prints each project in `host.toml`: name, path, and the admission and note its own store holds (`-` without a store or row); with `--store`, each row of that store: name, path, admission, note and newest run | `host.toml`, store, read-only |
 | `project enable NAME [--note TEXT] [--store PATH]` | enables admission again, recorded as `release_hold`; the note defaults to `enabled by operator`; refuses a project already enabled | store |
 | `project hold NAME --note TEXT [--store PATH]` | stops new admission while existing runs finish, recorded as `hold`; refuses a project already held | store |
 | `project disable NAME --note TEXT [--store PATH]` | stops admission, recorded as `disable`; a disabled project's supervisor exits at startup and `/status` reports the state and note with no runs; refuses a project already disabled | store |
+
+## Host forms
+
+A mode given no project means the host: every project listed in the host
+registry, `HOLOPHYTE_HOME/host.toml`, which `project add` and `project
+remove` write. `--status` is the one host form so far; any other mode
+without a project is a usage error.
+
+| Invocation | Does | Touches |
+| --- | --- | --- |
+| `--status [--json]` | the host form: the checkout's build and the last sweep's, the home's `supervisor.lock`, `sweep.json` (`sweep: none` without one), then every project in `HOLOPHYTE_HOME/host.toml` as the project form prints it, each line prefixed `[NAME]`; a project whose config, store or file cannot be read is its own error line and the exit is 1; no `host.toml` is exit 1 naming `project add` | `host.toml`, each store, read-only |
 
 ## Startup checks
 
