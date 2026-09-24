@@ -1,0 +1,14 @@
+[Unit]
+Description=Holophyte host: the serve socket and the sweep timer
+# Wants, not Requires: one unit failing must not stop the others. The
+# socket and the timer are PartOf this target, so `systemctl --user restart
+# holophyte.target` and `stop` reach both, and the daemon the socket
+# started. The sweep service is not PartOf it (a run in flight is stopped
+# by name), and no holophyte-loop@ instance is: a target restart or stop
+# never touches a live loop.
+Wants=holophyte-serve.socket holophyte-sweep.timer
+
+[Install]
+# The only one of the host units with an [Install] section:
+# `systemctl --user enable --now holophyte.target` is the whole setup.
+WantedBy=default.target

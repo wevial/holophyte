@@ -1,0 +1,33 @@
+[Unit]
+Description=Holophyte host daemon (--serve), every project in host.toml
+Requires=holophyte-serve.socket
+After=holophyte-serve.socket network-online.target
+PartOf=holophyte.target
+# No start limit, deliberately: a daemon that cannot start (a bad host.toml,
+# no tomlkit) would otherwise hit the burst, and systemd would fail the
+# socket with it and drop the port until `reset-failed`. Instead it retries
+# every RestartSec with the port held.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# `factory.py --serve` with no project is the host daemon. Under socket
+# activation (LISTEN_FDS=1, LISTEN_PID its own) it serves on the socket the
+# unit above hands over. On a factory HEAD move it stops accepting, drains
+# its requests for at most DRAIN_SEC (20 s) and exits 0; the socket queues
+# the next connection and starts the new code. So a clean exit is a HEAD
+# move or a stop, and only a failure restarts it here.
+# WorkingDirectory is the factory checkout; adjust it to your layout.
+WorkingDirectory=%h/srv/dev/holophyte
+ExecStart=/usr/bin/python3 factory.py --serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Hardening: on loopback the socket's address is the boundary; beyond it
+# host.toml's [serve] machine_token_file guards every project route. No new
+# privileges, private tmp.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=%h

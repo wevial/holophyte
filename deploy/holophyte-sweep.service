@@ -1,0 +1,28 @@
+[Unit]
+Description=Holophyte host sweep (--supervise --once), every project in host.toml
+After=network-online.target
+# Not PartOf holophyte.target: a target stop leaves a run in flight to
+# finish. Stop one by name: `systemctl --user stop holophyte-sweep.service`.
+
+[Service]
+# One run and an exit: sweep and beat every registered store, then act on
+# the trips and reconcile under a deadline of half the interval, write
+# ~/.holophyte/sweep.json, exit 1 when any project errored. The timer
+# fires it; `POST /actions/run-sweep` on the daemon starts it too. systemd
+# never starts a oneshot still activating, so the unit is the mutual
+# exclusion; the run also takes ~/.holophyte/supervisor.lock.
+Type=oneshot
+# WorkingDirectory is the factory checkout; adjust it to your layout. Every
+# run is the checkout's HEAD: nothing to restart after a merge.
+WorkingDirectory=%h/srv/dev/holophyte
+ExecStart=/usr/bin/python3 factory.py --supervise --once
+# Above the 97 s worst single Linear read (three 30 s attempts and 7 s of
+# waits), which no timeout cuts: a slow run is stopped here, never mid-call
+# by the sweep itself. The daemon reads a run started longer ago than this
+# with no end as killed. SIGTERM finishes the transaction in hand; SIGKILL
+# follows TimeoutStopSec later, and the next run reclaims the dead pid's lock.
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true

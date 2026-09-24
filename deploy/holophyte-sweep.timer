@@ -1,0 +1,14 @@
+[Unit]
+Description=Holophyte host sweep, every 60 s
+PartOf=holophyte.target
+
+[Timer]
+# Starts holophyte-sweep.service 5 s after the timer starts, then 60 s
+# after each run started. systemd never starts a oneshot that is still
+# activating, so a run past 60 s skips the next fire rather than overlapping
+# it. OnUnitActiveSec must equal host.toml's [supervisor] sweep_sec (default
+# 60): the daemon judges a sweep stale after two of those intervals.
+# AccuracySec defaults to a minute; 1 s keeps the interval an interval.
+OnActiveSec=5
+OnUnitActiveSec=60
+AccuracySec=1

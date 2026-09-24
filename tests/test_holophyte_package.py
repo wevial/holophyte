@@ -377,11 +377,16 @@ class ProjectTypeTests(unittest.TestCase):
             _module(self.OLD_MODULE)
 
     def test_the_old_names_are_gone_from_the_code_and_the_manual(self):
+        # The module is named as Python names it -- imported, or with an
+        # attribute after it -- so the systemd unit `holophyte.target`
+        # (deploy/, consolidation stage 4) is not taken for it.
+        module = rf"holophyte\.{self.OLD_MODULE}"
         found = subprocess.run(
-            ["git", "grep", "-nw",
+            ["git", "grep", "-nwE",
              "-e", self.OLD_TYPE,
-             "-e", f"holophyte.{self.OLD_MODULE}",
-             "-e", f"holophyte/{self.OLD_MODULE}.py",
+             "-e", rf"(from|import) {module}",
+             "-e", rf"{module}\.[A-Za-z_]+",
+             "-e", f"holophyte/{self.OLD_MODULE}\\.py",
              "--", "holophyte", "tests", "store", "factory.py", "README.md",
              "AGENTS.md", "docs", ":!docs/design"],
             cwd=ROOT, capture_output=True, text=True)
