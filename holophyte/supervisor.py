@@ -600,6 +600,43 @@ def _board_issue_owed(conn, project, issue, out):
         return status == "ready" and active_run is None
 
 
+# When the supervisor last asked the board which of a project's mirrored
+# tickets it has closed, by project id. Kept in the process, not the store:
+# a re-exec simply asks once more (KO-723).
+_MIRROR_ASKED = {}
+
+
+def reconcile_board_closes(conn, project, provider, target, now, out,
+                           board_ask_ms):
+    """Walk the tickets the board closed while no loop ran (KO-723): the
+    loop's own `_reconcile_mirror()`, which otherwise runs only at a loop's
+    startup, so a ticket the maintainer landed outside its pull request or
+    cancelled stayed open in the store until some loop started. Asked at
+    most once per `board_ask_ms` per project, only when the project has an
+    open ticket with no active run, and not while the Linear budget is low.
+    Anything it raises is one printed line -- never a strike, never the
+    pass."""
+    from holophyte.reconcile import _reconcile_mirror
+
+    if provider is None:
+        return
+    asked_at = _MIRROR_ASKED.get(project)
+    if asked_at is not None and now - asked_at < board_ask_ms:
+        return
+    if not any(t.activeRunId is None
+               for t in store.read.open_tickets(conn, project)):
+        return
+    if linear_budget_low(now, out):
+        return
+    _MIRROR_ASKED[project] = now
+    try:
+        with contextlib.redirect_stdout(out):
+            _reconcile_mirror(conn, project, provider, target)
+    except Exception as e:  # noqa: BLE001 - never a strike, never the pass
+        print(f"[holo2] closed board tickets could not be reconciled"
+              f" ({e}); a later pass asks again", file=out)
+
+
 def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
                                    knobs=None):
     """Land the pull requests a person merged while no loop was running
@@ -620,7 +657,8 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     as in the loop. A GitHub error is the reconcile's one printed line per
     ticket; anything else it raises is printed here and the pass goes on
     to its heartbeat, so nothing about GitHub ever counts as a strike or
-    ends a pass.
+    ends a pass. The board's closes follow the same way: the mirror
+    reconcile runs too, throttled per project (`reconcile_board_closes()`).
 
     Ready store tickets are owed a loop. A mirror miss asks the board, with
     its poll throttle and Linear budget gate, excluding already parked or
@@ -652,6 +690,8 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
                   f" ({e}); the next pass asks again", file=out)
         else:
             asked.append(project)
+        reconcile_board_closes(conn, project, provider, target, now, out,
+                               knobs.board_ask_ms)
         # Owed however it got there -- this pass's send-back, an
         # operator's --requeue or --babysit, a ticket filed while the
         # loop was down -- and asked even when GitHub could not be: the
