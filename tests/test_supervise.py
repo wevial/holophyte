@@ -157,6 +157,9 @@ class SuperviseTests(SweepTestCase):
             self.supervise(lambda _interval: None)
 
         self.assertIn("newer than the version", str(ended.exception))
+        # A failure to the service manager: `Restart=on-failure` restarts
+        # only a process whose exit status is non-zero.
+        self.assertNotIn(ended.exception.code, (0, None))
         self.assertFalse(self.lock.exists())
         self.assertEqual(self.heartbeats(), [])
 
