@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { ACTIONS_OFF, ROUTES, postAction } from "../lib/actions";
+import { ACTIONS_OFF, ROUTES, actionBase, postAction } from "../lib/actions";
+import { RUN_SWEEP } from "../lib/attention";
+import { underHost } from "../lib/hosts";
 import { fetchConfig, namedKey, putConfig, type ConfigAnswer, type ConfigValues, type ConfigWrite, type PatchValue } from "../lib/config";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import type { Status } from "../lib/types";
@@ -10,7 +12,9 @@ import { NEEDS_TOKEN } from "./TicketSheet";
 export const CONFIG_EDIT_OFF = "Read-only: this daemon has not opted into config edits ([serve] config_edit = true)";
 /** The banner over Save: the loop reads the file once, at startup. */
 export const APPLIES_LINE = "A saved change applies at the loop's next start.";
-/** The action beside the banner, the same wired label the rows post. */
+/** The action beside the banner, the same wired label the rows post; a
+ *  project behind a host daemon has no supervisor of its own and gets
+ *  the host sweep's `RUN_SWEEP` instead. */
 export const RESTART_LABEL = "Restart supervisor";
 /** The note under a field whose key the file holds in another shape than
  *  the field edits (a table where a string is expected, a list of numbers):
@@ -183,12 +187,13 @@ export function SettingsSheet({
     setTab(field == null ? "raw" : "fields");
   };
 
-  const restartRoute = ROUTES[RESTART_LABEL]!;
+  const restartLabel = underHost(base) ? RUN_SWEEP : RESTART_LABEL;
+  const restartRoute = ROUTES[restartLabel]!;
   const restartAct =
     status.actions === true
       ? async () => {
           setRestart(null);
-          const result = await postAction(base, restartRoute, {}, deps.fetch);
+          const result = await postAction(actionBase(restartLabel, base), restartRoute, {}, deps.fetch);
           setRestart({ text: result.detail, ok: result.ok });
         }
       : undefined;
@@ -395,7 +400,7 @@ export function SettingsSheet({
             </p>
             <span className="ml-auto">
               <ActionButton onAct={restartAct} title={ACTIONS_OFF}>
-                {RESTART_LABEL}
+                {restartLabel}
               </ActionButton>
             </span>
           </div>

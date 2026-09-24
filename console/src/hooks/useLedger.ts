@@ -13,7 +13,7 @@ export interface HostLedger {
   absent: boolean;
 }
 
-/** Ledger windows keyed by host address; a host is missing until its
+/** Ledger windows keyed by record key (`HostRecord.key`); a host is missing until its
  *  first answer lands. */
 export type Ledgers = Record<string, HostLedger>;
 
@@ -69,14 +69,14 @@ export function useLedger(hosts: HostRecord[], now: number, polls = 0, deps: { f
       const asks = threadAsks(host.attention?.items ?? [], midnight)
         .map((ask) => `${ask.ticket}=${ask.since}`)
         .join(",");
-      return `${host.address}\t${host.base}\t${asks}`;
+      return `${host.key}\t${host.base}\t${asks}`;
     })
     .join("\n");
 
   useEffect(() => {
     let alive = true;
     for (const line of key.split("\n").filter((candidate) => candidate.length > 0)) {
-      const [address = "", base = "", asked = ""] = line.split("\t");
+      const [key = "", base = "", asked = ""] = line.split("\t");
       const asks = asked
         .split(",")
         .filter((ask) => ask.length > 0)
@@ -84,8 +84,8 @@ export function useLedger(hosts: HostRecord[], now: number, polls = 0, deps: { f
           const at = ask.lastIndexOf("=");
           return { ticket: ask.slice(0, at), since: Number(ask.slice(at + 1)) };
         });
-      void hostLedger(fetchRef.current, base, midnight, asks, ledgersRef.current[address]).then((next) => {
-        if (alive && next != null) setLedgers((all) => ({ ...all, [address]: next }));
+      void hostLedger(fetchRef.current, base, midnight, asks, ledgersRef.current[key]).then((next) => {
+        if (alive && next != null) setLedgers((all) => ({ ...all, [key]: next }));
       });
     }
     return () => {

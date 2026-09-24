@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ACTIONS_OFF, NOT_WIRED, ROUTES, postAction } from "../lib/actions";
+import { ACTIONS_OFF, NOT_WIRED, ROUTES, actionBase, postAction } from "../lib/actions";
 import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME } from "../lib/attention";
 import type { Fetch } from "../lib/poll";
 import { ActionButton } from "./ActionButton";
@@ -48,7 +48,7 @@ export function RowActions({ kind, actions, ticket, prUrl, daemon, runId }: {
     if (!daemon || !daemon.actions || route == null) return undefined;
     return async () => {
       setDetail(null);
-      const result = await postAction(daemon.base, route, bodyFor(label, ticket), daemon.fetch ?? pageFetch);
+      const result = await postAction(actionBase(label, daemon.base), route, bodyFor(label, ticket), daemon.fetch ?? pageFetch);
       setDetail({ text: result.detail, ok: result.ok });
     };
   };

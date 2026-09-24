@@ -71,7 +71,8 @@ export function Rail({
 }) {
   const { hosts, polledAgo, now } = peers;
   const attentionCount = hosts.reduce((total, host) => total + hostItems(host, now).length, 0);
-  const failures = hosts.filter((host) => host.error != null);
+  // A host daemon whose root failed is one failure, not one per project.
+  const failures = [...new Set(hosts.flatMap((host) => (host.error == null ? [] : [host.error])))];
 
   return (
     <nav
@@ -134,9 +135,9 @@ export function Rail({
         <p className="px-2 font-mono text-[11px] text-rail-faint">
           {polledAgo == null ? "polling…" : `polled ${formatDuration(polledAgo)} ago`}
         </p>
-        {failures.map((host) => (
-          <p key={host.address} role="alert" className="px-2 font-mono text-[10px] text-rail-bad-text">
-            poll failed: {host.error}
+        {failures.map((error) => (
+          <p key={error} role="alert" className="px-2 font-mono text-[10px] text-rail-bad-text">
+            poll failed: {error}
           </p>
         ))}
         <ThemeToggle theme={theme} onChange={onTheme} />

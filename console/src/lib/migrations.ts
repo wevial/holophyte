@@ -18,7 +18,7 @@ export function migrationLines(hosts: HostRecord[], ledgers: Ledgers, now: numbe
     const latest = new Map<string, LedgerRow>();
     const migrated = new Set<string>();
     for (const host of siblings) {
-      for (const row of ledgers[host.address]?.rows ?? []) {
+      for (const row of ledgers[host.key]?.rows ?? []) {
         if (row.action !== "migrate" || row.at < localMidnight(now)) continue;
         const project = String(row.project ?? host.project ?? host.address);
         migrated.add(project);

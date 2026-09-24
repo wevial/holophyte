@@ -42,6 +42,25 @@ Python 3.11+ and the standard library.
    token on every request. `~` and a path relative to the config file both
    work. A daemon on loopback needs none.
 
+   A host daemon (`python3 factory.py --serve`, no project) serves every
+   project registered on its host from one address. Give it one
+   `[[daemon]]` whose `token_file` is a copy of the file its `host.toml`
+   `[serve] machine_token_file` names:
+
+   ```toml
+   [[daemon]]
+   name = "writer"
+   url = "http://HOST:7710"
+   token_file = "tokens/writer-machine.token"
+   ```
+
+   The drawer asks its root `/status` for the registered projects, then
+   polls each under `/projects/NAME` with that one token. Each project is a
+   block of its own; above the first, one line gives the host's last sweep
+   and how long ago it ended. A sweep that is not fresh is amber and listed
+   under "needs you". A project whose store the daemon cannot read is its
+   own block's error; the other projects render whole.
+
 4. Refresh SwiftBar. If the icon does not appear, SwiftBar's `PATH` may lack
    a `python3` of 3.11 or newer; put one first on the PATH SwiftBar sees.
 

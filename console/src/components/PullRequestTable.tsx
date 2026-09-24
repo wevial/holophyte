@@ -26,7 +26,7 @@ export function PullRequestTable({ hosts, project, now, actionFetch, polls = 0, 
   const localNow = useTick(TICK_MS);
   const { pullRequests } = splitPullRequests(filterItems(hosts.flatMap(host => hostItems(host, now)), "all", project));
   const rows = orderByAge(pullRequests.map(item => {
-    const host = hosts.find(candidate => candidate.address === item.daemon);
+    const host = hosts.find(candidate => candidate.key === item.daemon);
     const status = host?.status;
     const description = describe(item, status?.thresholds ?? { heartbeat_stale_ms: 0, strikes: 0 }, {
       now: status ? status.now + sinceSeen(host?.seen_ms, localNow) : now,

@@ -7,7 +7,7 @@ import { Shipped } from "./components/Shipped";
 import { Rail, type ProjectChoice, type View } from "./components/Rail";
 import { usePeers } from "./hooks/usePeers";
 import { useShipped } from "./hooks/useShipped";
-import { visibleHosts } from "./lib/hosts";
+import { rootOf, visibleHosts } from "./lib/hosts";
 import { defaultPollDeps, REQUEST_TIMEOUT_MS, type PollDeps } from "./lib/poll";
 import { applyTheme, readTheme, writeTheme, type Theme } from "./lib/theme";
 
@@ -30,10 +30,11 @@ export function App({
     const match = /^#run=([1-9]\d*)(?:&daemon=([^&]+))?$/.exec(window.location.hash);
     if (!match || !Number.isSafeInteger(Number(match[1]))) return null;
     // Keep peer navigation on this origin, where its bearer token is stored.
+    // A project behind a host daemon is the daemon's origin and its prefix.
     const daemon = new URLSearchParams(window.location.hash.slice(1)).get("daemon") ?? base;
     try {
       const url = new URL(daemon);
-      if (!/^https?:$/.test(url.protocol) || url.origin !== daemon) return null;
+      if (!/^https?:$/.test(url.protocol) || rootOf(daemon) !== url.origin) return null;
       return { id: Number(match[1]), base: daemon };
     } catch { return null; }
   };

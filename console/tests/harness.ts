@@ -52,6 +52,7 @@ export function peersFetch(origin: string, daemons: Record<string, StubDaemon>):
 /** A host record as one good poll of `base` would leave it. */
 export function hostOf(status: Status, attention: Attention, base = "http://writer:7710", polledMs = 0): HostRecord {
   return {
+    key: addressOf(base),
     address: addressOf(base),
     base,
     label: addressOf(base),
