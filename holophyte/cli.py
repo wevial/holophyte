@@ -4,7 +4,8 @@
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
-`--sweep [--act]`, `--status [--json]` (with no project, the host's),
+`--sweep [--act]`, `--status [--json]` and `--serve` (with no project,
+the host's),
 `--import-store PATH --dry-run`,
 `--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
 loop itself
@@ -71,7 +72,10 @@ APPROVE_DEFAULT_NOTE = "approved for merge"
 
 
 def serve_address(text):
-    """`--serve`'s argparse type: the address as typed, once it parses."""
+    """`--serve`'s argparse type: the address as typed, once it parses;
+    `""`, the bare flag, is the host daemon's."""
+    if text == "":
+        return text
     try:
         parse_address(text)
     except ValueError as bad:
@@ -321,11 +325,15 @@ def _legacy_cli(argv):
     # that is not a number is a usage error naming the shapes, not a bind
     # failure later.
     modes.add_argument(
-        "--serve", metavar=ADDRESS_SHAPE, type=serve_address,
+        "--serve", metavar=ADDRESS_SHAPE, type=serve_address, nargs="?",
+        const="",
         help="serve the JSON routes and the console on %s until SIGINT/SIGTERM; reads "
              "the store by default, and writes only through two opt-ins: [serve] "
              "actions (POST /actions/...) and [serve] config_edit (PUT /config); a "
-             "bearer token from [serve] token_file beyond loopback" % ADDRESS_SHAPE)
+             "bearer token from [serve] token_file beyond loopback. With no "
+             "project, every project in host.toml under /projects/NAME, on the "
+             "address given, host.toml's [serve] bind or a socket from the "
+             "service manager" % ADDRESS_SHAPE)
     # Internal: the child the scheduler spawns under `[loop] workers > 1`.
     # One ticket, claim to close, exit with the run's status; the scheduler
     # has already run the startup checks, the sweep and the supervisor spawn
@@ -394,6 +402,9 @@ def _legacy_cli(argv):
     _close_checks(parser, args)
     if args.target is None:
         return _host_mode(parser, args)
+    if args.serve == "":
+        parser.error(f"--serve needs {ADDRESS_SHAPE} with a project; without"
+                     " one it serves the host")
     # A dry run writes nothing, and adopting legacy state moves files: it
     # locates the target without adopting, so a store still in a legacy
     # layout is reported absent rather than moved.
@@ -483,11 +494,16 @@ def _legacy_cli(argv):
 
 
 def _host_mode(parser, args):
-    """The flags with no project mean the host; `--status` is the one host
-    form so far. Anything else still needs the project it acts on."""
+    """The flags with no project mean the host; `--status` and `--serve`
+    are the host forms so far. Anything else still needs the project it
+    acts on."""
+    if args.serve is not None:
+        from holophyte.host import Host
+        from holophyte.serve_host import serve_host
+        return serve_host(Host.locate(), args.serve or None)
     if not args.status:
         parser.error("the following arguments are required: project (only "
-                     "--status has a host form)")
+                     "--status and --serve have a host form)")
     from holophyte.host import Host, HostError
     try:
         return host_status_report(Host.locate(), as_json=args.json)

@@ -61,12 +61,13 @@ See [Operating](../operating.md#registering-and-disabling-projects).
 
 A mode given no project means the host: every project listed in the host
 registry, `HOLOPHYTE_HOME/host.toml`, which `project add` and `project
-remove` write. `--status` is the one host form so far; any other mode
-without a project is a usage error.
+remove` write. `--status` and `--serve` are the host forms so far; any
+other mode without a project is a usage error.
 
 | Invocation | Does | Touches |
 | --- | --- | --- |
 | `--status [--json]` | the host form: the checkout's build and the last sweep's, the home's `supervisor.lock`, `sweep.json` (`sweep: none` without one), then every project in `HOLOPHYTE_HOME/host.toml` as the project form prints it, each line prefixed `[NAME]`; a project whose config, store or file cannot be read is its own error line and the exit is 1; no `host.toml` is exit 1 naming `project add` | `host.toml`, each store, read-only |
+| `--serve [HOST:PORT]` | the host daemon: every registered project's routes under `/projects/NAME/...` (`NAME` its `[serve] name`), and the host's `/status` and `/attention` at the root; serves on the socket the service manager hands over (`LISTEN_FDS`), else the address given, else `host.toml`'s `[serve] bind`; `host.toml`'s `[serve] machine_token_file` is the bearer beyond loopback and for every write, `[serve] actions` opens the project actions and `POST /actions/run-sweep`. On a factory `HEAD` move it exits 0 when handed its socket, and re-executes otherwise | `host.toml`, each store; writes only through the opt-ins, and `run-sweep` appends to `HOLOPHYTE_HOME/host-actions.jsonl` |
 
 ## Startup checks
 

@@ -150,12 +150,19 @@ HOME_LOCK = "supervisor.lock"
 SWEEP_STATE = "sweep.json"
 
 
-def _sweep_state(home):
-    """`sweep.json` as written, None when absent, `{"error"}` unreadable."""
+def load_sweep_state(home):
+    """`sweep.json` as written, None when absent; OSError or ValueError
+    when it cannot be read or parsed."""
     try:
         return json.loads((home / SWEEP_STATE).read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
+
+
+def read_sweep_state(home):
+    """`sweep.json` as written, None when absent, `{"error"}` unreadable."""
+    try:
+        return load_sweep_state(home)
     except (OSError, ValueError) as bad:
         return {"error": str(bad)}
 
@@ -187,7 +194,7 @@ def host_snapshot(host, now=None):
     """The host's state as one JSON-able dict: the build this checkout is
     at and the one the last sweep ran, the home lock, `sweep.json`, and
     every registered project's snapshot or error."""
-    sweep = _sweep_state(host.home)
+    sweep = read_sweep_state(host.home)
     return {
         "home": str(host.home),
         "registry": str(host.path),

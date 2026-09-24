@@ -91,7 +91,12 @@ Each module, one line:
   and `/runs/N/files`, their query parsers and the origin-link pair.
 - `holophyte/serve_watch.py` — the daemon's code-moved check and its
   in-flight request count (KO-648): what re-executes it between requests
-  once the factory checkout's `HEAD` moves.
+  once the factory checkout's `HEAD` moves, or, on a socket the service
+  manager handed over (`adopted_socket()`), what makes it drain and exit.
+- `holophyte/serve_host.py` — `--serve` with no project: one daemon for
+  every project in `host.toml`, each under `/projects/NAME`, the root's
+  `/status` and `/attention` for the host, the machine token, one
+  project's failure its own 503 or `error`, and `run-sweep`'s host ledger.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the

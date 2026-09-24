@@ -11,8 +11,11 @@ writers queue on the temporary file instead of losing each other's entry,
 and a crash leaves the old file or the new one.
 
 A route name resolves through `Host.project()` only, never through a path
-built from outside input. Nothing here opens a store.
+built from outside input. Nothing here opens a store. `settings()` is the
+file's own keys, typed: `[serve] bind`, `machine_token_file` and
+`actions`, `[console] daemons`, `[supervisor] sweep_sec`.
 """
+import collections
 import dataclasses
 import os
 import time
@@ -20,13 +23,20 @@ import tomllib
 from pathlib import Path
 
 from holophyte.config import serve_config
+from holophyte.config_tables import split_address
 from holophyte.project import DEFAULT_HOLOPHYTE_HOME, Project
 
 HOST_FILE = "host.toml"
 # The known shape of the file: a key outside it is refused, as the project
 # config refuses one, so a typo is not a knob the operator believes is set.
 HOST_KEYS = {"serve": {"bind", "machine_token_file", "actions"},
-             "supervisor": {"sweep_sec"}}
+             "supervisor": {"sweep_sec"}, "console": {"daemons"}}
+# The host sweep's interval when `[supervisor] sweep_sec` is absent: the
+# timer's `OnUnitActiveSec`.
+SWEEP_SEC = 60
+HostSettings = collections.namedtuple(
+    "HostSettings", ("bind", "machine_token_file", "actions", "sweep_sec",
+                     "daemons"))
 # How long a writer waits for another writer's temporary file to go before
 # it gives up naming the file: a crash mid-write is the one way it stays.
 WRITE_WAIT_SEC = 10
@@ -103,6 +113,52 @@ def _entry(path):
     except Exception as bad:
         return HostProject(None, path, target,
                            f"{target.config_path}: {type(bad).__name__}: {bad}")
+
+
+def settings(host):
+    """The registry's own keys over their defaults; HostError naming the
+    key when one is the wrong shape. `machine_token_file` is a path, `~`
+    expanded, a relative one taken against the home."""
+    table = host.table()
+    serve = table.get("serve", {})
+    bind = serve.get("bind")
+    if bind is not None and (not isinstance(bind, str) or not bind.strip()):
+        raise HostError(f"[holo2] {host.path}: [serve] bind must be"
+                        f" PORT or HOST:PORT, got {bind!r}")
+    token = serve.get("machine_token_file")
+    if token is not None:
+        if not isinstance(token, str) or not token.strip():
+            raise HostError(f"[holo2] {host.path}: [serve] machine_token_file"
+                            f" must be a non-empty path, got {token!r}")
+        token = host.home / Path(token).expanduser()
+    actions = serve.get("actions", False)
+    if not isinstance(actions, bool):
+        raise HostError(f"[holo2] {host.path}: [serve] actions must be true"
+                        f" or false, got {actions!r}")
+    sweep = table.get("supervisor", {}).get("sweep_sec", SWEEP_SEC)
+    if isinstance(sweep, bool) or not isinstance(sweep, int) or sweep <= 0:
+        raise HostError(f"[holo2] {host.path}: [supervisor] sweep_sec must be"
+                        f" a positive whole number of seconds, got {sweep!r}")
+    return HostSettings(bind, token, actions, sweep,
+                        _daemons(table.get("console", {}), host.path))
+
+
+def _daemons(table, source):
+    daemons = table.get("daemons", [])
+    if not isinstance(daemons, list):
+        raise HostError(f"[holo2] {source}: [console] daemons must be a list")
+    for entry in daemons:
+        try:
+            if not isinstance(entry, str):
+                raise ValueError(f"expected HOST:PORT, got {entry!r}")
+            split_address(entry)
+        except ValueError as bad:
+            raise HostError(f"[holo2] {source}: [console] daemons: {bad}"
+                            ) from None
+    if len(set(daemons)) != len(daemons):
+        raise HostError(f"[holo2] {source}: [console] daemons lists an"
+                        " address twice")
+    return tuple(daemons)
 
 
 class Host:

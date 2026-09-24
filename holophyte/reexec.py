@@ -25,6 +25,9 @@ import sys
 # seconds to answer.
 LOOP_UNIT = "holophyte-loop@"
 SUPERVISOR_UNIT = "holophyte-supervise@"
+# The host sweep's oneshot, one per host: what `POST /actions/run-sweep`
+# starts on a host daemon.
+SWEEP_UNIT = "holophyte-sweep.service"
 SYSTEMCTL_TIMEOUT = 20
 
 
@@ -61,9 +64,9 @@ def reexec_self(reason, exec_, out=None):
     exec_(program, argv)
 
 
-def systemctl_user(verb, unit):
-    """`systemctl --user VERB UNIT`: `(ok, detail)`, where `detail` says
-    what happened in one line either way.
+def systemctl_user(verb, unit, *options):
+    """`systemctl --user VERB [OPTIONS] UNIT`: `(ok, detail)`, where
+    `detail` says what happened in one line either way.
 
     Never raises for what `systemctl` does: exiting non-zero is `ok`
     False with its stderr (or stdout, or the exit status) as the detail,
@@ -72,7 +75,7 @@ def systemctl_user(verb, unit):
     happened and decides what that means for it -- the daemon answers the
     request with it, the supervisor prints it and sweeps on.
     """
-    argv = ["systemctl", "--user", verb, unit]
+    argv = ["systemctl", "--user", verb, *options, unit]
     try:
         done = subprocess.run(argv, capture_output=True, text=True,
                               timeout=SYSTEMCTL_TIMEOUT)

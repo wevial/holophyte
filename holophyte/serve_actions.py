@@ -19,7 +19,6 @@ import sys
 import traceback
 
 import store.read
-from holophyte.config import serve_config
 from holophyte.redact import known_secrets, outbound
 from holophyte.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.runs import open_store
@@ -179,9 +178,9 @@ def requeue_action(project, body):
 
 
 def send_back_action(project, run_id, note, author):
-    """Release a parked PR with a private maintainer instruction."""
-    if not serve_config(project).actions:
-        return 404, {"error": "actions are disabled"}
+    """Release a parked PR with a private maintainer instruction. The
+    `actions` opt-in is the caller's to judge: the project's `[serve]
+    actions` on a project daemon, `host.toml`'s on a host daemon."""
     if type(run_id) is not int or not 0 < run_id < 2**63:
         return 400, {"error": "run must be a positive integer"}
     if not project.store_path.exists():

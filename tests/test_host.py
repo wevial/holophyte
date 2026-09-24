@@ -12,12 +12,10 @@ import io
 import json
 import os
 import subprocess
-import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 import holophyte.cli
 import store
@@ -29,53 +27,9 @@ from holophyte.supervisor_lock import (
     release_supervisor_lock,
     supervisor_lock_path,
 )
+from tests.host_fixture import HostFixture
 
 ROOT = Path(__file__).resolve().parent.parent
-
-
-class HostFixture(unittest.TestCase):
-    """A temporary home, repositories under it, the CLI in-process."""
-
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name).resolve()
-        self.home = self.root / "home"
-        patcher = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.home)})
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def repo(self, directory, team=None, name=None):
-        """A git repository at `root/directory` with a `[board]` config,
-        and `[serve] name` when `name` is given."""
-        path = self.root / directory
-        subprocess.run(["git", "init", "-q", str(path)], check=True)
-        target = Project.locate(path, adopt=False)
-        target.holo_dir.mkdir(parents=True, exist_ok=True)
-        text = (f'[board]\nteam = "{team or "team-" + directory}"\n'
-                f'project_id = "p-{directory}"\n')
-        if name is not None:
-            text += f'[serve]\nname = "{name}"\n'
-        target.config_path.write_text(text)
-        return path
-
-    def cli(self, *args):
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            code = holophyte.cli.cli(list(args))
-        return code, out.getvalue()
-
-    def registered(self):
-        return [(entry.name, entry.path) for entry in Host.locate().projects()]
-
-    def interventions(self, path, action):
-        conn = store.open(str(path))
-        try:
-            return conn.execute("SELECT count(*) FROM interventions"
-                                " WHERE action = ?", (action,)).fetchone()[0]
-        finally:
-            conn.close()
-
 
 
 class HostRegistryTests(HostFixture):
@@ -288,8 +242,8 @@ class HostStatusTests(HostFixture):
         self.assertIsNone(projects["beta"]["error"])
         self.assertIn("no store at", projects["gamma"]["error"])
 
-    def test_only_status_has_a_host_form(self):
-        for argv in ([], ["--serve", "7719"], ["--supervise"]):
+    def test_only_status_and_serve_have_a_host_form(self):
+        for argv in ([], ["--supervise"], ["--sweep"]):
             with self.subTest(argv=argv), \
                     contextlib.redirect_stderr(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised:

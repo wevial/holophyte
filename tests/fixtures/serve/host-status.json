@@ -1,0 +1,80 @@
+{
+  "now": 1750000000000,
+  "daemon": {
+    "started_ms": 1750000000000,
+    "pid": 1
+  },
+  "build": {
+    "daemon": null,
+    "sweep": "abc1234",
+    "head": "REVISION"
+  },
+  "sweep": {
+    "started": 1749999970000,
+    "ended": 1749999980000,
+    "revision": "abc1234",
+    "pid": 1,
+    "exit": 0,
+    "projects": {
+      "alpha": "ok",
+      "beta": "ok"
+    },
+    "error": null,
+    "state": "fresh"
+  },
+  "actions": false,
+  "projects": [
+    {
+      "name": "alpha",
+      "path": "/root/alpha",
+      "store": "/root/home/alpha-HASH/store.db",
+      "error": null,
+      "host": "writer",
+      "schema_version": 36,
+      "admission": "enabled",
+      "hold_note": null,
+      "project_row": 1,
+      "supervisor": {
+        "state": "live",
+        "pid": 1,
+        "heartbeat_age_ms": 5000,
+        "host": "writer"
+      },
+      "runs": [
+        {
+          "id": 1,
+          "ticket": "KO-7",
+          "phase": "working",
+          "heartbeat_age_ms": 30000
+        }
+      ],
+      "workers_on_previous_build": 0
+    },
+    {
+      "name": "beta",
+      "path": "/root/beta",
+      "store": "/root/home/beta-HASH/store.db",
+      "error": null,
+      "host": "writer",
+      "schema_version": 36,
+      "admission": "enabled",
+      "hold_note": null,
+      "project_row": 1,
+      "supervisor": {
+        "state": "live",
+        "pid": 1,
+        "heartbeat_age_ms": 5000,
+        "host": "writer"
+      },
+      "runs": [
+        {
+          "id": 1,
+          "ticket": "KO-7",
+          "phase": "working",
+          "heartbeat_age_ms": 1800000
+        }
+      ],
+      "workers_on_previous_build": 0
+    }
+  ]
+}
