@@ -52,7 +52,11 @@ to start with either opt-in on and no machine token, naming the key.
 project has no supervisor unit, and the host sweep's own action,
 `run-sweep`, below, is at the root. The record of each project action is
 written in that project's store, as on a project daemon; a store locked
-when the action writes is that project's 503.
+when the action writes is that project's 503. Every read a host daemon
+makes waits at most one second for a store's lock (`HOST_READ_WAIT_S` in
+`holophyte/serve_host.py`), not the store's own thirty, so an action can
+answer 503 `database is locked` during a brief write lock where a project
+daemon would have waited ([HTTP endpoints](http.md#the-host-daemon)).
 
 ## `POST /actions/run-sweep`
 

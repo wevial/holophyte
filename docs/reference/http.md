@@ -573,8 +573,17 @@ whose checkout moved leaves for the new code). A locked or corrupt store is 503 
 store with no row for the project's path is 503 naming `factory.py project
 add` (the other routes still answer, and a `hold` may write the row); any
 other failure is 500. Every read waits at most one second for a store's
-lock, so a locked store answers 503 inside the drawer's two-second limit.
-The root lists each such project with its `error` and the others whole.
+lock (`HOST_READ_WAIT_S` in `holophyte/serve_host.py`, through
+`store.read.lock_wait()`), so a locked store answers 503 inside the
+drawer's two-second limit. The root lists each such project with its
+`error` and the others whole.
+
+The bound has a cost a project daemon's thirty-second wait does not: a
+store whose write lock is held past that second, even briefly, answers 503
+`database is locked` for that poll, and the root carries it as the
+project's `error` and a `project_error` item on `/attention`. The tray and
+the drawer can show a needs-you row for that one poll; it clears at the
+next. A row that stays across polls is a store that stays locked.
 
 The root answers `GET /status` and `GET /attention` for the host, below,
 `GET /peers` from `host.toml`'s `[console] daemons`, `/` and the console's

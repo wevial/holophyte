@@ -151,12 +151,15 @@ run then:
    a live pid is skipped naming the pid and path, a dead one is removed and
    said so. A disabled project, or one whose store is missing or holds no
    row for its path, is skipped: the sweep writes no `projects` row;
-   `project add` does.
+   `project add PATH` on the registered path writes it back.
 2. acts on the trips and reconciles, as the project form's pass below does,
    round-robin from where the last run stopped, under one deadline of half
    the interval. Before every Linear or GitHub request the run checks the
-   deadline, and a project whose share is spent is cut at its next request
-   and first in line next run.
+   deadline, and a project whose share is spent is cut at its next request.
+   The next run starts at the project after the cut one, never at it, so
+   one project whose read spends the whole deadline cannot starve the
+   rest; the cut project keeps its progress through its throttles and comes
+   around again.
 
 What a run must remember between runs and no store column holds lives in
 `HOLOPHYTE_HOME/sweep.json`, rewritten whole after every project: when the
@@ -273,7 +276,13 @@ through the registry alone, and a name outside it is 404 before any file
 is opened; `project add` and `project remove` take effect at the next
 request, with no restart. One project's store locked, missing or stamped
 by a newer build this one cannot read is that project's 503 and its `error` on the root
-`/status`; the other projects answer whole. Under systemd the daemon is
+`/status`; the other projects answer whole. Every read waits at most one
+second for a store's lock (`HOST_READ_WAIT_S`), so the root answers inside
+the drawer's and the tray's two-second limit; the price is that a write
+lock held past that second, even briefly, makes the project answer 503
+`database is locked` for that one poll, and the tray and the drawer can
+show a needs-you row for it that clears at the next poll. A row that stays
+is a store that stays locked. Under systemd the daemon is
 socket-activated ([Serving standing](#serving-standing)); by hand it binds
 the address given, else `host.toml`'s `[serve] bind`:
 
