@@ -1,7 +1,11 @@
 # HTTP endpoints
 
-`--serve PORT|HOST:PORT` answers the JSON paths below and serves the
-console's built files at `/`. Every response carries
+`--serve PORT|HOST:PORT PROJECT`, the project daemon, answers the JSON
+paths below and serves the console's built files at `/`. `--serve` with no
+project, the host daemon, answers the same paths for each registered
+project under `/projects/NAME` and its own `/status` and `/attention` at
+the root ([The host daemon](#the-host-daemon)); every section below
+describes a project's route as either daemon answers it. Every response carries
 `Cache-Control: no-store` and `Access-Control-Allow-Origin: *`; the JSON
 ones `Content-Type: application/json`; every GET route opens the store
 read-only and closes it. The open origin is for the console page, which
@@ -541,7 +545,131 @@ announced it, not the machine's name. `peers` is the project's `[console]
 daemons` list (see `docs/config.md`) in its configured order, empty when
 the table is absent: an empty list, never an error. The daemon answers
 from config and never contacts a peer; it needs no store, so a project
-with none still answers 200 here.
+with none still answers 200 here. A host daemon answers the same shape at its root from
+`host.toml`'s `[console] daemons`.
+
+## The host daemon
+
+`factory.py --serve` with no project serves every project in the host
+registry, `HOLOPHYTE_HOME/host.toml` ([Operating](../operating.md#the-host-registry)).
+Each route of this page answers under the project's prefix,
+`/projects/NAME/...`, with the body a project daemon answers at its root:
+`/projects/holophyte/status`, `/projects/holophyte/runs/52`,
+`/projects/holophyte/config`, `/projects/holophyte/actions/requeue`.
+`NAME` is the project's `[serve] name`, percent-decoded (a client encodes a
+name that holds a space). It resolves through the registry alone, re-read
+when `host.toml` changes: a name outside it is 404, naming the registry,
+before any file of any project is opened, and a project `project remove`
+dropped stops answering at the next request.
+
+One project's failure is that project's answer. Before every project route
+the daemon checks the store's schema stamp, read-only: a store stamped by a
+newer build than the daemon's is 503 naming the versions (and makes the
+daemon look at the checkout's `HEAD` at once, so a daemon whose checkout
+moved leaves for the new code). A locked or corrupt store is 503 with its
+`error`, in a read or in an action's write; `/projects/NAME/status` for a
+store with no row for the project's path is 503 naming `factory.py project
+add` (the other routes still answer, and a `hold` may write the row); any
+other failure is 500. Every read waits at most one second for a store's
+lock, so a locked store answers 503 inside the drawer's two-second limit.
+The root lists each such project with its `error` and the others whole.
+
+The root answers `GET /status` and `GET /attention` for the host, below,
+`GET /peers` from `host.toml`'s `[console] daemons`, `/` and the console's
+files, and `POST /actions/run-sweep` ([The daemon's
+actions](daemon.md#post-actionsrun-sweep)). Any other JSON path at the root
+is 404, naming the `/projects/NAME` prefix. Tokens are in
+[Authentication](#authentication).
+
+## Host `GET /status`
+
+```json
+{
+  "now": 1788450534491,
+  "daemon": {"started_ms": 1788446934491, "pid": 2801590},
+  "build": {"daemon": "abc1234…", "sweep": "abc1234…", "head": "abc1234…"},
+  "sweep": {"started": 1788450500000, "ended": 1788450512000,
+            "revision": "abc1234…", "pid": 2801700, "exit": 0,
+            "projects": {"holophyte": "ok", "lotuspod": "skipped: disabled"},
+            "error": null, "state": "fresh"},
+  "actions": true,
+  "projects": [
+    {"name": "holophyte", "path": "/path/to/holophyte",
+     "store": "/home/op/.holophyte/holophyte-HASH/store.db", "error": null,
+     "host": "writer-1", "schema_version": 36, "admission": "enabled",
+     "hold_note": null, "project_row": 1,
+     "supervisor": {"state": "live", "pid": 0, "heartbeat_age_ms": 21000,
+                    "host": "writer-1"},
+     "runs": [{"id": 52, "ticket": "KO-219", "phase": "working",
+               "heartbeat_age_ms": 71989}],
+     "workers_on_previous_build": 0}
+  ]
+}
+```
+
+`now` is the daemon's clock, epoch milliseconds, as on a project's
+`/status`; `daemon` is its `started_ms` and `pid`. `build` names three
+builds side by side: `daemon`, the checkout's revision when this daemon
+started (null when it runs from no git checkout); `sweep`, the revision the
+last host sweep ran; `head`, the checkout's `HEAD` now. The console flags
+any that differ. `actions` is whether `host.toml`'s `[serve] actions` is
+on.
+
+`sweep` is `HOLOPHYTE_HOME/sweep.json` as the last run wrote it: `started`
+and `ended` (epoch milliseconds), `revision`, `pid`, `exit` (0, or 1 when a
+project errored or a signal stopped the run) and `projects`, each name's
+outcome (`ok`, `skipped: WHY`, `error: WHY`), each null when the file lacks
+it; `error` is why the file could not be read, else null. `state` is
+`none` with no file, `unreadable`, `running` while a run started within
+the sweep unit's 120 s has not ended, `killed` once it is past that with no
+`ended`, `fresh` when the last run ended within two `[supervisor]
+sweep_sec` intervals, and `stale` after that.
+
+`projects` is every registry entry in registry order. `name` is its
+`[serve] name` (null for an entry whose config cannot be read), `path` its
+repository and `store` its store file, null when there is none. `error` is
+the project's failure as text (a config that cannot be read, a store that
+cannot be opened, a schema newer than the daemon's build), null when it
+answered; the fields below are then null. `host` is the project's
+`[report] host_label`, `schema_version` its store's stamp, `admission` and
+`hold_note` as on a project's `/status`, and `project_row` the id of the
+store's row for this path, null when it has none (a store deleted or
+recreated since `project add`). `supervisor` is the store's watcher beat
+(`state` `live`, `stale` or `none`, `pid`, `heartbeat_age_ms`, `host`),
+stale after two sweep intervals; `pid` 0 is the host sweep's one beat per
+store. `runs` is every live run in a sweepable phase with its `id`,
+`ticket`, `phase` and `heartbeat_age_ms`, empty for a disabled project.
+`workers_on_previous_build` is as on a project's `/status`.
+
+## Host `GET /attention`
+
+Every project's `/attention` items in one list, each item carrying its
+`project` name, after the host's own:
+
+```json
+{"level": "attention", "now": 1788450534491, "items": [
+  {"kind": "sweep_stale", "project": null, "state": "killed",
+   "started": 1788450300000, "ended": null, "level": "attention"},
+  {"kind": "project_error", "project": "lotuspod", "path": "/path/to/lotuspod",
+   "error": "OperationalError: database is locked", "level": "attention"},
+  {"kind": "stale_run", "run": 52, "ticket": "KO-219", "ticket_url": null,
+   "phase": "working", "heartbeat_age_ms": 1800000, "pr_url": null,
+   "level": "attention", "project": "holophyte"}
+]}
+```
+
+`sweep_stale` comes first when the sweep's `state` is anything but `fresh`
+or `running`, with that `state` and the run's `started` and `ended`; its
+`project` is null. Then, per project in registry order: `project_error`
+for a project the root `/status` shows with an `error`; `no_store` for one
+with no store and `no_project_row` for a store with no row for its path,
+each with a `detail` naming `factory.py project add`; and the project's own
+items as its `/attention` answers them (`kind`, `run`, `ticket`,
+`ticket_url`, `phase`, `heartbeat_age_ms`, `pr_url` and the rest, above),
+each with `project` added. A project's `supervisor` item judges the host
+sweep's beat against two sweep intervals. `level` is `attention` when
+there is any item, else `working` when any project has a live run, else
+`none`; `now` is the daemon's clock.
 
 ## Static files
 
@@ -596,6 +724,18 @@ exception: `[serve] actions` or `[serve] config_edit` needs
 refuses to start without it), and `POST /actions/...`, `GET /config` and
 `PUT /config` answer only to the bearer.
 
+A host daemon takes its one token from `host.toml`: `[serve]
+machine_token_file` is the bearer at the root and under every
+`/projects/NAME` prefix. It is demanded on every read route beyond
+loopback, and on every bind for `POST /actions/...` and `/config`; a bind
+beyond loopback, `[serve] actions` or any project's `config_edit` without
+it is a startup error naming the key. A project's own `[serve] token_file`
+is accepted beside it under that project's prefix only, for one release;
+it is 401 at the root and under any other prefix. A project's
+`machine_token_file` is not read in host mode. The bind judged is the one
+the daemon serves on, the handed-over socket's when the service manager
+started it.
+
 A page served by one daemon polls the others from the browser, and a
 cross-origin GET carrying `Authorization` is not a simple request, nor
 is the console's `POST /actions/...` or `PUT /config` with the bearer
@@ -617,10 +757,11 @@ but `/config`, both in [The daemon's actions](daemon.md).
 | Status | When |
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
-| 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}` |
+| 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
 | 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
-| 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built |
+| 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
 | 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and `PUT` outside `/config`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
-| 503 | the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path |
+| 503 | the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |
+| 500 | on a host daemon, one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |
 | 504 | `/runs/N/files` when git does not answer within its cap |

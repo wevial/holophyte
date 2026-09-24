@@ -29,7 +29,11 @@ def keys(value):
 
 def assert_covers(case, text, fixture):
     body = json.loads((FIXTURES / fixture).read_text())
-    missing = sorted(key for key in keys(body)
+    # The host root's `sweep.projects` is keyed by project name: data, not
+    # a field to document.
+    names = {project["name"] for project in body.get("projects", [])
+             if isinstance(project, dict)}
+    missing = sorted(key for key in keys(body) - names
                      if f"`{key}`" not in text and f'"{key}"' not in text)
     case.assertEqual(missing, [], f"{fixture} keys undocumented: {missing}")
 
@@ -45,6 +49,12 @@ class HttpReferenceTests(unittest.TestCase):
     def test_run_detail_section_names_every_pinned_key(self):
         assert_covers(self, section(self.document, "`GET /runs/N`"),
                       "run-detail.json")
+
+    def test_host_sections_name_every_key_the_host_root_answers(self):
+        assert_covers(self, section(self.document, "Host `GET /status`"),
+                      "host-status.json")
+        assert_covers(self, section(self.document, "Host `GET /attention`"),
+                      "host-attention.json")
 
     def test_dropping_a_documented_key_names_it(self):
         text = section(self.document, "`GET /status`")

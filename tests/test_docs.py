@@ -292,10 +292,11 @@ class ProjectWordTests(unittest.TestCase):
     do. Mermaid node names follow the code; `docs/design/` holds dated
     records. The code type and its module left the old word in KO-619, and
     the daemon's JSON alias key in KO-634, which retired their exceptions
-    here."""
+    here. A systemd unit name such as `holophyte.target` is not the word:
+    the dot before it marks the unit type."""
 
     maxDiff = None
-    OLD_WORD = re.compile(r"\btargets?\b", re.IGNORECASE)
+    OLD_WORD = re.compile(r"(?<!\.)\btargets?\b", re.IGNORECASE)
     PERMITTED = re.compile(r"```mermaid\n.*?```", re.DOTALL)
 
     def test_the_old_word_is_gone_outside_the_design_notes(self):
