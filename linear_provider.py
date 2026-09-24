@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from time import localtime, strftime, time
+from time import localtime, sleep, strftime, time
 
 import ticket_template
 
@@ -169,6 +169,40 @@ class LinearBudget:
 
 LINEAR_BUDGET = LinearBudget(shared=True)
 
+# Seconds to wait before each retry of a read that met a transient failure;
+# its length is the number of retries. A mutation is never retried: Linear
+# may have applied it before answering with the error.
+READ_RETRY_WAITS = (2, 5)
+_TRANSIENT_CODES = (502, 503, 504)
+
+
+def _is_read(query):
+    text = query.lstrip()
+    return text.startswith("{") or re.match(r"query\b", text) is not None
+
+
+def _transient(error):
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code in _TRANSIENT_CODES
+    return isinstance(error, (urllib.error.URLError, TimeoutError))
+
+
+def _urlopen(req, retry):
+    """`urlopen(req)`, tried again after each of READ_RETRY_WAITS when
+    `retry` and the failure is a 502/503/504, a connection error or a
+    timeout; the last failure is raised unchanged."""
+    waits = iter(READ_RETRY_WAITS if retry else ())
+    while True:
+        try:
+            return urllib.request.urlopen(req, timeout=30)
+        except (urllib.error.URLError, TimeoutError) as e:
+            wait = next(waits, None) if _transient(e) else None
+            if wait is None:
+                raise
+            if isinstance(e, urllib.error.HTTPError):
+                LINEAR_BUDGET.remember(e.headers)
+            sleep(wait)
+
 
 def _gql(query, variables=None):
     key = _load_env_key()
@@ -178,7 +212,7 @@ def _gql(query, variables=None):
     req = urllib.request.Request(GRAPHQL, data=body, headers={
         "Authorization": key, "Content-Type": "application/json"})
     try:
-        res = urllib.request.urlopen(req, timeout=30)
+        res = _urlopen(req, retry=_is_read(query))
     except urllib.error.HTTPError as e:
         LINEAR_BUDGET.remember(e.headers)
         if e.code == 429:
