@@ -465,6 +465,16 @@ def _close_failed_pull_requests(target, conn, project, provider, poll_ms,
         asked[run_id] = now_ms
         try:
             status = pr_status.pull_status(target, pull)
+        except deadline.CallRefused as refused:
+            # Never sent, so never read: the throttle keeps the last read
+            # made, and the next run asks.
+            if last is None:
+                asked.pop(run_id, None)
+            else:
+                asked[run_id] = last
+            print(f"[holo2] {identifier}: {pull.url} not read ({refused});"
+                  " the ticket stays open")
+            continue
         except Exception as e:  # noqa: BLE001 - any transport failure
             print(f"[holo2] {identifier}: {pull.url} could not be read ({e});"
                   " the ticket stays open")

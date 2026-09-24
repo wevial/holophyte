@@ -610,7 +610,7 @@ def _board_issue_owed(conn, project, issue, out):
 # tickets it has closed, by project id (KO-723), and `failed_asked`, when it
 # last read each failed run's pull request, by run id (KO-722). One per
 # store: the project form keeps its own for its life, the host sweep loads
-# each store's from `sweep.json` and writes it back after the run.
+# each store's from `sweep.json` and writes it back after each project.
 ReconcileMemory = collections.namedtuple(
     "ReconcileMemory", ("mirror_asked", "failed_asked"))
 

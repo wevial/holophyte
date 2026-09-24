@@ -32,8 +32,11 @@ dead-pid reclaim):
    steps. `holophyte.deadline.check()` stands before every unit of
    Linear and GitHub work and cuts the project at the next one once its
    share is spent, and `deadline.admit()` stands before every Linear and
-   GitHub request, so a unit already begun sends no request past it; the
-   cursor then holds, so the next run starts there.
+   GitHub request, so a unit already begun sends no request past it. The
+   next run starts at the project after the one cut, never at the cut one:
+   a project whose own read can spend the whole deadline would otherwise
+   be the only one reconciled, run after run. The cut project keeps what
+   it did through its throttles and comes around again.
 
 What a run must remember between processes that no store column holds
 lives in `sweep.json` beside the lock, rewritten whole through a temporary
@@ -140,7 +143,7 @@ def save_state(home, state):
     home.mkdir(parents=True, exist_ok=True)
     path = home / SWEEP_STATE
     temporary = path.with_name(f"{SWEEP_STATE}.{os.getpid()}.tmp")
-    with open(temporary, "w") as handle:
+    with open(temporary, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(state, sort_keys=True, indent=1))
         handle.flush()
         os.fsync(handle.fileno())
@@ -261,7 +264,9 @@ def sweep_project(entry, state, now, out):
     skipped = state.setdefault("skipped", {})
     try:
         outcome, seen = sweep_store(entry, state, now, out)
-    except sqlite3.OperationalError as bad:
+    except sqlite3.DatabaseError as bad:
+        # Locked (`OperationalError`) or not a database at all (its parent,
+        # `DatabaseError`): either is a store this run could not open.
         count = skipped[name] = skipped.get(name, 0) + 1
         if count >= UNAVAILABLE_AFTER:
             outcome = (f"error: unavailable, store not opened for {count}"
@@ -341,9 +346,17 @@ def reconcile_one(entry, seen, state, now, out, end, stop):
 def reconcile_all(swept, state, home, stop, sweep_sec, now, out):
     """Reconcile `swept`, `(entry, sweep)` pairs, round-robin from
     `reconcile_cursor`; returns `{name: error}` for the projects that
-    raised. The cursor is saved as each project starts, so a killed run
-    resumes at the project in hand; it stays on a project the deadline cut,
-    and after a whole round moves one on so no project is always first."""
+    raised.
+
+    The cursor names where the next run starts. It is saved as each project
+    starts, so a killed run resumes at the project in hand, and moved to
+    the project after it as each one ends, whole or cut, with the state
+    saved again, throttles and GitHub budget included. So a run the
+    deadline ends early leaves the cursor on the first project it did not
+    reach, and a cut project is never the next run's first: one whose
+    single read spends the whole deadline would otherwise be the only
+    project ever reconciled. A run that reaches every project moves the
+    cursor one on from where it started, so no project is always first."""
     if not swept:
         return {}
     names = [entry_key(entry) for entry, _seen in swept]
@@ -351,33 +364,33 @@ def reconcile_all(swept, state, home, stop, sweep_sec, now, out):
     start = names.index(cursor) if cursor in names else 0
     order = swept[start:] + swept[:start]
     end = time.monotonic() + sweep_sec * RECONCILE_SHARE
-    errors, cut = {}, None
+    errors = {}
     for index, (entry, seen) in enumerate(order):
         name = entry_key(entry)
+        state["reconcile_cursor"] = name
         if stop.is_set() or time.monotonic() >= end:
-            cut = cut or name
-            break
-        state["reconcile_cursor"] = cut or name
+            return errors
         save_state(home, state)
         share = (end - time.monotonic()) / (len(order) - index)
         reached, bad = reconcile_one(entry, seen, state, now, out,
                                      time.monotonic() + share, stop)
         if reached is not None:
             print(f"[holo2] {name}: reconcile cut, {reached}; the next run"
-                  " starts here", file=out)
-            cut = cut or name
+                  " starts after it", file=out)
         if bad is not None:
             errors[name] = f"error: {type(bad).__name__}: {bad}"
             print(f"[holo2] {name}: reconcile failed: {bad}", file=out)
         keep_budget(state)
-    state["reconcile_cursor"] = cut or names[(start + 1) % len(names)]
+        state["reconcile_cursor"] = names[(start + index + 1) % len(names)]
+        save_state(home, state)
+    state["reconcile_cursor"] = names[(start + 1) % len(names)]
     return errors
 
 
 # --- the run and the mode ------------------------------------------------------
 
 
-def _begin(home, state, out, now):
+def _begin(home, state, out, now, revision):
     """Report a last run that did not end, then mark this one started."""
     started, ended = state.get("started"), state.get("ended")
     if isinstance(started, int) and (not isinstance(ended, int)
@@ -390,20 +403,22 @@ def _begin(home, state, out, now):
     else:
         state.pop("interrupted", None)
     state.update(started=now, ended=None, exit=None, pid=os.getpid(),
-                 revision=factory_revision(), projects={})
+                 revision=revision, projects={})
     save_state(home, state)
 
 
-def run_pass(host, stop=None, out=None, clock=None):
-    """One host sweep run; the caller holds the home lock. Returns the
-    run's exit status."""
+def run_pass(host, stop=None, out=None, clock=None, revision=None):
+    """One host sweep run; the caller holds the home lock. `revision` is
+    the code the process runs, recorded in `sweep.json`: the checkout's
+    `HEAD` when omitted, which a oneshot run is. Returns the run's exit
+    status."""
     out = out or sys.stdout
     stop = threading.Event() if stop is None else stop
     clock = clock or _now_ms
     home = host.home
     state = load_state(home, out)
     now = clock()
-    _begin(home, state, out, now)
+    _begin(home, state, out, now, revision or factory_revision())
     exit_code = 0
     try:
         if not host.path.exists():
@@ -456,8 +471,11 @@ def supervise_host(host, once=False, out=None, wait=None, clock=None):
     """`factory.py --supervise [--once]` with no project: take the home
     lock, then one run (`once`) or a run every `[supervisor] sweep_sec`
     until SIGINT or SIGTERM; release the lock on every way out. A second
-    run beside a live one exits 1 naming the holder's pid."""
+    run beside a live one exits 1 naming the holder's pid. Every run
+    records the revision the process started from: the loop form never
+    re-executes, so a `HEAD` that moves under it is not the code it runs."""
     out = out or sys.stdout
+    revision = factory_revision()
     try:
         interval = settings(host).sweep_sec
     except HostError as bad:
@@ -476,11 +494,11 @@ def supervise_host(host, once=False, out=None, wait=None, clock=None):
                 for signum in STOP_SIGNALS}
     try:
         if once:
-            return run_pass(host, stop, out, clock)
+            return run_pass(host, stop, out, clock, revision)
         print(f"[holo2] host sweep as pid {pid}: every {interval}s over"
               f" {host.path}, lock at {lock}", file=out)
         while not stop.is_set():
-            run_pass(host, stop, out, clock)
+            run_pass(host, stop, out, clock, revision)
             wait(interval)
         print("[holo2] host sweep stopping on signal; lock released",
               file=out)

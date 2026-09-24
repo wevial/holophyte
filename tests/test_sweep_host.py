@@ -267,6 +267,25 @@ class HostSweepTests(HostSweepFixture):
         self.assertEqual(self.state()["skipped"], {})
         self.assertEqual(self.beats("gamma"), [(0, T0 + 4 * MINUTE, 1)])
 
+    def test_a_corrupt_store_counts_toward_unavailable_as_a_locked_one(self):
+        """A store that is not a database raises `DatabaseError`, not the
+        `OperationalError` a lock does; three runs make it `unavailable`
+        all the same, and the others are swept first."""
+        target = self.target("alpha")
+        for suffix in ("", "-wal", "-shm"):
+            Path(str(target.store_path) + suffix).unlink(missing_ok=True)
+        target.store_path.write_bytes(b"not a database " * 256)
+        outcomes = []
+        for minute in range(3):
+            self.run_once(T0 + minute * MINUTE)
+            outcomes.append(self.state()["projects"]["alpha"])
+
+        self.assertIn("run 1 of 3", outcomes[0])
+        self.assertIn("run 2 of 3", outcomes[1])
+        self.assertTrue(outcomes[2].startswith("error: unavailable"),
+                        outcomes[2])
+        self.assertEqual(self.state()["skipped"], {"alpha": 3})
+
     def test_per_project_locks_live_skips_and_dead_is_reclaimed(self):
         live = a_live_pid(self)
         alpha_lock = supervisor_lock.supervisor_lock_path(self.target("alpha"))
@@ -444,6 +463,25 @@ class HomeLockTests(HostSweepFixture):
         self.assertEqual([passes for _pid, _at, passes
                           in self.beats("alpha")], [2])
 
+    def test_the_loop_form_records_the_revision_it_started_with(self):
+        """The loop form never re-executes, so a `HEAD` that moves under it
+        is not the code it runs: every run records the start revision."""
+        heads = iter(["a" * 40, "b" * 40, "c" * 40])
+        recorded = []
+
+        def stop_after_two(_interval):
+            recorded.append(self.state()["revision"])
+            if len(recorded) == 2:
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        with patch.object(sweep_host, "_provider", lambda _target: None), \
+                patch.object(sweep_host, "factory_revision",
+                             lambda: next(heads)):
+            sweep_host.supervise_host(Host.locate(), out=io.StringIO(),
+                                      wait=stop_after_two)
+
+        self.assertEqual(recorded, ["a" * 40, "a" * 40])
+
 
 # Run in a child process: one host sweep run whose reconcile of beta hangs
 # after touching a marker, until the test kills it.
@@ -543,6 +581,41 @@ class ThrottleTests(HostSweepFixture):
                 self.two_runs(forget, provider=provider)
                 self.assertEqual(provider.closed_asks, expected)
 
+    def test_a_failed_run_read_the_deadline_refused_is_asked_next_run(self):
+        """A refused request was never sent: the KO-722 throttle keeps the
+        read it last made, so the next run asks, not `pr_poll_sec` on."""
+        run = self.a_failed_run_with_pr("alpha", 7)
+
+        def refused(_target, _pull):
+            raise deadline.CallRefused("share spent before GitHub's POST"
+                                       " graphql request")
+
+        self.run_once_with(T0, refused)
+        self.assertNotIn(str(run), self.state()["failed_asked"]["alpha"])
+        reads = []
+        self.run_once(T0 + MINUTE, reads=reads)
+        self.assertEqual(reads, [7])
+
+    def test_a_run_killed_after_its_last_reconcile_keeps_its_throttles(self):
+        """`sweep.json` is written after each project's reconcile, not only
+        when the run ends: a kill between the two keeps the read's stamp
+        and the budget it saw."""
+        run = self.a_failed_run_with_pr("alpha", 7)
+        low = PullStatus(merged=False, closed=False, rate_remaining=10,
+                         rate_reset="2999-01-01T00:00:00Z")
+
+        def killed(*_args):
+            raise KeyboardInterrupt("killed before the run's end was written")
+
+        with patch.object(sweep_host, "_finish", killed), \
+                self.assertRaises(KeyboardInterrupt):
+            self.run_once(T0, status=low)
+
+        state = self.state()
+        self.assertIsNone(state["ended"])
+        self.assertIn(str(run), state["failed_asked"]["alpha"])
+        self.assertEqual(state["github_budget"]["remaining"], 10)
+
     def test_a_board_close_ask_the_deadline_cut_is_asked_next_run(self):
         """A slow board-state read spends the share before the board is
         asked what it closed: the next run asks, not ten minutes later."""
@@ -581,11 +654,11 @@ class ThrottleTests(HostSweepFixture):
 class DeadlineTests(HostSweepFixture):
     NAMES = ("alpha", "beta")
 
-    def test_a_slow_read_cuts_the_project_at_its_next_call_and_holds_the_cursor(
+    def test_a_slow_read_cuts_the_project_at_its_next_call_and_moves_the_cursor(
             self):
         """`sweep_sec = 2` leaves the reconcile one second, half each: the
         first read takes longer than that, so the second is never made,
-        beta gets nothing, and the next run starts at alpha."""
+        beta gets nothing, and the next run starts at beta."""
         with open(self.home / "host.toml", "a") as registry:
             registry.write("\n[supervisor]\nsweep_sec = 2\n")
         self.a_failed_run_with_pr("alpha", 1)
@@ -602,7 +675,7 @@ class DeadlineTests(HostSweepFixture):
         self.assertEqual(code, 0)
         self.assertEqual(reads, [1])
         self.assertIn("[holo2] alpha: reconcile cut, share spent before", printed)
-        self.assertEqual(self.state()["reconcile_cursor"], "alpha")
+        self.assertEqual(self.state()["reconcile_cursor"], "beta")
 
     def linear(self, jump_after=None):
         """The real `LinearProvider` with only its HTTP transport faked:
@@ -635,7 +708,7 @@ class DeadlineTests(HostSweepFixture):
     def assert_closed_out_in_the_store(self, run, printed, refusal):
         """The close-out's store writes all landed and its board writes are
         the stale board a Linear outage leaves, a `warning` naming
-        `refusal`; the project is cut and the cursor holds on it."""
+        `refusal`; the project is cut and the cursor moves past it."""
         conn = self.conn("alpha")
         self.assertEqual(conn.execute(
             "SELECT status FROM tickets").fetchone(), ("merged",))
@@ -649,7 +722,7 @@ class DeadlineTests(HostSweepFixture):
                             for w in warnings), warnings)
         self.assertIn("[holo2] alpha: reconcile cut, share spent before",
                       printed)
-        self.assertEqual(self.state()["reconcile_cursor"], "alpha")
+        self.assertEqual(self.state()["reconcile_cursor"], "beta")
 
     def test_a_merge_found_past_the_share_lands_in_the_store_alone(self):
         """The read that finds the pull request merged returns past the
@@ -686,6 +759,37 @@ class DeadlineTests(HostSweepFixture):
         self.assertEqual(requests, ["issue", "workflowStates"])
         self.assert_closed_out_in_the_store(run, printed,
                                             "Linear's issueUpdate request")
+
+
+class CursorTests(HostSweepFixture):
+    """The round-robin cursor over consecutive runs, on a clock the test
+    moves: the sweep's and the deadline's `time.monotonic()` are real time
+    plus a skew a reconcile adds to."""
+
+    def test_a_project_that_spends_the_whole_deadline_never_starves_the_rest(
+            self):
+        """Astra's case: alpha's first read takes 31 s of the run's 30 s
+        reconcile deadline and its next call is cut, every time alpha is
+        reached. Across three runs beta and gamma are reconciled too."""
+        real, skew = time.monotonic, [0.0]
+        clock = SimpleNamespace(monotonic=lambda: real() + skew[0],
+                                time=time.time)
+        reconciled = []
+
+        def reconcile(entry, *_):
+            reconciled.append(entry.name)
+            if entry.name == "alpha":
+                skew[0] += 31
+                deadline.check("alpha's next read")
+
+        with patch.object(deadline, "time", clock), \
+                patch.object(sweep_host, "time", clock), \
+                patch.object(sweep_host, "reconcile_store", reconcile):
+            for run in range(3):
+                self.run_once(T0 + run * MINUTE)
+
+        self.assertEqual(set(reconciled), set(self.NAMES), reconciled)
+        self.assertNotEqual(self.state()["reconcile_cursor"], "alpha")
 
 
 class RegisteredProjectTests(HostSweepFixture):
