@@ -129,6 +129,18 @@ def settled(unit):
     return show(unit, "ActiveState") in ("inactive", "failed", "active")
 
 
+def reach(unit, state, old_invocation=None):
+    """Poll `unit` until its `ActiveState` is `state` (and, given
+    `old_invocation`, its `InvocationID` has moved on), for up to
+    `TimeoutStopSec` plus 5 s; the last `ActiveState` seen."""
+    def there():
+        return (show(unit, "ActiveState") == state
+                and (old_invocation is None
+                     or show(unit, "InvocationID") != old_invocation))
+    wait_for(there, TIMEOUT_STOP_SEC + 5)
+    return show(unit, "ActiveState")
+
+
 def free_port():
     probe = socket.socket()
     probe.bind(("127.0.0.1", 0))
@@ -355,16 +367,19 @@ class HostUnitLifecycleTests(unittest.TestCase):
         before = {unit: show(unit, "InvocationID")
                   for unit in (SOCKET, SERVE, TIMER)}
         systemctl("restart", TARGET, timeout=90)
+        # The target's job does not wait for the jobs `PartOf=` propagates
+        # to its units, so each unit is polled to its state, bounded by the
+        # stop timeout, and a failure names the last state seen.
         for unit, invocation in before.items():
             with self.subTest(after="restart", unit=unit):
-                self.assertEqual(show(unit, "ActiveState"), "active")
+                self.assertEqual(reach(unit, "active", invocation), "active")
                 self.assertNotEqual(show(unit, "InvocationID"), invocation)
         self.assertEqual(self.get(), 200)
         self.assertEqual(show(LOOP, "MainPID"), loop_pid)
         systemctl("stop", TARGET, timeout=90)
         for unit in (SOCKET, SERVE, TIMER):
             with self.subTest(after="stop", unit=unit):
-                self.assertEqual(show(unit, "ActiveState"), "inactive")
+                self.assertEqual(reach(unit, "inactive"), "inactive")
         self.assertEqual(show(LOOP, "ActiveState"), "active")
         self.assertEqual(show(LOOP, "MainPID"), loop_pid)
 
