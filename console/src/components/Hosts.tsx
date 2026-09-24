@@ -39,7 +39,7 @@ export function Hosts({ hosts, project, now }: { hosts: HostRecord[]; project: P
           {groupByHost(shown).map((group) => (
             <div key={group.label} data-host-group={group.label} className="col-span-2 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-4">
               {byDaemon(group.hosts).map((records) =>
-                records.some((record) => record.name != null) ? (
+                records.some((record) => record.host_status != null) ? (
                   <HostDaemonPanel key={records[0]!.address} records={records} now={now} />
                 ) : (
                   <HostPanel key={records[0]!.key} host={records[0]!} now={now} />

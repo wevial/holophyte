@@ -52,7 +52,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from time import time
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import store.read
 from holophyte.admission import project_of
@@ -490,8 +490,9 @@ class HostHandler(StatusHandler):
         """The answer for a scope no route may read: a name outside the
         registry (404), a store this build cannot read (503); else None."""
         if scope.project is None:
+            name = unquote(scope.prefix[len(PROJECTS_PREFIX):])
             return 404, {"error": "not found", "path": scope.prefix,
-                         "detail": f"no project {scope.prefix[len(PROJECTS_PREFIX):]!r}"
+                         "detail": f"no project {name!r}"
                                    f" in {self.server.host.path}"}
         try:
             check_schema(scope.project)
@@ -536,15 +537,17 @@ class HostServer(StatusServer):
 
     def resolve(self, path):
         """`(scope, rest)` for `/projects/NAME/rest`; `(None, path)` for any
-        other path. A name the registry does not hold still gets a scope --
-        with no project, and the host's tokens -- so it is 401 or 404 as
-        any unknown route is."""
+        other path. NAME is percent-decoded before the registry is asked,
+        as a client must encode a name holding a space; a decoded `/` names
+        no entry, since a `[serve] name` holds none. A name the registry
+        does not hold still gets a scope -- with no project, and the host's
+        tokens -- so it is 401 or 404 as any unknown route is."""
         if not path.startswith(PROJECTS_PREFIX):
             return None, path
-        name, slash, rest = path[len(PROJECTS_PREFIX):].partition("/")
-        prefix = PROJECTS_PREFIX + name
+        segment, slash, rest = path[len(PROJECTS_PREFIX):].partition("/")
+        prefix = PROJECTS_PREFIX + segment
         stale_ms = beat_stale_ms(self.settings)
-        entry = self.host.project(name)
+        entry = self.host.project(unquote(segment))
         if entry is None:
             return Scope(None, self.read_token, self.write_token,
                          self.actions, False, None, prefix, stale_ms), \

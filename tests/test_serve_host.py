@@ -180,6 +180,21 @@ class HostRoutesTests(HostServeCase):
         _, body = self.request("GET", "/status")
         self.assertEqual([p["name"] for p in body["projects"]], ["alpha"])
 
+    def test_a_name_holding_a_space_routes_percent_encoded(self):
+        # A `[serve] name` may hold a space; a client must encode it on
+        # the request line, and the registry is asked the decoded name.
+        self.config("beta", '[serve]\nname = "my project"\n')
+        self.start()
+        code, body = self.request("GET", "/projects/my%20project/status")
+        self.assertEqual((code, body.get("project")),
+                         (200, str(self.paths["beta"])), body)
+        _, root = self.request("GET", "/status")
+        self.assertEqual([p["name"] for p in root["projects"]],
+                         ["alpha", "my project"])
+        # A decoded slash names no entry.
+        self.assertEqual(self.request("GET", "/projects/my%2Fproject/status")[0],
+                         404)
+
 
 class HostTokenTests(HostServeCase):
     def test_the_machine_token_answers_everywhere_a_project_token_its_prefix(self):

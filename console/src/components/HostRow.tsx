@@ -16,7 +16,7 @@ export function rowTail(host: HostRecord): string | null {
   if (host.error != null) return "no answer";
   if (host.token_rejected) return TOKEN_REJECTED;
   if (host.needs_token) return null;
-  if (!status) return "no answer";
+  if (!status) return host.host_status != null ? "no projects" : "no answer";
   if (hostTone(host) === "bad") {
     const hb = status.supervisor.heartbeat_age_ms;
     const who = host.name != null ? "sweep beat" : "supervisor";

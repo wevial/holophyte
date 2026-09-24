@@ -4,7 +4,10 @@
  * (and `/runs` on the idle ones, for the last-merge line). A host daemon's
  * root `/status` lists its projects instead of naming one: each project is
  * then asked the same three under `/projects/NAME` with the daemon's one
- * bearer, and becomes an entry of its own, `HOST:PORT/projects/NAME`. Each request
+ * bearer, the name percent-encoded, and becomes an entry of its own,
+ * `HOST:PORT/projects/NAME`; a project whose config gives no name is an
+ * entry by its encoded path that is never asked, carrying the root's
+ * error. Each request
  * carries the bearer `console.json` holds for that address and gives up
  * after `timeoutMs`. No Electron import: `main.ts` supplies the config
  * text, the user-data directory and the clock; a test supplies a fake
@@ -189,9 +192,19 @@ export function isHostStatus(body: unknown): body is HostStatus {
     && typeof (body as Status).project !== "string";
 }
 
+/** The entry id of a host daemon's project: `HOST:PORT/projects/NAME`,
+ *  the name percent-encoded as it goes on the path; a project with no
+ *  name by its path, encoded, which no name can equal (a name holds no
+ *  `/`). The tray's `projectName` decodes what follows the prefix. */
+export function projectEntry(address: string, project: HostStatus["projects"][number]): string {
+  return `${address}/projects/${encodeURIComponent(project.name ?? project.path)}`;
+}
+
 /** Why a host root says a project cannot be asked under its prefix, or
- *  null when it can: its own error, no store, or no row for its path. */
+ *  null when it can: no name to route by, its own error, no store, or no
+ *  row for its path. */
 function unaskable(project: HostStatus["projects"][number]): string | null {
+  if (project.name == null) return project.error ?? "its config gives no [serve] name";
   if (project.error) return project.error;
   if (project.store == null) return "no store";
   if (project.project_row == null) return "no project row";
@@ -235,18 +248,18 @@ export async function pollAll(
         return [address];
       }
       answer.hosts[address] = root.body;
-      const named = root.body.projects.filter((project) => project.name != null);
+      const projects = root.body.projects;
       await Promise.all(
-        named.map(async (project) => {
-          const entry = `${address}/projects/${project.name}`;
+        projects.map(async (project) => {
+          const entry = projectEntry(address, project);
           const why = unaskable(project);
-          const at = `${base}/projects/${project.name}`;
+          const at = `${base}${entry.slice(address.length)}`;
           const status: FetchResult<Status> =
             why === null ? await get<Status>(at, "/status") : { ok: false, kind: "http", status: 503, body: { error: why } };
           await rest(entry, at, status);
         }),
       );
-      return named.map((project) => `${address}/projects/${project.name}`);
+      return projects.map((project) => projectEntry(address, project));
     }),
   );
   answer.peers = entries.flat();

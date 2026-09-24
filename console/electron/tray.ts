@@ -148,7 +148,10 @@ function cut(text: unknown, limit: number): string {
  *  behind a host daemon, else the address. */
 export function projectName(address: string, status: Status | null): string {
   const project = status?.project;
-  if (!project) return address.split("/projects/")[1] ?? address;
+  if (!project) {
+    const at = address.indexOf("/projects/");
+    return at < 0 ? address : decodeURIComponent(address.slice(at + "/projects/".length));
+  }
   const segments = project.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? project;
 }
@@ -352,7 +355,12 @@ export function buildSummary(
     const line = projectLine(name, status, options.runs?.[address], stale);
     projects.push(line);
     level = worse(level, line.level);
-    if (!status.ok) continue;
+    if (!status.ok) {
+      // A host daemon's project that cannot be read needs you: the daemon
+      // answered, so it is this project alone that is broken.
+      if (address.includes("/projects/") && status.kind !== "unauthorized") needsYou.push(line);
+      continue;
+    }
     const attention = attentions[address];
     const withNow =
       attention?.ok && attention.body.now === undefined

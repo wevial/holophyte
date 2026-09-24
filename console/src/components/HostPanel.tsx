@@ -128,7 +128,7 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
   const hasToken = tokenFor(tokenAddress) != null;
   const tone = hostTone(host);
   const dot = { ok: "bg-ok", bad: "bg-bad", faint: "bg-faint" }[tone];
-  const stale = status ? supervisorStale(host, status) : false;
+  const stale = status ? supervisorStale(host.name != null, status) : false;
   const seen = host.seen_ms == null ? "never answered" : `last seen ${age(now - host.seen_ms)} ago`;
   const counts = status ? runCounts(status) : null;
   const runsCell = counts

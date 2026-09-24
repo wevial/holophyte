@@ -66,6 +66,36 @@ test("a host sweep that is not fresh is something that needs you", async () => {
   const { fetch } = hostDaemon("killed");
   const answer = await pollAll(`${ORIGIN}/`, {}, { fetch });
   const summary = summarizeAnswer(answer, NOW);
-  expect(summary.items[0]?.label).toBe("writer:7710 · sweep killed · 20s ago");
+  const needsYou = summary.items.slice(0, summary.items.findIndex((item) => item.type === "separator"));
+  expect(needsYou.map((item) => item.label)).toContain("writer:7710 · sweep killed · 20s ago");
   expect(summary.level).toBe("attention");
+});
+
+test("a project with no name needs you by its path, and a name holding a space is asked encoded", async () => {
+  const error = "[holo2] /root/beta/.holophyte/config.toml: [serve] name must be a non-empty systemd instance name";
+  const root = {
+    ...hostStatus,
+    projects: [
+      { ...hostStatus.projects[0]!, name: "my project" },
+      { ...hostStatus.projects[1]!, name: null, store: null, project_row: null, error },
+    ],
+  };
+  const requests: string[] = [];
+  const fetch = async (url: string) => {
+    requests.push(url);
+    const path = url.slice(ORIGIN.length);
+    if (path === "/peers") return Response.json({ self: "writer:7710", peers: [] });
+    if (path === "/status") return Response.json(root);
+    if (path === "/attention") return Response.json({ level: "none", now: NOW, items: [] });
+    if (path === "/projects/my%20project/status") return Response.json(projectStatus("alpha", "KO-7"));
+    if (path === "/projects/my%20project/attention") return Response.json({ level: "working", now: NOW, items: [] });
+    return Response.json({ error: "not found" }, { status: 404 });
+  };
+  const answer = await pollAll(`${ORIGIN}/`, {}, { fetch });
+  expect(answer.peers).toEqual(["writer:7710/projects/my%20project", "writer:7710/projects/%2Froot%2Fbeta"]);
+  expect(requests.filter((url) => url.includes("/projects/")).every((url) => url.includes("/projects/my%20project/"))).toBe(true);
+  const summary = summarizeAnswer(answer, NOW);
+  const needsYou = summary.items.slice(0, summary.items.findIndex((item) => item.type === "separator"));
+  expect(needsYou.map((item) => item.label)).toEqual([`/root/beta · ${error}`]);
+  expect(summary.items.map((item) => item.label)).toContain("alpha · working KO-7 · hb 12s");
 });

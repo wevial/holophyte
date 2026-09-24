@@ -25,7 +25,8 @@ export interface HostRecord {
    *  the root's list names it first); null before the first answer. */
   project: string | null;
   /** Under a host daemon: the project's route name, its `[serve] name`;
-   *  absent or null for a project daemon. */
+   *  absent or null for a project daemon, and null for the one record a
+   *  host daemon whose registry names no project stands on. */
   name?: string | null;
   /** Under a host daemon: the daemon's last good root `/status` and
    *  `/attention`, which every project record of it shares. */
@@ -57,12 +58,13 @@ export interface HostRecord {
 }
 
 /** Where a host daemon's project routes hang off the daemon's base. The
- *  name is the registry's `[serve] name`, which holds no `/`, and goes on
- *  the path as the daemon matches it: unescaped. */
+ *  name is the registry's `[serve] name`, which holds no `/` but may hold
+ *  a space: it goes on the path percent-encoded, and the daemon decodes
+ *  the segment before it asks the registry. */
 export const PROJECTS_PREFIX = "/projects/";
 
 export function projectBase(root: string, name: string): string {
-  return `${root}${PROJECTS_PREFIX}${name}`;
+  return `${root}${PROJECTS_PREFIX}${encodeURIComponent(name)}`;
 }
 
 /** The daemon's own base for a record's `base`: a host daemon project's
@@ -173,7 +175,10 @@ function failed(where: Where, failure: PollFailure, before: HostRecord | undefin
  *  host daemon whose root failed keeps every project record it had, each
  *  with the error, and one project that failed under its prefix is that
  *  record's error alone; an address seen for the first time that fails is
- *  one record with no answer yet. A 401 is not a failure to reach the
+ *  one record with no answer yet. A host daemon whose registry names no
+ *  project -- none registered, or none whose config gives a name -- is one
+ *  record of its own at the daemon's base, so its card, its sweep and its
+ *  broken entries stay in view. A 401 is not a failure to reach the
  *  daemon: the record is marked `needs_token` with no error, and
  *  `token_rejected` when the request carried a saved token. */
 export function mergeHosts(previous: HostRecord[], results: PollResult[], now: number): HostRecord[] {
@@ -183,20 +188,20 @@ export function mergeHosts(previous: HostRecord[], results: PollResult[], now: n
     if (!result.ok) {
       const had = previous.filter((host) => host.address === address);
       if (had.length === 0) return [failed({ key: address, address, base }, result, undefined, now)];
-      return had.map((before) => ({ ...failed({ key: before.key, address, base: before.base }, result, before, now), root_failed: before.name != null }));
+      return had.map((before) => ({ ...failed({ key: before.key, address, base: before.base }, result, before, now), root_failed: before.host_status != null }));
     }
     if (!("host" in result)) return [answered({ key: address, address, base }, result, now)];
+    const root = { host_status: result.host, host_attention: result.host_attention, root_failed: false };
+    if (result.projects.length === 0) {
+      return [{
+        key: address, address, base, label: address, name: null, project: null, status: null, attention: null,
+        polled_ms: now, seen_ms: now, error: null, needs_token: false, token_rejected: false, ...root,
+      }];
+    }
     return result.projects.map((project) => {
-      const where = { key: `${address}${PROJECTS_PREFIX}${project.name}`, address, base: projectBase(base, project.name) };
+      const where = { key: projectBase(address, project.name), address, base: projectBase(base, project.name) };
       const record = project.ok ? answered(where, project, now) : failed(where, project, byKey.get(where.key), now);
-      return {
-        ...record,
-        name: project.name,
-        project: record.project ?? project.path,
-        host_status: result.host,
-        host_attention: result.host_attention,
-        root_failed: false,
-      };
+      return { ...record, name: project.name, project: record.project ?? project.path, ...root };
     });
   });
 }
@@ -271,15 +276,15 @@ export function hostTone(host: HostRecord): HostTone {
   if (host.error != null) return "bad";
   if (host.needs_token) return "faint";
   if (!host.status) return "faint";
-  if (supervisorStale(host, host.status)) return "bad";
+  if (supervisorStale(host.name != null, host.status)) return "bad";
   return host.status.supervisor.state === "live" ? "ok" : "faint";
 }
 
-/** Whether `status`'s supervisor is stale. Under a host daemon the beat
- *  is the host sweep's, which the daemon judges against two sweep
+/** Whether `status`'s supervisor is stale. Under a host daemon (`onHost`)
+ *  the beat is the host sweep's, which the daemon judges against two sweep
  *  intervals, not the runs' `heartbeat_stale_ms`: its `state` is the word. */
-export function supervisorStale(host: Pick<HostRecord, "name">, status: Status): boolean {
-  if (host.name != null) return status.supervisor.state === "stale";
+export function supervisorStale(onHost: boolean, status: Status): boolean {
+  if (onHost) return status.supervisor.state === "stale";
   return isSupervisorStale(status.supervisor, status.thresholds.heartbeat_stale_ms);
 }
 
@@ -291,17 +296,20 @@ export const UNREACHABLE = "unreachable";
 export const SWEEP_OK = new Set(["fresh", "running"]);
 
 /** Whether `host` is the record a host daemon's own items ride on: its
- *  first project the registry names. */
+ *  first project the registry names, else the daemon's own record. */
 function carriesHostItems(host: HostRecord): boolean {
-  const first = host.host_status?.projects.find((project) => project.name != null);
-  return first != null && first.name === host.name;
+  if (host.host_status == null) return false;
+  const first = host.host_status.projects.find((project) => project.name != null);
+  return (first?.name ?? null) === (host.name ?? null);
 }
 
-/** The host sweep's row: root `/attention`'s `sweep_stale` as a
- *  `supervisor` item, since on a host the sweep is the supervisor. */
-function sweepItems(host: HostRecord, project: string): AttentionItem[] {
+/** The host daemon's own rows: root `/attention`'s `sweep_stale` as a
+ *  `supervisor` item, since on a host the sweep is the supervisor, and an
+ *  `unreachable` item for each registered project whose config gives no
+ *  name, which no prefix routes to and no record stands for. */
+function rootItems(host: HostRecord, project: string, now: number): AttentionItem[] {
   if (!carriesHostItems(host)) return [];
-  return (host.host_attention?.items ?? [])
+  const sweep = (host.host_attention?.items ?? [])
     .filter((item) => item.kind === "sweep_stale")
     .map((item) => ({
       kind: "supervisor",
@@ -313,14 +321,28 @@ function sweepItems(host: HostRecord, project: string): AttentionItem[] {
       daemon: host.key,
       host: hostName(host),
     }));
+  const unnamed = (host.host_status?.projects ?? [])
+    .filter((entry) => entry.name == null)
+    .map((entry) => ({
+      kind: UNREACHABLE,
+      level: "critical",
+      daemon: host.key,
+      project: entry.path,
+      host: `${entry.path} on ${hostName(host)}`,
+      error: entry.error ?? "its config gives no [serve] name",
+      last_seen_ms: null,
+      asked_ms: host.seen_ms ?? now,
+    }));
+  return [...unnamed, ...sweep];
 }
 
 /** One host's attention items, each stamped with the record's key and
  *  project, plus one critical `unreachable` item when the last poll failed
- *  and, on a host daemon's first project, the host sweep's row when it is
- *  not fresh. A `supervisor` item under a host daemon is the sweep's:
- *  `host_sweep` marks it for "Run sweep". `now` is the console's clock,
- *  for the unreachable item's `since_ms`. */
+ *  and, on the record a host daemon's own rows ride on, the host sweep's
+ *  row when it is not fresh and a row per project with no name. A
+ *  `supervisor` item under a host daemon is the sweep's: `host_sweep`
+ *  marks it for "Run sweep". `now` is the console's clock, for the
+ *  unreachable item's `since_ms`. */
 export function hostItems(host: HostRecord, now: number): AttentionItem[] {
   const project = host.project ?? host.address;
   const onHost = host.name != null;
@@ -330,7 +352,7 @@ export function hostItems(host: HostRecord, now: number): AttentionItem[] {
     daemon: host.key,
     ...(onHost && item.kind === "supervisor" ? { host_sweep: true } : {}),
   }));
-  items.push(...sweepItems(host, project));
+  items.push(...rootItems(host, project, now));
   if (host.error != null) {
     items.unshift({
       kind: UNREACHABLE,

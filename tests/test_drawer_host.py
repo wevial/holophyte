@@ -18,9 +18,16 @@ from tests.test_drawer import drawer
 from tests.test_serve_host import HostServeCase
 
 
-class DrawerHostDaemonTests(HostServeCase):
+class DrawerHostCase(HostServeCase):
+    """The daemon bound beyond loopback and one `[[daemon]]` naming it."""
+
+    # Appended to beta's config before the daemon starts, when set.
+    beta_serve = None
+
     def setUp(self):
         super().setUp()
+        if self.beta_serve is not None:
+            self.config("beta", self.beta_serve)
         self.host_config(machine_token_file=self.machine())
         self.start(bind="0.0.0.0")
         now = int(time() * 1000)
@@ -35,6 +42,8 @@ class DrawerHostDaemonTests(HostServeCase):
             f'token_file = "{self.home / "machine.token"}"\n')
         self.daemon = drawer.load_config(config)["daemons"][0]
 
+
+class DrawerHostDaemonTests(DrawerHostCase):
     def test_one_daemon_entry_is_a_block_per_project_under_the_sweep_line(self):
         entries = drawer.poll_daemon(self.daemon)
         self.assertEqual([entry["name"] for entry in entries],
@@ -79,3 +88,31 @@ class DrawerHostDaemonTests(HostServeCase):
         lines = drawer.render(entries, drawer.reference_now(entries))
         needs = lines.index("NEEDS YOU | size=11")
         self.assertRegex(lines[needs + 1], r"^writer · sweep killed \| color=#F0B13A$")
+
+
+class DrawerSpacedNameTests(DrawerHostCase):
+    beta_serve = '[serve]\nname = "my project"\n'
+
+    def test_a_name_holding_a_space_is_polled_under_its_own_prefix(self):
+        alpha, beta = drawer.poll_daemon(self.daemon)
+        self.assertEqual(beta["name"], "my project")
+        self.assertEqual(beta["status"].get("project"), str(self.paths["beta"]))
+        self.assertIn("items", beta["attention"])
+
+
+class DrawerUnnamedProjectTests(DrawerHostCase):
+    # A name the config refuses: the registry lists beta with no name.
+    beta_serve = '[serve]\nname = ""\n'
+
+    def test_a_project_with_no_name_needs_you_beside_the_healthy_one(self):
+        entries = drawer.poll_daemon(self.daemon)
+        self.assertEqual([entry["name"] for entry in entries],
+                         ["alpha", str(self.paths["beta"])])
+        lines = drawer.render(entries, drawer.reference_now(entries))
+        needs = lines.index("NEEDS YOU | size=11")
+        rows = lines[needs + 1:lines.index("---", needs)]
+        # The root's error names beta's config, cut to the row's width.
+        self.assertTrue(any(row.startswith(f"{self.paths['beta']} · [holo2] ")
+                            and row.endswith("color=#F0B13A")
+                            for row in rows), rows)
+        self.assertIn("name must be", entries[1]["status"]["error"])

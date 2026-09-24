@@ -7,7 +7,9 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { App } from "../src/App";
 import { HostDaemonPanel } from "../src/components/HostDaemonPanel";
 import { HostPanel } from "../src/components/HostPanel";
+import { Hosts } from "../src/components/Hosts";
 import { NeedsYou } from "../src/components/NeedsYou";
+import { ProjectBlock } from "../src/components/ProjectBlock";
 import { pollPeers } from "../src/hooks/usePeers";
 import { describe } from "../src/lib/attention";
 import { byDaemon, groupByHost, hostItems, mergeHosts, visibleHosts, type HostRecord } from "../src/lib/hosts";
@@ -15,7 +17,7 @@ import { tokenedFetch, type Fetch } from "../src/lib/poll";
 import { runKey } from "../src/lib/runs";
 import { hostStatusSchema, statusSchema } from "../src/lib/schemas";
 import { storeToken } from "../src/lib/token";
-import type { Attention, HostStatus, Status } from "../src/lib/types";
+import type { Attention, HostProject, HostStatus, Status } from "../src/lib/types";
 import { NO_ATTENTION, fakeDeps, hostOf, settle } from "./harness";
 
 const ORIGIN = "http://writer:7710";
@@ -43,7 +45,8 @@ function hostDaemon(root: HostStatus, projects: Record<string, Project>, attenti
     if (path === "/status") return Response.json(root);
     if (path === "/attention") return Response.json(attention);
     const match = /^\/projects\/([^/]+)(\/.*)$/.exec(path);
-    const answer = match ? projects[match[1]!] : undefined;
+    // The daemon decodes the segment before it asks the registry.
+    const answer = match ? projects[decodeURIComponent(match[1]!)] : undefined;
     if (!match || !answer) return Response.json({ error: "not found" }, { status: 404 });
     if ("code" in answer) return Response.json({ error: answer.error }, { status: answer.code });
     if (match[2] === "/status") return Response.json(answer.status);
@@ -239,4 +242,65 @@ test("a linked run under a host daemon opens from its prefix; a path outside one
   await act(settle);
   expect(screen.queryByRole("heading", { name: "Run 1" })).toBeNull();
   window.location.hash = "";
+});
+
+/** `entry` as the root lists a project whose config gives no name. */
+const unnamed = (entry: HostProject): HostProject => ({
+  ...entry, name: null, store: null, project_row: null, supervisor: null, runs: [], schema_version: null, admission: null,
+  error: `[holo2] ${entry.path}/.holophyte/config.toml: [serve] name must be a non-empty systemd instance name`,
+});
+
+test("a project whose config gives no name needs you beside a healthy one, and is never asked", async () => {
+  const mixed: HostStatus = { ...host, projects: host.projects.map((entry) => (entry.name === "beta" ? unnamed(entry) : entry)) };
+  const { fetch, requests } = hostDaemon(mixed, { alpha: { status: alphaStatus, attention: NO_ATTENTION } });
+  const hosts = await pollOnceInto([], fetch);
+  expect(hosts.map((record) => record.key)).toEqual(["writer:7710/projects/alpha"]);
+  expect(requests.some((request) => request.url.includes("/projects/null"))).toBe(false);
+  render(<NeedsYou hosts={hosts} project="all" now={T} />);
+  const band = screen.getByRole("region", { name: "Needs you" });
+  expect(band.textContent).toContain("/root/beta on writer is not answering");
+  expect(band.textContent).toContain("[serve] name must be");
+});
+
+test("a host daemon with no named project keeps one card with its sweep and its broken entries", async () => {
+  const none: HostStatus = { ...host, projects: host.projects.map(unnamed) };
+  const hosts = await pollOnceInto([], hostDaemon(none, {}).fetch);
+  expect(hosts).toHaveLength(1);
+  expect(hosts[0]).toMatchObject({ key: "writer:7710", base: ORIGIN, name: null, error: null, status: null });
+  expect(hostItems(hosts[0]!, T).map((item) => [item.kind, item.project])).toEqual([
+    ["unreachable", "/root/alpha"],
+    ["unreachable", "/root/beta"],
+  ]);
+  render(<Hosts hosts={hosts} project="all" now={T} />);
+  const card = screen.getByRole("article", { name: "writer" });
+  expect(card.querySelector("[data-sweep]")!.textContent).toBe("fresh · ended 20s ago");
+  expect(card.querySelectorAll("[data-project-error]")).toHaveLength(2);
+});
+
+test("a name holding a space is asked percent-encoded under its prefix", async () => {
+  const spaced: HostStatus = { ...host, projects: host.projects.map((entry) => (entry.name === "beta" ? { ...entry, name: "my project" } : entry)) };
+  const { fetch, requests } = hostDaemon(spaced, {
+    alpha: { status: alphaStatus, attention: NO_ATTENTION },
+    "my project": { status: betaStatus, attention: NO_ATTENTION },
+  });
+  const hosts = await pollOnceInto([], fetch);
+  expect(hosts[1]).toMatchObject({ name: "my project", base: `${ORIGIN}/projects/my%20project`, error: null, status: betaStatus });
+  expect(requests.map((request) => request.url)).toContain(`${ORIGIN}/projects/my%20project/status`);
+});
+
+test("the Floor judges a host sweep's beat by the daemon's word, not the runs' threshold", () => {
+  // A live pid-0 beat 45 s old against a 30 s run threshold: the daemon
+  // judges it against two sweep intervals and calls it live.
+  const swept: Status = {
+    ...alphaStatus,
+    thresholds: { ...alphaStatus.thresholds, heartbeat_stale_ms: 30_000 },
+    supervisor: { state: "live", pid: 0, heartbeat_age_ms: 45_000, host: "writer" },
+  };
+  const group = (base: string) => ({ path: "/root/alpha", name: "alpha", base, status: swept, runs: [] });
+  render(<ProjectBlock group={group(`${ORIGIN}/projects/alpha`)} expandedRun={null} onToggleRun={() => {}} />);
+  expect(screen.getByRole("region", { name: "alpha" }).dataset.supervisor).toBe("live");
+  cleanup();
+  // A project daemon keeps the runs' threshold for its own supervisor.
+  render(<ProjectBlock group={group(ORIGIN)} expandedRun={null} onToggleRun={() => {}} />);
+  expect(screen.getByRole("region", { name: "alpha" }).dataset.supervisor).toBe("stale");
 });

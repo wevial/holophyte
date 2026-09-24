@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import os
 import sys
@@ -40,6 +41,7 @@ import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 GREEN, AMBER, RED = "#4EA876", "#F0B13A", "#FF5F57"
 IDLE, WORKING, ATTENTION, CRITICAL = 0, 1, 2, 3
@@ -113,7 +115,7 @@ def fetch(url, path="/status", token=None):
         if isinstance(body, dict):
             body.setdefault("http_status", e.code)
         return body
-    except (OSError, ValueError) as e:
+    except (OSError, ValueError, http.client.HTTPException) as e:
         return {"unreachable": True, "error": str(e)}
 
 
@@ -245,7 +247,8 @@ def attention_error(answer):
 
 def attention_rows(entry):
     """`(rows, level)` for one target: `NAME · unreachable` in red and
-    `CRITICAL` when the daemon did not answer `/status`; else the daemon's
+    `CRITICAL` when the daemon did not answer `/status`; `NAME · ERROR` in
+    amber for a host daemon's project that cannot be read; else the daemon's
     own `/attention` items when `entry["attention"]` carries them; else
     the local rule over `/status` for a daemon that answers 404 there (or
     a fixture with no `attention` key). Any other `/attention` failure
@@ -253,6 +256,9 @@ def attention_rows(entry):
     by whatever the local rule still shows, never a silent fallback."""
     if entry["status"].get("unreachable"):
         return [(f"{entry['name']} · unreachable", RED)], CRITICAL
+    if entry.get("project_error"):
+        why = cut(entry["project_error"], REASON_CHARS)
+        return [(f"{entry['name']} · {why}", AMBER)], ATTENTION
     answer = entry.get("attention")
     if isinstance(answer, dict) and isinstance(answer.get("items"), list):
         return daemon_rows(entry)
@@ -479,27 +485,41 @@ def unaskable(project):
     return None
 
 
+def host_project(daemon, project):
+    """One registered project of a host daemon as an entry: polled under
+    `/projects/NAME`, the name percent-encoded as the daemon decodes it,
+    unless the root already says why not. A project whose config gives no
+    name routes nowhere: it is listed by its path with the root's error.
+    A project that cannot be read carries `project_error`, a "needs you"
+    row of its own."""
+    name = project.get("name")
+    base = daemon["url"]
+    target = {"name": name or project.get("path") or "?",
+              "url": f"{base}/projects/{quote(name, safe='')}" if name else base,
+              "token": daemon.get("token")}
+    why = unaskable(project)
+    if why is None:
+        entry = poll(target)
+        status = entry["status"]
+        if "http_status" in status and not status.get("unreachable"):
+            entry["project_error"] = str(status.get("error")
+                                         or f"HTTP {status['http_status']}")
+        return entry
+    return {**target, "status": {"error": why, "http_status": 503},
+            "runs": None, "attention": None, "project_error": why}
+
+
 def poll_daemon(daemon):
     """One `[[daemon]]`'s entries: the one `poll()` gives a project daemon,
-    or one per registered project of a host daemon, each polled under its
-    `/projects/NAME` prefix with the daemon's token; a project the root
-    reports broken is not asked, its `error` shown in its block. The first
-    carries `host_sweep`, the root's `sweep` with its `now`."""
+    or one per registered project of a host daemon (`host_project()`), in
+    registry order. The first carries `host_sweep`, the root's `sweep` with
+    its `now`, so a host with no project left still shows its sweep."""
     status = fetch(daemon["url"], token=daemon.get("token"))
     projects = status.get("projects")
     if not isinstance(projects, list) or isinstance(status.get("project"), str):
         return [poll(daemon, status)]
-    entries = []
-    for project in projects:
-        name = project.get("name")
-        if not name:
-            continue
-        target = {"name": name, "url": f"{daemon['url']}/projects/{name}",
-                  "token": daemon.get("token")}
-        why = unaskable(project)
-        entries.append(poll(target) if why is None else
-                       {**target, "status": {"error": why, "http_status": 503},
-                        "runs": None, "attention": None})
+    entries = [host_project(daemon, project) for project in projects
+               if isinstance(project, dict)]
     if not entries:
         entries.append({"name": daemon["name"], "url": daemon["url"],
                         "status": {"error": "no projects registered"},
