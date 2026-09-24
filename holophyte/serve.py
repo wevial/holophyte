@@ -840,7 +840,11 @@ class StatusHandler(BaseHTTPRequestHandler):
                 return LEVERS[action](project, body)
             return unit_action(project, action, scope.unit_name)
         except (Exception, SystemExit) as failure:
-            return action_failure(project, action, failure)
+            return self.act_failed(scope, action, failure)
+
+    def act_failed(self, scope, action, failure):
+        """The answer for an action that raised `failure`: 500."""
+        return action_failure(scope.project, action, failure)
 
     def do_PUT(self):
         self.put(self.server.scope, urlsplit(self.path).path)

@@ -50,6 +50,8 @@ MIN = 60 * SEC
 FIXTURES = Path(__file__).parent / "fixtures" / "serve"
 MACHINE = "machine-token-value"
 ALPHA_TOKEN = "alpha-project-token"
+# The drawer's and the tray's request limit, the tightest client's.
+DRAWER_LIMIT_SEC = 2
 
 
 def bearer(token):
@@ -263,32 +265,56 @@ class HostTokenTests(HostServeCase):
 
 
 class HostFaultTests(HostServeCase):
-    def test_a_locked_or_newer_store_is_its_projects_503_and_the_root_stays_whole(self):
-        self.start()
-        self.server.code_check = Mock(started_from="aaa")
-        self.enterContext(patch.object(store.schema, "BUSY_TIMEOUT_S", 0.2))
-        alpha = Project.locate(self.paths["alpha"]).store_path
-        holder = sqlite3.connect(alpha, isolation_level=None)
+    def hold_lock(self, name):
+        """Lock project `name`'s store against readers until cleanup: an
+        exclusive-mode connection inside a write transaction."""
+        holder = sqlite3.connect(Project.locate(self.paths[name]).store_path,
+                                 isolation_level=None)
         holder.execute("PRAGMA locking_mode = EXCLUSIVE")
         holder.execute("BEGIN EXCLUSIVE")
-        try:
-            code, body = self.request("GET", "/projects/alpha/status")
-            self.assertEqual(code, 503, body)
-            self.assertIn("locked", body["error"])
-            self.assertEqual(self.request("GET", "/projects/beta/status")[0],
-                             200)
-            code, root = self.request("GET", "/status")
-            self.assertEqual(code, 200)
-            alpha_row, beta_row = root["projects"]
-            self.assertIn("locked", alpha_row["error"])
-            self.assertEqual((beta_row["error"], len(beta_row["runs"])),
-                             (None, 1))
-        finally:
-            holder.execute("ROLLBACK")
-            holder.close()
-        self.assertEqual(self.request("GET", "/projects/alpha/status")[0], 200)
+        self.addCleanup(holder.close)
+        self.addCleanup(holder.execute, "ROLLBACK")
+
+    def timed(self, path):
+        """`(status, body)` for `GET path`, failing when the answer takes
+        longer than the drawer's and the tray's request limit."""
+        began = monotonic()
+        answer = self.request("GET", path)
+        self.assertLess(monotonic() - began, DRAWER_LIMIT_SEC, path)
+        return answer
+
+    def test_locked_stores_are_their_projects_503_within_a_clients_limit(self):
+        # Two stores really locked, the store's own lock wait unpatched:
+        # each is its project's error, the healthy one is whole, and no
+        # answer outlives the tightest client's limit.
+        self.paths["gamma"] = self.repo("gamma")
+        self.cli("project", "add", str(self.paths["gamma"]))
+        self.seed("gamma", 30 * SEC)
+        self.start()
+        self.server.code_check = Mock(started_from="aaa")
+        self.hold_lock("alpha")
+        self.hold_lock("gamma")
+        code, body = self.timed("/projects/alpha/status")
+        self.assertEqual(code, 503, body)
+        self.assertIn("locked", body["error"])
+        self.assertEqual(self.timed("/projects/beta/status")[0], 200)
+        code, root = self.timed("/status")
+        self.assertEqual(code, 200)
+        rows = {row["name"]: row for row in root["projects"]}
+        for name in ("alpha", "gamma"):
+            self.assertIn("locked", rows[name]["error"])
+        self.assertEqual((rows["beta"]["error"], len(rows["beta"]["runs"])),
+                         (None, 1))
+        code, body = self.timed("/attention")
+        self.assertEqual(code, 200)
+        self.assertEqual({item["project"] for item in body["items"]
+                          if item["kind"] == "project_error"},
+                         {"alpha", "gamma"})
         self.server.code_check.check_now.assert_not_called()
 
+    def test_a_store_stamped_newer_is_its_projects_503_and_the_root_stays_whole(self):
+        self.start()
+        self.server.code_check = Mock(started_from="aaa")
         beta = Project.locate(self.paths["beta"]).store_path
         stamp = sqlite3.connect(beta)
         stamp.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
@@ -306,6 +332,52 @@ class HostFaultTests(HostServeCase):
         self.assertEqual(code, 200)
         self.assertIn("project_error", [item["kind"] for item in body["items"]
                                         if item["project"] == "beta"])
+
+    def test_an_action_the_store_refuses_to_lock_is_its_projects_503(self):
+        # A writer holds alpha's WAL write lock: reads, the pre-check
+        # included, still pass; the action's own write cannot.
+        self.host_config(machine_token_file=self.machine(), actions=True)
+        self.start()
+        self.enterContext(patch.object(store.schema, "BUSY_TIMEOUT_S", 0.2))
+        writer = sqlite3.connect(Project.locate(self.paths["alpha"]).store_path,
+                                 isolation_level=None)
+        self.addCleanup(writer.close)
+        writer.execute("BEGIN IMMEDIATE")
+        self.addCleanup(writer.execute, "ROLLBACK")
+        self.assertEqual(self.request("GET", "/projects/alpha/status")[0], 200)
+        code, body = self.request("POST", "/projects/alpha/actions/hold",
+                                  bearer(MACHINE), {"note": "while locked"})
+        self.assertEqual(code, 503, body)
+        self.assertIn("locked", body["error"])
+        self.assertEqual(body["project"], "alpha")
+        code, body = self.request("POST", "/projects/beta/actions/hold",
+                                  bearer(MACHINE), {"note": "beta is free"})
+        self.assertEqual((code, body["ok"]), (200, True), body)
+
+
+class RowlessProjectTests(HostServeCase):
+    def test_a_store_without_the_projects_row_is_503_until_a_hold_writes_it(self):
+        # The store recreated after registration: schema, no rows.
+        path = Project.locate(self.paths["alpha"]).store_path
+        for stale in path.parent.glob(path.name + "*"):
+            stale.unlink()
+        store.open(str(path)).close()
+        self.host_config(machine_token_file=self.machine(), actions=True)
+        self.start()
+        code, body = self.request("GET", "/projects/alpha/status")
+        self.assertEqual((code, body["error"]), (503, "no project row"), body)
+        self.assertIn("project add", body["detail"])
+        self.assertEqual(self.request("GET", "/projects/beta/status")[0], 200)
+        _, root = self.request("GET", "/status")
+        self.assertEqual([(p["name"], p["error"], p["project_row"])
+                          for p in root["projects"]],
+                         [("alpha", None, None), ("beta", None, 1)])
+        # A hold may create the row, as `--hold` does.
+        code, body = self.request("POST", "/projects/alpha/actions/hold",
+                                  bearer(MACHINE), {"note": "rowless"})
+        self.assertEqual((code, body["ok"]), (200, True), body)
+        code, body = self.request("GET", "/projects/alpha/status")
+        self.assertEqual((code, body["admission"]), (200, "held"), body)
 
 
 class RunSweepTests(HostServeCase):

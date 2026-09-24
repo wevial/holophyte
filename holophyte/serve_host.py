@@ -16,9 +16,15 @@ One project's failure is that project's answer, never the daemon's: a
 store stamped newer than this build (checked before every project route,
 since `store.read.open_readonly()` checks no version) is 503 and makes the
 code watch read `HEAD` at once, so a daemon whose checkout moved leaves for
-the new code; a locked or corrupt store (`sqlite3.Error`) is 503; anything
-else is 500 through `action_failure()`. At the root the same failures are
-the project's `error` and the others are listed whole.
+the new code; a locked or corrupt store (`sqlite3.Error`), in a read or in
+an action's write, is 503; `/status` for a store with no row for the
+project's path is 503 naming `project add` (the other routes answer, and a
+`hold` may write the row); anything else is 500 through `action_failure()`.
+At the root the same failures are the project's `error` and the others are
+listed whole. Every read waits at most `HOST_READ_WAIT_S` for a store's
+lock (`store.read.lock_wait()`), and the root reads the projects side by
+side, so a locked store costs the root one wait, not one per store and not
+the store's own thirty seconds: the drawer and the tray give up at two.
 
 Tokens (the design's Auth row): `host.toml [serve] machine_token_file` is
 the one bearer at the root and under every prefix; a project's own `[serve]
@@ -43,6 +49,7 @@ import os
 import socket
 import sqlite3
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from time import time
 from urllib.parse import urlsplit
@@ -96,6 +103,12 @@ SWEEP_TIMEOUT_SEC = 120
 SWEEP_FIELDS = ("started", "ended", "revision", "pid", "exit", "projects")
 # The sweep states `/attention` leaves alone.
 SWEEP_OK = frozenset({"fresh", "running"})
+# How long any read of the host daemon waits for one store's lock: under
+# the drawer's and the tray's two-second request limit, with room for the
+# read itself.
+HOST_READ_WAIT_S = 1.0
+# At most this many stores read at once for the root.
+ROOT_READERS = 8
 
 
 def check_schema(project):
@@ -126,6 +139,40 @@ def project_error(project, bad):
     except (Exception, SystemExit):
         secrets = known_secrets(None)
     return outbound(text, secrets)
+
+
+def each_project(entries, read):
+    """`read(entry)` for every entry, side by side, in registry order: a
+    store's lock wait overlaps the others' instead of adding to them.
+    Each read waits at most `HOST_READ_WAIT_S` for its store's lock."""
+    entries = list(entries)
+    if not entries:
+        return []
+
+    def bounded(entry):
+        with store.read.lock_wait(HOST_READ_WAIT_S):
+            return read(entry)
+    with ThreadPoolExecutor(min(len(entries), ROOT_READERS)) as pool:
+        return list(pool.map(bounded, entries))
+
+
+def missing_row(scope):
+    """The 503 body for `/status` under a prefix whose store holds no row
+    for the project's path; None when it holds one or there is no store,
+    which `status()` answers itself."""
+    target = scope.project
+    if not target.store_path.exists():
+        return None
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        if project_of(conn, target) is not None:
+            return None
+    finally:
+        conn.close()
+    return {"error": "no project row", "project": scope.unit_name,
+            "project_row": None,
+            "detail": f"the store has no project row for {target.path};"
+                      f" `factory.py project add {target.path}` writes it"}
 
 
 def beat_stale_ms(knobs):
@@ -226,8 +273,9 @@ def host_status(server, now=None):
                   "sweep": sweep["revision"], "head": factory_revision()},
         "sweep": sweep,
         "actions": server.actions,
-        "projects": [project_summary(entry, now, stale_ms)
-                     for entry in server.host.projects()],
+        "projects": each_project(
+            server.host.projects(),
+            lambda entry: project_summary(entry, now, stale_ms)),
     }
 
 
@@ -245,8 +293,10 @@ def host_attention(server, now=None):
                       "state": sweep["state"], "started": sweep["started"],
                       "ended": sweep["ended"], "level": "attention"})
     working = False
-    for entry in server.host.projects():
-        found, busy = _project_items(entry, now, beat_stale_ms(knobs))
+    stale_ms = beat_stale_ms(knobs)
+    for found, busy in each_project(
+            server.host.projects(),
+            lambda entry: _project_items(entry, now, stale_ms)):
         items.extend(found)
         working = working or busy
     level = "attention" if items else ("working" if working else "none")
@@ -324,7 +374,12 @@ def project_token(knobs):
 
 class HostHandler(StatusHandler):
     """The project handler under `/projects/NAME/...`, a `Scope` per
-    request; the host routes at the root."""
+    request; the host routes at the root. Every read a request makes
+    waits at most `HOST_READ_WAIT_S` for a store's lock."""
+
+    def handle_one_request(self):
+        with store.read.lock_wait(HOST_READ_WAIT_S):
+            super().handle_one_request()
 
     def route(self, path):
         """`(scope, path)` for the request, scope None at the root; None
@@ -376,6 +431,8 @@ class HostHandler(StatusHandler):
         if refused is not None:
             return self.answer(*refused)
         try:
+            if path == "/status" and (rowless := missing_row(scope)):
+                return self.answer(503, rowless)
             super().dispatch(scope, path, query)
         except (BrokenPipeError, ConnectionResetError):
             raise
@@ -405,6 +462,11 @@ class HostHandler(StatusHandler):
 
     def act(self, scope, action, body):
         return self.refused(scope) or super().act(scope, action, body)
+
+    def act_failed(self, scope, action, failure):
+        # The pre-check read the store; the action's write may still find
+        # it locked, and that is the project's 503 as a read's would be.
+        return self.failure(scope, ACTIONS_PREFIX + action, failure)
 
     def do_PUT(self):
         found = self.route(urlsplit(self.path).path)

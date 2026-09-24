@@ -3,10 +3,33 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
 import store.schema
+
+# The lock wait `lock_wait()` set in this context; None is the store's own.
+_lock_wait = ContextVar("read_lock_wait", default=None)
+
+
+@contextmanager
+def lock_wait(seconds):
+    """Within the block, `open_readonly()` waits at most `seconds` for a
+    lock instead of `store.schema.BUSY_TIMEOUT_S`.
+
+    A host daemon answers for several stores inside one client's request
+    limit, so one store held locked must be that project's error within
+    it, not thirty seconds of every answer. The wait is per context: a
+    thread that enters the block changes no other thread's reads, and the
+    writable opener is untouched -- a writer still queues for the lock.
+    """
+    token = _lock_wait.set(seconds)
+    try:
+        yield
+    finally:
+        _lock_wait.reset(token)
 
 
 def open_readonly(path) -> sqlite3.Connection:
@@ -24,10 +47,12 @@ def open_readonly(path) -> sqlite3.Connection:
 
     Waits `store.schema.BUSY_TIMEOUT_S` for a lock, the same as the writable
     opener, so a reader is not the one that dies when a checkpoint or a
-    long write holds the file.
+    long write holds the file -- unless `lock_wait()` bounds it.
     """
     uri = Path(path).resolve().as_uri() + "?mode=ro"
-    return sqlite3.connect(uri, uri=True, timeout=store.schema.BUSY_TIMEOUT_S)
+    wait = _lock_wait.get()
+    return sqlite3.connect(uri, uri=True, timeout=(
+        store.schema.BUSY_TIMEOUT_S if wait is None else wait))
 
 
 # --- tickets -----------------------------------------------------------------
