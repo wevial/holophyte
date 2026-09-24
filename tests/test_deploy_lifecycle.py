@@ -10,7 +10,8 @@ that has any other `holophyte*` unit file, or a home with a
 `~/.holophyte/host.toml`. From that user's own checkout of the branch:
 
     sudo loginctl enable-linger holotest
-    sudo machinectl shell holotest@    # a login with XDG_RUNTIME_DIR set
+    sudo machinectl shell holotest@    # or an ssh login: XDG_RUNTIME_DIR set
+    python3 -m pip install --user -r requirements.txt   # tomlkit
     HOLOPHYTE_LIFECYCLE_USER=holotest python3 -m unittest \\
         tests.test_deploy_lifecycle -v
 
@@ -145,7 +146,17 @@ def refuse_a_live_manager():
     if (Path.home() / ".holophyte" / "host.toml").exists():
         raise RuntimeError(f"{Path.home()}/.holophyte/host.toml exists: this"
                            " user runs a factory; use a second user")
-    listed = systemctl("list-unit-files", "holophyte*", "--no-legend")
+    args = ("list-unit-files", "holophyte*", "--no-legend")
+    done = subprocess.run(["systemctl", "--user", *args], capture_output=True,
+                          text=True, timeout=60)
+    # Some systemd releases exit 1, printing nothing, when the pattern
+    # matches no unit file: that is the clean manager this guard admits.
+    nothing = done.returncode == 1 and not (done.stdout.strip()
+                                            or done.stderr.strip())
+    if done.returncode != 0 and not nothing:
+        raise AssertionError(f"systemctl --user {' '.join(args)} exited"
+                             f" {done.returncode}: {done.stderr.strip()}")
+    listed = "" if nothing else done.stdout
     others = [line.split()[0] for line in listed.splitlines()
               if line.strip() and not line.startswith(PREFIX)]
     if others:
