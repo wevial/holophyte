@@ -642,6 +642,7 @@ def reconcile_board_closes(conn, project, provider, target, now, out,
     if linear_budget_low(now, out):
         return
     deadline.check("the board's closed tickets")
+    previous = asked.get(project)
     asked[project] = now
     try:
         with contextlib.redirect_stdout(out):
@@ -649,6 +650,13 @@ def reconcile_board_closes(conn, project, provider, target, now, out,
     except Exception as e:  # noqa: BLE001 - never a strike, never the pass
         print(f"[holo2] closed board tickets could not be reconciled"
               f" ({e}); a later pass asks again", file=out)
+    finally:
+        # A sweep deadline cut the ask short, perhaps before the board was
+        # asked what it closed: the next pass asks again, unthrottled.
+        if deadline.spent() and previous is None:
+            del asked[project]
+        elif deadline.spent():
+            asked[project] = previous
 
 
 def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,

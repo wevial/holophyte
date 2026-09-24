@@ -63,7 +63,9 @@ Each module, one line:
   `sweep.json`, the round-robin reconcile under a deadline, and one
   project's failure its own `error`.
 - `holophyte/deadline.py` — the host sweep's bound on its network calls:
-  `check()` before each Linear or GitHub call, a no-op outside the sweep.
+  `check()` before each unit of Linear or GitHub work, and `guarded()`,
+  the board provider whose calls past the bound fail as a Linear outage
+  would; both no-ops outside the sweep.
 - `holophyte/sweep_report.py` — the sweep's report lines (KO-396): the
   `SWEEP_HEADERS` table, the per-run and restart lines, `sweep_report()`
   as `--sweep`'s whole body, and the review-container and merge-lock

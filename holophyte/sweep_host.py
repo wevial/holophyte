@@ -15,18 +15,25 @@ dead-pid reclaim):
 1. Sweeps every store and writes that store's beat right after its sweep
    (`sweep_store()`): the stale-run sweep without acting, then the
    sentinel `supervisorHeartbeats` row `(0, since)`, one per store. A
-   project whose own `supervisor.lock` names a live pid is skipped this
-   run naming it, a dead one is reclaimed and said so, an ambiguous one is
-   skipped naming the path. No `projects` row is written: a store with
-   none for the path is listed and skipped, as is a disabled project.
+   store's write waits at most `SWEEP_BUSY_MS`, not the store's own
+   thirty seconds, and a store a recent run could not open is swept after
+   the others, so a locked store holds no healthy one back. The loop
+   restarts the sweep stamps reported are printed here, as they are
+   stamped. A project whose own `supervisor.lock` names a live pid is
+   skipped this run naming it, a dead one is reclaimed and said so, an
+   ambiguous one is skipped naming the path. No `projects` row is written:
+   a store with none for the path is listed and skipped, as is a disabled
+   project.
 2. Reconciles the swept stores round-robin from `reconcile_cursor`, under
    one deadline of half the interval with an even share of what is left
    for each project in turn (`reconcile_all()`): the trips acted on, the
    stale merge lock removed, the parked and failed pull requests, the
    board's closes and the loop owed its start, exactly the project form's
-   steps. `holophyte.deadline.check()` stands before every Linear and
-   GitHub call on the way and cuts the project at the next one once its
-   share is spent; the cursor then holds, so the next run starts there.
+   steps. `holophyte.deadline.check()` stands before every unit of
+   Linear and GitHub work and cuts the project at the next one once its
+   share is spent, and the board provider is `deadline.guarded()`, so a
+   unit already begun makes no Linear call past it; the cursor then
+   holds, so the next run starts there.
 
 What a run must remember between processes that no store column holds
 lives in `sweep.json` beside the lock, rewritten whole through a temporary
@@ -78,7 +85,7 @@ from holophyte.supervisor_lock import (
     release_supervisor_lock,
     supervisor_lock_path,
 )
-from holophyte.sweep_report import merge_lock_lines, sweep_lines
+from holophyte.sweep_report import merge_lock_lines, restart_lines, sweep_lines
 
 # Consecutive runs a store may be locked or corrupt before it is listed
 # `unavailable`: the project form's three skipped passes.
@@ -86,6 +93,11 @@ UNAVAILABLE_AFTER = 3
 # The reconcile's share of the interval: the rest is the sweep's and slack
 # under `TimeoutStartSec`, since no timeout cuts a Linear read in flight.
 RECONCILE_SHARE = 0.5
+# How long step 1 waits on one store's write lock. A loop's transactions are
+# arithmetic and end in milliseconds; a store held past this is the `locked`
+# the three-run rule counts, not a reason to hold every later store back
+# for the store's own `BUSY_TIMEOUT_S`.
+SWEEP_BUSY_MS = 5000
 
 
 def _now_ms():
@@ -223,6 +235,7 @@ def sweep_store(entry, state, now, out):
         return f"skipped: no store at {target.store_path}", None
     conn = open_store(target)
     try:
+        conn.execute(f"PRAGMA busy_timeout = {SWEEP_BUSY_MS}")
         if project_of(conn, target) is None:
             return (f"skipped: no project row for {target.path};"
                     f" `factory.py project add {target.path}` writes it"), None
@@ -230,6 +243,10 @@ def sweep_store(entry, state, now, out):
         if admission == "disabled":
             return f"skipped: disabled: {note}", None
         seen = sweep(target, conn, now)
+        # Stamped reported by the sweep just committed: printed now, since a
+        # cut or failed reconcile would otherwise lose them for good.
+        for line in restart_lines(seen):
+            print(f"[{entry_key(entry)}] {line}", file=out)
         beat(conn, state, now)
     finally:
         conn.close()
@@ -279,7 +296,7 @@ def reconcile_store(entry, seen, state, now, out):
     closes, start the loop owed. The throttles go back into `state` on
     every way out, a cut included."""
     target, name = entry.target, entry_key(entry)
-    provider = _provider(target)
+    provider = deadline.guarded(_provider(target))
     memory = memory_for(state, name)
     conn = open_store(target)
     try:
@@ -288,8 +305,9 @@ def reconcile_store(entry, seen, state, now, out):
             deadline.check(f"acting on run {trip.run_id}")
             outcomes.append(act_on_trip(target, conn, trip, provider))
         seen = seen._replace(acted=True, outcomes=tuple(outcomes),
-                             locks=tuple(merge_lock_lines(target, conn, True)))
-        if seen.trips or seen.watched or seen.restarts:
+                             locks=tuple(merge_lock_lines(target, conn, True)),
+                             restarts=())
+        if seen.trips or seen.watched:
             print("\n".join(f"[{name}] {line}"
                             for line in sweep_lines(seen, target)), file=out)
         reconcile_parked_pull_requests(target, conn, now, provider, out,
@@ -299,6 +317,25 @@ def reconcile_store(entry, seen, state, now, out):
             keep_memory(state, name, memory, conn)
         finally:
             conn.close()
+
+
+def reconcile_one(entry, seen, state, now, out, end, stop):
+    """Reconcile one project under its share, ending at `end`; returns
+    `(cut, failure)`: why the share cut it and what it raised, each or
+    None. A board call the guard refused cuts the project as a `check()`
+    does, though the call sites went on past it."""
+    try:
+        with deadline.bounded(end, stop) as bound:
+            reconcile_store(entry, seen, state, now, out)
+    except (deadline.DeadlineReached, deadline.CallRefused) as reached:
+        return str(reached), None
+    except (Exception, SystemExit) as bad:  # noqa: BLE001 - the boundary
+        return None, bad
+    if bound.refused:
+        more = len(bound.refused) - 1
+        return bound.refused[0] + (f" and {more} more board calls refused"
+                                   if more else " refused"), None
+    return None, None
 
 
 def reconcile_all(swept, state, home, stop, sweep_sec, now, out):
@@ -323,14 +360,13 @@ def reconcile_all(swept, state, home, stop, sweep_sec, now, out):
         state["reconcile_cursor"] = cut or name
         save_state(home, state)
         share = (end - time.monotonic()) / (len(order) - index)
-        try:
-            with deadline.bounded(time.monotonic() + share, stop):
-                reconcile_store(entry, seen, state, now, out)
-        except deadline.DeadlineReached as reached:
+        reached, bad = reconcile_one(entry, seen, state, now, out,
+                                     time.monotonic() + share, stop)
+        if reached is not None:
             print(f"[holo2] {name}: reconcile cut, {reached}; the next run"
                   " starts here", file=out)
             cut = cut or name
-        except (Exception, SystemExit) as bad:  # noqa: BLE001 - the boundary
+        if bad is not None:
             errors[name] = f"error: {type(bad).__name__}: {bad}"
             print(f"[holo2] {name}: reconcile failed: {bad}", file=out)
         keep_budget(state)
@@ -381,6 +417,10 @@ def run_pass(host, stop=None, out=None, clock=None):
         return _finish(home, state, 1, clock)
     state.pop("error", None)
     load_budget(state)
+    # A store a recent run could not open goes last, so the healthy ones
+    # beat before anything waits on it.
+    unopened = state.get("skipped") or {}
+    entries = sorted(entries, key=lambda entry: entry_key(entry) in unopened)
     swept = []
     for entry in entries:
         if stop.is_set():

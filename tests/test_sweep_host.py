@@ -69,6 +69,18 @@ class CountingProvider(StubProvider):
         return super().closed_identifiers(identifiers)
 
 
+class SlowBoard(CountingProvider):
+    """A board whose per-ticket reads take longer than a two-second
+    interval's reconcile share while `slow`."""
+
+    slow = True
+
+    def fetch_task(self, issue_id):
+        if self.slow:
+            time.sleep(1.1)
+        return super().fetch_task(issue_id)
+
+
 class HostSweepFixture(HostFixture):
     """Projects registered under a temporary home, the sweep run in-process."""
 
@@ -82,8 +94,9 @@ class HostSweepFixture(HostFixture):
             code, _ = self.cli("project", "add", str(self.paths[name]))
             self.assertEqual(code, None)
         # A store another connection holds answers "locked" in a fifth of
-        # a second rather than the store's thirty.
-        patcher = patch.object(store.schema, "BUSY_TIMEOUT_S", 0.2)
+        # a second; the store's own thirty stay as shipped, so a wait on
+        # them is a test that takes thirty seconds.
+        patcher = patch.object(sweep_host, "SWEEP_BUSY_MS", 200)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.started_loops = []
@@ -145,11 +158,13 @@ class HostSweepFixture(HostFixture):
                                              clock=lambda: at)
         return code, out.getvalue()
 
-    def run_once_with(self, at, pull_status):
+    def run_once_with(self, at, pull_status, provider=None):
         """`run_once()` with GitHub's read replaced by `pull_status`."""
         out = io.StringIO()
-        with patch.object(sweep_host, "_provider", lambda _target: None), \
-                patch("holophyte.pr_status.pull_status", pull_status):
+        with patch.object(sweep_host, "_provider", lambda _target: provider), \
+                patch("holophyte.pr_status.pull_status", pull_status), \
+                patch("holophyte.supervisor.linear_budget_low",
+                      return_value=False):
             code = sweep_host.supervise_host(Host.locate(), once=True, out=out,
                                              clock=lambda: at)
         return code, out.getvalue()
@@ -275,6 +290,48 @@ class HostSweepTests(HostSweepFixture):
             "SELECT count(*) FROM projects").fetchone(), (0,))
         self.assertEqual(self.beats("alpha") + self.beats("beta"), [])
         self.assertEqual(projects["gamma"], "ok")
+
+    def test_a_locked_store_waits_the_sweeps_bound_and_then_goes_last(self):
+        """alpha, first in the registry, is locked: it waits the sweep's
+        fifth of a second, not the store's thirty, and once a run has
+        failed to open it the next run sweeps beta and gamma before it."""
+        release = self.hold_write_lock("alpha")
+        self.addCleanup(release)
+        store.set_admission(self.conn("beta"), 1, "disabled", "retired")
+        printed, took = [], []
+        for minute in range(2):
+            began = time.monotonic()
+            printed.append(self.run_once(T0 + minute * MINUTE)[1])
+            took.append(time.monotonic() - began)
+
+        self.assertLess(max(took), store.schema.BUSY_TIMEOUT_S / 3)
+        first, second = ([line.split(":")[0] for line in run.splitlines()
+                          if line.startswith(("[holo2] alpha:",
+                                              "[holo2] beta:"))]
+                         for run in printed)
+        self.assertEqual(first, ["[holo2] alpha", "[holo2] beta"])
+        self.assertEqual(second, ["[holo2] beta", "[holo2] alpha"])
+        self.assertEqual(self.beats("gamma"), [(0, T0 + MINUTE, 2)])
+
+    def test_a_loop_restart_is_printed_though_the_reconcile_fails(self):
+        """The sweep stamps an unreturned restart reported as it finds it,
+        so a reconcile that never prints is a warning lost for good."""
+        conn = self.conn("alpha")
+        store.record_loop_restart(conn, 1, "abc1234", now=T0)
+
+        def no_board(_target):
+            raise RuntimeError("no board today")
+
+        out = io.StringIO()
+        with patch.object(sweep_host, "_provider", no_board):
+            code = sweep_host.supervise_host(
+                Host.locate(), once=True, out=out,
+                clock=lambda: T0 + 10 * MINUTE)
+
+        self.assertEqual(code, 1)
+        self.assertIn("no board today", self.state()["projects"]["alpha"])
+        self.assertIn("[alpha] loop did not return after re-exec from abc1234",
+                      out.getvalue())
 
 
 class HomeLockTests(HostSweepFixture):
@@ -469,6 +526,21 @@ class ThrottleTests(HostSweepFixture):
                 self.two_runs(forget, provider=provider)
                 self.assertEqual(provider.closed_asks, expected)
 
+    def test_a_board_close_ask_the_deadline_cut_is_asked_next_run(self):
+        """A slow board-state read spends the share before the board is
+        asked what it closed: the next run asks, not ten minutes later."""
+        with open(self.home / "host.toml", "a") as registry:
+            registry.write("\n[supervisor]\nsweep_sec = 2\n")
+        self.a_failed_run_with_pr("alpha", 8)
+        provider = SlowBoard("team-alpha")
+
+        _, printed = self.run_once(T0, provider=provider)
+        provider.slow = False
+        self.run_once(T0 + MINUTE, provider=provider)
+
+        self.assertIn("alpha: reconcile cut", printed)
+        self.assertEqual(provider.closed_asks, 1)
+
     def test_a_low_github_budget_outlives_the_run_that_read_it(self):
         self.a_failed_run_with_pr("alpha", 9)
         low = PullStatus(merged=False, closed=False, rate_remaining=10,
@@ -513,6 +585,41 @@ class DeadlineTests(HostSweepFixture):
         self.assertEqual(code, 0)
         self.assertEqual(reads, [1])
         self.assertIn("[holo2] alpha: reconcile cut, share spent before", printed)
+        self.assertEqual(self.state()["reconcile_cursor"], "alpha")
+
+    def test_a_merge_found_past_the_share_lands_in_the_store_alone(self):
+        """The read that finds the pull request merged returns past the
+        share: the close-out's store writes all land, and not one of its
+        Linear calls is made -- each is the stale board a Linear outage
+        leaves, with its warning row."""
+        with open(self.home / "host.toml", "a") as registry:
+            registry.write("\n[supervisor]\nsweep_sec = 2\n")
+        run = self.a_failed_run_with_pr("alpha", 1)
+        provider = CountingProvider("team-alpha")
+
+        def slow_merged(_target, _pull):
+            time.sleep(1.1)
+            return PullStatus(merged=True, closed=True, merge_sha="f" * 40,
+                              merged_by="maintainer")
+
+        code, printed = self.run_once_with(T0, slow_merged, provider)
+
+        self.assertEqual(code, 0)
+        self.assertEqual((provider.states, provider.comments,
+                          provider.label_calls), ([], [], []))
+        conn = self.conn("alpha")
+        self.assertEqual(conn.execute(
+            "SELECT status FROM tickets").fetchone(), ("merged",))
+        self.assertEqual(conn.execute(
+            "SELECT action FROM interventions WHERE runId = ?",
+            (run,)).fetchall(), [("close_out",)])
+        warnings = [summary for (summary,) in conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind = 'warning'",
+            (run,))]
+        self.assertTrue(any("share spent before the board's set_state" in w
+                            for w in warnings), warnings)
+        self.assertIn("[holo2] alpha: reconcile cut, share spent before the"
+                      " board's", printed)
         self.assertEqual(self.state()["reconcile_cursor"], "alpha")
 
 
