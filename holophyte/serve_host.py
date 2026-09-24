@@ -333,7 +333,7 @@ def record_host_action(home, row):
     OSError when it cannot be."""
     handle = os.open(home / HOST_LEDGER,
                      os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-    with os.fdopen(handle, "a") as out:
+    with os.fdopen(handle, "a", encoding="utf-8") as out:
         out.write(json.dumps(row) + "\n")
         out.flush()
         os.fsync(out.fileno())
