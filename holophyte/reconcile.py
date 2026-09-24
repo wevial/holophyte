@@ -26,7 +26,13 @@ import store
 import store.read
 import store.tickets
 from holophyte import pr_activity, pr_status
-from holophyte.board import ledger, mirror_push, refresh_board_states
+from holophyte.board import (
+    ledger,
+    mirror_push,
+    post_ledger_comment,
+    refresh_board_states,
+    release_lease_label,
+)
 from holophyte.config_tables import merge_config
 from holophyte.findings import refresh_findings
 from holophyte.gates import sh
@@ -301,6 +307,11 @@ def _reconcile_pull_requests(target, conn, project, provider):
     points, the tick reads no pull request at all and prints one line
     naming the reset. Returns the Linear ids of the tickets sent back,
     so the serial loop can claim them again this pass.
+
+    Since KO-722 the pass then asks, on the same budget, about each ticket
+    whose last run ended failed, abandoned or killed holding a pull
+    request, and closes out a merged one as `--close` does
+    (`_close_failed_pull_requests()`).
     """
     from holophyte.admission import held_line
     sent = set()
@@ -333,7 +344,134 @@ def _reconcile_pull_requests(target, conn, project, provider):
                 sent.add(issue)
         if low:
             return sent
+    _close_failed_pull_requests(target, conn, project, provider, poll_ms)
     return sent
+
+
+# The run outcomes `--close` accepts as the last run of a ticket that
+# landed outside the factory; the reconcile asks GitHub about the pull
+# request of each but `rejected`, whose pull request it already saw closed.
+CLOSABLE_OUTCOMES = ("rejected", "failed", "abandoned", "killed")
+FAILED_PR_OUTCOMES = ("failed", "abandoned", "killed")
+
+# When this process last asked GitHub about a failed run's pull request,
+# keyed by store and run: at most one read per `[merge] pr_poll_sec` each.
+_FAILED_ASKED = {}
+
+
+class CloseRefused(Exception):
+    """Why a ticket cannot be closed out as landed outside the factory."""
+
+
+def close_out_landed(target, conn, ticket_id, message, provider, run_id=None):
+    """Close the ticket out as merged after its last run ended without a
+    factory merge; return that run's id (KO-451, shared since KO-722).
+
+    One transaction under a re-read of the ticket: a `close_out`
+    intervention carrying `message` on the last run, the question cleared,
+    the ticket walked to `merged`, the run's outcome kept. Then the lease
+    label, the mirror push and the ledger comment. `--close` and the pull
+    request reconcile both call this, so the two cannot drift. Raises
+    `CloseRefused` and writes nothing for a merged ticket, a live run, a
+    last run not ended in `CLOSABLE_OUTCOMES`, or one other than `run_id`
+    when it is given.
+    """
+    with store.transaction(conn):
+        ticket = store.read.ticket_by_id(conn, ticket_id)
+        last = _closable_run(conn, ticket)
+        if run_id is not None and last != run_id:
+            raise CloseRefused("the last run moved while GitHub was asked")
+        store.record_intervention(conn, last, "close_out", message)
+        ledger_text = conn.execute(
+            "SELECT text FROM ledger WHERE runId = ? ORDER BY id DESC LIMIT 1",
+            (last,)).fetchone()[0]
+        store.set_question(conn, ticket_id, None)
+        store.walk_ticket(conn, ticket_id, "merged")
+        store.clear_merge_sha(conn, last)
+    release_lease_label(target, conn, ticket_id, provider, last)
+    mirror_push(conn, ticket_id, provider)
+    post_ledger_comment(ticket.linearIssueId, ledger_text, provider)
+    return last
+
+
+def _closable_run(conn, ticket):
+    """The ticket's last run if `close_out_landed()` may close it out."""
+    if ticket.status == "merged":
+        raise CloseRefused("already merged")
+    live = conn.execute(
+        "SELECT id FROM runs WHERE ticketId = ? AND endedAt IS NULL",
+        (ticket.id,)).fetchone()
+    if ticket.activeRunId is not None or live is not None:
+        raise CloseRefused("has a live run")
+    run = conn.execute("SELECT outcome, endedAt FROM runs WHERE id = ?",
+                       (ticket.lastRunId,)).fetchone()
+    if run is None or run[1] is None or run[0] not in CLOSABLE_OUTCOMES:
+        raise CloseRefused("last run must have ended rejected, failed,"
+                           " abandoned or killed")
+    return ticket.lastRunId
+
+
+def _failed_pull_requests(conn, project):
+    """`(ticket id, identifier, run id, prUrl)` for each open ticket of the
+    project with no live run whose last run ended failed, abandoned or
+    killed holding a pull request."""
+    marks = ", ".join("?" * len(FAILED_PR_OUTCOMES))
+    return conn.execute(
+        "SELECT t.id, t.linearIdentifier, r.id, r.prUrl FROM tickets t"
+        " JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.projectId = ? AND t.status NOT IN ('merged', 'abandoned')"
+        " AND t.activeRunId IS NULL AND r.endedAt IS NOT NULL"
+        f" AND r.outcome IN ({marks}) AND r.prUrl IS NOT NULL ORDER BY t.id",
+        (project, *FAILED_PR_OUTCOMES)).fetchall()
+
+
+def _close_failed_pull_requests(target, conn, project, provider, poll_ms):
+    """Close out each ticket whose failed run's pull request a person merged
+    on GitHub afterwards, as `--close` would (KO-722).
+
+    A run that fails in a pull-request project leaves its pull request open
+    and the ticket in flight; merging it is the maintainer's decision, and
+    nothing else asks GitHub about it. One read per pull request, under the
+    same budget as the parked reads and at most once per `pr_poll_sec`. An
+    open pull request, or one closed without merging, changes nothing.
+    """
+    for ticket_id, identifier, run_id, url in _failed_pull_requests(conn,
+                                                                     project):
+        pull = pr_status.parse_pr_url(url)
+        key, now_ms = (str(target.store_path), run_id), time() * 1000
+        asked = _FAILED_ASKED.get(key)
+        if pull is None or (asked is not None and now_ms - asked < poll_ms):
+            continue
+        _FAILED_ASKED[key] = now_ms
+        try:
+            status = pr_status.pull_status(target, pull)
+        except Exception as e:  # noqa: BLE001 - any transport failure
+            print(f"[holo2] {identifier}: {pull.url} could not be read ({e});"
+                  " the ticket stays open")
+            continue
+        GITHUB_BUDGET.remember(status)
+        if status.merged:
+            _close_merged_after_failure(target, conn, provider, ticket_id,
+                                        identifier, run_id, pull, status)
+        if _budget_low():
+            return
+
+
+def _close_merged_after_failure(target, conn, provider, ticket_id,
+                                identifier, run_id, pull, status):
+    who = status.merged_by or "someone"
+    short = status.merge_sha[:12] if status.merge_sha else "an unrecorded sha"
+    message = (f"Closed: {pull.url} merged on GitHub by {who} as {short}"
+               " after the run ended; no factory merge occurred.")
+    try:
+        close_out_landed(target, conn, ticket_id, message, provider, run_id)
+    except CloseRefused as refused:
+        print(f"[holo2] {identifier}: {pull.url} is merged on GitHub but the"
+              f" ticket cannot be closed out ({refused}); left alone")
+        return
+    print(f"[holo2] {identifier}: {pull.url} was merged on GitHub by {who}"
+          f" as {short}; run {run_id} kept its outcome and the ticket is"
+          " closed out as merged")
 
 
 # The GraphQL budget below which the tick stops reading parked pull requests
