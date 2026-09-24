@@ -242,8 +242,9 @@ class HostStatusTests(HostFixture):
         self.assertIsNone(projects["beta"]["error"])
         self.assertIn("no store at", projects["gamma"]["error"])
 
-    def test_only_status_and_serve_have_a_host_form(self):
-        for argv in ([], ["--supervise"], ["--sweep"]):
+    def test_only_status_serve_and_supervise_have_a_host_form(self):
+        for argv in ([], ["--sweep"], ["--report"], ["--once"],
+                     ["--status", "--once"]):
             with self.subTest(argv=argv), \
                     contextlib.redirect_stderr(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised:

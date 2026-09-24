@@ -208,7 +208,8 @@ def host_snapshot(host, now=None):
 
 def render_host(snap):
     """The host snapshot as the lines `--status` prints; a project's lines
-    are its project-form lines, each prefixed with `[NAME]`."""
+    are what the last host sweep run said of it, then its project-form
+    lines, each prefixed with `[NAME]`."""
     build = snap["build"]
     sweep = snap["sweep"]
     lines = [f"host {snap['home']}: {len(snap['projects'])} projects in"
@@ -222,8 +223,12 @@ def render_host(snap):
             f"{key} {sweep[key]}" for key in
             ("started", "ended", "revision", "exit", "error") if key in sweep))
     lines.append(_lock_line("home", snap["home_lock"], "pid"))
+    swept = (sweep or {}).get("projects")
     for project in snap["projects"]:
-        prefix = f"[{project['name'] or project['path']}]"
+        key = project["name"] or project["path"]
+        prefix = f"[{key}]"
+        if isinstance(swept, dict) and key in swept:
+            lines.append(f"{prefix} last sweep: {swept[key]}")
         if project["store"] is None:
             lines.append(f"{prefix} project {project['path']}:"
                          f" {project['error']}")

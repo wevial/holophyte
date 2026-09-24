@@ -32,7 +32,7 @@ OVER = {}
 # Lower a pin when it sits more than 150 lines above its file's count.
 PINNED = {
     "holophyte/babysitter.py": 1095, "holophyte/board.py": 961,
-    "holophyte/claim.py": 988, "holophyte/cli.py": 627,
+    "holophyte/claim.py": 988, "holophyte/cli.py": 654,
     "holophyte/config.py": 894, "holophyte/dispatch.py": 327,
     "holophyte/config_tables.py": 695, "holophyte/findings.py": 391,
     "holophyte/gates.py": 924, "holophyte/loop.py": 917,
@@ -40,7 +40,7 @@ PINNED = {
     "holophyte/operator.py": 539, "holophyte/pool.py": 434,
     "holophyte/pr.py": 762, "holophyte/pr_status.py": 540,
     "holophyte/pullrequest.py": 465,
-    "holophyte/reconcile.py": 721, "holophyte/reexec.py": 154,
+    "holophyte/reconcile.py": 733, "holophyte/reexec.py": 154,
     "holophyte/report.py": 256, "provider.py": 362,
     "holophyte/serve.py": 1098,
     "holophyte/serve_actions.py": 251, "holophyte/serve_config.py": 402,
@@ -74,7 +74,7 @@ PINNED = {
     "tests/test_store_schema.py": 1612, "tests/test_store_status.py": 372,
     "tests/test_store_status_graph.py": 171,
     "tests/test_store_surface.py": 340, "tests/test_store_tickets.py": 178,
-    "tests/test_supervise.py": 1360, "tests/test_supervisor_sweep.py": 1100,
+    "tests/test_supervise.py": 1106, "tests/test_supervisor_sweep.py": 1100,
     "tests/test_wiring_claim.py": 700, "tests/test_wiring_findings.py": 549,
     "tests/test_wiring_mirror.py": 349, "tests/test_wiring_phases.py": 501,
     "tests/test_wiring_rounds.py": 657,

@@ -1,13 +1,14 @@
 """The self re-exec: how a factory process replaces itself with a fresh one.
 
 Two processes restart themselves on the factory's own code moving under
-them: the loop after merging a change to the factory itself, and the
-supervisor when the checkout it was started from is no longer the one on
-disk. Both replace the process image with the command line they were
-launched with -- never a module reloaded -- and both do it through a seam a
-test can patch, so `reexec_self()` takes the caller's `EXEC` rather than
-owning one: the loop's tests patch `holophyte.operator.EXEC`, the supervisor's
-`holophyte.supervisor.EXEC`, and neither ever execs the test runner.
+them: the loop after merging a change to the factory itself, and the serve
+daemon on a port it bound itself when the checkout it was started from is
+no longer the one on disk (the supervisor no longer does: it runs the code
+it started with). Both replace the process image with the command line they
+were launched with -- never a module reloaded -- and both do it through a
+seam a test can patch, so `reexec_self()` takes the caller's `EXEC` rather
+than owning one: the loop's tests patch `holophyte.operator.EXEC`, the
+daemon's `holophyte.serve.EXEC`, and neither ever execs the test runner.
 
 The other way a factory process is started: `start_loop()` asks the user
 service manager for the target's `holophyte-loop@` unit, the one call the

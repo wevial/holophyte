@@ -18,6 +18,7 @@ import store
 import store.read
 import store.tickets
 import ticket_template
+from holophyte import deadline
 from holophyte.agents import cleanup_review_refs
 from holophyte.findings import refresh_findings
 from holophyte.redact import outbound, redact_values
@@ -331,6 +332,7 @@ def refresh_board_states(conn, project, provider):
     if project is None:
         return
     for ticket in store.read.open_tickets(conn, project):
+        deadline.check(f"{ticket.linearIdentifier}'s board state")
         try:
             task = provider.fetch_task(ticket.linearIdentifier)
         except Exception as error:  # any transport failure leaves the cache intact

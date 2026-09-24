@@ -56,8 +56,14 @@ Each module, one line:
   one way, last write wins, never read back — so the provider's `set_state`
   is the only writer of that state, and the mapping table beside
   `mirror_push` says which state each status shows as.
-- `holophyte/supervisor.py` — the stale-run sweep and the `--supervise`
-  loop.
+- `holophyte/supervisor.py` — the stale-run sweep and the `PROJECT
+  --supervise` loop.
+- `holophyte/sweep_host.py` — `--supervise [--once]` with no project: the
+  host sweep over every store in `host.toml`, its per-run home lock,
+  `sweep.json`, the round-robin reconcile under a deadline, and one
+  project's failure its own `error`.
+- `holophyte/deadline.py` — the host sweep's bound on its network calls:
+  `check()` before each Linear or GitHub call, a no-op outside the sweep.
 - `holophyte/sweep_report.py` — the sweep's report lines (KO-396): the
   `SWEEP_HEADERS` table, the per-run and restart lines, `sweep_report()`
   as `--sweep`'s whole body, and the review-container and merge-lock

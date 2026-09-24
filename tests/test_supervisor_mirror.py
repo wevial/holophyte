@@ -9,10 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import StubProvider  # noqa: E402
 from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
-import holophyte.supervisor  # noqa: E402
 import store  # noqa: E402
 from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.supervisor import reconcile_parked_pull_requests  # noqa: E402
+from holophyte.supervisor import (  # noqa: E402
+    fresh_memory,
+    reconcile_parked_pull_requests,
+)
 
 
 class CountingProvider(StubProvider):
@@ -36,19 +38,15 @@ class SupervisorMirrorTests(SweepTestCase):
     def setUp(self):
         super().setUp()
         self.configure("[supervisor]\nboard_ask_sec = 600\n")
-        self.forget_asks()
-        self.addCleanup(self.forget_asks)
+        # The watcher's memory of its asks, kept across these passes as
+        # the project form keeps it for its life.
+        self.memory = fresh_memory()
         # The loop is gone: the ticket's last run ended `failed` and the
         # ticket stayed `in_flight`, the REL-138 shape.
         run = self.a_run()
         store.release(self.conn, run, "failed", "crashed")
         self.run_id = run
         self.ticket = self.ticket_of[run]
-
-    @staticmethod
-    def forget_asks():
-        """The supervisor process's throttle, fresh for each store."""
-        vars(holophyte.supervisor).get("_MIRROR_ASKED", {}).clear()
 
     def reconcile(self, provider, at):
         provider.team = "team-1"  # the project `setUp` ensures
@@ -59,7 +57,7 @@ class SupervisorMirrorTests(SweepTestCase):
                 patch("holophyte.supervisor.start_loop_for"):
             asked = reconcile_parked_pull_requests(
                 self.project, self.conn, at, provider, out,
-                knobs=sweep_config(self.project))
+                knobs=sweep_config(self.project), memory=self.memory)
         return asked, out.getvalue()
 
     def status(self):
@@ -86,7 +84,7 @@ class SupervisorMirrorTests(SweepTestCase):
         self.reconcile(provider, T0 + 21 * MINUTE)
         self.assertEqual(provider.closed_asks, 1)
 
-        self.forget_asks()
+        self.memory = fresh_memory()
         live = CountingProvider()
         self.a_run(claimed_at=T0 + 30 * MINUTE)  # a fresh beat: the loop is live
         self.reconcile(live, T0 + 30 * MINUTE)

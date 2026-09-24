@@ -11,7 +11,8 @@ writers queue on the temporary file instead of losing each other's entry,
 and a crash leaves the old file or the new one.
 
 A route name resolves through `Host.project()` only, never through a path
-built from outside input. Nothing here opens a store. `settings()` is the
+built from outside input; `registry_of()` answers whether a project is the
+host sweep's to watch. Nothing here opens a store. `settings()` is the
 file's own keys, typed: `[serve] bind`, `machine_token_file` and
 `actions`, `[console] daemons`, `[supervisor] sweep_sec`.
 """
@@ -234,6 +235,36 @@ def _refuse_duplicates(entries, source):
                     f" both registered as {key[0]} {key[1]}; one name and one"
                     " path per project")
             seen[key] = entry
+
+
+def registry_of(target, host=None):
+    """The registry file that lists `target`'s path, None when none does or
+    there is no registry; HostError when the registry cannot be read. The
+    loop's supervisor spawn and a hand `PROJECT --supervise` ask it: a
+    registered project is the host sweep's to watch."""
+    host = Host.locate() if host is None else host
+    if not host.path.exists():
+        return None
+    path = Path(target.path).resolve()
+    return host.path if any(entry.path == path
+                            for entry in host.projects()) else None
+
+
+def watched_line(target):
+    """None when the registry does not list `target`; otherwise the line
+    saying the host sweep watches it, which refuses a hand `PROJECT
+    --supervise` and stops the loop's supervisor spawn. A registry that
+    cannot be read answers with its error: it cannot say the host sweep is
+    not watching, and two watchers on one store would manufacture the second
+    strike the two-strike rule demands."""
+    try:
+        registry = registry_of(target)
+    except HostError as bad:
+        return f"{bad}; no supervisor for {target.path} beside it"
+    if registry is None:
+        return None
+    return (f"[holo2] the host sweep watches {target.path}, registered in"
+            f" {registry}; no supervisor started for it")
 
 
 def already_registered(host, entry):

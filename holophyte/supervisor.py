@@ -6,18 +6,18 @@ counts strikes and returns a `Sweep` of `Trip`s; `act_on_trip()` fails a
 tripped run through the loop's own `close_out_failure()` once
 `still_tripped()` agrees the verdict survives; `sweep_lines()` and its
 halves render a pass and `sweep_report()` is `--sweep`'s whole body. The
-supervisor loop -- `supervise()`, one `supervise_pass()` per interval, held
-to one process per target by `acquire_supervisor_lock()` and its helpers,
-refused with `SupervisorHeld` -- is `--supervise`'s. `supervisor_liveness_line()`
-is `--report`'s line about that process, read from the heartbeat rows
-`supervise_pass()` writes. `supervise()` also watches the factory's own
-code: `factory_revision()` is the checkout's `HEAD`, read once at startup and
-again before each pass, and a supervisor whose code has moved -- or whose
-store a newer build has stamped -- releases its lock and re-executes itself
-through the `EXEC` seam rather than exiting. Beyond the standard library it
-imports `store` and `store.read` for the rows, `open_store` from
-`holophyte.runs`, `reexec_self` from `holophyte.reexec`, `close_out_failure`
-from `holophyte.board`, `sweep_config` from `holophyte.config_tables`, and
+project form of the supervisor loop -- `supervise()`, one `supervise_pass()`
+per interval, held to one process per target by `acquire_supervisor_lock()`
+and its helpers, refused with `SupervisorHeld` -- is `PROJECT --supervise`'s
+for a project the host registry does not list; the host sweep
+(`holophyte.sweep_host`) runs the same steps once per registered store.
+`supervisor_liveness_line()` is `--report`'s line about the watcher, read
+from the heartbeat rows either writes. Neither form re-executes itself: a
+process runs the code it started with, and a newer store ends the project
+form for its service manager to start again on the new code. Beyond the
+standard library it imports `store` and `store.read` for the rows,
+`open_store` from `holophyte.runs`, `close_out_failure` from
+`holophyte.board`, `sweep_config` from `holophyte.config_tables`, and
 `host_label`, `format_age`, `REPORT_GAP` from `holophyte.report`; nothing
 from `factory`.
 
@@ -41,6 +41,7 @@ from time import time
 import holophyte
 import store
 import store.read
+from holophyte import deadline
 from holophyte.board import (
     body_problem,
     close_out_failure,
@@ -51,7 +52,7 @@ from holophyte.board import (
 )
 from holophyte.config import budget_scale, serve_config
 from holophyte.config_tables import BOARD_ASK_SEC, sweep_config
-from holophyte.reexec import LOOP_UNIT, reexec_self, start_loop
+from holophyte.reexec import LOOP_UNIT, start_loop
 from holophyte.report import format_age, host_label
 from holophyte.runs import MAX_ROUNDS, open_store
 from holophyte.supervisor_lock import (
@@ -61,11 +62,6 @@ from holophyte.supervisor_lock import (
 )
 from holophyte.sweep_report import merge_lock_lines, sweep_lines
 from store.working import agent_work
-
-# How the supervisor restarts itself when the factory's code moves under it:
-# the process image is replaced, never a module reloaded. A seam so tests can
-# see the decision without exec-ing the test runner.
-EXEC = os.execv
 
 # --- the supervisor's stale-run sweep -----------------------------------------
 # The loop watches itself only while it is alive. A run whose process crashed,
@@ -467,9 +463,15 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
 # the pass in hand, give the lock back, exit clean -- because an operator's
 # Ctrl-C and a service manager's stop are the same request.
 STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
+# The pid the host sweep beats under: every run is a new process, so its
+# `supervisorHeartbeats` row is `(0, since)`, one per store. Never handed to
+# `pid_alive()`: `os.kill(0, 0)` signals the caller's own process group and
+# always answers alive.
+HOST_SWEEP_PID = 0
 
 
-def supervise_pass(target, pid, started_at, now=None, provider=None, out=None):
+def supervise_pass(target, pid, started_at, now=None, provider=None, out=None,
+                   memory=None):
     """One pass: an acting sweep of the target's store, then a heartbeat.
 
     The store is opened and closed here rather than held by the loop: a
@@ -482,7 +484,8 @@ def supervise_pass(target, pid, started_at, now=None, provider=None, out=None):
     Prints what `--sweep` would when there is something to say -- a trip or a
     run one strike from one -- and nothing on a healthy pass: a watcher that
     prints "all healthy" once a minute all night has buried the one line
-    that mattered by morning.
+    that mattered by morning. `memory` is the `ReconcileMemory` the caller
+    keeps across passes.
     """
     out = out or sys.stdout
     now = int(time() * 1000) if now is None else now
@@ -491,7 +494,8 @@ def supervise_pass(target, pid, started_at, now=None, provider=None, out=None):
         seen = sweep(target, conn, now, act=True, provider=provider)
         if seen.trips or seen.watched or seen.restarts:
             print("\n".join(sweep_lines(seen, target)), file=out)
-        reconcile_parked_pull_requests(target, conn, now, provider, out)
+        reconcile_parked_pull_requests(target, conn, now, provider, out,
+                                       memory=memory)
         store.record_supervisor_heartbeat(conn, pid, started_at, now)
     finally:
         conn.close()
@@ -555,6 +559,7 @@ def board_ready(conn, project, provider, out, now=None, board_ask_ms=None):
     now = int(time() * 1000) if now is None else now
     if linear_budget_low(now, out):
         return 0
+    deadline.check("the board's ready listing")
     if board_ask_ms is None:
         board_ask_ms = BOARD_ASK_SEC * 1000
     if project is not None:
@@ -600,27 +605,35 @@ def _board_issue_owed(conn, project, issue, out):
         return status == "ready" and active_run is None
 
 
-# When the supervisor last asked the board which of a project's mirrored
-# tickets it has closed, by project id. Kept in the process, not the store:
-# a re-exec simply asks once more (KO-723).
-_MIRROR_ASKED = {}
+# What a watcher remembers between passes that no store column holds:
+# `mirror_asked`, when it last asked the board which of a store's mirrored
+# tickets it has closed, by project id (KO-723), and `failed_asked`, when it
+# last read each failed run's pull request, by run id (KO-722). One per
+# store: the project form keeps its own for its life, the host sweep loads
+# each store's from `sweep.json` and writes it back after the run.
+ReconcileMemory = collections.namedtuple(
+    "ReconcileMemory", ("mirror_asked", "failed_asked"))
+
+
+def fresh_memory():
+    return ReconcileMemory({}, {})
 
 
 def reconcile_board_closes(conn, project, provider, target, now, out,
-                           board_ask_ms):
+                           board_ask_ms, asked):
     """Walk the tickets the board closed while no loop ran (KO-723): the
     loop's own `_reconcile_mirror()`, which otherwise runs only at a loop's
     startup, so a ticket the maintainer landed outside its pull request or
     cancelled stayed open in the store until some loop started. Asked at
     most once per `board_ask_ms` per project, only when the project has an
-    open ticket with no active run, and not while the Linear budget is low.
-    Anything it raises is one printed line -- never a strike, never the
-    pass."""
+    open ticket with no active run, and not while the Linear budget is low;
+    `asked` is the store's `ReconcileMemory.mirror_asked`. Anything it
+    raises is one printed line -- never a strike, never the pass."""
     from holophyte.reconcile import _reconcile_mirror
 
     if provider is None:
         return
-    asked_at = _MIRROR_ASKED.get(project)
+    asked_at = asked.get(project)
     if asked_at is not None and now - asked_at < board_ask_ms:
         return
     if not any(t.activeRunId is None
@@ -628,7 +641,8 @@ def reconcile_board_closes(conn, project, provider, target, now, out,
         return
     if linear_budget_low(now, out):
         return
-    _MIRROR_ASKED[project] = now
+    deadline.check("the board's closed tickets")
+    asked[project] = now
     try:
         with contextlib.redirect_stdout(out):
             _reconcile_mirror(conn, project, provider, target)
@@ -638,7 +652,7 @@ def reconcile_board_closes(conn, project, provider, target, now, out,
 
 
 def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
-                                   knobs=None):
+                                   knobs=None, memory=None):
     """Land the pull requests a person merged while no loop was running
     (KO-372): the loop's own `_reconcile_pull_requests()`, called from the
     supervisor's pass for every project of the store no live loop is
@@ -666,7 +680,10 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     Startup route failures persist on the project: future deadlines skip
     starts silently, and due retries probe before starting (KO-466).
     Successful starts record launch_loop; systemctl failures leave an event.
+    The board fallback asks only for a team that already has a row: the
+    sweep writes no `projects` row, so a store without one is left alone.
 
+    `memory` is the store's `ReconcileMemory`, a fresh one when omitted.
     Returns the project ids reconciled.
     """
     # In the function, not at the top: `holophyte.loop` imports this module.
@@ -674,6 +691,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
 
     out = out or sys.stdout
     knobs = sweep_config(target) if knobs is None else knobs
+    memory = fresh_memory() if memory is None else memory
     asked = []
     owed = []
     live = False
@@ -684,14 +702,15 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
             continue
         try:
             with contextlib.redirect_stdout(out):
-                _reconcile_pull_requests(target, conn, project, provider)
+                _reconcile_pull_requests(target, conn, project, provider,
+                                         failed_asked=memory.failed_asked)
         except Exception as e:  # noqa: BLE001 - never a strike, never the pass
             print(f"[holo2] parked pull requests could not be reconciled"
                   f" ({e}); the next pass asks again", file=out)
         else:
             asked.append(project)
         reconcile_board_closes(conn, project, provider, target, now, out,
-                               knobs.board_ask_ms)
+                               knobs.board_ask_ms, memory.mirror_asked)
         # Owed however it got there -- this pass's send-back, an
         # operator's --requeue or --babysit, a ticket filed while the
         # loop was down -- and asked even when GitHub could not be: the
@@ -703,17 +722,20 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     # tick, so the read is only for a target with no loop at all; the
     # answer's surviving issues carry no mirror row and no run, (None,
     # None) apiece. The board's mirror rows live under the provider's
-    # team -- the key `ensure_project()` mirrors them by -- and ensuring
-    # the row here gives `board_ready()` somewhere to stamp its ask, so
-    # `board_ask_sec` holds even for a board nothing has mirrored yet.
+    # team -- the key `ensure_project()` mirrors them by -- and that row is
+    # where `board_ready()` stamps its ask, so `board_ask_sec` holds. The
+    # sweep never writes the row: a team with none (a store recreated
+    # after `project add`) is not asked about until a loop or `project
+    # add` writes it.
     board_project = None
-    if not owed and not live:
-        if provider is not None:
-            board_project = store.ensure_project(conn, provider.team,
-                                                 target.path)
-        owed = [(None, None)] * board_ready(
-            conn, board_project, provider, out, now=now,
-            board_ask_ms=knobs.board_ask_ms)
+    if not owed and not live and provider is not None:
+        row = conn.execute("SELECT id FROM projects WHERE linearTeamId = ?",
+                           (provider.team,)).fetchone()
+        board_project = row[0] if row is not None else None
+        if board_project is not None:
+            owed = [(None, None)] * board_ready(
+                conn, board_project, provider, out, now=now,
+                board_ask_ms=knobs.board_ask_ms)
     if owed and not linear_budget_low(now, out) and not lease_turn_held(target):
         start_loop_for(target, conn, owed, now, out, project_id=board_project)
     return asked
@@ -754,6 +776,7 @@ def start_loop_for(target, conn, owed, now, out, project_id=None):
     from store import launch_backoff
 
     project, run_id = launch_backoff.owed_project(conn, owed, project_id)
+    deadline.check("the implementer route probe")
     if project and not launch_route_ready(
             target, conn, project[0], run_id, now, out):
         return
@@ -817,7 +840,8 @@ def factory_revision():
 
 
 # The refusal `store.open()` raises for a store a newer build has stamped:
-# a `SystemExit` whose message says the schema is newer than this build's.
+# a `SystemExit` whose message says the schema is newer than this build's,
+# which the host sweep lists as that project's error.
 NEWER_SCHEMA = "newer than the version"
 
 
@@ -829,7 +853,8 @@ def supervise(target, provider=None, interval=None, wait=None, out=None):
 
 
 def _supervise(target, provider=None, interval=None, wait=None, out=None):
-    """`--supervise`'s whole body: lock, sweep, sleep, repeat until a signal.
+    """`PROJECT --supervise`'s whole body: lock, sweep, sleep, repeat until
+    a signal.
 
     The lock is taken before the first pass and given back on every way out
     -- a signal, a pass that raised -- so a supervisor that dies leaves the
@@ -842,16 +867,12 @@ def _supervise(target, provider=None, interval=None, wait=None, out=None):
     afterwards because this is a mode of a module other code imports, not
     the process's only occupant.
 
-    The factory's own code is watched too. `factory_revision()` is read once
-    here and again before every pass; when it has moved -- a self-merge on
-    this host -- the supervisor prints the two revisions, releases its lock
-    and replaces itself with the same command line through `EXEC`, so the
-    fresh process takes the lock and carries on from the new code. A pass
-    whose store open refuses a newer schema (`store.open()`'s `SystemExit`)
-    does the same instead of exiting: the net that guards every other
-    target on the host must not end without a sound over the one event the
-    loop already restarts itself for. A stop request wins over a pending
-    re-exec, and the exec never happens from inside a signal handler.
+    No re-exec: the process runs the code it started with. A store a newer
+    build has stamped past this build's reach refuses the pass's open with
+    `store.open()`'s `SystemExit`, which ends the process with that message
+    for its service manager (`Restart=on-failure`) to start again on the
+    new code. Three passes in a row that find the store locked or corrupt
+    end it the same way, exit 1.
 
     `wait` is the sleep, injectable so a test can drive the loop without
     one; it is called with the interval and its result is ignored. The
@@ -866,18 +887,12 @@ def _supervise(target, provider=None, interval=None, wait=None, out=None):
     started_at = int(time() * 1000)
     path = acquire_supervisor_lock(supervisor_lock_path(target), target.path,
                                    pid, started_at, target=target)
-    started_from = factory_revision()
     stop = threading.Event()
     wait = stop.wait if wait is None else wait
+    memory = fresh_memory()
 
     def on_signal(signum, _frame):
         stop.set()
-
-    def reexec(reason):
-        # The lock first: the fresh process must find it free, and nothing
-        # can be released after the exec has replaced this process.
-        release_supervisor_lock(path, pid)
-        reexec_self(reason, EXEC, out)
 
     skipped = 0
     previous = {signum: signal.signal(signum, on_signal)
@@ -888,16 +903,9 @@ def _supervise(target, provider=None, interval=None, wait=None, out=None):
               f" every {interval}s,"
               f" lock at {path}", file=out)
         while not stop.is_set():
-            current = factory_revision()
-            if stop.is_set():
-                break  # a signal landed in the git call: stop wins
-            if current != started_from:
-                reexec(f"factory code moved from {started_from} to {current};"
-                       " supervisor re-executing")
-                return 0  # only a test's EXEC returns
             try:
                 supervise_pass(target, pid, started_at, provider=provider,
-                               out=out)
+                               out=out, memory=memory)
             except sqlite3.OperationalError as exc:
                 skipped += 1
                 next_step = (f"next pass in {interval}s" if skipped < 3 else
@@ -906,11 +914,6 @@ def _supervise(target, provider=None, interval=None, wait=None, out=None):
                       f" ({exc}); {next_step}", file=out)
                 if skipped >= 3:
                     return 1
-            except SystemExit as refused:
-                if NEWER_SCHEMA not in str(refused) or stop.is_set():
-                    raise
-                reexec(f"{refused}; supervisor re-executing")
-                return 0  # only a test's EXEC returns
             else:
                 skipped = 0
             wait(interval)
@@ -945,5 +948,8 @@ def supervisor_liveness_line(target, conn=None, now=None):
     age = now - last_beat
     state = ("live" if age < sweep_config(target).heartbeat_stale_ms
              else "stale")
+    # Pid 0 is the host sweep's sentinel row: one per store, bumped by
+    # every run, and no process to name.
+    who = "host sweep" if pid == HOST_SWEEP_PID else f"pid {pid}"
     return (f"supervisor: {state}, last heartbeat {format_age(age)} ago"
-            f" (pid {pid} on {host_label(target, host)})")
+            f" ({who} on {host_label(target, host)})")

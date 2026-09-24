@@ -2,9 +2,9 @@
 
 `serve()` runs one `CodeWatch` between requests: it reads the revision the
 factory checkout had at startup and, every `CODE_CHECK_SEC`, the one it has
-now, and raises `Moved` out of `serve_forever()` once they differ -- the
-supervisor's code-moved check, read through the same `factory_revision()`,
-which `serve()` hands in so the daemon's tests patch it where it is used.
+now, and raises `Moved` out of `serve_forever()` once they differ, read
+through `holophyte.supervisor.factory_revision()`, which `serve()` hands in
+so the daemon's tests patch it where it is used.
 `InFlight` counts the requests the daemon has read and not yet answered,
 so the re-exec can wait for them: the daemon's handler threads are
 daemons, which `server_close()` is not promised to join -- for at most
