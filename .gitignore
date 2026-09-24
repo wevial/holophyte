@@ -8,3 +8,5 @@ console/dist/
 console/node_modules/
 console/electron/dist/
 console/electron/node_modules/
+.playwright-mcp/
+uv.lock
