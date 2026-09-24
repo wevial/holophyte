@@ -660,30 +660,27 @@ assert not lp.LINEAR_BUDGET.low(now={deadline})
 class LinearRetryTests(unittest.TestCase):
     """KO-721: a transient failure of a read is tried again; a mutation is not."""
 
-    @classmethod
-    def setUpClass(cls):
-        import linear_provider
-        cls.linear = linear_provider
+    linear = linear_provider
+    READ = "query { viewer { id } }"
 
     def setUp(self):
-        patcher = patch.object(self.linear, "LINEAR_BUDGET",
-                               self.linear.LinearBudget())
-        patcher.start()
-        self.addCleanup(patcher.stop)
         self.slept = []
-        patcher = patch.object(self.linear, "sleep", self.slept.append)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for name, value in (("LINEAR_BUDGET", self.linear.LinearBudget()),
+                            ("sleep", self.slept.append)):
+            patcher = patch.object(self.linear, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
-    def _run(self, query, failures, final=None):
-        """Run `_gql(query)` against a Linear that raises `failures` in turn
-        and then answers `final`; the calls it saw and the outcome."""
+    def _run(self, query, code, failures, final=None):
+        """Run `_gql(query)` against a Linear that refuses with `code`
+        `failures` times and then answers `final`; its calls and outcome."""
         calls = []
 
         def urlopen(req, timeout):
             calls.append(req)
-            if len(calls) <= len(failures):
-                raise failures[len(calls) - 1]
+            if len(calls) <= failures:
+                raise urllib.error.HTTPError(
+                    self.linear.GRAPHQL, code, "refused", {}, None)
             return _answer(final, {})
 
         with patch.dict(os.environ, {"LINEAR_API_KEY": "key"}), \
@@ -693,39 +690,26 @@ class LinearRetryTests(unittest.TestCase):
             except Exception as e:  # noqa: BLE001 -- the outcome under test
                 return calls, e
 
-    def _refused(self, code, reason):
-        return urllib.error.HTTPError(self.linear.GRAPHQL, code, reason, {}, None)
-
     def test_a_read_outlasts_two_503s(self):
-        calls, data = self._run(
-            "query { viewer { id } }",
-            [self._refused(503, "Service Unavailable")] * 2,
-            {"data": {"viewer": {"id": "u1"}}})
-
+        calls, data = self._run(self.READ, 503, 2,
+                                {"data": {"viewer": {"id": "u1"}}})
         self.assertEqual(data, {"viewer": {"id": "u1"}})
         self.assertEqual(len(calls), 3)
         self.assertEqual(self.slept, [2, 5])
 
     def test_a_read_that_keeps_failing_raises_the_503_after_three_calls(self):
-        calls, raised = self._run(
-            "query { viewer { id } }",
-            [self._refused(503, "Service Unavailable")] * 5)
-
+        calls, raised = self._run(self.READ, 503, 5)
         self.assertIsInstance(raised, urllib.error.HTTPError)
-        self.assertEqual(raised.code, 503)
-        self.assertEqual(len(calls), 3)
+        self.assertEqual((raised.code, len(calls)), (503, 3))
 
     def test_a_mutation_and_a_429_are_sent_once(self):
         calls, raised = self._run(
             'mutation { commentCreate(input: {issueId: "i", body: "b"}) '
-            '{ success } }',
-            [self._refused(503, "Service Unavailable")] * 5)
+            '{ success } }', 503, 5)
         self.assertIsInstance(raised, urllib.error.HTTPError)
         self.assertEqual((raised.code, len(calls)), (503, 1))
 
-        calls, raised = self._run(
-            "query { viewer { id } }",
-            [self._refused(429, "Too Many Requests")] * 5)
+        calls, raised = self._run(self.READ, 429, 5)
         self.assertIsInstance(raised, self.linear.LinearBudgetExhausted)
         self.assertEqual(len(calls), 1)
         self.assertEqual(self.slept, [])
