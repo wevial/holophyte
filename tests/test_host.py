@@ -178,6 +178,71 @@ class HostRegistryTests(HostFixture):
             self.cli("project", "add", str(self.root / "missing"))
         self.assertFalse((self.home / "host.toml").exists())
 
+    def test_remove_by_path_drops_an_entry_whose_config_gives_no_name(self):
+        # The recovery the operator needs most: a config that no longer
+        # loads leaves its entry nameless, so only its path can name it.
+        alpha, beta = self.repo("alpha"), self.repo("beta")
+        self.cli("project", "add", str(alpha))
+        self.cli("project", "add", str(beta))
+        Project.locate(beta).config_path.write_bytes(b"\xff\xfe[board]\n")
+        self.assertEqual(self.registered(), [("alpha", alpha), (None, beta)])
+        _, out = self.cli("project", "remove", str(beta))
+        self.assertIn(f"{beta} removed from the host registry", out)
+        self.assertEqual(self.registered(), [("alpha", alpha)])
+
+    def test_remove_by_path_resolves_a_name_collision(self):
+        # A name edited into a collision makes the registry unreadable to
+        # the daemon and the sweep; remove must still get it back.
+        alpha, beta = self.repo("alpha"), self.repo("beta")
+        self.cli("project", "add", str(alpha))
+        self.cli("project", "add", str(beta))
+        Project.locate(beta).config_path.write_text(
+            '[board]\nteam = "team-beta"\nproject_id = "p"\n'
+            '[serve]\nname = "alpha"\n')
+        with self.assertRaises(HostError):
+            Host.locate().projects()
+        # The shared name alone is ambiguous: refused, naming both paths.
+        with self.assertRaisesRegex(SystemExit,
+                                    f"alpha matches {alpha} and {beta}"):
+            self.cli("project", "remove", "alpha")
+        self.cli("project", "remove", str(beta))
+        self.assertEqual(self.registered(), [("alpha", alpha)])
+
+    def test_add_on_a_registered_path_writes_a_missing_store_row(self):
+        # The store was recreated after registration: the daemon and the
+        # sweep name `project add PATH`, which must write the row back.
+        alpha = self.repo("alpha")
+        self.cli("project", "add", str(alpha))
+        registry = (self.home / "host.toml").read_bytes()
+        target = Project.locate(alpha)
+        for suffix in ("", "-wal", "-shm"):
+            Path(str(target.store_path) + suffix).unlink(missing_ok=True)
+        _, out = self.cli("project", "add", str(alpha))
+        self.assertIn("host.toml unchanged", out)
+        self.assertEqual(
+            self.interventions(target.store_path, "register_project"), 1)
+        self.assertEqual((self.home / "host.toml").read_bytes(), registry)
+        # With its row back, the path is refused as any registered one is.
+        with self.assertRaisesRegex(
+                SystemExit, f"alpha {alpha} is already registered in"):
+            self.cli("project", "add", str(alpha))
+
+    def test_project_list_finds_a_row_written_under_another_spelling(self):
+        # The loop can write its row before anyone resolved the path (a
+        # symlinked checkout); list finds it by canonical path, as the
+        # daemon, the sweep and --status do.
+        alpha = self.repo("alpha")
+        self.cli("project", "add", str(alpha))
+        link = self.root / "link"
+        link.symlink_to(alpha)
+        conn = store.open(str(Project.locate(alpha).store_path))
+        conn.execute("UPDATE projects SET repoPath = ?, admission = 'held',"
+                     " holdNote = 'paused'", (str(link),))
+        conn.commit()
+        conn.close()
+        _, out = self.cli("project", "list")
+        self.assertEqual(out.splitlines(), [f"alpha\t{alpha}\theld\tpaused"])
+
     def test_a_registry_edit_is_seen_without_a_new_host(self):
         host = Host.locate()
         self.assertEqual(host.projects(), ())

@@ -115,9 +115,10 @@ class Host:
 
     def __init__(self, path):
         self.path = Path(path)
-        self._stamp = None
-        self._table = {}
-        self._projects = ()
+        # `(stamp, table, projects)`, swapped whole by one assignment so a
+        # request thread never pairs one reload's table with another's
+        # projects under the daemon's threading server.
+        self._state = (None, {}, ())
 
     @classmethod
     def locate(cls, home_dir=None):
@@ -131,8 +132,7 @@ class Host:
 
     def table(self):
         """The parsed file, `{}` when there is none."""
-        self._reload()
-        return self._table
+        return self._current()[1]
 
     def projects(self):
         """The registered projects in file order.
@@ -140,27 +140,30 @@ class Host:
         Two entries whose configs give one name are refused naming both,
         the check the daemon and the sweep make at every start and reload.
         """
-        self._reload()
-        return self._projects
+        return self._current()[2]
 
     def project(self, name):
         """The entry named `name`, None when the registry has none."""
         return next((entry for entry in self.projects()
                      if name is not None and entry.name == name), None)
 
-    def _reload(self):
+    def _current(self):
+        state = self._state
         stamp = _stamp(self.path)
-        if stamp == self._stamp and stamp is not None:
-            return
+        if stamp == state[0] and stamp is not None:
+            return state
         try:
-            text = self.path.read_text() if stamp is not None else ""
+            text = (self.path.read_text(encoding="utf-8")
+                    if stamp is not None else "")
             table = tomllib.loads(text)
         except (OSError, UnicodeDecodeError,
                 tomllib.TOMLDecodeError) as bad:
             raise HostError(f"[holo2] unreadable {self.path}: {bad}") from None
         entries = tuple(_entry(path) for path in _paths(table, self.path))
         _refuse_duplicates(entries, self.path)
-        self._stamp, self._table, self._projects = stamp, table, entries
+        state = (stamp, table, entries)
+        self._state = state
+        return state
 
 
 def _refuse_duplicates(entries, source):
@@ -177,6 +180,19 @@ def _refuse_duplicates(entries, source):
             seen[key] = entry
 
 
+def already_registered(host, entry):
+    """The refusal naming `entry` as already in the registry."""
+    return HostError(f"[holo2] {entry.name or '(no name)'} {entry.path} is"
+                     f" already registered in {host.path}")
+
+
+def registered_at(host, target):
+    """The entry registered at `target`'s resolved path, None when none."""
+    path = Path(target.path).resolve()
+    return next((entry for entry in host.projects() if entry.path == path),
+                None)
+
+
 def check_new(host, target):
     """Refuse registering `target` when its path or name is already an
     entry, naming the entry; returns the name it would register under."""
@@ -184,9 +200,7 @@ def check_new(host, target):
     path = Path(target.path).resolve()
     for entry in host.projects():
         if entry.path == path or entry.name == name:
-            raise HostError(
-                f"[holo2] {entry.name or '(no name)'} {entry.path} is already"
-                f" registered in {host.path}")
+            raise already_registered(host, entry)
     return name
 
 
@@ -201,22 +215,39 @@ def register(host, target):
     _rewrite(host, edit)
 
 
-def unregister(host, name):
-    """Drop the entry named `name`; no store is touched. Returns its path."""
+def unregister(host, key):
+    """Drop the entry whose `[serve] name` or registered path is `key`; no
+    store is touched. Returns the entry's `(name, path)`, name None when
+    its config gives none.
+
+    The entry is found in the file as parsed here, each config read on its
+    own, never through `projects()`: an entry whose config cannot give a
+    name, or two entries that give one name, are what a remove repairs, and
+    `projects()` refuses the second. A key matching two entries is refused
+    naming both, so the operator names the path."""
     removed = []
 
     def edit(document, tomlkit):
-        entry = host.project(name)
-        if entry is None:
-            names = ", ".join(e.name or str(e.path) for e in host.projects())
-            raise HostError(f"[holo2] no project {name!r} in {host.path}"
+        entries = [_entry(Path(table["path"]).resolve())
+                   for table in document.get("project", [])]
+        path = Path(key).expanduser().resolve()
+        matches = {entry.path: entry for entry in entries
+                   if entry.name == key or entry.path == path}
+        if not matches:
+            names = ", ".join(e.name or str(e.path) for e in entries)
+            raise HostError(f"[holo2] no project {key!r} in {host.path}"
                             f" (registered: {names or 'none'})")
+        if len(matches) > 1:
+            raise HostError(f"[holo2] {key} matches "
+                            + " and ".join(map(str, matches))
+                            + f" in {host.path}; remove one by its path")
+        entry, = matches.values()
         kept = tomlkit.aot()
         for table in document.get("project", []):
             if Path(table["path"]).resolve() != entry.path:
                 kept.append(table)
         document["project"] = kept
-        removed.append(entry.path)
+        removed.append((entry.name, entry.path))
     _rewrite(host, edit)
     return removed[0]
 
@@ -234,8 +265,9 @@ def _rewrite(host, edit, wait=WRITE_WAIT_SEC):
     temporary = host.path.with_name(host.path.name + ".tmp")
     handle = _hold(temporary, wait)
     try:
-        with os.fdopen(handle, "w") as out:
-            text = host.path.read_text() if host.path.exists() else ""
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            text = (host.path.read_text(encoding="utf-8")
+                    if host.path.exists() else "")
             document = tomlkit.parse(text)
             edit(document, tomlkit)
             out.write(tomlkit.dumps(document))

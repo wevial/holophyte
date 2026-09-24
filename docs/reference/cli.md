@@ -34,16 +34,24 @@ command family, [below](#project-commands).
 
 `python3 factory.py project VERB [--store PATH]` registers projects in the
 host registry, `HOLOPHYTE_HOME/host.toml`, and changes their admission in
-one store. A project's `NAME` in the registry is its `[serve] name`. `--store PATH` names the database;
-without it `project add` uses the added repository's store and the other
-verbs the store of the repository the command runs in. `NAME` is the
-repository directory's basename; a name that matches no row, or more than
-one, is refused. See [Operating](../operating.md#registering-and-disabling-projects).
+one store. `--store PATH` names the database; without it `project add` uses
+the added repository's store and the other verbs the store of the
+repository the command runs in. `NAME` means two things, by verb:
+
+- `project remove NAME` matches a registry entry: its `[serve] name`, or
+  the path it is registered under. It reads each entry's config on its
+  own, so an entry whose config no longer loads, or two entries sharing a
+  name, can still be removed by path.
+- `project enable`, `hold` and `disable NAME` match a store row: the
+  basename of the row's repository path. A name that matches no row, or
+  more than one, is refused.
+
+See [Operating](../operating.md#registering-and-disabling-projects).
 
 | Invocation | Does | Touches |
 | --- | --- | --- |
-| `project add PATH [--store PATH]` | validates `PATH` as a repository root whose `config.toml` passes and has a `[board]` table naming a team, then registers it enabled, recorded as `register_project`, without starting a run, and adds its resolved path to `host.toml`; a row the loop already wrote for the same team at the same path is adopted, and a row is recorded as `register_project` once however often it is adopted; refuses a path or name already in `host.toml`, naming the entry, and the same team at another path, naming the row. `host.toml` is rewritten whole through `host.toml.tmp`, created exclusively, and a rename, so two adds at once keep both. With `--store` naming a database other than the repository's own store, it registers in that store only and leaves `host.toml` untouched, since the registry holds paths and the host reads each project's own store | store, `host.toml` |
-| `project remove NAME` | drops `NAME`'s entry from `host.toml`; touches no store; refuses a name the registry does not hold, listing the ones it does | `host.toml` |
+| `project add PATH [--store PATH]` | validates `PATH` as a repository root whose `config.toml` passes and has a `[board]` table naming a team, then registers it enabled, recorded as `register_project`, without starting a run, and adds its resolved path to `host.toml`; a row the loop already wrote for the same team at the same path is adopted, and a row is recorded as `register_project` once however often it is adopted; refuses a name already in `host.toml`, or a path already there whose store holds its row, naming the entry, and the same team at another path, naming the row. On a registered path whose store has no row for it (the store deleted or recreated after registration) it is the repair the daemon and the sweep name: it writes the row as above, says so, and leaves `host.toml` unchanged. `host.toml` is rewritten whole through `host.toml.tmp`, created exclusively, and a rename, so two adds at once keep both. With `--store` naming a database other than the repository's own store, it registers in that store only and leaves `host.toml` untouched, since the registry holds paths and the host reads each project's own store | store, `host.toml` |
+| `project remove NAME\|PATH` | drops the entry whose `[serve] name` or registered path is given from `host.toml`; touches no store; refuses one the registry does not hold, listing the ones it does, and a name two entries share, naming both paths so one can be removed by path | `host.toml` |
 | `project list [--store PATH]` | without `--store`, prints each project in `host.toml`: name, path, and the admission and note its own store holds (`-` without a store or row); a project whose config or store cannot be read is listed with `error=` and the rest still are, and the exit is then 1; with `--store`, each row of that store: name, path, admission, note and newest run | `host.toml`, store, read-only |
 | `project enable NAME [--note TEXT] [--store PATH]` | enables admission again, recorded as `release_hold`; the note defaults to `enabled by operator`; refuses a project already enabled | store |
 | `project hold NAME --note TEXT [--store PATH]` | stops new admission while existing runs finish, recorded as `hold`; refuses a project already held | store |

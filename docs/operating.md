@@ -315,8 +315,12 @@ existing `[board]` configuration, then registers it without starting a run,
 in its store and in the host registry, `HOLOPHYTE_HOME/host.toml`. A second
 add of the same path, or of a project whose `[serve] name` is already
 registered, refuses and names the entry; a store row the loop wrote for the
-same team and path is adopted rather than refused. `project remove NAME`
-drops a registry entry and leaves its store alone. Configuration remains in its
+same team and path is adopted rather than refused. A registered path whose
+store has lost its row (deleted or recreated after registration) is the one
+exception: `project add PATH` writes the row back and leaves `host.toml`
+unchanged. `project remove NAME` drops a registry entry and leaves its store
+alone; it takes the entry's path as well, which is how an entry whose config
+no longer loads, or one sharing a name with another, is removed. Configuration remains in its
 existing per-project file; registration does not move it. New registrations,
 including implicit loop registration, store canonical absolute repository paths.
 If a legacy row has a relative path, registration and admission checks refuse
