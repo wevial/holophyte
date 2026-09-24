@@ -1,5 +1,9 @@
 """Fallback pull request descriptions."""
+import threading
+import time
 import unittest
+import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from time import monotonic
 from types import SimpleNamespace
@@ -7,7 +11,7 @@ from unittest.mock import patch
 
 import holophyte.loop
 import holophyte.pullrequest
-from holophyte import pr
+from holophyte import deadline, pr
 from holophyte.gates import InfraFailure
 
 
@@ -66,6 +70,43 @@ class ReactionTests(unittest.TestCase):
         with patch.object(pr, "_call", return_value=answer), \
                 self.assertRaisesRegex(InfraFailure, "Could not resolve"):
             pr.react_eyes(SimpleNamespace(), self.PULL, "IC_gone")
+
+
+class RedirectDeadlineTests(unittest.TestCase):
+    def test_a_redirect_that_arrives_past_the_sweeps_bound_is_not_followed(
+            self):
+        """The job-log read answers with a redirect. When the host sweep's
+        bound passes while the first request is answered, the redirected
+        request is refused like any other request past it, and never sent."""
+        served, skew = [], [0.0]
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                served.append(self.path)
+                if self.path == "/log":
+                    skew[0] = 3600.0
+                    self.send_response(302)
+                    self.send_header("Location", "/signed")
+                else:
+                    self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        clock = SimpleNamespace(monotonic=lambda: time.monotonic() + skew[0])
+        opener = urllib.request.build_opener(pr._TokenStaysHome)
+        with patch.object(deadline, "time", clock), \
+                deadline.bounded(time.monotonic() + 60), \
+                self.assertRaises(deadline.CallRefused):
+            opener.open(f"http://127.0.0.1:{server.server_address[1]}/log",
+                        timeout=10)
+        self.assertEqual(served, ["/log"])
 
 
 class PrBodyStubTests(unittest.TestCase):

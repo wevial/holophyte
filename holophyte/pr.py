@@ -723,6 +723,10 @@ class _TokenStaysHome(urllib.request.HTTPRedirectHandler):
     job-log endpoint redirects to a signed URL off the API's host."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # The redirected request is a request of its own: past the host
+        # sweep's bound it is refused like the first would have been.
+        deadline.admit(f"GitHub's redirect to"
+                       f" {urllib.parse.urlsplit(newurl).netloc}")
         new = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new is not None and (urllib.parse.urlsplit(newurl).netloc
                                 != urllib.parse.urlsplit(req.full_url).netloc):
