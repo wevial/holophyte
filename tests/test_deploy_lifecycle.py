@@ -121,6 +121,13 @@ def render(text, overrides, extra=()):
     return "\n".join(lines) + "\n"
 
 
+def settled(unit):
+    """True once `unit` has reached a state systemd leaves it in: not
+    `activating` and not `deactivating`, whose stop may still be waiting
+    out `TimeoutStopSec` before its SIGKILL."""
+    return show(unit, "ActiveState") in ("inactive", "failed", "active")
+
+
 def free_port():
     probe = socket.socket()
     probe.bind(("127.0.0.1", 0))
@@ -277,8 +284,8 @@ class HostUnitLifecycleTests(unittest.TestCase):
         self.assertEqual(len(self.starts()), 1, self.starts())
         self.assertEqual(show(SWEEP, "ActiveState"), "activating")
         (self.scratch / "hold").unlink()
-        self.assertTrue(wait_for(
-            lambda: show(SWEEP, "ActiveState") != "activating", 30))
+        self.assertTrue(wait_for(lambda: settled(SWEEP), 30),
+                        show(SWEEP, "ActiveState"))
 
     def test_a_run_held_past_its_start_timeout_is_stopped_and_reclaimed(self):
         self.fresh(hold=True)
@@ -286,9 +293,14 @@ class HostUnitLifecycleTests(unittest.TestCase):
         killed = self.starts()[0]
         # No second fire may reclaim the lock before it is looked at.
         systemctl("stop", TIMER)
-        done = wait_for(lambda: show(SWEEP, "ActiveState") != "activating",
+        # At TimeoutStartSec the unit goes to `deactivating` with the held
+        # run still alive (it ignores SIGTERM); only TimeoutStopSec's SIGKILL
+        # ends it. Wait for both the unit's end and the process's.
+        done = wait_for(lambda: settled(SWEEP) and not pid_alive(killed),
                         TIMEOUT_START_SEC + TIMEOUT_STOP_SEC + 30, step=2)
-        self.assertTrue(done, "the held run outlived TimeoutStartSec")
+        self.assertTrue(done, f"the held run {killed} outlived TimeoutStartSec"
+                        f" plus TimeoutStopSec: {show(SWEEP, 'ActiveState')}")
+        self.assertEqual(show(SWEEP, "ActiveState"), "failed")
         self.assertEqual(show(SWEEP, "Result"), "timeout")
         state = self.sweep_state()
         self.assertEqual(state.get("pid"), killed)

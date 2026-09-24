@@ -275,4 +275,4 @@ parked candidate today.
 | 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
 | 404 | `[serve] actions` is not `true`, or the action is not one of the three; `/config` without `[serve] config_edit = true`; on a host daemon, `restart-supervisor`, a project name outside the registry, and any root action but `run-sweep` |
 | 405 | `POST` on any path outside `/actions/`; `PUT` on any path but `/config` |
-| 503 | `requeue` against a project with no store yet; `PUT /config` with no store or no run to record against; on a host daemon, a project whose store is stamped newer than the build, or is locked or corrupt when the action reads or writes it |
+| 503 | `requeue` against a project with no store yet; `PUT /config` with no store or no run to record against; on a host daemon, a project whose store is stamped newer than the build can read, or is locked or corrupt when the action reads or writes it |

@@ -563,10 +563,12 @@ before any file of any project is opened, and a project `project remove`
 dropped stops answering at the next request.
 
 One project's failure is that project's answer. Before every project route
-the daemon checks the store's schema stamp, read-only: a store stamped by a
-newer build than the daemon's is 503 naming the versions (and makes the
-daemon look at the checkout's `HEAD` at once, so a daemon whose checkout
-moved leaves for the new code). A locked or corrupt store is 503 with its
+the daemon checks the store's schema stamp, read-only. A store stamped
+newer than the daemon's build still answers when its `readableFrom` floor
+is at or below the daemon's schema version (an additive bump); one this
+build cannot read, a floor above it or none, is 503 naming the versions
+(and makes the daemon look at the checkout's `HEAD` at once, so a daemon
+whose checkout moved leaves for the new code). A locked or corrupt store is 503 with its
 `error`, in a read or in an action's write; `/projects/NAME/status` for a
 store with no row for the project's path is 503 naming `factory.py project
 add` (the other routes still answer, and a `hold` may write the row); any
@@ -629,8 +631,8 @@ sweep_sec` intervals, and `stale` after that.
 `[serve] name` (null for an entry whose config cannot be read), `path` its
 repository and `store` its store file, null when there is none. `error` is
 the project's failure as text (a config that cannot be read, a store that
-cannot be opened, a schema newer than the daemon's build), null when it
-answered; the fields below are then null. `host` is the project's
+cannot be opened, a schema newer than the daemon's build can read), null
+when it answered; the fields below are then null. `host` is the project's
 `[report] host_label`, `schema_version` its store's stamp, `admission` and
 `hold_note` as on a project's `/status`, and `project_row` the id of the
 store's row for this path, null when it has none (a store deleted or
@@ -762,6 +764,6 @@ but `/config`, both in [The daemon's actions](daemon.md).
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
 | 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and `PUT` outside `/config`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
-| 503 | the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |
+| 503 | the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build can read, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |
 | 500 | on a host daemon, one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |
 | 504 | `/runs/N/files` when git does not answer within its cap |

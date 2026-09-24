@@ -272,7 +272,7 @@ every project's items, each carrying its `project`
 through the registry alone, and a name outside it is 404 before any file
 is opened; `project add` and `project remove` take effect at the next
 request, with no restart. One project's store locked, missing or stamped
-by a newer build is that project's 503 and its `error` on the root
+by a newer build this one cannot read is that project's 503 and its `error` on the root
 `/status`; the other projects answer whole. Under systemd the daemon is
 socket-activated ([Serving standing](#serving-standing)); by hand it binds
 the address given, else `host.toml`'s `[serve] bind`:
