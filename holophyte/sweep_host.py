@@ -31,9 +31,9 @@ dead-pid reclaim):
    board's closes and the loop owed its start, exactly the project form's
    steps. `holophyte.deadline.check()` stands before every unit of
    Linear and GitHub work and cuts the project at the next one once its
-   share is spent, and the board provider is `deadline.guarded()`, so a
-   unit already begun makes no Linear call past it; the cursor then
-   holds, so the next run starts there.
+   share is spent, and `deadline.admit()` stands before every Linear and
+   GitHub request, so a unit already begun sends no request past it; the
+   cursor then holds, so the next run starts there.
 
 What a run must remember between processes that no store column holds
 lives in `sweep.json` beside the lock, rewritten whole through a temporary
@@ -296,7 +296,7 @@ def reconcile_store(entry, seen, state, now, out):
     closes, start the loop owed. The throttles go back into `state` on
     every way out, a cut included."""
     target, name = entry.target, entry_key(entry)
-    provider = deadline.guarded(_provider(target))
+    provider = _provider(target)
     memory = memory_for(state, name)
     conn = open_store(target)
     try:
@@ -322,8 +322,8 @@ def reconcile_store(entry, seen, state, now, out):
 def reconcile_one(entry, seen, state, now, out, end, stop):
     """Reconcile one project under its share, ending at `end`; returns
     `(cut, failure)`: why the share cut it and what it raised, each or
-    None. A board call the guard refused cuts the project as a `check()`
-    does, though the call sites went on past it."""
+    None. A Linear or GitHub request `deadline.admit()` refused cuts the
+    project as a `check()` does, though the call sites went on past it."""
     try:
         with deadline.bounded(end, stop) as bound:
             reconcile_store(entry, seen, state, now, out)
@@ -333,7 +333,7 @@ def reconcile_one(entry, seen, state, now, out, end, stop):
         return None, bad
     if bound.refused:
         more = len(bound.refused) - 1
-        return bound.refused[0] + (f" and {more} more board calls refused"
+        return bound.refused[0] + (f" and {more} more requests refused"
                                    if more else " refused"), None
     return None, None
 

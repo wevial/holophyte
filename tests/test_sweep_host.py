@@ -11,6 +11,7 @@ Run: python3 -m unittest discover -s tests -p 'test_sweep_host*' -v
 import io
 import json
 import os
+import re
 import signal
 import sqlite3
 import subprocess
@@ -18,6 +19,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -31,14 +33,29 @@ import holophyte.sweep_host as sweep_host  # noqa: E402
 import store  # noqa: E402
 import store.schema  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte import deadline  # noqa: E402
 from holophyte.host import Host  # noqa: E402
 from holophyte.pr_status import PullStatus  # noqa: E402
 from holophyte.project import Project  # noqa: E402
 from holophyte.reconcile import GITHUB_BUDGET  # noqa: E402
 from holophyte.supervisor import supervisor_liveness_line  # noqa: E402
+from provider import LinearProvider  # noqa: E402
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
+HOUR_S = 3600.0
+
+# What the faked Linear transport answers, by the request's root field.
+LINEAR_ANSWERS = {
+    "issue": {"issue": {"labels": {"nodes": []}}},
+    "workflowStates": {"workflowStates": {"nodes": [
+        {"id": f"state-{name}", "name": name, "type": kind}
+        for name, kind in (("Todo", "unstarted"), ("In Progress", "started"),
+                           ("Done", "completed"), ("Canceled", "canceled"))]}},
+    "issues": {"issues": {"nodes": [], "pageInfo": {"hasNextPage": False}}},
+    "issueUpdate": {"issueUpdate": {"success": True}},
+    "commentCreate": {"commentCreate": {"success": True}},
+}
 
 
 def a_dead_pid():
@@ -587,26 +604,38 @@ class DeadlineTests(HostSweepFixture):
         self.assertIn("[holo2] alpha: reconcile cut, share spent before", printed)
         self.assertEqual(self.state()["reconcile_cursor"], "alpha")
 
-    def test_a_merge_found_past_the_share_lands_in_the_store_alone(self):
-        """The read that finds the pull request merged returns past the
-        share: the close-out's store writes all land, and not one of its
-        Linear calls is made -- each is the stale board a Linear outage
-        leaves, with its warning row."""
-        with open(self.home / "host.toml", "a") as registry:
-            registry.write("\n[supervisor]\nsweep_sec = 2\n")
-        run = self.a_failed_run_with_pr("alpha", 1)
-        provider = CountingProvider("team-alpha")
+    def linear(self, jump_after=None):
+        """The real `LinearProvider` with only its HTTP transport faked:
+        each request's root field is recorded in the list returned beside
+        it and answered from `LINEAR_ANSWERS`. Answering `jump_after`
+        moves the bound's clock an hour on -- a request that returned past
+        the share. The sweep's own clock stays real."""
+        real, requests = time.monotonic, []
+        clock = SimpleNamespace(monotonic=lambda: real() + self.skew)
+        self.skew = 0.0
 
-        def slow_merged(_target, _pull):
-            time.sleep(1.1)
-            return PullStatus(merged=True, closed=True, merge_sha="f" * 40,
-                              merged_by="maintainer")
+        class Answer(io.BytesIO):
+            headers = {}
 
-        code, printed = self.run_once_with(T0, slow_merged, provider)
+        def urlopen(request, timeout):
+            query = json.loads(request.data)["query"]
+            root = re.search(r"\{\s*(\w+)", query).group(1)
+            requests.append(root)
+            if root == jump_after:
+                self.skew = HOUR_S
+            return Answer(json.dumps({"data": LINEAR_ANSWERS[root]}).encode())
 
-        self.assertEqual(code, 0)
-        self.assertEqual((provider.states, provider.comments,
-                          provider.label_calls), ([], [], []))
+        for patcher in (patch.object(deadline, "time", clock),
+                        patch("urllib.request.urlopen", urlopen),
+                        patch.dict(os.environ, {"LINEAR_API_KEY": "lin_test"})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return LinearProvider("project-alpha", "team-alpha"), requests
+
+    def assert_closed_out_in_the_store(self, run, printed, refusal):
+        """The close-out's store writes all landed and its board writes are
+        the stale board a Linear outage leaves, a `warning` naming
+        `refusal`; the project is cut and the cursor holds on it."""
         conn = self.conn("alpha")
         self.assertEqual(conn.execute(
             "SELECT status FROM tickets").fetchone(), ("merged",))
@@ -616,11 +645,47 @@ class DeadlineTests(HostSweepFixture):
         warnings = [summary for (summary,) in conn.execute(
             "SELECT summary FROM runEvents WHERE runId = ? AND kind = 'warning'",
             (run,))]
-        self.assertTrue(any("share spent before the board's set_state" in w
+        self.assertTrue(any(f"share spent before {refusal}" in w
                             for w in warnings), warnings)
-        self.assertIn("[holo2] alpha: reconcile cut, share spent before the"
-                      " board's", printed)
+        self.assertIn("[holo2] alpha: reconcile cut, share spent before",
+                      printed)
         self.assertEqual(self.state()["reconcile_cursor"], "alpha")
+
+    def test_a_merge_found_past_the_share_lands_in_the_store_alone(self):
+        """The read that finds the pull request merged returns past the
+        share: the close-out's store writes all land, and not one request
+        of its Linear calls is sent."""
+        run = self.a_failed_run_with_pr("alpha", 1)
+        provider, requests = self.linear()
+
+        def late_merged(_target, _pull):
+            self.skew = HOUR_S
+            return PullStatus(merged=True, closed=True, merge_sha="f" * 40,
+                              merged_by="maintainer")
+
+        code, printed = self.run_once_with(T0, late_merged, provider)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(requests, [])
+        self.assert_closed_out_in_the_store(run, printed,
+                                            "Linear's issue request")
+
+    def test_a_board_call_begun_inside_the_share_sends_nothing_past_it(self):
+        """The review's case, through the real provider: the close-out's
+        `set_state()` starts inside the share and its workflow-state read
+        returns past it, so its `issueUpdate` is never sent, nor the ledger
+        comment after it."""
+        run = self.a_failed_run_with_pr("alpha", 1)
+        provider, requests = self.linear(jump_after="workflowStates")
+        merged = PullStatus(merged=True, closed=True, merge_sha="f" * 40,
+                            merged_by="maintainer")
+
+        code, printed = self.run_once_with(T0, lambda _t, _p: merged, provider)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(requests, ["issue", "workflowStates"])
+        self.assert_closed_out_in_the_store(run, printed,
+                                            "Linear's issueUpdate request")
 
 
 class RegisteredProjectTests(HostSweepFixture):

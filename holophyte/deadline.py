@@ -14,14 +14,15 @@ nothing half written. `DeadlineReached` derives from `BaseException` so the
 `except Exception` that turns a transport failure into one printed line
 does not swallow it.
 
-`guarded()` wraps the board provider a unit calls once it has begun: a
-close-out or a merge landed off a slow read writes the store first and then
-tells Linear in several calls. Past the bound each of those calls is
-refused with `CallRefused`, an ordinary `Exception`, so every call site
-does what it does when Linear is down -- a `warning` row, a stale board,
-the store right -- and the unit's remaining store writes still land. The
-bound records each refusal, and the sweep treats a project that had one
-as cut.
+`admit()` stands in the transports, before every HTTP request to Linear or
+GitHub and before each retry of one: a unit that began inside the bound --
+a close-out or a merge landed off a slow read, which writes the store first
+and then tells Linear in several calls, each of several requests -- sends
+nothing past it. Past the bound each request is refused with `CallRefused`,
+an ordinary `Exception`, so every call site does what it does when Linear or
+GitHub is down -- a `warning` row, a stale board, the store right -- and the
+unit's remaining store writes still land. The bound records each refusal,
+and the sweep treats a project that had one as cut.
 
 Outside `bounded()` both do nothing, so the loop and the project-form
 supervisor, which share those call sites, are never cut. Standard library
@@ -40,13 +41,13 @@ class DeadlineReached(BaseException):
 
 
 class CallRefused(Exception):
-    """A board call `guarded()` did not make because the bound had passed:
-    to its call site, a call that failed."""
+    """A request `admit()` did not let a transport send because the bound
+    had passed: to its call site, a request that failed."""
 
 
 class Bound:
-    """One `bounded()` block: its end, its stop event and why each board
-    call it refused was refused."""
+    """One `bounded()` block: its end, its stop event and why each request
+    it refused was refused."""
 
     def __init__(self, end, stop):
         self.end, self.stop, self.refused = end, stop, []
@@ -62,7 +63,7 @@ class Bound:
 
 @contextlib.contextmanager
 def bounded(end, stop=None):
-    """Bound the block's `check()` calls and guarded board calls by `end`,
+    """Bound the block's `check()` and `admit()` calls by `end`,
     a `time.monotonic()` instant, and by `stop`, a `threading.Event` a
     signal handler sets. Yields the `Bound`."""
     bound = Bound(end, stop)
@@ -87,29 +88,11 @@ def spent():
     return bound is not None and bound.spent("") is not None
 
 
-def guarded(provider):
-    """`provider` with every method call refused once the bound is spent;
-    None stays None."""
-    return None if provider is None else _Guarded(provider)
-
-
-class _Guarded:
-    """A board provider whose calls ask the bound first."""
-
-    def __init__(self, inner):
-        self._inner = inner
-
-    def __getattr__(self, name):
-        value = getattr(self._inner, name)
-        if not callable(value):
-            return value
-
-        def call(*args, **kwargs):
-            bound = _BOUND.get()
-            reason = (bound.spent(f"the board's {name}")
-                      if bound is not None else None)
-            if reason is not None:
-                bound.refused.append(reason)
-                raise CallRefused(reason)
-            return value(*args, **kwargs)
-        return call
+def admit(what):
+    """Raise `CallRefused` naming `what`, the request a transport is about
+    to send, and record it on the bound, when the bound is spent."""
+    bound = _BOUND.get()
+    reason = bound.spent(what) if bound is not None else None
+    if reason is not None:
+        bound.refused.append(reason)
+        raise CallRefused(reason)

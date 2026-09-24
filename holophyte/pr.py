@@ -36,7 +36,7 @@ import urllib.request
 from dataclasses import dataclass
 
 import ticket_template
-from holophyte import config_tables
+from holophyte import config_tables, deadline
 from holophyte.gates import InfraFailure
 from holophyte.redact import known_secrets, outbound
 
@@ -691,6 +691,7 @@ def _call_with_gh(target, host, method, path, payload):
 
 
 def _gh_output(target, host, method, path, payload):
+    deadline.admit(f"GitHub's {method} {path} request")
     argv = [GH, "api", "--hostname", host, "--method", method, path]
     body = None
     if payload is not None:
@@ -730,6 +731,7 @@ class _TokenStaysHome(urllib.request.HTTPRedirectHandler):
 
 
 def _api_output(host, method, path, payload, token):
+    deadline.admit(f"GitHub's {method} {path} request")
     base = API if host == "github.com" else f"https://{host}/api/v3"
     if path == "graphql":
         url = (f"{API}/graphql" if host == "github.com"
