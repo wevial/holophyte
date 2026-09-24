@@ -554,6 +554,13 @@ class DevinImplementerTests(ClaudeTableTests):
             def started(proc):
                 on_start(proc)
                 if cmd[1:] == LIST:
+                    # Sweep a list that is really running: wait until the
+                    # fake has recorded its call, or the kill beats the write.
+                    deadline = time.monotonic() + 5
+                    while len(self.calls.read_text().splitlines()) < 2:
+                        if time.monotonic() > deadline:
+                            self.fail("the fake devin list never recorded its call")
+                        time.sleep(0.02)
                     other = store.open(self.target.store_path)
                     try:
                         store.release(other, self.run, "failed", "swept")
