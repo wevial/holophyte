@@ -75,7 +75,7 @@ class TicketRevisionTests(ServeTestCase):
         self.assertEqual(claimed, 2)
         # The ten keys of before answer what they answered.
         self.assertEqual({k: body[k] for k in body if k not in (
-            "current", "claimed", "revisions")}, {
+            "current", "claimed", "revisions", "notes")}, {
             "ticket": "KO-7", "ticket_url": None, "title": "ticket 7",
             "status": "in_flight", "body": EDITED_BODY,
             "acceptance_criteria": ["Given KO-7, then it is worked"],
