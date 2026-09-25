@@ -189,6 +189,8 @@ EXPECTED_READ = [
     # KO-328: the `serve` daemon's `/tickets/KO-n` read of one mirrored
     # ticket, body included.
     "ticket_by_identifier",
+    # KO-737: a ticket's revisions, newest first, for `/tickets/KO-n`.
+    "ticket_revisions",
     # KO-705: human interventions per merged run, for `--report` and
     # `/status`.
     "toil_since",

@@ -213,7 +213,10 @@ def open_tickets(conn, project_id=None):
 class MirroredTicket:
     """One ticket as the store mirrors it, body included: what `/tickets/KO-n`
     answers. `activeRunId` is the live run's id, None when none is working
-    it; the two lists are decoded from their JSON columns."""
+    it; the two lists are decoded from their JSON columns. `revision` is the
+    ticket's current revision (0 when none is recorded); `claimedRevision`
+    and `claimedSnapshot` are the live run's `runs.revision` and
+    `ticketSnapshot`, None without a live run (KO-737)."""
 
     id: int
     linearIdentifier: str
@@ -226,6 +229,9 @@ class MirroredTicket:
     activeRunId: int | None
     mirroredAt: int
     ticketUrl: str | None = None
+    revision: int = 0
+    claimedRevision: int | None = None
+    claimedSnapshot: str | None = None
 
 
 def ticket_by_identifier(conn, identifier):
@@ -238,9 +244,11 @@ def ticket_by_identifier(conn, identifier):
     merged ticket's contract is still worth reading.
     """
     row = conn.execute(
-        "SELECT id, linearIdentifier, title, status, body,"
-        " acceptanceCriteria, verificationCommands, timeBoxMs, activeRunId,"
-        " mirroredAt, url FROM tickets WHERE linearIdentifier = ?",
+        "SELECT t.id, t.linearIdentifier, t.title, t.status, t.body,"
+        " t.acceptanceCriteria, t.verificationCommands, t.timeBoxMs,"
+        " t.activeRunId, t.mirroredAt, t.url, t.revision, r.revision,"
+        " r.ticketSnapshot FROM tickets t LEFT JOIN runs r"
+        " ON r.id = t.activeRunId WHERE t.linearIdentifier = ?",
         (identifier,)).fetchone()
     if row is None:
         return None
@@ -249,7 +257,35 @@ def ticket_by_identifier(conn, identifier):
                           acceptanceCriteria=tuple(json.loads(row[5])),
                           verificationCommands=tuple(json.loads(row[6])),
                           timeBoxMs=row[7], activeRunId=row[8],
-                          mirroredAt=row[9], ticketUrl=row[10])
+                          mirroredAt=row[9], ticketUrl=row[10],
+                          revision=row[11], claimedRevision=row[12],
+                          claimedSnapshot=row[13])
+
+
+@dataclass(frozen=True)
+class TicketRevision:
+    """One recorded version of a ticket's board-owned fields (KO-736);
+    `labels` is decoded from its JSON column, `column` is `boardColumn`."""
+
+    revision: int
+    at: int
+    author: str
+    title: str
+    body: str
+    priority: int | None
+    labels: tuple[str, ...]
+    column: str | None
+
+
+def ticket_revisions(conn, ticket_id):
+    """Ticket `ticket_id`'s recorded revisions, newest first (KO-737)."""
+    return [TicketRevision(revision=row[0], at=row[1], author=row[2],
+                           title=row[3], body=row[4], priority=row[5],
+                           labels=tuple(json.loads(row[6])), column=row[7])
+            for row in conn.execute(
+                "SELECT revision, at, author, title, body, priority, labels,"
+                " boardColumn FROM ticketRevisions WHERE ticketId = ?"
+                " ORDER BY revision DESC", (ticket_id,))]
 
 
 # --- runs --------------------------------------------------------------------
