@@ -320,11 +320,17 @@ export function hostsLine(peers: string[], statuses: Record<string, FetchResult<
 /** The sweep states a host daemon's root leaves alone. */
 const SWEEP_OK = new Set(["fresh", "running"]);
 
-/** A host daemon's sweep line: `ADDRESS · sweep fresh · 12s ago`, aged
- *  on the daemon's clock; attention when the sweep is not fresh. */
+/** The host a daemon's projects report, or its address when none does
+ *  (a daemon with no projects, or none that name the host). */
+function hostName(address: string, host: HostStatus): string {
+  return host.projects.find((project) => project.host)?.host ?? address;
+}
+
+/** A host daemon's sweep line: `HOST · sweep fresh · 12s ago`, aged on
+ *  the daemon's clock; attention when the sweep is not fresh. */
 export function sweepRow(address: string, host: HostStatus): Row {
   const { sweep } = host;
-  let label = `${address} · sweep ${sweep.state}`;
+  let label = `${hostName(address, host)} · sweep ${sweep.state}`;
   if (sweep.ended != null && host.now != null) label += ` · ${coarseAge(host.now - sweep.ended)} ago`;
   return { label, level: SWEEP_OK.has(sweep.state) ? "idle" : "attention" };
 }
