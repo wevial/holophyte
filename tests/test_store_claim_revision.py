@@ -90,27 +90,39 @@ class ClaimRevisionTests(unittest.TestCase):
         self.assertEqual(self.row(), (2, "add the thing", None))
 
     def test_an_edit_holding_the_write_lock_first_refuses_the_waiting_claim(self):
-        locked, go = threading.Event(), threading.Event()
+        locked, begun, at = threading.Event(), threading.Event(), {}
 
         def edit(conn):
             conn.execute("BEGIN IMMEDIATE")
             self.mirror(conn, title="add the thing")
             locked.set()
-            go.wait(5)
-            time.sleep(0.2)  # the claim is blocked on the lock by now
+            # The claim's own BEGIN IMMEDIATE has started, against this
+            # held write lock: it can only be waiting on it now.
+            self.assertTrue(begun.wait(5))
+            time.sleep(0.2)
+            at["committed"] = time.monotonic()
             conn.commit()
-            return time.monotonic()
 
-        thread, committed = self.in_thread(edit)
+        def claim_begins(statement):
+            if statement == "BEGIN IMMEDIATE" and "begun" not in at:
+                at["begun"] = time.monotonic()
+                begun.set()
+
+        thread, _ = self.in_thread(edit)
         self.assertTrue(locked.wait(5))
-        go.set()
+        self.conn.set_trace_callback(claim_begins)
         with self.assertRaises(store.RevisionMoved) as refused:
             store.claim(self.conn, self.project_id, self.ticket,
                         expected_revision=1)
-        refused_at = time.monotonic()
+        at["refused"] = time.monotonic()
+        self.conn.set_trace_callback(None)
         thread.join(5)
 
-        self.assertLess(committed[0], refused_at)
+        # Begun before the edit committed and refused after it: the claim
+        # waited on the edit's lock, then read the edit's revision.
+        self.assertLess(at["begun"], at["committed"])
+        self.assertLess(at["committed"], at["refused"])
+        self.assertGreaterEqual(at["refused"] - at["begun"], 0.2)
         self.assertEqual(refused.exception.current, 2)
         self.assertEqual(self.runs(), [])
         self.assertEqual(self.row(), (2, "add the thing", None))
