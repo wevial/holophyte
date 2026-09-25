@@ -289,7 +289,8 @@ def body_problem(task, repo=None, on_pull_request=False):
 
 
 def merge_drift(conn, run_id, provider, issue_id):
-    """The contract fields that moved between the claim and now; () if none.
+    """The contract fields that moved between the claim and now, () if
+    none, with the live task the answer was read from (None when none was).
 
     The merge gate's question: the run was implemented, reviewed and verified
     against the ticket as it stood at the claim, so a body a human edited
@@ -307,27 +308,27 @@ def merge_drift(conn, run_id, provider, issue_id):
     recorded; drift itself is the caller's to act on.
     """
     if conn is None or run_id is None or provider is None:
-        return ()
+        return (), None
     fetch = getattr(provider, "fetch_task", None)
     if fetch is None:
-        return ()  # a provider with no re-read; nothing to compare against
+        return (), None  # a provider with no re-read; nothing to compare
     claimed = store.run_contract(conn, run_id)
     if claimed is None:
-        return ()  # claimed before the snapshot existed
+        return (), None  # claimed before the snapshot existed
     try:
         live = fetch(issue_id)
     except Exception as e:
         warn_on_run(conn, run_id, f"could not re-read {issue_id} for the "
                                   f"merge-time drift check ({e}); merging on "
                                   "the contract frozen at the claim")
-        return ()
+        return (), None
     if not live:
         warn_on_run(conn, run_id, f"{issue_id} could not be found for the "
                                   "merge-time drift check; merging on the "
                                   "contract frozen at the claim")
-        return ()
+        return (), None
     return store.contract_drift(
-        claimed, store.contract_snapshot(*task_contract(live)))
+        claimed, store.contract_snapshot(*task_contract(live))), live
 
 
 def refresh_board_states(conn, project, provider):

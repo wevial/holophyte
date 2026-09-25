@@ -9,7 +9,9 @@ push-and-open alone (KO-644). `_park_for_approval()` stops a verified
 candidate for a human under `[merge] approve = "human"`;
 `_resume_at_merge_gate()` is the run that carries the approved candidate
 back through the gate; `_merge()` is the `--no-ff` merge onto main and its
-one self-resolved conflict.
+one self-resolved conflict. In store mode the gate reads the board once
+more (KO-746): a cancel ends the run `abandoned` as an abort, and drift
+requeues the ticket strike-free (`DriftRequeued`).
 `_run_stages()` in `holophyte.loop` and `land()` in `holophyte.run` call in;
 back-references into the loop are deferred imports inside function bodies.
 
@@ -23,7 +25,7 @@ import store
 import store.read
 from holophyte import run as run_state
 from holophyte.babysitter import _babysit
-from holophyte.board import block_ticket, ledger, merge_drift
+from holophyte.board import block_ticket, ledger, merge_drift, mirror_task
 from holophyte.claim import _resolve_merge_conflict, reuse_leftover
 from holophyte.config_tables import merge_config, sweep_config
 from holophyte.environment_git import refuse_environment_history
@@ -40,7 +42,12 @@ from holophyte.pullrequest import _prepare_pr, _push_and_open, _resume_on_pr
 from holophyte.redact import safe_print as print
 from holophyte.reproduce import tests_only_line
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
-from holophyte.stop import stop_if_requested
+from holophyte.stop import end_aborted, stop_if_requested
+
+
+class DriftRequeued(store.RunEnded):
+    """The merge gate ended its own run `abandoned` and requeued the ticket
+    because the store-mode board's ticket drifted from the claimed one."""
 
 
 def _resume_at_merge_gate(run, carried, verify_cmd,
@@ -375,8 +382,15 @@ def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
     # answers a contract that no longer exists. Merging it would land code
     # nobody approved against the ticket as it now reads, and the honest
     # answer is the one every other refusal at this gate gives — leave the
-    # branch and its worktree for a human.
-    drift = merge_drift(conn, run_id, provider, issue_id)
+    # branch and its worktree for a human. A store-mode board is asked
+    # first whether the ticket was canceled, and its drift is requeued.
+    store_mode = getattr(provider, "store_mode", False) is True
+    if store_mode:
+        _end_if_canceled(conn, run_id, provider, task_id)
+    drift, live = merge_drift(conn, run_id, provider, issue_id)
+    if drift and store_mode:
+        _requeue_drift(conn, run_id, provider, task_id, live, drift, branch,
+                       sha)
     if drift:
         warn_on_run(conn, run_id,
                     f"{task_id} changed while the run was working "
@@ -393,6 +407,55 @@ def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
                          f" ({', '.join(drift)}); branch {branch} preserved"
                          f" at {sha[:12]}")
     return ok, sha
+
+
+def _end_if_canceled(conn, run_id, provider, task_id):
+    """End the run `abandoned` through the abort path, branch kept, when the
+    board answers `task_id` canceled; a raise or any other answer (gone
+    included) is no evidence, and the gate goes on."""
+    if conn is None or run_id is None:
+        return
+    try:
+        answer = provider.states([task_id]).get(task_id)
+    except Exception as e:  # noqa: BLE001 - no evidence, never the gate
+        warn_on_run(conn, run_id, f"could not ask the board whether {task_id}"
+                                  f" was canceled ({e}); the gate goes on")
+        return
+    if answer and answer["state"] == "canceled":
+        note = f"{task_id} was canceled on the board"
+        print(f"[holo2] {note}; ending the run at the merge gate")
+        store.abort(conn, run_id, note, source="factory",
+                    trigger="linear_cancelled")
+        end_aborted(conn, run_id)
+
+
+def _requeue_drift(conn, run_id, provider, task_id, live, drift, branch, sha):
+    """Record the live ticket as the current revision, then in one
+    transaction a `requeue` intervention, the run ended `abandoned` with
+    the candidate and the ticket walked to `ready` -- no strike -- and
+    unwind with `DriftRequeued`; the next run works the current revision
+    from the preserved branch."""
+    fields = ", ".join(drift)
+    ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+    (project_id,) = conn.execute("SELECT projectId FROM tickets WHERE id = ?",
+                                 (ticket_id,)).fetchone()
+    mirror_task(conn, project_id, live)
+    revision = store.read.ticket_revisions(conn, ticket_id)[0].revision
+    note = (f"{task_id} changed while the run was working ({fields});"
+            f" requeued on revision {revision}, branch {branch} preserved at"
+            f" {sha[:12]}")
+    with store.transaction(conn):
+        store.record_intervention(conn, run_id, "requeue", note,
+                                  source="factory")
+        store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
+        store.walk_ticket(conn, ticket_id, "ready")
+    print(f"[holo2] {note}")
+    ledger(conn, run_id, task_id, "note",
+           "MERGE REQUEUED: the ticket drifted from the contract this run"
+           f" was claimed under ({fields}). Branch {branch} preserved at"
+           f" {sha}; the next run works revision {revision} from it.",
+           provider)
+    raise DriftRequeued(run_id, "abandoned", note)
 
 
 def _park_for_approval(conn, run_id, provider, task_id, branch, sha):

@@ -252,7 +252,7 @@ class WorkingTimeTests(SweepTestCase):
                     (loop, '_check_run_cap', None),
                     (loop, '_candidate_drift', ''),
                     (merge_gate, '_is_ancestor', True),
-                    (merge_gate, 'merge_drift', []),
+                    (merge_gate, 'merge_drift', ((), None)),
                     (babysitter, '_decline_threads', ()),
                     (pr, 'push_branch', None)):
                 stack.enter_context(patch.object(module, name, return_value=result))
