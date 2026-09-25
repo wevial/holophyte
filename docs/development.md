@@ -70,6 +70,9 @@ Each module, one line:
   `SWEEP_HEADERS` table, the per-run and restart lines, `sweep_report()`
   as `--sweep`'s whole body, and the review-container and merge-lock
   sections.
+- `holophyte/board_diff.py` — `--board-diff` (KO-738): the board's ready
+  listing against the store's rows for it, read-only on both, one line per
+  difference and a summary.
 - `holophyte/status.py` — `--status [--json]` (KO-596): what the project is
   doing now — projects and admission, live and parked runs, the ready
   count, the schema version and the lock holders — read only, no network.
