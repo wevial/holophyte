@@ -3,8 +3,9 @@
 `factory.py` never names a board. It is handed a `Board` and drives it
 through its members -- `team`, `claim_next()`, `ready_issues()`,
 `fetch_task()`, `set_state()`, `comment()`, `closed_identifiers()`,
-`label_issue()`, `issue_labels()` and `unlabel_issue()` -- so which board a
-loop runs against is the caller's choice, not a module import: every caller
+`label_issue()`, `issue_labels()` and `unlabel_issue()`, and files a ticket
+through `file()`, `update()` and `stored_body()` -- so which board a loop
+runs against is the caller's choice, not a module import: every caller
 that needs the target's board asks `board_for(target)`, the one place that
 reads `[board] kind`. Two boards ship here: `LinearBoard`, which wraps the
 functions `linear_provider.py` already has, and `FileProvider`, a
@@ -57,6 +58,15 @@ no priority, so `order="priority"` is accepted and orders the same way. The
 file board has no blocking relations: a ticket that must wait is one a
 human leaves out of `Todo`. `budget_min` is the body's `Estimate: N min`
 line, or 20 without one; a file has no other estimate field.
+
+`file()` writes a new ticket as `<team>-<n>.md`, `n` one above the highest
+number already filed under that prefix (1 on an empty board), and its
+state to `<team>-<n>.state` unless it is `Todo`. The file is the body as
+given: its title and estimate are the body's H1 and `Estimate:` line, so
+the `title` and `estimate` arguments of `file()` and `update()` are not
+stored apart from it, and `priority` is ignored -- a ticket file has no
+priority field. With no blocking relations to record, a non-empty
+`blockers` is refused before anything is written.
 """
 from __future__ import annotations
 
@@ -131,6 +141,29 @@ class Board(Protocol):
         """Remove the label `name` from the ticket; raise when the board refused."""
         ...
 
+    def file(self, title, body, estimate, state, priority=None,
+             blockers=()) -> str:
+        """Create the ticket in the workflow state named `state`, record each
+        of `blockers` (identifiers) as blocking it, and answer the new
+        identifier. `priority` is the board's integer, or None for none."""
+        ...
+
+    def update(self, identifier, title, body, estimate,
+               blockers=()) -> tuple[list[str], list[str]]:
+        """Replace the ticket's title, body and estimate, leaving its state
+        and priority alone; then record the `blockers` the board does not
+        hold yet. Answer `(added, kept)`: the blockers recorded, in
+        `blockers` order, and the ones the board already held that
+        `blockers` does not name, in the board's order -- left in place.
+        Raise `RuntimeError` for an identifier the board does not hold."""
+        ...
+
+    def stored_body(self, identifier) -> str:
+        """The body as the board stores it -- the read-back a filing is
+        judged by. Raise `RuntimeError` for an identifier the board does
+        not hold."""
+        ...
+
 
 class LinearBoard:
     """Linear, through the functions `linear_provider.py` already has.
@@ -192,6 +225,28 @@ class LinearBoard:
 
     def unlabel_issue(self, issue_id, name):
         self._linear().unlabel_issue(issue_id, name)
+
+    def file(self, title, body, estimate, state, priority=None, blockers=()):
+        linear = self._linear()
+        issue = linear.create_issue(self.project_id, self._team, title, body,
+                                    estimate, state, priority=priority)
+        for blocker in blockers:
+            linear.add_blocker(issue["id"], blocker)
+        return issue["identifier"]
+
+    def update(self, identifier, title, body, estimate, blockers=()):
+        linear = self._linear()
+        issue_id = linear.update_issue(identifier, title, body, estimate)
+        # Read after the body is stored: a refused update adds nothing, and
+        # the difference is taken against the board as it stands then.
+        held = linear.blockers_of(identifier)
+        added = [b for b in blockers if b not in held]
+        for blocker in added:
+            linear.add_blocker(issue_id, blocker)
+        return added, [b for b in held if b not in blockers]
+
+    def stored_body(self, identifier):
+        return self._linear().fetch_description(identifier)
 
 
 def board_for(target):
@@ -299,6 +354,34 @@ class FileProvider:
                 for identifier in identifiers
                 if "." not in identifier and self._path(identifier).is_file()
                 and self._state(identifier) in CLOSED_STATE_NAMES}
+
+    def _refuse_blockers(self, what, blockers):
+        if blockers:
+            raise RuntimeError(
+                f"refused to {what} blocked by {', '.join(blockers)}: the "
+                f"file board at {self.root} has no blocking relations")
+
+    def file(self, title, body, estimate, state, priority=None, blockers=()):
+        # Title and estimate live in the body; a file has no priority.
+        self._refuse_blockers(f"file {title!r}", blockers)
+        prefix = f"{self.team}-"
+        numbers = [int(i[len(prefix):]) for i in self._identifiers()
+                   if i.startswith(prefix) and i[len(prefix):].isdigit()]
+        identifier = f"{prefix}{max(numbers, default=0) + 1}"
+        self._path(identifier).write_text(body)
+        if state != DEFAULT_STATE:
+            self._path(identifier, ".state").write_text(f"{state}\n")
+        return identifier
+
+    def update(self, identifier, title, body, estimate, blockers=()):
+        self._require(identifier)
+        self._refuse_blockers(f"update {identifier}", blockers)
+        self._path(identifier).write_text(body)
+        return [], []
+
+    def stored_body(self, identifier):
+        self._require(identifier)
+        return self._path(identifier).read_text()
 
 
 def _parse(identifier, text):
