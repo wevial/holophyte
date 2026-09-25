@@ -1,24 +1,32 @@
 # A second board behind the provider protocol
 
-**Status:** proposed · 2026-09-04
+**Status:** accepted · 2026-09-25 (proposed 2026-09-04)
+
+Accepted because stage 0 of Phase 3 built the seam: `--file-ticket` now
+files through the board it is handed, and Linear is one board among two.
 
 ## Context
 
-`Provider` is five methods: `claim_next`, `fetch_task`, `set_state`,
-`comment`, `team`. Linear implements it; a file directory implements it
-for tests. `--file-ticket` and `--update` still call Linear directly.
+The protocol was five methods, and `--file-ticket` and `--update` called
+Linear directly, so a second board meant a second filing path.
 
-## Proposal
+## Decision
 
-`[board] kind = linear | file | …`. Move filing and updating behind the
-protocol. Then a Hermes kanban, GitHub Issues, or "our own" (the file
-provider plus a page over the daemon) are each a small module.
+`provider.Board` is the seam. Beside the loop's members it has `file()`,
+`update()` and `stored_body()`: create a ticket, revise it, read back
+what the board stored. `board_for()` is the one place that builds a
+project's board, reading `[board] kind` (`linear`, the default; `native`
+refused until it ships); `[board] mode` (`mirror` or `store`) is
+accepted beside it. `LinearBoard` and `FileProvider` both implement it,
+and one conformance suite holds them alike. The rest of Phase 3 is the
+"boards and the store" design, §2 and §10.
 
 ## Consequences
 
-Standing decision 2 in the roadmap says wait for the second real
-consumer; the seam being ready is what makes waiting cheap.
+A new board is one class and one `kind` value; the loop and
+`--file-ticket` do not change. The exit-2 line still says "as stored by
+Linear" whatever the board; its wording waits for the native board.
 
 ## Tickets
 
-To file when a second board is real.
+KO-730, KO-731, KO-732, KO-734.
