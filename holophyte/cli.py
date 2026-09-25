@@ -421,10 +421,11 @@ def _legacy_cli(argv):
     if args.serve == "":
         parser.error(f"--serve needs {ADDRESS_SHAPE} with a project; without"
                      " one it serves the host")
-    # A dry run writes nothing, and adopting legacy state moves files: it
-    # locates the target without adopting, so a store still in a legacy
-    # layout is reported absent rather than moved.
-    target = Project.locate(args.target, adopt=args.import_store is None)
+    # A dry run and `--board-diff` write nothing, and adopting legacy state
+    # moves files: they locate the target without adopting, so a store still
+    # in a legacy layout is reported absent rather than moved.
+    target = Project.locate(args.target, adopt=args.import_store is None
+                            and not args.board_diff)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.

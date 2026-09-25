@@ -112,3 +112,23 @@ class BoardDiffTests(unittest.TestCase):
         loop.assert_not_called()
         supervisor.assert_not_called()
         spawn.assert_not_called()
+
+    def test_the_flag_leaves_a_legacy_layout_where_it_is(self):
+        repo = self.root / "legacy"
+        repo.mkdir()
+        (self.root / "legacy.holophyte.db").write_bytes(
+            self.target.store_path.read_bytes())
+        (self.root / "legacy.holophyte.toml").write_text(
+            '[board]\nteam = "KO"\nproject_id = "project-1"\n')
+        before = {p.name: p.read_bytes() for p in self.root.iterdir()
+                  if p.is_file()}
+        out = io.StringIO()
+        with patch.object(holophyte.cli, "board_for",
+                          lambda target: self.board), \
+                contextlib.redirect_stdout(out):
+            holophyte.cli.cli([str(repo), "--board-diff"])
+        self.assertEqual({p.name: p.read_bytes() for p in self.root.iterdir()
+                          if p.is_file()}, before)
+        self.assertFalse(
+            holophyte.project.Project.locate(repo, adopt=False).holo_dir.exists())
+        self.assertNotIn("adopt", out.getvalue())
