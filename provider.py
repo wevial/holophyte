@@ -122,7 +122,8 @@ class Board(Protocol):
         ...
 
     def fetch_task(self, issue_id) -> dict | None:
-        """The ticket as the board holds it now; None when it has no such issue."""
+        """The ticket as the board holds it now, with its `column` as
+        `states()` names it and `updatedAt`; None when it has no such issue."""
         ...
 
     def set_state(self, issue_id, state_name) -> None:
@@ -237,7 +238,7 @@ class LinearBoard:
         return self._linear().listing(self.project_id, label=self._label)
 
     def fetch_task(self, issue_id):
-        return self._linear().fetch_task(issue_id)
+        return self._linear().fetch_task(issue_id, label=self._label)
 
     def set_state(self, issue_id, state_name):
         self._linear().set_state(issue_id, state_name, self._team)
@@ -346,7 +347,7 @@ class FileProvider:
     def fetch_task(self, issue_id):
         if "." in issue_id or not self._path(issue_id).is_file():
             return None
-        task = _parse(issue_id, self._path(issue_id).read_text())
+        task = parse_body(issue_id, self._path(issue_id).read_text())
         title = self._path(issue_id, ".title")
         if title.exists():
             task["title"] = title.read_text().strip()
@@ -355,6 +356,7 @@ class FileProvider:
             task["budget_min"] = int(estimate.read_text())
         task["labels"] = self._labels(issue_id)
         task["updatedAt"] = self._path(issue_id).stat().st_mtime_ns // 1_000_000
+        task["column"] = _file_column(self._state(issue_id))[1]
         return task
 
     def _labels(self, identifier):
@@ -412,9 +414,7 @@ class FileProvider:
                                       "column": None}
                 continue
             name = self._state(identifier)
-            state = CLOSED_STATE_NAMES.get(name, "open")
-            column = {"completed": None, "canceled": "canceled"}.get(
-                state, "backlog" if name == "Backlog" else "ready")
+            state, column = _file_column(name)
             answer[identifier] = {"state": state, "name": name,
                                   "column": column}
         return answer
@@ -447,7 +447,7 @@ class FileProvider:
         # The body verbatim; a title or estimate it does not say beside it,
         # and a stale one from an earlier call removed.
         self._path(identifier).write_text(body)
-        own = _parse(identifier, body)
+        own = parse_body(identifier, body)
         for suffix, value, said in (
                 (".title", title and title.strip(), own["title"]),
                 (".estimate", estimate and int(estimate), own["budget_min"])):
@@ -462,8 +462,19 @@ class FileProvider:
         return self._path(identifier).read_text()
 
 
-def _parse(identifier, text):
-    """A ticket file as the task dict, key for key as `parse_task()` builds it.
+def _file_column(name):
+    """A file board state name as `(state, column)`: a closed name is its
+    Linear type with column None (completed) or `canceled`, Backlog is the
+    backlog column, and any other open name the ready one."""
+    state = CLOSED_STATE_NAMES.get(name, "open")
+    return state, {"completed": None, "canceled": "canceled"}.get(
+        state, "backlog" if name == "Backlog" else "ready")
+
+
+def parse_body(identifier, text):
+    """A ticket body as the task dict, key for key as `parse_task()` builds it:
+    the file board's parse, and a store-mode claim's task built from a
+    stored body (Phase 3 stage 3).
     Mirrored rather than called because `linear_provider` cannot be imported
     without a configured project, which is the file board's whole case; the
     conformance suite holds the two parses to each other.

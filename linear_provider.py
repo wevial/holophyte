@@ -418,11 +418,28 @@ def parse_task(issue):
 
 ISSUE_QUERY = """
 query($id: String!) {
-  issue(id: $id) { identifier id url title description estimate state { name } }
+  issue(id: $id) {
+    identifier id url title description estimate priority createdAt updatedAt
+    archivedAt state { name type } labels { nodes { name } }
+  }
 }"""
 
 
-def fetch_task(issue_id):
+def _column(state_type, archived, labels, label):
+    """The board column an issue is in: None for a completed state type,
+    `canceled` for a canceled one or an archived issue, `backlog` for a
+    backlog type or, when the board has a `label`, an issue without it,
+    else `ready`. The one rule `states()` and `fetch_task()` share."""
+    if state_type == "completed":
+        return None
+    if state_type == "canceled" or archived:
+        return "canceled"
+    if state_type == "backlog" or (label is not None and label not in labels):
+        return "backlog"
+    return "ready"
+
+
+def fetch_task(issue_id, label=None):
     """Re-read one issue by id and parse it; None when Linear has no such issue.
 
     The read half of the merge-time drift check: `factory.run_task()` freezes
@@ -435,9 +452,18 @@ def fetch_task(issue_id):
     to work on, and state-model §1 keeps Linear a notice board. This reads one
     issue's body back, which is the one fact the board is authoritative about
     — a human edits the contract there, not in the store.
+
+    The answer carries what the ready listing's does -- labels, priority,
+    `filed_at` and `updatedAt` -- and the issue's `column` by `_column()`,
+    `label` being the board's `[board] label`: a store-mode claim mirrors
+    this one issue as the board holds it now (Phase 3 stage 3).
     """
     issue = _gql(ISSUE_QUERY, {"id": issue_id})["issue"]
-    return parse_task(issue) if issue else None
+    if not issue:
+        return None
+    state = issue.get("state") or {}
+    return dict(_listed_task(issue), column=_column(
+        state.get("type"), issue.get("archivedAt"), label_names(issue), label))
 
 
 def _state_id(name, team):
@@ -794,18 +820,12 @@ def states(identifiers, label=None):
               for i in identifiers if IDENTIFIER_RE.match(i)}
     for node in _issues_named(identifiers):
         state = node.get("state") or {}
-        kind, name = state.get("type"), state.get("name")
-        if kind == "completed":
-            answer[node["identifier"]] = {"state": kind, "name": name,
-                                          "column": None}
-        elif kind == "canceled" or node.get("archivedAt"):
-            answer[node["identifier"]] = {"state": "canceled", "name": name,
-                                          "column": "canceled"}
-        else:
-            unlabelled = label is not None and label not in label_names(node)
-            column = "backlog" if kind == "backlog" or unlabelled else "ready"
-            answer[node["identifier"]] = {"state": "open", "name": name,
-                                          "column": column}
+        column = _column(state.get("type"), node.get("archivedAt"),
+                         label_names(node), label)
+        answer[node["identifier"]] = {
+            "state": {None: "completed", "canceled": "canceled"}.get(
+                column, "open"),
+            "name": state.get("name"), "column": column}
     return answer
 
 

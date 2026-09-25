@@ -53,6 +53,7 @@ from holophyte.board import (
     release_lease_label,
     store_status,
 )
+from holophyte.claim_store import claim_from_store, store_mode
 from holophyte.config import (
     branch_prefix,
     setup_commands,
@@ -657,8 +658,12 @@ def _claim_next(project, conn, project_id, provider, order, skip, seen):
     (`_claim_run()`). Every ticket refused on the way -- unadmitted, or
     leased by another run mid-claim -- is added to `skip`, so the caller's
     next ask is the one after it. The ask that finds nothing reconciles
-    the mirror first (`_park_unlisted()`, KO-425)."""
+    the mirror first (`_park_unlisted()`, KO-425). A store-mode board
+    claims from the store's queue instead (`claim_from_store()`)."""
     from holophyte.admission import held_line
+    if store_mode(project):
+        return claim_from_store(project, conn, project_id, provider, order,
+                                skip, seen)
     while True:
         line = held_line(conn, project_id)
         if line:
@@ -923,18 +928,21 @@ def _lease_on_board(project, conn, provider, task, ticket_id, run_id):
     return True
 
 
-def _claim_run(project, conn, project_id, provider, task, ticket_id, seen):
+def _claim_run(project, conn, project_id, provider, task, ticket_id, seen,
+               expected_revision=None):
     """The lease, the board's lease label and the `ready -> in_flight`
     move. Returns the claimed run id, `HELD` when another run or another
     writer took the ticket first, or None when the loop must stop rather
-    than start a run."""
+    than start a run. A store-mode claim passes the revision it admitted,
+    and `store.RevisionMoved` propagates when the ticket left it."""
     # The store and board halves of the lease under one `lease_turn()`,
     # which a close-out's label removal and a critic's park also take.
     with lease_turn(project):
         if freshness.parked_since_admitted(conn, ticket_id, task):
             return HELD
         try:
-            run_id = store.claim(conn, project_id, ticket_id)
+            run_id = store.claim(conn, project_id, ticket_id,
+                                 expected_revision=expected_revision)
         except store.ClaimConflict as e:
             # Before any branch or worktree exists: another loop on this
             # target won the ticket, so this one moves on to the next.
