@@ -91,6 +91,20 @@ socket starts the new code on the next request, and every sweep run starts
 from the checkout's `HEAD`. Details in
 [Serving standing](../operating.md#serving-standing).
 
+Adjust the installed copies to the host, as with every unit here:
+`WorkingDirectory` to the factory checkout; `ExecStart`'s interpreter to
+one that imports `tomlkit` as this user (`/usr/bin/python3 -c 'import
+tomlkit'`); the socket's `ListenStream` to the private-network address
+with `FreeBind=true`. The sweep also needs its process environment. It
+runs `gh` for the pull-request reconcile and the agent CLIs for the route
+probe, and the user manager's `PATH` is bare. Its launches also need the
+shared keys (the media publisher's, `TYPESAFE_API_KEY`) that each
+project's `serve.env` carried for the old supervisor. The sweep unit
+carries both lines commented out: `Environment=PATH=...` naming where
+those CLIs live, and `EnvironmentFile=-%h/.holophyte/host.env`, a mode-600
+file holding the shared keys only. Its output goes to the journal; an
+`append:` log file is optional.
+
 The loop stays one per project: `holophyte-loop@NAME`, one pass of the
 loop, `Restart=no`, reading `~/.holophyte/NAME/serve.env` for the project
 path. The host sweep starts it when the project has a ready ticket and no

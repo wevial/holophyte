@@ -16,6 +16,17 @@ Type=oneshot
 # run is the checkout's HEAD: nothing to restart after a merge.
 WorkingDirectory=%h/srv/dev/holophyte
 ExecStart=/usr/bin/python3 factory.py --supervise --once
+# The sweep shells out: `gh` for the pull-request reconcile and the agent
+# CLIs for the implementer route probe before a launch. The user manager's
+# PATH is bare, so name the directories they live in; adjust to your layout.
+# The shared keys the old per-project supervisor read from each serve.env
+# (media publisher keys, TYPESAFE_API_KEY) go in one host-wide file, mode
+# 600, holding only those keys; the leading `-` makes it optional.
+#Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+#EnvironmentFile=-%h/.holophyte/host.env
+# The journal keeps every run's output; to keep a flat file as well:
+#StandardOutput=append:%h/holophyte-sweep.log
+#StandardError=append:%h/holophyte-sweep.log
 # Above the 97 s worst single Linear read (three 30 s attempts and 7 s of
 # waits), which no timeout cuts: a slow run is stopped here, never mid-call
 # by the sweep itself. The daemon reads a run started longer ago than this
