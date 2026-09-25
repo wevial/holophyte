@@ -3,7 +3,7 @@
 `factory.py` never names a board. It is handed a `Board` and drives it
 through its members -- `team`, `claim_next()`, `ready_issues()`,
 `fetch_task()`, `set_state()`, `comment()`, `closed_identifiers()`,
-`label_issue()`, `issue_labels()` and `unlabel_issue()`, and files a ticket
+`states()`, `label_issue()`, `issue_labels()` and `unlabel_issue()`, and files a ticket
 through `file()`, `update()` and `stored_body()` -- so which board a loop
 runs against is the caller's choice, not a module import: every caller
 that needs the target's board asks `board_for(target)`, the one place that
@@ -92,6 +92,8 @@ DEFAULT_STATE = "Todo"
 # is: `closed_identifiers()` answers in types on both boards.
 CLOSED_STATE_NAMES = {"Done": "completed", "Canceled": "canceled",
                       "Cancelled": "canceled", "Duplicate": "canceled"}
+# What `states()` says of an identifier the board holds no issue for.
+GONE = "gone"
 
 
 class Board(Protocol):
@@ -129,6 +131,16 @@ class Board(Protocol):
     def closed_identifiers(self, identifiers) -> dict[str, str]:
         """Which of `identifiers` the board holds closed, as identifier ->
         `"completed"` or `"canceled"`; open or unknown is absent."""
+        ...
+
+    def states(self, identifiers) -> dict[str, dict]:
+        """Each of `identifiers` as the board holds it, as identifier ->
+        `{"state", "name", "column"}`: `open` with its workflow state name
+        and column (`ready` or `backlog`), `completed` (column None),
+        `canceled` (column `canceled`), or `GONE` (name and column None)
+        where the board holds no such issue. Gone is said only on a
+        complete, successful answer; raise when the board could not be
+        asked. An identifier the board could not name is left out."""
         ...
 
     def label_issue(self, issue_id, name) -> None:
@@ -221,6 +233,9 @@ class LinearBoard:
 
     def closed_identifiers(self, identifiers):
         return self._linear().closed_identifiers(identifiers)
+
+    def states(self, identifiers):
+        return self._linear().states(identifiers, label=self._label)
 
     def label_issue(self, issue_id, name):
         self._linear().label_issue(issue_id, name, self._team)
@@ -365,6 +380,25 @@ class FileProvider:
                 for identifier in identifiers
                 if "." not in identifier and self._path(identifier).is_file()
                 and self._state(identifier) in CLOSED_STATE_NAMES}
+
+    def states(self, identifiers):
+        # A file board has no labels to filter a column on: a `.state` of
+        # Backlog is the backlog column, any other open name the ready one.
+        answer = {}
+        for identifier in identifiers:
+            if "." in identifier:
+                continue
+            if not self._path(identifier).is_file():
+                answer[identifier] = {"state": GONE, "name": None,
+                                      "column": None}
+                continue
+            name = self._state(identifier)
+            state = CLOSED_STATE_NAMES.get(name, "open")
+            column = {"completed": None, "canceled": "canceled"}.get(
+                state, "backlog" if name == "Backlog" else "ready")
+            answer[identifier] = {"state": state, "name": name,
+                                  "column": column}
+        return answer
 
     def _refuse_blockers(self, what, blockers):
         if blockers:

@@ -657,21 +657,26 @@ def claim_next(project_id, team, skip=(), order="identifier", label=None):
 
 
 def comment(task_id, body):
-    _gql('mutation($issue: String!, $body: String!) { commentCreate(input: '
-         '{ issueId: $issue, body: $body }) { success } }',
-         {"issue": task_id, "body": body})
+    """Post `body` on the issue; raise when Linear answers `success: false`,
+    so a refused note is never taken for a posted one."""
+    data = _gql('mutation($issue: String!, $body: String!) { commentCreate('
+                'input: { issueId: $issue, body: $body }) { success } }',
+                {"issue": task_id, "body": body})
+    if not (data.get("commentCreate") or {}).get("success"):
+        raise RuntimeError(f"Linear refused the comment on {task_id}")
 
 
-# Issues named by identifier, with their state type and whether Linear has
-# archived them. An identifier is the team's key and the issue's number
-# (`KO-217`), and those two are what the filter takes: IssueFilter has no
-# `identifier` field, so the pair is the identifier spelled in the terms the
-# API filters on. `includeArchived` is what makes an archived issue come back
-# at all -- Linear omits them by default, and it archives a Done issue on its
-# own after a while, which is how a finished ticket stayed on the board as a
-# ghost -- and there is no state filter because an archived issue whose state
-# is still open is one the caller reports too. The number filter bounds the
-# answer to the identifiers asked, so it is still a small page.
+# Issues named by identifier, with their state type and name, their labels
+# and whether Linear has archived them. An identifier is the team's key and
+# the issue's number (`KO-217`), and those two are what the filter takes:
+# IssueFilter has no `identifier` field, so the pair is the identifier
+# spelled in the terms the API filters on. `includeArchived` is what makes
+# an archived issue come back at all -- Linear omits them by default, and it
+# archives a Done issue on its own after a while, which is how a finished
+# ticket stayed on the board as a ghost -- and there is no state filter
+# because an archived issue whose state is still open is one the caller
+# reports too. The number filter bounds the answer to the identifiers asked,
+# so it is still a small page.
 CLOSED_QUERY = """
 query($key: String!, $numbers: [Float!]!, $after: String) {
   issues(
@@ -684,7 +689,10 @@ query($key: String!, $numbers: [Float!]!, $after: String) {
     }
   ) {
     pageInfo { hasNextPage endCursor }
-    nodes { identifier archivedAt state { type } }
+    nodes {
+      identifier archivedAt state { type name }
+      labels { nodes { name } }
+    }
   }
 }"""
 
@@ -708,25 +716,67 @@ def closed_identifiers(identifiers):
     `KEY-n` shape is skipped rather than sent, since the filter could not
     name it.
     """
+    closed = {}
+    for node in _issues_named(identifiers):
+        state_type = (node.get("state") or {}).get("type")
+        if state_type in CLOSED_STATE_TYPES:
+            closed[node["identifier"]] = state_type
+        elif node.get("archivedAt"):
+            closed[node["identifier"]] = "canceled"
+    return closed
+
+
+def _issues_named(identifiers):
+    """The `CLOSED_QUERY` nodes for `identifiers`, one query per team key;
+    an identifier not of the `KEY-n` shape is not sent, and a node nobody
+    asked for is dropped."""
     by_key = {}
     for identifier in identifiers:
         m = IDENTIFIER_RE.match(identifier)
         if m:
             by_key.setdefault(m.group(1), []).append(int(m.group(2)))
     asked = set(identifiers)
-    closed = {}
-    for key, numbers in by_key.items():
-        nodes = _paginate(CLOSED_QUERY, {"key": key, "numbers": numbers},
-                          ("issues",))
-        for node in nodes:
-            if node["identifier"] not in asked:
-                continue
-            state_type = (node.get("state") or {}).get("type")
-            if state_type in CLOSED_STATE_TYPES:
-                closed[node["identifier"]] = state_type
-            elif node.get("archivedAt"):
-                closed[node["identifier"]] = "canceled"
-    return closed
+    return [node for key, numbers in by_key.items()
+            for node in _paginate(CLOSED_QUERY, {"key": key, "numbers": numbers},
+                                  ("issues",))
+            if node["identifier"] in asked]
+
+
+def states(identifiers, label=None):
+    """Each of `identifiers` as Linear holds it: identifier -> `{"state",
+    "name", "column"}`.
+
+    `state` is `open`, `completed`, `canceled` or `provider.GONE`, and
+    `name` the workflow state's name (None when gone). An open issue's
+    `column` is `backlog` for a `backlog` state type, or for any other open
+    type when `label` -- the board's `[board] label` -- is set and the issue
+    does not carry it; else `ready`. A completed issue's column is None, a
+    canceled one's `canceled`, and an archived issue in an open state is
+    canceled, as `closed_identifiers()` says. Gone is said only of a
+    `KEY-n` identifier the complete, successful answer does not hold: a
+    transport failure raises out of here instead, and an identifier of
+    another shape is left out of the answer, since the filter could not
+    name it. A read: nothing here moves a ticket.
+    """
+    # Imported here: this module imports standalone, without the seam.
+    from provider import GONE
+    answer ={i: {"state": GONE, "name": None, "column": None}
+              for i in identifiers if IDENTIFIER_RE.match(i)}
+    for node in _issues_named(identifiers):
+        state = node.get("state") or {}
+        kind, name = state.get("type"), state.get("name")
+        if kind == "completed":
+            answer[node["identifier"]] = {"state": kind, "name": name,
+                                          "column": None}
+        elif kind == "canceled" or node.get("archivedAt"):
+            answer[node["identifier"]] = {"state": "canceled", "name": name,
+                                          "column": "canceled"}
+        else:
+            unlabelled = label is not None and label not in label_names(node)
+            column = "backlog" if kind == "backlog" or unlabelled else "ready"
+            answer[node["identifier"]] = {"state": "open", "name": name,
+                                          "column": column}
+    return answer
 
 
 # --- Operator API: filing a ticket from a file ------------------------------
