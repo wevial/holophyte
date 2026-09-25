@@ -193,23 +193,26 @@ def claim(conn, project_id, ticket_id, now=None):
         # A ticket that does not exist reads as no estimate and no contract
         # here and is refused a moment later by the ownership check below, so
         # this read decides nothing about whether the claim is legal. One
-        # SELECT for both snapshots, so the estimate and the contract a run
-        # records are the same ticket at the same instant.
+        # SELECT for the estimate, the contract and the revision (KO-737),
+        # so all three a run records are the same ticket at the same instant.
         ticket = conn.execute(
-            "SELECT timeBoxMs, title, acceptanceCriteria, verificationCommands, body"
-            " FROM tickets WHERE id = ?", (ticket_id,)
+            "SELECT timeBoxMs, title, acceptanceCriteria, verificationCommands,"
+            " body, revision FROM tickets WHERE id = ?", (ticket_id,)
         ).fetchone()
         estimate = ticket[0] if ticket else None
+        # Revision 0 is a row no revision was recorded for: claim none.
+        revision = ticket[5] or None if ticket else None
         snapshot = None if ticket is None else contract_snapshot(
             ticket[1], json.loads(ticket[2]), json.loads(ticket[3]),
             _ticket_template.parse(ticket[4] or "").evidence_states)
         run_id = conn.execute(
             "INSERT INTO runs"
             " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"
-            "  timeBoxMs, ticketSnapshot, host, workerPid, workingMs, verifyMs)"
-            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?, 0, 0)",
+            "  timeBoxMs, ticketSnapshot, host, workerPid, workingMs, verifyMs,"
+            "  revision)"
+            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?, 0, 0, ?)",
             (ticket_id, project_id, prior + 1, now, now, estimate, snapshot,
-             socket.gethostname(), os.getpid()),
+             socket.gethostname(), os.getpid(), revision),
         ).lastrowid
         # Scoped by projectId as well as id: claiming another project's ticket
         # would otherwise open a run of this project on work it does not

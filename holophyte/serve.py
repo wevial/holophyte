@@ -491,24 +491,59 @@ def board(project, now=None):
 
 def ticket_detail(project, identifier):
     """The `/tickets/KO-n` answer: `(http status, JSON-able body)`.
-    Serve the mirrored contract, URL and active run without calling Linear.
+    Serve the mirrored contract, URL and active run without calling Linear,
+    and beside them the ticket's `current` revision, the live run's
+    `claimed` one and the `revisions` list, newest first (KO-737).
     An unknown identifier returns 404 with an empty object."""
     if not project.store_path.exists():
         return 503, no_store(project)
     conn = store.read.open_readonly(project.store_path)
     try:
         ticket = store.read.ticket_by_identifier(conn, identifier)
+        revisions = ([] if ticket is None
+                     else store.read.ticket_revisions(conn, ticket.id))
     finally:
         conn.close()
     if ticket is None:
         return 404, {}
+    by_number = {r.revision: r for r in revisions}
     return 200, {"ticket": ticket.linearIdentifier,
                  "ticket_url": ticket.ticketUrl, "title": ticket.title,
                  "status": ticket.status, "body": ticket.body,
                  "acceptance_criteria": list(ticket.acceptanceCriteria),
                  "verification_commands": list(ticket.verificationCommands),
                  "time_box_ms": ticket.timeBoxMs, "run": ticket.activeRunId,
-                 "mirrored_ms": ticket.mirroredAt}
+                 "mirrored_ms": ticket.mirroredAt,
+                 "current": revision_json(by_number.get(ticket.revision)),
+                 "claimed": claimed_json(ticket, by_number),
+                 "revisions": [{"revision": r.revision, "at": r.at,
+                                "author": r.author} for r in revisions]}
+
+
+def revision_json(revision):
+    """One `TicketRevision` as the ticket route serves it; None stays None."""
+    if revision is None:
+        return None
+    return {"revision": revision.revision, "at": revision.at,
+            "author": revision.author, "title": revision.title,
+            "body": revision.body, "priority": revision.priority,
+            "labels": list(revision.labels), "column": revision.column}
+
+
+def claimed_json(ticket, by_number):
+    """The live run's claimed revision: null with no live run, and for a
+    run the previous build claimed (no `runs.revision`) its frozen
+    `ticketSnapshot`'s contract, served with `revision` null."""
+    if ticket.activeRunId is None:
+        return None
+    if ticket.claimedRevision is not None:
+        return revision_json(by_number.get(ticket.claimedRevision))
+    if ticket.claimedSnapshot is None:
+        return None
+    snapshot = json.loads(ticket.claimedSnapshot)
+    return {"revision": None, "title": snapshot["title"],
+            "acceptance_criteria": snapshot["acceptanceCriteria"],
+            "verification_commands": snapshot["verificationCommands"]}
 
 
 def is_loopback(host):

@@ -5,7 +5,8 @@ The board owns a ticket's title, body, priority, labels and column; the
 store keeps each version of them as a numbered revision, and
 `tickets.revision` names the current one. `mirror_ticket()` is the one
 writer: it heals a row an older build changed without a revision, writes
-the board's fields, then records them. Nothing reads the revisions yet.
+the board's fields, then records them. `store.read.ticket_revisions()`
+reads them back for `/tickets/KO-n` (KO-737).
 """
 from __future__ import annotations
 

@@ -4,7 +4,7 @@
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
-`--sweep [--act]`, `--status [--json]`, `--serve` and `--supervise
+`--sweep [--act]`, `--board-diff`, `--status [--json]`, `--serve` and `--supervise
 [--once]` (with no project, the host's),
 `--import-store PATH --dry-run`,
 `--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 from holophyte.board import FILE_TICKET_PRIORITIES, file_ticket
+from holophyte.board_diff import board_diff
 from holophyte.config import (
     check_agent_commands,
     check_config,
@@ -300,6 +301,12 @@ def _legacy_cli(argv):
         help="print the live runs that have tripped a mechanical condition "
              "(dead heartbeat, blown time box, stuck review) and exit; acts "
              "on none of them unless --act says to")
+    modes.add_argument(
+        "--board-diff", action="store_true",
+        help="print every way the store's copy of the board's ready queue "
+             "differs from the board's -- a board-owned field, a listed "
+             "issue with no store row, a ready row the listing no longer "
+             "names -- and exit 1 if there is any; writes nothing")
     # Read-only on both stores for now: the apply step is a later ticket
     # built on this report, so the mode runs only with `--dry-run` said.
     modes.add_argument(
@@ -414,10 +421,11 @@ def _legacy_cli(argv):
     if args.serve == "":
         parser.error(f"--serve needs {ADDRESS_SHAPE} with a project; without"
                      " one it serves the host")
-    # A dry run writes nothing, and adopting legacy state moves files: it
-    # locates the target without adopting, so a store still in a legacy
-    # layout is reported absent rather than moved.
-    target = Project.locate(args.target, adopt=args.import_store is None)
+    # A dry run and `--board-diff` write nothing, and adopting legacy state
+    # moves files: they locate the target without adopting, so a store still
+    # in a legacy layout is reported absent rather than moved.
+    target = Project.locate(args.target, adopt=args.import_store is None
+                            and not args.board_diff)
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.
@@ -450,6 +458,9 @@ def _legacy_cli(argv):
     # runs rather than dispatching them, so it needs no route either.
     if args.sweep:
         return sweep_report(target, act=args.act, provider=board)
+    # Reads the board, so a target without one exits naming the key.
+    if args.board_diff:
+        return board_diff(target, require_board(target, board))
     # The operator verbs on the store, in their own function so the
     # dispatch stays under the complexity bound with all of them in it.
     if _store_verb(args, target, board):
