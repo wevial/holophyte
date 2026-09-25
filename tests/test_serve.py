@@ -628,7 +628,8 @@ class TicketTests(ServeTestCase):
             "mirrored_ms": self.now - 5 * MIN,
             "current": revision, "claimed": revision,
             "revisions": [{"revision": 1, "at": self.now - 5 * MIN,
-                           "author": "board"}]})
+                           "author": "board"}],
+            "notes": []})
 
     def test_an_identifier_never_mirrored_is_404_with_an_empty_object(self):
         self.seed_ticket()

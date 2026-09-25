@@ -257,7 +257,8 @@ The store is its own package:
   build changed first (KO-736).
 - `store/notes.py` — `record_note()`: one `ticketNotes` row per key on a
   ticket, joining the caller's transaction so a ledger entry and its board
-  note land together; the host sweep posts it (KO-742).
+  note land together (KO-742); `mark_note_posted()` and `mark_note_failed()`
+  record the host sweep's post of it (KO-747).
 - `store/instructions.py` — persist replies on recorded thread instructions.
 - `store/agent_routes.py` — atomic fallback intervention and event records.
 - `store/launch_backoff.py` — persistent route outages, retry deadlines and

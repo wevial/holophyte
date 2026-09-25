@@ -993,7 +993,11 @@ class GuidanceNotAccepted(ResumeRefused):
     """
 
 
-from .notes import record_note  # noqa: E402,F401 - KO-742
+from .notes import (  # noqa: E402,F401 - KO-742, KO-747
+    mark_note_failed,
+    mark_note_posted,
+    record_note,
+)
 from .revisions import record_board_fields  # noqa: E402,F401 - KO-736
 from .tickets import (  # noqa: E402,F401 - re-export after `_json_list`
     STATE_GRAPHS,

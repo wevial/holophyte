@@ -1,5 +1,5 @@
 """Ticket notes: what the factory says on a ticket's board, kept in the store
-until the host sweep posts it (KO-742; delivery is DRAFT-465)."""
+until the host sweep posts it (KO-742; delivery is KO-747)."""
 
 import time
 
@@ -23,3 +23,21 @@ def record_note(conn, ticket_id, kind, text, dedup_key, author="factory",
             " ON CONFLICT (ticketId, dedupKey) DO NOTHING",
             (ticket_id, run_id, now, author, kind, dedup_key, text))
     return cursor.lastrowid if cursor.rowcount else None
+
+
+def mark_note_posted(conn, note_id, now=None):
+    """Stamp note `note_id` posted at `now` and clear its `postError`: the
+    board accepted the comment (KO-747)."""
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        conn.execute("UPDATE ticketNotes SET postedAt = ?, postError = NULL"
+                     " WHERE id = ?", (now, note_id))
+
+
+def mark_note_failed(conn, note_id, error):
+    """Record why note `note_id`'s post failed; it stays pending, and the
+    next pass posts it again (KO-747)."""
+    with _transaction(conn):
+        conn.execute("UPDATE ticketNotes SET postError = ? WHERE id = ?",
+                     (error, note_id))

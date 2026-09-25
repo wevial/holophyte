@@ -49,6 +49,9 @@ EXPECTED = [
     "hold",  # KO-578: project admission operator verbs.
     "init",
     "latest_supervisor_heartbeat",
+    # KO-747: a store-mode note's post, accepted or failed, by the host sweep.
+    "mark_note_failed",
+    "mark_note_posted",
     "mirror_ticket",
     "open",
     # KO-256: `[merge] approve = "human"` parks a live run in
@@ -180,6 +183,8 @@ EXPECTED_READ = [
     # KO-280: the `serve` daemon's `/board` read of the open tickets.
     "open_tickets",
     "open_readonly",
+    # KO-747: the store-mode notes the host sweep has yet to post.
+    "pending_notes",
     # KO-409: the supervisor's read of the ready tickets owed a loop,
     # however they became ready.
     "ready_tickets",
@@ -198,6 +203,8 @@ EXPECTED_READ = [
     "ticket_by_identifier",
     # KO-737: a ticket's revisions, newest first, for `/tickets/KO-n`.
     "ticket_revisions",
+    # KO-747: a ticket's notes, oldest first, for `/tickets/KO-n`.
+    "ticket_notes",
     # KO-705: human interventions per merged run, for `--report` and
     # `/status`.
     "toil_since",

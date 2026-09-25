@@ -294,6 +294,50 @@ def ticket_revisions(conn, ticket_id):
                 " ORDER BY revision DESC", (ticket_id,))]
 
 
+
+@dataclass(frozen=True)
+class PendingNote:
+    """One store-mode note the board has yet to accept (KO-747), with its
+    ticket's board id `issueId` and `identifier` to post it on."""
+
+    id: int
+    ticketId: int
+    issueId: str
+    identifier: str
+    at: int
+    text: str
+
+
+def pending_notes(conn, project_id):
+    """Project `project_id`'s notes with no `postedAt`, oldest first; a
+    ticket the board was last seen without (`goneSince` set) is left out."""
+    return [PendingNote(*row) for row in conn.execute(
+        "SELECT n.id, n.ticketId, t.linearIssueId, t.linearIdentifier, n.at,"
+        " n.text FROM ticketNotes n JOIN tickets t ON t.id = n.ticketId"
+        " WHERE t.projectId = ? AND n.postedAt IS NULL"
+        " AND t.goneSince IS NULL ORDER BY n.at, n.id", (project_id,))]
+
+
+@dataclass(frozen=True)
+class TicketNote:
+    """One note on a ticket and its post's outcome (KO-747): `postedAt` is
+    when the board accepted it, `postError` why the last post failed."""
+
+    id: int
+    at: int
+    author: str
+    kind: str
+    text: str
+    postedAt: int | None
+    postError: str | None
+
+
+def ticket_notes(conn, ticket_id):
+    """Ticket `ticket_id`'s notes, oldest first, for `/tickets/KO-n`."""
+    return [TicketNote(*row) for row in conn.execute(
+        "SELECT id, at, author, kind, text, postedAt, postError"
+        " FROM ticketNotes WHERE ticketId = ? ORDER BY at, id", (ticket_id,))]
+
 # --- runs --------------------------------------------------------------------
 
 
