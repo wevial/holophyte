@@ -218,6 +218,26 @@ def _urlopen(req, retry, what):
             sleep(wait)
 
 
+class GraphQLError(RuntimeError):
+    """An answer carrying GraphQL `errors`, kept on `errors` so a caller
+    can tell one refusal from another."""
+
+    def __init__(self, errors):
+        super().__init__(f"Linear GraphQL error: {errors}")
+        self.errors = errors
+
+
+def _issue_not_found(error):
+    """Whether `error` is exactly Linear's answer for an issue id it holds
+    no issue for -- deleted, or never there: every error `Entity not
+    found: Issue` with code `INPUT_ERROR`."""
+    return bool(error.errors) and all(
+        isinstance(e, dict)
+        and str(e.get("message", "")).startswith("Entity not found: Issue")
+        and (e.get("extensions") or {}).get("code") == "INPUT_ERROR"
+        for e in error.errors)
+
+
 def _gql(query, variables=None):
     key = _load_env_key()
     if not key:
@@ -242,8 +262,9 @@ def _gql(query, variables=None):
     LINEAR_BUDGET.remember(res.headers)
     r = json.load(res)
     if r.get("errors"):
-        raise RuntimeError(f"Linear GraphQL error: {r['errors']}")
+        raise GraphQLError(r["errors"])
     return r["data"]
+
 
 
 # --- Loop-facing provider API -------------------------------------------------
@@ -457,8 +478,17 @@ def fetch_task(issue_id, label=None):
     `filed_at` and `updatedAt` -- and the issue's `column` by `_column()`,
     `label` being the board's `[board] label`: a store-mode claim mirrors
     this one issue as the board holds it now (Phase 3 stage 3).
+
+    Linear answers an id it holds no issue for with an `Entity not found`
+    error rather than a null issue; that answer, and only that one, is
+    None, so a deleted issue is gone and not a board that failed.
     """
-    issue = _gql(ISSUE_QUERY, {"id": issue_id})["issue"]
+    try:
+        issue = _gql(ISSUE_QUERY, {"id": issue_id})["issue"]
+    except GraphQLError as e:
+        if _issue_not_found(e):
+            return None
+        raise
     if not issue:
         return None
     state = issue.get("state") or {}

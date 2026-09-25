@@ -8,6 +8,9 @@ Run: python3 -m unittest discover -s tests -p 'test_board_fetch.py' -v
 """
 from __future__ import annotations
 
+import io
+import json
+import os
 import sys
 import tempfile
 import unittest
@@ -92,6 +95,46 @@ class LinearFetchTests(unittest.TestCase):
         self.seed("KO-1")
         self.assertEqual(self.board().fetch_task("uuid-KO-1")["column"],
                          "ready")
+
+
+# Linear's answer to `issue(id:)` for an id it holds no issue for, as it
+# was read from Linear: an error, not a null issue.
+NOT_FOUND = {"message": "Entity not found: Issue",
+             "extensions": {"code": "INPUT_ERROR", "type": "invalid input",
+                            "userPresentableMessage": "Could not find"
+                            " referenced Issue."}}
+
+
+class LinearNotFoundTests(unittest.TestCase):
+    """The transport itself answers: `urlopen` is the only thing faked, so
+    `_gql()`'s own reading of an `errors` answer is what is tested."""
+
+    def fetch(self, errors):
+        answer = io.BytesIO(json.dumps({"data": None, "errors": errors})
+                            .encode())
+        answer.headers = {}
+        with patch.dict(os.environ, {"LINEAR_API_KEY": "key"}), \
+                patch.object(linear_provider, "LINEAR_BUDGET",
+                             linear_provider.LinearBudget()), \
+                patch.object(linear_provider.urllib.request, "urlopen",
+                             lambda req, timeout: answer):
+            return board_seam.LinearBoard("project-1", "team-1").fetch_task(
+                "uuid-of-a-deleted-issue")
+
+    def test_a_deleted_issue_is_gone_not_a_failed_board(self):
+        self.assertIsNone(self.fetch([NOT_FOUND]))
+
+    def test_any_other_error_still_raises(self):
+        others = ([{"message": "Entity not found: Issue",
+                    "extensions": {"code": "INTERNAL_SERVER_ERROR"}}],
+                  [{"message": "Authentication required",
+                    "extensions": {"code": "AUTHENTICATION_ERROR"}}],
+                  [NOT_FOUND, {"message": "rate limited",
+                               "extensions": {"code": "RATELIMITED"}}])
+        for errors in others:
+            with self.subTest(errors=errors), \
+                    self.assertRaises(RuntimeError):
+                self.fetch(errors)
 
 
 class FileFetchTests(unittest.TestCase):
