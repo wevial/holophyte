@@ -90,6 +90,23 @@ class FilingConformance:
         self.assertIn(todo, self.ready_ids())
         self.assertNotIn(backlog, self.ready_ids())
 
+    def test_a_title_and_estimate_given_apart_from_the_body_are_kept(self):
+        """The body is stored verbatim and the task answers the title and
+        estimate the call named, not the body's heading and `Estimate:`."""
+        body = ticket_body(title="the body heading", estimate=25)
+        filed = self.provider.file("the filed title", body, 40, "Todo")
+        self.assertEqual(self.provider.stored_body(filed), body)
+        task = self.provider.fetch_task(filed)
+        self.assertEqual((task["title"], task["budget_min"]),
+                         ("the filed title", 40))
+
+        self.provider.update(filed, "the replaced title", body, 30)
+
+        self.assertEqual(self.provider.stored_body(filed), body)
+        task = self.provider.fetch_task(filed)
+        self.assertEqual((task["title"], task["budget_min"]),
+                         ("the replaced title", 30))
+
     def test_an_update_replaces_title_and_body_and_leaves_the_state(self):
         identifier, _ = self.file("park the thing", state="Backlog")
         body = ticket_body(title="revise the thing", summary="Revised.")

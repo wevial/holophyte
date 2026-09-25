@@ -48,6 +48,11 @@ FileProvider's on-disk format
                                 blank line
     <root>/<IDENT>.labels       the ticket's labels, one name per line;
                                 absent means none
+    <root>/<IDENT>.title        the title `file()`/`update()` was given,
+                                when it is not the body's H1; absent means
+                                the H1
+    <root>/<IDENT>.estimate     likewise the estimate in minutes, when it is
+                                not the body's `Estimate:`; absent means that
 
 A ticket file's name has exactly one dot (`KO-12.md`), which is what keeps
 `KO-12.comments.md` from reading as a ticket called `KO-12.comments`. The
@@ -62,9 +67,9 @@ line, or 20 without one; a file has no other estimate field.
 `file()` writes a new ticket as `<team>-<n>.md`, `n` one above the highest
 number already filed under that prefix (1 on an empty board), and its
 state to `<team>-<n>.state` unless it is `Todo`. The file is the body as
-given: its title and estimate are the body's H1 and `Estimate:` line, so
-the `title` and `estimate` arguments of `file()` and `update()` are not
-stored apart from it, and `priority` is ignored -- a ticket file has no
+given; a `title` or `estimate` that differs from the body's own goes to
+the `.title`/`.estimate` file, so the task answers the fields the call
+named, as Linear's does. `priority` is ignored -- a ticket file has no
 priority field. With no blocking relations to record, a non-empty
 `blockers` is refused before anything is written.
 """
@@ -308,6 +313,12 @@ class FileProvider:
         if "." in issue_id or not self._path(issue_id).is_file():
             return None
         task = _parse(issue_id, self._path(issue_id).read_text())
+        title = self._path(issue_id, ".title")
+        if title.exists():
+            task["title"] = title.read_text().strip()
+        estimate = self._path(issue_id, ".estimate")
+        if estimate.exists():
+            task["budget_min"] = int(estimate.read_text())
         task["labels"] = self._labels(issue_id)
         task["updatedAt"] = self._path(issue_id).stat().st_mtime_ns // 1_000_000
         return task
@@ -368,7 +379,7 @@ class FileProvider:
         numbers = [int(i[len(prefix):]) for i in self._identifiers()
                    if i.startswith(prefix) and i[len(prefix):].isdigit()]
         identifier = f"{prefix}{max(numbers, default=0) + 1}"
-        self._path(identifier).write_text(body)
+        self._write(identifier, title, body, estimate)
         if state != DEFAULT_STATE:
             self._path(identifier, ".state").write_text(f"{state}\n")
         return identifier
@@ -376,8 +387,22 @@ class FileProvider:
     def update(self, identifier, title, body, estimate, blockers=()):
         self._require(identifier)
         self._refuse_blockers(f"update {identifier}", blockers)
-        self._path(identifier).write_text(body)
+        self._write(identifier, title, body, estimate)
         return [], []
+
+    def _write(self, identifier, title, body, estimate):
+        # The body verbatim; a title or estimate it does not say beside it,
+        # and a stale one from an earlier call removed.
+        self._path(identifier).write_text(body)
+        own = _parse(identifier, body)
+        for suffix, value, said in (
+                (".title", title and title.strip(), own["title"]),
+                (".estimate", estimate and int(estimate), own["budget_min"])):
+            path = self._path(identifier, suffix)
+            if value is None or value == said:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_text(f"{value}\n")
 
     def stored_body(self, identifier):
         self._require(identifier)
