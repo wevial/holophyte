@@ -33,6 +33,14 @@ that run through `abort_run()`, source `supervisor` and trigger
 `abandoned` with its work kept on the branch, and the ticket with it.
 An abort or a walk re-reads the row and re-derives its push, so a push
 selected before it is never sent over it (operator_note event 10148).
+
+It is the one sender of a store-mode note too (KO-747): after the pushes,
+on a pass the board answered, each of the project's pending notes is
+posted oldest first, its last line `holophyte-note: ID`, and stamped
+posted only once the board took it. A raise records the note's
+`postError` and stops the project's delivery until the next ask. A
+response lost after the board kept the comment posts it again; the id
+line is what makes the duplicate recognisable.
 """
 from datetime import datetime, timezone
 
@@ -90,6 +98,25 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
         if send is not None:
             sends.append((ticket.id, ticket.linearIdentifier, *send))
     _send(conn, board, sends, out)
+    _deliver(conn, project, board, out)
+
+
+def _deliver(conn, project, board, out):
+    """Post the project's pending notes oldest first, each outside any
+    transaction and stamped in its own after; the first raise is recorded
+    on its note and the rest wait for the next ask."""
+    for note in store.read.pending_notes(conn, project):
+        deadline.check(f"the post of note {note.id} on {note.identifier}")
+        body = (f"**{_utc(note.at)}**\n\n{note.text}\n\n"
+                f"holophyte-note: {note.id}")
+        try:
+            board.comment(note.issueId, body)
+        except Exception as e:  # noqa: BLE001 - the note waits, never the pass
+            store.mark_note_failed(conn, note.id, str(e) or type(e).__name__)
+            print(f"[holo2] note {note.id} on {note.identifier} could not be"
+                  f" posted ({e}); it waits for the next ask", file=out)
+            return
+        store.mark_note_posted(conn, note.id)
 
 
 def _send(conn, board, sends, out):

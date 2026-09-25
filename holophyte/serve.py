@@ -493,8 +493,9 @@ def ticket_detail(project, identifier):
     """The `/tickets/KO-n` answer: `(http status, JSON-able body)`.
     Serve the mirrored contract, URL and active run without calling Linear,
     and beside them the ticket's `current` revision, the live run's
-    `claimed` one and the `revisions` list, newest first (KO-737).
-    An unknown identifier returns 404 with an empty object."""
+    `claimed` one and the `revisions` list, newest first (KO-737), and its
+    `notes`, oldest first, each with its post state (KO-747). An unknown
+    identifier returns 404 with an empty object."""
     if not project.store_path.exists():
         return 503, no_store(project)
     conn = store.read.open_readonly(project.store_path)
@@ -502,6 +503,8 @@ def ticket_detail(project, identifier):
         ticket = store.read.ticket_by_identifier(conn, identifier)
         revisions = ([] if ticket is None
                      else store.read.ticket_revisions(conn, ticket.id))
+        notes = ([] if ticket is None
+                 else store.read.ticket_notes(conn, ticket.id))
     finally:
         conn.close()
     if ticket is None:
@@ -517,7 +520,11 @@ def ticket_detail(project, identifier):
                  "current": revision_json(by_number.get(ticket.revision)),
                  "claimed": claimed_json(ticket, by_number),
                  "revisions": [{"revision": r.revision, "at": r.at,
-                                "author": r.author} for r in revisions]}
+                                "author": r.author} for r in revisions],
+                 "notes": [{"id": n.id, "at": n.at, "author": n.author,
+                            "kind": n.kind, "text": n.text,
+                            "posted_ms": n.postedAt,
+                            "post_error": n.postError} for n in notes]}
 
 
 def revision_json(revision):
