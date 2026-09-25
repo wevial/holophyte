@@ -497,6 +497,8 @@ def supervise_host(host, once=False, out=None, wait=None, clock=None):
             return run_pass(host, stop, out, clock, revision)
         print(f"[holo2] host sweep as pid {pid}: every {interval}s over"
               f" {host.path}, lock at {lock}", file=out)
+        # Unread at start stays unknown: a later `HEAD` is not this code.
+        revision = revision or "unknown"
         while not stop.is_set():
             run_pass(host, stop, out, clock, revision)
             wait(interval)
