@@ -31,7 +31,6 @@ from holophyte.config import (
 )
 from holophyte.config_tables import (
     SUPERVISE_INTERVAL_SEC,
-    board_config,
     loop_config,
 )
 from holophyte.host import watched_line
@@ -445,7 +444,6 @@ def _legacy_cli(argv):
     # a read-only sweep can live with (it calls nobody) and the modes that
     # post to the board cannot: they exit here, naming the key to set.
     # `board_for()` refuses `[board] kind = "native"` here, before the loop.
-    settings = board_config(target)
     board = board_for(target)
     # Same window and the same reasons as `--report`: it reads runs and prints
     # them, so no route has to resolve and nobody is called. `--act` fails
@@ -458,13 +456,13 @@ def _legacy_cli(argv):
         return None
     # Posts to the board, so a target without one exits here naming the key
     # -- before the file is read, so the error is about the target, not the
-    # file. The board is the `[board]` pair itself, not the loop's provider:
-    # this is an operator command on the Linear module, as `--requeue` is on
-    # the store, and the provider protocol does not widen for it.
+    # file. The board is the loop's own, filed to through its `file()`,
+    # `update()` and `stored_body()` members, so `--file-ticket` names no
+    # board either.
     if args.file_ticket is not None:
-        require_board(target, board)
         return file_ticket(target, args.file_ticket,
-                           args.state or FILE_TICKET_STATES[0], settings,
+                           args.state or FILE_TICKET_STATES[0],
+                           require_board(target, board),
                            priority=args.priority, update=args.update)
     # The acting sweep on a timer. Like `--sweep --act` it dispatches nothing
     # and so resolves no route; unlike it, it takes the target's supervisor

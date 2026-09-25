@@ -731,9 +731,9 @@ def closed_identifiers(identifiers):
 
 # --- Operator API: filing a ticket from a file ------------------------------
 #
-# Not part of the loop's provider protocol: `--file-ticket` is an operator
-# command on this module directly, the way `--requeue` is on the store. The
-# loop never creates an issue, so `provider.LinearBoard` does not learn to.
+# The Linear board's filing members call these: `provider.LinearBoard`'s
+# `file()`, `update()` and `stored_body()`, which `--file-ticket` files
+# through.
 
 def _team_id(team):
     """The id of the team called `team`, looked up by name."""

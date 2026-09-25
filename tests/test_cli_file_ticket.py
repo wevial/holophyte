@@ -28,6 +28,8 @@ import holophyte.config
 import holophyte.project
 import linear_provider
 import ticket_template
+from holophyte.board import file_ticket
+from provider import FileProvider
 
 TICKET = """\
 # Add export endpoint
@@ -451,6 +453,30 @@ class FileTicketCliTests(unittest.TestCase):
         self.assertIn("--priority", err.getvalue())
         self.assertIn("--update", err.getvalue())
         self.assertEqual(linear.calls, [])
+
+    def test_a_file_board_is_filed_to_updated_and_read_back_through_its_members(self):
+        # The file board refuses blocking relations, so the fixture's
+        # dependency is dropped; everything else is the Linear tests' file.
+        text = TICKET.replace("Depends on: KO-7000", "Depends on: none")
+        self.ticket.write_text(text)
+        (self.root / "board").mkdir()
+        board = FileProvider(self.root / "board")
+
+        out = io.StringIO()
+        status = file_ticket(self.target, self.ticket, "Todo", board, out=out)
+
+        self.assertEqual(status, 0)
+        self.assertEqual(out.getvalue().strip(), "[holo2] filed board-1: "
+                         "Add export endpoint (Todo, 25 min)")
+        self.assertEqual(board.stored_body("board-1"), text)
+
+        out = io.StringIO()
+        status = file_ticket(self.target, self.ticket, "Todo", board, out=out,
+                             update="board-1")
+
+        self.assertEqual(status, 0)
+        self.assertEqual(out.getvalue().strip(),
+                         "[holo2] updated board-1: Add export endpoint")
 
     def test_a_target_with_no_board_exits_naming_the_key_before_reading_the_file(self):
         self.ticket.unlink()

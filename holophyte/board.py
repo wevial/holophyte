@@ -867,14 +867,12 @@ def file_ticket(target, path, state, board, out=None, priority=None,
     a `Depends on:` by update on 2026-09-07 and was claimed before that
     blocker had run, because the update changed the text and not the gate.
 
-    `board` is the target's `[board]` pair (`project_id`, `team`), resolved
-    by `cli()` before the file is read: a target with no board exits there,
-    naming the key. The module is imported here rather than at the top, the
-    way `provider.LinearBoard` does it: the loop's other paths through
-    this module never file a ticket.
+    `board` is the target's board as `board_for()` builds it, and the
+    ticket goes through its `file()`, `update()` and `stored_body()` alone:
+    Linear today, any board that has those members tomorrow. `cli()`
+    resolves it before the file is read: a target with no board exits
+    there, naming the key.
     """
-    import linear_provider
-
     out = out or sys.stdout
     text = Path(path).read_text()
     ticket = ticket_template.parse(text)
@@ -883,20 +881,13 @@ def file_ticket(target, path, state, board, out=None, priority=None,
         print(f"[holo2] {path}: {problems[0]}", file=out)
         return 1
     if update is not None:
-        issue_id = linear_provider.update_issue(update, ticket.title, text,
-                                                ticket.estimate_min)
-        # Read after the body is stored: a refused update adds nothing, and
-        # the difference is taken against the board as it stands then.
-        held = linear_provider.blockers_of(update)
         identifier = update
-        named = ticket.depends_on or []
-        added = [b for b in named if b not in held]
-        for blocker in added:
-            linear_provider.add_blocker(issue_id, blocker)
+        added, extra = board.update(update, ticket.title, text,
+                                    ticket.estimate_min,
+                                    ticket.depends_on or [])
         parts = []
         if added:
             parts.append("blocked by " + ", ".join(f"+{b}" for b in added))
-        extra = [b for b in held if b not in named]
         if extra:
             parts.append("board also holds " + ", ".join(extra))
         line = f"[holo2] updated {identifier}: {ticket.title}"
@@ -904,13 +895,10 @@ def file_ticket(target, path, state, board, out=None, priority=None,
             line += f" ({'; '.join(parts)})"
         print(line, file=out)
     else:
-        issue = linear_provider.create_issue(
-            board.project_id, board.team, ticket.title, text,
-            ticket.estimate_min, state,
-            priority=FILE_TICKET_PRIORITIES[priority] if priority else None)
-        for blocker in ticket.depends_on or []:
-            linear_provider.add_blocker(issue["id"], blocker)
-        identifier = issue["identifier"]
+        identifier = board.file(
+            ticket.title, text, ticket.estimate_min, state,
+            priority=FILE_TICKET_PRIORITIES[priority] if priority else None,
+            blockers=ticket.depends_on or [])
         detail = f"{state}, {ticket.estimate_min} min"
         if ticket.depends_on:
             detail += f", blocked by {', '.join(ticket.depends_on)}"
@@ -918,8 +906,7 @@ def file_ticket(target, path, state, board, out=None, priority=None,
             detail += f", {priority}"
         print(f"[holo2] filed {identifier}: {ticket.title} ({detail})",
               file=out)
-    stored = _ticket_problems(
-        linear_provider.fetch_description(identifier), target.path)
+    stored = _ticket_problems(board.stored_body(identifier), target.path)
     if stored:
         print(f"[holo2] {identifier}: as stored by Linear, {stored[0]}",
               file=out)
