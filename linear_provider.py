@@ -297,7 +297,7 @@ query($project: String!, $after: String) {
     issues(first: 50, after: $after) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        identifier state { type }
+        identifier id state { type }
         relations { nodes { type relatedIssue { identifier } } }
       }
     }
@@ -321,29 +321,39 @@ def list_ready_issues(project_id, label=None):
     carrying that label name are ready -- on a project people also work in,
     a ticket reaching Todo is not by itself a contract for the factory, and
     an issue without the label is invisible to the loop however ready it
-    looks. The filter runs here, after the blocked-by inversion, rather
-    than in READY_QUERY: the inversion needs the whole project's relations
-    either way, so a label argument in the query would save nothing and
-    could only disagree with the set the blockers were read against.
-    Compared by name, case-sensitive, as Linear shows it.
+    looks. The filter runs in `_ready_with_blockers()`, beside the
+    blocked-by inversion, rather than in READY_QUERY: the inversion needs
+    the whole project's relations either way, so a label argument in the
+    query would save nothing and could only disagree with the set the
+    blockers were read against. Compared by name, case-sensitive, as Linear
+    shows it.
     """
+    issues, blockers = _ready_with_blockers(project_id, label)
+    return [i for i in issues if not blockers.get(i["identifier"])]
+
+
+def _ready_with_blockers(project_id, label):
+    """`READY_QUERY`'s issues carrying `label` (every one when None), and
+    the blocked-by inversion over the whole project: blocked identifier ->
+    the `RELATIONS_QUERY` nodes of its open blockers, in the order the
+    relations list them. `list_ready_issues()` drops the blocked ones;
+    `listing()` keeps them and names their blockers (KO-743)."""
     path = ("project", "issues")
     issues = _paginate(READY_QUERY, {"project": project_id}, path)
     all_nodes = _paginate(RELATIONS_QUERY, {"project": project_id}, path)
 
-    blocked_by = {}
+    blockers = {}
     for n in all_nodes:
         if (n.get("state") or {}).get("type") in CLOSED_STATE_TYPES:
             continue
         for rel in n["relations"]["nodes"]:
             if rel["type"] == "blocks":
-                blocked_by.setdefault(rel["relatedIssue"]["identifier"],
-                                      []).append(n["identifier"])
+                blockers.setdefault(rel["relatedIssue"]["identifier"],
+                                    []).append(n)
 
-    ready = [i for i in issues if not blocked_by.get(i["identifier"])]
     if label is not None:
-        ready = [i for i in ready if label in label_names(i)]
-    return ready
+        issues = [i for i in issues if label in label_names(i)]
+    return issues, blockers
 
 
 def parse_task(issue):
@@ -606,10 +616,30 @@ def ready_issues(project_id, label=None):
     the same filtered queue the claim does. Reads only; nothing is written
     to Linear.
     """
-    return [dict(parse_task(issue), updatedAt=(
-                int(datetime.fromisoformat(issue["updatedAt"].replace("Z", "+00:00"))
-                    .timestamp() * 1000) if issue.get("updatedAt") else None))
+    return [_listed_task(issue)
             for issue in list_ready_issues(project_id, label=label)]
+
+
+def listing(project_id, label=None):
+    """The ready column as the store mirrors it (KO-743): `ready_issues()`'s
+    parsed shape for every issue of `READY_QUERY` carrying `label`, blocked
+    ones included, each with `blocked_by` -- the board ids (`issue_id`) of
+    its blockers still open, in the order the relations list them, empty
+    for an unblocked one. The claim keeps choosing from `ready_issues()`;
+    this is what a store-mode queue mirror writes `dependsOn` from. Reads
+    only; nothing is written to Linear.
+    """
+    issues, blockers = _ready_with_blockers(project_id, label)
+    return [dict(_listed_task(issue),
+                 blocked_by=[b["id"] for b in blockers.get(issue["identifier"], ())])
+            for issue in issues]
+
+
+def _listed_task(issue):
+    """`parse_task()` of a listed issue, with `updatedAt` as epoch ms or None."""
+    return dict(parse_task(issue), updatedAt=(
+        int(datetime.fromisoformat(issue["updatedAt"].replace("Z", "+00:00"))
+            .timestamp() * 1000) if issue.get("updatedAt") else None))
 
 
 def claim_next(project_id, team, skip=(), order="identifier", label=None):
