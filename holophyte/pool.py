@@ -218,6 +218,7 @@ def scheduler(target, provider, knobs):
     nonzero for a broken worker process, a human stop, or an unavailable
     board with no live workers. Ticket run failures do not make it nonzero."""
     from holophyte.claim import _park_unlisted
+    from holophyte.claim_store import announce, store_mode
     from holophyte.dispatch import _startup_sweep
     from holophyte.operator import _reexec, self_hosted
 
@@ -229,6 +230,7 @@ def scheduler(target, provider, knobs):
     try:
         project = store.tickets.ensure_project(conn, provider.team, target.path)
         _startup_sweep(target, conn)
+        announce(target)
         _reconcile_at_startup(target, conn, project, provider)
         first_tick = True
         while True:
@@ -276,9 +278,10 @@ def scheduler(target, provider, knobs):
                             prepared_sha=state.prepared_sha, can_ff=state.can_ff)
                     return  # only a test's EXEC returns
                 store.record_loop_return(conn, project)
-                if listing is not None:
+                if listing is not None and not store_mode(target):
                     # The claim's empty-pass reconcile (KO-425) on this
-                    # tick's own listing -- no second board ask.
+                    # tick's own listing -- no second board ask. A
+                    # store-mode queue is the store's own: nothing parks.
                     _park_unlisted(conn, project,
                                    [task["id"] for task in listing])
                 print("[holo2] Linear has no ready tickets. done.")

@@ -11,7 +11,14 @@ admits the ticket again, at most `READMIT_LIMIT` times an ask. A board
 that cannot be asked claims nothing (KO-351). `store_mode()` is the one
 predicate every store-mode branch of the claim, the scheduler and the
 sweep is gated on; mirror mode never reaches this module.
+
+The board is read once a pass, not once an ask: `sync_board()` mirrors
+the ready listing into the store, throttled on the project's
+`boardAskedAt`, and the scheduler counts `claimable()` rather than the
+listing (`pool_handoff.listing()`).
 """
+from time import time
+
 import store
 import store.read
 from holophyte import freshness
@@ -39,6 +46,36 @@ SKIP, READMIT, STOP = "skip", "readmit", "stop"
 def store_mode(target):
     """Whether `target`'s board is in store mode: `[board] mode = "store"`."""
     return board_mode(target).mode == "store"
+
+
+def announce(target):
+    """The loop's one startup line in store mode; nothing in mirror mode."""
+    if store_mode(target):
+        print("[holo2] board mode store: claims come from the store's queue")
+
+
+def sync_board(target, conn, project, provider, now=None,
+               min_interval_ms=None):
+    """One store-mode board sync: the ready listing mirrored into the store
+    (`dispatch._mirror_queue()`, blockers included), unless the project's
+    board was asked within `min_interval_ms` -- the loop's `tick_sec`, the
+    sweep's `board_ask_sec` -- on the shared `boardAskedAt` stamp, which is
+    written before the ask as `board_ready()` writes it. Answers whether
+    the board was asked. `states()` stays the host sweep's
+    (`observe_board()`); the claim reads its candidate back on its own.
+    """
+    from holophyte.dispatch import _mirror_queue
+    now = int(time() * 1000) if now is None else now
+    if min_interval_ms is not None:
+        (asked_at,) = conn.execute(
+            "SELECT boardAskedAt FROM projects WHERE id = ?",
+            (project,)).fetchone()
+        if asked_at is not None and now - asked_at < min_interval_ms:
+            return False
+    with store.transaction(conn):
+        store.stamp_board_ask(conn, project, now)
+    _mirror_queue(target, conn, project, provider)
+    return True
 
 
 def task_of(row):

@@ -17,6 +17,7 @@ from holophyte.agents import (
 )
 from holophyte.board import release_lease_label
 from holophyte.claim import _claim_next
+from holophyte.claim_store import announce, store_mode, sync_board
 from holophyte.config_tables import loop_config, report_config
 from holophyte.findings import commit_findings
 from holophyte.gates import sh
@@ -84,13 +85,7 @@ def _record_startup_probe(target, provider, probe):
 
 def _serial(target, provider, knobs):
     """Claim and dispatch serially; `worker()` runs the same phases once."""
-    from holophyte.dispatch import (
-        PARKED,
-        SWEPT,
-        _dispatch,
-        _mirror_queue,
-        _startup_sweep,
-    )
+    from holophyte.dispatch import PARKED, SWEPT, _dispatch, _startup_sweep
 
     restart_after_merge = self_hosted(target)
     stop_on_failure = knobs.stop_on_failure
@@ -102,6 +97,7 @@ def _serial(target, provider, knobs):
         # The team name keys the project until the provider resolves its id.
         project = store.tickets.ensure_project(conn, provider.team, target.path)
         seen = _startup_sweep(target, conn)
+        announce(target)
         _reconcile_at_startup(target, conn, project, provider)
         # Refused tickets remain on the board's ready list. Remember them so
         # a blocked head-of-queue ticket cannot starve the tickets behind it.
@@ -124,7 +120,7 @@ def _serial(target, provider, knobs):
                 skip -= _reconcile_pull_requests(target, conn, project,
                                                  provider)
             first_pass = False
-            _mirror_queue(target, conn, project, provider)
+            _read_board(target, conn, project, provider, knobs)
             # The claim spends the mirror's listing. Check its budget after
             # mirroring: that request (including a caught 429) may have pushed
             # the budget below its tenth. Stop before a refused claim; the
@@ -193,6 +189,19 @@ def _serial(target, provider, knobs):
                 return  # only a test's EXEC returns
     finally:
         conn.close()
+
+
+def _read_board(target, conn, project, provider, knobs):
+    """The pass's board read before its claim: the ready listing mirrored
+    (`_mirror_queue()`), or in store mode one sync a `tick_sec`, the claim
+    reading the store's queue (Phase 3 stage 3)."""
+    from holophyte.dispatch import _mirror_queue
+
+    if store_mode(target):
+        sync_board(target, conn, project, provider,
+                   min_interval_ms=knobs.tick_sec * 1000)
+    else:
+        _mirror_queue(target, conn, project, provider)
 
 
 def _schema_reason(moved):

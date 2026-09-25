@@ -89,9 +89,23 @@ def prepare_restart(state, target, pool):
 
 
 def listing(target, conn, project, provider):
+    """The tick's queue: the board's ready listing, mirrored. In store mode
+    (Phase 3 stage 3) it is the store's `claimable()` queue after a sync
+    throttled to `[loop] tick_sec`, so a board that could not be asked
+    still leaves the pool its queue; None only when the Linear budget is
+    low."""
+    from holophyte.claim_store import store_mode, sync_board
+    from holophyte.config_tables import loop_config
     from holophyte.dispatch import _mirror_queue
     from holophyte.supervisor import linear_budget_low
 
+    if store_mode(target):
+        import store.read
+        sync_board(target, conn, project, provider,
+                   min_interval_ms=loop_config(target).tick_sec * 1000)
+        return None if linear_budget_low() else [
+            {"id": row.linearIdentifier}
+            for row in store.read.claimable(conn, project)]
     listing = _mirror_queue(target, conn, project, provider)
     return None if linear_budget_low() else listing
 
