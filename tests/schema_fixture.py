@@ -14,6 +14,8 @@ DOCUMENTED_COLUMNS = {
         # across passes and restarts (KO-434).
         "admission", "holdNote", "boardAskedAt",
         "launchBackoffUntil", "launchBackoffReason",
+        # Store-owned: the last ticket number handed out (KO-733).
+        "ticketSeq",
     },
     "tickets": {
         "id", "projectId", "linearIssueId", "linearIdentifier", "title",
@@ -25,6 +27,9 @@ DOCUMENTED_COLUMNS = {
         "body",
         # Claim-time Linear issue URL for console ticket links (KO-478).
         "url", "boardState",
+        # Board-owned fields, the current revision and a pending push (KO-733).
+        "boardColumn", "priority", "labels", "filedAt", "boardUpdatedAt",
+        "revision", "pushState", "pushFrom", "pushAt", "goneSince",
     },
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
@@ -67,6 +72,8 @@ DOCUMENTED_COLUMNS = {
         # Store-owned: the hostname that claimed the run, so a store read on
         # another machine can say where each live run is executing.
         "host",
+        # Store-owned: the ticket revision the run was claimed at (KO-733).
+        "revision",
     },
     "ledger": {
         "id", "runId", "ticketId", "at", "kind", "text", "source",
@@ -94,6 +101,12 @@ DOCUMENTED_COLUMNS = {
     # restart that came back from one that died in the exec.
     "loopRestarts": {"id", "projectId", "sha", "at", "returnedAt",
                      "reportedAt"},
+    # Each version of a ticket's board-owned fields (KO-733).
+    "ticketRevisions": {"ticketId", "revision", "at", "author", "title",
+                        "body", "priority", "labels", "boardColumn"},
+    # A note on a ticket and its post to the board, deduplicated (KO-733).
+    "ticketNotes": {"id", "ticketId", "runId", "at", "author", "kind",
+                    "dedupKey", "text", "postedAt", "postError"},
 }
 
 

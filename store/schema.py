@@ -48,7 +48,10 @@ CREATE TABLE IF NOT EXISTS projects (
     -- inferred from runs so a concurrent claim loses on a uniqueness-style
     -- assertion instead of on a race-prone count.
     activeRunId         INTEGER
-        REFERENCES runs (id) DEFERRABLE INITIALLY DEFERRED
+        REFERENCES runs (id) DEFERRABLE INITIALLY DEFERRED,
+    -- The last ticket number the store handed out for this project, for a
+    -- board the store owns (KO-733).
+    ticketSeq           INTEGER NOT NULL DEFAULT 0
 );
 
 -- tickets: Holophyte's mirror of a Linear issue + loop-owned planning
@@ -82,7 +85,23 @@ CREATE TABLE IF NOT EXISTS tickets (
         REFERENCES runs (id) DEFERRABLE INITIALLY DEFERRED,
     blockedQuestion      TEXT,                           -- set when blocked_on_operator
     splitDepth           INTEGER NOT NULL DEFAULT 0,     -- 0 = original ticket
-    mirroredAt           INTEGER NOT NULL
+    mirroredAt           INTEGER NOT NULL,
+    -- The board-owned fields and their push to a board (KO-733): the
+    -- column, priority and JSON labels a board shows, when the ticket was
+    -- filed and last changed there, the `ticketRevisions` number its
+    -- current fields are, and a pending push's state, origin and time.
+    -- `goneSince` is when the board stopped listing the ticket.
+    boardColumn          TEXT
+        {_enums.check_clause('boardColumn', _enums.BoardColumn)},
+    priority             INTEGER,
+    labels               TEXT    NOT NULL DEFAULT '[]',  -- JSON string[]
+    filedAt              INTEGER,
+    boardUpdatedAt       INTEGER,
+    revision             INTEGER NOT NULL DEFAULT 0,     -- 0 = none recorded
+    pushState            TEXT,
+    pushFrom             TEXT,
+    pushAt               INTEGER,
+    goneSince            INTEGER
 );
 
 -- runs: one attempt at one ticket (state-model §2). Phase enum is §4.
@@ -124,6 +143,9 @@ CREATE TABLE IF NOT EXISTS runs (
     -- claimed by a module older than this column), which the drift check
     -- reads as nothing to compare rather than as no drift.
     ticketSnapshot    TEXT,
+    -- The `ticketRevisions` number the run was claimed at (KO-733), NULL
+    -- on a run claimed before anything recorded one.
+    revision          INTEGER,
     outcome           TEXT
         {_enums.check_clause('outcome', _enums.RunOutcome)},
     outcomeReason     TEXT,
@@ -313,6 +335,40 @@ CREATE TABLE IF NOT EXISTS ledger (
     text     TEXT    NOT NULL,
     source   TEXT    NOT NULL {_enums.check_clause('source', _enums.LedgerSource)}
 );
+
+-- ticketRevisions: each version of a ticket's board-owned fields, numbered
+-- from 1 per ticket (KO-733), and `tickets.revision` names the current one.
+-- `boardColumn`, not `column`: COLUMN is an SQLite keyword.
+CREATE TABLE IF NOT EXISTS ticketRevisions (
+    ticketId    INTEGER NOT NULL REFERENCES tickets (id),
+    revision    INTEGER NOT NULL,
+    at          INTEGER NOT NULL,
+    author      TEXT    NOT NULL,
+    title       TEXT    NOT NULL,
+    body        TEXT    NOT NULL DEFAULT '',
+    priority    INTEGER,
+    labels      TEXT    NOT NULL DEFAULT '[]',  -- JSON string[]
+    boardColumn TEXT
+        {_enums.check_clause('boardColumn', _enums.BoardColumn)},
+    PRIMARY KEY (ticketId, revision)
+);
+
+-- ticketNotes: a note on a ticket and its post to the board (KO-733).
+-- `dedupKey` makes a retried write collide instead of posting twice;
+-- `postedAt` and `postError` record the post's outcome.
+CREATE TABLE IF NOT EXISTS ticketNotes (
+    id        INTEGER PRIMARY KEY,
+    ticketId  INTEGER NOT NULL REFERENCES tickets (id),
+    runId     INTEGER REFERENCES runs (id),
+    at        INTEGER NOT NULL,
+    author    TEXT    NOT NULL,
+    kind      TEXT    NOT NULL,
+    dedupKey  TEXT,
+    text      TEXT    NOT NULL,
+    postedAt  INTEGER,
+    postError TEXT,
+    UNIQUE (ticketId, dedupKey)
+);
 """
 
 # interventions: supervisor/human actions on a run (state-model §2). Kept out
@@ -353,7 +409,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 34 records verify time apart from agent work on runs (KO-635).
 # Version 35 admits the `abort_close` intervention action (KO-611).
 # Version 36 admits the `not_reproduced` run park kind (KO-657).
-SCHEMA_VERSION = 36
+# Version 37 adds ticket revisions, ticket notes and board columns (KO-733).
+SCHEMA_VERSION = 37
 
 # The oldest SCHEMA_VERSION whose builds can still read and write a store at
 # SCHEMA_VERSION (KO-661). Each migration records it in its `migrate` note,
@@ -375,7 +432,10 @@ SCHEMA_VERSION = 36
 #   on by a build that tests only for `held`), `tickets.status` (it decides
 #   pickability) or `runs.parkKind` (the claim and the serve daemon choose a
 #   path from it).
-READABLE_FROM = SCHEMA_VERSION
+#
+# A literal, never an expression: `fetched_schema()` in
+# holophyte/pool_handoff.py reads it with `ast.literal_eval`.
+READABLE_FROM = 36
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -677,6 +737,19 @@ ADDED_COLUMNS = (
         "boardAskedAt",
         "boardAskedAt INTEGER",
     ),
+    ("projects", "ticketSeq", "ticketSeq INTEGER NOT NULL DEFAULT 0"),
+    ("tickets", "boardColumn", "boardColumn TEXT "
+     + _enums.check_clause("boardColumn", _enums.BoardColumn)),
+    ("tickets", "priority", "priority INTEGER"),
+    ("tickets", "labels", "labels TEXT NOT NULL DEFAULT '[]'"),
+    ("tickets", "filedAt", "filedAt INTEGER"),
+    ("tickets", "boardUpdatedAt", "boardUpdatedAt INTEGER"),
+    ("tickets", "revision", "revision INTEGER NOT NULL DEFAULT 0"),
+    ("tickets", "pushState", "pushState TEXT"),
+    ("tickets", "pushFrom", "pushFrom TEXT"),
+    ("tickets", "pushAt", "pushAt INTEGER"),
+    ("tickets", "goneSince", "goneSince INTEGER"),
+    ("runs", "revision", "revision INTEGER"),
 )
 
 
@@ -760,6 +833,16 @@ def init(conn):
         # `paused` phase, and at 36 for the `not_reproduced` park (KO-657).
         if version < 36:
             _rebuild_enum_tables(conn)
+        # Each ticket's current fields become its revision 1 (KO-733);
+        # `revision = 0` also keeps a second pass from writing another.
+        if version < 37:
+            conn.execute(
+                "INSERT INTO ticketRevisions (ticketId, revision, at, author,"
+                " title, body, priority, labels, boardColumn)"
+                " SELECT id, 1, ?, 'backfill', title, body, priority, labels,"
+                " boardColumn FROM tickets WHERE revision = 0",
+                (int(time.time() * 1000),))
+            conn.execute("UPDATE tickets SET revision = 1 WHERE revision = 0")
         # Stamped last and inside the same transaction as the ladder, so a
         # store carries the version only once it holds everything the
         # version means.

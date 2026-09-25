@@ -24,6 +24,12 @@ class TicketStatus(str, Enum):
     ABANDONED = 'abandoned'
 
 
+class BoardColumn(str, Enum):
+    BACKLOG = 'backlog'
+    READY = 'ready'
+    CANCELED = 'canceled'
+
+
 class Affinity(str, Enum):
     ANY = 'any'
     GUI = 'gui'
@@ -171,6 +177,7 @@ CONSTRAINED_COLUMNS = {
     ('projects', 'admission'): ProjectAdmission,
     ('tickets', 'status'): TicketStatus,
     ('tickets', 'affinity'): Affinity,
+    ('tickets', 'boardColumn'): BoardColumn,
     ('runs', 'phase'): RunPhase,
     ('runs', 'parkKind'): ParkKind,
     ('runs', 'outcome'): RunOutcome,
@@ -181,6 +188,7 @@ CONSTRAINED_COLUMNS = {
     ('runEvents', 'level'): EventLevel,
     ('ledger', 'kind'): LedgerKind,
     ('ledger', 'source'): LedgerSource,
+    ('ticketRevisions', 'boardColumn'): BoardColumn,
     ('interventions', 'source'): InterventionSource,
     ('interventions', 'trigger'): InterventionTrigger,
     ('interventions', 'action'): InterventionAction,
