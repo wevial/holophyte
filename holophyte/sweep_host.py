@@ -154,7 +154,8 @@ def memory_for(state, name):
     def table(key):
         saved = (state.get(key) or {}).get(name) or {}
         return {int(ident): at for ident, at in saved.items()}
-    return ReconcileMemory(table("mirror_asked_at"), table("failed_asked"))
+    return ReconcileMemory(table("mirror_asked_at"), table("failed_asked"),
+                           table("states_asked"))
 
 
 def keep_memory(state, name, memory, conn):
@@ -164,6 +165,8 @@ def keep_memory(state, name, memory, conn):
              for row in _failed_pull_requests(conn, project)}
     state.setdefault("mirror_asked_at", {})[name] = {
         str(project): at for project, at in memory.mirror_asked.items()}
+    state.setdefault("states_asked", {})[name] = {
+        str(project): at for project, at in memory.states_asked.items()}
     state.setdefault("failed_asked", {})[name] = {
         str(run): at for run, at in memory.failed_asked.items()
         if run in still}

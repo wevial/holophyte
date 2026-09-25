@@ -62,6 +62,10 @@ Each module, one line:
   host sweep over every store in `host.toml`, its per-run home lock,
   `sweep.json`, the round-robin reconcile under a deadline, and one
   project's failure its own `error`.
+- `holophyte/board_sync.py` — `observe_board()` (KO-739): in store mode
+  the host sweep's ask of the board's `states()` for every open ticket,
+  once per `board_ask_sec` — the state name and column recorded, an
+  issue seen gone twice walked `abandoned` or its live run paused.
 - `holophyte/deadline.py` — the host sweep's bound on its network calls:
   `check()` before each unit of Linear or GitHub work, and `admit()`
   before each Linear or GitHub request, which past the bound fails as an

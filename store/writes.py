@@ -3,11 +3,19 @@
 from .schema import _transaction
 
 
-def set_board_state(conn, ticket_id, state):
-    """Set the ticket's mirrored board state."""
+def set_board_state(conn, ticket_id, state, column=None):
+    """Set the ticket's mirrored board state, and its column when given."""
     with _transaction(conn):
-        conn.execute("UPDATE tickets SET boardState = ? WHERE id = ?",
-                     (state, ticket_id))
+        conn.execute("UPDATE tickets SET boardState = ?,"
+                     " boardColumn = COALESCE(?, boardColumn) WHERE id = ?",
+                     (state, column, ticket_id))
+
+
+def set_gone_since(conn, ticket_id, at):
+    """Stamp when the board was first seen without the ticket; None clears."""
+    with _transaction(conn):
+        conn.execute("UPDATE tickets SET goneSince = ? WHERE id = ?",
+                     (at, ticket_id))
 
 
 def set_question(conn, ticket_id, question, *, park_kind=None):
