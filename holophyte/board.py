@@ -531,6 +531,12 @@ def mirror_push(conn, ticket_id, provider):
     is read back. Returns the state pushed, or None when there was nothing to
     push — an unmapped status, or a push that failed.
 
+    A store-mode board (`provider.store_mode`, KO-740) is not called: the
+    push is queued on the ticket beside the board state last observed, and
+    the host sweep's observation alone delivers it (`holophyte.board_sync`),
+    so a retry never undoes a person's later move. The state is returned as
+    queued, or as already shown when the row shows it.
+
     Failure is a warning, not an error. Linear being unreachable must not
     fail a run that has already merged, so a push that raises leaves the
     board stale, the store right, and a `warning` row in the run's stream.
@@ -550,6 +556,9 @@ def mirror_push(conn, ticket_id, provider):
     state = MIRROR_STATES.get(status)
     if state is None:
         return None
+    if getattr(provider, "store_mode", False):
+        store.record_push(conn, ticket_id, state)
+        return state
     try:
         provider.set_state(issue_id, state)
     except Exception as e:
