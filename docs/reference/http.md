@@ -607,7 +607,7 @@ is 404, naming the `/projects/NAME` prefix. Tokens are in
   "projects": [
     {"name": "holophyte", "path": "/path/to/holophyte",
      "store": "/home/op/.holophyte/holophyte-HASH/store.db", "error": null,
-     "host": "writer-1", "schema_version": 36, "admission": "enabled",
+     "host": "writer-1", "schema_version": 37, "admission": "enabled",
      "hold_note": null, "project_row": 1,
      "supervisor": {"state": "live", "pid": 0, "heartbeat_age_ms": 21000,
                     "host": "writer-1"},

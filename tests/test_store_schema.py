@@ -1351,8 +1351,8 @@ class Version26EnumMigrationTests(unittest.TestCase):
     @staticmethod
     def rows(conn):
         return {table: conn.execute(f'SELECT * FROM "{table}" ORDER BY id').fetchall()
-                for table in dict.fromkeys(
-                    t for t, _ in store.enums.CONSTRAINED_COLUMNS)}
+                for table in dict.fromkeys(t for t, _ in store.enums.CONSTRAINED_COLUMNS
+                                           if t != 'ticketRevisions')}
 
     def test_rows_survive_and_each_enum_still_rejects_invalid_inserts(self):
         conn = store.open(self.path)
@@ -1360,15 +1360,14 @@ class Version26EnumMigrationTests(unittest.TestCase):
         after = self.rows(conn)
         # Opening adds one truthful migration-evidence row, as every version does.
         after['interventions'] = after['interventions'][:1]
-        # Admission columns are new; all pre-existing project values survive.
-        after['projects'] = [row[:7] + row[9:] for row in after['projects']]
+        # Admission and board columns are new; pre-existing values survive.
+        after['projects'] = [row[:7] + row[9:-1] for row in after['projects']]
+        after['tickets'] = [row[:-10] for row in after['tickets']]
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
+        added = {'parkKind', 'failureKind', 'stopRequested', 'workerPid', 'revision',
+                 'prSeenTitle', 'verifyMs', 'verifyStartedAt'}
         after['runs'] = [tuple(value for column, value in zip(columns, row)
-                               if column not in {'parkKind', 'failureKind',
-                                                 'stopRequested', 'workerPid',
-                                                 'prSeenTitle', 'verifyMs',
-                                                 'verifyStartedAt'})
-                         for row in after['runs']]
+                               if column not in added) for row in after['runs']]
         self.assertEqual(after, self.before)
         self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],
                          store.schema.SCHEMA_VERSION)
@@ -1383,13 +1382,13 @@ class Version26EnumMigrationTests(unittest.TestCase):
         # Clone a populated row while avoiding unrelated UNIQUE constraints.
         replacements = {'id': 'NULL', 'linearTeamId': "'new-team'",
                         'linearIssueId': "'new-issue'", 'attempt': '999',
-                        'round': '999', 'seq': '999'}
+                        'round': '999', 'seq': '999', 'revision': '999'}
         for table, column in store.enums.CONSTRAINED_COLUMNS:
             columns = [r[1] for r in conn.execute(f'PRAGMA table_info("{table}")')]
             expressions = ["?" if c == column else replacements.get(c, f'"{c}"')
                            for c in columns]
             sql = (f'INSERT INTO "{table}" SELECT ' + ', '.join(expressions)
-                   + f' FROM "{table}" WHERE id = 1')
+                   + f' FROM "{table}" WHERE rowid = 1')
             with self.subTest(table=table, column=column):
                 conn.execute('SAVEPOINT enum_insert')
                 for member in store.enums.CONSTRAINED_COLUMNS[table, column]:
