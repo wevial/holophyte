@@ -321,7 +321,50 @@ def board_config(project):
                 f"[holo2] {project.config_path}: [board] {key} must be a "
                 f"non-empty string, got {value!r}")
         values[key] = value
+    board_mode(project)
     return BoardConfig(**values)
+
+
+# Where a project's tickets live (KO-730): `mode` is `"mirror"`, the store
+# mirroring the board as it does today, or `"store"`, the store being the record;
+# `kind` is `"linear"`, today's board, or `"native"`. Kept beside
+# `BoardConfig` rather than in it, which three call sites unpack
+# positionally. Accepted and validated, but nothing reads them yet: a
+# project behaves the same whatever they say.
+BOARD_MODE_KEYS = {
+    "mode": "mirror",
+    "kind": "linear",
+}
+BOARD_MODE_VALUES = {
+    "mode": ("mirror", "store"),
+    "kind": ("linear", "native"),
+}
+BoardMode = collections.namedtuple("BoardMode", BOARD_MODE_KEYS)
+
+
+def board_mode(project):
+    """The target's `[board] mode` and `kind`, defaulted when absent.
+
+    Each is one of `BOARD_MODE_VALUES`; anything else, `"stor"` or `3`, is
+    refused naming the table, the key and the allowed values, like a bad
+    `[loop] order`. `board_config()` calls this for a present table, so
+    every path that resolves the board refuses a bad value at startup.
+    """
+    table = project.config().get("board", {})
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [board] must be a table, got "
+            f"{type(table).__name__}")
+    values = {}
+    for key, default in BOARD_MODE_KEYS.items():
+        value = table.get(key, default)
+        if value not in BOARD_MODE_VALUES[key]:
+            allowed = " or ".join(f'"{o}"' for o in BOARD_MODE_VALUES[key])
+            raise SystemExit(
+                f"[holo2] {project.config_path}: [board] {key} must be one of "
+                f"{allowed}, got {value!r}")
+        values[key] = value
+    return BoardMode(**values)
 
 
 # `approve = "auto"` merges a green, approved candidate; `"human"` parks it

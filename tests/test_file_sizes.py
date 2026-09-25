@@ -34,7 +34,7 @@ PINNED = {
     "holophyte/babysitter.py": 1095, "holophyte/board.py": 927,
     "holophyte/claim.py": 988, "holophyte/cli.py": 654,
     "holophyte/config.py": 894, "holophyte/dispatch.py": 327,
-    "holophyte/config_tables.py": 695, "holophyte/findings.py": 391,
+    "holophyte/config_tables.py": 709, "holophyte/findings.py": 391,
     "holophyte/gates.py": 924, "holophyte/loop.py": 917,
     "holophyte/merge_gate.py": 562,
     "holophyte/operator.py": 539, "holophyte/pool.py": 434,
