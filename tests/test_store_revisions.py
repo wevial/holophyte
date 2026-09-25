@@ -36,11 +36,11 @@ class MirrorRevisionTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.conn = store.open(Path(tmp.name) / "store.sqlite3")
         self.addCleanup(self.conn.close)
-        self.project = store.tickets.ensure_project(self.conn, "team-1",
-                                                    "/repos/holophyte")
+        self.project_id = store.tickets.ensure_project(
+            self.conn, "team-1", "/repos/holophyte")
 
     def mirror(self, task):
-        return holophyte.board.mirror_task(self.conn, self.project, task)
+        return holophyte.board.mirror_task(self.conn, self.project_id, task)
 
     def revisions(self, ticket):
         return [(n, author, title, body, priority, json.loads(labels), column)
@@ -95,13 +95,13 @@ class MirrorRevisionTests(unittest.TestCase):
             "  status, acceptanceCriteria, verificationCommands, timeBoxMs,"
             "  affinity, dependsOn, mirroredAt, url, boardState)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (self.project, "iss-2", "KO-2", "second", "", "ready", '["a"]',
+            (self.project_id, "iss-2", "KO-2", "second", "", "ready", '["a"]',
              '["echo ok"]', None, "any", "[]", 3, None, "Todo")).lastrowid
         self.conn.commit()
 
         self.mirror(listing_task(title="retitled", body="new body"))
         store.tickets.mirror_ticket(
-            self.conn, self.project, "iss-2", "KO-2", "second",
+            self.conn, self.project_id, "iss-2", "KO-2", "second",
             acceptance_criteria=["a"], verification_commands=["echo ok"])
 
         self.assertEqual(self.revisions(ticket)[1:], [
