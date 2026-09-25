@@ -133,6 +133,26 @@ class QueuedPushTests(SweepTestCase):
                 self.assertEqual(board.pushed, [])
                 self.assertEqual(self.push_row(ticket)[:2], (None, None))
 
+    def test_a_move_committed_after_settlement_is_not_sent_over(self):
+        """KO-2's worker merges it while KO-1's settled push is on the
+        wire: KO-2's settled In Progress must not follow over its Done."""
+        self.queue_in_progress()
+        other = self.a_ready_ticket("KO-2")
+        mirror_status(self.conn, other, "in_flight",
+                      RecordingBoard(self.files, store_mode=True))
+        conn = self.conn
+
+        class MergeMidSend(RecordingBoard):
+            def set_state(self, issue_id, state_name):
+                super().set_state(issue_id, state_name)
+                if issue_id == "KO-1":
+                    mirror_status(conn, other, "merged", self)
+
+        board = MergeMidSend(self.files, store_mode=True)
+        self.observe(board, T0)
+        self.assertEqual(board.pushed, [("KO-1", "In Progress")])
+        self.assertEqual(self.push_row(other)[:2], ("Done", "Todo"))
+
 
 class CanceledPushTests(SweepTestCase):
     def test_a_cancel_that_aborts_the_run_drops_its_queued_push(self):

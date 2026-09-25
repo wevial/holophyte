@@ -23,8 +23,9 @@ move stands. A push queued before the row was ever observed is sent from
 `S`, unless `S` is already the wanted state or a canceled or completed
 one, which clears it. A gone answer leaves the push alone, and a closed
 ticket is still asked while it has one queued. The sends are made after
-each row's transaction commits; a raise is one printed line and the push
-waits for the next ask.
+each row's transaction commits, each only if the row, read again, still
+queues it and its status still maps to it; a raise is one printed line and
+the push waits for the next ask.
 
 A canceled answer for a ticket whose run is live in a work phase aborts
 that run through `abort_run()`, source `supervisor` and trigger
@@ -87,13 +88,20 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
             _abort_canceled(target, conn, board, ticket, run, out)
             send = _rederive(conn, ticket.id, answer, now)
         if send is not None:
-            sends.append((ticket.linearIdentifier, *send))
-    _send(board, sends, out)
+            sends.append((ticket.id, ticket.linearIdentifier, *send))
+    _send(conn, board, sends, out)
 
 
-def _send(board, sends, out):
-    """Send the settled pushes, each after its row's transaction."""
-    for identifier, issue_id, state in sends:
+def _send(conn, board, sends, out):
+    """Send the settled pushes, each after its row's transaction. Each row
+    is read again first: a worker may have moved the ticket on since its
+    push was settled, and a push its status no longer maps to, or no
+    longer queued, is not sent over the newer one."""
+    for ticket_id, identifier, issue_id, state in sends:
+        current = store.read.ticket_by_id(conn, ticket_id)
+        if (current is None or current.pushState != state
+                or MIRROR_STATES.get(current.status) != state):
+            continue
         try:
             board.set_state(issue_id, state)
         except Exception as e:  # noqa: BLE001 - the push waits, never the pass
