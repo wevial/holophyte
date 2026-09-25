@@ -194,12 +194,17 @@ class LinearBoard:
     -- the import reads no configuration, so `--report`, a read-only
     `--sweep` and a trip-less acting sweep never touch it. Construction does
     no I/O; the API key is read by the module on the first request.
+
+    `store_mode` is the target's `[board] mode` being `store`: its status
+    pushes are queued on the ticket for the host sweep rather than sent
+    inline (KO-740). A board without the attribute reads as False.
     """
 
-    def __init__(self, project_id, team, label=None):
+    def __init__(self, project_id, team, label=None, *, store_mode=False):
         self.project_id = project_id
         self._team = team
         self._label = label
+        self.store_mode = store_mode
         self._module = None
         # The listing the last `claim_next()` saw; None until asked (KO-425).
         self.last_listing = None
@@ -275,14 +280,15 @@ def board_for(target):
     the `SystemExit` `board_config()` raises for a bad value -- this build
     has no native board, and a native project must not run against Linear.
     """
-    if board_mode(target).kind == "native":
+    mode = board_mode(target)
+    if mode.kind == "native":
         raise SystemExit(
             f"[holo2] {target.config_path}: [board] kind \"native\" is not "
             "supported: this build has no native board")
     settings = board_config(target)
     if settings is None:
         return None
-    return LinearBoard(*settings)
+    return LinearBoard(*settings, store_mode=mode.mode == "store")
 
 
 class FileProvider:

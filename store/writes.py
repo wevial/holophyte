@@ -1,5 +1,7 @@
 """Small state writes shared by the loop's board and pull request paths."""
 
+import time
+
 from .schema import _transaction
 
 
@@ -16,6 +18,30 @@ def set_gone_since(conn, ticket_id, at):
     with _transaction(conn):
         conn.execute("UPDATE tickets SET goneSince = ? WHERE id = ?",
                      (at, ticket_id))
+
+
+def record_push(conn, ticket_id, state, now=None):
+    """Queue a store-mode push of `state` on the ticket, from the board
+    state last observed; answer whether it was queued. A row that already
+    shows `state` queues nothing."""
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute("SELECT boardState FROM tickets WHERE id = ?",
+                           (ticket_id,)).fetchone()
+        if row is None or row[0] == state:
+            return False
+        conn.execute("UPDATE tickets SET pushState = ?, pushFrom = ?,"
+                     " pushAt = ? WHERE id = ?",
+                     (state, row[0], now, ticket_id))
+        return True
+
+
+def clear_push(conn, ticket_id):
+    """Clear the ticket's queued push: landed, dropped or superseded."""
+    with _transaction(conn):
+        conn.execute("UPDATE tickets SET pushState = NULL, pushFrom = NULL,"
+                     " pushAt = NULL WHERE id = ?", (ticket_id,))
 
 
 def set_question(conn, ticket_id, question, *, park_kind=None):

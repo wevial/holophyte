@@ -72,6 +72,11 @@ class Ticket:
     # step's skip line reads it to say why the ticket is parked (KO-345).
     blockedQuestion: str | None = None
     boardState: str | None = None
+    # A store-mode push waiting on the host sweep (KO-740): the state it
+    # wants, the state observed when it was queued, and when; None when none.
+    pushState: str | None = None
+    pushFrom: str | None = None
+    pushAt: int | None = None
 
 
 def ticket_by_id(conn, ticket_id):
@@ -82,14 +87,15 @@ def ticket_by_id(conn, ticket_id):
     """
     row = conn.execute(
         "SELECT id, linearIssueId, linearIdentifier, status,"
-        " activeRunId, lastRunId, blockedQuestion, boardState"
-        " FROM tickets WHERE id = ?",
+        " activeRunId, lastRunId, blockedQuestion, boardState,"
+        " pushState, pushFrom, pushAt FROM tickets WHERE id = ?",
         (ticket_id,)).fetchone()
     if row is None:
         return None
     return Ticket(id=row[0], linearIssueId=row[1], linearIdentifier=row[2],
                   status=row[3], activeRunId=row[4], lastRunId=row[5],
-                  blockedQuestion=row[6], boardState=row[7])
+                  blockedQuestion=row[6], boardState=row[7],
+                  pushState=row[8], pushFrom=row[9], pushAt=row[10])
 
 
 @dataclass(frozen=True)

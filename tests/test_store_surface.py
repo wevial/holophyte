@@ -36,6 +36,7 @@ EXPECTED = [
     "babysit",
     "claim",
     "clear_merge_sha",  # KO-582: named writers replace loop SQL.
+    "clear_push",  # KO-740: a store-mode push landed or dropped.
     "contract_drift",
     "contract_snapshot",
     "ensure_project",
@@ -70,6 +71,8 @@ EXPECTED = [
     # `runs.prSeen*` columns in one statement, for `park()` and the loop's
     # reconcile alike.
     "record_pr_seen",
+    # KO-740: a store-mode status push, queued for the host sweep.
+    "record_push",
     # KO-665: a project-level decision, recorded with no run.
     "record_project_intervention",
     "record_review_round",
