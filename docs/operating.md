@@ -7,7 +7,7 @@ commands (`--requeue KO-n --note TEXT`, `--file-ticket TICKET.md
 [--update KO-n]`, `--approve KO-n`, `--babysit KO-n`,
 `--repoint KO-n SHA`, `--pause KO-n`, `--resume KO-n`, `--abort KO-n
 [--close-pr]`, `--close KO-n --landed URL`, `--hold`, `--release-hold` and
-`factory.py project add|list|enable|hold|disable`) are described by
+`factory.py project add|remove|list|enable|hold|disable`) are described by
 `factory.py --help` and the [CLI reference](reference/cli.md), and the
 escalation ladder they sit on in the [runbook](operating/runbook.md). Back
 to the [README](index.md).
@@ -118,15 +118,76 @@ The loop watches itself only while it is alive. A crashed or hung run leaves
 a row in a work phase and a lease nobody gives back, and the supervisor is
 what notices: an acting sweep (`--sweep --act`) that fails any run with a
 dead heartbeat, a blown time box or a stuck review, releases its leases and
-leaves its branch and worktree for a human. `--supervise` runs that sweep
-every 60 seconds by default (`[supervisor] sweep_interval_sec`) as a
-long-lived process:
+leaves its branch and worktree for a human. On a host with a registry the
+**host sweep** is that watcher for every registered project; a project kept
+out of the registry has a supervisor of its own. The two do the same work
+per store and never watch one store together.
+
+### The host sweep
+
+`factory.py --supervise --once`, with no project, is one run over every
+project in the host registry, `HOLOPHYTE_HOME/host.toml`
+([below](#the-host-registry)), and an exit. On systemd the
+`holophyte-sweep.timer` starts it every 60 seconds as the oneshot
+`holophyte-sweep.service` ([Serving standing](#serving-standing)), so every
+run is the checkout's current `HEAD` and a merge needs nothing restarted.
+Without systemd, `factory.py --supervise` with no project runs the same
+pass every `[supervisor] sweep_sec` of `host.toml` in one process until
+SIGINT or SIGTERM; it runs the code it started with, so restart it after a
+pull.
+
+A run takes the host's lock, `HOLOPHYTE_HOME/supervisor.lock`, with the
+exclusive create and dead-pid reclaim the project lock below uses: a second
+run beside a live one exits 1 naming its pid, and a run killed mid-way
+leaves a dead pid the next run reclaims. systemd never starts a oneshot that
+is still running, so under the timer the unit itself keeps runs apart. A
+run then:
+
+1. sweeps every registered store and writes that store's beat right after
+   it: one `supervisorHeartbeats` row per store, pid 0, which every reader
+   prints as "host sweep". A store that cannot be opened (locked, corrupt)
+   is skipped this run and swept after the others next time; three runs in
+   a row mark it `unavailable`. A project whose own `supervisor.lock` names
+   a live pid is skipped naming the pid and path, a dead one is removed and
+   said so. A disabled project, or one whose store is missing or holds no
+   row for its path, is skipped: the sweep writes no `projects` row;
+   `project add PATH` on the registered path writes it back.
+2. acts on the trips and reconciles, as the project form's pass below does,
+   round-robin from where the last run stopped, under one deadline of half
+   the interval. Before every Linear or GitHub request the run checks the
+   deadline, and a project whose share is spent is cut at its next request.
+   The next run starts at the project after the cut one, never at it, so
+   one project whose read spends the whole deadline cannot starve the
+   rest; the cut project keeps its progress through its throttles and comes
+   around again.
+
+What a run must remember between runs and no store column holds lives in
+`HOLOPHYTE_HOME/sweep.json`, rewritten whole after every project: when the
+run started and ended, its pid, revision and exit, each project's outcome
+(`ok`, `skipped: WHY` or `error: WHY`), the unavailable counts, the
+round-robin cursor, the GitHub rate budget and the pull-request and board
+throttles. A missing or unreadable file is an empty state and one line. A
+run whose `started` has no `ended` did not finish; the next run says so and
+resumes at the cursor. One project's failure is that project's `error`,
+never the run's; the run exits 1 when any project errored, and the timer
+fires again at the next interval regardless.
+
+A registered project is the host sweep's alone. The loop's
+`[loop] spawn_supervisor` spawns nothing for it and prints `the host sweep
+watches PATH`, and `factory.py PROJECT --supervise` for it is refused
+naming `host.toml`.
+
+### A project's own supervisor
+
+For a project not in the registry (a one-project host, a test):
 
 ```
 python3 factory.py --supervise /path/to/repo
 ```
 
-Running it by hand is optional: the loop starts one itself. At startup,
+It runs the pass below every `[supervisor] sweep_interval_sec` (60 s by
+default) as a long-lived process. Running it by hand is optional: the loop
+starts one itself. At startup,
 after its config and route checks and before its first claim, the loop reads
 the project's `supervisor.lock`, and when no live pid holds it spawns
 `factory.py --supervise` for the same project in its own session, with stdout
@@ -148,9 +209,13 @@ supervisor that was killed without the chance to clean up, and is reclaimed
 on the next start; reclaims take turns under an flock on the sidecar
 `supervisor.lock.reclaim` beside it, which is left in place. A lock
 that names no pid at all is not guessed about: the start refuses and says
-which file to look at.
+which file to look at. It runs the code it started with: a store stamped by
+a newer build ends it, and its service manager (`Restart=on-failure`) starts
+it again on the new code.
 
-Each pass bumps the process's row in the store's `supervisorHeartbeats`
+### What a pass does
+
+Each pass bumps the watcher's row in the store's `supervisorHeartbeats`
 table, so whether the watcher is still watching is a query rather than a
 `ps`. Each pass also reconciles parked pull requests whenever no loop is
 live on the project: a run parked on its pull request (`[merge] mode =
@@ -188,26 +253,46 @@ watches the loop's own restarts: a loop that merges a change to the
 factory itself writes a `loopRestarts` row and re-executes,
 and if no claim, heartbeat or "no ready tickets" exit follows within
 `restart_grace_sec` the next sweep prints `loop did not return after re-exec
-from <sha>` and records it, once per restart. The supervisor also watches
-the factory checkout it runs from: before each pass it compares that
-checkout's `HEAD` with the one it started on, and when they differ -- or
-when a pass finds the store stamped with a newer schema than its build
-understands -- it prints `factory code moved from OLD to NEW; supervisor
-re-executing`, releases its lock and replaces itself with the same command
-line, so a self-merge does not end the watch. Nothing else is relaunched. Process management (systemd, a tmux pane, `nohup`) is the operator's;
+from <sha>` and records it, once per restart. Nothing else is relaunched.
+Process management (systemd, a tmux pane, `nohup`) is the operator's;
 the factory ships the invocation and nothing around it.
 
 ## Serving
 
-`--serve PORT` runs an HTTP daemon for one project on loopback, so
-a drawer or dashboard can poll the factory over HTTP instead of reading the
-store. It reads by default; `[serve] actions` (`POST /actions/...`) and
-`[serve] config_edit` (`PUT /config`) are the two opt-ins that make it write
-([The daemon's actions](reference/daemon.md)):
+`--serve` runs an HTTP daemon, so a drawer or dashboard can poll the
+factory over HTTP instead of reading the store. It reads by default; the
+project actions (`POST .../actions/...`) and `[serve] config_edit`
+(`PUT .../config`) are the two opt-ins that make it write
+([The daemon's actions](reference/daemon.md)).
+
+`factory.py --serve`, with no project, is the **host daemon**: one daemon
+for every project in the host registry. Each project's routes answer under
+`/projects/NAME/...`, `NAME` its `[serve] name`, with the bodies a project
+daemon answers at its root; the root's `/status` lists every project with
+the builds and the last host sweep, and the root's `/attention` merges
+every project's items, each carrying its `project`
+([HTTP endpoints](reference/http.md#the-host-daemon)). A name resolves
+through the registry alone, and a name outside it is 404 before any file
+is opened; `project add` and `project remove` take effect at the next
+request, with no restart. One project's store locked, missing or stamped
+by a newer build this one cannot read is that project's 503 and its `error` on the root
+`/status`; the other projects answer whole. Every read waits at most one
+second for a store's lock (`HOST_READ_WAIT_S`), so the root answers inside
+the drawer's and the tray's two-second limit; the price is that a write
+lock held past that second, even briefly, makes the project answer 503
+`database is locked` for that one poll, and the tray and the drawer can
+show a needs-you row for it that clears at the next poll. A row that stays
+is a store that stays locked. Under systemd the daemon is
+socket-activated ([Serving standing](#serving-standing)); by hand it binds
+the address given, else `host.toml`'s `[serve] bind`:
 
 ```
-python3 factory.py --serve 7710 /path/to/repo
+python3 factory.py --serve 7710
 ```
+
+`factory.py --serve 7710 /path/to/repo`, with a project, is the **project
+daemon**, the same routes at its root for that project alone: the form for
+a project kept out of the registry and for tests.
 
 A bare port binds `127.0.0.1`, which is the whole setup on one machine.
 When the drawer runs on another machine, give the host too:
@@ -234,34 +319,85 @@ project renders it into a `FINDINGS.md` unless its config says
 `[report] findings = "repo"` ([Configuration](config.md)).
 
 On loopback the boundary is the bind address and nothing else: the
-daemon binds the one address the command line names (loopback when it names
-only a port) and anyone who can reach that port can read run and ticket
+daemon binds the one address it is given (loopback when it is only a port)
+and anyone who can reach that port can read run and ticket
 identifiers, phases, heartbeat ages and the estimate-vs-actual history. Keep
 the bare port unless another machine must reach it, and then name one
-private-network address and a `[serve] token_file`: beyond loopback the
-daemon refuses to start without one and answers 401 to every JSON request
-that does not present the file's contents as `Authorization: Bearer TOKEN`;
-only `/peers`, the console page and its files stay open, so the page can
-load and find its peers before it has a token to present
-([Across machines](operating/hosts.md), [config](config.md)). The token is a
-second boundary, not a substitute for the first: binding the wildcard
-address (all interfaces) still offers the port to every network the host is
-on.
+private-network address and a token: `host.toml`'s `[serve]
+machine_token_file` for the host daemon, a project's `[serve] token_file`
+for a project daemon. Beyond loopback the daemon refuses to start without
+it and answers 401 to every JSON request that does not present the file's
+contents as `Authorization: Bearer TOKEN`; only `/peers`, the console page
+and its files stay open, so the page can load and find its peers before it
+has a token to present ([Across machines](operating/hosts.md),
+[config](config.md)). The token is a second boundary, not a substitute for
+the first: binding the wildcard address (all interfaces) still offers the
+port to every network the host is on.
 
 
 ## Serving standing
 
-A daemon started by hand in a tmux session ends silently at the next reboot,
-and the drawer then reads the project as "attention needed".
-`deploy/holophyte-serve@.service` is a systemd user unit template that keeps
-one daemon per project standing: the instance name is the project slug, the
-unit restarts on failure, and an enabled unit comes back after a reboot or a
-supervisor re-exec, provided the operator's user manager itself starts at boot
-(lingering, below). It runs `factory.py` from the factory checkout named in
-its `WorkingDirectory`, so a self-merge is picked up on the next restart; the
-daemon reads the store per request and has no state to lose.
+A daemon or sweep started by hand in a tmux session ends silently at the
+next reboot, and the drawer then reads the host as "attention needed".
+`deploy/` ships systemd user units that keep them standing, provided the
+operator's user manager itself starts at boot (lingering, below).
 
-The unit reads three keys from `~/.holophyte/SLUG/serve.env`:
+On a host with a registry, five host units, none reading an environment
+file (`deploy/README.md` has each unit's keys):
+
+| Unit | Does |
+| --- | --- |
+| `holophyte.target` | `Wants=` the socket and the timer; the only one to enable |
+| `holophyte-serve.socket` | holds `127.0.0.1:7710` and hands it to the daemon; connections queue on it while no daemon runs |
+| `holophyte-serve.service` | `factory.py --serve`, started by the socket on the first connection; on a factory `HEAD` move it drains for at most 20 s and exits 0, and the next connection starts the new code; `Restart=on-failure` every 5 s with no start limit, so a daemon that cannot start leaves the port held |
+| `holophyte-sweep.timer` | starts the sweep 5 s after it starts and every 60 s after, start to start; a run past 60 s skips the next fire, never overlaps it |
+| `holophyte-sweep.service` | `factory.py --supervise --once`, a oneshot; `TimeoutStartSec=120`, above the 97 s a single Linear read can take |
+
+The socket's address and `host.toml`'s `[serve] bind` are typed in two
+places: keep them equal (the daemon names a difference once and serves the
+socket's). The timer's 60 s and `host.toml`'s `[supervisor] sweep_sec` are
+too: the daemon calls the sweep stale after two `sweep_sec` intervals.
+
+```
+sudo loginctl enable-linger "$USER"
+mkdir -p ~/.config/systemd/user
+cp deploy/holophyte.target deploy/holophyte-serve.socket deploy/holophyte-serve.service \
+   deploy/holophyte-sweep.timer deploy/holophyte-sweep.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now holophyte.target
+systemctl --user list-timers holophyte-sweep.timer
+journalctl --user -u holophyte-sweep.service -u holophyte-serve.service -f
+```
+
+`systemctl --user restart holophyte.target` restarts the socket, the daemon
+and the timer, and `stop` stops all three. Neither touches a sweep run in
+flight (the sweep service is not `PartOf=holophyte.target`: stop it by
+name, `systemctl --user stop holophyte-sweep.service`) or a running loop.
+
+The first line matters for an unattended reboot: a user unit is run by the
+operator's user manager, and without lingering that manager only starts when
+the operator logs in, so an enabled unit would wait for a login that never
+comes on a headless host. `loginctl enable-linger` starts the user
+manager at boot; run it once per host, and check with
+`loginctl show-user "$USER" -p Linger` (expect `Linger=yes`).
+
+Each unit's `WorkingDirectory` is `%h`-relative and names one checkout
+layout; adjust it before enabling if the factory lives elsewhere.
+
+The loop stays per project: `deploy/holophyte-loop@.service`, one pass,
+instance `NAME` its `[serve] name`, started by the sweep or the console's
+launch-loop action. It reads `HOLOPHYTE_TARGET` from
+`~/.holophyte/NAME/serve.env`, so a registered project still needs that
+file, with that one key.
+
+### The project units
+
+For a project kept out of the registry, `deploy/holophyte-serve@.service`
+keeps one project daemon standing, the instance name the project slug, and
+`deploy/holophyte-supervise@.service` its supervisor. Never enable the
+supervisor unit for a registered project: it is refused, and restarts into
+the refusal. The serve unit reads three keys from
+`~/.holophyte/SLUG/serve.env`:
 
 | Key | Value |
 | --- | --- |
@@ -273,9 +409,10 @@ The address is `127.0.0.1` on one machine, or the host's address on the
 private network a remote drawer uses; never the wildcard address (see
 "Serving" above for what an open bind publishes).
 
-**Port convention:** 7710 for the first project on a host, counting up by one
-per further project, so a client config is two lines per project: a host
-serving `holophyte` and `lotuspod` has them on 7710 and 7711.
+**Port convention:** 7710 is the host daemon's. A host that runs project
+daemons instead gives the first 7710 and counts up by one per further
+project, so a client config is two lines per project: a host serving
+`holophyte` and `lotuspod` has them on 7710 and 7711.
 
 An example `~/.holophyte/holophyte/serve.env`:
 
@@ -288,31 +425,84 @@ HOLOPHYTE_SERVE_PORT=7710
 Install and enable, one instance per project:
 
 ```
-sudo loginctl enable-linger "$USER"
 mkdir -p ~/.config/systemd/user && cp deploy/holophyte-serve@.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now holophyte-serve@holophyte
 journalctl --user -u holophyte-serve@holophyte -f
 ```
 
-The first line matters for an unattended reboot: a user unit is run by the
-operator's user manager, and without lingering that manager only starts when
-the operator logs in, so an enabled unit would wait for a login that never
-comes on a headless host. `loginctl enable-linger` starts the user
-manager at boot; run it once per host, and check with
-`loginctl show-user "$USER" -p Linger` (expect `Linger=yes`).
-
-The unit's `WorkingDirectory` is `%h`-relative and names one checkout
-layout; adjust it before enabling if the factory lives elsewhere. A client
-finds a daemon at the bind address and the project's port from the
-convention, nothing else; splitting the drawer onto a second machine is
+The project daemon re-executes itself when the factory checkout's `HEAD`
+moves; it reads the store per request and has no state to lose. A client
+finds it at the bind address and the project's port from the convention,
+nothing else; splitting the drawer onto a second machine is
 [Across machines](operating/hosts.md).
+
+### The host registry
+
+`HOLOPHYTE_HOME/host.toml` (default `~/.holophyte/host.toml`) lists the
+projects the host daemon serves and the host sweep watches, by path, and
+the host's own keys. `project add` and `project remove` write it, whole,
+through an exclusive `host.toml.tmp` and a rename; edit the host's keys by
+hand. A key outside this list is refused, as a project config refuses one.
+
+```toml
+[serve]
+# What `factory.py --serve` binds without a socket from the service manager
+# or an address on its command line. Keep it equal to the socket unit's
+# ListenStream.
+bind = "127.0.0.1:7710"
+# The one bearer token of the host daemon, at the root and under every
+# project prefix. Required beyond loopback, with `actions`, or when any
+# project sets `[serve] config_edit`. A relative path is taken against the
+# home. Held to `[serve] token_file`'s rules (a chmod 600, non-empty file).
+machine_token_file = "machine.token"
+# Open each project's actions under /projects/NAME/actions/... and, at the
+# root, POST /actions/run-sweep. Off: every actions path is 404.
+actions = false
+
+[supervisor]
+# The host sweep's interval, in seconds: the `--supervise` loop's sleep and
+# the unit of the daemon's stale rule. Equal to the timer's OnUnitActiveSec.
+sweep_sec = 60
+
+[console]
+# Other hosts' daemons the console fans out to, as HOST:PORT strings.
+daemons = []
+
+[[project]]
+path = "/path/to/holophyte"
+```
+
+Everything else about a project stays in its own `config.toml`: its route
+and unit name (`[serve] name`), its thresholds, `config_edit`, its
+`token_file`. On a host daemon a project's own `bind`, `actions`,
+`machine_token_file` and `[console] daemons` are not read; a project whose
+`machine_token_file` differs from the host's is named once at start. A
+project's `token_file` is still accepted under that project's own prefix,
+for one release. Two entries that resolve to one name or one path refuse
+the registry, naming both; an entry whose config cannot be read is listed
+with its error and served to no one. The host daemon and the sweep re-read
+the `[[project]]` list whenever the file changes; the daemon reads the
+`[serve]` and `[console]` keys once, at start.
+
+Beside it in the home: `supervisor.lock`, the host sweep's lock;
+`sweep.json`, its record; and `host-actions.jsonl`, the host daemon's
+ledger, one JSON line per `POST /actions/run-sweep`, written before
+`systemctl` is asked.
 
 ### Registering and disabling projects
 
 `python3 factory.py project add PATH` validates a repository root and its
-existing `[board]` configuration, then registers it without starting a run.
-A second add refuses and names the existing row. Configuration remains in its
+existing `[board]` configuration, then registers it without starting a run,
+in its store and in the host registry, `HOLOPHYTE_HOME/host.toml`. A second
+add of the same path, or of a project whose `[serve] name` is already
+registered, refuses and names the entry; a store row the loop wrote for the
+same team and path is adopted rather than refused. A registered path whose
+store has lost its row (deleted or recreated after registration) is the one
+exception: `project add PATH` writes the row back and leaves `host.toml`
+unchanged. `project remove NAME` drops a registry entry and leaves its store
+alone; it takes the entry's path as well, which is how an entry whose config
+no longer loads, or one sharing a name with another, is removed. Configuration remains in its
 existing per-project file; registration does not move it. New registrations,
 including implicit loop registration, store canonical absolute repository paths.
 If a legacy row has a relative path, registration and admission checks refuse
@@ -323,15 +513,25 @@ interpret it relative to the current working directory. This refusal applies
 across the store because the ambiguous row could identify any project.
 `project list` remains available to inspect the rows.
 
-From the repository directory, use `python3 factory.py project list` to print
-name, path, admission, note and newest run, ordered by name and path. All project
-commands accept `--store PATH` to select one database explicitly; this does not
-combine stores. Without it, `add` uses the added repository's store and the other
-commands use the current repository's store.
+Registering a project hands its watch to the host sweep: stop and disable
+its `holophyte-supervise@` unit first, since a registered project's
+`--supervise` is refused.
+
+`python3 factory.py project list` prints each registered project's name,
+path, admission and note from its own store; `python3 factory.py --status`
+with no project reports every one of them. With `--store PATH`, `project list`
+prints that store's rows instead: name, path, admission, note and newest run,
+ordered by name and path. The admission commands accept `--store PATH` to
+select one database explicitly; this does not combine stores. Without it, `add`
+uses the added repository's store and the other commands use the current
+repository's store. `add --store` naming any other database registers there
+only and leaves `host.toml` alone: the registry holds paths, and the host
+reads each project's own store.
 
 `project hold NAME --note TEXT` stops new admission while workers drain.
-`project disable NAME --note TEXT` also stops admission; a disabled supervisor
-exits at startup, and `/status` reports the disabled state and note with no runs.
+`project disable NAME --note TEXT` also stops admission; the host sweep
+skips a disabled project, a project's own supervisor exits at startup, and
+`/status` reports the disabled state and note with no runs.
 `project enable NAME` enables admission again (an optional `--note` records why).
 NAME is the repository directory's basename; ambiguous names are refused.
 The existing `factory.py PATH --hold --note TEXT` and

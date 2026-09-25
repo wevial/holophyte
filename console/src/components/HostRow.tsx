@@ -16,10 +16,11 @@ export function rowTail(host: HostRecord): string | null {
   if (host.error != null) return "no answer";
   if (host.token_rejected) return TOKEN_REJECTED;
   if (host.needs_token) return null;
-  if (!status) return "no answer";
+  if (!status) return host.host_status != null ? "no projects" : "no answer";
   if (hostTone(host) === "bad") {
     const hb = status.supervisor.heartbeat_age_ms;
-    return hb == null ? "supervisor stale" : `supervisor stale ${age(hb)}`;
+    const who = host.name != null ? "sweep beat" : "supervisor";
+    return hb == null ? `${who} stale` : `${who} stale ${age(hb)}`;
   }
   return `${status.runs.length} ${status.runs.length === 1 ? "run" : "runs"}`;
 }
@@ -36,7 +37,7 @@ export function HostRow({ host, selected, onClick }: { host: HostRecord; selecte
   const bad = tone === "bad";
   const stale = !unreachable && bad;
   const port = /:\d+$/.exec(host.address)?.[0] ?? "";
-  const name = host.project != null ? projectName(host.project) : host.address;
+  const name = host.project != null ? projectName(host.project) : (host.name ?? host.address);
   const tail = rowTail(host);
   // A refused token is a fault the operator must fix, not a key to paste
   // for the first time: it reads on its own line like one.

@@ -25,7 +25,7 @@ from time import time
 import store
 import store.read
 import store.tickets
-from holophyte import pr_activity, pr_status
+from holophyte import deadline, pr_activity, pr_status
 from holophyte.board import (
     ledger,
     mirror_push,
@@ -113,6 +113,7 @@ def _reconcile_mirror(conn, project, provider, target=None):
             continue
         if ticket.status == "blocked_on_operator" \
                 and _parked_pull_request(conn, ticket.id) is not None:
+            deadline.check(f"{ticket.linearIdentifier}'s cancel check")
             if _close_canceled(target, conn, provider, ticket.id):
                 continue
             # GitHub's verdict, not the board's: a Done here is a person
@@ -126,6 +127,7 @@ def _reconcile_mirror(conn, project, provider, target=None):
         tickets.append(ticket)
     if not tickets:
         return
+    deadline.check("the board's closed identifiers")
     try:
         closed = provider.closed_identifiers([t.linearIdentifier for t in tickets])
     except Exception as e:  # any transport failure: the board could not be asked
@@ -274,7 +276,8 @@ def _retire_abandoned(target, conn, ticket):
 PR_CLOSED_QUESTION = "rejected: "
 
 
-def _reconcile_pull_requests(target, conn, project, provider):
+def _reconcile_pull_requests(target, conn, project, provider,
+                             failed_asked=None):
     """Ask GitHub about every pull request this project's parked runs wait
     on, and land the ones a person merged there (KO-359).
 
@@ -312,7 +315,9 @@ def _reconcile_pull_requests(target, conn, project, provider):
     whose last run ended failed, abandoned or killed holding a pull
     request, and closes out a merged one as `--close` does
     (`_close_failed_pull_requests()`), skipping a ticket this pass just
-    sent back, whose pull request it has already read.
+    sent back, whose pull request it has already read. `failed_asked` is
+    when each failed run's pull request was last read, by run id: the
+    caller's, or this process's own for the store when omitted.
     """
     from holophyte.admission import held_line
     sent = set()
@@ -325,6 +330,7 @@ def _reconcile_pull_requests(target, conn, project, provider):
         pull = pr_status.parse_pr_url(ticket.prUrl)
         if pull is None or _parked_phase(conn, ticket.runId) is None:
             continue
+        deadline.check(f"{ticket.linearIdentifier}'s pull request read")
         try:
             status = pr_status.pull_status(target, pull)
         except Exception as e:  # noqa: BLE001 - any transport failure
@@ -345,8 +351,10 @@ def _reconcile_pull_requests(target, conn, project, provider):
                 sent.add(issue)
         if low:
             return sent
+    if failed_asked is None:
+        failed_asked = _FAILED_ASKED.setdefault(str(target.store_path), {})
     _close_failed_pull_requests(target, conn, project, provider, poll_ms,
-                                sent)
+                                sent, failed_asked)
     return sent
 
 
@@ -356,8 +364,10 @@ def _reconcile_pull_requests(target, conn, project, provider):
 CLOSABLE_OUTCOMES = ("rejected", "failed", "abandoned", "killed")
 FAILED_PR_OUTCOMES = ("failed", "abandoned", "killed")
 
-# When this process last asked GitHub about a failed run's pull request,
-# keyed by store and run: at most one read per `[merge] pr_poll_sec` each.
+# The loop's own record of when it last asked GitHub about a failed run's
+# pull request, by store and then run: at most one read per `[merge]
+# pr_poll_sec` each. The loop is one long process; the host sweep is a new
+# one every run, so it passes its own from `sweep.json` instead.
 _FAILED_ASKED = {}
 
 
@@ -429,7 +439,7 @@ def _failed_pull_requests(conn, project):
 
 
 def _close_failed_pull_requests(target, conn, project, provider, poll_ms,
-                                sent):
+                                sent, asked):
     """Close out each ticket whose failed run's pull request a person merged
     on GitHub afterwards, as `--close` would (KO-722).
 
@@ -439,20 +449,32 @@ def _close_failed_pull_requests(target, conn, project, provider, poll_ms,
     same budget as the parked reads and at most once per `pr_poll_sec`. An
     open pull request, or one closed without merging, changes nothing.
     A ticket in `sent` was just sent back to the babysitter off a read of
-    this same pull request, so it is not asked about again.
+    this same pull request, so it is not asked about again. `asked` holds
+    the store's last read of each run's pull request, by run id.
     """
     for ticket_id, identifier, issue, run_id, url in _failed_pull_requests(
             conn, project):
         if issue in sent:
             continue
         pull = pr_status.parse_pr_url(url)
-        key, now_ms = (str(target.store_path), run_id), time() * 1000
-        asked = _FAILED_ASKED.get(key)
-        if pull is None or (asked is not None and now_ms - asked < poll_ms):
+        now_ms = time() * 1000
+        last = asked.get(run_id)
+        if pull is None or (last is not None and now_ms - last < poll_ms):
             continue
-        _FAILED_ASKED[key] = now_ms
+        deadline.check(f"{identifier}'s failed run pull request read")
+        asked[run_id] = now_ms
         try:
             status = pr_status.pull_status(target, pull)
+        except deadline.CallRefused as refused:
+            # Never sent, so never read: the throttle keeps the last read
+            # made, and the next run asks.
+            if last is None:
+                asked.pop(run_id, None)
+            else:
+                asked[run_id] = last
+            print(f"[holo2] {identifier}: {pull.url} not read ({refused});"
+                  " the ticket stays open")
+            continue
         except Exception as e:  # noqa: BLE001 - any transport failure
             print(f"[holo2] {identifier}: {pull.url} could not be read ({e});"
                   " the ticket stays open")

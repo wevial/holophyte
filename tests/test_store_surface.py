@@ -157,6 +157,10 @@ EXPECTED_READ = [
     # KO-278: the `serve` daemon's `/ledger` window across runs.
     "ledger_since",
     "live_runs",
+    # Consolidation stage 1: the host daemon's bound on one store's lock
+    # wait, so a locked store is its project's error inside a client's
+    # request limit. Not a read; the context `open_readonly()` reads in.
+    "lock_wait",
     # KO-274: the `serve` daemon's `/shipped` page of merged runs.
     "merged_runs",
     # KO-269: the `serve` daemon's `/runs/N` reads.

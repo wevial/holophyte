@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
-import { isSupervisorStale } from "../lib/derive";
 import { formatDuration } from "../lib/format";
+import { supervisorStale, underHost } from "../lib/hosts";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { runKey, type ProjectGroup } from "../lib/runs";
 import type { Run } from "../lib/types";
@@ -41,7 +41,8 @@ export function ProjectBlock({
   };
   const { supervisor, thresholds } = status;
   const daemon = { base: group.base, actions: status.actions === true, fetch: actionFetch };
-  const stale = isSupervisorStale(supervisor, thresholds.heartbeat_stale_ms);
+  // Under a host daemon the beat is the host sweep's, judged by the daemon.
+  const stale = supervisorStale(underHost(group.base), status);
   const dot = stale ? "bg-bad" : supervisor.state === "live" ? "bg-ok" : "bg-faint";
   const heartbeat = supervisor.heartbeat_age_ms == null ? "no hb" : `hb ${formatDuration(supervisor.heartbeat_age_ms)}`;
   return (

@@ -1,4 +1,4 @@
-"""Supervisor contract: `--supervise`, the loop's re-exec, its config table,
+"""Supervisor contract: `PROJECT --supervise`, the loop's re-exec, its config table,
 the waiting loop's heartbeat, the host label and the pull-request close-out.
 
 The sweep itself is asserted in `test_supervisor_sweep.py`; these are the
@@ -16,7 +16,6 @@ import signal
 import socket
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -52,17 +51,6 @@ from tests.phase_fixture import (  # noqa: E402 - after sys.path setup
 )
 
 
-def a_dead_pid():
-    """A pid the kernel no longer knows: a child that has already been reaped.
-
-    Reuse is possible in principle and negligible in a test's lifetime; the
-    alternative, a pid guessed to be free, is a guess.
-    """
-    child = subprocess.Popen(["true"])
-    child.wait()
-    return child.pid
-
-
 class SuperviseTests(SweepTestCase):
     """`factory.py --supervise <target>`: one watcher per target, on a timer.
 
@@ -94,35 +82,6 @@ class SuperviseTests(SweepTestCase):
         return self.conn.execute(
             "SELECT pid, lastBeat, passes FROM supervisorHeartbeats"
             " ORDER BY startedAt").fetchall()
-
-    def test_a_second_supervisor_exits_nonzero_naming_the_live_pid(self):
-        """The first holder is a live child of this process -- a process of
-        its own, as a running supervisor is -- and the second start is the
-        mode end to end, as an operator (or a service manager retrying)
-        would run it."""
-        holder = subprocess.Popen(["sleep", "60"])
-        self.addCleanup(holder.wait)
-        self.addCleanup(holder.kill)
-        holophyte.supervisor_lock.acquire_supervisor_lock(self.lock, self.project.path,
-                                        pid=holder.pid, now=T0)
-        complaint = io.StringIO()
-
-        with patch.object(sys, "stderr", complaint), \
-                self.assertRaises(SystemExit) as exited:
-            holophyte.cli.cli(["--supervise", str(self.target)])
-
-        self.assertNotEqual(exited.exception.code, 0)
-        self.assertIn(f"pid {holder.pid} on {socket.gethostname()}",
-                      str(exited.exception))
-        # The refusal names the repository as well as the lock: an operator
-        # supervising several targets has to know which one is already taken.
-        self.assertIn(f"for {self.project.path}:", str(exited.exception))
-        # And the holder's lock is untouched: a refused starter must not
-        # take the file out from under the supervisor it deferred to.
-        self.assertEqual(holophyte.supervisor_lock.read_supervisor_lock(self.lock),
-                         (holder.pid, T0, socket.gethostname()))
-        self.assertEqual(self.lock.read_text().split(),
-                         [socket.gethostname(), str(holder.pid), str(T0)])
 
     def test_a_refused_start_says_whether_the_holder_is_still_beating(self):
         """The refusal is actionable only with the liveness beside it: the
@@ -164,74 +123,6 @@ class SuperviseTests(SweepTestCase):
         self.assertIn(str(self.lock), str(refused.exception))
         self.assertTrue(self.lock.exists())
 
-    def test_a_stale_lock_is_reclaimed_and_the_supervisor_runs(self):
-        """A dead pid in the lock is a supervisor killed without the chance
-        to clean up. The proof of "runs" is a pass on file under this
-        process's pid, made while the lock named this process."""
-        self.lock.write_text(f"{socket.gethostname()} {a_dead_pid()} {T0}\n")
-        held_during_pass = []
-
-        def stop_after_one_pass(_interval):
-            held_during_pass.append(
-                holophyte.supervisor_lock.read_supervisor_lock(self.lock))
-            os.kill(os.getpid(), signal.SIGTERM)
-
-        code, printed = self.supervise(stop_after_one_pass)
-
-        self.assertEqual(code, 0)
-        self.assertEqual(held_during_pass[0][0], os.getpid())
-        self.assertEqual([(pid, passes) for pid, _at, passes
-                          in self.heartbeats()], [(os.getpid(), 1)])
-        self.assertIn(f"pid {os.getpid()}", printed)
-
-    def test_two_starters_reclaiming_one_stale_lock_admit_only_one(self):
-        """Both starters read the same dead pid; the rival gets its reclaim
-        and its new lock in *between* this starter's last look at the stale
-        file and its unlink -- the widest window the old inode guard left
-        open. The rival's live lock must survive, and this starter must
-        lose to it, or two supervisors run side by side."""
-        self.lock.write_text(f"{a_dead_pid()} {T0}\n")
-        us, rival = os.getpid(), os.getpid() + 1
-        real_unlink, real_alive = os.unlink, holophyte.supervisor_lock.pid_alive
-        rival_outcome, fired = [], []
-
-        def rival_starts():
-            try:
-                rival_outcome.append(
-                    holophyte.supervisor_lock.acquire_supervisor_lock(
-                        self.lock, self.project.path, pid=rival, now=T0 + 1))
-            except holophyte.supervisor_lock.SupervisorHeld as held:
-                rival_outcome.append(held)
-
-        def unlink_with_a_rival_in_the_gap(path, *args, **kwargs):
-            if not fired and Path(path) == self.lock:
-                fired.append(threading.Thread(target=rival_starts))
-                fired[0].start()
-                fired[0].join(0.5)
-            return real_unlink(path, *args, **kwargs)
-
-        with patch.object(holophyte.supervisor_lock, "pid_alive",
-                          lambda pid: pid in (us, rival) or real_alive(pid)), \
-                patch.object(os, "unlink", unlink_with_a_rival_in_the_gap):
-            try:
-                ours = holophyte.supervisor_lock.acquire_supervisor_lock(
-                    self.lock, self.project.path, pid=us, now=T0)
-            except holophyte.supervisor_lock.SupervisorHeld as held:
-                ours = held
-            fired[0].join(5)
-
-        self.assertTrue(fired, "the rival never got its turn in the gap")
-        outcomes = {us: ours, rival: rival_outcome[0]}
-        admitted = [who for who, got in outcomes.items()
-                    if not isinstance(got, Exception)]
-        self.assertEqual(len(admitted), 1, outcomes)
-        # The lock on disk names the one starter that was admitted, and the
-        # other was refused naming exactly that pid.
-        self.assertEqual(holophyte.supervisor_lock.read_supervisor_lock(self.lock)[0],
-                         admitted[0])
-        refused = outcomes[rival if admitted == [us] else us]
-        self.assertEqual(refused.pid, admitted[0])
-
     def test_sigterm_ends_the_loop_cleanly_and_releases_the_lock(self):
         """A real SIGTERM to this process, delivered while the supervisor is
         between passes: the loop returns rather than raising, the lock is
@@ -256,109 +147,21 @@ class SuperviseTests(SweepTestCase):
         self.assertEqual(self.heartbeats()[0][2], 2)
         self.assertIn("stopping on signal", printed)
 
-    def test_a_moved_factory_revision_releases_the_lock_and_re_executes(self):
-        """The revision is read at startup and before each pass; on the
-        first pass that finds it moved, the lock is gone before the exec
-        and the printed line names both revisions. Through the `EXEC` seam:
-        the test runner is never exec-ed, and a real one never returns."""
-        execs = []
-
-        def record_exec(program, argv):
-            execs.append((program, argv, self.lock.exists()))
-
-        orig = ["/usr/bin/python3", "-u", "factory.py", "--supervise", "/r"]
-        revisions = iter(["aaa", "bbb", "bbb"])
-        with patch.object(holophyte.supervisor, "EXEC", record_exec), \
-                patch.object(holophyte.supervisor, "factory_revision",
-                             lambda: next(revisions)), \
-                patch.object(sys, "orig_argv", orig):
-            code, printed = self.supervise(lambda _interval: None)
-
-        self.assertEqual(code, 0)
-        self.assertEqual(execs, [("/usr/bin/python3", orig, False)])
-        self.assertIn("[holo2] factory code moved from aaa to bbb;"
-                      " supervisor re-executing", printed)
-        # `aaa` at startup, `bbb` before the first pass: no pass ran on the
-        # stale code, so no heartbeat was written.
-        self.assertEqual(self.heartbeats(), [])
-
-    def test_a_store_a_newer_build_stamped_re_executes_instead_of_exiting(self):
-        """The 55 unsupervised minutes: a self-merge bumped the schema, the
-        pass's store open refused it with `SystemExit`, and the supervisor
-        exited. Now the refusal is the re-exec's second trigger, with the
-        lock released first."""
-        execs = []
-
-        def record_exec(program, argv):
-            execs.append((program, argv, self.lock.exists()))
-
+    def test_a_store_a_newer_build_stamped_ends_the_process_for_a_restart(self):
+        """No re-exec: the refusal ends the project form, lock released, for
+        its service manager (`Restart=on-failure`) to start the new code."""
         self.conn.execute(
             f"PRAGMA user_version = {store.SCHEMA_VERSION + 1}")
         self.conn.commit()
-        with patch.object(holophyte.supervisor, "EXEC", record_exec), \
-                patch.object(holophyte.supervisor, "factory_revision",
-                             lambda: "aaa"), \
-                patch.object(sys, "orig_argv", ["python3", "factory.py"]):
-            code, printed = self.supervise(lambda _interval: None)
-
-        self.assertEqual(code, 0)
-        ((program, argv, held),) = execs
-        self.assertTrue(os.path.isabs(program), program)
-        self.assertEqual(argv, ["python3", "factory.py"])
-        self.assertFalse(held)
-        self.assertIn("newer than the version", printed)
-        self.assertIn("supervisor re-executing", printed)
-
-    def test_a_stop_request_wins_over_a_pending_re_exec(self):
-        """A signal that lands during the refused pass ends the loop; the
-        refusal is re-raised as before rather than exec-ed past."""
-        execs = []
-        self.conn.execute(
-            f"PRAGMA user_version = {store.SCHEMA_VERSION + 1}")
-        self.conn.commit()
-
-        def refuse_then_stop(*args, **kwargs):
-            os.kill(os.getpid(), signal.SIGTERM)
-            raise SystemExit("x: newer than the version this build understands")
-
-        with patch.object(holophyte.supervisor, "EXEC",
-                          lambda *a: execs.append(a)), \
-                patch.object(holophyte.supervisor, "supervise_pass",
-                             refuse_then_stop), \
-                self.assertRaises(SystemExit):
+        with self.assertRaises(SystemExit) as ended:
             self.supervise(lambda _interval: None)
 
-        self.assertEqual(execs, [])
+        self.assertIn("newer than the version", str(ended.exception))
+        # A failure to the service manager: `Restart=on-failure` restarts
+        # only a process whose exit status is non-zero.
+        self.assertNotIn(ended.exception.code, (0, None))
         self.assertFalse(self.lock.exists())
-
-    def test_a_stop_request_wins_over_a_revision_triggered_re_exec(self):
-        """The other trigger: a signal that lands while the revision is
-        being read -- inside the git call, after the loop's own stop check
-        -- ends the loop with the lock released, even though the revision
-        came back moved."""
-        execs = []
-        reads = []
-
-        def moved_but_stopped():
-            # Startup's read is plain; the one before the first pass is the
-            # one the signal lands in.
-            reads.append(1)
-            if len(reads) == 1:
-                return "aaa"
-            os.kill(os.getpid(), signal.SIGTERM)
-            return "bbb"
-
-        with patch.object(holophyte.supervisor, "EXEC",
-                          lambda *a: execs.append(a)), \
-                patch.object(holophyte.supervisor, "factory_revision",
-                             moved_but_stopped):
-            code, printed = self.supervise(lambda _interval: None)
-
-        self.assertEqual(code, 0)
-        self.assertEqual(execs, [])
-        self.assertFalse(self.lock.exists())
-        self.assertNotIn("re-executing", printed)
-        self.assertIn("stopping on signal", printed)
+        self.assertEqual(self.heartbeats(), [])
 
     def test_the_loop_body_sweeps_with_action_and_records_a_heartbeat(self):
         """The body is `--sweep --act` plus a beat: a run silent across two

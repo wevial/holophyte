@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Holophyte drawer v0: a SwiftBar plugin over one `--serve` daemon per target.
+"""Holophyte drawer v0: a SwiftBar plugin over the `--serve` daemons of a tailnet.
 
 Reads `drawer.toml` from `$HOLOPHYTE_HOME` (default `~/.holophyte`), polls
 `GET /status` and `GET /attention` on every `[[daemon]]` with a two-second
@@ -16,6 +16,13 @@ network, so a test and an operator see the exact output. A fixture is a
 carrying the `/runs` answer an idle target's "last merge" row reads and the
 `/attention` answer the "needs you" section renders.
 
+A `[[daemon]]` is either a project daemon (`factory.py PROJECT --serve`) or
+a host daemon (`factory.py --serve`), whose root `/status` lists its
+projects instead of naming one: each project is then polled under
+`/projects/NAME` with the same token, one target block per project, and the
+host's last sweep is one line above them, amber and in "needs you" when it
+is not fresh.
+
 "Needs you" is the daemon's own `/attention` items when it answers them;
 a daemon too old for the path (404) gets the local rule over its `/status`
 instead, so a half-upgraded tailnet still renders. Any other `/attention`
@@ -26,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import os
 import sys
@@ -33,6 +41,7 @@ import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 GREEN, AMBER, RED = "#4EA876", "#F0B13A", "#FF5F57"
 IDLE, WORKING, ATTENTION, CRITICAL = 0, 1, 2, 3
@@ -57,10 +66,12 @@ def load_config(path):
     `drawer.toml`.
 
     A `[[daemon]]` may name a `token_file`: the file whose contents the
-    daemon's `[serve] token_file` holds, sent as `Authorization: Bearer`
-    on every request to that daemon. `~` and a path relative to the
-    config's directory both work; the token is read here, once per poll,
-    and never printed. A daemon without one is polled bare, as before.
+    daemon's `[serve] token_file` holds (for a host daemon, the file its
+    `host.toml` `[serve] machine_token_file` names), sent as
+    `Authorization: Bearer` on every request to that daemon. `~` and a
+    path relative to the config's directory both work; the token is read
+    here, once per poll, and never printed. A daemon without one is
+    polled bare, as before.
     """
     with open(path, "rb") as f:
         raw = tomllib.load(f)
@@ -104,7 +115,7 @@ def fetch(url, path="/status", token=None):
         if isinstance(body, dict):
             body.setdefault("http_status", e.code)
         return body
-    except (OSError, ValueError) as e:
+    except (OSError, ValueError, http.client.HTTPException) as e:
         return {"unreachable": True, "error": str(e)}
 
 
@@ -236,7 +247,8 @@ def attention_error(answer):
 
 def attention_rows(entry):
     """`(rows, level)` for one target: `NAME · unreachable` in red and
-    `CRITICAL` when the daemon did not answer `/status`; else the daemon's
+    `CRITICAL` when the daemon did not answer `/status`; `NAME · ERROR` in
+    amber for a host daemon's project that cannot be read; else the daemon's
     own `/attention` items when `entry["attention"]` carries them; else
     the local rule over `/status` for a daemon that answers 404 there (or
     a fixture with no `attention` key). Any other `/attention` failure
@@ -244,6 +256,9 @@ def attention_rows(entry):
     by whatever the local rule still shows, never a silent fallback."""
     if entry["status"].get("unreachable"):
         return [(f"{entry['name']} · unreachable", RED)], CRITICAL
+    if entry.get("project_error"):
+        why = cut(entry["project_error"], REASON_CHARS)
+        return [(f"{entry['name']} · {why}", AMBER)], ATTENTION
     answer = entry.get("attention")
     if isinstance(answer, dict) and isinstance(answer.get("items"), list):
         return daemon_rows(entry)
@@ -257,9 +272,15 @@ def attention_rows(entry):
 
 def attention(statuses):
     """`(rows, level)`: the "needs you" rows as `(text, colour)` over all
-    targets in config order and the worst level among them."""
+    targets in config order and the worst level among them; a host sweep
+    that is not fresh is one of them."""
     rows, level = [], IDLE
     for entry in statuses:
+        if "host_sweep" in entry:
+            text, colour = sweep_row(entry["host_sweep"])
+            if colour is not None:
+                rows.append((text, colour))
+                level = max(level, ATTENTION)
         got, got_level = attention_rows(entry)
         rows.extend(got)
         level = max(level, got_level)
@@ -394,6 +415,9 @@ def render(statuses, now, linear="https://linear.app"):
     for i, entry in enumerate(statuses):
         if i:
             lines.append("---")
+        if "host_sweep" in entry:
+            text, colour = sweep_row(entry["host_sweep"])
+            lines.append(f"{text} | {HEADER}" + (f" color={colour}" if colour else ""))
         lines.extend(target_block(entry))
     lines.append("---")
     lines.append(f"Open in Linear | href={linear}")
@@ -428,12 +452,14 @@ def fixture_entry(path):
             "runs": runs, "attention": att}
 
 
-def poll(daemon):
+def poll(daemon, status=None):
     """One daemon's entry: `/status` and `/attention`, then `/runs` only for
     an idle target. A daemon that did not answer `/status` is not asked
-    again, so a dead host costs one timeout, not three."""
+    again, so a dead host costs one timeout, not three. `status` is the
+    `/status` answer when the caller already has it."""
     token = daemon.get("token")
-    status = fetch(daemon["url"], token=token)
+    if status is None:
+        status = fetch(daemon["url"], token=token)
     if status.get("unreachable"):
         att, runs = None, None
     else:
@@ -442,6 +468,77 @@ def poll(daemon):
                 if status.get("runs") == [] else None)
     return {"name": daemon["name"], "url": daemon["url"], "status": status,
             "runs": runs, "attention": att}
+
+
+SWEEP_OK = ("fresh", "running")
+
+
+def unaskable(project):
+    """Why a host root says `project` cannot be asked under its prefix, or
+    None when it can: its own error, no store, or no row for its path."""
+    if project.get("error"):
+        return project["error"]
+    if project.get("store") is None:
+        return "no store"
+    if project.get("project_row") is None:
+        return "no project row"
+    return None
+
+
+def host_project(daemon, project):
+    """One registered project of a host daemon as an entry: polled under
+    `/projects/NAME`, the name percent-encoded as the daemon decodes it,
+    unless the root already says why not. A project whose config gives no
+    name routes nowhere: it is listed by its path with the root's error.
+    A project that cannot be read carries `project_error`, a "needs you"
+    row of its own."""
+    name = project.get("name")
+    base = daemon["url"]
+    target = {"name": name or project.get("path") or "?",
+              "url": f"{base}/projects/{quote(name, safe='')}" if name else base,
+              "token": daemon.get("token")}
+    why = unaskable(project)
+    if why is None:
+        entry = poll(target)
+        status = entry["status"]
+        if "http_status" in status and not status.get("unreachable"):
+            entry["project_error"] = str(status.get("error")
+                                         or f"HTTP {status['http_status']}")
+        return entry
+    return {**target, "status": {"error": why, "http_status": 503},
+            "runs": None, "attention": None, "project_error": why}
+
+
+def poll_daemon(daemon):
+    """One `[[daemon]]`'s entries: the one `poll()` gives a project daemon,
+    or one per registered project of a host daemon (`host_project()`), in
+    registry order. The first carries `host_sweep`, the root's `sweep` with
+    its `now`, so a host with no project left still shows its sweep."""
+    status = fetch(daemon["url"], token=daemon.get("token"))
+    projects = status.get("projects")
+    if not isinstance(projects, list) or isinstance(status.get("project"), str):
+        return [poll(daemon, status)]
+    entries = [host_project(daemon, project) for project in projects
+               if isinstance(project, dict)]
+    if not entries:
+        entries.append({"name": daemon["name"], "url": daemon["url"],
+                        "status": {"error": "no projects registered"},
+                        "runs": None, "attention": None})
+    entries[0]["host_sweep"] = {"name": daemon["name"], "now": status.get("now"),
+                                "sweep": status.get("sweep") or {}}
+    return entries
+
+
+def sweep_row(host):
+    """`(text, colour)` for a host daemon's last sweep: its state and how
+    long ago it ended against the daemon's `now`, grey when fresh or
+    running, amber otherwise."""
+    sweep = host["sweep"]
+    state = sweep.get("state", "none")
+    text = f"{host['name']} · sweep {state}"
+    if sweep.get("ended") is not None and host.get("now") is not None:
+        text += f" · {coarse_age(host['now'] - sweep['ended'])} ago"
+    return text, (None if state in SWEEP_OK else AMBER)
 
 
 def reference_now(statuses):
@@ -463,7 +560,7 @@ def main(argv=None):
     else:
         config = load_config(args.config or config_path())
         linear = config["linear"]
-        statuses = [poll(d) for d in config["daemons"]]
+        statuses = [e for d in config["daemons"] for e in poll_daemon(d)]
     for line in render(statuses, reference_now(statuses), linear):
         print(line)
     return 0

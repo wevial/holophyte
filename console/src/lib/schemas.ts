@@ -45,6 +45,41 @@ export const statusSchema = z.looseObject({
   runs: z.array(runSchema),
 });
 
+// The last host sweep as a host daemon's root `/status` reports it
+// (holophyte/serve_host.py `sweep_view()`): `sweep.json`'s fields, each
+// null when the file has none, and the daemon's judgement in `state`.
+export const sweepSchema = z.looseObject({
+  started: z.number().nullable(), ended: z.number().nullable(),
+  revision: z.string().nullable(), pid: z.number().nullable(), exit: z.number().nullable(),
+  projects: z.record(z.string(), z.string()).nullable(),
+  error: z.string().nullable(),
+  state: z.enum(["none", "unreadable", "running", "killed", "fresh", "stale"]),
+});
+
+// One registered project as the host root lists it (`project_summary()`):
+// every store fact null when the entry has no store or `error` is set.
+export const hostProjectSchema = z.looseObject({
+  name: z.string().nullable(), path: z.string(), store: z.string().nullable(),
+  error: z.string().nullable(), host: z.string().nullable(),
+  schema_version: z.number().nullable(), admission: z.string().nullable(),
+  hold_note: z.string().nullable().optional(), project_row: z.number().nullable(),
+  supervisor: supervisorSchema.nullable(),
+  runs: z.array(z.looseObject({ id: z.number(), ticket: z.string(), phase: z.string(), heartbeat_age_ms: z.number() })),
+  workers_on_previous_build: z.number().nullable(),
+});
+
+// A host daemon's root `/status` (`host_status()`): no `project` of its
+// own, a `projects` list instead; each project's own body answers under
+// `/projects/NAME/status` and parses as `statusSchema`.
+export const hostStatusSchema = z.looseObject({
+  now: z.number(),
+  daemon: z.looseObject({ started_ms: z.number(), pid: z.number() }).optional(),
+  build: z.looseObject({ daemon: z.string().nullable(), sweep: z.string().nullable(), head: z.string().nullable() }),
+  sweep: sweepSchema,
+  actions: z.boolean(),
+  projects: z.array(hostProjectSchema),
+});
+
 export const threadFindingFieldsSchema = z.looseObject({
   fingerprint: z.looseObject({
     path: z.string(), line: z.number().nullable().optional(), severity: z.string(),

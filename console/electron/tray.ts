@@ -79,11 +79,27 @@ export type AttentionItem = {
 };
 export type Attention = { level?: string; now?: number; items?: AttentionItem[] };
 export type Runs = { rows?: { ticket: string; outcome?: string; ended_ms?: number | null }[] };
+/** A host daemon's root `/status` (holophyte/serve_host.py `host_status()`):
+ *  the last sweep and every registered project, no `project` of its own. */
+export type HostStatus = {
+  now?: number;
+  sweep: { state: string; ended?: number | null; started?: number | null; exit?: number | null };
+  projects: {
+    name: string | null;
+    path: string;
+    store: string | null;
+    error: string | null;
+    host?: string | null;
+    project_row: number | null;
+  }[];
+};
 
 /** A menu line, with the level its colour would carry in the drawer. */
 type Row = { label: string; level: Level };
 
 export type SummaryOptions = {
+  /** Each host daemon's root `/status`, by address: one sweep line each. */
+  hosts?: Record<string, HostStatus>;
   /** `/runs` answers for the idle daemons, keyed by address, so the idle
    *  line can name the last merge as the drawer does. */
   runs?: Record<string, FetchResult<Runs>>;
@@ -128,10 +144,14 @@ function cut(text: unknown, limit: number): string {
 }
 
 /** What the tray calls a daemon: the last path segment of its project,
- *  the address before `/status` has named one. */
+ *  before `/status` has named one the project's route name for an entry
+ *  behind a host daemon, else the address. */
 export function projectName(address: string, status: Status | null): string {
   const project = status?.project;
-  if (!project) return address;
+  if (!project) {
+    const at = address.indexOf("/projects/");
+    return at < 0 ? address : decodeURIComponent(address.slice(at + "/projects/".length));
+  }
   const segments = project.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? project;
 }
@@ -283,16 +303,30 @@ function projectLine(
   return { label: `${name} · ${parts.join(", ")}`, level: "working" };
 }
 
-/** `1 host · 3 daemons`: one daemon per address polled, the hosts the
- *  distinct `host` values they report (an unreachable daemon reports none). */
+/** `1 host · 3 daemons`: one daemon per address polled (a host daemon's
+ *  projects are one), the hosts the distinct `host` values they report (an
+ *  unreachable daemon reports none). */
 export function hostsLine(peers: string[], statuses: Record<string, FetchResult<Status>>): string {
   const hosts = new Set<string>();
   for (const address of peers) {
     const status = statuses[address];
     if (status?.ok && status.body.host) hosts.add(status.body.host);
   }
+  const daemons = new Set(peers.map((entry) => entry.split("/projects/")[0]));
   const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
-  return `${plural(hosts.size, "host")} · ${plural(peers.length, "daemon")}`;
+  return `${plural(hosts.size, "host")} · ${plural(daemons.size, "daemon")}`;
+}
+
+/** The sweep states a host daemon's root leaves alone. */
+const SWEEP_OK = new Set(["fresh", "running"]);
+
+/** A host daemon's sweep line: `ADDRESS · sweep fresh · 12s ago`, aged
+ *  on the daemon's clock; attention when the sweep is not fresh. */
+export function sweepRow(address: string, host: HostStatus): Row {
+  const { sweep } = host;
+  let label = `${address} · sweep ${sweep.state}`;
+  if (sweep.ended != null && host.now != null) label += ` · ${coarseAge(host.now - sweep.ended)} ago`;
+  return { label, level: SWEEP_OK.has(sweep.state) ? "idle" : "attention" };
 }
 
 /**
@@ -321,7 +355,12 @@ export function buildSummary(
     const line = projectLine(name, status, options.runs?.[address], stale);
     projects.push(line);
     level = worse(level, line.level);
-    if (!status.ok) continue;
+    if (!status.ok) {
+      // A host daemon's project that cannot be read needs you: the daemon
+      // answered, so it is this project alone that is broken.
+      if (address.includes("/projects/") && status.kind !== "unauthorized") needsYou.push(line);
+      continue;
+    }
     const attention = attentions[address];
     const withNow =
       attention?.ok && attention.body.now === undefined
@@ -330,6 +369,12 @@ export function buildSummary(
     const got = attentionRows(name, status.body, withNow, stale);
     needsYou.push(...got.rows);
     level = worse(level, got.level);
+  }
+  for (const [address, host] of Object.entries(options.hosts ?? {})) {
+    const row = sweepRow(address, host);
+    projects.push(row);
+    if (row.level !== "idle") needsYou.push(row);
+    level = worse(level, row.level);
   }
   const show = (): void => options.actions?.showConsole?.();
   const items: TrayMenuItem[] = [];
@@ -349,6 +394,7 @@ export function buildSummary(
  *  `/runs`; `pollAll` only fetches it for idle daemons). */
 export type PollAnswerLike = {
   peers: string[];
+  hosts?: Record<string, HostStatus>;
   statuses: Record<string, FetchResult<Status>>;
   attentions: Record<string, FetchResult<Attention>>;
   runs: Record<string, FetchResult<Runs>>;
@@ -358,10 +404,11 @@ export type PollAnswerLike = {
 export function summarizeAnswer(
   answer: PollAnswerLike,
   now: number,
-  options: Omit<SummaryOptions, "runs" | "tokenFiles"> = {},
+  options: Omit<SummaryOptions, "runs" | "tokenFiles" | "hosts"> = {},
 ): Summary {
   return buildSummary(answer.peers, answer.statuses, answer.attentions, now, {
     ...options,
+    hosts: answer.hosts,
     runs: answer.runs,
     tokenFiles: answer.tokenFiles,
   });

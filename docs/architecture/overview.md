@@ -51,8 +51,8 @@ one is [Across machines](../operating/hosts.md).
 | Process | Started by | Reads | Writes | Ends when |
 | --- | --- | --- | --- | --- |
 | **loop** (`factory.py PROJECT`) | operator, in a terminal | Linear, store, config | store, worktrees, `main`, Linear, `FINDINGS.md` | queue empty, a failed run, or after a self-merge (re-execs) |
-| **supervisor** (`--supervise`) | the loop, or the operator | store | store (strikes, releases, heartbeats) | SIGTERM; re-execs itself when the factory checkout's HEAD moves |
-| **serve daemon** (`--serve`) | operator, or a systemd user unit | store, read-only | nothing | never; restart to pick up new code |
+| **supervisor** (`--supervise --once`, the host sweep) | a systemd timer every 60 s, for every registered project; for an unregistered one, the loop or the operator (`PROJECT --supervise`) | stores, the host registry, Linear, GitHub | stores (strikes, releases, heartbeats), `sweep.json` | after one run; the project form on SIGTERM |
+| **serve daemon** (`--serve`) | a systemd socket on the first connection, one per host; or the operator, per project | stores, read-only | stores and units through its two opt-ins | when the factory checkout's HEAD moves: the next request starts the new code |
 | **implementer** | the loop, per run | the worktree, the ticket body | the worktree | budget or commit |
 | **reviewer** | the loop, per round | a staged, read-only export of the candidate | its verdict text | verdict or timeout |
 | **drawer** | SwiftBar, every 10 s | the daemons | nothing | never |
@@ -82,10 +82,15 @@ sees. [Store and state](data.md) has the tables and the diagrams.
 - **The review container** sees a clean export of the candidate commit,
   read-only, with no credentials and no host home. It can witness only
   what is in that tree. See [Reviewing](../reviewing.md).
-- **The bind address and `[serve] token_file`** are the daemon's access
+- **The bind address and the bearer token** are the daemon's access
   control: it listens on `127.0.0.1`, or on one private-network address,
   and nowhere else; a non-loopback bind refuses to start without a token
-  file, and every JSON route but `/peers` then demands that bearer token.
+  file (the host registry's `[serve] machine_token_file`, or a project
+  daemon's `[serve] token_file`), and every JSON route but `/peers` then
+  demands that bearer token.
+- **The host registry** is the daemon's only map from a route name to a
+  project: `/projects/NAME` resolves through it, never through a path built
+  from the URL, and a name outside it is 404 before any file is opened.
 
 ### Projections
 
@@ -96,9 +101,11 @@ sees. [Store and state](data.md) has the tables and the diagrams.
   "repo"`, is the newest twenty-five entries below a marker, regenerated
   from `runs` and `reviewRounds` at every close-out. Nobody edits it. By
   default (`"none"`) it is not rendered: the store is the record.
-- **The ten JSON routes** in [HTTP endpoints](../reference/http.md)
-  (`/status`, `/runs`, `/ledger`, `/attention` and the rest) are the store
-  as JSON, one read-only connection per request.
+- **The JSON routes** in [HTTP endpoints](../reference/http.md)
+  (`/status`, `/runs`, `/ledger`, `/attention` and the rest) are each
+  store as JSON under its project's `/projects/NAME` prefix, one read-only
+  connection per request; the host daemon's root `/status` and
+  `/attention` gather every project's.
 - **The drawer** is those endpoints as a menu.
 
 ## What talks to what, and over which channel
@@ -109,7 +116,7 @@ sees. [Store and state](data.md) has the tables and the diagrams.
 | loop | implementer | subprocess in its own process group | local |
 | loop | reviewer | `docker run`, staged repo mounted read-only; Codex reaches its backend outbound from inside | local + outbound |
 | loop | origin | nothing. The factory never pushes; the operator does | none |
-| supervisor | loop | only through the store: strikes, releases, `loopRestarts` | local |
+| supervisor | loop | through the store (strikes, releases, `loopRestarts`), and `systemctl --user start` of the loop's unit when a ticket is ready | local |
 | daemon | drawer | HTTP on the bind address | local, or inbound from a private network |
 | operator | Linear | `--file-ticket` against the project's `[board]` | outbound |
 

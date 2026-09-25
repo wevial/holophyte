@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -187,12 +188,24 @@ def _transient(error):
     return isinstance(error, (urllib.error.URLError, TimeoutError))
 
 
-def _urlopen(req, retry):
+def _admit(what):
+    """`holophyte.deadline.admit(what)`: `CallRefused` once the host sweep's
+    bound is spent. Looked up, not imported, so this module still imports
+    alone; a process that never loaded the module has no bound to spend."""
+    bounds = sys.modules.get("holophyte.deadline")
+    if bounds is not None:
+        bounds.admit(what)
+
+
+def _urlopen(req, retry, what):
     """`urlopen(req)`, tried again after each of READ_RETRY_WAITS when
     `retry` and the failure is a 502/503/504, a connection error or a
-    timeout; the last failure is raised unchanged."""
+    timeout; the last failure is raised unchanged. Under the host sweep's
+    bound no attempt starts, and no wait begins, once it is spent: that is
+    `CallRefused` naming `what` (`_admit()`)."""
     waits = iter(READ_RETRY_WAITS if retry else ())
     while True:
+        _admit(what)
         try:
             return urllib.request.urlopen(req, timeout=30)
         except (urllib.error.URLError, TimeoutError) as e:
@@ -201,6 +214,7 @@ def _urlopen(req, retry):
                 raise
             if isinstance(e, urllib.error.HTTPError):
                 LINEAR_BUDGET.remember(e.headers)
+            _admit(what)
             sleep(wait)
 
 
@@ -211,8 +225,10 @@ def _gql(query, variables=None):
     body = json.dumps({"query": query, "variables": variables or {}}).encode()
     req = urllib.request.Request(GRAPHQL, data=body, headers={
         "Authorization": key, "Content-Type": "application/json"})
+    root = re.search(r"\{\s*(\w+)", query)
+    what = f"Linear's {root.group(1) if root else 'GraphQL'} request"
     try:
-        res = _urlopen(req, retry=_is_read(query))
+        res = _urlopen(req, retry=_is_read(query), what=what)
     except urllib.error.HTTPError as e:
         LINEAR_BUDGET.remember(e.headers)
         if e.code == 429:

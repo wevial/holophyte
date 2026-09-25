@@ -30,7 +30,10 @@ python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails th
 python3 factory.py /path/to/repo --status [--json] # projects, live and parked runs, ready count, locks
 python3 factory.py --import-store PATH --dry-run /path/to/repo # what importing another store would move; writes nothing
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
+python3 factory.py --supervise [--once]          # the host sweep over every project in host.toml; --once is one run
 python3 factory.py --serve 7710 /path/to/repo         # JSON daemon on loopback, the console at /; reads, and writes only with [serve] actions or config_edit; HOST:PORT to bind elsewhere
+python3 factory.py --serve [HOST:PORT]          # the host daemon: every project in host.toml under /projects/NAME, socket-activated under systemd
+python3 factory.py --status [--json]            # every project in host.toml, the last host sweep, the locks
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
 python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run parked for merge approval
 python3 factory.py --babysit KO-n [--note TEXT] /path/to/repo # look at a parked run's pull request again
@@ -43,7 +46,7 @@ python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # recor
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
-python3 factory.py project add|list|enable|hold|disable [--store PATH] # register projects and change their admission
+python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
 ```
 
 `--file-ticket` validates the file against the project, creates the issue,

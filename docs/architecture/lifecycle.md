@@ -179,9 +179,10 @@ opted in with `[report] findings = "repo"`.
 
 If the project is the factory itself, `reexec.reexec_self()` replaces the
 loop process with a fresh `factory.py` from the merged code and records a
-`loopRestarts` row; the supervisor notices the checkout's HEAD moved on its
-next pass and re-execs too. The daemon does not; it is stateless and the
-operator restarts its unit. The operator pushes `main` to origin by hand.
+`loopRestarts` row. The next sweep run starts from the new HEAD, and the
+daemon, stateless, exits once it sees HEAD moved and is started again on
+the new code by the next request. The operator pushes `main` to origin by
+hand.
 
 ## When it goes wrong
 

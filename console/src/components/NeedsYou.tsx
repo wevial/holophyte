@@ -36,7 +36,7 @@ function rowKey({ item, attempts }: BandEntry, index: number): string {
 /** The band that opens the Now view: what needs a human across every host
  *  in view, each item stamped with its daemon's project, plus one critical
  *  row per daemon that stopped answering. `now` is the console's clock.
- *  `ledgers` is each daemon's `/ledger` answer by address, its threads
+ *  `ledgers` is each record's `/ledger` answer by its key, its threads
  *  keyed by ticket; a question row whose daemon has one opens its thread,
  *  one thread at a time, and a band without any renders as before. The
  *  `failed` items of one ticket are one row wearing an attempts badge; it
@@ -70,7 +70,7 @@ export function NeedsYou({
    *  The daemon's numbers are frozen at its answer, so each ages by the
    *  local time since that answer arrived until the next poll realigns. */
   const describeRow = (item: AttentionItem) => {
-    const host = hosts.find((candidate) => candidate.address === item.daemon);
+    const host = hosts.find((candidate) => candidate.key === item.daemon);
     const status = host?.status;
     if (item.kind === UNREACHABLE || !status) {
       return describe(item, { heartbeat_stale_ms: 0, strikes: 0 }, { now });
@@ -104,7 +104,7 @@ export function NeedsYou({
    *  with whether its `/status` advertised `actions`; undefined for the
    *  unreachable row, whose daemon is not answering. */
   const daemonOf = (item: AttentionItem) => {
-    const host = hosts.find((candidate) => candidate.address === item.daemon);
+    const host = hosts.find((candidate) => candidate.key === item.daemon);
     if (!host || item.kind === UNREACHABLE) return undefined;
     return { base: host.base, actions: host.status?.actions === true, fetch: actionFetch };
   };

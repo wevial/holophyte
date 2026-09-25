@@ -26,7 +26,7 @@ after a claim is contract drift.
 | `reviewRounds` | review or adjudication round | loop | verdict, structured findings, their fingerprint, the verify result shown to the reviewer, the agent route |
 | `runEvents` | narrative event | loop, supervisor | phase changes, warnings, sweeps; the story `FINDINGS.md` does not tell. `level` ∈ `narrative, detail`; a `detail` row of kind `crash` carries the traceback of a run that crashed in its `payload`, its summary the one-line reason |
 | `sweepStrikes` | supervisor sighting | supervisor | consecutive silent sightings per run |
-| `supervisorHeartbeats` | supervisor process | supervisor | pid, start, last beat, passes, host |
+| `supervisorHeartbeats` | supervisor process; one row for the host sweep | supervisor | pid, start, last beat, passes, host; the host sweep keeps one sentinel row per store, pid 0, which readers print as "host sweep" |
 | `loopRestarts` | self-merge re-exec | loop | sha; the supervisor checks the loop came back |
 | `linearDeliveries` | push to Linear | loop | what was projected, when |
 | `interventions` | operator or supervisor decision on a run | operator commands, supervisor | action ∈ `redirect, kill, extend_time_box, resume, close_out, requeue, approve, repoint` plus the babysit action `store.babysit()` writes (a fixed set, currently 9 values); the record-before-acting rule lives here |
@@ -75,9 +75,15 @@ never disagree.
   `BEGIN IMMEDIATE`. A loop that dies holding it blocks every later claim
   until the supervisor sweeps the run, which is the supervisor's reason to
   exist.
-- `supervisor.lock` in the state directory holds the supervisor's pid;
-  a second supervisor for the same project exits naming it. A dead pid is
-  reclaimed under an `flock` on a sidecar.
+- `supervisor.lock` in the state directory holds a project supervisor's
+  pid; a second supervisor for the same project exits naming it. A dead pid
+  is reclaimed under an `flock` on a sidecar. The host sweep takes the same
+  kind of lock in the host's home, `HOLOPHYTE_HOME/supervisor.lock`, for
+  each run, and skips a project whose own lock names a live pid.
+- Beside it, three host files no store owns: `host.toml`, the registry;
+  `sweep.json`, what the host sweep remembers between runs, rewritten whole
+  after every project; and `host-actions.jsonl`, the host daemon's
+  append-only ledger of `run-sweep` requests, written before it acts.
 - Review scratch directories under `~/.cache/holophyte/reviews/` are
   temporary; a review container whose directory is gone is a stray.
 

@@ -384,7 +384,7 @@ supplies the binary; review roles run on the host and keep their path.
 | --- | --- | --- |
 | `stop_on_failure` | Default: `true` | Boolean; set false to continue the queue after a failed run. |
 | `order` | Default: `"identifier"` | `"identifier"` or `"priority"`; choose priority to claim urgent Linear tickets first. |
-| `spawn_supervisor` | Default: `true` | Boolean; disable when a service manager owns the supervisor. |
+| `spawn_supervisor` | Default: `true` | Boolean; disable when a service manager owns the supervisor. A project in the host registry spawns none whatever it says: the host sweep watches it. |
 | `review_rounds` | Default: `2` | Integer at least 1; change the base independent review allowance. |
 | `review_rounds_per_lines` | Default: `800` | Integer at least 0; change the diff-size scaling interval, or use 0 to disable scaling. |
 | `review_rounds_max` | Default: `4` | Integer at least 1 and at least review_rounds; change the scaled round ceiling. |
@@ -997,7 +997,7 @@ retention_days = 7
 | `budget_grace` | Default: `1.5` | Finite positive number; change the grace multiplier on the run's per-turn allowance. |
 | `run_cap` | Default: `3.0` | Finite number from 1.5 to 5.0; change the hard ceiling in scaled ticket boxes. |
 | `review_overlap_threshold` | Default: `0.5` | Finite number in (0, 1]; change the shared-findings fraction that signals a stuck review. |
-| `sweep_interval_sec` | Default: `60` seconds | Finite positive number; change how often the supervisor sweeps. |
+| `sweep_interval_sec` | Default: `60` seconds | Finite positive number; change how often a project's own supervisor sweeps. The host sweep's interval is `host.toml`'s `[supervisor] sweep_sec` instead. |
 | `restart_grace_sec` | Default: `120` seconds | Finite positive number; increase for slower self-merge restarts. |
 | `board_ask_sec` | Default: `600` seconds | Integer at least 60; change the minimum interval between fallback board listings. |
 
@@ -1062,7 +1062,13 @@ from 1.5 to 5.0. A value outside its
 constraint is an error naming the key and the constraint, like malformed TOML,
 rather than a default quietly used in its place. A key this version does not
 know is refused the same way. The config is read once at startup; a running
-supervisor does not pick up an edit.
+supervisor does not pick up an edit. Under the sweep timer every host sweep
+run is a new process that reads each registered project's thresholds, so
+an edit applies at the next run (the `--supervise` loop without a timer
+re-reads a project's config when `host.toml` changes);
+its interval is not a project's but the host's, `[supervisor] sweep_sec` in
+`host.toml` ([The host registry](operating.md#the-host-registry)), and it
+judges a project's watcher beat stale after two of those intervals.
 
 ## `[serve]`
 
@@ -1160,6 +1166,17 @@ host (`[worktree] setup`, `[agents]`). All three are read once at bind. The
 routes, their bodies and replies are in [The daemon's
 actions](reference/daemon.md).
 
+On a host daemon (`factory.py --serve` with no project) the keys split.
+`name` is the project's route name, `/projects/NAME/...`, as well as its
+unit instance, and must be unique across the registry. `config_edit`
+stays per project, read when the registry is (re)read. `token_file` is
+accepted under the project's own prefix only, beside the machine token,
+for one release. The bind, `machine_token_file` and `actions` are the
+host's, in `host.toml`'s `[serve]` table ([The host
+registry](operating.md#the-host-registry)): a project's `actions` is not
+read, and a project's `machine_token_file` is named once at start and
+ignored.
+
 ## `[console]`
 
 | Key | Default | Allowed values and when to change |
@@ -1182,7 +1199,9 @@ at startup like `--serve`'s address -- a non-empty host, a decimal port -- and
 none may appear twice; a bad entry is a startup error naming `[console]
 daemons` and the entry, before anything is served. A peer beyond loopback
 is behind its own `[serve] token_file`; the page presents the token the
-operator gives it.
+operator gives it. A host daemon serves every registered project, so its
+peers are other hosts' daemons, listed in `host.toml`'s `[console]
+daemons`; a project's own list is not read there.
 
 ## `[report]`
 

@@ -19,7 +19,8 @@ every file; this page lists what each seam promises.
 | **`review`** | `holophyte/review.py` | Reviewer prose in, structured findings and a verdict out: the `CRITERION n:` checklist parser, the witness-test resolver, the finding key. |
 | **`findings`** | `holophyte/findings.py` | The `FINDINGS.md` window renderer, byte-stable, from `EndedRun` and `ReviewRound` rows only. |
 | **`board`** | `holophyte/board.py` | Linear as a notice board: mirror a ticket into the store with its contract snapshot, push status, detect drift at merge, escalate a twice-failed ticket, file and update tickets from files. |
-| **`reexec`** | `holophyte/reexec.py` | Replace the process with the same command line, through an `EXEC` seam tests can intercept. Shared by the loop and the supervisor. |
+| **`reexec`** | `holophyte/reexec.py` | Replace the process with the same command line, through an `EXEC` seam tests can intercept, shared by the loop and the project daemon; and `systemctl --user` on the deploy units (the loop's, the sweep's), shared by the supervisor and the daemon's actions. |
+| **`host`** | `holophyte/host.py` | The host registry, `host.toml`: the projects the host daemon serves and the host sweep watches, by path, re-read when it changes; written by `project add` and `project remove` alone. A route name resolves through `Host.project()` alone. Opens no store. |
 | **`config`** | `holophyte/config.py`, `holophyte/config_tables.py` | Every `config.toml` table as a typed value with defaults, validated at startup; unknown keys are startup errors. |
 
 ## What depends on what
@@ -67,6 +68,12 @@ flowchart TB
   gates --> config
   agents --> config
   board --> config
+  cli --> serve_host
+  cli --> sweep_host
+  serve_host --> serve
+  serve_host --> host
+  sweep_host --> supervisor
+  sweep_host --> host
   everything[every module] --> project[Project]
 ```
 
@@ -81,7 +88,10 @@ Three rules hold the graph in this shape: `serve` reads through
 the store API (`store.record_intervention()`, `store.requeue()`,
 `store.operator_notes.send_back()`);
 `holophyte.config` never imports `factory` or the loop (no cycles); and
-nothing outside `store/` writes SQL.
+nothing outside `store/` writes SQL. The host forms sit on top of the
+project ones: `serve_host` is `serve`'s handler under a `/projects/NAME`
+prefix, one `Project` per registry entry, and `sweep_host` runs the
+supervisor's sweep and reconcile per store, bounded by `deadline`.
 
 ## Configuration as the second seam
 
@@ -98,7 +108,12 @@ the project, read at startup and refused if unknown:
 | `[report]` | the host label rendered instead of the machine name |
 | `[merge]` | `approve` (auto or human), `mode` (local or pr) and `pr_rounds`, the babysitter-pass cap |
 | `[console]` | `daemons`, the `HOST:PORT` peers the console page fans out to |
-| `[serve]` | `token_file`, the bearer token the daemon reads for a non-loopback bind |
+| `[serve]` | `name`, the route and unit name; `token_file`, the bearer token a project daemon reads for a non-loopback bind; the opt-ins |
+
+The host's own file, `host.toml`, is the third: the registry's
+`[[project]]` paths, and the host daemon's bind, machine token and
+`actions`, the host sweep's `sweep_sec` and the console's `daemons`
+([The host registry](../operating.md#the-host-registry)).
 
 [Config](../config.md) has each with a commented example.
 

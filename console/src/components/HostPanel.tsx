@@ -1,14 +1,22 @@
 import { useState } from "react";
 import { CHIP_LABELS, KINDS, countsByKind, type Kind } from "../lib/attention";
-import { isSupervisorStale, projectName } from "../lib/derive";
+import { projectName } from "../lib/derive";
 import { age } from "../lib/format";
-import { addressOf, hostName, hostTone, runCounts, toilLines, type HostRecord } from "../lib/hosts";
+import { addressOf, hostName, hostTone, runCounts, supervisorStale, toilLines, type HostRecord } from "../lib/hosts";
 import { routeParts, routeText } from "../lib/routes";
 import { forgetToken, storeToken, tokenFor } from "../lib/token";
 import { ActionButton } from "./ActionButton";
 import { TOKEN_REJECTED } from "./HostRow";
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** Who wrote a supervisor beat: `pid N`, or "host sweep" for pid 0, the
+ *  host sweep's one sentinel row per store (no process to name); null
+ *  when the beat names none. */
+export function beatPid(pid: number | null): string | null {
+  if (pid == null) return null;
+  return pid === 0 ? "host sweep" : `pid ${pid}`;
+}
 
 /** "1 question · 2 stale runs" from a host's own `/attention`, empty with none. */
 const NOUNS: Record<Kind, string> = {
@@ -35,7 +43,7 @@ function attentionSummary(host: HostRecord): string[] {
  *  the field, with the reason under it and nothing stored. `onStored`
  *  tells the card a value was kept, so its Forget button appears at
  *  once rather than on the next poll. */
-function TokenField({ host, onStored }: { host: HostRecord; onStored: () => void }) {
+export function TokenField({ host, onStored }: { host: HostRecord; onStored: () => void }) {
   const [token, setToken] = useState("");
   const [reason, setReason] = useState<string | null>(null);
   const [sentAt, setSentAt] = useState<number | null>(null);
@@ -120,7 +128,7 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
   const hasToken = tokenFor(tokenAddress) != null;
   const tone = hostTone(host);
   const dot = { ok: "bg-ok", bad: "bg-bad", faint: "bg-faint" }[tone];
-  const stale = status ? isSupervisorStale(status.supervisor, status.thresholds.heartbeat_stale_ms) : false;
+  const stale = status ? supervisorStale(host.name != null, status) : false;
   const seen = host.seen_ms == null ? "never answered" : `last seen ${age(now - host.seen_ms)} ago`;
   const counts = status ? runCounts(status) : null;
   const runsCell = counts
@@ -131,7 +139,7 @@ export function HostPanel({ host, now }: { host: HostRecord; now: number }) {
   const supervisorCell = status
     ? [
         stale ? "stale" : status.supervisor.state,
-        status.supervisor.pid == null ? null : `pid ${status.supervisor.pid}`,
+        beatPid(status.supervisor.pid),
         status.supervisor.heartbeat_age_ms == null ? null : `hb ${age(status.supervisor.heartbeat_age_ms)}`,
       ]
         .filter((part): part is string => part != null)
@@ -304,7 +312,7 @@ export function HostAgents({ label, hosts }: { label: string; hosts: HostRecord[
         </thead>
         <tbody>
           {rows.map(({ host, project, labels }) => (
-            <tr key={host.address} className="border-t border-line-faint align-top">
+            <tr key={host.key} className="border-t border-line-faint align-top">
               <th scope="row" className="py-2 pr-3 font-semibold text-ink">
                 {projectName(project)}
               </th>

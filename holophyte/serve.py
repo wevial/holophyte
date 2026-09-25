@@ -94,12 +94,18 @@ the two differ it stops accepting, lets the requests in flight finish,
 closes its socket and re-executes itself through `reexec_self()` with the
 same command line, so it binds the same address again -- the port typed,
 not the one an ephemeral `:0` happened to get. A checkout whose `HEAD`
-cannot be read logs that once and keeps serving the build it has.
+cannot be read logs that once and keeps serving the build it has. Handed
+a listening socket by the service manager (`serve_watch.adopted_socket()`)
+it serves on that instead of binding, drains for at most `DRAIN_SEC` and
+exits 0 on a code move: the manager starts the new code on the next
+connection. With no project, `holophyte.serve_host` serves every project
+in the host registry through this handler, one `Scope` per request.
 
 Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
 """
 from __future__ import annotations
 
+import collections
 import hmac
 import json
 import os
@@ -161,7 +167,14 @@ from holophyte.serve_runs import (
     runs,
     shipped,
 )
-from holophyte.serve_watch import CODE_CHECK_SEC, CodeWatch, InFlight, Moved
+from holophyte.serve_watch import (
+    CODE_CHECK_SEC,
+    DRAIN_SEC,
+    CodeWatch,
+    InFlight,
+    Moved,
+    adopted_socket,
+)
 from holophyte.supervisor import SWEEPABLE_PHASES, factory_revision
 from store.working import agent_work, effective_work, verify_work
 
@@ -206,6 +219,14 @@ TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 # The fixed JSON paths that read the store; every one is behind the token.
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger",
                         "/attention", "/board"})
+# What one request answers for: the project, the read and write bearer
+# values (None: open), the two opt-ins, the unit instance, the route prefix
+# (None in project mode) and the beat's stale threshold (None: the
+# project's own). A project daemon has one; a host daemon builds one per
+# request from the registry.
+Scope = collections.namedtuple(
+    "Scope", ("project", "token", "action_token", "actions", "config_edit",
+              "unit_name", "prefix", "beat_stale_ms"))
 
 
 def parse_address(text):
@@ -231,7 +252,7 @@ def parse_address(text):
                          f" got {text!r}") from None
 
 
-def status(project, now=None, started_ms=None):
+def status(project, now=None, started_ms=None, beat_stale_ms=None):
     """Return target status, process-owned routes and independent run clocks.
 
     Read-only; a missing store returns 503. Ages and effective working_ms use
@@ -242,7 +263,9 @@ def status(project, now=None, started_ms=None):
     Runs include title, phase, round, heartbeat age and sweep strikes. The scaled
     time box and thresholds agree with the loop's budget checks. `project` is the
     repository path; `actions` and `config_edit` advertise authenticated daemon
-    mutations; `toil` is the report's human interventions per merge."""
+    mutations; `toil` is the report's human interventions per merge.
+    `beat_stale_ms` replaces `heartbeat_stale_ms` in judging the supervisor
+    beat, as a host daemon judges the host sweep's."""
     now = int(time() * 1000) if now is None else now
     started_ms = now if started_ms is None else started_ms
     if not project.store_path.exists():
@@ -282,7 +305,8 @@ def status(project, now=None, started_ms=None):
         "host": host_label(project, socket.gethostname()),
         "now": now, "toil": toil,
         "daemon": {"started_ms": started_ms, "pid": os.getpid()},
-        "supervisor": supervisor_view(project, beat, now, knobs),
+        "supervisor": supervisor_view(project, beat, now, knobs,
+                                      beat_stale_ms),
         "thresholds": {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                        "strikes": knobs.stale_strikes, "run_cap": knobs.run_cap},
         "actions": serve_config(project).actions,
@@ -311,14 +335,16 @@ def status(project, now=None, started_ms=None):
     }
 
 
-def supervisor_view(project, beat, now, knobs):
+def supervisor_view(project, beat, now, knobs, stale_ms=None):
     """`/status`'s `supervisor` object for `beat` (None when none was ever
-    written): `live` under the stale threshold, `stale` at or past it."""
+    written): `live` under the stale threshold -- `stale_ms`, else the
+    project's `heartbeat_stale_ms` -- `stale` at or past it."""
     if beat is None:
         return {"state": "none", "pid": None, "heartbeat_age_ms": None,
                 "host": None}
     age = now - beat.lastBeat
-    return {"state": "live" if age < knobs.heartbeat_stale_ms else "stale",
+    stale_ms = knobs.heartbeat_stale_ms if stale_ms is None else stale_ms
+    return {"state": "live" if age < stale_ms else "stale",
             "pid": beat.pid, "heartbeat_age_ms": age,
             "host": host_label(project, beat.host)}
 
@@ -358,7 +384,7 @@ def parked_item(ticket):
             "pr_url": ticket.prUrl, "level": "attention"}
 
 
-def attention(project, now=None):
+def attention(project, now=None, beat_stale_ms=None):
     """The `/attention` answer: `(http status, JSON-able body)`.
 
     `items` is what needs the operator, in the order they should read it:
@@ -409,7 +435,7 @@ def attention(project, now=None):
                  and run.activeRunId is None
                  and run.ticketStatus in ("ready", "in_flight", "blocked_on_operator")
                  and run.boardState not in ("Backlog", "Canceled", "Done"))
-    supervisor = supervisor_view(project, beat, now, knobs)
+    supervisor = supervisor_view(project, beat, now, knobs, beat_stale_ms)
     if supervisor["state"] != "live":
         items.append({"kind": "supervisor", "state": supervisor["state"],
                       "heartbeat_age_ms": supervisor["heartbeat_age_ms"],
@@ -656,6 +682,14 @@ def shaped_route(path):
     return None
 
 
+def is_json_route(path):
+    """Whether `path` names a route that reads a project: a fixed JSON
+    path, `/config`, the `/actions/` prefix or a shaped route."""
+    return (path in JSON_PATHS or path == CONFIG_PATH
+            or path.startswith(ACTIONS_PREFIX)
+            or shaped_route(path) is not None)
+
+
 class StatusHandler(BaseHTTPRequestHandler):
     """`GET /status`, `GET /runs`, `GET /runs/N`, `GET /runs/N/files`,
     `GET /attention`, `GET /board` and `GET /peers` as JSON; any other GET
@@ -705,44 +739,54 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parts = urlsplit(self.path)
-        path = parts.path
-        # The token check comes before any route reads the store, and after
-        # the question of which routes are open: a 401 touches nothing.
-        # `/config` demands the write token on every bind, as the actions
-        # do, when the opt-in is on; off, it is 404 behind the read token.
-        token = (self.server.action_token if path == CONFIG_PATH
-                 and self.server.config_edit else self.server.token)
+        self.get(self.server.scope, parts.path, parts.query)
+
+    def get(self, scope, path, query):
+        """The token check, then `dispatch()`. The check comes before any
+        route reads the store, and after the question of which routes are
+        open: a 401 touches nothing. `/config` demands the write token on
+        every bind, as the actions do, when the opt-in is on; off, it is
+        404 behind the read token."""
+        token = (scope.action_token if path == CONFIG_PATH
+                 and scope.config_edit else scope.token)
         if token is not None and not self.open_route(path) \
                 and not authorized(self.headers.get("Authorization"), token):
             return self.answer(401, {})
-        self.dispatch(path, parts.query)
+        self.dispatch(scope, path, query)
 
-    def dispatch(self, path, query):
+    def dispatch(self, scope, path, query):
         """Answer `path` from its route: the JSON ones by name, `/peers`
         from config, anything else as a console file."""
+        project = scope.project
+        # A host daemon judges the beat by its sweep interval.
+        beat = ({} if scope.beat_stale_ms is None
+                else {"beat_stale_ms": scope.beat_stale_ms})
         if path == "/status":
-            code, body = status(self.server.project,
-                                started_ms=self.server.started_ms)
+            code, body = status(project, started_ms=self.server.started_ms,
+                                **beat)
+            if scope.prefix is not None and code == 200:
+                # The host's opt-ins, not the project file's.
+                body.update(actions=scope.actions,
+                            config_edit=scope.config_edit)
         elif path == "/runs":
-            code, body = runs(self.server.project, query)
+            code, body = runs(project, query)
         elif path == "/shipped":
-            code, body = shipped(self.server.project, query)
+            code, body = shipped(project, query)
         elif path == "/ledger":
-            code, body = ledger(self.server.project, query)
+            code, body = ledger(project, query)
         elif path == "/attention":
-            code, body = attention(self.server.project)
+            code, body = attention(project, **beat)
         elif path == "/board":
-            code, body = board(self.server.project)
+            code, body = board(project)
         elif path == "/peers":
             code, body = 200, {"self": self.server.self_address,
                                "peers": list(self.server.peers)}
         elif path == CONFIG_PATH:
             code, body = ((404, {"error": "not found", "path": path})
-                          if not self.server.config_edit
-                          else read_config(self.server.project))
+                          if not scope.config_edit else read_config(project))
         elif (shaped := shaped_route(path)) is not None:
             handler, segment = shaped
-            code, body = handler(self.server.project, segment)
+            code, body = handler(project, segment)
         else:
             found = static_file(self.server.console_dir, path)
             if isinstance(found[0], bytes):
@@ -751,6 +795,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.answer(code, body)
 
     def do_POST(self):
+        self.post(self.server.scope, urlsplit(self.path).path)
+
+    def post(self, scope, path):
         """`POST /actions/NAME` when `[serve] actions = true`; 405 on any
         other path, as every non-GET method is.
 
@@ -764,58 +811,66 @@ class StatusHandler(BaseHTTPRequestHandler):
         before it is 404. The body is JSON (`parse_action_body()`), 400
         when it is not. A handler that raises is 500 (`action_failure()`).
         """
-        path = urlsplit(self.path).path
         if not path.startswith(ACTIONS_PREFIX):
             return self.refuse()
-        token = (self.server.action_token if self.server.actions
-                 else self.server.token)
+        token = scope.action_token if scope.actions else scope.token
         if token is not None and not authorized(
                 self.headers.get("Authorization"), token):
             return self.answer(401, {})
         action = path[len(ACTIONS_PREFIX):]
-        if not self.server.actions or action not in ACTIONS:
+        if not scope.actions or action not in self.server.action_names:
             return self.answer(404, {"error": "not found", "path": path})
         try:
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"error": str(bad)})
-        project = self.server.project
+        self.answer(*self.act(scope, action, body))
+
+    def act(self, scope, action, body):
+        """Run `action` for `scope`'s project: `(http status, body)`."""
+        project = scope.project
         try:
             if action == "send-back":
-                code, body = send_back_action(
+                return send_back_action(
                     project, body.get("run"), body.get("note"),
                     body.get("author", "maintainer"))
-            elif action == REQUEUE_ACTION:
-                code, body = requeue_action(project, body)
-            elif action in LEVERS:
-                code, body = LEVERS[action](project, body)
-            else:
-                code, body = unit_action(project, action, self.server.unit_name)
+            if action == REQUEUE_ACTION:
+                return requeue_action(project, body)
+            if action in LEVERS:
+                return LEVERS[action](project, body)
+            return unit_action(project, action, scope.unit_name)
         except (Exception, SystemExit) as failure:
-            code, body = action_failure(project, action, failure)
-        self.answer(code, body)
+            return self.act_failed(scope, action, failure)
+
+    def act_failed(self, scope, action, failure):
+        """The answer for an action that raised `failure`: 500."""
+        return action_failure(scope.project, action, failure)
 
     def do_PUT(self):
+        self.put(self.server.scope, urlsplit(self.path).path)
+
+    def put(self, scope, path):
         """`PUT /config` when `[serve] config_edit = true`; 405 on any
         other path. Token, then opt-in, then body, in the actions' order
         and for their reasons: the write token on every bind, 404 without
         the opt-in whatever the token, 400 for a body that is not a JSON
         object; `write_config()` judges the text or the patch."""
-        path = urlsplit(self.path).path
         if path != CONFIG_PATH:
             return self.refuse()
-        token = (self.server.action_token if self.server.config_edit
-                 else self.server.token)
+        token = scope.action_token if scope.config_edit else scope.token
         if token is not None and not authorized(
                 self.headers.get("Authorization"), token):
             return self.answer(401, {})
-        if not self.server.config_edit:
+        if not scope.config_edit:
             return self.answer(404, {"error": "not found", "path": path})
         try:
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"ok": False, "error": str(bad)})
-        self.answer(*write_config(self.server.project, body))
+        self.answer(*self.edit_config(scope, body))
+
+    def edit_config(self, scope, body):
+        return write_config(scope.project, body)
 
     def read_body(self):
         """The request body as a JSON object (`parse_action_body()`);
@@ -833,10 +888,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         never one either."""
         if path in OPEN_PATHS:
             return True
-        if path in JSON_PATHS or path == CONFIG_PATH \
-                or path.startswith(ACTIONS_PREFIX):
-            return False
-        return shaped_route(path) is None
+        return not is_json_route(path)
 
     def refuse(self):
         self.answer(405, {"error": "method not allowed",
@@ -901,32 +953,43 @@ class StatusServer(InFlight, ThreadingHTTPServer):
     answers: the target's `[console] daemons`, read once at bind, and the
     address the daemon bound as `HOST:PORT` -- the label it announces, so a
     page loaded from it can tell this daemon from the peers, not the
-    machine's name. `actions` and `unit_name` are `[serve] actions` and
-    `[serve] name`, read once at bind too: whether `POST /actions/...`
-    answers and which unit instance it addresses; `config_edit` is `[serve]
-    config_edit`, whether the `/config` routes answer; `action_token` is the
-    bearer values those routes accept on every bind, resolved at bind from
-    `[serve] token_file` (and `machine_token_file`) when the read `token`
-    is None, so a loopback daemon with actions on exits at bind without
-    the key rather than answering them open."""
+    machine's name. `scope` is the one `Scope` every request answers for,
+    read once at bind: `[serve] actions`, `config_edit` and `name`, and
+    the bearer values -- `action_token` resolved at bind from `[serve]
+    token_file` (and `machine_token_file`) when the read `token` is None,
+    so a loopback daemon with actions on exits at bind without the key
+    rather than answering them open. `sock`, when given, is a listening
+    socket to serve on instead of binding `address`."""
 
     daemon_threads = True
     # Called by `serve_forever()` between requests; `serve()` sets it to
     # its `CodeWatch`.
     code_check = None
+    # The `POST /actions/NAME` names this daemon answers.
+    action_names = ACTIONS
 
-    def __init__(self, project, address, console_dir=CONSOLE_DIR, token=None):
+    def __init__(self, project, address, console_dir=CONSOLE_DIR, token=None,
+                 sock=None):
         self.project = project
         self.console_dir = Path(console_dir)
-        self.token = token
         self.peers = console_config(project).daemons
         knobs = serve_config(project)
-        self.actions = knobs.actions
-        self.config_edit = knobs.config_edit
-        self.unit_name = knobs.name
-        self.action_token = resolve_action_token(project, knobs, token)
+        self.scope = Scope(project, token,
+                           resolve_action_token(project, knobs, token),
+                           knobs.actions, knobs.config_edit, knobs.name,
+                           None, None)
         self.started_ms = int(time() * 1000)
-        super().__init__(address, StatusHandler)
+        self.listen(address, StatusHandler, sock)
+
+    def listen(self, address, handler, sock):
+        """Bind `address`, or take over the listening `sock` as it is."""
+        if sock is None:
+            super().__init__(address, handler)
+        else:
+            super().__init__(sock.getsockname()[:2], handler,
+                             bind_and_activate=False)
+            self.socket.close()
+            self.socket = sock
         host, port = self.server_address[:2]
         self.self_address = f"{host}:{port}"
 
@@ -935,7 +998,8 @@ class StatusServer(InFlight, ThreadingHTTPServer):
             self.code_check()
 
 
-def make_server(project, host, port, console_dir=CONSOLE_DIR, token=None):
+def make_server(project, host, port, console_dir=CONSOLE_DIR, token=None,
+                sock=None):
     """Bind a `StatusServer` for `project` at `host:port` and return it.
 
     Port 0 binds an ephemeral port; the address actually bound is
@@ -943,32 +1007,62 @@ def make_server(project, host, port, console_dir=CONSOLE_DIR, token=None):
     `console_dir` is where `/` is served from -- the repository's own
     `console/dist/` unless a test points it elsewhere. `token`, when given,
     is the tuple of bearer values every JSON route accepts; `serve()` resolves it
-    from the bind address and the config through `resolve_token()`.
+    from the bind address and the config through `resolve_token()`. `sock`
+    is a socket the service manager handed over, served on unbound.
     """
-    return StatusServer(project, (host, port), console_dir, token)
+    return StatusServer(project, (host, port), console_dir, token, sock)
 
 
 class _Stopped(Exception):
     """Raised inside `serve_forever()` by the signal handler to unwind it."""
 
 
+def listen_address(address, sock, out, source="--serve"):
+    """`(host, port)` to judge and bind: the handed-over `sock`'s own
+    address, naming `address` once when it says otherwise, else `address`
+    parsed."""
+    if sock is None:
+        return parse_address(address)
+    bound = sock.getsockname()[:2]
+    if address and parse_address(address) != bound:
+        print(f"[holo2] {source} {address} is ignored: serving on"
+              f" {bound[0]}:{bound[1]}, the socket the service manager"
+              " handed over", file=out)
+    return bound
+
+
 def serve(project, address, out=None, interval=CODE_CHECK_SEC):
     """`--serve`'s whole body: bind, announce, answer until SIGINT/SIGTERM
-    or until the factory code moves, then re-execute.
+    or until the factory code moves, then re-execute (`run()`)."""
+    out = out or sys.stdout
+    require_tomlkit()
+    sock = adopted_socket()
+    host, port = listen_address(address, sock, out)
+    token = resolve_token(project, host)
+    server = make_server(project, host, port, token=token, sock=sock)
+    guard = "open" if token is None else "behind a bearer token"
+    opened = [name for name, on in (("actions", server.scope.actions),
+                                    ("config edit", server.scope.config_edit))
+              if on]
+    mode = f"with {' and '.join(opened)}" if opened else "read-only"
+    return run(server, f"{mode} for {project.path}, {guard}", out, interval,
+               adopted=sock is not None)
+
+
+def run(server, description, out, interval, adopted=False):
+    """Announce `server`, answer until SIGINT/SIGTERM or until the factory
+    code moves, then leave for the new code: 0.
 
     The handler for the stop signals raises out of `serve_forever()` rather
     than calling `shutdown()`: `shutdown()` waits for the serving loop to
     notice, and the loop is the thread the signal interrupted. The code
     check raises out of it the same way, from the loop's own thread between
-    requests; the re-exec waits for the requests in flight, after the
-    socket is closed so the fresh process can bind it. Returns after a
-    re-exec only when a test's `EXEC` does.
+    requests. On a move the socket is closed, the requests in flight get up
+    to `DRAIN_SEC`, and then an `adopted` daemon exits -- the service
+    manager's socket starts the new code -- while one that bound its own
+    address re-executes to bind it again. Returns after a re-exec only when
+    a test's `EXEC` does.
     """
-    out = out or sys.stdout
-    require_tomlkit()
-    host, port = parse_address(address)
-    token = resolve_token(project, host)
-    server = make_server(project, host, port, token=token)
     watch = server.code_check = CodeWatch(interval, out, factory_revision)
 
     def on_signal(signum, _frame):
@@ -978,13 +1072,8 @@ def serve(project, address, out=None, interval=CODE_CHECK_SEC):
                 for signum in STOP_SIGNALS}
     try:
         bound_host, bound_port = server.server_address[:2]
-        guard = "open" if token is None else "behind a bearer token"
-        opened = [name for name, on in (("actions", server.actions),
-                                        ("config edit", server.config_edit))
-                  if on]
-        mode = f"with {' and '.join(opened)}" if opened else "read-only"
-        print(f"[holo2] serving {bound_host}:{bound_port} {mode} for"
-              f" {project.path}, {guard}", file=out)
+        print(f"[holo2] serving {bound_host}:{bound_port} {description}",
+              file=out)
         try:
             server.serve_forever(poll_interval=min(0.5, interval))
         except _Stopped:
@@ -995,8 +1084,15 @@ def serve(project, address, out=None, interval=CODE_CHECK_SEC):
         for signum, handler in previous.items():
             signal.signal(signum, handler)
         server.server_close()
-    if watch.moved_to is not None:
-        server.drain()
-        reexec_self(f"factory code moved from {watch.started_from} to"
-                    f" {watch.moved_to}; serve re-executing", EXEC, out)
+    if watch.moved_to is None:
+        return 0
+    if not server.drain(DRAIN_SEC):
+        print(f"[holo2] requests still in flight after {DRAIN_SEC}s;"
+              " leaving them", file=out)
+    moved = f"factory code moved from {watch.started_from} to {watch.moved_to}"
+    if adopted:
+        print(f"[holo2] {moved}; serve exiting for the service manager to"
+              " start the new code", file=out, flush=True)
+        return 0
+    reexec_self(f"{moved}; serve re-executing", EXEC, out)
     return 0

@@ -25,16 +25,19 @@ infrastructure failure; the third response is a written diagnosis.
 ## Daily shape
 
 ```
-# one tmux session per process
+# the host daemon and the host sweep are systemd user units, for every
+# project in host.toml; see Serving standing
+systemctl --user status holophyte.target holophyte-sweep.timer
+# a loop by hand, one tmux session per project (the sweep also starts
+# holophyte-loop@NAME when a ticket is ready and no loop is live)
 tmux new-session -d -s holo-loop  "cd /path/to/holophyte && python3 -u factory.py /path/to/holophyte 2>&1 | tee -a loop.log"
-tmux new-session -d -s holo-sup   "cd /path/to/holophyte && python3 -u factory.py /path/to/holophyte --supervise 2>&1 | tee -a supervise.log"
-# the serve daemons are systemd user units; see Serving standing
 ```
 
 The loop idle-exits when the board is empty and stops after a failed run,
-so relaunching it is routine. The supervisor stays up and re-execs itself
-after self-merges. After each loop merge the operator pushes `main` by
-hand; the factory never pushes.
+so relaunching it is routine. The sweep runs every minute from the
+checkout's `HEAD`, and the daemon leaves for the new code on its own after
+a self-merge; neither is restarted by hand. After each loop merge the
+operator pushes `main` by hand; the factory never pushes.
 
 ## Recipes
 
@@ -153,6 +156,28 @@ included), a criterion naming a path the project gitignores, a section
 after `## Open questions` (it must read exactly `- None`), a bold key that
 Linear rewrote. Fix the file, `--file-ticket FILE --update KO-n`, relaunch.
 
+### The host sweep is stale or a project shows an error
+
+The host `/status` (and the drawer's sweep line, the console's host card)
+reads `sweep.json`: `stale` means no run ended in two intervals, `killed` a
+run that started and never ended.
+
+```
+systemctl --user status holophyte-sweep.timer holophyte-sweep.service
+journalctl --user -u holophyte-sweep.service -n 200
+python3 factory.py --status                     # the home lock, sweep.json, every project
+```
+
+A run that exits 1 had a project error; the timer fires again regardless,
+and `sweep.json`'s `projects` names which project and why. A killed run
+leaves the home lock with a dead pid, which the next run reclaims and
+reports. To run one now, the console's **Run sweep** or `systemctl --user
+start holophyte-sweep.service`; both record nothing in a store, and the
+console's is written to `host-actions.jsonl` first. A project skipped
+because its own `supervisor.lock` names a live pid has a project
+supervisor still running: stop it (`systemctl --user disable --now
+holophyte-supervise@NAME`), since the host sweep is its watcher now.
+
 ### Codex or Linear is down
 
 The run fails on the route with the HTTP error in its reason. Wait,
@@ -161,8 +186,10 @@ The run fails on the route with the HTTP error in its reason. Wait,
 ### The store refuses to open: schema is newer
 
 A build older than the store's schema refuses on purpose. Pull the
-checkout; the supervisor re-execs itself on the newer schema, the loop is
-relaunched, the daemon units are restarted.
+checkout: the next sweep run is the new build, the daemon exits on the
+`HEAD` move and the next request starts the new code, and the loop is
+relaunched. On the host daemon that one project answers 503 with `schema
+newer than build` until then, and the others answer whole.
 
 ### A manual merge to `main`
 
@@ -178,13 +205,16 @@ merge waits.
 ```
 python3 factory.py PROJECT --report          # estimate vs actual per run, supervisor liveness
 python3 factory.py PROJECT --sweep           # what would trip, without acting
+python3 factory.py --status                  # every registered project, the last sweep, the locks
 curl -s -H "Authorization: Bearer $(cat TOKEN_FILE)" http://WRITER:7710/status | python3 -m json.tool
-curl -s -H "Authorization: Bearer $(cat TOKEN_FILE)" http://WRITER:7710/runs?limit=5
+curl -s -H "Authorization: Bearer $(cat TOKEN_FILE)" http://WRITER:7710/projects/NAME/runs?limit=5
 ```
 
-`TOKEN_FILE` is your copy of that project's `[serve] token_file`; a daemon
-bound beyond loopback answers 401 to a bare request (see [Across
-machines](hosts.md#what-listens-where)). The drawer on the operator's Mac
+`TOKEN_FILE` is your copy of the host's machine token (`host.toml`'s
+`[serve] machine_token_file`); a daemon bound beyond loopback answers 401
+to a bare request (see [Across machines](hosts.md#what-listens-where)).
+The root `/status` lists every project; each project's routes are under
+`/projects/NAME`, `NAME` its `[serve] name`. The drawer on the operator's Mac
 and the console in a browser show the same through the daemons; a
 coloured dot on the glyph means something in "needs you".
 

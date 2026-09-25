@@ -36,7 +36,7 @@ import urllib.request
 from dataclasses import dataclass
 
 import ticket_template
-from holophyte import config_tables
+from holophyte import config_tables, deadline
 from holophyte.gates import InfraFailure
 from holophyte.redact import known_secrets, outbound
 
@@ -691,6 +691,7 @@ def _call_with_gh(target, host, method, path, payload):
 
 
 def _gh_output(target, host, method, path, payload):
+    deadline.admit(f"GitHub's {method} {path} request")
     argv = [GH, "api", "--hostname", host, "--method", method, path]
     body = None
     if payload is not None:
@@ -722,6 +723,10 @@ class _TokenStaysHome(urllib.request.HTTPRedirectHandler):
     job-log endpoint redirects to a signed URL off the API's host."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # The redirected request is a request of its own: past the host
+        # sweep's bound it is refused like the first would have been.
+        deadline.admit(f"GitHub's redirect to"
+                       f" {urllib.parse.urlsplit(newurl).netloc}")
         new = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new is not None and (urllib.parse.urlsplit(newurl).netloc
                                 != urllib.parse.urlsplit(req.full_url).netloc):
@@ -730,6 +735,7 @@ class _TokenStaysHome(urllib.request.HTTPRedirectHandler):
 
 
 def _api_output(host, method, path, payload, token):
+    deadline.admit(f"GitHub's {method} {path} request")
     base = API if host == "github.com" else f"https://{host}/api/v3"
     if path == "graphql":
         url = (f"{API}/graphql" if host == "github.com"

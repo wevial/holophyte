@@ -10,6 +10,9 @@ Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
 - `holophyte/cli_project.py` — project registration, listing and admission commands.
+- `holophyte/host.py` — the host registry, `HOLOPHYTE_HOME/host.toml`: the
+  projects a host serves and sweeps, by path, reloaded when the file changes;
+  its one writer path is an exclusive temporary file and a rename.
 - `holophyte/cli.py` — the argument parser and mode dispatch: `--report`,
   `--requeue`, `--approve`, `--babysit`, `--repoint`, `--file-ticket`,
   `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
@@ -53,8 +56,16 @@ Each module, one line:
   one way, last write wins, never read back — so the provider's `set_state`
   is the only writer of that state, and the mapping table beside
   `mirror_push` says which state each status shows as.
-- `holophyte/supervisor.py` — the stale-run sweep and the `--supervise`
-  loop.
+- `holophyte/supervisor.py` — the stale-run sweep and the `PROJECT
+  --supervise` loop.
+- `holophyte/sweep_host.py` — `--supervise [--once]` with no project: the
+  host sweep over every store in `host.toml`, its per-run home lock,
+  `sweep.json`, the round-robin reconcile under a deadline, and one
+  project's failure its own `error`.
+- `holophyte/deadline.py` — the host sweep's bound on its network calls:
+  `check()` before each unit of Linear or GitHub work, and `admit()`
+  before each Linear or GitHub request, which past the bound fails as an
+  outage would; both no-ops outside the sweep.
 - `holophyte/sweep_report.py` — the sweep's report lines (KO-396): the
   `SWEEP_HEADERS` table, the per-run and restart lines, `sweep_report()`
   as `--sweep`'s whole body, and the review-container and merge-lock
@@ -88,7 +99,12 @@ Each module, one line:
   and `/runs/N/files`, their query parsers and the origin-link pair.
 - `holophyte/serve_watch.py` — the daemon's code-moved check and its
   in-flight request count (KO-648): what re-executes it between requests
-  once the factory checkout's `HEAD` moves.
+  once the factory checkout's `HEAD` moves, or, on a socket the service
+  manager handed over (`adopted_socket()`), what makes it drain and exit.
+- `holophyte/serve_host.py` — `--serve` with no project: one daemon for
+  every project in `host.toml`, each under `/projects/NAME`, the root's
+  `/status` and `/attention` for the host, the machine token, one
+  project's failure its own 503 or `error`, and `run-sweep`'s host ledger.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the

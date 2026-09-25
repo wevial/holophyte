@@ -1,7 +1,13 @@
 /**
  * One poll of every daemon the console names: `/peers` on the configured
  * console URL, then `/status` and `/attention` on each address it lists
- * (and `/runs` on the idle ones, for the last-merge line). Each request
+ * (and `/runs` on the idle ones, for the last-merge line). A host daemon's
+ * root `/status` lists its projects instead of naming one: each project is
+ * then asked the same three under `/projects/NAME` with the daemon's one
+ * bearer, the name percent-encoded, and becomes an entry of its own,
+ * `HOST:PORT/projects/NAME`; a project whose config gives no name is an
+ * entry by its encoded path that is never asked, carrying the root's
+ * error. Each request
  * carries the bearer `console.json` holds for that address and gives up
  * after `timeoutMs`. No Electron import: `main.ts` supplies the config
  * text, the user-data directory and the clock; a test supplies a fake
@@ -10,7 +16,9 @@
  * Tokens come from `console.json` as `tokens: { "HOST:PORT": "..." }` or
  * as `token_files: { "HOST:PORT": "/path" }`, the latter the same files
  * the drawer's `[[daemon]] token_file` names and the daemon's `[serve]
- * token_file` holds, read once per poll and never shown. The tray never
+ * token_file` holds -- for a host daemon, the machine token its
+ * `host.toml` names, one entry for every project it serves -- read once
+ * per poll and never shown. The tray never
  * prompts: a daemon whose token is missing is a "needs token" line, and
  * one that refuses a token read from a file names that file as out of
  * date, until the file is fixed.
@@ -19,7 +27,7 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import type { Attention, FetchResult, Runs, Status } from "./tray.ts";
+import type { Attention, FetchResult, HostStatus, Runs, Status } from "./tray.ts";
 
 export const TIMEOUT_MS = 2000;
 export const POLL_INTERVAL_MS = 10_000;
@@ -27,7 +35,12 @@ export const POLL_INTERVAL_MS = 10_000;
 export type PeersBody = { self?: string; peers?: string[]; daemons?: string[] };
 
 export type PollAnswer = {
+  /** Every entry polled, the console's own first: a project daemon's
+   *  address, or a host daemon's projects as `HOST:PORT/projects/NAME`,
+   *  each in its registry's order. */
   peers: string[];
+  /** Each host daemon's root `/status`, by its address. */
+  hosts: Record<string, HostStatus>;
   statuses: Record<string, FetchResult<Status>>;
   attentions: Record<string, FetchResult<Attention>>;
   runs: Record<string, FetchResult<Runs>>;
@@ -172,6 +185,32 @@ export function peerAddresses(consoleUrl: string, peers: FetchResult<PeersBody>)
   return out;
 }
 
+/** Whether a root `/status` body is a host daemon's: a `projects` list
+ *  where a project daemon names its one `project`. */
+export function isHostStatus(body: unknown): body is HostStatus {
+  return typeof body === "object" && body !== null && Array.isArray((body as HostStatus).projects)
+    && typeof (body as Status).project !== "string";
+}
+
+/** The entry id of a host daemon's project: `HOST:PORT/projects/NAME`,
+ *  the name percent-encoded as it goes on the path; a project with no
+ *  name by its path, encoded, which no name can equal (a name holds no
+ *  `/`). The tray's `projectName` decodes what follows the prefix. */
+export function projectEntry(address: string, project: HostStatus["projects"][number]): string {
+  return `${address}/projects/${encodeURIComponent(project.name ?? project.path)}`;
+}
+
+/** Why a host root says a project cannot be asked under its prefix, or
+ *  null when it can: no name to route by, its own error, no store, or no
+ *  row for its path. */
+function unaskable(project: HostStatus["projects"][number]): string | null {
+  if (project.name == null) return project.error ?? "its config gives no [serve] name";
+  if (project.error) return project.error;
+  if (project.store == null) return "no store";
+  if (project.project_row == null) return "no project row";
+  return null;
+}
+
 /** One poll over every daemon. A daemon that did not answer `/status` is
  *  not asked again, so a dead host costs one timeout, not three. */
 export async function pollAll(
@@ -184,24 +223,45 @@ export async function pollAll(
   const origin = new URL(consoleUrl).origin;
   const peers = await fetchJson<PeersBody>(fetchImpl, `${origin}/peers`, undefined, timeoutMs);
   const daemons = peerAddresses(consoleUrl, peers);
-  const answer: PollAnswer = { peers: daemons.map((d) => d.address), statuses: {}, attentions: {}, runs: {}, tokenFiles: {} };
-  await Promise.all(
-    daemons.map(async ({ address, base }) => {
+  const answer: PollAnswer = { peers: [], hosts: {}, statuses: {}, attentions: {}, runs: {}, tokenFiles: {} };
+  const entries = await Promise.all(
+    daemons.map(async ({ address, base }): Promise<string[]> => {
       const key = tokens[address] !== undefined ? address : addressOf(base);
       const token = tokens[key];
       const file = token === undefined ? undefined : deps.tokenFiles?.[key];
-      if (file !== undefined) answer.tokenFiles[address] = file;
-      const get = <T>(p: string) => fetchJson<T>(fetchImpl, `${base}${p}`, token, timeoutMs);
-      const status = await get<Status>("/status");
-      answer.statuses[address] = status;
-      if (!status.ok) return;
-      const [attention, runs] = await Promise.all([
-        get<Attention>("/attention"),
-        status.body.runs?.length === 0 ? get<Runs>("/runs") : Promise.resolve(undefined),
-      ]);
-      answer.attentions[address] = attention;
-      if (runs !== undefined) answer.runs[address] = runs;
+      const get = <T>(at: string, p: string) => fetchJson<T>(fetchImpl, `${at}${p}`, token, timeoutMs);
+      // The rest of one entry's poll, once its `/status` answered.
+      const rest = async (entry: string, at: string, status: FetchResult<Status>) => {
+        if (file !== undefined) answer.tokenFiles[entry] = file;
+        answer.statuses[entry] = status;
+        if (!status.ok) return;
+        const [attention, runs] = await Promise.all([
+          get<Attention>(at, "/attention"),
+          status.body.runs?.length === 0 ? get<Runs>(at, "/runs") : Promise.resolve(undefined),
+        ]);
+        answer.attentions[entry] = attention;
+        if (runs !== undefined) answer.runs[entry] = runs;
+      };
+      const root = await get<Status | HostStatus>(base, "/status");
+      if (!root.ok || !isHostStatus(root.body)) {
+        await rest(address, base, root as FetchResult<Status>);
+        return [address];
+      }
+      answer.hosts[address] = root.body;
+      const projects = root.body.projects;
+      await Promise.all(
+        projects.map(async (project) => {
+          const entry = projectEntry(address, project);
+          const why = unaskable(project);
+          const at = `${base}${entry.slice(address.length)}`;
+          const status: FetchResult<Status> =
+            why === null ? await get<Status>(at, "/status") : { ok: false, kind: "http", status: 503, body: { error: why } };
+          await rest(entry, at, status);
+        }),
+      );
+      return projects.map((project) => projectEntry(address, project));
     }),
   );
+  answer.peers = entries.flat();
   return answer;
 }

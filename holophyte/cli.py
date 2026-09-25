@@ -4,7 +4,9 @@
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
-`--sweep [--act]`, `--status [--json]`, `--import-store PATH --dry-run`,
+`--sweep [--act]`, `--status [--json]`, `--serve` and `--supervise
+[--once]` (with no project, the host's),
+`--import-store PATH --dry-run`,
 `--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
 loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
@@ -32,6 +34,7 @@ from holophyte.config_tables import (
     board_config,
     loop_config,
 )
+from holophyte.host import watched_line
 from holophyte.operator import (
     BABYSIT_DEFAULT_NOTE,
     approve,
@@ -46,7 +49,7 @@ from holophyte.pool import worker
 from holophyte.project import Project
 from holophyte.serve import ADDRESS_SHAPE, parse_address, serve
 from holophyte.startup import eager_import
-from holophyte.status import status_report
+from holophyte.status import host_status_report, status_report
 from holophyte.store_import import dry_run
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
@@ -70,7 +73,10 @@ APPROVE_DEFAULT_NOTE = "approved for merge"
 
 
 def serve_address(text):
-    """`--serve`'s argparse type: the address as typed, once it parses."""
+    """`--serve`'s argparse type: the address as typed, once it parses;
+    `""`, the bare flag, is the host daemon's."""
+    if text == "":
+        return text
     try:
         parse_address(text)
     except ValueError as bad:
@@ -153,6 +159,9 @@ def _modifier_checks(parser, args):
     if args.json and not args.status:
         parser.error("--json says how --status prints; it prints nothing "
                      "by itself")
+    if args.once and (not args.supervise or args.target is not None):
+        parser.error("--once is the host sweep's single run: --supervise "
+                     "--once with no project")
     if args.import_store is not None and not args.dry_run:
         parser.error("--import-store has only its dry run yet: add --dry-run "
                      "to see what it would move; applying the import is a "
@@ -188,8 +197,9 @@ def _legacy_cli(argv):
     # one machine. A missing target is an argparse error, the same way a
     # mistyped flag is.
     parser.add_argument(
-        "target", metavar="project",
-        help="repository the loop works in")
+        "target", metavar="project", nargs="?",
+        help="repository the loop works in; left out, --status reports the "
+             "host: every project in HOLOPHYTE_HOME/host.toml")
     # The read-only modes, exclusive of each other: each one prints its table
     # and exits, so a command line naming both is a mistake argparse should
     # answer rather than a silent choice between them.
@@ -312,18 +322,28 @@ def _legacy_cli(argv):
         help="run the acting sweep on an interval ([supervisor] "
              "sweep_interval_sec, default %ds) until SIGINT/SIGTERM, as the "
              "project's one supervisor: a second one for the same project "
-             "exits naming the first" % SUPERVISE_INTERVAL_SEC)
+             "exits naming the first, and a project host.toml lists is "
+             "refused. With no project, the host sweep over every project "
+             "in host.toml every [supervisor] sweep_sec" % SUPERVISE_INTERVAL_SEC)
+    parser.add_argument(
+        "--once", action="store_true",
+        help="with --supervise and no project: one host sweep run, then "
+             "exit 1 if any project errored; what the sweep timer runs")
     # The port is required and a bare one binds loopback: the only default
     # interface is the one that publishes nothing, and a read daemon on any
     # other must be named. The value is checked while parsing, so a port
     # that is not a number is a usage error naming the shapes, not a bind
     # failure later.
     modes.add_argument(
-        "--serve", metavar=ADDRESS_SHAPE, type=serve_address,
+        "--serve", metavar=ADDRESS_SHAPE, type=serve_address, nargs="?",
+        const="",
         help="serve the JSON routes and the console on %s until SIGINT/SIGTERM; reads "
              "the store by default, and writes only through two opt-ins: [serve] "
              "actions (POST /actions/...) and [serve] config_edit (PUT /config); a "
-             "bearer token from [serve] token_file beyond loopback" % ADDRESS_SHAPE)
+             "bearer token from [serve] token_file beyond loopback. With no "
+             "project, every project in host.toml under /projects/NAME, on the "
+             "address given, host.toml's [serve] bind or a socket from the "
+             "service manager" % ADDRESS_SHAPE)
     # Internal: the child the scheduler spawns under `[loop] workers > 1`.
     # One ticket, claim to close, exit with the run's status; the scheduler
     # has already run the startup checks, the sweep and the supervisor spawn
@@ -390,6 +410,11 @@ def _legacy_cli(argv):
     _modifier_checks(parser, args)
     _note_checks(parser, args)
     _close_checks(parser, args)
+    if args.target is None:
+        return _host_mode(parser, args)
+    if args.serve == "":
+        parser.error(f"--serve needs {ADDRESS_SHAPE} with a project; without"
+                     " one it serves the host")
     # A dry run writes nothing, and adopting legacy state moves files: it
     # locates the target without adopting, so a store still in a legacy
     # layout is reported absent rather than moved.
@@ -445,14 +470,7 @@ def _legacy_cli(argv):
     # and so resolves no route; unlike it, it takes the target's supervisor
     # lock first, and a target that already has one is an exit, not a loop.
     if args.supervise:
-        try:
-            return supervise(target, require_board(target, board))
-        except SupervisorHeld as held:
-            # With the liveness line, so the refusal is actionable: a held
-            # lock and a fresh heartbeat is a watcher doing its job; a held
-            # lock and a stale one is a watcher to go and look at.
-            raise SystemExit(
-                f"{held}\n{supervisor_liveness_line(target)}") from None
+        return _supervise_project(target, board)
     # A worker of the pool: the scheduler that spawned it live-probed the
     # routes, checked the worktree setup and started the supervisor moments
     # ago for the whole pool, so none of that is repeated per child.
@@ -476,6 +494,42 @@ def _legacy_cli(argv):
     if loop_config(target).spawn_supervisor:
         start_supervisor(target)
     return main(target, require_board(target, board))
+
+
+def _supervise_project(target, board):
+    """`PROJECT --supervise`, refused for a project the host registry lists:
+    the host sweep watches it."""
+    watched = watched_line(target)
+    if watched is not None:
+        raise SystemExit(watched)
+    try:
+        return supervise(target, require_board(target, board))
+    except SupervisorHeld as held:
+        # With the liveness line, so the refusal is actionable: a held
+        # lock and a fresh heartbeat is a watcher doing its job; a held
+        # lock and a stale one is a watcher to go and look at.
+        raise SystemExit(
+            f"{held}\n{supervisor_liveness_line(target)}") from None
+
+
+def _host_mode(parser, args):
+    """The flags with no project mean the host; `--status`, `--serve` and
+    `--supervise [--once]` are the host forms. Anything else still needs
+    the project it acts on."""
+    from holophyte.host import Host, HostError
+    if args.serve is not None:
+        from holophyte.serve_host import serve_host
+        return serve_host(Host.locate(), args.serve or None)
+    if args.supervise:
+        from holophyte.sweep_host import supervise_host
+        return supervise_host(Host.locate(), once=args.once)
+    if not args.status:
+        parser.error("the following arguments are required: project (only "
+                     "--status, --serve and --supervise have a host form)")
+    try:
+        return host_status_report(Host.locate(), as_json=args.json)
+    except HostError as bad:
+        raise SystemExit(str(bad)) from None
 
 
 def _read_only_mode(args, target):
@@ -549,11 +603,13 @@ def _store_verb(args, target, board):
 def start_supervisor(target, out=None):
     """Start a detached `--supervise` for `target` unless one is watching.
 
-    A live pid in the target's supervisor lock is a watcher already on the
-    job, named on stdout and left alone. Otherwise `factory.py --supervise
-    TARGET` is spawned in its own session, stdin closed, stdout and stderr
-    appended to `supervisor.log` in the target's state directory -- unbuffered
-    (`-u`), so the log reads live under a redirect -- and its pid is named.
+    A project the host registry lists is the host sweep's (`watched_line()`)
+    and nothing is spawned for it. A live pid in the target's supervisor
+    lock is a watcher already on the job, named on stdout and left alone.
+    Otherwise `factory.py --supervise TARGET` is spawned in its own
+    session, stdin closed, stdout and stderr appended to `supervisor.log`
+    in the target's state directory -- unbuffered (`-u`), so the log reads
+    live under a redirect -- and its pid is named.
     Nothing waits on it and nothing reads its output: it is meant to outlive
     the loop, it takes the lock itself, and whether it is still watching is
     the store's `supervisorHeartbeats` row. Two loops starting at once both
@@ -561,6 +617,10 @@ def start_supervisor(target, out=None):
     `--supervise` does.
     """
     out = sys.stdout if out is None else out
+    watched = watched_line(target)
+    if watched is not None:
+        print(watched, file=out, flush=True)
+        return None
     pid = supervisor_running(target)
     if pid is not None:
         print(f"[holo2] supervisor pid {pid} is watching {target.path}",

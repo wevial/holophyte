@@ -12,7 +12,9 @@ export interface RunDetailState {
   loading: boolean;
 }
 
-/** One `/runs/N`; a 404 is named as the store not having the run. */
+/** One `/runs/N` of the project at `base`, whose prefix (`/projects/NAME`
+ *  on a host daemon) makes run N of two projects two URLs; a 404 is named
+ *  as the store not having the run. */
 export async function fetchRunDetail(base: string, id: number, fetchImpl: Fetch): Promise<RunDetailBody> {
   const url = `${base}/runs/${id}`;
   try {

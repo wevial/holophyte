@@ -10,7 +10,6 @@ import http.client
 import io
 import json
 import os
-import shutil
 import signal
 import socket
 import sqlite3
@@ -35,6 +34,7 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.schema  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.serve_config import TOMLKIT_MISSING  # noqa: E402
+from tests.host_fixture import factory_checkout, git
 from tests.phase_fixture import advance_phase, finish_run, park_run
 from tests.serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
 
@@ -1281,18 +1281,6 @@ class DisconnectedClientTests(unittest.TestCase):
         self.assertNotIn("Traceback", out.getvalue())
 
 
-REPO = Path(__file__).resolve().parent.parent
-
-
-def git(checkout, *args):
-    """Run git in `checkout` as a throwaway identity; its stdout, stripped."""
-    return subprocess.run(
-        ["git", "-c", "user.name=serve-test", "-c", "user.email=serve@test",
-         "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
-         *args], cwd=checkout, capture_output=True, text=True,
-        check=True).stdout.strip()
-
-
 def free_port():
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -1310,21 +1298,7 @@ class FollowsCodeProcessTests(ServeTestCase):
     def factory_checkout(self):
         """A copy of this factory committed as commit A in its own git
         repository, with the check interval cut so the test is quick."""
-        checkout = self.root / "factory"
-        skip = shutil.ignore_patterns("__pycache__")
-        for package in ("holophyte", "store"):
-            shutil.copytree(REPO / package, checkout / package, ignore=skip)
-        for module in REPO.glob("*.py"):
-            shutil.copy(module, checkout)
-        serve_py = checkout / "holophyte" / "serve_watch.py"
-        text = serve_py.read_text()
-        self.assertIn("\nCODE_CHECK_SEC = 15\n", text)
-        serve_py.write_text(text.replace(
-            "\nCODE_CHECK_SEC = 15\n", f"\nCODE_CHECK_SEC = {self.CHECK}\n"))
-        git(checkout, "init", "-q")
-        git(checkout, "add", "-A")
-        git(checkout, "commit", "-q", "-m", "A")
-        return checkout
+        return factory_checkout(self, self.root / "factory", self.CHECK)
 
     def get_status(self, port):
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)

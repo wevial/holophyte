@@ -1,4 +1,4 @@
-import { addressOf } from "./hosts";
+import { addressOf, rootOf } from "./hosts";
 import type { Fetch } from "./poll";
 import { withToken } from "./token";
 
@@ -7,11 +7,23 @@ import { withToken } from "./token";
  *  as "not wired yet" until its own ticket lands a daemon route. */
 export const ROUTES: Record<string, string> = {
   "Restart supervisor": "/actions/restart-supervisor",
+  // A host daemon's root route (holophyte/serve_host.py `run_sweep()`):
+  // posted at `rootOf()` the row's base, never under a project's prefix.
+  "Run sweep": "/actions/run-sweep",
   Requeue: "/actions/requeue",
   // Reason boxes (components/ReasonAction.tsx), not one-click posts.
   Abort: "/actions/abort",
   "Abort and close": "/actions/abort",
 };
+
+/** The labels whose route is the daemon's own, not a project's. */
+export const ROOT_LABELS = new Set(["Run sweep"]);
+
+/** Where `label` posts for a row whose project answers at `base`: the
+ *  daemon's root for a root label, else `base` itself. */
+export function actionBase(label: string, base: string): string {
+  return ROOT_LABELS.has(label) ? rootOf(base) : base;
+}
 
 /** The title of a button whose daemon has no `[serve] actions = true`. */
 export const ACTIONS_OFF = "This daemon has not opted into actions ([serve] actions = true)";

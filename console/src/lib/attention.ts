@@ -51,6 +51,11 @@ export const RESUME = "Resume";
 export const ABORT = "Abort";
 export const ABORT_CLOSE = "Abort and close";
 
+/** The `supervisor` row's action on a host daemon, where the host sweep
+ *  is the supervisor: `POST /actions/run-sweep` at the daemon's root
+ *  (lib/actions.ts). A project daemon keeps "Restart supervisor". */
+export const RUN_SWEEP = "Run sweep";
+
 const ACTIONS: Record<Kind, string[]> = {
   blocked: ["Answer", "Requeue"],
   pr_open: [OPEN_PR],
@@ -334,7 +339,7 @@ export function describe(
     body: "",
     meta: null,
     ageMs: ageOf(item, now),
-    actions: ACTIONS[kind] ?? [],
+    actions: kind === "supervisor" && item.host_sweep === true ? [RUN_SWEEP] : (ACTIONS[kind] ?? []),
   };
   switch (kind) {
     case "blocked": {
@@ -390,7 +395,24 @@ export function describe(
       };
     }
     case "supervisor": {
+      const sweep = str(item.sweep_state);
+      if (sweep != null) {
+        const ended = num(item.ended_ms);
+        return {
+          ...base,
+          body: sweep === "none" ? "No host sweep has run" : `Host sweep is ${sweep}`,
+          meta: joinMeta(str(item.host), ended == null ? null : `last ended ${formatAge(now - ended)} ago`),
+        };
+      }
       const age = num(item.heartbeat_age_ms);
+      // On a host the beat is the host sweep's, judged by the daemon
+      // against two sweep intervals rather than the runs' threshold.
+      if (item.host_sweep === true) {
+        return {
+          ...base,
+          body: age == null ? `Host sweep beat is ${str(item.state) ?? "not live"}` : `Host sweep last beat this store ${formatSpan(age)} ago`,
+        };
+      }
       return {
         ...base,
         body:

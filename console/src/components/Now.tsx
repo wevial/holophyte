@@ -39,10 +39,10 @@ export function Now({
   for (const host of shown) if (host.status && !host.contract_error) daemons.push({ base: host.base, status: host.status, seen_ms: host.seen_ms });
 
   const ledgers = useLedger(shown, now, polls, deps);
-  const served = shown.filter((host) => ledgers[host.address] && !ledgers[host.address]!.absent);
+  const served = shown.filter((host) => ledgers[host.key] && !ledgers[host.key]!.absent);
   const midnight = localMidnight(now);
-  const resolved = served.flatMap((host) => resolvedSince(ledgers[host.address]!.rows, midnight)).sort((a, b) => b.at - a.at);
-  const notices = served.flatMap((host) => (ledgers[host.address]!.activeOutages ?? [])
+  const resolved = served.flatMap((host) => resolvedSince(ledgers[host.key]!.rows, midnight)).sort((a, b) => b.at - a.at);
+  const notices = served.flatMap((host) => (ledgers[host.key]!.activeOutages ?? [])
     .map((row) => `${host.address} · project ${row.project} · implementer route down since ${new Date(row.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${row.reason}`));
   notices.push(...migrationLines(served, ledgers, now));
   return (

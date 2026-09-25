@@ -55,16 +55,28 @@ def ensure_project(conn, linear_team_id, repo_path, default_branch="main",
 
 
 def register_project(conn, linear_team_id, repo_path):
-    """Explicit registration refuses an existing team or canonical path."""
+    """Explicit registration: a new row, or the adoption of the row that
+    already holds this team at this canonical path -- the row a loop's
+    `ensure_project()` wrote before the project was registered. A row is
+    recorded as `register_project` once, however often it is adopted.
+    The same team at another path, or the path under another team, is
+    refused naming the row."""
     path = str(Path(repo_path).resolve())
     with _transaction(conn):
         paths = canonical_projects(conn)
         row = next((row for row in conn.execute(
             "SELECT id, repoPath, linearTeamId FROM projects ORDER BY id")
             if row[2] == linear_team_id or paths[row[0]] == path), None)
-        if row:
+        if row and row[2] == linear_team_id and paths[row[0]] == path:
+            project = row[0]
+            if conn.execute(
+                    "SELECT 1 FROM interventions WHERE projectId = ?"
+                    " AND action = 'register_project'", (project,)).fetchone():
+                return project
+        elif row:
             raise ValueError(f"project {row[0]} already registered: {row[1]}")
-        project = ensure_project(conn, linear_team_id, path)
+        else:
+            project = ensure_project(conn, linear_team_id, path)
         conn.execute(
             'INSERT INTO interventions (projectId, source, "trigger", action, note, at)'
             " VALUES (?, 'human', 'manual', 'register_project', ?, ?)",

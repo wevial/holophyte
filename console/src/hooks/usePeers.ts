@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { addressOf, mergeHosts, oldestPoll, peerAddresses, type HostRecord, type PeersBody, type PollResult } from "../lib/hosts";
+import { addressOf, mergeHosts, oldestPoll, peerAddresses, rootOf, type HostRecord, type PeersBody, type PollResult } from "../lib/hosts";
 import { forgetToken } from "../lib/token";
 import {
-  AnswerError,
-  ContractError,
   POLL_INTERVAL_MS,
   REQUEST_TIMEOUT_MS,
   TICK_MS,
   defaultPollDeps,
   fetchJson,
-  pollOnce,
+  pollDaemon,
+  pollFailure,
   type PollDeps,
 } from "../lib/poll";
 
@@ -30,10 +29,9 @@ interface Inner {
   now: number;
 }
 
-const message = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure));
-
 /** One tick: `/status` + `/attention` from every daemon last known (the
- *  origin alone before the first answer) start at once, beside `GET
+ *  origin alone before the first answer) start at once -- and, from a
+ *  host daemon, each registered project's own two under its prefix -- beside `GET
  *  /peers` from the origin; a daemon `/peers` newly names is polled as
  *  soon as it is known. Every request of the tick shares one deadline,
  *  `timeoutMs` from its start, so a `/peers` that hangs neither delays
@@ -50,25 +48,20 @@ export async function pollPeers(
   const start = ({ address, base }: { address: string; base: string }): Promise<PollResult> => {
     let pending = inFlight.get(address);
     if (!pending) {
-      pending = pollOnce(base, deps.fetch, signal).then(
-        (answer) => ({ address, base, ok: true, ...answer }),
-        (failure: unknown) =>
-          failure instanceof AnswerError
-            ? {
-                address,
-                base,
-                ok: false,
-                error: message(failure),
-                status: failure.status,
-                token_sent: failure.tokenSent,
-              }
-            : { address, base, ok: false, error: message(failure), contract_error: failure instanceof ContractError },
+      pending = pollDaemon(base, deps.fetch, signal).then(
+        (answer): PollResult =>
+          answer.kind === "host"
+            ? { address, base, ok: true, host: answer.host, host_attention: answer.attention, projects: answer.projects }
+            : { address, base, ok: true, status: answer.status, attention: answer.attention },
+        (failure: unknown): PollResult => ({ address, base, ...pollFailure(failure) }),
       );
       inFlight.set(address, pending);
     }
     return pending;
   };
-  let addresses = known.length > 0 ? known.map(({ address, base }) => ({ address, base })) : peerAddresses(origin, null);
+  // A host daemon's projects are one address to poll, at the daemon's own base.
+  const daemons = new Map(known.map(({ address, base }) => [address, rootOf(base)]));
+  let addresses = daemons.size > 0 ? [...daemons].map(([address, base]) => ({ address, base })) : peerAddresses(origin, null);
   addresses.forEach(start);
   try {
     addresses = peerAddresses(origin, await fetchJson<PeersBody>(deps.fetch, `${origin}/peers`, undefined, signal));

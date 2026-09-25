@@ -1,0 +1,13 @@
+[Unit]
+Description=Holophyte host daemon socket
+PartOf=holophyte.target
+
+[Socket]
+# The port outlives the daemon: systemd holds it, queues connections while
+# no daemon runs, and hands the listening socket to holophyte-serve.service
+# as fd 3 on the first one. The address is typed here and in host.toml's
+# [serve] bind (which the daemon names and ignores when they differ);
+# change both together. Beyond loopback, host.toml's [serve]
+# machine_token_file is required: see docs/operating/hosts.md.
+ListenStream=127.0.0.1:7710
+Backlog=128

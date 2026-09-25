@@ -93,7 +93,8 @@ findings above the overlap threshold: the review is circling.
 outcome and a class (`work` or `infra`).
 
 **Self-merge.** A merge in a project that is the factory itself. The loop
-re-execs from the new `main`; the supervisor follows on its next pass.
+re-execs from the new `main`; the next sweep run and the daemon's next
+request run the new code.
 
 **Serve token.** `[serve] token_file`: the bearer token a daemon bound
 beyond loopback demands on every request except the console's files and
@@ -115,7 +116,9 @@ from.
 configured number in a row ends the run.
 
 **Sweep.** One supervisor pass over live runs. `--sweep` reports,
-`--sweep --act` acts.
+`--sweep --act` acts. The host sweep, `--supervise --once` with no
+project, is one such pass over every registered project's store, run by a
+timer.
 
 **Time box.** A run's wall-clock budget, from the ticket's estimate.
 

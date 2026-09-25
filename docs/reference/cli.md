@@ -2,7 +2,7 @@
 
 `python3 factory.py [MODE] PROJECT`. The command line is parsed, not
 indexed, so `--help` is safe. Modes are mutually exclusive; the project is
-always the repository path. `python3 factory.py project VERB` is a separate
+always the repository path, except in the [host forms](#host-forms). `python3 factory.py project VERB` is a separate
 command family, [below](#project-commands).
 
 | Invocation | Does | Touches |
@@ -13,7 +13,7 @@ command family, [below](#project-commands).
 | `--sweep --act PROJECT` | fails tripped runs, releases their leases, removes stray containers; prints the same `failures KIND: N` lines | store, Docker |
 | `--status [--json] PROJECT` | prints what the factory is doing now: projects, live and parked runs, ready tickets, schema, lock holders; `--json` prints it as one JSON object | store, read-only |
 | `--import-store PATH --dry-run PROJECT` | opens the store at `PATH` and the project's own read-only and prints, per table, the rows an import would move, their id range, the offset a remap would add and a sha256 of the rows; refuses stores at different schema versions; `--dry-run` is required | store, read-only |
-| `--supervise PROJECT` | the acting sweep every `sweep_interval_sec`, under the project's supervisor lock; re-execs itself when the factory code moves | store |
+| `--supervise PROJECT` | the acting sweep every `sweep_interval_sec`, under the project's supervisor lock; runs the code it started with, and exits for its service manager to restart when a newer build has stamped the store; refused for a project `host.toml` lists, which the host sweep watches | store |
 | `--serve PORT PROJECT` | the JSON daemon on loopback (`--serve 7710` binds `127.0.0.1:7710`), which also serves the console at `/` from the built bundle; it reads by default and writes only through two opt-ins, `[serve] actions` (`POST /actions/...`) and `[serve] config_edit` (`PUT /config`) ([The daemon's actions](daemon.md)); `--serve HOST:PORT` binds the named address instead, and a non-loopback bind demands `[serve] token_file`, whose contents every JSON request but `/peers` must present as a bearer token (`/`, the console's files and `/peers` stay open; a loopback bind, `127.0.0.1:PORT` included, ignores the key for reads, but either write opt-in demands `[serve] token_file` on every bind, loopback included, and the routes it opens answer only to the bearer) | store, read-only by default; with `[serve] actions` the store and the systemd units, with `[serve] config_edit` the project's `config.toml` |
 | `--requeue KO-n --note TEXT PROJECT` | walks a failed ticket back to `ready` with an `interventions` row | store |
 | `--approve KO-n [--note TEXT] PROJECT` | releases a ticket parked by `[merge] approve = "human"`: an `interventions` row with action `approve`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim reuses the preserved worktree and branch, re-runs the pre-merge verify and merges with no implementer or reviewer -- under `[merge] mode = "pr"`, babysits the pull request once more and merges it through the API when green and quiet; refuses any other state, naming it | store |
@@ -32,20 +32,43 @@ command family, [below](#project-commands).
 
 ## Project commands
 
-`python3 factory.py project VERB [--store PATH]` registers projects and
-changes their admission in one store. `--store PATH` names the database;
-without it `project add` uses the added repository's store and the other
-verbs the store of the repository the command runs in. `NAME` is the
-repository directory's basename; a name that matches no row, or more than
-one, is refused. See [Operating](../operating.md#registering-and-disabling-projects).
+`python3 factory.py project VERB [--store PATH]` registers projects in the
+host registry, `HOLOPHYTE_HOME/host.toml`, and changes their admission in
+one store. `--store PATH` names the database; without it `project add` uses
+the added repository's store and the other verbs the store of the
+repository the command runs in. `NAME` means two things, by verb:
+
+- `project remove NAME` matches a registry entry: its `[serve] name`, or
+  the path it is registered under. It reads each entry's config on its
+  own, so an entry whose config no longer loads, or two entries sharing a
+  name, can still be removed by path.
+- `project enable`, `hold` and `disable NAME` match a store row: the
+  basename of the row's repository path. A name that matches no row, or
+  more than one, is refused.
+
+See [Operating](../operating.md#registering-and-disabling-projects).
 
 | Invocation | Does | Touches |
 | --- | --- | --- |
-| `project add PATH [--store PATH]` | validates `PATH` as a repository root whose `config.toml` passes and has a `[board]` table naming a team, then registers it enabled, recorded as `register_project`, without starting a run; refuses a second add, naming the existing row | store |
-| `project list [--store PATH]` | prints each project's name, path, admission, note and newest run | store, read-only |
+| `project add PATH [--store PATH]` | validates `PATH` as a repository root whose `config.toml` passes and has a `[board]` table naming a team, then registers it enabled, recorded as `register_project`, without starting a run, and adds its resolved path to `host.toml`; a row the loop already wrote for the same team at the same path is adopted, and a row is recorded as `register_project` once however often it is adopted; refuses a name already in `host.toml`, or a path already there whose store holds its row, naming the entry, and the same team at another path, naming the row. On a registered path whose store has no row for it (the store deleted or recreated after registration) it is the repair the daemon and the sweep name: it writes the row as above, says so, and leaves `host.toml` unchanged. `host.toml` is rewritten whole through `host.toml.tmp`, created exclusively, and a rename, so two adds at once keep both. With `--store` naming a database other than the repository's own store, it registers in that store only and leaves `host.toml` untouched, since the registry holds paths and the host reads each project's own store | store, `host.toml` |
+| `project remove NAME\|PATH` | drops the entry whose `[serve] name` or registered path is given from `host.toml`; touches no store; refuses one the registry does not hold, listing the ones it does, and a name two entries share, naming both paths so one can be removed by path | `host.toml` |
+| `project list [--store PATH]` | without `--store`, prints each project in `host.toml`: name, path, and the admission and note its own store holds (`-` without a store or row); a project whose config or store cannot be read is listed with `error=` and the rest still are, and the exit is then 1; with `--store`, each row of that store: name, path, admission, note and newest run | `host.toml`, store, read-only |
 | `project enable NAME [--note TEXT] [--store PATH]` | enables admission again, recorded as `release_hold`; the note defaults to `enabled by operator`; refuses a project already enabled | store |
 | `project hold NAME --note TEXT [--store PATH]` | stops new admission while existing runs finish, recorded as `hold`; refuses a project already held | store |
 | `project disable NAME --note TEXT [--store PATH]` | stops admission, recorded as `disable`; a disabled project's supervisor exits at startup and `/status` reports the state and note with no runs; refuses a project already disabled | store |
+
+## Host forms
+
+A mode given no project means the host: every project listed in the host
+registry, `HOLOPHYTE_HOME/host.toml`, which `project add` and `project
+remove` write. `--status`, `--serve` and `--supervise` are the host forms;
+any other mode without a project is a usage error.
+
+| Invocation | Does | Touches |
+| --- | --- | --- |
+| `--status [--json]` | the host form: the checkout's build and the last sweep's, the home's `supervisor.lock`, `sweep.json` (`sweep: none` without one), then every project in `HOLOPHYTE_HOME/host.toml` as the project form prints it, each line prefixed `[NAME]`; a project whose config, store or file cannot be read is its own error line and the exit is 1; no `host.toml` is exit 1 naming `project add` | `host.toml`, each store, read-only |
+| `--serve [HOST:PORT]` | the host daemon: every registered project's routes under `/projects/NAME/...` (`NAME` its `[serve] name`), and the host's `/status` and `/attention` at the root; serves on the socket the service manager hands over (`LISTEN_FDS`), else the address given, else `host.toml`'s `[serve] bind`; `host.toml`'s `[serve] machine_token_file` is the bearer beyond loopback and for every write, `[serve] actions` opens the project actions and `POST /actions/run-sweep`. On a factory `HEAD` move it exits 0 when handed its socket, and re-executes otherwise | `host.toml`, each store; writes only through the opt-ins, and `run-sweep` appends to `HOLOPHYTE_HOME/host-actions.jsonl` |
+| `--supervise [--once]` | the host sweep: under `HOLOPHYTE_HOME/supervisor.lock` (a second run beside a live one exits 1 naming its pid), sweeps every registered store and bumps its one host-sweep beat (pid 0), then acts on the trips and reconciles pull requests, board closes and owed loops round-robin under a deadline of half `[supervisor] sweep_sec`; a project whose own `supervisor.lock` names a live pid is skipped, a dead one is removed; a disabled project, or one with no store or no row for its path, is skipped; writes `HOLOPHYTE_HOME/sweep.json` after every project; `--once` is one run, exit 1 when any project errored, and without it a run every `sweep_sec` until SIGINT/SIGTERM | `host.toml`, each store, `sweep.json`, Linear, GitHub, the loop units |
 
 ## Startup checks
 
@@ -78,4 +101,5 @@ after the store.
 | --- | --- | --- |
 | `HOLOPHYTE_HOME` | `Project` | the state root, default `~/.holophyte`; tests point it at a temp dir |
 | `LINEAR_API_KEY` | `linear_provider` | the board's API key; env or `.env` beside the module |
-| `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the serve unit | one daemon instance's project, bind address, port |
+| `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the project units (`holophyte-serve@`, `holophyte-supervise@`), and `HOLOPHYTE_TARGET` alone the loop unit | one instance's project, bind address, port |
+| `LISTEN_FDS`, `LISTEN_PID` | `--serve` | set by the service manager's socket unit: with `LISTEN_FDS=1` and `LISTEN_PID` this process's pid, the daemon serves on fd 3 instead of binding, and exits 0 on a factory `HEAD` move for the socket to start the new code |

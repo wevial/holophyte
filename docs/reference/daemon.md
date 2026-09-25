@@ -37,6 +37,53 @@ which is not a server error. Each action is an interventions row
 call) written before the action runs; an action that cannot be recorded
 does not run.
 
+## On a host daemon
+
+`factory.py --serve` with no project answers every route on this page
+under the project's prefix, `/projects/NAME/actions/...` and
+`/projects/NAME/config`, `NAME` its `[serve] name` ([HTTP
+endpoints](http.md#the-host-daemon)). The opt-ins move: `[serve] actions`
+in `host.toml` opens the actions for every registered project at once, and
+`config_edit` stays in each project's own config. Both answer only to
+`host.toml`'s `[serve] machine_token_file`, on every bind, and a project's
+own `token_file` under its own prefix, for one release; the daemon refuses
+to start with either opt-in on and no machine token, naming the key.
+`restart-supervisor` is not a host daemon's route (404): a registered
+project has no supervisor unit, and the host sweep's own action,
+`run-sweep`, below, is at the root. The record of each project action is
+written in that project's store, as on a project daemon; a store locked
+when the action writes is that project's 503. Every read a host daemon
+makes waits at most one second for a store's lock (`HOST_READ_WAIT_S` in
+`holophyte/serve_host.py`), not the store's own thirty, so an action can
+answer 503 `database is locked` during a brief write lock where a project
+daemon would have waited ([HTTP endpoints](http.md#the-host-daemon)).
+
+## `POST /actions/run-sweep`
+
+At a host daemon's root, behind `host.toml`'s `[serve] actions` and the
+machine token. It runs `systemctl --user start --no-block
+holophyte-sweep.service`: one host sweep run now, beside the timer's
+(systemd never starts it twice at once, so a request while a run is in
+flight joins that run). `--no-block` because a oneshot's plain `start`
+would wait out the whole run.
+
+Body: optional, a JSON object with `note` and `author`. No store owns the
+sweep, and the stores may be what is down, so the record is not an
+interventions row: before `systemctl` is asked, one JSON line is appended
+to `HOLOPHYTE_HOME/host-actions.jsonl` and synced, with `at`, `action`
+(`run_sweep`), `unit`, `via`, `pid`, `author` (default `maintainer`) and
+`note`. A line that cannot be written runs nothing:
+
+```json
+{"action": "run-sweep", "unit": "holophyte-sweep.service", "ok": true,
+ "detail": "systemctl --user start --no-block holophyte-sweep.service exited 0",
+ "recorded": "/home/op/.holophyte/host-actions.jsonl"}
+```
+
+`recorded` is the ledger's path, null when the line could not be written;
+`ok` and `detail` are as on the unit actions below. The console's
+"Run sweep" on a stale sweep or supervisor row is this route.
+
 ## `POST /actions/restart-supervisor`
 
 Runs `systemctl --user restart holophyte-supervise@NAME`, where `NAME` is
@@ -230,6 +277,6 @@ parked candidate today.
 | --- | --- |
 | 400 | the body is not a JSON object, or `requeue` has no `ticket`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value; a `patch` that is not an object, or with a key the daemon cannot apply |
 | 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
-| 404 | `[serve] actions` is not `true`, or the action is not one of the three; `/config` without `[serve] config_edit = true` |
+| 404 | `[serve] actions` is not `true`, or the action is not one of the three; `/config` without `[serve] config_edit = true`; on a host daemon, `restart-supervisor`, a project name outside the registry, and any root action but `run-sweep` |
 | 405 | `POST` on any path outside `/actions/`; `PUT` on any path but `/config` |
-| 503 | `requeue` against a project with no store yet; `PUT /config` with no store or no run to record against |
+| 503 | `requeue` against a project with no store yet; `PUT /config` with no store or no run to record against; on a host daemon, a project whose store is stamped newer than the build can read, or is locked or corrupt when the action reads or writes it |
