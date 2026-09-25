@@ -27,6 +27,7 @@ python3 factory.py --report /path/to/repo         # estimate-vs-actual table
 python3 factory.py /path/to/repo --hold --note TEXT # stop new admission; existing runs continue
 python3 factory.py /path/to/repo --release-hold --note TEXT # enable admission again
 python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails them
+python3 factory.py /path/to/repo --board-diff    # where the store's ready queue differs from the board's; writes nothing
 python3 factory.py /path/to/repo --status [--json] # projects, live and parked runs, ready count, locks
 python3 factory.py --import-store PATH --dry-run /path/to/repo # what importing another store would move; writes nothing
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
