@@ -44,8 +44,7 @@ class CloseFlagTests(unittest.TestCase):
 
     def cli(self, *args):
         out = io.StringIO()
-        with patch("holophyte.cli.board_config", return_value=("project", "team")), \
-                patch("holophyte.cli.LinearProvider", return_value=self.board), \
+        with patch("holophyte.cli.board_for", return_value=self.board), \
                 contextlib.redirect_stdout(out):
             holophyte.cli.cli([str(self.repo), *args])
         return out.getvalue()

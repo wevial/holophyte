@@ -1,15 +1,15 @@
 """The board seam: one protocol, two boards.
 
-`factory.py` never names a board. It is handed a `Provider` and drives it
+`factory.py` never names a board. It is handed a `Board` and drives it
 through its members -- `team`, `claim_next()`, `ready_issues()`,
 `fetch_task()`, `set_state()`, `comment()`, `closed_identifiers()`,
 `label_issue()`, `issue_labels()` and `unlabel_issue()` -- so which board a
-loop runs against is the caller's choice (`factory.cli()` builds a
-`LinearProvider`), not a module import. Two boards ship here:
-`LinearProvider`, which wraps the functions `linear_provider.py` already
-has, and `FileProvider`, a directory of ticket files for tests and offline
-runs. The conformance suite in `tests/test_provider.py` holds both to the
-same observable behavior.
+loop runs against is the caller's choice, not a module import: every caller
+that needs the target's board asks `board_for(target)`, the one place that
+reads `[board] kind`. Two boards ship here: `LinearBoard`, which wraps the
+functions `linear_provider.py` already has, and `FileProvider`, a
+directory of ticket files for tests and offline runs. The conformance suite
+in `tests/test_provider.py` holds both to the same observable behavior.
 
 Kept deliberately plain for the Rust port -- a protocol with dict payloads,
 no metaclass, no dispatch on module names.
@@ -66,6 +66,7 @@ from pathlib import Path
 from typing import Protocol
 
 import ticket_template
+from holophyte.config_tables import board_config, board_mode
 
 # The same fence `linear_provider.parse_task()` reads, so a body parsed by
 # either board yields the same `verify`.
@@ -78,7 +79,7 @@ CLOSED_STATE_NAMES = {"Done": "completed", "Canceled": "canceled",
                       "Cancelled": "canceled", "Duplicate": "canceled"}
 
 
-class Provider(Protocol):
+class Board(Protocol):
     """What the loop asks of a board. Task dicts: see the module docstring."""
 
     @property
@@ -131,7 +132,7 @@ class Provider(Protocol):
         ...
 
 
-class LinearProvider:
+class LinearBoard:
     """Linear, through the functions `linear_provider.py` already has.
 
     `project_id`, `team` and `label` are the target's `[board]` table, as
@@ -191,6 +192,22 @@ class LinearProvider:
 
     def unlabel_issue(self, issue_id, name):
         self._linear().unlabel_issue(issue_id, name)
+
+
+def board_for(target):
+    """The target's board: None without a `[board]` table, a `LinearBoard`
+    for `kind = "linear"` (the default). `kind = "native"` is refused with
+    the `SystemExit` `board_config()` raises for a bad value -- this build
+    has no native board, and a native project must not run against Linear.
+    """
+    if board_mode(target).kind == "native":
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [board] kind \"native\" is not "
+            "supported: this build has no native board")
+    settings = board_config(target)
+    if settings is None:
+        return None
+    return LinearBoard(*settings)
 
 
 class FileProvider:

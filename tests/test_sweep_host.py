@@ -39,7 +39,7 @@ from holophyte.pr_status import PullStatus  # noqa: E402
 from holophyte.project import Project  # noqa: E402
 from holophyte.reconcile import GITHUB_BUDGET  # noqa: E402
 from holophyte.supervisor import supervisor_liveness_line  # noqa: E402
-from provider import LinearProvider  # noqa: E402
+from provider import LinearBoard  # noqa: E402
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -697,7 +697,7 @@ class DeadlineTests(HostSweepFixture):
         self.assertEqual(self.state()["reconcile_cursor"], "beta")
 
     def linear(self, jump_after=None):
-        """The real `LinearProvider` with only its HTTP transport faked:
+        """The real `LinearBoard` with only its HTTP transport faked:
         each request's root field is recorded in the list returned beside
         it and answered from `LINEAR_ANSWERS`. Answering `jump_after`
         moves the bound's clock an hour on -- a request that returned past
@@ -722,7 +722,7 @@ class DeadlineTests(HostSweepFixture):
                         patch.dict(os.environ, {"LINEAR_API_KEY": "lin_test"})):
             patcher.start()
             self.addCleanup(patcher.stop)
-        return LinearProvider("project-alpha", "team-alpha"), requests
+        return LinearBoard("project-alpha", "team-alpha"), requests
 
     def assert_closed_out_in_the_store(self, run, printed, refusal):
         """The close-out's store writes all landed and its board writes are

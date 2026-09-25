@@ -3,7 +3,7 @@
 
 Loop:
   0. Open the v2 store (WAL-mode SQLite, a sibling file of the target repo).
-  1. Claim the first ready ticket from the board (a `provider.Provider`,
+  1. Claim the first ready ticket from the board (a `provider.Board`,
      Linear by default), mirror it into the store and take the project's
      run lease before any branch exists; the lease goes back when the run
      ends, merged or not.

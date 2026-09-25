@@ -521,7 +521,7 @@ scheduler reads it: under `workers = 1` there is no pool to tick.
 | `team` | Default: None; required for a configured board | Non-empty string naming the Linear team; set to resolve that team's workflow states. |
 | `label` | Default: Absent (no filter) | Non-empty string; set to claim only ready issues with this label. |
 | `mode` | Default: `"mirror"` | `"mirror"` or `"store"`; where the project's tickets are kept. Leave at the default for now. |
-| `kind` | Default: `"linear"` | `"linear"` or `"native"`; which board the project uses. Leave at the default for now. |
+| `kind` | Default: `"linear"` | `"linear"` or `"native"`; which board the project uses. `"native"` is refused at startup until the native board ships. |
 
 ```toml
 [board]
@@ -558,8 +558,10 @@ waits on the board at `blocked_on_deps` until it carries it again.
 the one key that may be absent, but when written it must be a non-empty
 string, and anything else is a startup error naming the key.
 
-`mode` and `kind` stage the move to boards kept in the store: `"store"` and
-`"native"` are accepted but change nothing in this release. Any other value
+`mode` and `kind` stage the move to boards kept in the store: `"store"` is
+accepted but changes nothing in this release, and `"native"` is refused
+wherever the board is built, naming `[board] kind`, until the native board
+ships. Any other value
 is refused when a command resolves the board -- the loop, `--supervise`, a
 `--sweep` read-only or acting, and the operator verbs -- which then exits at
 startup naming the key and the values it accepts. `--report`, `--status`,

@@ -18,7 +18,8 @@ import holophyte.config
 import holophyte.pr
 import holophyte.supervisor_lock
 import review_runner
-from provider import LinearProvider
+from holophyte.config_tables import board_config
+from provider import LinearBoard
 
 # `config_fixture` is a helper, not a test module: discovery never imports it,
 # and how this file is imported decides whether `tests/` is on the path at all.
@@ -360,7 +361,7 @@ class StartupCheckTests(ConfigTestCase):
         # building it reads no config and opens no connection.
         sweep_report.assert_called_once_with(self.project, act=False, provider=ANY)
         self.assertIsInstance(sweep_report.call_args.kwargs["provider"],
-                              LinearProvider)
+                              LinearBoard)
 
 
 class BoardConfigTests(StartupCheckTests):
@@ -515,14 +516,14 @@ class SupervisorSpawnTests(StartupCheckTests):
     class EmptyBoard:
         """A board with no ready tickets, in the provider's shape.
 
-        Stands in for `LinearProvider` where `cli()` builds it, so the real
+        Stands in for `board_for()` where `cli()` calls it, so the real
         `main()` runs: opens the store, sweeps, asks for a ticket, is told
         there is none, and exits on its "no ready tickets" line. The spawn
         under test sits between the startup checks and that call.
         """
 
-        def __init__(self, project_id, team, label=None):
-            self.team = team
+        def __init__(self, target):
+            self.team = board_config(target).team
 
         def ready_issues(self):
             return []
@@ -532,7 +533,7 @@ class SupervisorSpawnTests(StartupCheckTests):
 
     def start_loop(self, target):
         printed = io.StringIO()
-        with patch.object(holophyte.cli, "LinearProvider", self.EmptyBoard), \
+        with patch.object(holophyte.cli, "board_for", self.EmptyBoard), \
                 contextlib.redirect_stdout(printed):
             holophyte.cli.cli([str(target)])
         out = printed.getvalue()
@@ -632,7 +633,7 @@ class SupervisorSpawnTests(StartupCheckTests):
         with patch.object(holophyte.cli, "worker", return_value=3) as worker, \
                 patch.object(holophyte.cli, "main") as main, \
                 patch.object(holophyte.cli, "check_agent_commands") as probe, \
-                patch.object(holophyte.cli, "LinearProvider", self.EmptyBoard), \
+                patch.object(holophyte.cli, "board_for", self.EmptyBoard), \
                 contextlib.redirect_stdout(io.StringIO()):
             rc = holophyte.cli.cli([str(target), "--worker"])
 

@@ -358,15 +358,15 @@ class FakeLinear:
             "hasNextPage": False, "endCursor": None}}}}
 
 
-class LinearProviderTests(ConformanceMixin, unittest.TestCase):
-    """`LinearProvider` with the transport faked and nothing else."""
+class LinearBoardTests(ConformanceMixin, unittest.TestCase):
+    """`LinearBoard` with the transport faked and nothing else."""
 
     def setUp(self):
         self.board = FakeLinear()
         patcher = patch.object(linear_provider, "_gql", self.board.gql)
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.provider = board_seam.LinearProvider("test-project", "test-team")
+        self.provider = board_seam.LinearBoard("test-project", "test-team")
 
     def seed(self, identifier, state="Todo", **fields):
         # `priority` is an issue field, not part of the body's template.
@@ -475,8 +475,8 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         self.seed("KO-3")
         self.board.issues["KO-2"]["labels"]["nodes"].append(
             {"id": "label-holophyte", "name": "holophyte"})
-        provider = board_seam.LinearProvider("test-project", "test-team",
-                                             label="holophyte")
+        provider = board_seam.LinearBoard("test-project", "test-team",
+                                          label="holophyte")
 
         self.assertEqual([task["id"] for task in provider.ready_issues()],
                          ["KO-2"])
@@ -501,7 +501,7 @@ class LinearProviderTests(ConformanceMixin, unittest.TestCase):
         def tripwire(query, variables=None):
             raise AssertionError(f"_gql was reached: {query[:40]}")
         with patch.object(linear_provider, "_gql", tripwire):
-            self.assertEqual(board_seam.LinearProvider("p", "t").team, "t")
+            self.assertEqual(board_seam.LinearBoard("p", "t").team, "t")
 
 
 class LabelGatePassTests(LoopFixture):
@@ -512,8 +512,8 @@ class LabelGatePassTests(LoopFixture):
     def test_a_label_nothing_carries_ends_the_pass_as_empty(self):
         board = FakeLinear()
         board.add("KO-1", TITLE, ticket_body())
-        provider = board_seam.LinearProvider("test-project", "test-team",
-                                             label="holophyte")
+        provider = board_seam.LinearBoard("test-project", "test-team",
+                                          label="holophyte")
         out = io.StringIO()
         with patch.object(linear_provider, "_gql", board.gql), \
                 no_agent_processes(), patch.object(sys, "stdout", out):
@@ -548,8 +548,8 @@ class LinearImportTests(unittest.TestCase):
 
     def test_the_provider_carries_the_pair_it_was_built_with(self):
         """`team` is the stored value, not a module read."""
-        one = board_seam.LinearProvider("p-1", "Team One")
-        two = board_seam.LinearProvider("p-2", "Team Two")
+        one = board_seam.LinearBoard("p-1", "Team One")
+        two = board_seam.LinearBoard("p-2", "Team Two")
         self.assertEqual((one.project_id, one.team), ("p-1", "Team One"))
         self.assertEqual((two.project_id, two.team), ("p-2", "Team Two"))
 

@@ -40,7 +40,7 @@ def _load_env_var(name):
 
 # Which project to drive and which team's workflow states to resolve in are
 # the caller's to say: `list_ready_issues()`, `_state_id()`, `set_state()`
-# and `claim_next()` take them as parameters, and `provider.LinearProvider`
+# and `claim_next()` take them as parameters, and `provider.LinearBoard`
 # carries the pair the target's `[board]` table names. The only variable
 # this module reads from the environment is `LINEAR_API_KEY`, at the first
 # request; there is no script mode, because a claim outside the loop's
@@ -617,7 +617,7 @@ def claim_next(project_id, team, skip=(), order="identifier", label=None):
 
     Returns `(task, listed)`: `task` is None when there is none, and `listed`
     is every identifier the ready listing held, before `skip` removed the
-    refused -- the set `provider.LinearProvider` keeps on `last_listing` for
+    refused -- the set `provider.LinearBoard` keeps on `last_listing` for
     the empty pass's mirror reconcile (KO-425), which judges the listing the
     claim saw rather than asking the board a second time.
 
@@ -733,7 +733,7 @@ def closed_identifiers(identifiers):
 #
 # Not part of the loop's provider protocol: `--file-ticket` is an operator
 # command on this module directly, the way `--requeue` is on the store. The
-# loop never creates an issue, so `provider.LinearProvider` does not learn to.
+# loop never creates an issue, so `provider.LinearBoard` does not learn to.
 
 def _team_id(team):
     """The id of the team called `team`, looked up by name."""

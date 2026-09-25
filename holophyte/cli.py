@@ -12,7 +12,7 @@ loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
 `holophyte.supervisor`, `holophyte.status` and `holophyte.serve`; the `Project`
 is built once from the command line and handed down, and the board
-(`LinearProvider`) is built here and never reached for by name below.
+(`provider.board_for()`) is built here and never reached for by name below.
 Importing this module locates no target, reads no config and touches no
 `HOLOPHYTE_HOME`.
 
@@ -54,7 +54,7 @@ from holophyte.store_import import dry_run
 from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
-from provider import LinearProvider
+from provider import board_for
 
 # The entry point the loop's spawned supervisor is started through: the
 # `factory.py` beside this package, by path, so the supervisor runs the same
@@ -444,9 +444,9 @@ def _legacy_cli(argv):
     # A target with no table has no board, which
     # a read-only sweep can live with (it calls nobody) and the modes that
     # post to the board cannot: they exit here, naming the key to set.
+    # `board_for()` refuses `[board] kind = "native"` here, before the loop.
     settings = board_config(target)
-    board = (LinearProvider(*settings)
-             if settings is not None else None)
+    board = board_for(target)
     # Same window and the same reasons as `--report`: it reads runs and prints
     # them, so no route has to resolve and nobody is called. `--act` fails
     # runs rather than dispatching them, so it needs no route either.

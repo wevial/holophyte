@@ -870,7 +870,7 @@ def file_ticket(target, path, state, board, out=None, priority=None,
     `board` is the target's `[board]` pair (`project_id`, `team`), resolved
     by `cli()` before the file is read: a target with no board exits there,
     naming the key. The module is imported here rather than at the top, the
-    way `provider.LinearProvider` does it: the loop's other paths through
+    way `provider.LinearBoard` does it: the loop's other paths through
     this module never file a ticket.
     """
     import linear_provider

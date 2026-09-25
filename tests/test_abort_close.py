@@ -31,7 +31,7 @@ class AbortCloseTests(MergeModeFixture):
         """`factory.py TARGET --abort KO-131 FLAGS --note NOTE` through the
         real command line; the board is the loop's stub."""
         out = io.StringIO()
-        with patch.object(holophyte.cli, "LinearProvider",
+        with patch.object(holophyte.cli, "board_for",
                           return_value=self.provider()), \
                 contextlib.redirect_stdout(out):
             holophyte.cli.cli([str(self.target), "--abort", "KO-131", *flags,
