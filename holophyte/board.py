@@ -8,6 +8,7 @@ close-out releases their runs and refreshes the rendered findings window.
 """
 import contextlib
 import fcntl
+import hashlib
 import os
 import re
 import socket
@@ -249,8 +250,8 @@ def task_contract(task):
             ticket_template.parse(task.get("body") or "").evidence_states)
 
 
-def body_problem(task, repo=None, on_pull_request=False):
-    """The first template violation in the offered ticket's body, or None.
+def body_problems(task, repo=None, on_pull_request=False):
+    """Every blocking template violation in the offered ticket's body.
 
     The claim-time contract gate. `ticket_template.validate()` is what a
     ticket is held to before it enters the queue, and until now nothing on
@@ -261,9 +262,9 @@ def body_problem(task, repo=None, on_pull_request=False):
     that body; this is the call that puts it in the way.
 
     Advisories are scope guidance, not violations, so `blocking()` filters
-    them out and an advisory-only body is claimed as before. The first
-    blocker is returned, not the list: the loop prints one line per
-    refusal and `ticket_template.py` gives the owner the full list.
+    them out and an advisory-only body is claimed as before. The loop
+    prints the first per refusal (`body_problem()`); a store-mode board
+    gets the full list as one note (`note_problems()`, KO-745).
 
     A task with no body at all (`None`, not `""`) is not judged: a provider
     that hands no body has nothing to validate; an empty description is
@@ -280,12 +281,35 @@ def body_problem(task, repo=None, on_pull_request=False):
     """
     body = task.get("body")
     if body is None:
-        return None
+        return []
     if on_pull_request:
         repo = None
-    problems = ticket_template.blocking(
+    return ticket_template.blocking(
         ticket_template.validate(ticket_template.parse(body), repo=repo))
+
+
+def body_problem(task, repo=None, on_pull_request=False):
+    """The first of `body_problems()`, or None for a body that passes."""
+    problems = body_problems(task, repo, on_pull_request)
     return problems[0] if problems else None
+
+
+VALIDATION_HEADING = "Not claimed: this ticket's body fails the template"
+
+
+def note_problems(conn, ticket_id, kind, body, problems, text=None):
+    """Record one `kind` note on `ticket_id` naming every one of `problems`
+    (KO-745), keyed on a sha256 of `body` and `problems`: an unchanged
+    refusal seen again is the same note, an edited body that still fails
+    is a new one. `text` defaults to a heading and one bullet per problem;
+    the note holds it as `comment_body()` caps it."""
+    if text is None:
+        bullets = "\n".join(f"* {problem}" for problem in problems)
+        text = f"**{VALIDATION_HEADING}**\n\n{bullets}"
+    digest = hashlib.sha256(
+        "\0".join([body or "", *problems]).encode()).hexdigest()
+    return store.record_note(conn, ticket_id, kind, comment_body(text),
+                             f"{kind}:{digest}")
 
 
 def merge_drift(conn, run_id, provider, issue_id):
