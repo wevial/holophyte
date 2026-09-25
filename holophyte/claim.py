@@ -33,7 +33,7 @@ import store.tickets
 from holophyte import freshness
 from holophyte.board import (
     MAX_FAILED_RUNS,
-    body_problem,
+    body_problems,
     drop_lease_label,
     escalate,
     failure_history,
@@ -48,6 +48,7 @@ from holophyte.board import (
     mirror_push,
     mirror_status,
     mirror_task,
+    note_problems,
     on_pull_request,
     release_lease_label,
     store_status,
@@ -754,10 +755,13 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
     # freshness check, which refuses a body naming files or symbols main
     # lacks (KO-709, KO-713) or a `Depends on:` ticket not yet merged.
     pr = on_pull_request(conn, project_id, task)
-    problem = body_problem(task, project.path, on_pull_request=pr)
-    if problem:
-        mirror_task(conn, project_id, task, specced=False)
-        print(f"[holo2] {task['id']} skipped: {problem}")
+    # A store-mode board gets every problem as one note (KO-745).
+    problems = body_problems(task, project.path, on_pull_request=pr)
+    if problems:
+        refused = mirror_task(conn, project_id, task, specced=False)
+        if getattr(provider, "store_mode", False) is True:
+            note_problems(conn, refused, "validation", task["body"], problems)
+        print(f"[holo2] {task['id']} skipped: {problems[0]}")
         return None
     if skip_labelled_stale(conn, project_id, task):
         return None

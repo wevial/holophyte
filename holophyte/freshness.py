@@ -48,6 +48,7 @@ from holophyte.board import (
     lease_turn,
     mirror_key,
     mirror_task,
+    note_problems,
     store_status,
     warn,
 )
@@ -278,7 +279,12 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
     that run's -- its contract is not blanked, its issue not moved -- and so
     is an `admitted` one, `ready` when this pass admitted it, that is no
     longer `ready`: another loop parked or moved it while the critic ran.
-    Either is skipped with nothing written."""
+    Either is skipped with nothing written.
+
+    A store-mode board (KO-745) is not commented on or moved: the comment is
+    a `stale` note keyed on the body and the reasons, and the move a queued
+    push, so the next observation reads Backlog as the factory's move and
+    not a person's. The label is still written inline."""
     issue_id = mirror_key(task)
     with lease_turn(project), store.transaction(conn):
         row = conn.execute(
@@ -293,22 +299,31 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
         print(f"[holo2] {task['id']} skipped: another loop claimed or parked"
               " it while it was judged; this verdict is dropped")
         return
-    try:
-        provider.comment(issue_id, comment_body(stale_comment(reasons)))
-    except Exception as e:
-        warn(conn, ticket_id, f"stale-ticket comment failed for {task['id']}"
-                              f" ({e}); the board is not told why")
+    store_mode = getattr(provider, "store_mode", False) is True
+    if store_mode:
+        note_problems(conn, ticket_id, "stale", task.get("body"), reasons,
+                      stale_comment(reasons))
+    else:
+        try:
+            provider.comment(issue_id, comment_body(stale_comment(reasons)))
+        except Exception as e:
+            warn(conn, ticket_id, f"stale-ticket comment failed for"
+                                  f" {task['id']} ({e}); the board is not"
+                                  " told why")
     try:
         provider.label_issue(issue_id, STALE_LABEL)
     except Exception as e:
         warn(conn, ticket_id, f"stale label failed for {task['id']} ({e});"
                               " the board carries no mark")
-    try:
-        provider.set_state(issue_id, BACKLOG_STATE)
-    except Exception as e:
-        warn(conn, ticket_id, f"moving stale {task['id']} to"
-                              f" {BACKLOG_STATE} failed ({e}); the board"
-                              " still lists it ready")
+    if store_mode:
+        store.record_push(conn, ticket_id, BACKLOG_STATE)
+    else:
+        try:
+            provider.set_state(issue_id, BACKLOG_STATE)
+        except Exception as e:
+            warn(conn, ticket_id, f"moving stale {task['id']} to"
+                                  f" {BACKLOG_STATE} failed ({e}); the board"
+                                  " still lists it ready")
     why = why or f"{len(reasons)} stale landmarks"
     print(f"[holo2] {task['id']} skipped: out of date with main ({why})")
 
