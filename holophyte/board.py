@@ -556,7 +556,9 @@ def mirror_push(conn, ticket_id, provider):
     state = MIRROR_STATES.get(status)
     if state is None:
         return None
-    if getattr(provider, "store_mode", False):
+    # `is True`, not truthiness: a `Mock` board answers any attribute, and a
+    # board that never said store mode pushes inline.
+    if getattr(provider, "store_mode", False) is True:
         store.record_push(conn, ticket_id, state)
         return state
     try:
