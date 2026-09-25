@@ -19,10 +19,11 @@ from time import time
 import store
 from holophyte.agents import cleanup_review_refs
 from holophyte.board import (
-    body_problem,
+    body_problems,
     close_out_failure,
     mirror_status,
     mirror_task,
+    note_problems,
     on_pull_request,
     release_lease_label,
     release_run,
@@ -91,6 +92,8 @@ def _mirror_queue(target, conn, project, provider):
     re-parks it only when `pickable()` still says no. Column and status are
     separate: a blocked ticket in Ready stays column `ready`. Only the
     unblocked tasks are returned, so the scheduler's count keeps its meaning.
+    A body it refuses gets one `validation` note naming every problem
+    (KO-745), once per body however many passes see it.
     """
     from holophyte.admission import held_line
     if held_line(conn, project) or linear_budget_low():
@@ -99,12 +102,16 @@ def _mirror_queue(target, conn, project, provider):
     mirrored = []
     try:
         for task in provider.listing() if store_mode else provider.ready_issues():
-            specced = body_problem(
+            problems = body_problems(
                 task, target.path,
-                on_pull_request=on_pull_request(conn, project, task)) is None
+                on_pull_request=on_pull_request(conn, project, task))
             blocked_by = task["blocked_by"] if store_mode else None
-            ticket_id = mirror_task(conn, project, task, specced=specced,
+            ticket_id = mirror_task(conn, project, task,
+                                    specced=not problems,
                                     depends_on=blocked_by)
+            if problems and store_mode:
+                note_problems(conn, ticket_id, "validation", task["body"],
+                              problems)
             if blocked_by:
                 _wait_on_blockers(conn, ticket_id)
             else:
