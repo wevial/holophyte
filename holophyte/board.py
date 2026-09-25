@@ -714,6 +714,9 @@ def escalate(conn, ticket_id, provider):
     with the same discipline as `mirror_push()`: the store is the truth and is
     written first, Linear is a copy and is told after, and a comment that does
     not land is a warning on the run rather than a failure of the escalation.
+    A store-mode board gets the comment as a note keyed by the run whose
+    failure tripped the escalation, written with the park in one
+    transaction, for the host sweep to post (KO-742).
     """
     if conn is None:
         return False
@@ -729,15 +732,26 @@ def escalate(conn, ticket_id, provider):
     history = failure_history(conn, ticket_id)
     if len(history) < MAX_FAILED_RUNS:
         return False
-    if not block_ticket(conn, ticket_id, provider,
-                        strike_question(len(history))):
+    question = strike_question(len(history))
+    body = comment_body(escalation_comment(history))
+    if getattr(provider, "store_mode", False) is True:
+        # One transaction: a park committed alone would make every later
+        # call return early above, and the note would never be written.
+        run_id = ticket.activeRunId or ticket.lastRunId
+        with store.transaction(conn):
+            if not block_ticket(conn, ticket_id, provider, question):
+                return False
+            store.record_note(conn, ticket_id, "escalation", body,
+                              f"escalation:{run_id}", run_id=run_id)
+    elif not block_ticket(conn, ticket_id, provider, question):
         return False
-    try:
-        provider.comment(issue_id, comment_body(escalation_comment(history)))
-    except Exception as e:
-        warn(conn, ticket_id, f"failure history comment failed for "
-                              f"{identifier} ({e}); the store keeps the block"
-                              " and Linear is not told why")
+    else:
+        try:
+            provider.comment(issue_id, body)
+        except Exception as e:
+            warn(conn, ticket_id, f"failure history comment failed for "
+                                  f"{identifier} ({e}); the store keeps the"
+                                  " block and Linear is not told why")
     print(f"[holo2] {identifier} blocked after {len(history)} failed runs")
     return True
 
@@ -824,8 +838,20 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
 
 
 def ledger(conn, run_id, task_id, kind, text, provider):
-    """Store the full narrative, then post a cleaned board copy best-effort."""
+    """Store the full narrative, then post a cleaned board copy best-effort.
+
+    A store-mode board (KO-742) is not called: the entry and its cleaned,
+    capped copy as a note on the run's ticket are one transaction, and the
+    host sweep posts the note."""
     if conn is not None and run_id is not None:
+        if getattr(provider, "store_mode", False) is True:
+            with store.transaction(conn):
+                entry = store.record_ledger(conn, run_id, kind, text)
+                ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+                store.record_note(conn, ticket_id, "ledger",
+                                  comment_body(redact_values(text)),
+                                  f"ledger:{entry}", run_id=run_id)
+            return
         store.record_ledger(conn, run_id, kind, text)
     else:
         print("[holo2] no store to record the ledger entry in")
