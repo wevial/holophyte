@@ -53,7 +53,7 @@ from holophyte.board import (
     release_lease_label,
     store_status,
 )
-from holophyte.claim_store import claim_from_store, store_mode
+from holophyte.claim_store import claim_from_store, store_mode, superseded
 from holophyte.config import (
     branch_prefix,
     setup_commands,
@@ -764,7 +764,8 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
     problems = body_problems(task, project.path, on_pull_request=pr)
     if problems:
         refused = mirror_task(conn, project_id, task, specced=False)
-        if getattr(provider, "store_mode", False) is True:
+        if (getattr(provider, "store_mode", False) is True
+                and not superseded(conn, refused, task)):
             note_problems(conn, refused, "validation", task["body"], problems)
         print(f"[holo2] {task['id']} skipped: {problems[0]}")
         return None

@@ -17,7 +17,7 @@ from holophyte.agents import (
 )
 from holophyte.board import release_lease_label
 from holophyte.claim import _claim_next
-from holophyte.claim_store import announce, store_mode, sync_board
+from holophyte.claim_store import BOARD_DOWN, announce, store_mode, sync_board
 from holophyte.config_tables import loop_config, report_config
 from holophyte.findings import commit_findings
 from holophyte.gates import sh
@@ -133,13 +133,7 @@ def _serial(target, provider, knobs):
             task, ticket_id, run_id = _claim_next(target, conn, project,
                                                   provider, order, skip, seen)
             if not task:
-                # The exit note, in the store before it is on the terminal:
-                # a loop that was re-exec'd and found nothing to claim ends
-                # here without ever heartbeating, and this is what tells the
-                # sweep the restart came back.
-                store.record_loop_return(conn, project)
-                print("[holo2] Linear has no ready tickets. done.")
-                return 1 if failed else None
+                return _queue_ended(conn, project, task, failed)
             if run_id is None:
                 return
             merged = _dispatch(target, conn, run_id, provider, task, ticket_id)
@@ -189,6 +183,22 @@ def _serial(target, provider, knobs):
                 return  # only a test's EXEC returns
     finally:
         conn.close()
+
+
+def _queue_ended(conn, project, task, failed):
+    """The serial loop's exit when the claim found nothing: the exit note,
+    in the store before it is on the terminal -- a loop that was re-exec'd
+    and found nothing to claim ends here without ever heartbeating, and
+    this is what tells the sweep the restart came back -- then the line and
+    the status. A store-mode board that could not be read back at the claim
+    (`BOARD_DOWN`) is not a drained queue: it says so and exits nonzero."""
+    store.record_loop_return(conn, project)
+    if task is BOARD_DOWN:
+        print("[holo2] the board could not be read back at the claim;"
+              " stopping. relaunch once the board answers")
+        return 1
+    print("[holo2] Linear has no ready tickets. done.")
+    return 1 if failed else None
 
 
 def _read_board(target, conn, project, provider, knobs):

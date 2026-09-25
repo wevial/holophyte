@@ -17,7 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import VALID_BODY  # noqa: E402
 from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
+import store  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.claim_store import NOT_ASKED, SYNCED, sync_board  # noqa: E402
 from holophyte.config_tables import sweep_config  # noqa: E402
 from holophyte.supervisor import (  # noqa: E402
     fresh_memory,
@@ -120,3 +122,26 @@ class SweepStoreQueueTests(SweepTestCase):
         self.assertEqual(self.conn.execute(
             "SELECT id, boardAskedAt FROM projects ORDER BY id").fetchall(),
             [(self.project_id, T0), (other, None)])
+
+    def test_a_held_project_or_a_low_budget_is_neither_asked_nor_stamped(self):
+        """A sync that does not ask leaves `boardAskedAt` alone, so the
+        next one is not put off an interval for an ask never made."""
+        store.hold(self.conn, self.project_id, "draining")
+        self.assertEqual(sync_board(self.project, self.conn, self.project_id,
+                                    self.board, now=T0), NOT_ASKED)
+        store.release_hold(self.conn, self.project_id, "drained")
+        with patch("holophyte.supervisor.linear_budget_low",
+                   return_value=True):
+            self.assertEqual(sync_board(self.project, self.conn,
+                                        self.project_id, self.board, now=T0),
+                             NOT_ASKED)
+
+        self.assertEqual(self.board.listed, 0)
+        self.assertEqual(self.conn.execute(
+            "SELECT boardAskedAt FROM projects WHERE id = ?",
+            (self.project_id,)).fetchone(), (None,))
+        with patch("holophyte.supervisor.linear_budget_low",
+                   return_value=False):
+            self.assertEqual(sync_board(self.project, self.conn,
+                                        self.project_id, self.board, now=T0),
+                             SYNCED)

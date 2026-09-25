@@ -148,3 +148,32 @@ class StoreModePoolTests(LoopFixture):
         self.assertEqual(self.board.listed, 1)
         self.assertIn("queue mirror skipped", self.out)
 
+
+    def test_a_board_that_cannot_list_with_no_store_queue_stops_nonzero(self):
+        """Not a drained queue: the scheduler says the board failed and
+        exits 1, as it does in mirror mode."""
+        self.board.broken = True
+
+        pool = self.run_scheduler([])
+
+        self.assertEqual(pool.spawned, [])
+        self.assertIn("the board's ready listing failed and no worker is"
+                      " running; stopping", self.out)
+        self.assertNotIn("no ready tickets", self.out)
+        self.assertEqual(self.rc, 1)
+
+    def test_a_worker_that_cannot_read_its_candidate_back_exits_failed(self):
+        holophyte.board.mirror_task(self.conn, self.project_id,
+                                    self.board.fetch_task("KO-1"))
+
+        def down(issue_id):
+            raise RuntimeError("the board is down")
+
+        self.board.fetch_task = down
+        with patch.object(sys, "stdout", io.StringIO()) as out:
+            status = holophyte.pool._worker(self.project, self.board)
+
+        self.assertEqual(status, holophyte.pool.WORKER_FAILED)
+        self.assertIn("KO-1 could not be read back from the board",
+                      out.getvalue())
+        self.assertNotIn("nothing left to claim", out.getvalue())

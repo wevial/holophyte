@@ -106,6 +106,7 @@ def _worker(target, provider):
     """Claim and dispatch one ticket, then return its worker exit status.
     The scheduler mirrors, reconciles and re-execs; this child owns one run."""
     from holophyte.claim import _claim_next
+    from holophyte.claim_store import BOARD_DOWN
     from holophyte.dispatch import PARKED, _dispatch
 
     knobs = loop_config(target)
@@ -116,6 +117,10 @@ def _worker(target, provider):
             return WORKER_IDLE
         task, ticket_id, run_id = _claim_next(target, conn, project, provider,
                                               knobs.order, set(), NOTHING_SEEN)
+        if task is BOARD_DOWN:
+            # Not an empty queue: the board could not be read back at the
+            # claim, and a worker whose claim raised exits 1 in mirror mode.
+            return WORKER_FAILED
         if not task:
             print("[holo2] nothing left to claim; worker done.")
             return WORKER_IDLE

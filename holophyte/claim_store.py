@@ -43,8 +43,26 @@ READMIT_LIMIT = 2
 SKIP, READMIT, STOP = "skip", "readmit", "stop"
 
 
+class _BoardDown:
+    """`claim_from_store()`'s task when the board could not be read back:
+    falsy, as an empty queue is, and its own object, so the loop can say
+    the board failed rather than that the queue drained."""
+
+    def __bool__(self):
+        return False
+
+
+BOARD_DOWN = _BoardDown()
+
+# What `sync_board()` answers: the board was not asked (throttled, held or
+# the Linear budget low), its listing was mirrored, or it could not be.
+NOT_ASKED, SYNCED, FAILED = "not asked", "synced", "failed"
+
+
 def store_mode(target):
     """Whether `target`'s board is in store mode: `[board] mode = "store"`."""
+    # `provider.store_mode` (queued pushes, notes, the listing) must match
+    # this: `board_for()` sets it from the same `board_mode(target)`.
     return board_mode(target).mode == "store"
 
 
@@ -60,22 +78,42 @@ def sync_board(target, conn, project, provider, now=None,
     (`dispatch._mirror_queue()`, blockers included), unless the project's
     board was asked within `min_interval_ms` -- the loop's `tick_sec`, the
     sweep's `board_ask_sec` -- on the shared `boardAskedAt` stamp, which is
-    written before the ask as `board_ready()` writes it. Answers whether
-    the board was asked. `states()` stays the host sweep's
-    (`observe_board()`); the claim reads its candidate back on its own.
+    written before the ask as `board_ready()` writes it. A held project or
+    a low Linear budget is not asked and not stamped. Answers `NOT_ASKED`,
+    `SYNCED`, or `FAILED` when the listing could not be mirrored.
+    `states()` stays the host sweep's (`observe_board()`); the claim reads
+    its candidate back on its own.
     """
+    from holophyte.admission import held_line
     from holophyte.dispatch import _mirror_queue
+    from holophyte.supervisor import linear_budget_low
     now = int(time() * 1000) if now is None else now
     if min_interval_ms is not None:
         (asked_at,) = conn.execute(
             "SELECT boardAskedAt FROM projects WHERE id = ?",
             (project,)).fetchone()
         if asked_at is not None and now - asked_at < min_interval_ms:
-            return False
+            return NOT_ASKED
+    if held_line(conn, project) or linear_budget_low():
+        return NOT_ASKED
     with store.transaction(conn):
         store.stamp_board_ask(conn, project, now)
-    _mirror_queue(target, conn, project, provider)
-    return True
+    if _mirror_queue(target, conn, project, provider) is None:
+        return FAILED
+    return SYNCED
+
+
+def superseded(conn, ticket_id, task):
+    """Whether `task`, built from the store at `store_revision`, was judged
+    on a revision the ticket has since left (Phase 3 stage 3): a refusal of
+    it writes nothing to the board, and the claim admits the ticket again.
+    False for any other task."""
+    at = task.get("store_revision")
+    if at is None:
+        return False
+    row = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                       (ticket_id,)).fetchone()
+    return row is not None and row[0] != at
 
 
 def task_of(row):
@@ -110,7 +148,8 @@ def claim_from_store(target, conn, project_id, provider, order, skip, seen):
 
     Candidates come from the store's queue in `order`, never from a board
     listing, so an empty queue parks nothing (`_park_unlisted()` is not
-    reached). A refused candidate is added to `skip`.
+    reached). A refused candidate is added to `skip`. A board that could
+    not be asked answers `BOARD_DOWN` as the task.
     """
     from holophyte.admission import held_line
     readmitted = {}
@@ -125,7 +164,7 @@ def claim_from_store(target, conn, project_id, provider, order, skip, seen):
             return None, None, None
         answer = _candidate(target, conn, project_id, provider, row, seen)
         if answer == STOP:
-            return None, None, None
+            return BOARD_DOWN, None, None
         if answer == SKIP:
             skip.add(row.linearIdentifier)
         elif answer == READMIT:
@@ -141,7 +180,9 @@ def _candidate(target, conn, project_id, provider, row, seen):
     ticket_id = _admit_ticket(target, conn, project_id, provider, task_of(row),
                               seen)
     if ticket_id is None:
-        return SKIP
+        # A refusal judged on a revision the board has since replaced is
+        # not the ticket's (its board writes were dropped): judge it again.
+        return READMIT if _revision(conn, row.id) != row.revision else SKIP
     live, verdict = _confirm_on_board(target, conn, project_id, provider, row)
     if live is None:
         return verdict

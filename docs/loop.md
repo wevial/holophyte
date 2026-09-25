@@ -302,8 +302,11 @@ one of the three exits. Under `[board] mode = "store"` the scheduler counts
 the store's queue (`store.read.claimable()`) instead of the listing: the
 board is synced into the store at most once a `tick_sec`, however many
 ticks and exits fall inside it, a listing the board could not answer leaves
-the pool the queue the store already holds, and an empty queue parks
-nothing. Each worker is step 1 through 7 above for one
+the pool the queue the store already holds (with none, the pool stops
+nonzero, as it does in mirror mode), and an empty queue parks nothing. A
+claim that cannot read its candidate back from the board claims nothing
+and exits nonzero rather than reporting an empty queue; an issue the board
+no longer has is skipped. Each worker is step 1 through 7 above for one
 ticket -- claim, worktree, implementer, verify, review, merge gate -- and
 exits with the run's status: `0` merged, `1` failed, `2` parked awaiting
 merge approval, `3` nothing left to claim, `4` stopped for a human. The
