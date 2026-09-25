@@ -114,6 +114,25 @@ class QueuedPushTests(SweepTestCase):
         self.assertEqual(self.push_row(), (None, None, None, "In Progress"))
         self.assertEqual(len(board.pushed), 1)
 
+    def test_a_closed_answer_drops_a_push_queued_from_that_column(self):
+        """A push queued while the board showed a closed column is not
+        sent back over it: a completed issue is not reopened, nor a
+        canceled one with no run to abort."""
+        for closed in ("Done", "Canceled"):
+            with self.subTest(closed=closed):
+                identifier = f"KO-{closed}"
+                ticket = self.a_ready_ticket(identifier)
+                store.set_board_state(self.conn, ticket, closed)
+                mirror_status(self.conn, ticket, "in_flight",
+                              RecordingBoard(self.files, store_mode=True))
+                self.assertEqual(self.push_row(ticket)[:2],
+                                 ("In Progress", closed))
+                (self.files / f"{identifier}.state").write_text(f"{closed}\n")
+                board = RecordingBoard(self.files, store_mode=True)
+                self.observe(board, T0)
+                self.assertEqual(board.pushed, [])
+                self.assertEqual(self.push_row(ticket)[:2], (None, None))
+
 
 class CanceledPushTests(SweepTestCase):
     def test_a_cancel_that_aborts_the_run_drops_its_queued_push(self):

@@ -171,8 +171,9 @@ def _settle(conn, ticket_id, answer, now):
         # Landed, or a person's move: either way nothing is left to send.
         store.clear_push(conn, ticket_id)
         return None
-    if ticket.pushFrom is None and answer["state"] in CLOSED_ANSWERS:
-        # Never observed when queued: a closed column is not sent from.
+    if answer["state"] in CLOSED_ANSWERS:
+        # A closed column is never sent from, even the one queued from:
+        # the push would reopen a completed or canceled issue.
         store.clear_push(conn, ticket_id)
         return None
     if MIRROR_STATES.get(ticket.status) != wanted:
