@@ -482,6 +482,25 @@ class HomeLockTests(HostSweepFixture):
 
         self.assertEqual(recorded, ["a" * 40, "a" * 40])
 
+    def test_the_loop_form_records_unknown_when_it_started_without_one(self):
+        """A loop that could not read its revision at start does not know
+        the code it runs, so no later `HEAD` stands in for it."""
+        heads = iter([None, "b" * 40, "c" * 40])
+        recorded = []
+
+        def stop_after_two(_interval):
+            recorded.append(self.state()["revision"])
+            if len(recorded) == 2:
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        with patch.object(sweep_host, "_provider", lambda _target: None), \
+                patch.object(sweep_host, "factory_revision",
+                             lambda: next(heads)):
+            sweep_host.supervise_host(Host.locate(), out=io.StringIO(),
+                                      wait=stop_after_two)
+
+        self.assertEqual(recorded, ["unknown", "unknown"])
+
 
 # Run in a child process: one host sweep run whose reconcile of beta hangs
 # after touching a marker, until the test kills it.
