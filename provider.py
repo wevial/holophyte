@@ -115,6 +115,12 @@ class Board(Protocol):
         promised order; `updatedAt` is epoch ms or None. Raise on read failure."""
         ...
 
+    def listing(self) -> list[dict]:
+        """The ready column with its blocked tasks too, each carrying
+        `blocked_by`: the `issue_id`s of its still-open blockers (KO-743).
+        What a store-mode queue mirror writes `dependsOn` from."""
+        ...
+
     def fetch_task(self, issue_id) -> dict | None:
         """The ticket as the board holds it now; None when it has no such issue."""
         ...
@@ -227,6 +233,9 @@ class LinearBoard:
     def ready_issues(self):
         return self._linear().ready_issues(self.project_id, label=self._label)
 
+    def listing(self):
+        return self._linear().listing(self.project_id, label=self._label)
+
     def fetch_task(self, issue_id):
         return self._linear().fetch_task(issue_id)
 
@@ -329,6 +338,10 @@ class FileProvider:
     def ready_issues(self):
         return [self.fetch_task(identifier) for identifier in self._identifiers()
                 if self._state(identifier) == DEFAULT_STATE]
+
+    def listing(self):
+        # No relations on a file board, so nothing is ever blocked.
+        return [dict(task, blocked_by=[]) for task in self.ready_issues()]
 
     def fetch_task(self, issue_id):
         if "." in issue_id or not self._path(issue_id).is_file():

@@ -353,7 +353,7 @@ def refresh_board_states(conn, project, provider):
                 store.set_board_state(conn, ticket.id, state)
 
 
-def mirror_task(conn, project, task, specced=True):
+def mirror_task(conn, project, task, specced=True, depends_on=None):
     """Mirror the offered ticket's live body into the store; return its id.
 
     The first half of a claim, split from the lease so the loop can ask the
@@ -379,10 +379,12 @@ def mirror_task(conn, project, task, specced=True):
     issue a second time under its real id. A provider with no UUID gets a
     mirror keyed on the identifier it does have.
 
-    No `depends_on`, on purpose: the provider does not parse a dependency
-    list, so the store's copy is the only one and `mirror_ticket()` keeps
-    it when the caller says nothing — `[]` would clear a blocked ticket's
-    dependencies in the very row the pickability gate reads next.
+    `depends_on=None`, the default, on purpose: the claim's task carries
+    no dependency list, so the store's copy is the only one and
+    `mirror_ticket()` keeps it when the caller says nothing — `[]` would
+    clear a blocked ticket's dependencies in the very row the pickability
+    gate reads next. Store mode's queue mirror does know the list — the
+    board's open blockers (KO-743) — and passes it, `[]` included.
 
     `specced=False` mirrors the ticket with its criteria and verify command
     withheld — the same row a criteria-less body produces: `needs_spec`,
@@ -426,6 +428,7 @@ def mirror_task(conn, project, task, specced=True):
         board_column="ready",
         filed_at=task.get("filed_at"),
         board_updated_at=task.get("updatedAt"),
+        depends_on=depends_on,
     )
     if criteria and commands:
         with store.transaction(conn):

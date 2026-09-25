@@ -69,36 +69,59 @@ def _mirror_queue(target, conn, project, provider):
     in `needs_spec`, a valid one lands where its lists put it -- and, as
     there, a ticket whose last run holds a pull request skips the
     repository checks, its branch holding the paths main lacks (KO-680).
-    Statuses that are somebody's decision -- `in_flight`, `blocked_on_operator`,
-    `blocked_on_deps`, the terminal ones -- are left alone by
-    `store.tickets.mirror_ticket()` itself, and dependencies are left as the store
-    has them. A board that cannot be asked, or a listing the mirror
-    chokes on, skips the whole step in one printed line and the claim
-    proceeds: this fills the Board, it does not gate the work. Nothing is
-    written to Linear. Returns the listing it mirrored -- the scheduler
-    counts its claimable tickets from it (KO-343) -- and None when the step
-    was skipped: a board that could not be asked has said nothing about the
-    queue, and an empty list would say it is empty. A Linear complexity
-    budget under its tenth is skipped the same way (KO-434): the relisting
-    waits for the reset `linear_budget_low()` names once rather than
-    spending the points to be refused.
+    Statuses that are somebody's decision -- `in_flight`,
+    `blocked_on_operator`, `blocked_on_deps`, the terminal ones -- are left
+    alone by `store.tickets.mirror_ticket()` itself, and outside store mode
+    dependencies are left as the store has them. A board that cannot be
+    asked, or a listing the mirror chokes on, skips the whole step in one
+    printed line and the claim proceeds: this fills the Board, it does not
+    gate the work. Nothing is written to Linear. Returns the listing it
+    mirrored -- the scheduler counts its claimable tickets from it (KO-343)
+    -- and None when the step was skipped: a board that could not be asked
+    has said nothing about the queue, and an empty list would say it is
+    empty. A Linear complexity budget under its tenth is skipped the same
+    way (KO-434): the relisting waits for the reset `linear_budget_low()`
+    names once rather than spending the points to be refused.
+
+    A store-mode board (KO-743) is listed through `listing()` instead: its
+    blocked tasks too, each mirrored with `dependsOn` set to its open
+    blockers on every pass, so the store knows the dependency the board
+    holds. A `ready` row with blockers then walks to `blocked_on_deps`; one
+    whose blockers are gone is walked back by `mirror_task()` itself, which
+    re-parks it only when `pickable()` still says no. Column and status are
+    separate: a blocked ticket in Ready stays column `ready`. Only the
+    unblocked tasks are returned, so the scheduler's count keeps its meaning.
     """
     from holophyte.admission import held_line
     if held_line(conn, project) or linear_budget_low():
         return None
+    store_mode = getattr(provider, "store_mode", False)
     mirrored = []
     try:
-        for task in provider.ready_issues():
+        for task in provider.listing() if store_mode else provider.ready_issues():
             specced = body_problem(
                 task, target.path,
                 on_pull_request=on_pull_request(conn, project, task)) is None
-            mirror_task(conn, project, task, specced=specced)
-            mirrored.append(task)
+            blocked_by = task["blocked_by"] if store_mode else None
+            ticket_id = mirror_task(conn, project, task, specced=specced,
+                                    depends_on=blocked_by)
+            if blocked_by:
+                _wait_on_blockers(conn, ticket_id)
+            else:
+                mirrored.append(task)
     except Exception as e:  # any transport or mirror failure: not a gate
         print(f"[holo2] queue mirror skipped: the board's ready issues could"
               f" not be mirrored ({e})")
         return None
     return mirrored
+
+
+def _wait_on_blockers(conn, ticket_id):
+    """Walk a just-mirrored `ready` row the board says is blocked to
+    `blocked_on_deps` (KO-743); any other status is left as it is."""
+    with store.transaction(conn):
+        if store.read.ticket_by_id(conn, ticket_id).status == "ready":
+            store.tickets.walk_ticket(conn, ticket_id, "blocked_on_deps")
 
 
 # The repository the factory runs from, for telling its own frames in a
