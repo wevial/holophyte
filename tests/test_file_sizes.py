@@ -31,7 +31,7 @@ OVER = {}
 # Pins are upper bounds, initialized with 60 lines of headroom in KO-576.
 # Lower a pin when it sits more than 150 lines above its file's count.
 PINNED = {
-    "holophyte/babysitter.py": 1095, "holophyte/board.py": 947,
+    "holophyte/babysitter.py": 1095, "holophyte/board.py": 965,
     "holophyte/claim.py": 988, "holophyte/cli.py": 663,
     "holophyte/config.py": 894, "holophyte/dispatch.py": 327,
     "holophyte/config_tables.py": 709, "holophyte/findings.py": 391,
@@ -73,7 +73,7 @@ PINNED = {
     "tests/test_store_read.py": 414, "tests/test_store_resume.py": 263,
     "tests/test_store_schema.py": 1612, "tests/test_store_status.py": 372,
     "tests/test_store_status_graph.py": 171,
-    "tests/test_store_surface.py": 327, "tests/test_store_tickets.py": 178,
+    "tests/test_store_surface.py": 330, "tests/test_store_tickets.py": 178,
     "tests/test_supervise.py": 1109, "tests/test_supervisor_sweep.py": 1100,
     "tests/test_wiring_claim.py": 700, "tests/test_wiring_findings.py": 549,
     "tests/test_wiring_mirror.py": 349, "tests/test_wiring_phases.py": 501,

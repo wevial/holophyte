@@ -67,6 +67,9 @@ EXPECTED = [
     "record_ledger",
     "record_loop_restart",
     "record_loop_return",
+    # KO-742: a ticket's board note, written with its ledger entry in store
+    # mode for the host sweep to post.
+    "record_note",
     # KO-368: what one read of a parked run's pull request saw, the four
     # `runs.prSeen*` columns in one statement, for `park()` and the loop's
     # reconcile alike.
