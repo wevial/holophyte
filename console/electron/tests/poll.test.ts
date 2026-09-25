@@ -58,7 +58,7 @@ test("a host daemon's projects are an entry each under its prefix, asked with th
   const labels = summarizeAnswer(answer, NOW).items.filter((item) => item.type !== "separator").map((item) => item.label);
   expect(labels).toContain("alpha · working KO-7 · hb 12s");
   expect(labels).toContain("beta · OperationalError: database is locked");
-  expect(labels).toContain("writer:7710 · sweep fresh · 20s ago");
+  expect(labels).toContain("writer · sweep fresh · 20s ago");
   expect(labels).toContain("1 host · 1 daemon");
 });
 
@@ -67,7 +67,7 @@ test("a host sweep that is not fresh is something that needs you", async () => {
   const answer = await pollAll(`${ORIGIN}/`, {}, { fetch });
   const summary = summarizeAnswer(answer, NOW);
   const needsYou = summary.items.slice(0, summary.items.findIndex((item) => item.type === "separator"));
-  expect(needsYou.map((item) => item.label)).toContain("writer:7710 · sweep killed · 20s ago");
+  expect(needsYou.map((item) => item.label)).toContain("writer · sweep killed · 20s ago");
   expect(summary.level).toBe("attention");
 });
 

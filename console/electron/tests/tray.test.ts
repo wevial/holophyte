@@ -5,7 +5,16 @@ import path from "node:path";
 
 import * as electronStub from "./electron-stub.ts";
 import { pollAll, readTokenSources, readTokens } from "../poll.ts";
-import { type Attention, type FetchResult, type Status, buildSummary, summarizeAnswer, trayImageFile } from "../tray.ts";
+import {
+  type Attention,
+  type FetchResult,
+  type HostStatus,
+  type Status,
+  buildSummary,
+  summarizeAnswer,
+  sweepRow,
+  trayImageFile,
+} from "../tray.ts";
 
 // The stub has to answer "electron" before main.ts links, so main.ts is
 // imported inside the test, after this registration.
@@ -84,6 +93,26 @@ describe("buildSummary", () => {
     expect(labels(items)).toContain("writer-2:7710 · unreachable");
     expect(labels(items)).toContain("1 host · 2 daemons");
     expect(level).toBe("bad");
+  });
+});
+
+// A host daemon's root /status (holophyte/serve_host.py host_status()):
+// the sweep ended 30 s before its clock, and one project reporting its host.
+const HOST_ADDRESS = "192.0.2.10:7710";
+const HOST_STATUS: HostStatus = {
+  now: NOW,
+  sweep: { state: "fresh", ended: NOW - 30_000, started: NOW - 32_000, exit: 0 },
+  projects: [{ name: "holophyte", path: "/srv/dev/holophyte", store: "/srv/dev/holophyte/.holophyte/store.db", error: null, host: "writer-1", project_row: 1 }],
+};
+
+describe("sweepRow", () => {
+  test("the sweep line names the host its projects report, not the daemon's address", () => {
+    expect(sweepRow(HOST_ADDRESS, HOST_STATUS)).toEqual({ label: "writer-1 · sweep fresh · 30s ago", level: "idle" });
+  });
+
+  test("with no project reporting a host the line falls back to the address", () => {
+    const status = { ...HOST_STATUS, projects: HOST_STATUS.projects.map((p) => ({ ...p, host: null })) };
+    expect(sweepRow(HOST_ADDRESS, status).label.startsWith(`${HOST_ADDRESS} · sweep`)).toBe(true);
   });
 });
 
