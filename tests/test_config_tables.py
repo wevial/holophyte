@@ -304,6 +304,53 @@ class BoardLabelTests(ConfigTestCase):
                 self.assertIn("[board] label", message)
 
 
+class BoardModeTests(ConfigTestCase):
+    """`[board] mode` (`"mirror"` or `"store"`) and `[board] kind`
+    (`"linear"` or `"native"`): accepted with today's board as the
+    default, refused outside those values, read by nothing yet."""
+
+    BOARD = '[board]\nproject_id = "p-1"\nteam = "T"\n'
+
+    def start(self, target):
+        """`cli([target])`, the loop's startup, with `main` patched."""
+        with patch.object(holophyte.cli, "check_agent_commands"), \
+                patch.object(holophyte.cli, "check_worktree_setup"), \
+                patch.object(holophyte.cli, "main") as main:
+            holophyte.cli.cli([str(target)])
+        return main
+
+    def test_the_keys_default_to_today_and_a_store_board_starts(self):
+        for toml in ("", self.BOARD):
+            with self.subTest(toml=toml):
+                self.locate(toml)
+                self.assertEqual(config_tables.board_mode(self.project),
+                                 ("mirror", "linear"))
+
+        self.locate(self.BOARD + 'mode = "store"\nkind = "native"\n')
+        self.assertEqual(config_tables.board_mode(self.project),
+                         ("store", "native"))
+
+        main = self.start(self.locate(self.BOARD + 'mode = "store"\n').path)
+        main.assert_called_once()
+
+    def test_a_value_outside_the_allowed_ones_is_a_startup_error(self):
+        for line, key, allowed in (('mode = "stor"', "[board] mode", "store"),
+                                   ("mode = 3", "[board] mode", "mirror"),
+                                   ('kind = "jira"', "[board] kind", "native")):
+            with self.subTest(line=line):
+                target = self.locate(self.BOARD + line + "\n").path
+                with patch.object(holophyte.cli, "check_agent_commands"), \
+                        patch.object(holophyte.cli, "check_worktree_setup"), \
+                        patch.object(holophyte.cli, "main") as main, \
+                        self.assertRaises(SystemExit) as raised:
+                    holophyte.cli.cli([str(target)])
+                main.assert_not_called()
+                message = str(raised.exception)
+                self.assertIn(str(self.project.config_path), message)
+                self.assertIn(key, message)
+                self.assertIn(allowed, message)
+
+
 class ConsoleConfigTests(ConfigTestCase):
     """`[console] daemons`: the other daemons as `HOST:PORT` strings, each
     held to `--serve`'s address rule, none twice; empty by default."""

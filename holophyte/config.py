@@ -23,6 +23,7 @@ from holophyte import harness
 from holophyte.config_tables import (
     AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
+    BOARD_MODE_KEYS,
     CONSOLE_KEYS,
     LOOP_KEYS,
     MERGE_KEYS,
@@ -120,7 +121,7 @@ KNOWN_KEYS = {
 # `REPORT_KEYS`, with `[supervisor]`'s.
 KNOWN_KEYS["supervisor"] = frozenset(SUPERVISOR_KEYS)
 KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
-KNOWN_KEYS["board"] = frozenset(BOARD_KEYS)
+KNOWN_KEYS["board"] = frozenset(BOARD_KEYS) | frozenset(BOARD_MODE_KEYS)
 # The capture allow-list stays out of `MERGE_KEYS`, which `merge_config()`
 # checks through `MERGE_VALUES`; `capture_environment()` checks it instead.
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS) | frozenset(

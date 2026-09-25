@@ -12,6 +12,7 @@ from holophyte.config import (
 from holophyte.config_tables import (
     AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
+    BOARD_MODE_KEYS,
     CONSOLE_KEYS,
     LOOP_KEYS,
     MERGE_KEYS,
@@ -25,7 +26,7 @@ TABLES = {
     "agents": (set(AGENT_CONFIG_KEYS.values()) | set(AGENT_FALLBACK_KEYS)
                | set(REVIEW_ROUTE_KEYS) | set(KNOWN_KEYS["agents"])),
     "loop": LOOP_KEYS,
-    "board": BOARD_KEYS,
+    "board": set(BOARD_KEYS) | set(BOARD_MODE_KEYS),
     "merge": MERGE_KEYS,
     "supervisor": SUPERVISOR_KEYS,
     "serve": SERVE_KEYS,
