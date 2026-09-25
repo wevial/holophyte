@@ -21,8 +21,15 @@ command.
 ## The host units
 
 One daemon and one sweep per host, for every project in the host registry,
-`~/.holophyte/host.toml` (`factory.py project add PATH` writes it). None of
-them reads an environment file: they read `host.toml`.
+`~/.holophyte/host.toml` (`factory.py project add PATH` writes it). Their
+configuration is `host.toml`, not an environment file. The one exception
+is the sweep's process environment: it shells out to `gh` and the agent
+CLIs, and its launches need the shared keys the old per-project supervisor
+read from each `serve.env`. `holophyte-sweep.service` carries the lines
+commented out: a `PATH` naming where those CLIs live, and an optional
+`~/.holophyte/host.env` (mode 600, the shared keys only). Uncomment and
+adjust them before enabling. Without the `PATH`, the reconcile and the
+route probe fail on a missing executable.
 
 - `deploy/holophyte.target` — `Wants=` the socket and the timer, and is the
   only host unit with an `[Install]` section. `systemctl --user enable --now
