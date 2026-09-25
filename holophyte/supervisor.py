@@ -51,6 +51,8 @@ from holophyte.board import (
     refresh_board_states,
 )
 from holophyte.board_sync import observe_board
+from holophyte.board_sync import owed as tickets_owed
+from holophyte.claim_store import store_mode
 from holophyte.config import budget_scale, serve_config
 from holophyte.config_tables import BOARD_ASK_SEC, sweep_config
 from holophyte.reexec import LOOP_UNIT, start_loop
@@ -729,8 +731,10 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
         # Owed however it got there -- this pass's send-back, an
         # operator's --requeue or --babysit, a ticket filed while the
         # loop was down -- and asked even when GitHub could not be: the
-        # ready rows are the mirror's, not the reconcile's.
-        owed.extend(store.read.ready_tickets(conn, project))
+        # ready rows are the mirror's, not the reconcile's. In store mode
+        # the store's queue, synced here while no loop is live.
+        owed.extend(tickets_owed(target, conn, project, provider, now, out,
+                                 knobs))
     # The mirror is a cache of the board, and a ticket that became ready
     # while no loop ran has no row in it: an empty mirror falls through
     # to the board itself (KO-411). A live loop asks the board on its own
@@ -743,7 +747,8 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     # after `project add`) is not asked about until a loop or `project
     # add` writes it.
     board_project = None
-    if not owed and not live and provider is not None:
+    if (not owed and not live and provider is not None
+            and not store_mode(target)):
         row = conn.execute("SELECT id FROM projects WHERE linearTeamId = ?",
                            (provider.team,)).fetchone()
         board_project = row[0] if row is not None else None

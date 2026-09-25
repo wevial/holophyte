@@ -44,7 +44,7 @@ PINNED = {
     "holophyte/report.py": 256, "provider.py": 520,
     "holophyte/serve.py": 1140,
     "holophyte/serve_actions.py": 214, "holophyte/serve_config.py": 402,
-    "holophyte/serve_runs.py": 662, "holophyte/supervisor.py": 970,
+    "holophyte/serve_runs.py": 662, "holophyte/supervisor.py": 975,
     "holophyte/supervisor_lock.py": 287,
     "holophyte/sweep_report.py": 322, "store/__init__.py": 1068,
     "store/operate.py": 1018, "store/read.py": 1187,

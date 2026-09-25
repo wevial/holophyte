@@ -132,3 +132,27 @@ class BoardDiffTests(unittest.TestCase):
         self.assertFalse(
             holophyte.project.Project.locate(repo, adopt=False).holo_dir.exists())
         self.assertNotIn("adopt", out.getvalue())
+
+    def test_in_store_mode_a_row_shelved_by_its_column_is_no_difference(self):
+        """Phase 3 stage 3: a store-mode ticket leaves the queue by its
+        column, so a `ready` row in column `backlog` the listing no longer
+        names agrees with the board; mirror mode still reports it."""
+        (self.boards / "KO-2.state").write_text("Backlog\n")
+        conn = open_store(self.target)
+        try:
+            (ticket,) = conn.execute("SELECT id FROM tickets WHERE"
+                                     " linearIdentifier = 'KO-2'").fetchone()
+            store.set_board_state(conn, ticket, "Backlog", column="backlog")
+        finally:
+            conn.close()
+        board = '[board]\nteam = "KO"\nproject_id = "project-1"\n'
+        self.target.holo_dir.mkdir(parents=True, exist_ok=True)
+        for mode, expected in (('mode = "store"\n', (0, [
+                "[holo2] board diff: no differences"])),
+                               ("", (1, [
+                "KO-2: ready in the store, not on the board's ready listing",
+                "[holo2] board diff: 1 difference"]))):
+            with self.subTest(mode=mode):
+                self.target.config_path.write_text(board + mode)
+                self.target = holophyte.project.Project.locate(self.repo)
+                self.assertEqual(self.diff(), expected)
