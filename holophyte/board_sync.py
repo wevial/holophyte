@@ -12,6 +12,10 @@ stamps `goneSince`; a second one at least `board_ask_sec` later retires
 the ticket -- an idle one walked `abandoned` under a `reconcile` row, a
 live run asked to pause on the question. Seeing the issue again clears the
 stamp. A board that cannot be asked is no evidence and changes nothing.
+A canceled answer for a ticket whose run is live in a work phase aborts
+that run through `abort_run()`, source `supervisor` and trigger
+`linear_cancelled`, after the row's transaction (KO-741): the run ends
+`abandoned` with its work kept on the branch, and the ticket with it.
 """
 from datetime import datetime, timezone
 
@@ -20,6 +24,7 @@ import store.read
 import store.tickets
 from holophyte import deadline
 from holophyte.config_tables import board_mode
+from holophyte.stop import abort_requested, abort_run
 from provider import GONE
 
 
@@ -54,13 +59,17 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
             asked[project] = previous
     for ticket in tickets:
         answer = answers.get(ticket.linearIdentifier)
-        if answer is not None:
-            _record(conn, ticket, answer, now, out, ask_ms)
+        if answer is None:
+            continue
+        run = _record(conn, ticket, answer, now, out, ask_ms)
+        if run is not None:
+            _abort_canceled(target, conn, board, ticket, run, out)
 
 
 def _record(conn, ticket, answer, now, out, ask_ms):
     """One ticket's answer, written under one transaction that re-reads
-    the row; a row closed since the open read is left alone."""
+    the row; a row closed since the open read is left alone. The live run
+    a canceled answer is to abort is returned, not aborted here."""
     with store.transaction(conn):
         row = conn.execute(
             "SELECT status, activeRunId, lastRunId, goneSince FROM tickets"
@@ -74,6 +83,8 @@ def _record(conn, ticket, answer, now, out, ask_ms):
             if answer["state"] != "completed":
                 store.record_board_fields(conn, ticket.id, author="board",
                                           now=now)
+            if answer["state"] == "canceled":
+                return _abortable(conn, row[1])
             return
         if row[3] is None:
             store.set_gone_since(conn, ticket.id, now)
@@ -81,6 +92,30 @@ def _record(conn, ticket, answer, now, out, ask_ms):
         # is: the person it waits on decides it.
         elif now - row[3] >= ask_ms and row[0] != "blocked_on_operator":
             _retire(conn, ticket, row, now, out)
+
+
+def _abortable(conn, run_id):
+    """`run_id` when it is live in a work phase with no abort pending: a
+    run parked on its pull request is `_close_canceled()`'s (KO-660)."""
+    if run_id is None or abort_requested(conn, run_id):
+        return None
+    (phase,) = conn.execute("SELECT phase FROM runs WHERE id = ?",
+                            (run_id,)).fetchone()
+    return None if phase in store.PARKED_PHASES else run_id
+
+
+def _abort_canceled(target, conn, board, ticket, run_id, out):
+    """Abort the canceled ticket's live run; a refusal is one printed line."""
+    note = f"{ticket.linearIdentifier} was canceled on the board"
+    try:
+        ended = abort_run(target, conn, run_id, note, provider=board,
+                          source="supervisor", trigger="linear_cancelled")
+    except ValueError as refused:
+        print(f"[holo2] run {run_id} could not be aborted: {note}"
+              f" ({refused})", file=out)
+        return
+    when = "ended abandoned" if ended else "ends at its worker's next heartbeat"
+    print(f"[holo2] aborted run {run_id}: {note}; it {when}", file=out)
 
 
 def _retire(conn, ticket, row, now, out):

@@ -589,15 +589,15 @@ def pause(conn, run_id, note, source="human", now=None):
     return request
 
 
-def abort(conn, run_id, note, source="human", now=None, close=False):
+def abort(conn, run_id, note, source="human", now=None, close=False, trigger="manual"):
     """Record an emergency stop before marking the live run, atomically.
 
     Shares `stopRequested` with `pause()`; the intervention's action tells the
     two apart, and an abort supersedes a pending pause. `close` records it
     as `abort_close`, which closes the run's pull request once the abort is
-    finished (KO-611) and supersedes a pending plain abort. A run that has
-    ended, or sits where the state model draws no edge to `failed`, is
-    refused before anything is written."""
+    finished (KO-611) and supersedes a pending plain abort; `trigger` is the
+    intervention's (KO-741). A run that has ended, or sits where the state
+    model draws no edge to `failed`, is refused before anything is written."""
     with _transaction(conn):
         row = conn.execute(
             "SELECT r.endedAt, r.outcome, r.phase, r.stopRequested, i.action"
@@ -613,8 +613,8 @@ def abort(conn, run_id, note, source="human", now=None, close=False):
         wanted = "abort_close" if close else "abort"
         if action in (wanted, "abort_close"):
             return pending
-        request = record_intervention(conn, run_id, wanted, note,
-                                      source=source, guidance=note, now=now)
+        request = record_intervention(conn, run_id, wanted, note, source=source,
+                                      trigger=trigger, guidance=note, now=now)
         conn.execute("UPDATE runs SET stopRequested = ? WHERE id = ?",
                      (request, run_id))
     return request
