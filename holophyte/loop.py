@@ -66,6 +66,7 @@ from holophyte.gates import (
     MergeParked as MergeParked,
 )
 from holophyte.merge_gate import (
+    DriftRequeued,
     _gate_lock,
     _merge_gate,
     _park_for_approval,
@@ -137,7 +138,8 @@ def run_task(project, task, conn=None, run_id=None, provider=None):
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused
     except store.RunEnded as ended:
-        if ended.outcome == "paused" or isinstance(ended, Aborted):
+        if ended.outcome == "paused" or isinstance(ended, (Aborted,
+                                                           DriftRequeued)):
             ticket_id = store.read.run_snapshot(run.conn, run.run_id).ticketId
             board.mirror_push(run.conn, ticket_id, run.provider)
             board.release_lease_label(run.project, run.conn, ticket_id,
