@@ -21,6 +21,7 @@ from . import _json_list
 from . import enums as _enums
 from .enums import TicketStatus as _Status
 from .project_paths import canonical_projects
+from .revisions import record_board_fields
 from .schema import _transaction
 
 
@@ -312,12 +313,26 @@ def mirror_ticket(
     body="",
     url=None,
     board_state=None,
+    priority=None,
+    labels=None,
+    board_column=None,
+    filed_at=None,
+    board_updated_at=None,
 ):
     """Upsert the Holophyte mirror of a Linear issue; return its ticket id.
 
     `body`, `url` and `board_state` are refreshed on every mirror. The body is the
     text the loop read, served by `ticket_by_identifier()` rather than live Linear.
     A missing body is empty; a missing URL or board state is null.
+
+    `priority`, `labels`, `board_column`, `filed_at` and `board_updated_at`
+    are the board's other fields (KO-736), and None for each means what it
+    means for `depends_on`: no opinion, keep what the row holds. Title, body,
+    priority, labels and column are the board-owned fields a revision holds:
+    the stored row is first healed against its latest revision (authored
+    `unrecorded`, for an older build's write that recorded none), then
+    written, then recorded as the next revision (authored `board`) when it
+    changed -- so an older build's edit and this one are two revisions.
 
     The routing rule, state-model §2: a ticket lacking acceptance criteria or
     a verification command is **not pickable**, so a new one lands in
@@ -362,6 +377,7 @@ def mirror_ticket(
     criteria = _json_list("acceptance_criteria", acceptance_criteria)
     commands = _json_list("verification_commands", verification_commands)
     depends = None if depends_on is None else _json_list("depends_on", depends_on)
+    labels = None if labels is None else _json_list("labels", labels)
     specced = bool(json.loads(criteria)) and bool(json.loads(commands))
     derived = "ready" if specced else "needs_spec"
     if now is None:
@@ -377,30 +393,41 @@ def mirror_ticket(
                 "INSERT INTO tickets"
                 " (projectId, linearIssueId, linearIdentifier, title, body,"
                 "  status, acceptanceCriteria, verificationCommands, timeBoxMs,"
-                "  affinity, dependsOn, mirroredAt, url, boardState)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "  affinity, dependsOn, mirroredAt, url, boardState, priority,"
+                "  labels, boardColumn, filedAt, boardUpdatedAt)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     project_id, linear_issue_id, linear_identifier, title,
                     body, derived, criteria, commands, time_box_ms, affinity,
                     "[]" if depends is None else depends, now, url, board_state,
+                    priority, "[]" if labels is None else labels, board_column,
+                    filed_at, board_updated_at,
                 ),
             ).lastrowid
         else:
             ticket_id, status = row
             if status in ("needs_spec", "ready"):
                 status = derived
+            record_board_fields(conn, ticket_id, "unrecorded", now)
             conn.execute(
                 "UPDATE tickets SET linearIdentifier = ?, title = ?, body = ?,"
                 " status = ?, acceptanceCriteria = ?, verificationCommands = ?,"
                 " timeBoxMs = ?, affinity = ?,"
                 " dependsOn = COALESCE(?, dependsOn), mirroredAt = ?,"
-                " url = ?, boardState = ?"
+                " url = ?, boardState = ?, priority = COALESCE(?, priority),"
+                " labels = COALESCE(?, labels),"
+                " boardColumn = COALESCE(?, boardColumn),"
+                " filedAt = COALESCE(?, filedAt),"
+                " boardUpdatedAt = COALESCE(?, boardUpdatedAt)"
                 " WHERE id = ?",
                 (
                     linear_identifier, title, body, status, criteria, commands,
-                    time_box_ms, affinity, depends, now, url, board_state, ticket_id,
+                    time_box_ms, affinity, depends, now, url, board_state,
+                    priority, labels, board_column, filed_at, board_updated_at,
+                    ticket_id,
                 ),
             )
+        record_board_fields(conn, ticket_id, "board", now)
     return ticket_id
 
 

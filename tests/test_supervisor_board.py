@@ -48,6 +48,7 @@ class SupervisorBoardTests(SweepTestCase):
     def test_fixed_body_is_mirrored_and_owed_after_throttle(self):
         for status in ("needs_spec", "blocked_on_deps"):
             with self.subTest(status=status):
+                self.conn.execute("DELETE FROM ticketRevisions")
                 self.conn.execute("DELETE FROM tickets")
                 self.conn.execute("UPDATE projects SET boardAskedAt = NULL")
                 self.conn.commit()
@@ -76,6 +77,7 @@ class SupervisorBoardTests(SweepTestCase):
                                 ("blocked_on_operator", T0 + 1),
                                 ("merged", T0 + 1)):
             with self.subTest(status=status, updated=updated):
+                self.conn.execute("DELETE FROM ticketRevisions")
                 self.conn.execute("DELETE FROM tickets")
                 self.conn.execute("UPDATE projects SET boardAskedAt = NULL")
                 self.conn.commit()
