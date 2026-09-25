@@ -60,7 +60,8 @@ def stop_if_requested(conn, run_id, phase):
 
 
 class Aborted(store.RunEnded):
-    """This worker ended its own run `abandoned` for an operator's `--abort`."""
+    """This worker ended its own run `abandoned` for an operator's `--abort`
+    or the board's cancel."""
 
 
 def abort_requested(conn, run_id):
@@ -74,20 +75,21 @@ def abort_requested(conn, run_id):
 
 def end_aborted(conn, run_id):
     """Commit the tree as WIP, push it when a pull request is open, then end
-    the run `abandoned` with the note and park the ticket; the turn's
-    process group is the caller's to have killed. An `abort_close` then
-    comments on and closes the pull request; nothing is merged or deleted,
-    and the branch and worktree are kept."""
+    the run `abandoned` with the note and park the ticket -- or, for the
+    board's cancel (trigger `linear_cancelled`, KO-741), walk it `abandoned`
+    with no question; the turn's process group is the caller's to have
+    killed. An `abort_close` then comments on and closes the pull request;
+    nothing is merged or deleted, and the branch and worktree are kept."""
     from holophyte import pr
     from holophyte.gates import InfraFailure
-    branch, ticket_id, repo, note, pr_url, action, source, identifier = \
-        conn.execute(
-            "SELECT r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl,"
-            " i.action, i.source, t.linearIdentifier"
-            " FROM runs r JOIN projects p ON p.id = r.projectId"
-            " JOIN tickets t ON t.id = r.ticketId"
-            " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
-            (run_id,)).fetchone()
+    (branch, ticket_id, repo, note, pr_url, action, source, trigger,
+     identifier) = conn.execute(
+        "SELECT r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl,"
+        ' i.action, i.source, i."trigger", t.linearIdentifier'
+        " FROM runs r JOIN projects p ON p.id = r.projectId"
+        " JOIN tickets t ON t.id = r.ticketId"
+        " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
+        (run_id,)).fetchone()
     target = Project.locate(repo)
     sha = preserve(target, branch, "abort") if branch else None
     if sha and pr_url:
@@ -102,8 +104,11 @@ def end_aborted(conn, run_id):
         if ended is not None:
             raise store.RunEnded(run_id, outcome, reason)
         store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
-        store.walk_ticket(conn, ticket_id, "blocked_on_operator")
-        store.set_question(conn, ticket_id, note)
+        if trigger == "linear_cancelled":
+            store.walk_ticket(conn, ticket_id, "abandoned")
+        else:
+            store.walk_ticket(conn, ticket_id, "blocked_on_operator")
+            store.set_question(conn, ticket_id, note)
     # Closed only once the run has ended, so a reconcile that sees the pull
     # request closed never finds a parked run to reject. Signed by the
     # factory, not a model: the operator decided this.
@@ -255,15 +260,18 @@ def abort_command(target, identifier, note, *, provider, close=False):
         conn.close()
 
 
-def abort_run(target, conn, run_id, note, *, provider, close=False):
-    """Record the abort (`close`: and the pull request's close), then end
-    the run here when no worker can still touch its tree, and project the
-    park to the board as the worker path does; True when it ended here,
-    False when a live worker ends it at its next heartbeat. `--abort` and
-    `POST /actions/abort` both call this (KO-612); ValueError, before any
-    write, when the store refuses the abort."""
+def abort_run(target, conn, run_id, note, *, provider, close=False,
+              source="human", trigger="manual"):
+    """Record the abort (`close`: and the pull request's close) with its
+    `source` and `trigger`, then end the run here when no worker can still
+    touch its tree, and project the park to the board as the worker path
+    does; True when it ended here, False when a live worker ends it at its
+    next heartbeat. `--abort` and `POST /actions/abort` both call this
+    (KO-612), and the store-mode sweep for a board cancel (KO-741);
+    ValueError, before any write, when the store refuses the abort."""
     from holophyte import board
-    store.abort(conn, run_id, note, close=close)
+    store.abort(conn, run_id, note, source=source, close=close,
+                trigger=trigger)
     if not worker_gone(conn, run_id):
         return False
     try:

@@ -24,6 +24,11 @@ move stands. A push queued before the row was ever observed is sent from
 alone, and a closed ticket is still asked while it has one queued. The
 sends are made after each row's transaction commits; a raise is one
 printed line and the push waits for the next ask.
+
+A canceled answer for a ticket whose run is live in a work phase aborts
+that run through `abort_run()`, source `supervisor` and trigger
+`linear_cancelled`, after the row's transaction (KO-741): the run ends
+`abandoned` with its work kept on the branch, and the ticket with it.
 """
 from datetime import datetime, timezone
 
@@ -33,6 +38,7 @@ import store.tickets
 from holophyte import deadline
 from holophyte.board import MIRROR_STATES
 from holophyte.config_tables import board_mode
+from holophyte.stop import abort_requested, abort_run
 from provider import GONE
 
 
@@ -69,10 +75,18 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
     sends = []
     for ticket in tickets:
         answer = answers.get(ticket.linearIdentifier)
-        if answer is not None:
-            send = _record(conn, ticket, answer, now, out, ask_ms)
-            if send is not None:
-                sends.append((ticket.linearIdentifier, *send))
+        if answer is None:
+            continue
+        send, run = _record(conn, ticket, answer, now, out, ask_ms)
+        if send is not None:
+            sends.append((ticket.linearIdentifier, *send))
+        if run is not None:
+            _abort_canceled(target, conn, board, ticket, run, out)
+    _send(board, sends, out)
+
+
+def _send(board, sends, out):
+    """Send the settled pushes, each after its row's transaction."""
     for identifier, issue_id, state in sends:
         try:
             board.set_state(issue_id, state)
@@ -93,28 +107,33 @@ def _closed_with_push(conn, project):
 def _record(conn, ticket, answer, now, out, ask_ms):
     """One ticket's answer, written under one transaction that re-reads
     the row; a row closed since the open read is left alone but for its
-    queued push. Answer the push to send, as `(issue id, state)`, or None."""
+    queued push. Answer `(push, run)`: the push to send, as `(issue id,
+    state)`, and the live run a canceled answer is to abort, each or None;
+    neither is acted on here."""
     with store.transaction(conn):
         row = conn.execute(
             "SELECT status, activeRunId, lastRunId, goneSince, pushState"
             " FROM tickets WHERE id = ?", (ticket.id,)).fetchone()
         if row is None:
-            return None
+            return None, None
         closed = row[0] in ("merged", "abandoned")
         if answer["state"] == GONE:
             if not closed:
                 _gone(conn, ticket, row[:4], now, out, ask_ms)
-            return None
+            return None, None
         if closed and row[4] is None:
-            return None
+            return None, None
         store.set_board_state(conn, ticket.id, answer["name"],
                               column=answer["column"])
+        run = None
         if not closed:
             store.set_gone_since(conn, ticket.id, None)
             if answer["state"] != "completed":
                 store.record_board_fields(conn, ticket.id, author="board",
                                           now=now)
-        return _settle(conn, ticket.id, answer["name"], now)
+            if answer["state"] == "canceled":
+                run = _abortable(conn, row[1])
+        return _settle(conn, ticket.id, answer["name"], now), run
 
 
 def _settle(conn, ticket_id, seen, now):
@@ -147,6 +166,30 @@ def _gone(conn, ticket, row, now, out, ask_ms):
     # is: the person it waits on decides it.
     elif now - row[3] >= ask_ms and row[0] != "blocked_on_operator":
         _retire(conn, ticket, row, now, out)
+
+
+def _abortable(conn, run_id):
+    """`run_id` when it is live in a work phase with no abort pending: a
+    run parked on its pull request is `_close_canceled()`'s (KO-660)."""
+    if run_id is None or abort_requested(conn, run_id):
+        return None
+    (phase,) = conn.execute("SELECT phase FROM runs WHERE id = ?",
+                            (run_id,)).fetchone()
+    return None if phase in store.PARKED_PHASES else run_id
+
+
+def _abort_canceled(target, conn, board, ticket, run_id, out):
+    """Abort the canceled ticket's live run; a refusal is one printed line."""
+    note = f"{ticket.linearIdentifier} was canceled on the board"
+    try:
+        ended = abort_run(target, conn, run_id, note, provider=board,
+                          source="supervisor", trigger="linear_cancelled")
+    except ValueError as refused:
+        print(f"[holo2] run {run_id} could not be aborted: {note}"
+              f" ({refused})", file=out)
+        return
+    when = "ended abandoned" if ended else "ends at its worker's next heartbeat"
+    print(f"[holo2] aborted run {run_id}: {note}; it {when}", file=out)
 
 
 def _retire(conn, ticket, row, now, out):
