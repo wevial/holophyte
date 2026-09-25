@@ -32,6 +32,14 @@ from holophyte.runs import warn_on_run
 LEASE_LABEL_PREFIX = "holo:"
 
 
+def board_owned_labels(labels):
+    """`labels` without the ones the factory writes: the `holo:` lease labels
+    and `stale` (`freshness.STALE_LABEL`, named here because that module
+    imports this one) -- what the store records as the board's (KO-736)."""
+    return [label for label in labels
+            if not label.startswith(LEASE_LABEL_PREFIX) and label != "stale"]
+
+
 BOARD_COMMENT_LIMIT = 12000
 _COMMENT_BANNERS = (
     r"Reading additional input from stdin", r"(?:\*\*)?OpenAI Codex v",
@@ -388,6 +396,12 @@ def mirror_task(conn, project, task, specced=True):
     — the admit step and the scheduler's queue mirror both — and
     `pickable()` re-parks one still blocked. `blocked_on_operator` is a
     human's and never moved.
+
+    The board's other fields ride along (KO-736): `priority`, the
+    board-owned labels, `filed_at` and `updatedAt`, each kept as stored when
+    the task lacks it, and column `ready`, since every task mirrored here
+    came from the ready listing. The store records a revision when a
+    board-owned one changed.
     """
     title, criteria, commands, _states = task_contract(task)
     if not specced:
@@ -406,6 +420,12 @@ def mirror_task(conn, project, task, specced=True):
         body=task.get("body") or "",
         url=task.get("url"),
         board_state=task.get("board_state"),
+        priority=task.get("priority"),
+        labels=(None if task.get("labels") is None
+                else board_owned_labels(task["labels"])),
+        board_column="ready",
+        filed_at=task.get("filed_at"),
+        board_updated_at=task.get("updatedAt"),
     )
     if criteria and commands:
         with store.transaction(conn):

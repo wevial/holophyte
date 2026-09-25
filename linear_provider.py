@@ -373,8 +373,8 @@ def parse_task(issue):
 
     `labels` is the names of the issue's labels, in the order Linear lists
     them, or [] for a query that did not ask (`ISSUE_QUERY`). The claim
-    reads it for another writer's `holo:` lease label (KO-351) and nothing
-    else does; the store never mirrors it.
+    reads it for another writer's `holo:` lease label (KO-351), and the
+    mirror records the board-owned ones (KO-736).
 
     `filed_at` is the issue's `createdAt` in epoch milliseconds, or None for
     a query that did not ask (`ISSUE_QUERY`): the claim reads it to decide

@@ -987,6 +987,7 @@ class GuidanceNotAccepted(ResumeRefused):
     """
 
 
+from .revisions import record_board_fields  # noqa: E402,F401 - KO-736
 from .tickets import (  # noqa: E402,F401 - re-export after `_json_list`
     STATE_GRAPHS,
     TICKET_STATUSES,

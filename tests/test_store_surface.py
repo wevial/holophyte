@@ -56,6 +56,8 @@ EXPECTED = [
     "pickable",
     # KO-343: the scheduler's one-read count of the claimable queue.
     "pickable_tickets",
+    # KO-736: the mirror's revision of a ticket's board-owned fields.
+    "record_board_fields",
     "record_agent_session",  # KO-569: latest session and ordered event history.
     "record_event",
     "record_intervention",
