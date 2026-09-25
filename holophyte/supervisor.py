@@ -50,6 +50,7 @@ from holophyte.board import (
     mirror_task,
     refresh_board_states,
 )
+from holophyte.board_sync import observe_board
 from holophyte.config import budget_scale, serve_config
 from holophyte.config_tables import BOARD_ASK_SEC, sweep_config
 from holophyte.reexec import LOOP_UNIT, start_loop
@@ -607,16 +608,18 @@ def _board_issue_owed(conn, project, issue, out):
 
 # What a watcher remembers between passes that no store column holds:
 # `mirror_asked`, when it last asked the board which of a store's mirrored
-# tickets it has closed, by project id (KO-723), and `failed_asked`, when it
-# last read each failed run's pull request, by run id (KO-722). One per
-# store: the project form keeps its own for its life, the host sweep loads
-# each store's from `sweep.json` and writes it back after each project.
+# tickets it has closed, by project id (KO-723), `failed_asked`, when it
+# last read each failed run's pull request, by run id (KO-722), and
+# `states_asked`, when it last asked a store-mode board its open tickets'
+# states, by project id (KO-739). One per store: the project form keeps its
+# own for its life, the host sweep loads each store's from `sweep.json` and
+# writes it back after each project.
 ReconcileMemory = collections.namedtuple(
-    "ReconcileMemory", ("mirror_asked", "failed_asked"))
+    "ReconcileMemory", ("mirror_asked", "failed_asked", "states_asked"))
 
 
 def fresh_memory():
-    return ReconcileMemory({}, {})
+    return ReconcileMemory({}, {}, {})
 
 
 def reconcile_board_closes(conn, project, provider, target, now, out,
@@ -705,6 +708,10 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     live = False
     for (project,) in conn.execute(
             "SELECT id FROM projects WHERE admission = 'enabled' ORDER BY id"):
+        # A store-mode board is asked about live tickets too (KO-739).
+        if provider is not None and not linear_budget_low(now, out):
+            observe_board(target, conn, project, provider, now, out,
+                          memory.states_asked, knobs.board_ask_ms)
         if loop_is_live(conn, project, now, knobs.heartbeat_stale_ms):
             live = True
             continue

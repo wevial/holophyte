@@ -97,6 +97,7 @@ EXPECTED = [
     "run_phase",
     "set_board_state",
     "set_branch",
+    "set_gone_since",  # KO-739: the store-mode sweep's gone stamp.
     "set_outcome_reason",
     "set_phase",
     "set_pull_request",

@@ -54,6 +54,7 @@ from .schema import (  # noqa: F401
 from .writes import (  # noqa: F401
     clear_merge_sha,
     set_board_state,
+    set_gone_since,
     set_outcome_reason,
     set_pull_request,
     set_question,
