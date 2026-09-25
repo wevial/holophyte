@@ -17,8 +17,15 @@ sequenceDiagram
   participant Rev as reviewer (container)
   participant Sup as supervisor
   Op->>Lin: --file-ticket TICKET.md (validate, create, re-read, re-validate)
-  Fac->>Lin: claim_next(): first ready, unblocked, by identifier, or priority when configured
-  Fac->>Store: mirror ticket (contract snapshot), claim run, lease project
+  alt [board] mode = "mirror"
+    Fac->>Lin: claim_next(): first ready, unblocked, by identifier, or priority when configured
+    Fac->>Store: mirror ticket (contract snapshot), claim run, lease project
+  else [board] mode = "store"
+    Fac->>Lin: sync once a pass: the ready listing mirrored as revisions
+    Fac->>Store: claimable(): first queued row, admitted at its revision R
+    Fac->>Lin: read that one issue back; a change since R is admitted again
+    Fac->>Store: claim expecting revision R and column ready, one BEGIN IMMEDIATE
+  end
   Fac->>WT: git worktree add, then [worktree] setup commands
   Fac->>Imp: claude -p with the whole ticket body, budget = estimate
   loop heartbeat thread
@@ -79,9 +86,23 @@ the project repository; a body that fails is mirrored as `needs_spec` and
 skipped. `store.claim()` opens the run row and takes the project lease in
 one `BEGIN IMMEDIATE`.
 
+In `[board] mode = "store"` the store owns the queue instead
+(`holophyte/claim_store.py`). The board is read once a pass: the ready
+listing is mirrored into the store, each changed board-owned field a new
+revision, at most once a `[loop] tick_sec`. The claim takes the first row
+of `store.read.claimable()` -- `ready`, in column `ready`, pickable -- and
+admits it at its revision R with the same questions, then reads that one
+issue back from the board. Another writer's `holo:` label, a `stale`
+label, a gone or completed issue skips it; a board that cannot be asked
+claims nothing. What it reads is mirrored, and an edit since R -- a new
+title, a move to Backlog -- makes a new revision, so the ticket is admitted
+again, at most twice an ask. `store.claim()` then asserts revision R and
+column `ready` under its own transaction, so a run only ever works a
+revision that passed admission, recorded as `runs.revision`.
+
 Trace: `tickets` (status `in_flight`, `activeRunId`), `runs` (phase
 `claimed`), `projects.activeRunId`, a `runEvents` row, Linear state In
-Progress.
+Progress -- in store mode a push the host sweep delivers.
 
 ### 2. Worktree
 
