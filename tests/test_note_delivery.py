@@ -103,6 +103,16 @@ class NoteDeliveryTests(SweepTestCase):
         self.assertIsNotNone(posted)
         self.assertIsNone(error)
 
+    def test_a_closed_tickets_failed_note_is_posted_on_a_later_ask(self):
+        """The project's only ticket closed: its note is still retried."""
+        store.tickets.walk_ticket(self.conn, self.ticket, "abandoned")
+        note = self.a_note(self.ticket, "the last round", T0)
+        self.observe(LostResponseBoard(self.files), T0 + MINUTE)
+        self.assertIsNone(self.post_state(note)[0])
+        self.observe(FileProvider(self.files), T0 + 2 * ASK)
+        self.assertEqual(len(self.comments("KO-1")), 2)
+        self.assertIsNotNone(self.post_state(note)[0])
+
     def test_an_unasked_board_or_a_gone_ticket_posts_nothing(self):
         note = self.a_note(self.ticket, "the round", T0)
         self.observe(UnaskableBoard(self.files), T0 + MINUTE)

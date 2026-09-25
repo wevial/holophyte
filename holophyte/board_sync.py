@@ -38,7 +38,9 @@ It is the one sender of a store-mode note too (KO-747): after the pushes,
 on a pass the board answered, each of the project's pending notes is
 posted oldest first, its last line `holophyte-note: ID`, and stamped
 posted only once the board took it. A raise records the note's
-`postError` and stops the project's delivery until the next ask. A
+`postError` and stops the project's delivery until the next ask; a
+closed ticket is still asked while it has a note pending, so a note that
+failed after its ticket closed is posted on a later ask. A
 response lost after the board kept the comment posts it again; the id
 line is what makes the duplicate recognisable.
 """
@@ -68,7 +70,7 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
     if asked_at is not None and now - asked_at < ask_ms:
         return
     tickets = [*store.read.open_tickets(conn, project),
-               *_closed_with_push(conn, project)]
+               *_closed_to_ask(conn, project)]
     if not tickets:
         return
     deadline.check("the board's ticket states")
@@ -136,13 +138,18 @@ def _send(conn, board, sends, out):
                   f" failed ({e}); it waits for the next ask", file=out)
 
 
-def _closed_with_push(conn, project):
-    """The project's closed tickets that still have a push queued: a merge
-    or abandonment is pushed like any other status."""
+def _closed_to_ask(conn, project):
+    """The project's closed tickets that still have a push queued -- a
+    merge or abandonment is pushed like any other status -- or a note
+    pending delivery, so the ask that gates delivery is made while one
+    waits (KO-747)."""
     return [store.read.ticket_by_id(conn, ticket_id) for (ticket_id,) in
-            conn.execute("SELECT id FROM tickets WHERE projectId = ? AND"
-                         " status IN ('merged', 'abandoned') AND pushState"
-                         " IS NOT NULL ORDER BY linearIdentifier", (project,))]
+            conn.execute(
+                "SELECT id FROM tickets t WHERE projectId = ? AND status IN"
+                " ('merged', 'abandoned') AND (pushState IS NOT NULL OR"
+                " (goneSince IS NULL AND EXISTS (SELECT 1 FROM ticketNotes n"
+                " WHERE n.ticketId = t.id AND n.postedAt IS NULL)))"
+                " ORDER BY linearIdentifier", (project,))]
 
 
 def _record(conn, ticket, answer, now, out, ask_ms):
