@@ -75,7 +75,7 @@ class RepointFlagTests(unittest.TestCase):
         self.target.holo_dir.mkdir(parents=True, exist_ok=True)
         self.target.config_path.write_text('[board]\nteam = "team-1"\n'
                                            'project_id = "project-1"\n')
-        with patch.object(holophyte.cli, "LinearProvider", return_value=board):
+        with patch.object(holophyte.cli, "board_for", return_value=board):
             return self.cli(*args)
 
     def candidate_sha(self):

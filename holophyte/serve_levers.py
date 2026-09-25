@@ -21,7 +21,6 @@ from __future__ import annotations
 import store
 import store.read
 from holophyte.admission import held_line, set_hold
-from holophyte.config_tables import board_config
 from holophyte.runs import open_store
 from holophyte.serve_actions import tickets_named
 from holophyte.serve_runs import no_store
@@ -127,13 +126,13 @@ def abort_action(target, body):
         return 400, {"error": "close must be true or false"}
 
     def act(conn, reason):
-        settings = board_config(target)
-        if settings is None:
+        from provider import board_for
+        board = board_for(target)
+        if board is None:
             return False, (f"{target.config_path}: [board] project_id is not"
                            " set; nothing written"), {"run": run_id}
-        from provider import LinearProvider
         ended = abort_run(target, conn, run_id, reason,
-                          provider=LinearProvider(*settings), close=close)
+                          provider=board, close=close)
         detail = (f"run {run_id} had no live worker; ended abandoned and parked"
                   if ended else f"abort requested; run {run_id} ends at its"
                   " worker's next heartbeat")

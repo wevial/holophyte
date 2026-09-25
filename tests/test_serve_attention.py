@@ -12,7 +12,7 @@ import linear_provider
 import store
 import store.read
 import store.tickets
-from provider import LinearProvider
+from provider import LinearBoard
 from tests.phase_fixture import advance_phase, park_run
 from tests.serve_fixture import MIN, ServeTestCase
 
@@ -47,7 +47,7 @@ class FailedAttentionTests(ServeTestCase):
 
     def test_provider_refresh_observes_backlog_missing_from_ready_listing(self):
         project = store.tickets.ensure_project(self.conn, "team-1", self.target)
-        provider = LinearProvider("project-1", "team-1")
+        provider = LinearBoard("project-1", "team-1")
         state = "Backlog"
 
         def gql(query, variables):

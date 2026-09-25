@@ -29,6 +29,7 @@ import linear_provider
 import store
 import store.read
 import store.tickets
+from holophyte.config_tables import board_config
 from holophyte.runs import open_store
 from tests.fake_agent import APPROVE, Commit
 from tests.loop_fixture import LoopFixture, StubProvider, a_task
@@ -39,17 +40,23 @@ T0 = 1_700_000_000_000
 
 
 class StubBoard:
-    """`LinearProvider` as `cli()` builds it, recording the label calls."""
+    """The board `cli()` asks `board_for()` for, recording the label calls."""
 
     instance = None
 
-    def __init__(self, project_id, team, label=None):
+    def __init__(self, team):
         self.team = team
         self.unlabelled = []
         StubBoard.instance = self
 
     def unlabel_issue(self, issue_id, name):
         self.unlabelled.append((issue_id, name))
+
+
+def stub_board_for(target):
+    """`board_for()` with the stub: no `[board]` table is no board."""
+    settings = board_config(target)
+    return StubBoard(settings.team) if settings is not None else None
 
 
 class RequeueCliTests(unittest.TestCase):
@@ -95,7 +102,7 @@ class RequeueCliTests(unittest.TestCase):
         # records the call instead of reaching for the network.
         self.board = StubBoard.instance = None
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
-                patch.object(holophyte.cli, "LinearProvider", StubBoard):
+                patch.object(holophyte.cli, "board_for", stub_board_for):
             holophyte.cli.cli([str(self.repo), *args])
         self.board = StubBoard.instance
         return out.getvalue(), err.getvalue()

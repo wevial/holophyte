@@ -64,7 +64,6 @@ import store
 from holophyte import deadline
 from holophyte.admission import project_of
 from holophyte.admission import state as admission_state
-from holophyte.config_tables import board_config
 from holophyte.host import HostError, settings
 from holophyte.reconcile import GITHUB_BUDGET, _failed_pull_requests
 from holophyte.runs import open_store
@@ -290,9 +289,8 @@ def sweep_project(entry, state, now, out):
 
 
 def _provider(target):
-    from provider import LinearProvider
-    settings_ = board_config(target)
-    return LinearProvider(*settings_) if settings_ is not None else None
+    from provider import board_for
+    return board_for(target)
 
 
 def reconcile_store(entry, seen, state, now, out):
