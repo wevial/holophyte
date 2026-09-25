@@ -560,7 +560,11 @@ string, and anything else is a startup error naming the key.
 
 `mode` and `kind` stage the move to boards kept in the store: `"store"` and
 `"native"` are accepted but change nothing in this release. Any other value
-is a startup error naming the key and the values it accepts.
+is refused when a command resolves the board -- the loop, `--supervise`, a
+`--sweep` read-only or acting, and the operator verbs -- which then exits at
+startup naming the key and the values it accepts. `--report`, `--status`,
+`--serve` and `--import-store --dry-run` never resolve the board, so one of
+them succeeding says nothing about these two keys.
 
 ## `[worktree]`
 
