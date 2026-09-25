@@ -712,7 +712,8 @@ def escalate(conn, ticket_id, provider):
     written first, Linear is a copy and is told after, and a comment that does
     not land is a warning on the run rather than a failure of the escalation.
     A store-mode board gets the comment as a note keyed by the run whose
-    failure tripped the escalation, for the host sweep to post (KO-742).
+    failure tripped the escalation, written with the park in one
+    transaction, for the host sweep to post (KO-742).
     """
     if conn is None:
         return False
@@ -728,14 +729,19 @@ def escalate(conn, ticket_id, provider):
     history = failure_history(conn, ticket_id)
     if len(history) < MAX_FAILED_RUNS:
         return False
-    if not block_ticket(conn, ticket_id, provider,
-                        strike_question(len(history))):
-        return False
+    question = strike_question(len(history))
     body = comment_body(escalation_comment(history))
     if getattr(provider, "store_mode", False) is True:
+        # One transaction: a park committed alone would make every later
+        # call return early above, and the note would never be written.
         run_id = ticket.activeRunId or ticket.lastRunId
-        store.record_note(conn, ticket_id, "escalation", body,
-                          f"escalation:{run_id}", run_id=run_id)
+        with store.transaction(conn):
+            if not block_ticket(conn, ticket_id, provider, question):
+                return False
+            store.record_note(conn, ticket_id, "escalation", body,
+                              f"escalation:{run_id}", run_id=run_id)
+    elif not block_ticket(conn, ticket_id, provider, question):
+        return False
     else:
         try:
             provider.comment(issue_id, body)

@@ -75,17 +75,23 @@ class TicketNoteTests(SweepTestCase):
         self.assertEqual(self.notes(ticket),
                          [("ledger", "first", None, "ledger:5")])
 
-    def test_store_mode_escalation_parks_and_writes_its_history_as_a_note(self):
+    def two_failed_runs(self):
         first = self.a_run()
         ticket = self.ticket_of[first]
         store.release(self.conn, first, "failed", "verify failed: first")
         second = self.a_run(ticket=ticket)
         store.release(self.conn, second, "failed", "verify failed: second")
+        return ticket, second
+
+    def status(self, ticket):
+        (row,) = self.rows("SELECT status FROM tickets WHERE id = ?", ticket)
+        return row[0]
+
+    def test_store_mode_escalation_parks_and_writes_its_history_as_a_note(self):
+        ticket, second = self.two_failed_runs()
         board = StoreModeBoard()
         self.assertTrue(escalate(self.conn, ticket, board))
-        (status,) = self.rows("SELECT status FROM tickets WHERE id = ?",
-                              ticket)
-        self.assertEqual(status[0], "blocked_on_operator")
+        self.assertEqual(self.status(ticket), "blocked_on_operator")
         self.assertEqual(board.comments, [])
         (note,) = self.notes(ticket)
         kind, body, note_run, key = note
@@ -93,3 +99,19 @@ class TicketNoteTests(SweepTestCase):
                          ("escalation", second, f"escalation:{second}"))
         self.assertIn("verify failed: first", body)
         self.assertIn("verify failed: second", body)
+
+    def test_a_failed_escalation_note_leaves_the_ticket_unparked(self):
+        """A park committed without its note would never be retried: the
+        next call finds the ticket blocked and returns early."""
+        ticket, second = self.two_failed_runs()
+        with patch.object(store, "record_note",
+                          side_effect=RuntimeError("note refused")):
+            with self.assertRaises(RuntimeError):
+                escalate(self.conn, ticket, StoreModeBoard())
+        self.assertEqual(self.status(ticket), "in_flight")
+        self.assertEqual(self.notes(ticket), [])
+
+        self.assertTrue(escalate(self.conn, ticket, StoreModeBoard()))
+        self.assertEqual(self.status(ticket), "blocked_on_operator")
+        self.assertEqual([note[3] for note in self.notes(ticket)],
+                         [f"escalation:{second}"])

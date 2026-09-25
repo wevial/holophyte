@@ -31,7 +31,7 @@ OVER = {}
 # Pins are upper bounds, initialized with 60 lines of headroom in KO-576.
 # Lower a pin when it sits more than 150 lines above its file's count.
 PINNED = {
-    "holophyte/babysitter.py": 1095, "holophyte/board.py": 965,
+    "holophyte/babysitter.py": 1095, "holophyte/board.py": 971,
     "holophyte/claim.py": 988, "holophyte/cli.py": 663,
     "holophyte/config.py": 894, "holophyte/dispatch.py": 327,
     "holophyte/config_tables.py": 709, "holophyte/findings.py": 391,
