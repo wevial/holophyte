@@ -44,7 +44,6 @@ def worker(*args):
 
 with patch('holophyte.startup.build_sha', return_value='original'), \
      patch('holophyte.cli.Project'), patch('holophyte.cli.check_config'), \\
-     patch('holophyte.cli.board_config', return_value=('team', 'project')), \\
      patch('holophyte.cli.board_for', return_value=object()), \\
      patch('holophyte.cli.worker', worker):
     cli(['.', '--worker'])
