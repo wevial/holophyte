@@ -2,7 +2,9 @@
 observation delivers it, so a person's later move stands (KO-740):
 `mirror_status()` and `observe_board()` on a real store with a file board,
 and `board_for()` reading the mode."""
+import contextlib
 import io
+import subprocess
 import sys
 from pathlib import Path
 
@@ -111,6 +113,37 @@ class QueuedPushTests(SweepTestCase):
         self.observe(board, T0 + ASK)
         self.assertEqual(self.push_row(), (None, None, None, "In Progress"))
         self.assertEqual(len(board.pushed), 1)
+
+
+class CanceledPushTests(SweepTestCase):
+    def test_a_cancel_that_aborts_the_run_drops_its_queued_push(self):
+        """The observation selected the push before the cancel walked the
+        ticket `abandoned`; it must not then write In Progress over the
+        cancel (operator_note event 10148)."""
+        self.configure(STORE_MODE)
+        run = self.a_run()
+        ticket = self.ticket_of[run]
+        store.record_push(self.conn, ticket, "In Progress")
+        dead = subprocess.Popen(["true"])
+        dead.wait()
+        with self.conn:
+            self.conn.execute("UPDATE runs SET workerPid = ? WHERE id = ?",
+                              (dead.pid, run))
+        files = self.root / "board"
+        files.mkdir()
+        (files / "KO-1.md").write_text("# KO-1\n")
+        (files / "KO-1.state").write_text("Canceled\n")
+        board = RecordingBoard(files, store_mode=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            observe_board(self.project, self.conn, self.project_id, board,
+                          T0 + MINUTE, io.StringIO(), {}, ASK)
+        self.assertEqual(self.conn.execute(
+            "SELECT outcome FROM runs WHERE id = ?", (run,)).fetchone(),
+            ("abandoned",))
+        self.assertEqual(self.conn.execute(
+            "SELECT status, pushState FROM tickets WHERE id = ?",
+            (ticket,)).fetchone(), ("abandoned", None))
+        self.assertNotIn("In Progress", [s for _, s in board.pushed])
 
 
 class BoardForModeTests(ConfigTestCase):
