@@ -318,6 +318,7 @@ def mirror_ticket(
     board_column=None,
     filed_at=None,
     board_updated_at=None,
+    expected_revision=None,
 ):
     """Upsert the Holophyte mirror of a Linear issue; return its ticket id.
 
@@ -365,6 +366,11 @@ def mirror_ticket(
     gate would let it through. A caller that does know the list passes it,
     `[]` included, and that replaces the stored one.
 
+    `expected_revision` is the revision a store-built task was read at
+    (Phase 3 stage 3): when the row has moved past it, the task is older
+    than the row, so nothing is written -- no heal, no update, no
+    revision -- and the id is returned. None, the default, always writes.
+
     Lookups are scoped to `project_id`, so re-mirroring another project's
     issue does not overwrite it — it fails on the `linearIssueId` uniqueness
     constraint instead. `now` is epoch milliseconds for `mirroredAt`,
@@ -384,10 +390,12 @@ def mirror_ticket(
         now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
-            "SELECT id, status FROM tickets"
+            "SELECT id, status, revision FROM tickets"
             " WHERE linearIssueId = ? AND projectId = ?",
             (linear_issue_id, project_id),
         ).fetchone()
+        if row is not None and expected_revision not in (None, row[2]):
+            return row[0]
         if row is None:
             ticket_id = conn.execute(
                 "INSERT INTO tickets"
@@ -405,7 +413,7 @@ def mirror_ticket(
                 ),
             ).lastrowid
         else:
-            ticket_id, status = row
+            ticket_id, status, _ = row
             if status in ("needs_spec", "ready"):
                 status = derived
             record_board_fields(conn, ticket_id, "unrecorded", now)
