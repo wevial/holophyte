@@ -4,6 +4,8 @@
 `--babysit KO-n [--note TEXT]`, `--repoint KO-n SHA --note TEXT`,
 `--close KO-n --landed URL [--note TEXT]`,
 `--file-ticket PATH [--state] [--priority]`,
+`--move KEY-n ready|backlog --revision N [--note TEXT]` and
+`--cancel KEY-n --revision N --note TEXT` (a native board's),
 `--sweep [--act]`, `--board-diff`, `--status [--json]`, `--serve` and `--supervise
 [--once]` (with no project, the host's),
 `--import-store PATH --dry-run`,
@@ -55,6 +57,7 @@ from holophyte.supervisor import supervise, supervisor_liveness_line
 from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
 from provider import board_for
+from store import RevisionMoved
 
 # The entry point the loop's spawned supervisor is started through: the
 # `factory.py` beside this package, by path, so the supervisor runs the same
@@ -101,7 +104,8 @@ def _file_ticket_only(parser, args):
                 parser.error(f"{flag} is what --file-ticket creates the "
                              "issue with; it names nothing by itself")
     if args.update is None:
-        for flag, value in (("--revision", args.revision),
+        board_verb = args.move is not None or args.cancel is not None
+        for flag, value in (("--revision", None if board_verb else args.revision),
                             ("--labels", args.labels)):
             if value is not None:
                 parser.error(f"{flag} is what --file-ticket --update edits "
@@ -127,6 +131,26 @@ def _native_update_only(parser, args, board):
                          "board takes none")
 
 
+def _board_verb_checks(parser, args):
+    """`--move KEY-n ready|backlog` and `--cancel KEY-n` are made at
+    `--revision N`, a move only to Ready or Backlog (KO-764)."""
+    if args.move is not None and args.move[1] not in ("ready", "backlog"):
+        parser.error(f"--move takes a ticket to ready or backlog, not "
+                     f"{args.move[1]!r}")
+    if (args.move or args.cancel) and args.revision is None:
+        parser.error(f"{'--move' if args.move else '--cancel'} is made at "
+                     "--revision N, the revision the ticket was read at")
+
+
+def _native_board_only(parser, args, board):
+    """Refuse `--move` and `--cancel` on a board that is not native, before
+    anything asks it: a Linear ticket's column is moved in Linear."""
+    if (args.move or args.cancel) and not getattr(board, "native", False):
+        parser.error(f"{'--move' if args.move else '--cancel'} is a native "
+                     "board's ([board] kind = \"native\"); this project's "
+                     "tickets are moved and canceled in Linear")
+
+
 def label_names(text):
     """`--labels`' argparse type: the comma-separated names, empty dropped."""
     return [name for name in (part.strip() for part in text.split(","))
@@ -134,32 +158,34 @@ def label_names(text):
 
 
 def _note_checks(parser, args):
-    """`--note` belongs to `--requeue` and `--repoint`, which require it,
-    and to `--approve`, `--babysit` and `--close`, which take it. Refuse a
-    required note missing, a note without an operator verb, or a blank note:
-    leave it off when there is nothing to add."""
+    """`--note` belongs to `--requeue`, `--repoint` and `--cancel`, which
+    require it, and to `--approve`, `--babysit`, `--close` and `--move`,
+    which take it. Refuse a required note missing, a note without an
+    operator verb, or a blank note: leave it off when there is nothing to
+    add."""
     if args.requeue is not None and not (args.note or "").strip():
         parser.error("--requeue records why the ticket goes back in the "
                      "queue; say so with --note TEXT")
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
-    if args.hold or args.release_hold or args.pause or args.resume or args.abort:
+    if args.hold or args.release_hold or args.pause or args.resume \
+            or args.abort or args.cancel:
         if not (args.note or "").strip():
-            parser.error("--hold, --release-hold, --pause, --resume and --abort"
-                         " require --note TEXT")
+            parser.error("--hold, --release-hold, --pause, --resume, --abort"
+                         " and --cancel require --note TEXT")
         return
-    optional = args.approve or args.babysit or args.close
+    optional = args.approve or args.babysit or args.close or args.move
     if args.note is not None and args.requeue is None \
             and args.repoint is None and optional is None:
-        parser.error("--note is what --requeue, --approve, --babysit and "
-                     "--repoint and --close record; it has nothing to annotate "
-                     "by itself")
+        parser.error("--note is what --requeue, --approve, --babysit, "
+                     "--repoint, --close and --move record; it has nothing to "
+                     "annotate by itself")
     if optional is not None and args.note is not None \
             and not args.note.strip():
-        parser.error("--note with --approve, --babysit or --close is the operator's "
-                     "own words; leave it off for the default rather than "
-                     "blank")
+        parser.error("--note with --approve, --babysit, --close or --move is "
+                     "the operator's own words; leave it off for the default "
+                     "rather than blank")
 
 
 def _close_checks(parser, args):
@@ -413,7 +439,7 @@ def _legacy_cli(argv):
              f"{APPROVE_DEFAULT_NOTE!r}; with --babysit: a maintainer instruction "
              f"unless {BABYSIT_DEFAULT_NOTE!r}; with --close: context for the external "
              "landing; recorded on the intervention row's "
-             "event")
+             "event; with --cancel, required, or --move: the ticket's note")
     # Only the two states a filed ticket can start in: Todo is ready to
     # claim, Backlog waits on triage. Anything else is a state the loop
     # projects, never one a file declares, so argparse refuses it.
@@ -434,13 +460,25 @@ def _legacy_cli(argv):
              "board it requires --revision and takes --priority and --labels")
     parser.add_argument(
         "--revision", metavar="N", type=int,
-        help="with --file-ticket --update on a native board: the revision "
-             "the ticket was read at; a ticket that moved past it is left "
-             "unchanged and its current revision printed")
+        help="with --file-ticket --update, --move or --cancel on a native "
+             "board: the revision the ticket was read at; a ticket that moved "
+             "past it is left unchanged and its current revision printed")
     parser.add_argument(
         "--labels", metavar="a,b", type=label_names,
         help="with --file-ticket --update on a native board: the ticket's "
              "labels, comma-separated")
+    # A person's two verbs on a native ticket's column (KO-764); a Linear
+    # ticket is moved in Linear, so a Linear board refuses both.
+    modes.add_argument(
+        "--move", nargs=2, metavar=("KEY-n", "ready|backlog"),
+        help="on a native board: move the ticket to Ready or Backlog at "
+             "--revision N, recording --note if given; a live run continues. "
+             "A ticket at another revision exits 1 and nothing changes")
+    modes.add_argument(
+        "--cancel", metavar="KEY-n",
+        help="on a native board: cancel the ticket at --revision N, recording "
+             "--note; a live run is aborted and ends abandoned at its next "
+             "safe point, naming which run")
     modes.add_argument("--hold", action="store_true",
                        help="hold project admission; requires --note")
     modes.add_argument("--release-hold", action="store_true",
@@ -448,6 +486,7 @@ def _legacy_cli(argv):
     args = parser.parse_args(argv)
     eager_import()
     _file_ticket_only(parser, args)
+    _board_verb_checks(parser, args)
     _modifier_checks(parser, args)
     _note_checks(parser, args)
     _close_checks(parser, args)
@@ -490,14 +529,10 @@ def _legacy_cli(argv):
     _refuse_native_key(target, args, modes)
     board = board_for(target)
     _native_update_only(parser, args, board)
-    # Same window and the same reasons as `--report`: it reads runs and prints
-    # them, so no route has to resolve and nobody is called. `--act` fails
-    # runs rather than dispatching them, so it needs no route either.
-    if args.sweep:
-        return sweep_report(target, act=args.act, provider=board)
-    # Reads the board, so a target without one exits naming the key.
-    if args.board_diff:
-        return board_diff(target, require_board(target, board))
+    _native_board_only(parser, args, board)
+    board_mode = _board_mode(args, target, board)
+    if board_mode is not None:
+        return board_mode()
     # The operator verbs on the store, in their own function so the
     # dispatch stays under the complexity bound with all of them in it.
     if _store_verb(args, target, board):
@@ -608,6 +643,23 @@ def _read_only_mode(args, target):
     return None
 
 
+def _board_mode(args, target, board):
+    """Return the mode that runs on the built board as a call to make, or
+    None when the command line names none of them; no route resolves."""
+    # Same window and the same reasons as `--report`: it reads runs and prints
+    # them, so no route has to resolve and nobody is called. `--act` fails
+    # runs rather than dispatching them, so it needs no route either.
+    if args.sweep:
+        return lambda: sweep_report(target, act=args.act, provider=board)
+    # Reads the board, so a target without one exits naming the key.
+    if args.board_diff:
+        return lambda: board_diff(target, require_board(target, board))
+    # `_native_board_only()` has refused these on any board but a native one.
+    if args.move or args.cancel:
+        return lambda: _board_verb(args, board)
+    return None
+
+
 def _store_verb(args, target, board):
     """Run the operator verb the command line names, if it is one of the
     verbs that write the store and exit, including `--close`, which also
@@ -657,6 +709,34 @@ def _store_verb(args, target, board):
         repoint(target, identifier, sha, args.note)
         return True
     return False
+
+
+def _board_verb(args, board, out=None):
+    """`--move` or `--cancel` on the native `board`, printing what changed;
+    exit 1, nothing changed, at a stale revision or on the store's
+    refusal."""
+    out = sys.stdout if out is None else out
+    identifier = args.move[0] if args.move else args.cancel
+    try:
+        if args.move:
+            revision = board.move(identifier, args.move[1], args.revision,
+                                  args.note)
+            line = f"moved {identifier} to {args.move[1]} (revision {revision})"
+        else:
+            revision, run = board.cancel(identifier, args.revision, args.note)
+            line = f"canceled {identifier} (revision {revision})"
+            if run is not None:
+                line += f"; run {run} ends abandoned at its next safe point"
+    except RevisionMoved as moved:
+        line = (f"{identifier} is at revision {moved.current}, not "
+                f"{moved.expected}; nothing changed")
+        print(f"[holo2] {line}", file=out)
+        return 1
+    except ValueError as refused:
+        print(f"[holo2] {refused}", file=out)
+        return 1
+    print(f"[holo2] {line}", file=out)
+    return 0
 
 
 def start_supervisor(target, out=None):

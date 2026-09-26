@@ -92,6 +92,22 @@ Todo and In Progress are claimable;
 Backlog and Done are not. `[loop] order = "priority"` makes an Urgent or
 High ticket run first.
 
+On a native board (`[board] kind = "native"`) the column is yours to move,
+at the revision you read the ticket at:
+
+```
+python3 factory.py PROJECT --move KEY-n ready|backlog --revision N [--note TEXT]
+python3 factory.py PROJECT --cancel KEY-n --revision N --note TEXT
+```
+
+A move takes an idle or live ticket between Ready and Backlog; a live run
+continues and the ticket is not claimed again. A draft is refused Ready.
+A cancel records an abort on a live run, which ends `abandoned` at its
+next safe point, and the printed line names the run. A ticket that moved
+past `N` is left as it is, its current revision printed, exit 1. Nothing
+moves a ticket out of Canceled. On a Linear project both are usage errors:
+move its tickets in Linear.
+
 ## The ledger
 
 Every run leaves a comment on its ticket: the rounds, their findings, the

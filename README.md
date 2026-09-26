@@ -47,6 +47,8 @@ python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # recor
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
 python3 factory.py --file-ticket TICKET.md --update KEY-n --revision N [--priority urgent|high|medium|low] [--labels a,b] /path/to/repo # a native board's edit
+python3 factory.py --move KEY-n ready|backlog --revision N [--note TEXT] /path/to/repo # a native ticket to Ready or Backlog
+python3 factory.py --cancel KEY-n --revision N --note TEXT /path/to/repo # cancel a native ticket; a live run ends abandoned
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
 python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
 ```
@@ -65,6 +67,12 @@ and its current revision printed. It prints `[holo2] updated KO-n: TITLE`,
 naming any blocker it added with a `+`, or exits 1 with the problem and nothing
 changed when the file is invalid and 2 with the identifier and the problem
 when the stored body is.
+
+A native board's column is a person's: `--move KEY-n ready|backlog` and
+`--cancel KEY-n --note TEXT` act at `--revision N` as `--update` does, and
+a live run continues through a move but is aborted by a cancel, ending
+`abandoned` at its next safe point. Both are usage errors on a Linear
+project, whose tickets are moved in Linear.
 
 `--report`, `--status`, `--sweep` and `--import-store --dry-run` read the
 store and call nobody; `--serve` reads it too, and writes only through its
