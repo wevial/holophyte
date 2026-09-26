@@ -8,6 +8,7 @@ Run: python3 -m unittest discover -s tests -p 'test_native_board.py' -v
 import os
 import sqlite3
 import sys
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,7 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
 import linear_provider  # noqa: E402
+import store.tickets  # noqa: E402
+from holophyte.board import mirror_task  # noqa: E402
 from holophyte.native_board import NativeBoard  # noqa: E402
+from holophyte.runs import open_store  # noqa: E402
 from provider import GONE, board_for  # noqa: E402
 from tests.test_provider import ticket_body  # noqa: E402
 
@@ -64,6 +68,20 @@ class NativeBoardTests(ConfigTestCase):
         self.assertEqual(task["column"], "ready")
         self.assertEqual(task["budget_min"], 25)
         self.assertIsNone(self.board.fetch_task("NAT-9"))
+
+    def test_a_mirror_of_a_task_read_before_an_edit_keeps_the_edit(self):
+        self.board.file("One", body("One"), 20, "Todo")
+        stale = self.board.fetch_task("NAT-1")
+        (revision,), = self.sql("SELECT revision FROM tickets")
+        edited = body("One edited")
+        self.board.update("NAT-1", "One edited", edited, 20, revision=revision)
+
+        with closing(open_store(self.project)) as conn:
+            project_id = store.tickets.ensure_project(conn, self.board.team,
+                                                      self.project.path)
+            with conn:
+                mirror_task(conn, project_id, stale)
+        self.assertEqual(self.board.stored_body("NAT-1"), edited)
 
     def file_three(self):
         """NAT-1 and NAT-2 in Todo, NAT-3 in Backlog."""

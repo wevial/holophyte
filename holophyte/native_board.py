@@ -28,7 +28,7 @@ from store.read import claimable, open_readonly
 STATE_COLUMNS = {"Todo": "ready", "Backlog": "backlog"}
 _COLUMNS = ("id, linearIssueId, linearIdentifier, title, body, timeBoxMs,"
             " priority, labels, url, boardState, boardUpdatedAt, filedAt,"
-            " boardColumn, status")
+            " boardColumn, status, revision")
 
 
 class NativeBoard:
@@ -189,14 +189,16 @@ def _json(values):
 
 def _task(row):
     """A ticket row as the task dict: its body parsed as a board parses it,
-    with the row's own fields over it."""
+    with the row's own fields over it and `store_revision` naming the
+    revision it was read at, so a mirror of it never reverts a later edit."""
     (_, issue_id, identifier, title, body, time_box_ms, priority, labels, url,
-     state_name, updated_at, filed_at, column, status) = row
+     state_name, updated_at, filed_at, column, status, revision) = row
     task = parse_body(identifier, body)
     task.update(issue_id=issue_id, title=title, priority=priority,
                 labels=json.loads(labels), url=url, board_state=state_name,
                 updatedAt=updated_at, filed_at=filed_at,
-                column=None if status == "merged" else column)
+                column=None if status == "merged" else column,
+                store_revision=revision)
     if time_box_ms is not None:
         task["budget_min"] = time_box_ms // 60000
     return task
