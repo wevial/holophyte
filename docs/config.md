@@ -522,7 +522,7 @@ scheduler reads it: under `workers = 1` there is no pool to tick.
 | `label` | Default: Absent (no filter) | Non-empty string; set to claim only ready issues with this label. Refused on a native board. |
 | `key` | Default: None; required for a native board | An uppercase letter then up to nine uppercase letters or digits, such as `"HOLO"`; the `KEY` of a native board's `KEY-n` ticket identifiers. Refused on a Linear board, whose team names its tickets. |
 | `mode` | Default: `"mirror"`; `"store"` on a native board | `"mirror"` or `"store"`; where the project's tickets are kept. `"mirror"` claims from the board's ready listing; `"store"` claims from the store's queue, at the revision admission judged. Flip one project at a time, held and drained, and only while `--board-diff` is empty. |
-| `kind` | Default: `"linear"` | `"linear"` or `"native"`; which board the project uses. A native board is the store: it takes `key`, defaults `team` to `"native:KEY"` and `mode` to `"store"`, and refuses `mode = "mirror"`. `"native"` is refused at startup until the native board ships. |
+| `kind` | Default: `"linear"` | `"linear"` or `"native"`; which board the project uses. A native board is the store: it takes `key`, defaults `team` to `"native:KEY"` and `mode` to `"store"`, and refuses `mode = "mirror"`. Every board member answers from the project's store and nothing asks Linear. |
 
 ```toml
 [board]
@@ -567,9 +567,9 @@ the one key that may be absent, but when written it must be a non-empty
 string, and anything else is a startup error naming the key.
 
 `mode` and `kind` stage the move to boards kept in the store: `"store"` is
-accepted but changes nothing in this release, and `"native"` is refused
-wherever the board is built, naming `[board] kind`, until the native board
-ships. Any other value
+accepted but changes nothing in this release, and `"native"` builds the
+native board, whose reads, filing and notes are the project's store.
+Any other value
 is refused when a command resolves the board -- the loop, `--supervise`, a
 `--sweep` read-only or acting, and the operator verbs -- which then exits at
 startup naming the key and the values it accepts. `--report`, `--status`,

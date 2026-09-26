@@ -2,8 +2,7 @@
 
 No `[board]` table is no board; `kind = "linear"`, the default, is a
 `LinearBoard` of the table's `project_id`, `team` and `label`; `kind =
-"native"` is refused, directly and where the loop starts, because this
-build has no native board and a native project must not run against Linear.
+"native"` is a `NativeBoard` of the table's `key` and `team` (KO-754).
 """
 import sys
 from pathlib import Path
@@ -12,8 +11,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
-import holophyte.cli  # noqa: E402
 import linear_provider  # noqa: E402
+from holophyte.native_board import NativeBoard  # noqa: E402
 from provider import board_for  # noqa: E402
 from tests.test_provider import FakeLinear, ticket_body  # noqa: E402
 
@@ -43,17 +42,13 @@ class BoardForTests(ConfigTestCase):
                 self.assertIn("p-1", [variables.get("project")
                                       for _, variables in linear.calls])
 
-    def test_a_native_board_is_refused_directly_and_at_loop_start(self):
-        target = self.locate(BOARD + 'kind = "native"\n')
-        with self.assertRaises(SystemExit) as direct:
-            board_for(target)
-        with patch.object(holophyte.cli, "check_agent_commands"), \
-                patch.object(holophyte.cli, "check_worktree_setup"), \
-                patch.object(holophyte.cli, "main") as main, \
-                self.assertRaises(SystemExit) as started:
-            holophyte.cli.cli([str(target.path)])
-        main.assert_not_called()
-        for raised in (direct, started):
-            message = str(raised.exception)
-            self.assertIn(str(target.config_path), message)
-            self.assertIn("[board] kind", message)
+    def test_a_native_table_is_a_native_board_on_its_key_and_team(self):
+        """Its team defaulted from `key`, or the table's own when set."""
+        for config, team in (('', "native:NAT"), ('team = "KO"\n', "KO")):
+            with self.subTest(config=config):
+                target = self.locate('[board]\nkind = "native"\nkey = "NAT"\n'
+                                     + config)
+                board = board_for(target)
+                self.assertIsInstance(board, NativeBoard)
+                self.assertEqual((board.key, board.team), ("NAT", team))
+                self.assertIs(board.project, target)

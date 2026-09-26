@@ -10,7 +10,8 @@ that needs the target's board asks `board_for(target)`, the one place that
 reads `[board] kind`. Two boards ship here: `LinearBoard`, which wraps the
 functions `linear_provider.py` already has, and `FileProvider`, a
 directory of ticket files for tests and offline runs. The conformance suite
-in `tests/test_provider.py` holds both to the same observable behavior.
+in `tests/test_provider.py` holds both to the same observable behavior. A
+native board, the store itself, is `holophyte/native_board.py` (KO-754).
 
 Kept deliberately plain for the Rust port -- a protocol with dict payloads,
 no metaclass, no dispatch on module names.
@@ -291,18 +292,17 @@ class LinearBoard:
 
 def board_for(target):
     """The target's board: None without a `[board]` table, a `LinearBoard`
-    for `kind = "linear"` (the default). `kind = "native"` is refused with
-    the `SystemExit` `board_config()` raises for a bad value -- this build
-    has no native board, and a native project must not run against Linear.
+    for `kind = "linear"` (the default), and for `kind = "native"` a
+    `NativeBoard` on the target's store (KO-754), imported here because
+    this module is imported where no store exists.
     """
     mode = board_mode(target)
-    if mode.kind == "native":
-        raise SystemExit(
-            f"[holo2] {target.config_path}: [board] kind \"native\" is not "
-            "supported: this build has no native board")
     settings = board_config(target)
     if settings is None:
         return None
+    if mode.kind == "native":
+        from holophyte.native_board import NativeBoard
+        return NativeBoard(target, settings.key, settings.team)
     return LinearBoard(settings.project_id, settings.team, settings.label,
                        store_mode=mode.mode == "store")
 
