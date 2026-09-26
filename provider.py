@@ -237,6 +237,11 @@ class LinearBoard:
     def listing(self):
         return self._linear().listing(self.project_id, label=self._label)
 
+    def open_issues(self):
+        """Every open issue, Backlog included, for a board import (KO-751);
+        not on `Board`, as only a Linear board is imported from."""
+        return self._linear().open_issues(self.project_id, label=self._label)
+
     def fetch_task(self, issue_id):
         return self._linear().fetch_task(issue_id, label=self._label)
 

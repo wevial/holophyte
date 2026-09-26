@@ -312,6 +312,10 @@ query($project: String!, $after: String) {
   }
 }"""
 
+# `READY_QUERY` with Backlog and Triage kept: the whole open board, for an
+# import (KO-751).
+OPEN_QUERY = READY_QUERY.replace('"canceled", "backlog"]', '"canceled"]')
+
 RELATIONS_QUERY = """
 query($project: String!, $after: String) {
   project(id: $project) {
@@ -359,22 +363,28 @@ def _ready_with_blockers(project_id, label):
     the `RELATIONS_QUERY` nodes of its open blockers, in the order the
     relations list them. `list_ready_issues()` drops the blocked ones;
     `listing()` keeps them and names their blockers (KO-743)."""
-    path = ("project", "issues")
-    issues = _paginate(READY_QUERY, {"project": project_id}, path)
-    all_nodes = _paginate(RELATIONS_QUERY, {"project": project_id}, path)
+    issues = _paginate(READY_QUERY, {"project": project_id},
+                       ("project", "issues"))
+    blockers = _open_blockers(project_id)
+    if label is not None:
+        issues = [i for i in issues if label in label_names(i)]
+    return issues, blockers
 
+
+def _open_blockers(project_id):
+    """The blocked-by inversion over the whole project: blocked identifier
+    -> the `RELATIONS_QUERY` nodes of its open blockers, in the order the
+    relations list them. Shared by the ready listing and `open_issues()`."""
     blockers = {}
-    for n in all_nodes:
+    for n in _paginate(RELATIONS_QUERY, {"project": project_id},
+                       ("project", "issues")):
         if (n.get("state") or {}).get("type") in CLOSED_STATE_TYPES:
             continue
         for rel in n["relations"]["nodes"]:
             if rel["type"] == "blocks":
                 blockers.setdefault(rel["relatedIssue"]["identifier"],
                                     []).append(n)
-
-    if label is not None:
-        issues = [i for i in issues if label in label_names(i)]
-    return issues, blockers
+    return blockers
 
 
 def parse_task(issue):
@@ -687,6 +697,25 @@ def listing(project_id, label=None):
     """
     issues, blockers = _ready_with_blockers(project_id, label)
     return [dict(_listed_task(issue),
+                 blocked_by=[b["id"] for b in blockers.get(issue["identifier"], ())])
+            for issue in issues]
+
+
+def open_issues(project_id, label=None):
+    """Every open issue of the project, for a board import (KO-751): each
+    whose state type is not completed or canceled -- Backlog and Triage
+    included, labelled or not -- in `listing()`'s shape, with `column` by
+    `_column()` under the board's `label` (an issue without it, or in
+    Backlog, is `backlog`) and `blocked_by` its open blockers' board ids.
+    Linear leaves archived issues out of a project's listing, so none is
+    `canceled` by archiving. Reads only; nothing is written to Linear.
+    """
+    issues = _paginate(OPEN_QUERY, {"project": project_id},
+                       ("project", "issues"))
+    blockers = _open_blockers(project_id)
+    return [dict(_listed_task(issue),
+                 column=_column((issue.get("state") or {}).get("type"), None,
+                                label_names(issue), label),
                  blocked_by=[b["id"] for b in blockers.get(issue["identifier"], ())])
             for issue in issues]
 

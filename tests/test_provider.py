@@ -351,9 +351,10 @@ class FakeLinear:
             return {"issues": {"nodes": nodes, "pageInfo": {
                 "hasNextPage": False, "endCursor": None}}}
         nodes = list(self.issues.values())
-        if "nin:" in query:  # READY_QUERY's state filter; RELATIONS_QUERY has none
-            nodes = [i for i in nodes if i["state"]["type"]
-                     not in ("completed", "canceled", "backlog")]
+        excluded = re.search(r"nin: \[([^\]]*)\]", query)
+        if excluded:  # READY_QUERY's or OPEN_QUERY's; RELATIONS_QUERY has none
+            nodes = [i for i in nodes if f'"{i["state"]["type"]}"'
+                     not in excluded.group(1)]
         return {"project": {"issues": {"nodes": nodes, "pageInfo": {
             "hasNextPage": False, "endCursor": None}}}}
 
