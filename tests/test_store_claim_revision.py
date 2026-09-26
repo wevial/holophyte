@@ -191,6 +191,27 @@ class ClaimRevisionTests(unittest.TestCase):
         self.assertIn("needs_spec in column ready", str(unspecced.exception))
         self.assertEqual(self.runs(), [])
 
+    def test_a_ticket_seen_gone_after_admission_is_refused_and_skipped(self):
+        """The host sweep's observation stamps `goneSince` on its own
+        connection after admission read the row and before the claim:
+        the claim is refused as a conflict -- a skip, not a readmission,
+        since the revision did not move -- and no run is opened. A claim
+        with no expected revision (mirror mode) is unchanged."""
+        admitted = self.row()[0]
+        store.set_gone_since(self.open(), self.ticket, 1_000)
+
+        with self.assertRaises(store.ClaimConflict) as refused:
+            store.claim(self.conn, self.project_id, self.ticket,
+                        expected_revision=admitted)
+
+        self.assertNotIsInstance(refused.exception, store.RevisionMoved)
+        self.assertIn("KO-1 was seen gone from the board",
+                      str(refused.exception))
+        self.assertEqual(self.runs(), [])
+        self.assertEqual(self.row(), (1, "add a thing", None))
+        run = store.claim(self.conn, self.project_id, self.ticket)
+        self.assertEqual(self.runs(), [(run, 1)])
+
     def test_without_an_expected_revision_a_row_with_no_column_claims(self):
         other = store.tickets.mirror_ticket(
             self.conn, self.project_id, linear_issue_id="iss-2",

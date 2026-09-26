@@ -260,19 +260,23 @@ def claim(conn, project_id, ticket_id, now=None, expected_revision=None):
 
 def _assert_admitted(conn, ticket_id, expected_revision):
     """`claim()`'s store-mode assertion, inside its transaction: the ticket
-    is at `expected_revision`, and `ready` in column `ready`. A ticket
+    is at `expected_revision`, `ready` in column `ready`, and not seen gone
+    from the board -- the queue `store.read.claimable()` reads. A ticket
     that does not exist passes, for the ownership check to refuse."""
     row = conn.execute(
-        "SELECT revision, boardColumn, status, linearIdentifier FROM tickets"
-        " WHERE id = ?", (ticket_id,)).fetchone()
+        "SELECT revision, boardColumn, status, linearIdentifier, goneSince"
+        " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
     if row is None:
         return
-    revision, column, status, identifier = row
+    revision, column, status, identifier, gone_since = row
     if revision != expected_revision:
         raise RevisionMoved(identifier, expected_revision, revision)
     if column != "ready" or status != "ready":
         raise ClaimConflict(f"ticket {identifier} is {status} in column"
                             f" {column}, not ready")
+    if gone_since is not None:
+        raise ClaimConflict(f"ticket {identifier} was seen gone from the"
+                            " board, not ready")
 
 
 # Validate phases against the same vocabulary SQLite enforces.
