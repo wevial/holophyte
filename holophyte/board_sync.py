@@ -68,10 +68,14 @@ CLOSED_ANSWERS = ("canceled", "completed")
 def observe_board(target, conn, project, board, now, out, asked, ask_ms):
     """Ask `board` the state of each of `project`'s open tickets and record
     the answers; nothing unless `target`'s `[board] mode` is `store`, a
-    board is given and the project was not asked within `ask_ms`. `asked`
+    board is given that is not native (KO-759: the store asking itself
+    writes revisions for nothing) and the project was not asked within
+    `ask_ms`. `asked`
     is the store's `ReconcileMemory.states_asked`, by project id. A raise
     from the board is one printed line to `out` and no write."""
     if board is None or board_mode(target).mode != "store":
+        return
+    if getattr(board, "native", False) is True:
         return
     asked_at = asked.get(project)
     if asked_at is not None and now - asked_at < ask_ms:
