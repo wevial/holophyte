@@ -1,6 +1,18 @@
 import type { Fetch } from "./poll";
 import type { BoardState } from "./types";
 
+/** One revision of a ticket's board-owned fields, as `/tickets/ID`
+ *  serves its `current` and `claimed` (holophyte/serve.py `revision_json()`).
+ *  `column` is `backlog`, `ready`, `canceled`, or null when none was named. */
+export interface TicketRevision {
+  revision: number | null;
+  title: string | null;
+  body?: string;
+  priority?: number | null;
+  labels?: string[];
+  column?: string | null;
+}
+
 /** The daemon's `GET /tickets/KO-n` body (`docs/reference/http.md`). */
 export interface TicketBody {
   ticket: string;
@@ -12,6 +24,11 @@ export interface TicketBody {
   time_box_ms: number | null;
   run: number | null;
   mirrored_ms: number | null;
+  /** The ticket's revision now, the one a write sends as `If-Match`; null
+   *  or absent when the store records none. */
+  current?: TicketRevision | null;
+  /** The revision the live run claimed; null with no live run. */
+  claimed?: TicketRevision | null;
 }
 
 /** The three outcomes the sheet tells apart: the mirrored ticket, the
