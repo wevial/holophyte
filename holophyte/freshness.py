@@ -284,20 +284,28 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
     A store-mode board (KO-745) is not commented on or moved: the comment is
     a `stale` note keyed on the body and the reasons, and the move a queued
     push, so the next observation reads Backlog as the factory's move and
-    not a person's. The label is still written inline."""
+    not a person's. The label is still written inline.
+
+    A task a store-mode claim built at a revision the ticket has since
+    left (Phase 3 stage 3) was judged on a body the board no longer holds:
+    that verdict is dropped the same way, with nothing written."""
     issue_id = mirror_key(task)
     with lease_turn(project), store.transaction(conn):
         row = conn.execute(
-            "SELECT activeRunId, status FROM tickets"
+            "SELECT activeRunId, status, revision FROM tickets"
             " WHERE linearIssueId = ? AND projectId = ?",
             (issue_id, project_id)).fetchone()
         taken = row is not None and (
             row[0] is not None or (admitted and row[1] != "ready"))
-        if not taken:
+        moved = row is not None and task.get("store_revision") not in (
+            None, row[2])
+        if not (taken or moved):
             ticket_id = mirror_task(conn, project_id, task, specced=False)
-    if taken:
-        print(f"[holo2] {task['id']} skipped: another loop claimed or parked"
-              " it while it was judged; this verdict is dropped")
+    if taken or moved:
+        why = ("another loop claimed or parked it" if taken
+               else "it changed on the board")
+        print(f"[holo2] {task['id']} skipped: {why} while it was judged;"
+              " this verdict is dropped")
         return
     store_mode = getattr(provider, "store_mode", False) is True
     if store_mode:

@@ -378,7 +378,8 @@ def refresh_board_states(conn, project, provider):
                 store.set_board_state(conn, ticket.id, state)
 
 
-def mirror_task(conn, project, task, specced=True, depends_on=None):
+def mirror_task(conn, project, task, specced=True, depends_on=None,
+                column=None):
     """Mirror the offered ticket's live body into the store; return its id.
 
     The first half of a claim, split from the lease so the loop can ask the
@@ -426,11 +427,16 @@ def mirror_task(conn, project, task, specced=True, depends_on=None):
 
     The board's other fields ride along (KO-736): `priority`, the
     board-owned labels, `filed_at` and `updatedAt`, each kept as stored when
-    the task lacks it, and column `ready`, since every task mirrored here
-    came from the ready listing. The store records a revision when a
-    board-owned one changed.
+    the task lacks it, and `column`: the task's own when a one-issue read
+    gave it one (None, completed, keeps the stored column), else `ready`,
+    the listing's. The store records a revision when a
+    board-owned one changed. A task a store-mode claim built from a row
+    carries `store_revision`, and is written only while the row is still
+    at it (Phase 3 stage 3): an edit landed since is not reverted.
     """
     title, criteria, commands, _states = task_contract(task)
+    if column is None:
+        column = task.get("column", "ready")
     if not specced:
         criteria, commands = [], []
     ticket_id = store.tickets.mirror_ticket(
@@ -450,10 +456,11 @@ def mirror_task(conn, project, task, specced=True, depends_on=None):
         priority=task.get("priority"),
         labels=(None if task.get("labels") is None
                 else board_owned_labels(task["labels"])),
-        board_column="ready",
+        board_column=column,
         filed_at=task.get("filed_at"),
         board_updated_at=task.get("updatedAt"),
         depends_on=depends_on,
+        expected_revision=task.get("store_revision"),
     )
     if criteria and commands:
         with store.transaction(conn):

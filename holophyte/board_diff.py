@@ -14,6 +14,7 @@ import sys
 
 import store.read
 from holophyte.board import board_owned_labels, mirror_key
+from holophyte.claim_store import store_mode
 
 # The board-owned fields a task carries, named alike in the task dict and
 # `tickets`; the column is compared separately, since a task does not carry it.
@@ -39,7 +40,8 @@ def board_diff(target, board, out=None):
     tasks = board.ready_issues()
     conn = store.read.open_readonly(target.store_path)
     try:
-        lines = diff_lines(conn, board.team, tasks)
+        lines = diff_lines(conn, board.team, tasks,
+                           store_mode=store_mode(target))
     finally:
         conn.close()
     for line in lines:
@@ -51,9 +53,12 @@ def board_diff(target, board, out=None):
     return 1 if lines else 0
 
 
-def diff_lines(conn, team, tasks):
+def diff_lines(conn, team, tasks, store_mode=False):
     """The difference lines for `tasks`, the board's ready listing, against
-    the store's rows under `team`'s project."""
+    the store's rows under `team`'s project. In store mode (Phase 3 stage
+    3) a `ready` row the listing does not name is a difference only while
+    its column is `ready`: a ticket moved to Backlog leaves the queue by
+    its column, and the store already says so."""
     row = conn.execute("SELECT id FROM projects WHERE linearTeamId = ?",
                        (team,)).fetchone()
     project = row[0] if row is not None else None
@@ -70,10 +75,11 @@ def diff_lines(conn, team, tasks):
                          " the store")
             continue
         lines.extend(field_lines(task, stored))
+    column = " AND boardColumn = 'ready'" if store_mode else ""
     for key, identifier in conn.execute(
             "SELECT linearIssueId, linearIdentifier FROM tickets"
             " WHERE projectId = ? AND status = 'ready' AND activeRunId IS NULL"
-            " ORDER BY linearIdentifier", (project,)):
+            + column + " ORDER BY linearIdentifier", (project,)):
         if key not in listed:
             lines.append(f"{identifier}: ready in the store, not on the"
                          " board's ready listing")

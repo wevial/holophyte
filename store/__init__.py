@@ -74,6 +74,22 @@ class ClaimConflict(Exception):
     """
 
 
+class RevisionMoved(Exception):
+    """A claim at revision `expected` found the ticket at `current`, and
+    nothing was written (Phase 3 stage 3).
+
+    A board edit landed between the admission and the claim, so the claim
+    would freeze a revision admission never judged. Deliberately not a
+    `ClaimConflict`: the answer is to admit the ticket again at `current`,
+    not to skip it as another run's.
+    """
+
+    def __init__(self, identifier, expected, current):
+        super().__init__(f"ticket {identifier} moved from revision {expected}"
+                         f" to {current} since it was admitted")
+        self.expected, self.current = expected, current
+
+
 # --- the claim-time contract snapshot -----------------------------------------
 # A run is worked to the ticket as it stood when the lease was taken: that
 # body is what the implementer was briefed with and what the reviewer judged
@@ -138,7 +154,7 @@ def contract_drift(before, after):
     return tuple(f for f in CONTRACT_FIELDS if was.get(f) != is_now.get(f))
 
 
-def claim(conn, project_id, ticket_id, now=None):
+def claim(conn, project_id, ticket_id, now=None, expected_revision=None):
     """Take the ticket's lease for a new run on `ticket_id`; return its id.
 
     One `BEGIN IMMEDIATE` transaction, per state-model §7 as KO-341 narrows
@@ -166,6 +182,12 @@ def claim(conn, project_id, ticket_id, now=None):
     that later re-points the title or either list must not be able to change
     what this run was asked for after the fact. The merge gate reads the
     freeze back through `run_contract()` and compares it with the live ticket.
+
+    `expected_revision` is the revision a store-mode claim was admitted at
+    (Phase 3 stage 3). Given, the same transaction also asserts the ticket
+    is still at it -- `RevisionMoved` otherwise -- and still `ready` in
+    column `ready`, a `ClaimConflict` otherwise. None, the default, asserts
+    neither, as a mirror-mode claim always has.
     """
     if now is None:
         now = int(time.time() * 1000)
@@ -189,6 +211,8 @@ def claim(conn, project_id, ticket_id, now=None):
             raise ClaimConflict(
                 f"ticket {held[1]}: lease already held by run {held[0]}"
             )
+        if expected_revision is not None:
+            _assert_admitted(conn, ticket_id, expected_revision)
         (prior,) = conn.execute(
             "SELECT COUNT(*) FROM runs WHERE ticketId = ?", (ticket_id,)
         ).fetchone()
@@ -232,6 +256,27 @@ def claim(conn, project_id, ticket_id, now=None):
         raise
     conn.commit()
     return run_id
+
+
+def _assert_admitted(conn, ticket_id, expected_revision):
+    """`claim()`'s store-mode assertion, inside its transaction: the ticket
+    is at `expected_revision`, `ready` in column `ready`, and not seen gone
+    from the board -- the queue `store.read.claimable()` reads. A ticket
+    that does not exist passes, for the ownership check to refuse."""
+    row = conn.execute(
+        "SELECT revision, boardColumn, status, linearIdentifier, goneSince"
+        " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+    if row is None:
+        return
+    revision, column, status, identifier, gone_since = row
+    if revision != expected_revision:
+        raise RevisionMoved(identifier, expected_revision, revision)
+    if column != "ready" or status != "ready":
+        raise ClaimConflict(f"ticket {identifier} is {status} in column"
+                            f" {column}, not ready")
+    if gone_since is not None:
+        raise ClaimConflict(f"ticket {identifier} was seen gone from the"
+                            " board, not ready")
 
 
 # Validate phases against the same vocabulary SQLite enforces.

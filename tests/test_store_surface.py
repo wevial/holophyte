@@ -133,6 +133,8 @@ EXPECTED_CLASSES = [
     "RepointRefused",
     "RequeueRefused",
     "ResumeRefused",
+    # Phase 3 stage 3: a store-mode claim's revision moved since admission.
+    "RevisionMoved",
     "RunEnded", "SchemaNewer", "SchemaOlder",  # Schema compatibility refusals.
 ]
 
@@ -159,6 +161,8 @@ EXPECTED_READ = [
     "babysit_note",  # KO-462: the resumed implementer reads the operator note.
     # KO-245: the `serve` daemon's `/attention` reads.
     "blocked_tickets",
+    # Phase 3 stage 3: the store's ready queue.
+    "claimable",
     "ended_runs",
     "failed_attempts_since",
     # KO-435: pages of ended runs of any outcome for `/shipped`.

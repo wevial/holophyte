@@ -520,7 +520,7 @@ scheduler reads it: under `workers = 1` there is no pool to tick.
 | `project_id` | Default: None; required for a configured board | Non-empty string naming the Linear project UUID; set to choose the project's queue. |
 | `team` | Default: None; required for a configured board | Non-empty string naming the Linear team; set to resolve that team's workflow states. |
 | `label` | Default: Absent (no filter) | Non-empty string; set to claim only ready issues with this label. |
-| `mode` | Default: `"mirror"` | `"mirror"` or `"store"`; where the project's tickets are kept. Leave at the default for now. |
+| `mode` | Default: `"mirror"` | `"mirror"` or `"store"`; where the project's tickets are kept. `"mirror"` claims from the board's ready listing; `"store"` claims from the store's queue, at the revision admission judged. Flip one project at a time, held and drained, and only while `--board-diff` is empty. |
 | `kind` | Default: `"linear"` | `"linear"` or `"native"`; which board the project uses. `"native"` is refused at startup until the native board ships. |
 
 ```toml
@@ -554,6 +554,13 @@ live project it takes effect at the next restart, not the next pass. The board
 side is live -- the loop asks the board fresh each claim, so a ticket that
 gains the label joins the listing, and a mirror row whose ticket lost it
 waits on the board at `blocked_on_deps` until it carries it again.
+In `mode = "store"` the board is read once a pass instead -- the loop's
+listing at most once a `[loop] tick_sec`, the host sweep's once a
+`board_ask_sec` while no loop is live -- and the claim reads its one
+candidate back from the board before it is taken. A ticket then leaves the
+queue when its column changes (moved to Backlog, or the label removed),
+not when it disappears from the listing, and nothing waits at
+`blocked_on_deps` for the listing to name it again.
 `project_id` and `team` are required when the table is present; `label` is
 the one key that may be absent, but when written it must be a non-empty
 string, and anything else is a startup error naming the key.

@@ -1127,3 +1127,61 @@ def ready_tickets(conn, project_id=None):
     return conn.execute(
         f"SELECT t.id, t.lastRunId FROM tickets t WHERE {where}"
         " ORDER BY t.id", params).fetchall()
+
+
+@dataclass(frozen=True)
+class ClaimableTicket:
+    """One row of a store-mode project's ready queue (Phase 3 stage 3):
+    everything the claim builds its task from, in one read. `labels` and
+    the two contract lists are decoded from their JSON columns; `revision`
+    is the ticket's current one, the revision its admission is judged at."""
+
+    id: int
+    linearIssueId: str
+    linearIdentifier: str
+    revision: int
+    title: str
+    body: str
+    timeBoxMs: int | None
+    priority: int | None
+    labels: tuple[str, ...]
+    url: str | None
+    boardState: str | None
+    filedAt: int | None
+    lastRunId: int | None
+    acceptanceCriteria: tuple[str, ...] = ()
+    verificationCommands: tuple[str, ...] = ()
+
+
+# `[loop] order`'s two sorts: identifier string order, as the board's own
+# claim sorted, and Linear priority with none (0 or NULL) last.
+_CLAIM_ORDER = {
+    "identifier": "linearIdentifier",
+    "priority": "CASE WHEN priority BETWEEN 1 AND 4 THEN priority ELSE 5 END,"
+                " linearIdentifier",
+}
+
+
+def claimable(conn, project_id, order="identifier"):
+    """The store's ready queue for `project_id`, ordered by `order`
+    (`"identifier"` or `"priority"`): every ticket `ready` in column
+    `ready`, under no live run, not gone from the board, and pickable.
+
+    Pickability is `store.tickets.pickable_tickets()`'s, asked of the same
+    rows, so the specced and dependency clauses cannot drift from the
+    claim's own. A row whose column is NULL -- never observed by a
+    store-mode sync -- is not claimable.
+    """
+    import store.tickets
+    rows = conn.execute(
+        "SELECT id, linearIssueId, linearIdentifier, revision, title, body,"
+        " timeBoxMs, priority, labels, url, boardState, filedAt, lastRunId,"
+        " acceptanceCriteria, verificationCommands FROM tickets"
+        " WHERE projectId = ? AND status = 'ready' AND activeRunId IS NULL"
+        " AND boardColumn = 'ready' AND goneSince IS NULL"
+        f" ORDER BY {_CLAIM_ORDER[order]}", (project_id,)).fetchall()
+    verdicts = store.tickets.pickable_tickets(conn, project_id)
+    return [ClaimableTicket(*row[:8], tuple(json.loads(row[8])), *row[9:13],
+                            tuple(json.loads(row[13])),
+                            tuple(json.loads(row[14])))
+            for row in rows if verdicts.get(row[2])]

@@ -43,7 +43,13 @@ closed ticket is still asked while it has a note pending, so a note that
 failed after its ticket closed is posted on a later ask. A
 response lost after the board kept the comment posts it again; the id
 line is what makes the duplicate recognisable.
+
+`owed()` is the sweep's answer to which tickets a project with no live
+loop is owed one for (Phase 3 stage 3): in store mode the store's own
+`claimable()` queue, after a sync on `board_ask_sec` when no loop is live
+to make one; in mirror mode the `ready` rows, as ever.
 """
+import contextlib
 from datetime import datetime, timezone
 
 import store
@@ -51,6 +57,7 @@ import store.read
 import store.tickets
 from holophyte import deadline
 from holophyte.board import MIRROR_STATES
+from holophyte.claim_store import store_mode, sync_board
 from holophyte.config_tables import board_mode
 from holophyte.stop import abort_requested, abort_run
 from provider import GONE
@@ -101,6 +108,30 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
             sends.append((ticket.id, ticket.linearIdentifier, *send))
     _send(conn, board, sends, out)
     _deliver(conn, project, board, out)
+
+
+def owed(target, conn, project, provider, now, out, knobs):
+    """The `(ticket id, run id)` pairs `project` is owed a loop for. Mirror
+    mode: `store.read.ready_tickets()`, exactly as before. Store mode: the
+    store's queue, `claimable()`, after one `sync_board()` of the project
+    the provider's team keys, throttled to `knobs.board_ask_ms` on the
+    shared `boardAskedAt`; its printed lines go to `out`. Another project
+    row in the store is not synced."""
+    if not store_mode(target):
+        return store.read.ready_tickets(conn, project)
+    if provider is not None and project == _board_project(conn, provider):
+        deadline.check("the board's ready listing")
+        with contextlib.redirect_stdout(out):
+            sync_board(target, conn, project, provider, now=now,
+                       min_interval_ms=knobs.board_ask_ms)
+    return [(row.id, row.lastRunId)
+            for row in store.read.claimable(conn, project)]
+
+
+def _board_project(conn, provider):
+    row = conn.execute("SELECT id FROM projects WHERE linearTeamId = ?",
+                       (provider.team,)).fetchone()
+    return row[0] if row is not None else None
 
 
 def _deliver(conn, project, board, out):
