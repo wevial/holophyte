@@ -151,6 +151,15 @@ class BoardImportTests(unittest.TestCase):
                          self.summary(self.run_import(self.target)))
         self.assertIn("[holo2] KO-2: new", dry)
 
+    def test_a_dry_run_with_no_store_refuses_and_creates_none(self):
+        empty = self.locate("empty")
+
+        with self.assertRaises(SystemExit) as raised:
+            self.run_import(empty, dry_run=True)
+
+        self.assertIn("no store", str(raised.exception.code))
+        self.assertFalse(empty.store_path.exists())
+
     def test_a_changed_issue_is_counted_changed(self):
         self.board.issues[0]["title"] = "ticket KO-1, retitled"
 

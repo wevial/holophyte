@@ -32,6 +32,9 @@ def board_import(project, board, dry_run=False, out=None):
     being keyed by board id.
     """
     out = out or sys.stdout
+    # Opening creates an absent file, so a dry run refuses one first.
+    if dry_run and not project.store_path.is_file():
+        raise SystemExit(f"[holo2] no store at {project.store_path}")
     issues = board.open_issues()
     conn = store.open(project.store_path, migrate=not dry_run)
     try:
