@@ -49,9 +49,11 @@ export function TicketSheet({
 }) {
   const [reloads, setReloads] = useState(0);
   const { state, ticket, error } = useTicket(host.base, card.ticket, deps, reloads);
-  // The open write: the body being edited, or the cancel's note.
-  const [draft, setDraft] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  // The open write, the body being edited or the cancel's note, each bound
+  // to the revision it was opened at: a reload landing a newer revision
+  // under an open edit must not let the older text save over it.
+  const [draft, setDraft] = useState<{ body: string; revision: number } | null>(null);
+  const [note, setNote] = useState<{ text: string; revision: number } | null>(null);
   const [conflict, setConflict] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
@@ -141,7 +143,7 @@ export function TicketSheet({
           </h2>
           {editable && ticket != null && (
             <div data-sheet-actions className="flex items-center gap-2">
-              <button type="button" disabled={pending || draft != null} onClick={() => setDraft(ticket.current?.body ?? ticket.body)} className={button}>
+              <button type="button" disabled={pending || draft != null} onClick={() => setDraft({ body: ticket.current?.body ?? ticket.body, revision })} className={button}>
                 Edit
               </button>
               <button
@@ -152,7 +154,7 @@ export function TicketSheet({
               >
                 {target === "ready" ? "Move to Ready" : "Move to Backlog"}
               </button>
-              <button type="button" disabled={pending || note != null} onClick={() => setNote("")} className={button}>
+              <button type="button" disabled={pending || note != null} onClick={() => setNote({ text: "", revision })} className={button}>
                 Cancel
               </button>
             </div>
@@ -161,8 +163,8 @@ export function TicketSheet({
             <div data-cancel-note className="flex flex-col gap-2">
               <textarea
                 aria-label="Cancel note"
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
+                value={note.text}
+                onChange={(event) => setNote({ ...note, text: event.target.value })}
                 className="min-h-[60px] rounded-button border border-chip-border bg-well p-2 text-[12px] text-body"
               />
               <div className="flex items-center gap-2">
@@ -171,8 +173,8 @@ export function TicketSheet({
                 </button>
                 <button
                   type="button"
-                  disabled={pending || note.trim() === ""}
-                  onClick={() => void write(() => cancelTicket(host.base, card.ticket, revision, note, deps.fetch))}
+                  disabled={pending || note.text.trim() === ""}
+                  onClick={() => void write(() => cancelTicket(host.base, card.ticket, note.revision, note.text, deps.fetch))}
                   className="rounded-button bg-bad px-3 py-1 text-[12px] font-semibold text-card disabled:opacity-60"
                 >
                   {confirm}
@@ -219,8 +221,8 @@ export function TicketSheet({
             <div className="flex h-full flex-col gap-2">
               <textarea
                 aria-label="Ticket body"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                value={draft.body}
+                onChange={(event) => setDraft({ ...draft, body: event.target.value })}
                 spellCheck={false}
                 className="min-h-[360px] flex-1 rounded-button border border-chip-border bg-well p-3 font-mono text-[12px] leading-[1.5] text-body"
               />
@@ -231,7 +233,7 @@ export function TicketSheet({
                 <button
                   type="button"
                   disabled={pending}
-                  onClick={() => void write(() => editTicket(host.base, card.ticket, revision, draft, deps.fetch))}
+                  onClick={() => void write(() => editTicket(host.base, card.ticket, draft.revision, draft.body, deps.fetch))}
                   className="rounded-button bg-accent px-3 py-1 text-[12px] font-semibold text-card disabled:opacity-60"
                 >
                   Save

@@ -316,6 +316,32 @@ test("Edit saves the changed body with one PUT at If-Match 3; a second sheet's s
   expect(second.getByText("The new body.")).toBeTruthy();
 });
 
+test("an edit opened while a reload is in flight saves at the revision it was read at, so the newer body is not overwritten", async () => {
+  const held = { revision: 3, body: "# First\n\nThe old body.\n", column: "ready" };
+  const { fetch, writes } = nativeDaemon({ "NAT-1": held });
+  const view = within(sheet("NAT-1", fetch).container);
+  await act(settle);
+  // Another tab lands revision 4 after this sheet read revision 3.
+  held.revision = 4;
+  held.body = "# First\n\nThe other tab's body.\n";
+
+  fireEvent.click(view.getByRole("button", { name: "Edit" }));
+  fireEvent.click(view.getByRole("button", { name: "Save" }));
+  await act(settle);
+  fireEvent.click(view.getByRole("button", { name: "Reload" }));
+  // Edit again before the reload answers: the draft holds revision 3's body.
+  fireEvent.click(view.getByRole("button", { name: "Edit" }));
+  expect((view.getByRole("textbox", { name: "Ticket body" }) as HTMLTextAreaElement).value).toBe("# First\n\nThe old body.\n");
+  await act(settle);
+  expect(view.getByText("rev 4")).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "Save" }));
+  await act(settle);
+
+  expect(writes.map((write) => write.ifMatch)).toEqual(["3", "3"]);
+  expect(held.body).toBe("# First\n\nThe other tab's body.\n");
+  expect(view.getByRole("alert").textContent).toContain("This ticket changed since you opened it");
+});
+
 test("Cancel on NAT-2 names run 7 and posts the note at If-Match 5; Move on NAT-1 in ready posts backlog at If-Match 3", async () => {
   const { fetch, writes } = nativeDaemon({
     "NAT-1": { revision: 3, body: "# One\n", column: "ready" },
