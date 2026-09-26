@@ -290,14 +290,17 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
                            f" for the conflicting {pull.url}:"
                            f" {(fetched.stderr or fetched.stdout).strip()}"
                            f"; branch {branch} preserved at {sha[:12]}")
+    # Pinned once: worktrees share `refs/remotes`, so a fetch elsewhere
+    # during the turn may move the ref off the main the turn resolved.
+    target = sh(["git", "rev-parse", ref], wt)
     record_step(conn, run_id, "conflict_merge")
     before = _diff_identity(wt, ref)
-    status, detail = _merge_ref(wt, ref)
+    status, detail = _merge_ref(wt, target)
     if status == "conflicted":
         _timed(project, conn, run_id, beat_s, wt, budget_min,
                merge_conflict_goal(branch, pull, detail))
         still = merge_conflicts(wt)
-        if still or not _is_ancestor(wt, ref, "HEAD"):
+        if still or not _is_ancestor(wt, target, "HEAD"):
             if still:
                 subprocess.run(["git", "merge", "--abort"], cwd=wt,
                                capture_output=True, text=True)

@@ -645,6 +645,43 @@ class ConflictingPullRequestTests(MergeModeFixture):
         # merge pushed nothing.
         self.assertEqual(self.pushed(), [(BRANCH, approved)])
 
+    def test_a_resolved_conflict_survives_a_fetch_during_the_turn(self):
+        """KO-765: the turn resolves and commits the merge it was given,
+        and before it returns `origin/main` moves, as a concurrent fetch
+        by another worker would. The pass judges the turn against the
+        `main` it fetched, not the moved ref, so it pushes the merge."""
+        approved = self.parked_on_a_nit(
+            Commit("the scripted work", path="README.md",
+                   body="the branch's line\n"))
+        fetched = self.remote_main("README.md", "the remote's line\n")
+        self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
+        remote_main = self.remote_main
+
+        class ResolveThenFetch(Commit):
+            def play(self, cwd, turn):
+                said = super().play(cwd, turn)
+                remote_main("LATER.md", "main moved again\n")
+                return said
+
+        fake, _ = self.resume(ResolveThenFetch(
+            "resolve the merge", path="README.md", body="both lines\n"),
+            Idle(""))
+
+        self.assertEqual(fake.roles[0], "implement")
+        wt = self.worktrees / "ko-131-add-a-thing"
+        head = self.git("rev-parse", "HEAD", cwd=wt).strip()
+        self.assertEqual(self.git("rev-parse", "HEAD^1", cwd=wt).strip(),
+                         approved)
+        self.assertEqual(self.git("rev-parse", "HEAD^2", cwd=wt).strip(),
+                         fetched)
+        self.assertNotIn("left it unresolved", self.question())
+        self.assertEqual(self.pushed(), [(BRANCH, approved), (BRANCH, head)])
+        self.assertEqual(
+            self.read("SELECT text FROM ledger WHERE kind = 'note' AND"
+                      " text LIKE 'Merged main into%'"),
+            [(f"Merged main into {BRANCH} at {head} (GitHub reported a"
+              " conflict)",)])
+
     def test_mergeable_and_unknown_pull_requests_are_not_merged(self):
         """KO-377: MERGEABLE is left alone -- a PR that is merely behind
         is not merged into -- and UNKNOWN is treated as not conflicting:
