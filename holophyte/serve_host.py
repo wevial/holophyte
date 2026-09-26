@@ -84,6 +84,7 @@ from holophyte.serve_actions import (
     ACTIONS_PREFIX,
     action_failure,
 )
+from holophyte.serve_board import put_ticket, ticket_path
 from holophyte.serve_config import require_tomlkit
 from holophyte.serve_watch import CODE_CHECK_SEC, adopted_socket
 from holophyte.status import load_sweep_state
@@ -475,6 +476,9 @@ class HostHandler(StatusHandler):
         scope, path = found
         if scope is None:
             return self.refuse()
+        identifier = ticket_path(path)
+        if identifier is not None:
+            return put_ticket(self, scope, path, identifier)
         self.put(scope, path)
 
     def edit_config(self, scope, body):

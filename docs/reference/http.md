@@ -697,6 +697,44 @@ sweep's beat against two sweep intervals. `level` is `attention` when
 there is any item, else `working` when any project has a live run, else
 `none`; `now` is the daemon's clock.
 
+## `PUT /tickets/ID`
+
+A host daemon's edit of one ticket on a native board (`[board] kind =
+"native"`), at `/projects/NAME/tickets/ID`: the console's Board writing a
+ticket's body at the revision it read. A project daemon has no such
+route, and a Linear project's board stays read-only on the console.
+
+```
+PUT /projects/holophyte/tickets/NAT-1
+Authorization: Bearer MACHINE_TOKEN
+If-Match: 2
+Content-Type: application/json
+
+{"body": "# …\n\n## Summary\n…", "priority": 2, "labels": ["ui"]}
+```
+
+```json
+{"ticket": "NAT-1", "revision": 3}
+```
+
+The gate, in order: the host's machine token on every bind, loopback
+included, and never a project's own `token_file`, else 401 with `{}`; host
+`[serve] actions` on and the project native, else 404 with nothing
+written; `If-Match` a non-negative integer, the `revision` `GET /board`
+served, else 428; a JSON object body, else 400. `body` is the ticket's
+full text; `priority` (0 to 4) and `labels` (a list of strings) are
+optional, and each left out keeps the ticket's own.
+
+The edit is the store's `edit_ticket()`, judged as `--file-ticket` judges
+a body and recorded as the ticket's next revision authored `console`,
+never an author the body names. It answers 200 with the new `revision`;
+409 with `error` and `current`, the ticket's revision now, when it has
+moved past `If-Match` (another edit landed; read it again); and 422 with
+`problems`, every blocking problem, when the body fails the template for
+a ticket outside the `backlog` column or names a ticket the project does
+not hold, with nothing written. A store failure is the project's 503 or
+500 as a read's is.
+
 ## Static files
 
 `GET /` answers `console/dist/index.html` and `GET /PATH` answers
@@ -764,19 +802,21 @@ started it.
 
 A page served by one daemon polls the others from the browser, and a
 cross-origin GET carrying `Authorization` is not a simple request, nor
-is the console's `POST /actions/...` or `PUT /config` with the bearer
-and a JSON body: the
+is the console's `POST /actions/...` or `PUT` with the bearer, a JSON
+body and, for a ticket edit, `If-Match`: the
 browser first sends a CORS preflight, `OPTIONS` on the path with
 `Access-Control-Request-Headers: authorization` (`authorization,
-content-type` for an action). Every daemon answers it on any path with
+content-type` for an action, and `if-match` beside them for a ticket
+edit). Every daemon answers it on any path with
 204, no body, `Access-Control-Allow-Origin: *`,
 `Access-Control-Allow-Methods: GET, POST, PUT`, `Access-Control-Allow-Headers:
-authorization, accept, content-type` and `Access-Control-Max-Age: 600`,
+authorization, accept, content-type, if-match` and `Access-Control-Max-Age: 600`,
 token or not: a preflight never carries credentials, so the answer
 discloses nothing and touches no store, and the request it clears is
 still refused without the bearer. Every other method but GET stays 405, `POST`
 included on every path but the `/actions/` routes and `PUT` on every path
-but `/config`, both in [The daemon's actions](daemon.md).
+but `/config`, both in [The daemon's actions](daemon.md), and a host
+daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)).
 
 ## Errors
 
@@ -786,7 +826,7 @@ but `/config`, both in [The daemon's actions](daemon.md).
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
 | 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
-| 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and `PUT` outside `/config`; `Allow: GET` |
+| 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and `PUT` outside `/config` and, on a host daemon, `/tickets/ID`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build can read, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |
 | 500 | on a host daemon, one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |
