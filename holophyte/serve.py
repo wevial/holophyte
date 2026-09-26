@@ -960,15 +960,15 @@ class StatusHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         # A CORS preflight: the browser asks, before a cross-origin GET
         # carrying `Authorization` -- or the console's `POST /actions/...`
-        # or `PUT /config` carrying it and a JSON `Content-Type` -- whether
-        # it may send it.
+        # or `PUT` carrying it, a JSON `Content-Type` and `If-Match` --
+        # whether it may send it.
         # The answer is the same on every path, never carries credentials,
         # discloses nothing and reads nothing, so it runs without the
         # bearer check; the POST itself is still refused without one.
         self.answer_bytes(b"", "application/json", code=204, extra=[
             ("Access-Control-Allow-Methods", "GET, POST, PUT"),
             ("Access-Control-Allow-Headers",
-             "authorization, accept, content-type"),
+             "authorization, accept, content-type, if-match"),
             ("Access-Control-Max-Age", "600"),
         ])
 

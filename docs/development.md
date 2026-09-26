@@ -112,6 +112,10 @@ Each module, one line:
   every project in `host.toml`, each under `/projects/NAME`, the root's
   `/status` and `/attention` for the host, the machine token, one
   project's failure its own 503 or `error`, and `run-sweep`'s host ledger.
+- `holophyte/serve_board.py` — the host daemon's native board writes
+  (KO-758): the gate every one passes (the machine token alone, host
+  `[serve] actions`, a native board, `If-Match`) and `PUT
+  /projects/NAME/tickets/ID`, an edit authored `console`.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
