@@ -162,6 +162,26 @@ class ServeBoardTests(ServeBoardCase):
         self.assertEqual([r[:2] for r in self.revisions("native", "NAT-1")],
                          [(1, "cli"), (2, "cli")])
 
+    def corrupt(self, name):
+        """Overwrite the named project's store with bytes SQLite refuses."""
+        Project.locate(self.paths[name]).store_path.write_bytes(
+            b"not a database" * 512)
+
+    def test_a_linear_project_is_404_before_its_store_is_read(self):
+        self.corrupt("linear")
+        self.start_host()
+
+        status, _ = self.edit(project="linear", identifier="KO-1",
+                              revision="1")
+
+        self.assertEqual(status, 404)
+
+    def test_actions_off_is_404_before_the_store_is_read(self):
+        self.corrupt("native")
+        self.start_host(actions=False)
+
+        self.assertEqual(self.edit()[0], 404)
+
     def test_a_body_with_a_blocking_problem_in_ready_is_422_unchanged(self):
         self.start_host()
 

@@ -72,14 +72,15 @@ def edit_fields(body):
 
 
 def gate(handler, scope, path):
-    """None when the write may go on, else the `(status, body)` it gets."""
+    """None when the write may go on, else the `(status, body)` it gets.
+    Nothing here opens a store: a route that does not exist is 404 however
+    its project's store reads."""
     server = handler.server
     if server.write_token is None or not authorized(
             handler.headers.get("Authorization"), server.write_token):
         return 401, {}
-    refused = handler.refused(scope)
-    if refused is not None:
-        return refused
+    if scope.project is None:
+        return handler.refused(scope)
     if not server.actions or board_mode(scope.project).kind != "native":
         return 404, {"error": "not found", "path": scope.prefix + path}
     return None
@@ -102,6 +103,9 @@ def put_ticket(handler, scope, path, identifier):
     except ValueError as bad:
         return handler.answer(400, {"error": str(bad)})
     try:
+        refused = handler.refused(scope)
+        if refused is not None:
+            return handler.answer(*refused)
         handler.answer(*edit(scope.project, identifier, expected, *fields))
     except (Exception, SystemExit) as bad:
         handler.answer(*handler.failure(scope, path, bad))
