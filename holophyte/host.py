@@ -294,7 +294,8 @@ def check_new(host, target):
 
 def native_key_conflict(target, host=None):
     """The first reason `target`'s native `[board] key` is not its own on
-    the host, as one line; None when it is, or `target` is not native.
+    the host, as one line; None when it is, when `target` is not native,
+    and when its table cannot be read: the table's own reader refuses that.
 
     Another registry entry whose native board has the same key conflicts,
     and so does any registered store -- `target`'s own included, registered
@@ -302,9 +303,9 @@ def native_key_conflict(target, host=None):
     its identifier, as a native ticket's is. An entry whose config or store
     cannot be read is skipped, as `project list` skips it.
     """
-    if board_mode(target).kind != "native":
+    key = _native_key(target)
+    if key is None:
         return None
-    key = board_config(target).key
     host = Host.locate() if host is None else host
     try:
         entries = host.projects()
