@@ -19,6 +19,7 @@ from pathlib import Path
 
 import holophyte.cli
 import store
+from holophyte.config_tables import board_mode
 from holophyte.gates import merge_lock_path
 from holophyte.host import Host, HostError
 from holophyte.project import Project
@@ -203,6 +204,23 @@ class HostRegistryTests(HostFixture):
         alpha = self.repo("alpha")
         self.cli("project", "add", str(alpha))
         self.assertEqual([entry.name for entry in host.projects()], ["alpha"])
+
+    def test_a_project_config_edit_is_seen_without_a_registry_edit(self):
+        # The operator's native move edits the project's config only; the
+        # daemon's registry must answer the new board on its next request.
+        alpha = self.repo("alpha")
+        self.cli("project", "add", str(alpha))
+        host = Host.locate()
+        registry = host.path.stat()
+        [entry] = host.projects()
+        self.assertEqual(board_mode(entry.target).kind, "linear")
+        self.assertIs(host.projects(), host.projects())
+        # A different size, so the stamp moves within one mtime tick.
+        entry.target.config_path.write_text(
+            '[board]\nkind = "native"\nkey = "NAT"\n')
+        [entry] = host.projects()
+        self.assertEqual(board_mode(entry.target).kind, "native")
+        self.assertEqual(host.path.stat(), registry)
 
 
 class HostStatusTests(HostFixture):
