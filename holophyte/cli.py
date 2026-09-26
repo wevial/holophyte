@@ -452,6 +452,7 @@ def _legacy_cli(argv):
     # a read-only sweep can live with (it calls nobody) and the modes that
     # post to the board cannot: they exit here, naming the key to set.
     # `board_for()` refuses `[board] kind = "native"` here, before the loop.
+    _refuse_native_key(target, args, modes)
     board = board_for(target)
     # Same window and the same reasons as `--report`: it reads runs and prints
     # them, so no route has to resolve and nobody is called. `--act` fails
@@ -492,7 +493,6 @@ def _legacy_cli(argv):
     from holophyte.admission import disabled_startup
     if disabled_startup(target):
         return 0
-    _refuse_native_key(target)
     check_agent_commands(target)
     # Same window, same reason: the `[worktree]` table is read here rather
     # than by the first run that cuts a worktree with it.
@@ -506,9 +506,13 @@ def _legacy_cli(argv):
     return main(target, require_board(target, board))
 
 
-def _refuse_native_key(target):
+def _refuse_native_key(target, args, modes):
     """A native board's key is its own on the host (KO-752): the loop's
-    start exits naming the conflict before a route is probed."""
+    start, a command line naming none of `modes`, exits naming the conflict
+    before the board is built or a route probed."""
+    if any(getattr(args, action.dest) != action.default
+           for action in modes._group_actions):
+        return
     conflict = native_key_conflict(target)
     if conflict is not None:
         raise SystemExit(conflict)

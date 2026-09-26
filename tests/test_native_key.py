@@ -72,18 +72,20 @@ class NativeKeyTest(HostFixture):
     def test_loop_start_refuses_a_key_a_linear_store_holds(self):
         self.linear("linear", "NAT-2")
         native = self.native("native", "NAT")
-        # This build's `board_for()` refuses a native board; the loop's
-        # start is what is under test, so the board is stood in for.
-        with patch("holophyte.cli.board_for", return_value=object()), \
-                patch("holophyte.cli.check_agent_commands"), \
-                patch("holophyte.cli.check_worktree_setup"), \
-                patch("holophyte.cli.start_supervisor"), \
-                patch("holophyte.cli.main", return_value=0) as main, \
+        with patch("holophyte.cli.main", return_value=0) as main, \
                 self.assertRaises(SystemExit) as refused:
             self.cli(str(native))
         self.assertIn("NAT", str(refused.exception.code).replace(
             str(native), ""))
         main.assert_not_called()
+
+    def test_an_entry_whose_config_cannot_be_read_is_skipped(self):
+        # As `project list` skips it: its store is not read either.
+        linear = self.linear("linear", "NAT-2")
+        Project.locate(linear, adopt=False).config_path.write_text("[board\n")
+        native = self.native("native", "NAT")
+        self.cli("project", "add", str(native))
+        self.assertIn(native, [path for _, path in self.registered()])
 
 
 if __name__ == "__main__":

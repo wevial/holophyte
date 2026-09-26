@@ -311,9 +311,9 @@ def native_key_conflict(target, host=None):
     except HostError as bad:
         return f"{bad}; cannot check [board] key {key} against it"
     path = Path(target.path).resolve()
+    entries = [entry for entry in entries if entry.error is None]
     for entry in entries:
-        if entry.path != path and entry.error is None and _native_key(
-                entry.target) == key:
+        if entry.path != path and _native_key(entry.target) == key:
             return (f"[holo2] [board] key {key} of {path} is already the"
                     f" native board key of {entry.path}")
     targets = [entry.target for entry in entries]
