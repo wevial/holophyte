@@ -2,8 +2,10 @@ import type { BoardCard, Column } from "../lib/board";
 import type { BoardState } from "../lib/types";
 import { TicketCard } from "./TicketCard";
 
-/** The header dot per state: grey, amber, ok green, red, teal. */
+/** The header dot per state: hollow for backlog, then grey, amber, ok
+ *  green, red, teal. */
 const DOTS: Record<BoardState, string> = {
+  backlog: "border border-faint",
   needs_spec: "bg-faint",
   blocked_on_deps: "bg-warn",
   ready: "bg-ok",

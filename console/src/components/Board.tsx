@@ -1,11 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import { columns, type BoardCard } from "../lib/board";
+import { projectName } from "../lib/derive";
 import type { HostRecord } from "../lib/hosts";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { groupByDay, medianRounds, mergedRows, withinDays } from "../lib/shipped";
 import { useBoard } from "../hooks/useBoard";
 import type { ShippedState } from "../hooks/useShipped";
 import { BoardColumn } from "./BoardColumn";
+import { NewTicket } from "./NewTicket";
 import { ShippedTable } from "./ShippedTable";
 import { TicketSheet } from "./TicketSheet";
 
@@ -22,7 +24,10 @@ function identifierFor(key: string): HTMLElement | null {
 /**
  * The Board view: every host's `/board` as five columns, left to right
  * the path to merge, each card joined with the host's live run or open
- * question; beneath them today's merges from `shipped`, the `/shipped`
+ * question, and a Backlog column first when some host answered one;
+ * each editable host gets a New ticket button, naming its project when
+ * more than one is editable, that opens the filing form; beneath them
+ * today's merges from `shipped`, the `/shipped`
  * ledger the shell holds for the Shipped view and this table alike. `now`
  * is the clock naming today; `tz` pins the zone for tests. The open
  * sheet's `{ host, ticket }` lives here, keyed by the card's `key`, so a
@@ -46,7 +51,11 @@ export function Board({
   tz?: string;
 }) {
   const board = useBoard(hosts, polls, deps);
-  const grouped = columns(board.cards);
+  const grouped = columns(board.cards, board.backlog);
+  // The host whose New ticket form is open, by base.
+  const [filing, setFiling] = useState<string | null>(null);
+  const filingHost = board.editable.find((host) => host.base === filing) ?? null;
+  const closeFiling = useCallback(() => setFiling(null), []);
   // The open sheet: the card's `key` (host base and ticket) and the card
   // as it read when opened, so the header stands while `/tickets` loads.
   const [open, setOpen] = useState<BoardCard | null>(null);
@@ -82,13 +91,24 @@ export function Board({
             {plural(board.cards.length, "open ticket")} · left to right is the path to merge
           </span>
           <span className="ml-auto text-[12px] text-faint">drag to reorder the ready column later</span>
+          {board.editable.map((host) => (
+            <button
+              key={host.base}
+              type="button"
+              data-new-ticket-for={host.base}
+              onClick={() => setFiling(host.base)}
+              className="rounded-button border border-chip-border px-3 py-1 text-[12px] font-semibold text-ink"
+            >
+              {board.editable.length > 1 && host.project != null ? `New ticket · ${projectName(host.project)}` : "New ticket"}
+            </button>
+          ))}
         </div>
         {board.errors.map((error) => (
           <p key={error} role="alert" className="mt-2 font-mono text-[11px] text-bad-text">
             board failed: {error}
           </p>
         ))}
-        <div className="mt-4 grid grid-cols-[repeat(5,minmax(0,1fr))] gap-3">
+        <div className={`mt-4 grid ${board.backlog ? "grid-cols-[repeat(6,minmax(0,1fr))]" : "grid-cols-[repeat(5,minmax(0,1fr))]"} gap-3`}>
           {grouped.map((column) => (
             <BoardColumn key={column.state} column={column} openKey={open?.key ?? null} onOpen={openSheet} />
           ))}
@@ -116,6 +136,7 @@ export function Board({
         </section>
       </section>
       {openCard && openHost && <TicketSheet key={openCard.key} host={openHost} card={openCard} onClose={closeSheet} deps={deps} />}
+      {filingHost && <NewTicket key={filingHost.base} host={filingHost} onClose={closeFiling} deps={deps} />}
     </>
   );
 }
