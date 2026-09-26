@@ -274,8 +274,11 @@ class StoreSurfaceTests(unittest.TestCase):
     def test_public_functions_match_the_allow_list(self):
         for module, expected in ((store, EXPECTED),
                                  (store.schema, EXPECTED_SCHEMA),
-                                 # KO-750: the native board's writers.
-                                 (store.board, ["edit_ticket", "file_ticket",
+                                 # KO-750: the native board's writers;
+                                 # KO-753: its moves, cancels and waits.
+                                 (store.board, ["cancel_ticket", "edit_ticket",
+                                                "file_ticket", "move_ticket",
+                                                "resolve_dependencies",
                                                 "ticket_problems"]),
                                  # KO-457: persisted work boundaries and live read.
                                  (store.working, ["agent_work", "effective_work",
