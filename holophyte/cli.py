@@ -8,7 +8,7 @@
 `--cancel KEY-n --revision N --note TEXT` (a native board's),
 `--sweep [--act]`, `--board-diff`, `--status [--json]`, `--serve` and `--supervise
 [--once]` (with no project, the host's),
-`--import-store PATH --dry-run`,
+`--import-store PATH --dry-run`, `--board-import [--dry-run]`,
 `--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
 loop itself
 dispatch from here to `holophyte.operator`, `holophyte.board`,
@@ -27,6 +27,7 @@ from pathlib import Path
 
 from holophyte.board import FILE_TICKET_PRIORITIES, file_ticket
 from holophyte.board_diff import board_diff
+from holophyte.board_import import board_import
 from holophyte.config import (
     check_agent_commands,
     check_config,
@@ -34,6 +35,7 @@ from holophyte.config import (
 )
 from holophyte.config_tables import (
     SUPERVISE_INTERVAL_SEC,
+    board_mode,
     loop_config,
 )
 from holophyte.host import native_key_conflict, watched_line
@@ -202,8 +204,8 @@ def _close_checks(parser, args):
 def _modifier_checks(parser, args):
     """Refuse a mode's modifier without its mode -- `--act` without
     `--sweep`, `--json` without `--status`, `--dry-run` without
-    `--import-store` -- and `--import-store` without `--dry-run`, the only
-    form of it that exists yet."""
+    `--import-store` or `--board-import` -- and `--import-store` without
+    `--dry-run`, the only form of it that exists yet."""
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
@@ -217,9 +219,9 @@ def _modifier_checks(parser, args):
         parser.error("--import-store has only its dry run yet: add --dry-run "
                      "to see what it would move; applying the import is a "
                      "later ticket built on that report (after KO-595)")
-    if args.dry_run and args.import_store is None:
-        parser.error("--dry-run says what --import-store does with the store "
-                     "it names; it has nothing to run by itself")
+    if args.dry_run and args.import_store is None and not args.board_import:
+        parser.error("--dry-run says what --import-store or --board-import "
+                     "does; it has nothing to run by itself")
 
 
 def cli(argv=None):
@@ -367,6 +369,16 @@ def _legacy_cli(argv):
              "would move, their id range, the offset a remap would add and "
              "a sha256 of the rows; refuses stores at different schema "
              "versions, and writes nothing")
+    # Writes the store from the Linear board, once, before a project moves
+    # to the native board (KO-756); `--dry-run` rolls the copy back.
+    modes.add_argument(
+        "--board-import", action="store_true",
+        help="copy every open issue of the project's Linear board, Backlog "
+             "included, into its store by board id in one transaction, "
+             "printing each issue as new, changed or unchanged and a summary "
+             "counting the pushes and notes still pending for Linear; rows, "
+             "runs, ledger and dependsOn the store holds stay; rerun it to "
+             "restart; refuses [board] kind = \"native\"")
     modes.add_argument(
         "--status", action="store_true",
         help="print what the factory is doing now -- projects, live and "
@@ -421,10 +433,12 @@ def _legacy_cli(argv):
              "leaving its branch and worktree for a human")
     # `--import-store`'s modifier, as `--act` is `--sweep`'s, and for now
     # its required one: the apply step without it does not exist yet.
+    # `--board-import`'s too, optional there.
     parser.add_argument(
         "--dry-run", action="store_true",
         help="with --import-store: report what the import would do and "
-             "write nothing; required, as only the dry run exists yet")
+             "write nothing; required, as only the dry run exists yet; with "
+             "--board-import: print the same lines and write nothing")
     # Required with `--requeue` and `--repoint`, optional with `--approve`
     # and `--babysit`/`--close`, and meaningless without one of them: the
     # intervention row is the point of these modes, and a requeue or
@@ -498,8 +512,8 @@ def _legacy_cli(argv):
     # A dry run and `--board-diff` write nothing, and adopting legacy state
     # moves files: they locate the target without adopting, so a store still
     # in a legacy layout is reported absent rather than moved.
-    target = Project.locate(args.target, adopt=args.import_store is None
-                            and not args.board_diff)
+    target = Project.locate(args.target, adopt=not (
+        args.import_store is not None or args.board_diff or args.dry_run))
     # Read the target's config here, with the command line parsed and nothing
     # claimed yet: a malformed file is a startup error about the repository
     # this invocation names, and `--help` never had to touch a config at all.
@@ -590,6 +604,20 @@ def _refuse_native_key(target, args, modes):
         raise SystemExit(conflict)
 
 
+def _board_read(args, target, board):
+    """`--board-diff`, or `--board-import [--dry-run]`, which a native
+    board refuses before anything is asked of a board: it is the store."""
+    if args.board_diff:
+        return board_diff(target, require_board(target, board))
+    if board_mode(target).kind == "native":
+        raise SystemExit(
+            f"[holo2] {target.config_path}: [board] kind is \"native\" -- "
+            "--board-import copies a Linear board into the store, and this "
+            "project's board is the store already")
+    return board_import(target, require_board(target, board),
+                        dry_run=args.dry_run)
+
+
 def _supervise_project(target, board):
     """`PROJECT --supervise`, refused for a project the host registry lists:
     the host sweep watches it."""
@@ -651,9 +679,9 @@ def _board_mode(args, target, board):
     # runs rather than dispatching them, so it needs no route either.
     if args.sweep:
         return lambda: sweep_report(target, act=args.act, provider=board)
-    # Reads the board, so a target without one exits naming the key.
-    if args.board_diff:
-        return lambda: board_diff(target, require_board(target, board))
+    # Read the board, so a target without one exits naming the key.
+    if args.board_diff or args.board_import:
+        return lambda: _board_read(args, target, board)
     # `_native_board_only()` has refused these on any board but a native one.
     if args.move or args.cancel:
         return lambda: _board_verb(args, board)
