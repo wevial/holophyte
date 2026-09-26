@@ -1,4 +1,5 @@
-"""store.board: filing and editing a ticket on a board the store owns.
+"""store.board: filing, editing, moving and canceling a ticket on a board
+the store owns.
 
 A native board is the store itself, so filing and editing a ticket are
 store writes (KO-750). `file_ticket()` numbers a ticket `KEY-n` from
@@ -7,16 +8,29 @@ was read at. Both validate as `--file-ticket` does (`ticket_problems()`),
 resolve `Depends on:` to the project's own tickets, and write the row
 through `mirror_ticket()`, so the status routing and revision rules are
 the mirror's.
+
+`move_ticket()` and `cancel_ticket()` change the column at the revision it
+was read at, each with a note carrying the person's words (KO-753); a
+cancel is the one board event that reaches a live run. `resolve_dependencies()`
+ends a dependency wait once every dependency has merged.
 """
 from __future__ import annotations
 
+import json
 import time
 
 import ticket_template
 
 from . import RevisionMoved
+from .notes import record_note
+from .operate import abort
+from .revisions import record_board_fields
 from .schema import _transaction
-from .tickets import mirror_ticket, transition
+from .tickets import mirror_ticket, transition, walk_ticket
+from .writes import set_board_state
+
+# The board state each native column reads as, as a Linear board's would.
+_BOARD_STATES = {"backlog": "Backlog", "ready": "Ready", "canceled": "Canceled"}
 
 
 class FilingRefused(ValueError):
@@ -107,6 +121,121 @@ def edit_ticket(conn, project_id, identifier, text, expected_revision,
         _park(conn, ticket_id, waiting)
         (revision,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
                                    (ticket_id,)).fetchone()
+    return revision
+
+
+def move_ticket(conn, project_id, identifier, column, expected_revision,
+                author="cli", note=None, now=None):
+    """Move ticket `identifier` to column `column`, `ready` or `backlog`;
+    answer its new revision.
+
+    Refused at a stale `expected_revision` as `edit_ticket()` refuses one,
+    and with `FilingRefused` for a canceled or closed ticket, a ticket
+    already in `column`, or a move to `ready` of a body `ticket_problems()`
+    refuses, so a draft stays in Backlog. The column and its board state
+    are recorded as a revision authored `author`, with a `move` note
+    reading `note`. A live run on a ticket moved to Backlog continues.
+    """
+    if column not in ("ready", "backlog"):
+        raise ValueError(f"a ticket moves to ready or backlog, not {column!r}")
+    if now is None:
+        now = int(time.time() * 1000)
+    repo = _repo_path(conn, project_id)
+    with _transaction(conn):
+        ticket_id, _status, _run, text = _open_ticket(
+            conn, project_id, identifier, expected_revision)
+        (current,) = conn.execute("SELECT boardColumn FROM tickets"
+                                  " WHERE id = ?", (ticket_id,)).fetchone()
+        if current == column:
+            raise FilingRefused([f"{identifier} is already in {column}"])
+        if column == "ready":
+            problems = ticket_problems(text, repo)
+            if problems:
+                raise FilingRefused(problems)
+        return _record_column(conn, ticket_id, column, "move",
+                              note or f"Moved to {_BOARD_STATES[column]}.",
+                              author, now)
+
+
+def cancel_ticket(conn, project_id, identifier, expected_revision, note,
+                  author="cli", now=None):
+    """Cancel ticket `identifier`; answer its new revision.
+
+    Refused as `move_ticket()` refuses. The column `canceled` and board
+    state `Canceled` are recorded as a revision authored `author`, with a
+    `cancel` note reading `note`, and in the same transaction the ticket's
+    work is stopped as a Linear cancel stops it (KO-660, KO-741): a live
+    run gets `abort()` from source `human`, trigger `manual`, and its
+    worker ends it `abandoned` at its next safe point; a ticket
+    `blocked_on_operator` is left for the reconcile's `_close_canceled()`
+    to finish, parked run first; any other ticket is walked `abandoned`.
+    """
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        ticket_id, status, run_id, _text = _open_ticket(
+            conn, project_id, identifier, expected_revision)
+        revision = _record_column(conn, ticket_id, "canceled", "cancel", note,
+                                  author, now)
+        if run_id is not None:
+            abort(conn, run_id, note, source="human", now=now,
+                  trigger="manual")
+        elif status != "blocked_on_operator":
+            walk_ticket(conn, ticket_id, "abandoned")
+    return revision
+
+
+def resolve_dependencies(conn, project_id):
+    """Walk each of the project's `blocked_on_deps` tickets whose
+    dependencies have all merged back to `ready`; answer their identifiers.
+
+    A dependency is merged as `pickable()` judges one: a sibling of the
+    same project at status `merged`; one the project does not hold keeps
+    the ticket waiting.
+    """
+    with _transaction(conn):
+        rows = conn.execute(
+            "SELECT id, linearIdentifier, linearIssueId, status, dependsOn"
+            " FROM tickets WHERE projectId = ? ORDER BY id",
+            (project_id,)).fetchall()
+        status_of = {row[2]: row[3] for row in rows}
+        resolved = []
+        for ticket_id, identifier, _, status, depends in rows:
+            if status == "blocked_on_deps" and all(
+                    status_of.get(dep) == "merged"
+                    for dep in json.loads(depends)):
+                transition(conn, ticket_id, "ready")
+                resolved.append(identifier)
+    return resolved
+
+
+def _open_ticket(conn, project_id, identifier, expected_revision):
+    """Ticket `identifier`'s id, status, live run and body, inside the
+    caller's transaction, when it is at `expected_revision` and still open
+    on the board; `RevisionMoved` or `FilingRefused` otherwise."""
+    row = conn.execute(
+        "SELECT id, revision, boardColumn, status, activeRunId, body"
+        " FROM tickets WHERE projectId = ? AND linearIdentifier = ?",
+        (project_id, identifier)).fetchone()
+    if row is None:
+        raise FilingRefused([f"no ticket {identifier} in this project"])
+    ticket_id, revision, column, status, run_id, text = row
+    if revision != expected_revision:
+        raise RevisionMoved(identifier, expected_revision, revision)
+    if column == "canceled":
+        raise FilingRefused([f"{identifier} is canceled"])
+    if status in ("merged", "abandoned"):
+        raise FilingRefused([f"{identifier} is closed: {status}"])
+    return ticket_id, status, run_id, text or ""
+
+
+def _record_column(conn, ticket_id, column, kind, text, author, now):
+    """Set the ticket's column and board state, record them as its next
+    revision and write a `kind` note keyed on it; answer the revision."""
+    set_board_state(conn, ticket_id, _BOARD_STATES[column], column)
+    revision = record_board_fields(conn, ticket_id, author, now)
+    record_note(conn, ticket_id, kind, text, f"{kind}:{revision}",
+                author=author, now=now)
     return revision
 
 
