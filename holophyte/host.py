@@ -12,9 +12,10 @@ and a crash leaves the old file or the new one.
 
 A route name resolves through `Host.project()` only, never through a path
 built from outside input; `registry_of()` answers whether a project is the
-host sweep's to watch. Nothing here opens a store. `settings()` is the
-file's own keys, typed: `[serve] bind`, `machine_token_file` and
-`actions`, `[console] daemons`, `[supervisor] sweep_sec`.
+host sweep's to watch. `settings()` is the file's own keys, typed:
+`[serve] bind`, `machine_token_file` and `actions`, `[console] daemons`,
+`[supervisor] sweep_sec`. `native_key_conflict()` alone opens stores, each
+read-only: a native board's `KEY` is its own on the host (KO-752).
 """
 import collections
 import dataclasses
@@ -24,7 +25,7 @@ import tomllib
 from pathlib import Path
 
 from holophyte.config import serve_config
-from holophyte.config_tables import split_address
+from holophyte.config_tables import board_config, board_mode, split_address
 from holophyte.project import DEFAULT_HOLOPHYTE_HOME, Project
 
 HOST_FILE = "host.toml"
@@ -289,6 +290,75 @@ def check_new(host, target):
         if entry.path == path or entry.name == name:
             raise already_registered(host, entry)
     return name
+
+
+def native_key_conflict(target, host=None):
+    """The first reason `target`'s native `[board] key` is not its own on
+    the host, as one line; None when it is, when `target` is not native,
+    and when its table cannot be read: the table's own reader refuses that.
+
+    Another registry entry whose native board has the same key conflicts,
+    and so does any registered store -- `target`'s own included, registered
+    or not -- holding a Linear ticket `KEY-n`: one whose board id is not
+    its identifier, as a native ticket's is. An entry whose config or store
+    cannot be read is skipped, as `project list` skips it.
+    """
+    key = _native_key(target)
+    if key is None:
+        return None
+    host = Host.locate() if host is None else host
+    try:
+        entries = host.projects()
+    except HostError as bad:
+        return f"{bad}; cannot check [board] key {key} against it"
+    path = Path(target.path).resolve()
+    entries = [entry for entry in entries if entry.error is None]
+    for entry in entries:
+        if entry.path != path and _native_key(entry.target) == key:
+            return (f"[holo2] [board] key {key} of {path} is already the"
+                    f" native board key of {entry.path}")
+    targets = [entry.target for entry in entries]
+    if path not in (entry.path for entry in entries):
+        targets.append(target)
+    for other in targets:
+        identifier = _linear_identifier(other, key)
+        if identifier is not None:
+            return (f"[holo2] [board] key {key} of {path} is a Linear team"
+                    f" key on this host: the store of {other.path} holds"
+                    f" {identifier}")
+    return None
+
+
+def _native_key(target):
+    """`target`'s native `[board] key`, None when it has none or its
+    config cannot be read."""
+    try:
+        if board_mode(target).kind != "native":
+            return None
+        return board_config(target).key
+    except (SystemExit, Exception):
+        return None
+
+
+def _linear_identifier(target, key):
+    """A `KEY-n` identifier of a Linear ticket in `target`'s store, None
+    when it holds none or cannot be read."""
+    import store.read
+    if not target.store_path.exists():
+        return None
+    try:
+        conn = store.read.open_readonly(target.store_path)
+        try:
+            row = conn.execute(
+                "SELECT linearIdentifier FROM tickets"
+                " WHERE linearIdentifier GLOB ?"
+                " AND linearIssueId <> linearIdentifier"
+                " ORDER BY id LIMIT 1", (f"{key}-[0-9]*",)).fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        return None
+    return row and row[0]
 
 
 def register(host, target):

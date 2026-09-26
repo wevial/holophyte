@@ -24,6 +24,7 @@ from holophyte.host import (
     Host,
     already_registered,
     check_new,
+    native_key_conflict,
     register,
     registered_at,
     unregister,
@@ -114,6 +115,9 @@ def _validate(target):
     if settings is None or not settings.team.strip():
         raise ValueError(f"project {target.path} requires [board] "
                          "configuration naming a team")
+    conflict = native_key_conflict(target)
+    if conflict is not None:
+        raise ValueError(conflict)
     return settings
 
 

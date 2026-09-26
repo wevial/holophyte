@@ -34,7 +34,7 @@ from holophyte.config_tables import (
     SUPERVISE_INTERVAL_SEC,
     loop_config,
 )
-from holophyte.host import watched_line
+from holophyte.host import native_key_conflict, watched_line
 from holophyte.operator import (
     BABYSIT_DEFAULT_NOTE,
     approve,
@@ -452,6 +452,7 @@ def _legacy_cli(argv):
     # a read-only sweep can live with (it calls nobody) and the modes that
     # post to the board cannot: they exit here, naming the key to set.
     # `board_for()` refuses `[board] kind = "native"` here, before the loop.
+    _refuse_native_key(target, args, modes)
     board = board_for(target)
     # Same window and the same reasons as `--report`: it reads runs and prints
     # them, so no route has to resolve and nobody is called. `--act` fails
@@ -503,6 +504,18 @@ def _legacy_cli(argv):
     if loop_config(target).spawn_supervisor:
         start_supervisor(target)
     return main(target, require_board(target, board))
+
+
+def _refuse_native_key(target, args, modes):
+    """A native board's key is its own on the host (KO-752): the loop's
+    start, a command line naming none of `modes`, exits naming the conflict
+    before the board is built or a route probed."""
+    if any(getattr(args, action.dest) != action.default
+           for action in modes._group_actions):
+        return
+    conflict = native_key_conflict(target)
+    if conflict is not None:
+        raise SystemExit(conflict)
 
 
 def _supervise_project(target, board):
