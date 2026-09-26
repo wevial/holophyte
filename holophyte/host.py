@@ -207,9 +207,9 @@ class Host:
 
     def _current(self):
         # The stamp covers each registered project's config too: a hand edit
-        # (a native move, a mode flip) rebuilds that entry's `Project`. It is
-        # taken from the last state's entries before the read, so a registry
-        # edit costs one more rebuild and an edit mid-rebuild is not lost.
+        # (a native move, a mode flip) rebuilds that entry's `Project`. A
+        # rebuild stamps the new entries' configs before parsing them, so an
+        # edit made mid-rebuild is not lost.
         state = self._state
         registry = _stamp(self.path)
         stamp = (registry, tuple(_stamp(entry.target.config_path)
@@ -223,9 +223,12 @@ class Host:
         except (OSError, UnicodeDecodeError,
                 tomllib.TOMLDecodeError) as bad:
             raise HostError(f"[holo2] unreadable {self.path}: {bad}") from None
-        entries = tuple(_entry(path) for path in _paths(table, self.path))
+        paths = _paths(table, self.path)
+        configs = tuple(_stamp(Project.locate(path, adopt=False).config_path)
+                        for path in paths)
+        entries = tuple(_entry(path) for path in paths)
         _refuse_duplicates(entries, self.path)
-        state = (stamp, table, entries)
+        state = ((registry, configs), table, entries)
         self._state = state
         return state
 

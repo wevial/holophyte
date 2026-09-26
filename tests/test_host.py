@@ -212,9 +212,10 @@ class HostRegistryTests(HostFixture):
         self.cli("project", "add", str(alpha))
         host = Host.locate()
         registry = host.path.stat()
-        [entry] = host.projects()
+        first = host.projects()
+        self.assertIs(host.projects(), first)
+        [entry] = first
         self.assertEqual(board_mode(entry.target).kind, "linear")
-        self.assertIs(host.projects(), host.projects())
         # A different size, so the stamp moves within one mtime tick.
         entry.target.config_path.write_text(
             '[board]\nkind = "native"\nkey = "NAT"\n')
