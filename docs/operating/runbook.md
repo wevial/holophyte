@@ -191,6 +191,31 @@ checkout: the next sweep run is the new build, the daemon exits on the
 relaunched. On the host daemon that one project answers 503 with `schema
 newer than build` until then, and the others answer whole.
 
+### Move a project off Linear to the native board
+
+A native store is the only copy of its tickets, so the move copies every
+open issue in first and backs the store up before it.
+
+```
+python3 factory.py PROJECT --hold --note "moving to the native board"
+python3 factory.py PROJECT --status          # drain: wait until no run is live
+python3 factory.py PROJECT --board-import --dry-run  # deliver: wait for 0 pushes and 0 notes pending
+sqlite3 ~/.holophyte/<slug>/store.db ".backup ~/.holophyte/<slug>/store.db.pre-native"
+python3 factory.py PROJECT --board-import --dry-run
+python3 factory.py PROJECT --board-import
+# config.toml [board]: kind = "native", key = "KEY"; keep team, drop project_id and label
+python3 factory.py PROJECT --release-hold --note "on the native board"
+```
+
+Hold, then drain: the loop claims nothing new, and `--status` shows the
+live runs finishing. The host sweep delivers the pending board pushes and
+notes; the import's summary counts them, and the switch waits for both to
+read 0, since nothing posts to Linear afterwards. The import upserts by
+board id, so rows, runs, ledger and `dependsOn` stay, old tickets keep
+`KO-n` and new ones take `KEY-n`; a failure rolls back and rerunning it is
+the restart. `team` is the store's key for the project, so it stays as it
+was. Nothing in Linear is deleted or archived.
+
 ### A manual merge to `main`
 
 Named event with a gate: suite green, `ruff` clean, an independent review

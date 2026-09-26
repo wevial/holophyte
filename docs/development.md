@@ -77,6 +77,10 @@ Each module, one line:
 - `holophyte/board_diff.py` — `--board-diff` (KO-738): the board's ready
   listing against the store's rows for it, read-only on both, one line per
   difference and a summary.
+- `holophyte/board_import.py` — `--board-import [--dry-run]` (KO-756):
+  `board_import()` upserts the Linear board's `open_issues()` into the
+  store by board id in one transaction, one line per issue and a summary
+  counting the pushes and notes pending for Linear; a dry run rolls back.
 - `holophyte/status.py` — `--status [--json]` (KO-596): what the project is
   doing now — projects and admission, live and parked runs, the ready
   count, the schema version and the lock holders — read only, no network.
