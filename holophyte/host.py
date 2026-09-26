@@ -206,20 +206,29 @@ class Host:
                      if name is not None and entry.name == name), None)
 
     def _current(self):
+        # The stamp covers each registered project's config too: a hand edit
+        # (a native move, a mode flip) rebuilds that entry's `Project`. A
+        # rebuild stamps the new entries' configs before parsing them, so an
+        # edit made mid-rebuild is not lost.
         state = self._state
-        stamp = _stamp(self.path)
-        if stamp == state[0] and stamp is not None:
+        registry = _stamp(self.path)
+        stamp = (registry, tuple(_stamp(entry.target.config_path)
+                                 for entry in state[2]))
+        if stamp == state[0] and registry is not None:
             return state
         try:
             text = (self.path.read_text(encoding="utf-8")
-                    if stamp is not None else "")
+                    if registry is not None else "")
             table = tomllib.loads(text)
         except (OSError, UnicodeDecodeError,
                 tomllib.TOMLDecodeError) as bad:
             raise HostError(f"[holo2] unreadable {self.path}: {bad}") from None
-        entries = tuple(_entry(path) for path in _paths(table, self.path))
+        paths = _paths(table, self.path)
+        configs = tuple(_stamp(Project.locate(path, adopt=False).config_path)
+                        for path in paths)
+        entries = tuple(_entry(path) for path in paths)
         _refuse_duplicates(entries, self.path)
-        state = (stamp, table, entries)
+        state = ((registry, configs), table, entries)
         self._state = state
         return state
 
