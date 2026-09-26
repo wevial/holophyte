@@ -213,7 +213,10 @@ def _confirm_on_board(target, conn, project_id, provider, row):
     leased by another writer, which only the live labels show (the stored
     labels are the board-owned ones). Any other answer is mirrored with its
     column (the stale skip's mirror too), which writes the next revision
-    when a board-owned field moved.
+    when a board-owned field moved. A read-back naming open blockers
+    (`blocked_by`, KO-748) mirrors them as `dependsOn`, walks the row to
+    `blocked_on_deps` and is skipped, as the next sync would have; one
+    without the key (the file board) leaves `dependsOn` as it is.
     """
     identifier = row.linearIdentifier
     try:
@@ -238,9 +241,17 @@ def _confirm_on_board(target, conn, project_id, provider, row):
     problem = body_problem(live, target.path,
                            on_pull_request=on_pull_request(conn, project_id,
                                                            live))
-    mirror_task(conn, project_id, live, specced=problem is None)
+    blocked_by = live.get("blocked_by")
+    ticket_id = mirror_task(conn, project_id, live, specced=problem is None,
+                            depends_on=blocked_by)
     if problem:
         print(f"[holo2] {identifier} skipped: {problem}")
+        return None, SKIP
+    if blocked_by:
+        from holophyte.dispatch import _wait_on_blockers
+        _wait_on_blockers(conn, ticket_id)
+        print(f"[holo2] {identifier} gained a blocker on the board since the"
+              " last sync; waiting on it")
         return None, SKIP
     return live, None
 

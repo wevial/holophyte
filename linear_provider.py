@@ -442,6 +442,7 @@ query($id: String!) {
   issue(id: $id) {
     identifier id url title description estimate priority createdAt updatedAt
     archivedAt state { name type } labels { nodes { name } }
+    inverseRelations { nodes { type issue { id state { type } } } }
   }
 }"""
 
@@ -477,7 +478,10 @@ def fetch_task(issue_id, label=None):
     The answer carries what the ready listing's does -- labels, priority,
     `filed_at` and `updatedAt` -- and the issue's `column` by `_column()`,
     `label` being the board's `[board] label`: a store-mode claim mirrors
-    this one issue as the board holds it now (Phase 3 stage 3).
+    this one issue as the board holds it now (Phase 3 stage 3). It carries
+    `blocked_by` as `listing()` does: the board ids of its blockers still
+    open, read from its inverse relations, as a blocker's `blocks` relation
+    is stored on the blocker (KO-748).
 
     Linear answers an id it holds no issue for with an `Entity not found`
     error rather than a null issue; that answer, and only that one, is
@@ -492,8 +496,12 @@ def fetch_task(issue_id, label=None):
     if not issue:
         return None
     state = issue.get("state") or {}
+    inverse = (issue.get("inverseRelations") or {}).get("nodes") or ()
     return dict(_listed_task(issue), column=_column(
-        state.get("type"), issue.get("archivedAt"), label_names(issue), label))
+        state.get("type"), issue.get("archivedAt"), label_names(issue), label),
+        blocked_by=[r["issue"]["id"] for r in inverse if r["type"] == "blocks"
+                    and (r["issue"].get("state") or {}).get("type")
+                    not in CLOSED_STATE_TYPES])
 
 
 def _state_id(name, team):
