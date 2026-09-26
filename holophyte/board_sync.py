@@ -59,6 +59,7 @@ from holophyte import deadline
 from holophyte.board import MIRROR_STATES
 from holophyte.claim_store import store_mode, sync_board
 from holophyte.config_tables import board_mode
+from holophyte.freshness import BACKLOG_STATE
 from holophyte.stop import abort_requested, abort_run
 from provider import GONE
 
@@ -164,7 +165,7 @@ def _send(conn, board, sends, out):
     for ticket_id, identifier, issue_id, state in sends:
         current = store.read.ticket_by_id(conn, ticket_id)
         if (current is None or current.pushState != state
-                or MIRROR_STATES.get(current.status) != state):
+                or not _pushes(current.status, state)):
             continue
         try:
             board.set_state(issue_id, state)
@@ -257,7 +258,7 @@ def _settle(conn, ticket_id, answer, now):
         # the push would reopen a completed or canceled issue.
         store.clear_push(conn, ticket_id)
         return None
-    if MIRROR_STATES.get(ticket.status) != wanted:
+    if not _pushes(ticket.status, wanted):
         # The status has moved on to one that does not push this state.
         store.clear_push(conn, ticket_id)
         return None
@@ -265,6 +266,13 @@ def _settle(conn, ticket_id, answer, now):
         # Never observed when queued: `seen` is the state it is sent from.
         store.record_push(conn, ticket_id, wanted, now)
     return ticket.linearIssueId, wanted
+
+
+def _pushes(status, state):
+    """Whether a ticket at `status` pushes `state`: its mirror state, or
+    Backlog for a `needs_spec` one, which a stale park queues (KO-766)."""
+    return (MIRROR_STATES.get(status) == state
+            or (status == "needs_spec" and state == BACKLOG_STATE))
 
 
 def _gone(conn, ticket, row, now, out, ask_ms):
