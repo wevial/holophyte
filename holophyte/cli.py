@@ -34,7 +34,7 @@ from holophyte.config_tables import (
     SUPERVISE_INTERVAL_SEC,
     loop_config,
 )
-from holophyte.host import watched_line
+from holophyte.host import native_key_conflict, watched_line
 from holophyte.operator import (
     BABYSIT_DEFAULT_NOTE,
     approve,
@@ -492,6 +492,7 @@ def _legacy_cli(argv):
     from holophyte.admission import disabled_startup
     if disabled_startup(target):
         return 0
+    _refuse_native_key(target)
     check_agent_commands(target)
     # Same window, same reason: the `[worktree]` table is read here rather
     # than by the first run that cuts a worktree with it.
@@ -503,6 +504,14 @@ def _legacy_cli(argv):
     if loop_config(target).spawn_supervisor:
         start_supervisor(target)
     return main(target, require_board(target, board))
+
+
+def _refuse_native_key(target):
+    """A native board's key is its own on the host (KO-752): the loop's
+    start exits naming the conflict before a route is probed."""
+    conflict = native_key_conflict(target)
+    if conflict is not None:
+        raise SystemExit(conflict)
 
 
 def _supervise_project(target, board):
