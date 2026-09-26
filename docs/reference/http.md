@@ -475,16 +475,18 @@ The open tickets by state, as the store mirrors them: the console's Board
 view, Linear's columns without a call to Linear.
 
 ```json
-{"now": 1788450534491, "columns": [
+{"now": 1788450534491, "editable": false, "columns": [
   {"state": "needs_spec", "tickets": []},
   {"state": "blocked_on_deps", "tickets": [
     {"ticket": "KO-n", "title": "…", "time_box_ms": 1500000, "run": null,
-     "question": null, "waits_on": ["KO-m"], "mirrored_ms": 1788449000000}]},
+     "question": null, "waits_on": ["KO-m"], "mirrored_ms": 1788449000000,
+     "column": "ready", "priority": 2, "labels": ["ui"], "revision": 3}]},
   {"state": "ready", "tickets": []},
   {"state": "blocked_on_operator", "tickets": []},
   {"state": "in_flight", "tickets": [
     {"ticket": "KO-m", "title": "…", "time_box_ms": 1500000, "run": 52,
-     "question": null, "waits_on": [], "mirrored_ms": 1788449000000}]}
+     "question": null, "waits_on": [], "mirrored_ms": 1788449000000,
+     "column": null, "priority": null, "labels": [], "revision": 1}]}
 ]}
 ```
 
@@ -498,7 +500,20 @@ otherwise; `waits_on` is the identifiers of the open tickets its Linear
 dependencies name, empty when none (a dependency the store has never
 mirrored is shown by its Linear issue id, since the store cannot name
 what it has not seen); `mirrored_ms` is when the store last mirrored the
-ticket. The board is the store's mirror and nothing more, and the endpoint
+ticket. `column` (`backlog`, `ready`, `canceled`, null when the board
+named none), `priority` (null when none), `labels` and `revision` are the
+ticket's board-owned fields as the store holds them; `revision` is the one
+a revision-checked edit sends as `If-Match`, 0 when none is recorded.
+
+A native project (`[board] kind = "native"`) answers a `backlog` column
+first, before the five above: its tickets idle in `needs_spec`,
+`blocked_on_deps` or `ready` whose `column` is `backlog`. A ticket in
+`in_flight` or `blocked_on_operator` stays under its status whatever its
+column, and a Linear project has no `backlog` column. `editable` is true
+only when a host daemon with `[serve] actions` on answers for a native
+project; a project daemon, or a Linear project, answers false.
+
+The board is the store's mirror and nothing more, and the endpoint
 never calls the provider. The loop mirrors every ready issue the provider
 lists at each claim, a valid body to `ready` and one failing the template
 to `needs_spec`, so the queue is on the board before the loop starts on

@@ -1013,12 +1013,14 @@ class BoardTests(ServeTestCase):
              "title": "ticket 3", "time_box_ms": 25 * MIN,
              "run": None, "question": None,
              "waits_on": ["KO-2", "issue-never-seen"],
-             "mirrored_ms": self.now - 5 * MIN}])
+             "mirrored_ms": self.now - 5 * MIN,
+             "column": None, "priority": None, "labels": [], "revision": 1}])
         self.assertEqual(by_state["in_flight"], [
             {"ticket": "KO-5", "ticket_url": None,
              "title": "ticket 5", "time_box_ms": 25 * MIN,
              "run": self.run, "question": None, "waits_on": [],
-             "mirrored_ms": self.now - 5 * MIN}])
+             "mirrored_ms": self.now - 5 * MIN,
+             "column": None, "priority": None, "labels": [], "revision": 1}])
         self.assertEqual(by_state["blocked_on_operator"][0]["question"],
                          "Which branch is canonical?")
         self.assertIsNone(by_state["needs_spec"][0]["run"])

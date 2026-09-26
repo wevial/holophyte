@@ -126,6 +126,7 @@ from holophyte.config import (
     serve_config,
 )
 from holophyte.config_tables import (
+    board_mode,
     split_address,
     sweep_config,
 )
@@ -452,9 +453,13 @@ def attention(project, now=None, beat_stale_ms=None):
 # every one present even when empty. The two terminal statuses are absent.
 BOARD_STATES = ("needs_spec", "blocked_on_deps", "ready",
                 "blocked_on_operator", "in_flight")
+# A native project's `backlog` column, placed first, holds its idle tickets
+# whose column is `backlog`; a ticket being worked stays under its status.
+BACKLOG = "backlog"
+IDLE_STATES = ("needs_spec", "blocked_on_deps", "ready")
 
 
-def board(project, now=None):
+def board(project, now=None, editable=False):
     """The `/board` answer: `(http status, JSON-able body)`.
 
     `columns` is one entry per open state in `BOARD_STATES` order, each
@@ -462,10 +467,16 @@ def board(project, now=None):
     identifier: the ticket's `title`, `time_box_ms`, `run` (the active
     run's id, null when none), `question` (the blocked question, null when
     none), `waits_on` (the identifiers of the open tickets its `dependsOn`
-    names, empty when none) and `mirrored_ms`. `merged` and `abandoned`
+    names, empty when none), `mirrored_ms`, and the board-owned `column`,
+    `priority`, `labels` and `revision` (KO-755). `merged` and `abandoned`
     tickets are absent. The store's mirror is the whole answer: a ticket
     the loop never claimed is not on this board, and nothing here calls
     the provider.
+
+    A native project's answer opens with a `backlog` column holding its
+    idle tickets whose column is `backlog`. `editable` is true only for a
+    native project when the caller says the daemon lets the Board write
+    (a host daemon with `[serve] actions` on).
     """
     now = int(time() * 1000) if now is None else now
     if not project.store_path.exists():
@@ -475,18 +486,24 @@ def board(project, now=None):
         tickets = store.read.open_tickets(conn)
     finally:
         conn.close()
-    columns = {state: [] for state in BOARD_STATES}
+    native = board_mode(project).kind == "native"
+    states = ((BACKLOG,) if native else ()) + BOARD_STATES
+    columns = {state: [] for state in states}
     for ticket in tickets:
-        columns[ticket.status].append({
+        backlog = (native and ticket.boardColumn == BACKLOG
+                   and ticket.status in IDLE_STATES)
+        columns[BACKLOG if backlog else ticket.status].append({
             "ticket": ticket.linearIdentifier,
             "ticket_url": ticket.ticketUrl, "title": ticket.title,
             "time_box_ms": ticket.timeBoxMs, "run": ticket.activeRunId,
             "question": ticket.blockedQuestion,
             "waits_on": list(ticket.waitsOn),
-            "mirrored_ms": ticket.mirroredAt})
+            "mirrored_ms": ticket.mirroredAt, "column": ticket.boardColumn,
+            "priority": ticket.priority, "labels": list(ticket.labels),
+            "revision": ticket.revision})
     return 200, {"columns": [{"state": state, "tickets": columns[state]}
-                             for state in BOARD_STATES],
-                 "now": now}
+                             for state in states],
+                 "editable": editable and native, "now": now}
 
 
 def ticket_detail(project, identifier):
@@ -819,7 +836,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         elif path == "/attention":
             code, body = attention(project, **beat)
         elif path == "/board":
-            code, body = board(project)
+            # Only a host daemon serves the Board's write routes.
+            code, body = board(project, editable=scope.prefix is not None
+                               and scope.actions)
         elif path == "/peers":
             code, body = 200, {"self": self.server.self_address,
                                "peers": list(self.server.peers)}

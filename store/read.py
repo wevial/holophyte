@@ -170,7 +170,9 @@ class OpenTicket:
     through the same table, holding only the dependencies still open; a
     Linear issue id the store has never mirrored is kept as-is, since the
     store cannot name what it has not seen. `activeRunId` is the live run's
-    id, None when the ticket is not being worked.
+    id, None when the ticket is not being worked. `boardColumn`, `priority`,
+    `labels` (decoded from JSON) and `revision` are the board-owned fields
+    a board's editor reads (KO-755); `revision` is 0 when none is recorded.
     """
 
     id: int
@@ -183,6 +185,10 @@ class OpenTicket:
     waitsOn: tuple[str, ...]
     mirroredAt: int
     ticketUrl: str | None = None
+    boardColumn: str | None = None
+    priority: int | None = None
+    labels: tuple[str, ...] = ()
+    revision: int = 0
 
 
 def open_tickets(conn, project_id=None):
@@ -196,7 +202,8 @@ def open_tickets(conn, project_id=None):
     params = () if project_id is None else (project_id,)
     rows = conn.execute(
         "SELECT id, linearIssueId, linearIdentifier, title, status,"
-        " timeBoxMs, activeRunId, blockedQuestion, dependsOn, mirroredAt, url"
+        " timeBoxMs, activeRunId, blockedQuestion, dependsOn, mirroredAt, url,"
+        " boardColumn, priority, labels, revision"
         " FROM tickets WHERE status NOT IN ('merged', 'abandoned')"
         + scope + " ORDER BY linearIdentifier", params).fetchall()
     # The closed ids are read too, so a dependency on a merged ticket is
@@ -211,7 +218,9 @@ def open_tickets(conn, project_id=None):
                        waitsOn=tuple(mirrored.get(dep, dep)
                                      for dep in json.loads(row[8])
                                      if dep not in closed),
-                       mirroredAt=row[9], ticketUrl=row[10])
+                       mirroredAt=row[9], ticketUrl=row[10],
+                       boardColumn=row[11], priority=row[12],
+                       labels=tuple(json.loads(row[13])), revision=row[14])
             for row in rows]
 
 
