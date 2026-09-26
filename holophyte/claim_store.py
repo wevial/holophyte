@@ -20,6 +20,7 @@ listing (`pool_handoff.listing()`).
 from time import time
 
 import store
+import store.board
 import store.read
 from holophyte import freshness
 from holophyte.board import (
@@ -83,10 +84,18 @@ def sync_board(target, conn, project, provider, now=None,
     `SYNCED`, or `FAILED` when the listing could not be mirrored.
     `states()` stays the host sweep's (`observe_board()`); the claim reads
     its candidate back on its own.
+
+    A native board (KO-762) is the store, so nothing is listed or asked:
+    every sync walks the project's finished dependency waits back to
+    `ready` (`store.board.resolve_dependencies()`) and answers `SYNCED`.
     """
     from holophyte.admission import held_line
     from holophyte.dispatch import _mirror_queue
     from holophyte.supervisor import linear_budget_low
+    if getattr(provider, "native", False) is True:
+        with store.transaction(conn):
+            store.board.resolve_dependencies(conn, project)
+        return SYNCED
     now = int(time() * 1000) if now is None else now
     if min_interval_ms is not None:
         (asked_at,) = conn.execute(

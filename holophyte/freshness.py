@@ -220,7 +220,11 @@ def _unmerged_dependencies(t, conn, provider):
     """One reason per `Depends on:` ticket that is not merged: the store's
     mirror says `merged`, or else the board answers `completed` -- over an
     `abandoned` mirror too. A board that cannot be asked gives no evidence,
-    so every dependency the store does not hold merged is refused."""
+    so every dependency the store does not hold merged is refused. A
+    native board's unmerged dependency is a wait, not a stale body
+    (KO-762): `resolve_dependencies()` ends it, so none is refused."""
+    if getattr(provider, "native", False) is True:
+        return []
     status = {}
     for dep in t.depends_on or []:
         mirror = (store.read.ticket_by_identifier(conn, dep)
