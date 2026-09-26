@@ -47,6 +47,7 @@ python3 factory.py --repoint KO-n SHA --note TEXT /path/to/repo # move a parked 
 python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # record a change landed outside the factory
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
+python3 factory.py --file-ticket TICKET.md --update KEY-n --revision N [--priority urgent|high|medium|low] [--labels a,b] /path/to/repo # a native board's edit
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
 python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
 ```
@@ -58,7 +59,10 @@ title, description and estimate from the file instead of creating one, with
 the same validation on both sides. It adds the blockers the file names and
 the board does not yet hold, and leaves in place one the board holds and the
 file no longer names; state and priority stay as they are, so `--state` and
-`--priority` are refused beside it. It prints `[holo2] updated KO-n: TITLE`,
+`--priority` are refused beside it. On a native board `--update KEY-n`
+requires `--revision N`, the revision the ticket was read at, and takes
+`--priority` and `--labels`; a ticket that moved past `N` is left unchanged
+and its current revision printed. It prints `[holo2] updated KO-n: TITLE`,
 naming any blocker it added with a `+`, or exits 1 with the problem and nothing
 changed when the file is invalid and 2 with the identifier and the problem
 when the stored body is.

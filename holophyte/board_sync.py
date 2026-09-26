@@ -171,6 +171,10 @@ def _send(conn, board, sends, out):
         except Exception as e:  # noqa: BLE001 - the push waits, never the pass
             print(f"[holo2] the queued push of {identifier} to {state}"
                   f" failed ({e}); it waits for the next ask", file=out)
+            continue
+        # The board now shows the sent state: a push queued before the
+        # next ask is queued from it, not from the answer before (KO-761).
+        store.set_board_state(conn, ticket_id, state)
 
 
 def _closed_to_ask(conn, project):
