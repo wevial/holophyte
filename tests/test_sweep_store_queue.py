@@ -19,6 +19,7 @@ from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
 import store  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import mirror_status  # noqa: E402
 from holophyte.claim_store import NOT_ASKED, SYNCED, sync_board  # noqa: E402
 from holophyte.config_tables import sweep_config  # noqa: E402
 from holophyte.supervisor import (  # noqa: E402
@@ -122,6 +123,52 @@ class SweepStoreQueueTests(SweepTestCase):
         self.assertEqual(self.conn.execute(
             "SELECT id, boardAskedAt FROM projects ORDER BY id").fetchall(),
             [(self.project_id, T0), (other, None)])
+
+    def queued_push_and_note(self):
+        """KO-1 in the store, observed in Todo, with a push to In Progress
+        queued and one note unposted; the note's id."""
+        ticket = store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id="KO-1",
+            linear_identifier="KO-1", title="a thing",
+            acceptance_criteria=["Given it, then it works"],
+            verification_commands=["echo ok"], board_state="Todo")
+        self.assertTrue(mirror_status(self.conn, ticket, "in_flight",
+                                      self.board))
+        return store.record_note(self.conn, ticket, "ledger", "merged",
+                                 dedup_key="merged", now=T0)
+
+    def delivered(self, note):
+        """The state the board holds KO-1 in, if a push set one, and
+        whether the note was posted."""
+        state = self.board.root / "KO-1.state"
+        return (state.read_text().strip() if state.exists() else None,
+                self.conn.execute(
+                    "SELECT postedAt IS NOT NULL FROM ticketNotes"
+                    " WHERE id = ?", (note,)).fetchone()[0])
+
+    def test_a_held_project_s_pushes_and_notes_are_delivered(self):
+        """KO-771: a hold stops claims, not the board catching up."""
+        note = self.queued_push_and_note()
+        store.hold(self.conn, self.project_id, "draining")
+        self.memory.states_asked[self.project_id] = T0
+
+        self.assertIsNone(self.reconcile(T0 + 10 * MINUTE))
+
+        self.assertEqual(self.delivered(note), ("In Progress", 1))
+        self.assertEqual(self.board.listed, 0)
+
+    def test_a_disabled_project_s_pushes_and_notes_wait(self):
+        note = self.queued_push_and_note()
+        store.tickets.set_admission(self.conn, self.project_id, "disabled",
+                                    "retired")
+        self.memory.states_asked[self.project_id] = T0
+
+        self.assertIsNone(self.reconcile(T0 + 10 * MINUTE))
+
+        self.assertEqual(self.delivered(note), (None, 0))
+        self.assertEqual(self.conn.execute(
+            "SELECT pushState FROM tickets WHERE linearIdentifier = 'KO-1'"
+        ).fetchone(), ("In Progress",))
 
     def test_a_held_project_or_a_low_budget_is_neither_asked_nor_stamped(self):
         """A sync that does not ask leaves `boardAskedAt` alone, so the
