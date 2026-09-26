@@ -919,7 +919,7 @@ def _ticket_problems(text, repo):
 
 
 def file_ticket(target, path, state, board, out=None, priority=None,
-                update=None):
+                update=None, revision=None, labels=None):
     """`--file-ticket`'s whole body: validate `path`, create the issue in the
     target's `board`, relate it, read it back and validate that.
 
@@ -964,6 +964,12 @@ def file_ticket(target, path, state, board, out=None, priority=None,
     Linear today, any board that has those members tomorrow. `cli()`
     resolves it before the file is read: a target with no board exits
     there, naming the key.
+
+    `revision`, `priority` and `labels` go to `update()` when given: a
+    native board's edit is made at the revision it was read at (KO-760).
+    A refusal from `file()` or `update()` -- the store's `FilingRefused`,
+    a `store.RevisionMoved`, or on a native board a `RuntimeError` -- is
+    printed as one line with exit 1, and nothing was written.
     """
     out = out or sys.stdout
     text = Path(path).read_text()
@@ -972,11 +978,40 @@ def file_ticket(target, path, state, board, out=None, priority=None,
     if problems:
         print(f"[holo2] {path}: {problems[0]}", file=out)
         return 1
+    refusals = (store.board.FilingRefused, store.RevisionMoved)
+    if getattr(board, "native", False):
+        refusals += (RuntimeError,)
+    try:
+        identifier = _file_or_update(board, ticket, text, state, priority,
+                                     update, revision, labels, out)
+    except store.RevisionMoved as moved:
+        print(f"[holo2] {path}: {update} is at revision {moved.current}, not "
+              f"{moved.expected}; nothing changed", file=out)
+        return 1
+    except refusals as refused:
+        print(f"[holo2] {path}: {refused}", file=out)
+        return 1
+    stored = _ticket_problems(board.stored_body(identifier), target.path)
+    if stored:
+        print(f"[holo2] {identifier}: as stored by Linear, {stored[0]}",
+              file=out)
+        return 2
+    return 0
+
+
+def _file_or_update(board, ticket, text, state, priority, update, revision,
+                    labels, out):
+    """`file_ticket()`'s write: update `update` or file a new ticket, print
+    the line saying which, and answer the identifier."""
     if update is not None:
         identifier = update
-        added, extra = board.update(update, ticket.title, text,
-                                    ticket.estimate_min,
-                                    ticket.depends_on or [])
+        given = {"revision": revision, "labels": labels,
+                 "priority": FILE_TICKET_PRIORITIES[priority]
+                 if priority else None}
+        added, extra = board.update(
+            update, ticket.title, text, ticket.estimate_min,
+            ticket.depends_on or [],
+            **{k: v for k, v in given.items() if v is not None})
         parts = []
         if added:
             parts.append("blocked by " + ", ".join(f"+{b}" for b in added))
@@ -998,9 +1033,4 @@ def file_ticket(target, path, state, board, out=None, priority=None,
             detail += f", {priority}"
         print(f"[holo2] filed {identifier}: {ticket.title} ({detail})",
               file=out)
-    stored = _ticket_problems(board.stored_body(identifier), target.path)
-    if stored:
-        print(f"[holo2] {identifier}: as stored by Linear, {stored[0]}",
-              file=out)
-        return 2
-    return 0
+    return identifier
