@@ -5,8 +5,9 @@ A native board has no second copy to sync, read back or post notes to
 writes do nothing -- a claim's lease read-back then stands -- and
 `comment()` only records the note. Filing, editing and the body read-back
 go through `store.board`, so `--file-ticket` reaches the store through the
-same `file()`, `update()` and `stored_body()` it drives on Linear. Nothing
-here imports or asks Linear.
+same `file()`, `update()` and `stored_body()` it drives on Linear, and
+`--move` and `--cancel` through `move()` and `cancel()`, which only a
+native board has (KO-764). Nothing here imports or asks Linear.
 
 The store is opened per call, read-only for a read; a read of a store not
 created yet answers as a board with no tickets.
@@ -175,6 +176,28 @@ class NativeBoard:
                                     revision, author="cli", priority=priority,
                                     labels=labels)
         return [], []
+
+    def move(self, identifier, column, revision, note=None):
+        """Move `identifier` to `column`, `ready` or `backlog`, at
+        `revision`, the one the mover read; answer its new revision."""
+        conn, project_id = self._write()
+        with closing(conn):
+            return store.board.move_ticket(conn, project_id, identifier,
+                                           column, revision, author="cli",
+                                           note=note)
+
+    def cancel(self, identifier, revision, note):
+        """Cancel `identifier` at `revision`; answer its new revision and
+        the live run the cancel asked to end, or None without one."""
+        conn, project_id = self._write()
+        with closing(conn):
+            revision = store.board.cancel_ticket(conn, project_id, identifier,
+                                                 revision, note, author="cli")
+            row = conn.execute(
+                "SELECT r.id FROM tickets t JOIN runs r ON r.id = t.activeRunId"
+                " WHERE t.projectId = ? AND t.linearIdentifier = ?"
+                " AND r.endedAt IS NULL", (project_id, identifier)).fetchone()
+        return revision, None if row is None else row[0]
 
     def stored_body(self, identifier):
         row = self._row(identifier)
