@@ -86,8 +86,9 @@ export interface ShippedBody {
 }
 
 /** The open ticket states, in the order `/board` answers them: left to
- *  right the path to merge (holophyte/serve.py `BOARD_STATES`). */
-export type BoardState = "needs_spec" | "blocked_on_deps" | "ready" | "blocked_on_operator" | "in_flight";
+ *  right the path to merge (holophyte/serve.py `BOARD_STATES`), after
+ *  the `backlog` column a native project answers first. */
+export type BoardState = "backlog" | "needs_spec" | "blocked_on_deps" | "ready" | "blocked_on_operator" | "in_flight";
 
 /** One open ticket of `/board` (holophyte/serve.py `board()`): `run` is
  *  the live run's id or null, `question` the blocked question or null,
@@ -104,10 +105,13 @@ export interface BoardWireTicket {
 }
 
 /** The daemon's `/board` body: every column present, empty or not, in
- *  path order. */
+ *  path order. `editable` is true only for a native project on a host
+ *  daemon with actions on, where the console may file; a daemon older
+ *  than the field sends none. */
 export interface BoardBody {
   columns: { state: BoardState; tickets: BoardWireTicket[] }[];
   now: number;
+  editable?: boolean;
 }
 
 export type Status = z.infer<typeof statusSchema>;

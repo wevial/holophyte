@@ -239,3 +239,50 @@ test("the ledger lives above the view switch: today's rows loaded on Shipped sta
   expect(shipped.querySelectorAll("[data-row]").length).toBe(3);
   expect(screen.queryByText("Nothing merged today")).toBeNull();
 });
+
+/** A native project on a host daemon: `/board` answers `editable` and a
+ *  `backlog` column before the five. */
+const NATIVE = "http://writer:7710/projects/nat";
+const nativeHost = hostOf({ ...status, project: "/srv/dev/nat", runs: [] }, { level: "none", now, items: [] }, NATIVE);
+const nativeBoard: BoardBody = {
+  now,
+  editable: true,
+  columns: [
+    { state: "backlog", tickets: [wire("NAT-2", "A draft")] },
+    ...board.columns.map((column) => ({ state: column.state, tickets: [] })),
+  ],
+};
+const boardFetch =
+  (bodies: Record<string, BoardBody>): Fetch =>
+  async (url, init) => {
+    const base = Object.keys(bodies).find((candidate) => url === `${candidate}/board`);
+    return base ? Response.json(bodies[base]) : daemonFetch(url, init);
+  };
+const columnStates = () => Array.from(document.querySelectorAll("[data-column]")).map((column) => column.getAttribute("data-column"));
+
+test("an editable host with a backlog column: backlog comes first holding NAT-2, and the host gets a New ticket button that opens the form", async () => {
+  render(<Board hosts={[nativeHost]} now={now} deps={{ fetch: boardFetch({ [NATIVE]: nativeBoard }) }} tz="UTC" />);
+  await act(settle);
+  expect(columnStates()).toEqual(["backlog", "needs_spec", "blocked_on_deps", "ready", "blocked_on_operator", "in_flight"]);
+  const first = document.querySelector("[data-column]")!;
+  expect(first.querySelector("header span + span")!.textContent).toBe("backlog");
+  expect(Array.from(first.querySelectorAll("[data-ticket]")).map((card) => card.getAttribute("data-ticket"))).toEqual(["NAT-2"]);
+  fireEvent.click(screen.getByRole("button", { name: "New ticket" }));
+  expect(within(screen.getByRole("dialog")).getByRole("textbox", { name: "Ticket body" })).toBeTruthy();
+});
+
+test("hosts answering editable: false with no backlog column draw the five columns and no New ticket button", async () => {
+  render(<Board hosts={[host]} now={now} deps={{ fetch: boardFetch({ [BASE]: { ...board, editable: false } }) }} tz="UTC" />);
+  await act(settle);
+  expect(columnStates()).toEqual(["needs_spec", "blocked_on_deps", "ready", "blocked_on_operator", "in_flight"]);
+  expect(screen.queryByRole("button", { name: /New ticket/ })).toBeNull();
+});
+
+test("with two editable hosts each New ticket button names its project; a read-only host gets none", async () => {
+  const OTHER = "http://writer:7710/projects/other";
+  const otherHost = hostOf({ ...status, project: "/srv/dev/other", runs: [] }, { level: "none", now, items: [] }, OTHER);
+  const fetch = boardFetch({ [NATIVE]: nativeBoard, [OTHER]: { ...nativeBoard, columns: nativeBoard.columns.slice(1) }, [BASE]: { ...board, editable: false } });
+  render(<Board hosts={[host, nativeHost, otherHost]} now={now} deps={{ fetch }} tz="UTC" />);
+  await act(settle);
+  expect(screen.getAllByRole("button", { name: /New ticket/ }).map((button) => button.textContent)).toEqual(["New ticket · nat", "New ticket · other"]);
+});

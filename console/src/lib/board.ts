@@ -7,8 +7,12 @@ import type { BoardBody, BoardState, Run } from "./types";
 /** The five columns, left to right the path to merge. */
 export const BOARD_STATES: BoardState[] = ["needs_spec", "blocked_on_deps", "ready", "blocked_on_operator", "in_flight"];
 
+/** The column a native project answers before the five, holding its drafts. */
+export const BACKLOG: BoardState = "backlog";
+
 /** What the column header calls each state. */
 export const STATE_LABELS: Record<BoardState, string> = {
+  backlog: "backlog",
   needs_spec: "needs_spec",
   blocked_on_deps: "blocked_on_deps",
   ready: "ready",
@@ -80,10 +84,11 @@ export interface Column {
 }
 
 /** The cards under the five columns in path order, every column present
- *  and counted; a card with a state the board does not know is dropped
- *  rather than misfiled. */
-export function columns(cards: BoardCard[]): Column[] {
-  return BOARD_STATES.map((state) => {
+ *  and counted, the `backlog` column first when `backlog` says some
+ *  host answered one; a card with a state the board does not know is
+ *  dropped rather than misfiled. */
+export function columns(cards: BoardCard[], backlog = false): Column[] {
+  return (backlog ? [BACKLOG, ...BOARD_STATES] : BOARD_STATES).map((state) => {
     const own = cards.filter((card) => card.status === state);
     return { state, label: STATE_LABELS[state], count: own.length, cards: own };
   });

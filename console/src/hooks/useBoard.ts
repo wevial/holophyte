@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { cardsOf, type BoardCard } from "../lib/board";
+import { BACKLOG, cardsOf, type BoardCard } from "../lib/board";
 import type { HostRecord } from "../lib/hosts";
 import { defaultPollDeps, fetchJson, type Fetch } from "../lib/poll";
 import type { BoardBody } from "../lib/types";
@@ -11,6 +11,10 @@ export interface BoardState {
   errors: string[];
   /** True until every host's first answer, good or bad. */
   loading: boolean;
+  /** Whether any host's last good answer holds a `backlog` column. */
+  backlog: boolean;
+  /** The hosts whose last good answer is `editable`, in host order. */
+  editable: HostRecord[];
 }
 
 interface Answer {
@@ -59,5 +63,7 @@ export function useBoard(hosts: HostRecord[], polls = 0, deps: { fetch: Fetch } 
     cards,
     errors: hosts.flatMap((host) => (answers[host.base]?.error ? [answers[host.base]!.error!] : [])),
     loading: hosts.some((host) => answers[host.base] == null),
+    backlog: hosts.some((host) => answers[host.base]?.body?.columns.some((column) => column.state === BACKLOG) ?? false),
+    editable: hosts.filter((host) => answers[host.base]?.body?.editable === true),
   };
 }
