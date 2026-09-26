@@ -138,6 +138,23 @@ class StoreBoardMoveTests(unittest.TestCase):
         self.assertEqual(self.row("NAT-6")[0], "ready")
         self.assertEqual(self.row("NAT-7")[0], "blocked_on_deps")
 
+    def test_resolve_dependencies_keeps_a_draft_or_empty_wait_blocked(self):
+        self.file()
+        self.file(body(depends="NAT-1"))
+        self.file()
+        store.board.move_ticket(self.conn, self.project_id, "NAT-2",
+                                "backlog", 1)
+        store.board.edit_ticket(self.conn, self.project_id, "NAT-2",
+                                body(depends="NAT-1", what=False), 2)
+        store.tickets.transition(self.conn, self.ticket_id("NAT-3"),
+                                 "blocked_on_deps")
+        store.tickets.walk_ticket(self.conn, self.ticket_id("NAT-1"), "merged")
+
+        self.assertEqual(store.board.resolve_dependencies(
+            self.conn, self.project_id), [])
+        self.assertEqual(self.row("NAT-2")[0], "blocked_on_deps")
+        self.assertEqual(self.row("NAT-3")[0], "blocked_on_deps")
+
 
 if __name__ == "__main__":
     unittest.main()

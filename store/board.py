@@ -191,19 +191,27 @@ def resolve_dependencies(conn, project_id):
 
     A dependency is merged as `pickable()` judges one: a sibling of the
     same project at status `merged`; one the project does not hold keeps
-    the ticket waiting.
+    the ticket waiting. A wait with no dependencies, parked by the board
+    rather than by one, stays, and so does a draft whose contract is
+    withheld (no acceptance criteria or verify commands), which `ready`
+    must never hold.
     """
     with _transaction(conn):
         rows = conn.execute(
-            "SELECT id, linearIdentifier, linearIssueId, status, dependsOn"
+            "SELECT id, linearIdentifier, linearIssueId, status, dependsOn,"
+            " acceptanceCriteria, verificationCommands"
             " FROM tickets WHERE projectId = ? ORDER BY id",
             (project_id,)).fetchall()
         status_of = {row[2]: row[3] for row in rows}
         resolved = []
-        for ticket_id, identifier, _, status, depends in rows:
-            if status == "blocked_on_deps" and all(
-                    status_of.get(dep) == "merged"
-                    for dep in json.loads(depends)):
+        for (ticket_id, identifier, _, status, depends, criteria,
+             commands) in rows:
+            if status != "blocked_on_deps":
+                continue
+            depends = json.loads(depends)
+            if (depends and json.loads(criteria) and json.loads(commands)
+                    and all(status_of.get(dep) == "merged"
+                            for dep in depends)):
                 transition(conn, ticket_id, "ready")
                 resolved.append(identifier)
     return resolved
