@@ -135,7 +135,16 @@ export function Board({
           )}
         </section>
       </section>
-      {openCard && openHost && <TicketSheet key={openCard.key} host={openHost} card={openCard} onClose={closeSheet} deps={deps} />}
+      {openCard && openHost && (
+        <TicketSheet
+          key={openCard.key}
+          host={openHost}
+          card={openCard}
+          onClose={closeSheet}
+          editable={board.editable.some((host) => host.base === openHost.base)}
+          deps={deps}
+        />
+      )}
       {filingHost && <NewTicket key={filingHost.base} host={filingHost} onClose={closeFiling} deps={deps} />}
     </>
   );

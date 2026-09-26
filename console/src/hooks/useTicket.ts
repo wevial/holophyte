@@ -14,9 +14,11 @@ export interface TicketState {
 /**
  * The daemon's `/tickets/ID` for the open sheet: fetched once when the
  * pair is set, not per poll, so the body under the operator's eyes does
- * not move while they read. A null `id` fetches nothing.
+ * not move while they read. A null `id` fetches nothing. Advancing
+ * `reloads` fetches the ticket again, for a sheet that wrote to it or was
+ * told it changed.
  */
-export function useTicket(base: string, id: string | null, deps: { fetch: Fetch } = defaultPollDeps): TicketState {
+export function useTicket(base: string, id: string | null, deps: { fetch: Fetch } = defaultPollDeps, reloads = 0): TicketState {
   const fetchRef = useRef(deps.fetch);
   fetchRef.current = deps.fetch;
   const [answer, setAnswer] = useState<{ key: string; answer: TicketAnswer } | null>(null);
@@ -31,7 +33,7 @@ export function useTicket(base: string, id: string | null, deps: { fetch: Fetch 
     return () => {
       alive = false;
     };
-  }, [base, id]);
+  }, [base, id, reloads]);
 
   if (key == null || answer == null || answer.key !== key) return { state: "loading", ticket: null, error: null };
   const { answer: result } = answer;
