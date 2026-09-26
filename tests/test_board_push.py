@@ -16,6 +16,7 @@ import store  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.board import mirror_status  # noqa: E402
 from holophyte.board_sync import observe_board  # noqa: E402
+from holophyte.freshness import park_stale  # noqa: E402
 from provider import FileProvider, board_for  # noqa: E402
 
 ASK = 10 * MINUTE
@@ -163,6 +164,37 @@ class QueuedPushTests(SweepTestCase):
         self.observe(board, T0)
         self.assertEqual(board.pushed, [("KO-1", "In Progress")])
         self.assertEqual(self.push_row(other)[:2], ("Done", "Todo"))
+
+    def test_a_stale_park_sends_its_backlog_push(self):
+        """KO-766: a stale park mirrors the ticket `needs_spec` and queues
+        Backlog; the sweep sends it rather than clear it as a status that
+        pushes no state."""
+        board = RecordingBoard(self.files, store_mode=True)
+        task = {"id": "KO-1", "title": "KO-1", "board_state": "Todo",
+                "verify": "echo ok", "budget_min": 5, "contracts": [],
+                "criteria": ["Given the ticket, then it is worked"]}
+        with contextlib.redirect_stdout(io.StringIO()):
+            park_stale(self.project, self.conn, self.project_id, board, task,
+                       ["`gone.py` is not on main"])
+        self.assertEqual(self.push_row()[:2], ("Backlog", "Todo"))
+
+        self.observe(board, T0)
+        self.assertEqual(board.pushed, [("KO-1", "Backlog")])
+        self.assertEqual((self.files / "KO-1.state").read_text(), "Backlog\n")
+        self.observe(board, T0 + ASK)
+        self.assertEqual(self.push_row(), (None, None, None, "Backlog"))
+
+    def test_a_push_the_status_moved_off_is_cleared_unsent(self):
+        """A Todo push queued while `ready` is dropped once the ticket is
+        `in_flight`, which pushes In Progress."""
+        store.set_board_state(self.conn, self.ticket, "Backlog")
+        store.record_push(self.conn, self.ticket, "Todo")
+        (self.files / "KO-1.state").write_text("Backlog\n")
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
+        board = RecordingBoard(self.files, store_mode=True)
+        self.observe(board, T0)
+        self.assertEqual(board.pushed, [])
+        self.assertEqual(self.push_row()[:2], (None, None))
 
 
 class CanceledPushTests(SweepTestCase):
