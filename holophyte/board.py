@@ -571,7 +571,9 @@ def mirror_push(conn, ticket_id, provider):
     push is queued on the ticket beside the board state last observed, and
     the host sweep's observation alone delivers it (`holophyte.board_sync`),
     so a retry never undoes a person's later move. The state is returned as
-    queued, or as already shown when the row shows it.
+    queued, or as already shown when the row shows it. A native board
+    (`provider.native`, KO-759) is the store: the state is returned and
+    nothing is queued, since there is no board to deliver it to.
 
     Failure is a warning, not an error. Linear being unreachable must not
     fail a run that has already merged, so a push that raises leaves the
@@ -594,6 +596,8 @@ def mirror_push(conn, ticket_id, provider):
         return None
     # `is True`, not truthiness: a `Mock` board answers any attribute, and a
     # board that never said store mode pushes inline.
+    if getattr(provider, "native", False) is True:
+        return state
     if getattr(provider, "store_mode", False) is True:
         store.record_push(conn, ticket_id, state)
         return state

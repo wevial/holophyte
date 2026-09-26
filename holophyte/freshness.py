@@ -284,7 +284,9 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
     A store-mode board (KO-745) is not commented on or moved: the comment is
     a `stale` note keyed on the body and the reasons, and the move a queued
     push, so the next observation reads Backlog as the factory's move and
-    not a person's. The label is still written inline.
+    not a person's. The label is still written inline. A native board
+    (KO-759) is the store: the note is written and nothing else, no label
+    and no queued push.
 
     A task a store-mode claim built at a revision the ticket has since
     left (Phase 3 stage 3) was judged on a body the board no longer holds:
@@ -318,6 +320,16 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
             warn(conn, ticket_id, f"stale-ticket comment failed for"
                                   f" {task['id']} ({e}); the board is not"
                                   " told why")
+    if getattr(provider, "native", False) is not True:
+        _label_and_move(conn, provider, task, issue_id, ticket_id, store_mode)
+    why = why or f"{len(reasons)} stale landmarks"
+    print(f"[holo2] {task['id']} skipped: out of date with main ({why})")
+
+
+def _label_and_move(conn, provider, task, issue_id, ticket_id, store_mode):
+    """Label a parked ticket's issue `stale` and move it to Backlog, the
+    move queued on a store-mode board; a board call that fails is a
+    warning."""
     try:
         provider.label_issue(issue_id, STALE_LABEL)
     except Exception as e:
@@ -332,8 +344,6 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
             warn(conn, ticket_id, f"moving stale {task['id']} to"
                                   f" {BACKLOG_STATE} failed ({e}); the board"
                                   " still lists it ready")
-    why = why or f"{len(reasons)} stale landmarks"
-    print(f"[holo2] {task['id']} skipped: out of date with main ({why})")
 
 
 def critic_due(project, task):
