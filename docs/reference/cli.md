@@ -30,6 +30,7 @@ command family, [below](#project-commands).
 | `--file-ticket TICKET.md [--state Todo\|Backlog] [--priority urgent\|high\|medium\|low] PROJECT` | validates, creates the issue in the Linear project the project's `[board]` names, reads it back, validates again | Linear |
 | `--worker PROJECT` | internal, spawned by the scheduler under `[loop] workers > 1`: claims one ticket, works it to merge or park, exits with the run's status (0 merged, 1 failed, 2 parked, 3 nothing to claim, 4 stopped for a human); skips the startup probes, the sweep and the supervisor spawn, which the scheduler ran for the pool | Linear, store, worktrees, `main`, `FINDINGS.md` |
 | `--file-ticket TICKET.md --update KO-n PROJECT` | same, replacing an existing issue's title, body and estimate; a blocker the file's `Depends on:` names and the board lacks is recorded and printed as `+KO-a`, one the board holds and the file no longer names is printed as `board also holds KO-c` -- relations are added, never removed | Linear |
+| `--file-ticket TICKET.md --update KEY-n --revision N [--priority urgent\|high\|medium\|low] [--labels a,b] PROJECT` | on a native board: replaces the ticket's body, and its priority or labels when given, at revision `N`; a ticket at another revision exits 1 printing `KEY-n is at revision M, not N; nothing changed`, and every refusal of the store's is one line with exit 1; on a Linear board all three are refused beside `--update` | store |
 
 ## Project commands
 

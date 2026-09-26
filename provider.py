@@ -173,14 +173,18 @@ class Board(Protocol):
         identifier. `priority` is the board's integer, or None for none."""
         ...
 
-    def update(self, identifier, title, body, estimate,
-               blockers=()) -> tuple[list[str], list[str]]:
+    def update(self, identifier, title, body, estimate, blockers=(), *,
+               revision=None, priority=None,
+               labels=None) -> tuple[list[str], list[str]]:
         """Replace the ticket's title, body and estimate, leaving its state
         and priority alone; then record the `blockers` the board does not
         hold yet. Answer `(added, kept)`: the blockers recorded, in
         `blockers` order, and the ones the board already held that
         `blockers` does not name, in the board's order -- left in place.
-        Raise `RuntimeError` for an identifier the board does not hold."""
+        Raise `RuntimeError` for an identifier the board does not hold.
+        `revision` (the one the edit was read at), `priority` (the board's
+        integer) and `labels` are a native board's (KO-760); a board that
+        has no such write raises `RuntimeError` for any that is not None."""
         ...
 
     def stored_body(self, identifier) -> str:
@@ -275,7 +279,9 @@ class LinearBoard:
             linear.add_blocker(issue["id"], blocker)
         return issue["identifier"]
 
-    def update(self, identifier, title, body, estimate, blockers=()):
+    def update(self, identifier, title, body, estimate, blockers=(), *,
+               revision=None, priority=None, labels=None):
+        _refuse_native_update(identifier, revision, priority, labels)
         linear = self._linear()
         issue_id = linear.update_issue(identifier, title, body, estimate)
         # Read after the body is stored: a refused update adds nothing, and
@@ -288,6 +294,16 @@ class LinearBoard:
 
     def stored_body(self, identifier):
         return self._linear().fetch_description(identifier)
+
+
+def _refuse_native_update(identifier, revision, priority, labels):
+    """Refuse an update's native-board keywords on a board without them."""
+    given = [name for name, value in (("revision", revision),
+                                      ("priority", priority),
+                                      ("labels", labels)) if value is not None]
+    if given:
+        raise RuntimeError(f"refused to update {identifier} with "
+                           f"{', '.join(given)}: only a native board takes them")
 
 
 def board_for(target):
@@ -443,7 +459,9 @@ class FileProvider:
             self._path(identifier, ".state").write_text(f"{state}\n")
         return identifier
 
-    def update(self, identifier, title, body, estimate, blockers=()):
+    def update(self, identifier, title, body, estimate, blockers=(), *,
+               revision=None, priority=None, labels=None):
+        _refuse_native_update(identifier, revision, priority, labels)
         self._require(identifier)
         self._refuse_blockers(f"update {identifier}", blockers)
         self._write(identifier, title, body, estimate)

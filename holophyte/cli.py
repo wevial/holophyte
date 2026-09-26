@@ -86,10 +86,11 @@ def serve_address(text):
 
 def _file_ticket_only(parser, args):
     """Refuse `--state`, `--priority` and `--update` given without
-    `--file-ticket`: each is a field of, or a verb on, the issue that
-    command works with, and names nothing alone. And refuse `--update`
-    beside `--state` or `--priority`: those are create-time fields, and an
-    update leaves them as they are."""
+    `--file-ticket`, and `--revision` and `--labels` without `--file-ticket
+    --update`: each is a field of, or a verb on, the issue that command
+    works with, and names nothing alone. And refuse `--update` beside
+    `--state`, a create-time field an update leaves as it is; `--priority`
+    beside it is a native board's, which `_native_update_only()` decides."""
     if args.file_ticket is None:
         if args.update is not None:
             parser.error("--update says which issue --file-ticket replaces "
@@ -99,13 +100,37 @@ def _file_ticket_only(parser, args):
             if value is not None:
                 parser.error(f"{flag} is what --file-ticket creates the "
                              "issue with; it names nothing by itself")
-        return
-    if args.update is not None:
-        for flag, value in (("--state", args.state),
-                            ("--priority", args.priority)):
+    if args.update is None:
+        for flag, value in (("--revision", args.revision),
+                            ("--labels", args.labels)):
             if value is not None:
-                parser.error(f"{flag} is set when --file-ticket creates an "
-                             "issue; --update leaves it as it is")
+                parser.error(f"{flag} is what --file-ticket --update edits "
+                             "a native ticket with; it names nothing by itself")
+    elif args.state is not None:
+        parser.error("--state is set when --file-ticket creates an "
+                     "issue; --update leaves it as it is")
+
+
+def _native_update_only(parser, args, board):
+    """Refuse `--revision`, `--priority` and `--labels` beside `--update`
+    on a board that is not native: an update there leaves priority and
+    labels as they are, and has no revision to be made at (KO-760)."""
+    if args.update is None or getattr(board, "native", False):
+        return
+    if args.priority is not None:
+        parser.error("--priority is set when --file-ticket creates an "
+                     "issue; --update leaves it as it is")
+    for flag, value in (("--revision", args.revision),
+                        ("--labels", args.labels)):
+        if value is not None:
+            parser.error(f"{flag} is a native board's; --update on this "
+                         "board takes none")
+
+
+def label_names(text):
+    """`--labels`' argparse type: the comma-separated names, empty dropped."""
+    return [name for name in (part.strip() for part in text.split(","))
+            if name]
 
 
 def _note_checks(parser, args):
@@ -405,7 +430,17 @@ def _legacy_cli(argv):
         help="with --file-ticket: replace that issue's title, description "
              "and estimate from the validated file instead of creating one; "
              "state, priority and relations stay as they are, and the stored "
-             "body is read back and validated as on filing")
+             "body is read back and validated as on filing; on a native "
+             "board it requires --revision and takes --priority and --labels")
+    parser.add_argument(
+        "--revision", metavar="N", type=int,
+        help="with --file-ticket --update on a native board: the revision "
+             "the ticket was read at; a ticket that moved past it is left "
+             "unchanged and its current revision printed")
+    parser.add_argument(
+        "--labels", metavar="a,b", type=label_names,
+        help="with --file-ticket --update on a native board: the ticket's "
+             "labels, comma-separated")
     modes.add_argument("--hold", action="store_true",
                        help="hold project admission; requires --note")
     modes.add_argument("--release-hold", action="store_true",
@@ -454,6 +489,7 @@ def _legacy_cli(argv):
     # `board_for()` refuses `[board] kind = "native"` here, before the loop.
     _refuse_native_key(target, args, modes)
     board = board_for(target)
+    _native_update_only(parser, args, board)
     # Same window and the same reasons as `--report`: it reads runs and prints
     # them, so no route has to resolve and nobody is called. `--act` fails
     # runs rather than dispatching them, so it needs no route either.
@@ -475,7 +511,8 @@ def _legacy_cli(argv):
         return file_ticket(target, args.file_ticket,
                            args.state or FILE_TICKET_STATES[0],
                            require_board(target, board),
-                           priority=args.priority, update=args.update)
+                           priority=args.priority, update=args.update,
+                           revision=args.revision, labels=args.labels)
     # The acting sweep on a timer. Like `--sweep --act` it dispatches nothing
     # and so resolves no route; unlike it, it takes the target's supervisor
     # lock first, and a target that already has one is an exit, not a loop.
