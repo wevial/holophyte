@@ -33,6 +33,9 @@ WORKER_FAILED = 1
 WORKER_PARKED = 2   # parked awaiting merge approval: not a failure
 WORKER_IDLE = 3     # nothing left to claim
 WORKER_STOP = 4     # the claim said stop for a human (`_claim_run()`)
+# A store-mode claim could not read its ticket back from the board: not a
+# failed run and not an empty queue -- the pool stops as for a failed listing.
+WORKER_BOARD_DOWN = 5
 # The variable a worker reads its slot number from, for the `[holo2 wN]`
 # prefix: the children share the scheduler's stdout.
 WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
@@ -118,9 +121,8 @@ def _worker(target, provider):
         task, ticket_id, run_id = _claim_next(target, conn, project, provider,
                                               knobs.order, set(), NOTHING_SEEN)
         if task is BOARD_DOWN:
-            # Not an empty queue: the board could not be read back at the
-            # claim, and a worker whose claim raised exits 1 in mirror mode.
-            return WORKER_FAILED
+            # Not an empty queue and not a failed run: the scheduler stops.
+            return WORKER_BOARD_DOWN
         if not task:
             print("[holo2] nothing left to claim; worker done.")
             return WORKER_IDLE
@@ -221,7 +223,9 @@ def scheduler(target, provider, knobs):
     An idle worker pauses spawning until the next exit recounts: a sibling
     may have claimed ahead of it. Return zero for an empty, drained queue,
     nonzero for a broken worker process, a human stop, or an unavailable
-    board with no live workers. Ticket run failures do not make it nonzero."""
+    board with no live workers -- a failed listing, or in store mode a
+    worker that could not read its ticket back (`WORKER_BOARD_DOWN`), which
+    stops spawning and drains. Ticket run failures do not make it nonzero."""
     from holophyte.claim import _park_unlisted
     from holophyte.claim_store import announce, store_mode
     from holophyte.dispatch import _startup_sweep
@@ -271,10 +275,11 @@ def scheduler(target, provider, knobs):
                         child = _spawn_worker(target, slot)
                         pool[child.pid] = (slot, child)
             if not pool:
-                if listing is None and state.spawning:
-                    print("[holo2] the board's ready listing failed and no"
-                          " worker is running; stopping. relaunch once the"
-                          " board answers")
+                if state.board_down or (listing is None and state.spawning):
+                    what = (" could not be read back at the claim"
+                            if state.board_down else "'s ready listing failed")
+                    print(f"[holo2] the board{what} and no worker is running;"
+                          " stopping. relaunch once the board answers")
                     return 1
                 if state.restart and not state.stopped:
                     # A stop takes priority: restarting would spawn again.
@@ -312,6 +317,7 @@ class _PoolState:
         self.stop_on_failure = stop_on_failure
         self.broken = False
         self.stopped = False
+        self.board_down = False
         self.paused = False
         self.restart = False
         self.restart_reason = None   # a store move this build cannot open: drain
@@ -380,6 +386,10 @@ class _PoolState:
         elif code == WORKER_STOP:
             print(f"[holo2] worker {slot} stopped for a human")
             self.broken = self.stopped = True
+        elif code == WORKER_BOARD_DOWN:
+            print(f"[holo2] worker {slot} could not read its ticket back"
+                  " from the board; spawning stops")
+            self.board_down = self.stopped = True
         else:
             print(f"[holo2] worker {slot} failed (exit {code})")
             if code != WORKER_FAILED:

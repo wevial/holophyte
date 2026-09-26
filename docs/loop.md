@@ -305,11 +305,13 @@ ticks and exits fall inside it, a listing the board could not answer leaves
 the pool the queue the store already holds (with none, the pool stops
 nonzero, as it does in mirror mode), and an empty queue parks nothing. A
 claim that cannot read its candidate back from the board claims nothing
-and exits nonzero rather than reporting an empty queue; an issue the board
-no longer has is skipped. Each worker is step 1 through 7 above for one
+and exits nonzero rather than reporting an empty queue -- a worker with
+`5`, on which the scheduler stops spawning, drains and exits `1` whatever
+`stop_on_failure` says; an issue the board no longer has is skipped. Each worker is step 1 through 7 above for one
 ticket -- claim, worktree, implementer, verify, review, merge gate -- and
 exits with the run's status: `0` merged, `1` failed, `2` parked awaiting
-merge approval, `3` nothing left to claim, `4` stopped for a human. The
+merge approval, `3` nothing left to claim, `4` stopped for a human, `5`
+the board could not be read back (store mode). The
 children share the scheduler's stdout, so one `tee` captures the pool, and
 each worker prints `[holo2 wN]` in place of `[holo2]`, `N` its slot. Merges
 into `main` take turns under the merge lock of step 6, and so does a

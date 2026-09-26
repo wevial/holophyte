@@ -162,7 +162,29 @@ class StoreModePoolTests(LoopFixture):
         self.assertNotIn("no ready tickets", self.out)
         self.assertEqual(self.rc, 1)
 
-    def test_a_worker_that_cannot_read_its_candidate_back_exits_failed(self):
+    def test_workers_that_cannot_read_back_stop_the_pool_nonzero(self):
+        """A store queue with the board down: the listing fails, the store
+        still holds work, so workers are spawned, and each exits board-down.
+        Spawning stops at the first, the pool drains and exits 1 with the
+        board's line, whether or not a failed run stops the pool."""
+        for n in (1, 2, 3):
+            holophyte.board.mirror_task(self.conn, self.project_id,
+                                        self.board.fetch_task(f"KO-{n}"))
+        self.board.broken = True
+        down = holophyte.pool.WORKER_BOARD_DOWN
+        for stop in ("true", "false"):
+            with self.subTest(stop_on_failure=stop):
+                self.configure(CONFIG + f"stop_on_failure = {stop}\n")
+                pool = self.run_scheduler([(down, None)] * 12)
+
+                self.assertEqual(len(pool.spawned), 2)
+                self.assertEqual(len(pool.reaped), 2)
+                self.assertEqual(self.rc, 1)
+                self.assertIn("the board could not be read back at the claim"
+                              " and no worker is running; stopping", self.out)
+                self.assertNotIn("no ready tickets", self.out)
+
+    def test_a_worker_that_cannot_read_its_candidate_back_exits_board_down(self):
         holophyte.board.mirror_task(self.conn, self.project_id,
                                     self.board.fetch_task("KO-1"))
 
@@ -173,7 +195,7 @@ class StoreModePoolTests(LoopFixture):
         with patch.object(sys, "stdout", io.StringIO()) as out:
             status = holophyte.pool._worker(self.project, self.board)
 
-        self.assertEqual(status, holophyte.pool.WORKER_FAILED)
+        self.assertEqual(status, holophyte.pool.WORKER_BOARD_DOWN)
         self.assertIn("KO-1 could not be read back from the board",
                       out.getvalue())
         self.assertNotIn("nothing left to claim", out.getvalue())
