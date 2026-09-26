@@ -114,6 +114,17 @@ class QueuedPushTests(SweepTestCase):
         self.assertEqual(self.push_row(), (None, None, None, "In Progress"))
         self.assertEqual(len(board.pushed), 1)
 
+    def test_a_push_queued_before_the_next_ask_follows_the_sent_one(self):
+        """KO-751: In Progress sent at T0, the ticket merged inside the ask
+        interval; the Done push is sent, not dropped as a person's move."""
+        board = self.queue_in_progress()
+        self.observe(board, T0)
+        self.assertEqual(board.pushed, [("KO-1", "In Progress")])
+        mirror_status(self.conn, self.ticket, "merged", board)
+        self.observe(board, T0 + ASK)
+        self.assertEqual(board.pushed[-1], ("KO-1", "Done"))
+        self.assertEqual((self.files / "KO-1.state").read_text(), "Done\n")
+
     def test_a_closed_answer_drops_a_push_queued_from_that_column(self):
         """A push queued while the board showed a closed column is not
         sent back over it: a completed issue is not reopened, nor a
