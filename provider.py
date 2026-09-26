@@ -298,7 +298,8 @@ def board_for(target):
     settings = board_config(target)
     if settings is None:
         return None
-    return LinearBoard(*settings, store_mode=mode.mode == "store")
+    return LinearBoard(settings.project_id, settings.team, settings.label,
+                       store_mode=mode.mode == "store")
 
 
 class FileProvider:

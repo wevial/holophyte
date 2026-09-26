@@ -282,21 +282,44 @@ def loop_config(project):
 # `label` (KO-432) is the one optional key: set to a non-empty string, it
 # names the label a ready issue must carry for the loop to see it at all;
 # absent, the board is every ready issue, as it has always been.
+# `key` (KO-749) is a native board's own: the `KEY` of its `KEY-n`
+# identifiers, required there and refused on Linear, whose team names them.
+# A native table's `team` defaults to `native:KEY`, the store's project key
+# for a project born native; a project that leaves Linear keeps its `team`,
+# so the store row survives the move and `key` is never derived from it.
 BOARD_KEYS = {
     "project_id": None,
     "team": None,
     "label": None,
+    "key": None,
 }
 BoardConfig = collections.namedtuple("BoardConfig", BOARD_KEYS)
+# An uppercase letter, then up to nine uppercase letters or digits, so
+# `KEY-n` parses as an identifier everywhere one is parsed.
+NATIVE_KEY_SHAPE = re.compile(r"[A-Z][A-Z0-9]{0,9}")
+
+
+def _board_string(project, table, key):
+    """`[board] key` as a non-empty string, `None` when absent."""
+    value = table.get(key)
+    if value is not None and (not isinstance(value, str) or not value):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [board] {key} must be a "
+            f"non-empty string, got {value!r}")
+    return value
 
 
 def board_config(project):
     """The target's `[board]`, or `None` when the table is absent.
 
-    A present table has to carry `project_id` and `team` as non-empty
-    strings -- half a board names no project to claim from or no team to
-    resolve states in -- and may carry `label` the same way, the one
-    optional key (KO-432): `None` when absent, `3` or `""` refused. The
+    A Linear table (`kind = "linear"`, the default) has to carry
+    `project_id` and `team` as non-empty strings -- half a board names no
+    project to claim from or no team to resolve states in -- and may carry
+    `label` the same way, the one optional key (KO-432): `None` when
+    absent, `3` or `""` refused; `key` is refused, the team names Linear's
+    tickets. A native table (KO-749) has to carry `key` in
+    `NATIVE_KEY_SHAPE`, may carry `team` (defaulting to `native:KEY`), and
+    refuses `project_id` and `label`, which name Linear's things. The
     refusal names the table, the key and the constraint, like a bad
     `[loop]` value. An absent table is `None`, and the caller decides
     whether its mode needs a board: `--report` and a read-only `--sweep`
@@ -311,17 +334,27 @@ def board_config(project):
         raise SystemExit(
             f"[holo2] {project.config_path}: [board] must be a table, got "
             f"{type(table).__name__}")
-    values = {"label": None}  # the one optional key; absent is no filter
-    for key in BOARD_KEYS:
-        value = table.get(key)
-        if value is None and key == "label":
-            continue
-        if not isinstance(value, str) or not value:
+    kind = board_mode(project).kind
+    values = {key: _board_string(project, table, key) for key in BOARD_KEYS}
+    required = ("key",) if kind == "native" else ("project_id", "team")
+    refused = ("project_id", "label") if kind == "native" else ("key",)
+    for key in required:
+        if values[key] is None:
             raise SystemExit(
                 f"[holo2] {project.config_path}: [board] {key} must be a "
-                f"non-empty string, got {value!r}")
-        values[key] = value
-    board_mode(project)
+                f"non-empty string, got None")
+    for key in refused:
+        if values[key] is not None:
+            raise SystemExit(
+                f"[holo2] {project.config_path}: [board] {key} is not read "
+                f"by a {kind} board; remove it")
+    if kind == "native":
+        if not NATIVE_KEY_SHAPE.fullmatch(values["key"]):
+            raise SystemExit(
+                f"[holo2] {project.config_path}: [board] key must be an "
+                "uppercase letter then up to nine uppercase letters or "
+                f"digits, got {values['key']!r}")
+        values["team"] = values["team"] or f"native:{values['key']}"
     return BoardConfig(**values)
 
 
@@ -329,8 +362,8 @@ def board_config(project):
 # mirroring the board as it does today, or `"store"`, the store being the record;
 # `kind` is `"linear"`, today's board, or `"native"`. Kept beside
 # `BoardConfig` rather than in it, which three call sites unpack
-# positionally. Accepted and validated, but nothing reads them yet: a
-# project behaves the same whatever they say.
+# positionally. A native board is the store (KO-749): its `mode` defaults
+# to `"store"` and `"mirror"` is refused.
 BOARD_MODE_KEYS = {
     "mode": "mirror",
     "kind": "linear",
@@ -347,23 +380,33 @@ def board_mode(project):
 
     Each is one of `BOARD_MODE_VALUES`; anything else, `"stor"` or `3`, is
     refused naming the table, the key and the allowed values, like a bad
-    `[loop] order`. `board_config()` calls this for a present table, so
-    every path that resolves the board refuses a bad value at startup.
+    `[loop] order`. `kind` is read first so `mode`'s default follows it: a
+    native board defaults to `"store"` and refuses `"mirror"`, there being
+    no other board to mirror. `board_config()` calls this for a present
+    table, so every path that resolves the board refuses a bad value at
+    startup.
     """
     table = project.config().get("board", {})
     if not isinstance(table, dict):
         raise SystemExit(
             f"[holo2] {project.config_path}: [board] must be a table, got "
             f"{type(table).__name__}")
+    defaults = dict(BOARD_MODE_KEYS)
     values = {}
-    for key, default in BOARD_MODE_KEYS.items():
-        value = table.get(key, default)
+    for key in ("kind", "mode"):
+        value = table.get(key, defaults[key])
         if value not in BOARD_MODE_VALUES[key]:
             allowed = " or ".join(f'"{o}"' for o in BOARD_MODE_VALUES[key])
             raise SystemExit(
                 f"[holo2] {project.config_path}: [board] {key} must be one of "
                 f"{allowed}, got {value!r}")
         values[key] = value
+        if value == "native":
+            defaults["mode"] = "store"
+    if values["kind"] == "native" and values["mode"] == "mirror":
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [board] mode must be \"store\" "
+            "for a native board, got 'mirror'")
     return BoardMode(**values)
 
 
