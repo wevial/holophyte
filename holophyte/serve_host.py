@@ -84,7 +84,7 @@ from holophyte.serve_actions import (
     ACTIONS_PREFIX,
     action_failure,
 )
-from holophyte.serve_board import put_ticket, ticket_path
+from holophyte.serve_board import post_path, post_ticket, put_ticket, ticket_path
 from holophyte.serve_config import require_tomlkit
 from holophyte.serve_watch import CODE_CHECK_SEC, adopted_socket
 from holophyte.status import load_sweep_state
@@ -446,6 +446,9 @@ class HostHandler(StatusHandler):
             return
         scope, path = found
         if scope is not None:
+            board = post_path(path)
+            if board is not None:
+                return post_ticket(self, scope, path, *board)
             return self.post(scope, path)
         if not path.startswith(ACTIONS_PREFIX):
             return self.refuse()

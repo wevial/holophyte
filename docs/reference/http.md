@@ -735,6 +735,85 @@ a ticket outside the `backlog` column or names a ticket the project does
 not hold, with nothing written. A store failure is the project's 503 or
 500 as a read's is.
 
+## `POST /tickets`
+
+A host daemon's filing of a new ticket on a native board, at
+`/projects/NAME/tickets`: the console's New ticket. It passes the gate of
+[`PUT /tickets/ID`](#put-ticketsid) but for `If-Match`, which it does not
+read: a new ticket has no revision.
+
+```
+POST /projects/holophyte/tickets
+Authorization: Bearer MACHINE_TOKEN
+Content-Type: application/json
+
+{"body": "# …\n\n## Summary\n…", "priority": 2, "column": "ready"}
+```
+
+```json
+{"ticket": "NAT-1", "revision": 1}
+```
+
+`body` is the ticket's full text; `priority` (0 to 4) is optional, and
+`column`, `ready` by default or `backlog`, the column it lands in; any
+other is 400. The filing is the store's `file_ticket()` under the board's
+`[board] key`, authored `console`: 201 with the new `ticket` and its first
+`revision`, 1; 422 with `problems` and nothing written when a body filed
+to `ready` fails the template or `Depends on:` names a ticket the project
+does not hold. A body filed to `backlog` with problems is saved as a
+draft.
+
+## `POST /tickets/ID/move`
+
+A host daemon's move of a native ticket between Ready and Backlog, at
+`/projects/NAME/tickets/ID/move`, behind the whole gate of
+[`PUT /tickets/ID`](#put-ticketsid), `If-Match` included.
+
+```
+POST /projects/holophyte/tickets/NAT-1/move
+Authorization: Bearer MACHINE_TOKEN
+If-Match: 1
+Content-Type: application/json
+
+{"column": "backlog", "note": "after the release"}
+```
+
+```json
+{"ticket": "NAT-1", "revision": 2}
+```
+
+`column` is `ready` or `backlog`, else 400; `note`, optional, is the
+move's note. The move is the store's `move_ticket()`, authored `console`:
+200 with the new `revision`; 409 with `error` and `current` when the
+ticket has moved past `If-Match`; 422 with `problems` and nothing written
+for a canceled or closed ticket, one already in `column`, or a draft
+moved to `ready`. A canceled ticket does not move.
+
+## `POST /tickets/ID/cancel`
+
+A host daemon's cancel of a native ticket, at
+`/projects/NAME/tickets/ID/cancel`, behind the whole gate of
+[`PUT /tickets/ID`](#put-ticketsid), `If-Match` included.
+
+```
+POST /projects/holophyte/tickets/NAT-3/cancel
+Authorization: Bearer MACHINE_TOKEN
+If-Match: 1
+Content-Type: application/json
+
+{"note": "wrong scope"}
+```
+
+```json
+{"ticket": "NAT-3", "revision": 2, "run": 5}
+```
+
+`note`, the reason, is required: missing or blank is 400 with nothing
+written. The cancel is the store's `cancel_ticket()`, authored `console`:
+200 with the new `revision` and `run`, the live run the cancel asked to
+abort (its `stopRequested` names an `abort` intervention), null when the
+ticket had none; 409 with `current` and 422 with `problems` as a move's.
+
 ## Static files
 
 `GET /` answers `console/dist/index.html` and `GET /PATH` answers
@@ -816,7 +895,11 @@ discloses nothing and touches no store, and the request it clears is
 still refused without the bearer. Every other method but GET stays 405, `POST`
 included on every path but the `/actions/` routes and `PUT` on every path
 but `/config`, both in [The daemon's actions](daemon.md), and a host
-daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)).
+daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)); a host
+daemon also takes `POST` on `/tickets` ([`POST /tickets`](#post-tickets)),
+`/tickets/ID/move` ([`POST /tickets/ID/move`](#post-ticketsidmove)) and
+`/tickets/ID/cancel` ([`POST /tickets/ID/cancel`](#post-ticketsidcancel)),
+each behind the machine token alone.
 
 ## Errors
 
@@ -826,7 +909,7 @@ daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)).
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
 | 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
-| 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and `PUT` outside `/config` and, on a host daemon, `/tickets/ID`; `Allow: GET` |
+| 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and, on a host daemon, `/tickets`, `/tickets/ID/move` and `/tickets/ID/cancel`, and `PUT` outside `/config` and, on a host daemon, `/tickets/ID`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build can read, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |
 | 500 | on a host daemon, one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |
