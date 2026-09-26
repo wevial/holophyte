@@ -319,6 +319,7 @@ def mirror_ticket(
     filed_at=None,
     board_updated_at=None,
     expected_revision=None,
+    author="board",
 ):
     """Upsert the Holophyte mirror of a Linear issue; return its ticket id.
 
@@ -332,8 +333,9 @@ def mirror_ticket(
     priority, labels and column are the board-owned fields a revision holds:
     the stored row is first healed against its latest revision (authored
     `unrecorded`, for an older build's write that recorded none), then
-    written, then recorded as the next revision (authored `board`) when it
-    changed -- so an older build's edit and this one are two revisions.
+    written, then recorded as the next revision (authored `author`, `board`
+    unless a native writer names itself, KO-750) when it changed -- so an
+    older build's edit and this one are two revisions.
 
     The routing rule, state-model §2: a ticket lacking acceptance criteria or
     a verification command is **not pickable**, so a new one lands in
@@ -435,7 +437,7 @@ def mirror_ticket(
                     ticket_id,
                 ),
             )
-        record_board_fields(conn, ticket_id, "board", now)
+        record_board_fields(conn, ticket_id, author, now)
     return ticket_id
 
 

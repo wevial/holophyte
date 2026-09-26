@@ -257,6 +257,10 @@ The store is its own package:
   `TICKET_TRANSITIONS` table and `transition()`/`walk_ticket()`,
   `mirror_ticket`, §2's `pickable()`/`pickable_tickets()` and the Mermaid
   state-graph renderer, re-exported from the package.
+- `store/board.py` — `file_ticket()` and `edit_ticket()`: a native board's
+  ticket numbered from `projects.ticketSeq`, validated by `ticket_problems()`
+  as `--file-ticket` validates, and an edit refused at a stale revision
+  (KO-750).
 - `store/revisions.py` — `record_board_fields()`: one `ticketRevisions`
   row per change of a ticket's board-owned fields, healing a row an older
   build changed first (KO-736).
