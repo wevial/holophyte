@@ -200,7 +200,7 @@ open issue in first and backs the store up before it.
 python3 factory.py PROJECT --hold --note "moving to the native board"
 python3 factory.py PROJECT --status          # drain: wait until no run is live
 python3 factory.py PROJECT --board-import --dry-run  # deliver: wait for 0 pushes and 0 notes pending
-sqlite3 ~/.holophyte/<slug>/store.db ".backup ~/.holophyte/<slug>/store.db.pre-native"
+python3 -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); print(d.execute('pragma integrity_check').fetchone()[0])" ~/.holophyte/<slug>/store.db ~/.holophyte/<slug>/store.db.pre-native
 python3 factory.py PROJECT --board-import --dry-run
 python3 factory.py PROJECT --board-import
 # config.toml [board]: kind = "native", key = "KEY"; keep team, drop project_id and label
