@@ -153,6 +153,11 @@ Each module, one line:
   `store.read.claimable()` row, admits it at its revision, reads that one
   issue back from the board and claims only at the admitted revision,
   admitting a moved ticket again at most `READMIT_LIMIT` times an ask.
+- `holophyte/native_board.py` — `NativeBoard` (KO-754), the board
+  `board_for()` builds for `[board] kind = "native"`: its reads answer from
+  the project's store, filing, editing and the body read-back go through
+  `store.board`, the lease and state writes do nothing, and `comment()`
+  records a note. It never asks Linear.
 - `holophyte/freshness.py` — the claim's freshness check (KO-709):
   `stale_reasons()` asks the `main` ref for each file a ticket names, and
   `park_stale()` mirrors a stale ticket `needs_spec`, comments once and
