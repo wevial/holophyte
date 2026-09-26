@@ -708,12 +708,17 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     asked = []
     owed = []
     live = False
-    for (project,) in conn.execute(
-            "SELECT id FROM projects WHERE admission = 'enabled' ORDER BY id"):
-        # A store-mode board is asked about live tickets too (KO-739).
+    for project, admission in conn.execute(
+            "SELECT id, admission FROM projects"
+            " WHERE admission IN ('enabled', 'held') ORDER BY id"):
+        # A store-mode board is asked about live tickets too (KO-739), a
+        # held project's as well: its queued pushes and notes are finished
+        # work catching up, and a drain waits on them (KO-771).
         if provider is not None and not linear_budget_low(now, out):
             observe_board(target, conn, project, provider, now, out,
                           memory.states_asked, knobs.board_ask_ms)
+        if admission == "held":
+            continue
         if loop_is_live(conn, project, now, knobs.heartbeat_stale_ms):
             live = True
             continue
