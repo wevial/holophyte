@@ -30,6 +30,7 @@ python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails th
 python3 factory.py /path/to/repo --board-diff    # where the store's ready queue differs from the board's; writes nothing
 python3 factory.py /path/to/repo --status [--json] # projects, live and parked runs, ready count, locks
 python3 factory.py --import-store PATH --dry-run /path/to/repo # what importing another store would move; writes nothing
+python3 factory.py --board-import [--dry-run] /path/to/repo # copy every open Linear issue into the store; --dry-run writes nothing
 python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
 python3 factory.py --supervise [--once]          # the host sweep over every project in host.toml; --once is one run
 python3 factory.py --serve 7710 /path/to/repo         # JSON daemon on loopback, the console at /; reads, and writes only with [serve] actions or config_edit; HOST:PORT to bind elsewhere
