@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import store
+import store.board
 import store.operate
 import store.read
 import store.schema
@@ -273,6 +274,9 @@ class StoreSurfaceTests(unittest.TestCase):
     def test_public_functions_match_the_allow_list(self):
         for module, expected in ((store, EXPECTED),
                                  (store.schema, EXPECTED_SCHEMA),
+                                 # KO-750: the native board's writers.
+                                 (store.board, ["edit_ticket", "file_ticket",
+                                                "ticket_problems"]),
                                  # KO-457: persisted work boundaries and live read.
                                  (store.working, ["agent_work", "effective_work",
                                                   "settle_work", "verify_work",

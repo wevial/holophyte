@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import store
+import store.board
 import store.read
 import store.tickets
 import ticket_template
@@ -912,10 +913,9 @@ def post_ledger_comment(task_id, text, provider):
 FILE_TICKET_PRIORITIES = {"urgent": 1, "high": 2, "medium": 3, "low": 4}
 
 def _ticket_problems(text, repo):
-    """What filing refuses in `text`, checked against `repo`: the blocking
-    template violations plus the advisories `filing_refusals()` names."""
-    return ticket_template.filing_refusals(
-        ticket_template.validate(ticket_template.parse(text), repo=repo))
+    """What filing refuses in `text`, checked against `repo`: the store's
+    `ticket_problems()`, the one composition every filer uses (KO-750)."""
+    return store.board.ticket_problems(text, repo)
 
 
 def file_ticket(target, path, state, board, out=None, priority=None,
