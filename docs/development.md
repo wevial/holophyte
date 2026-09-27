@@ -390,6 +390,26 @@ to `Bun.build` with `bun-plugin-tailwind` and writes the static bundle to
 to its hashed script and stylesheet. `console/dist/` and
 `console/node_modules/` are git-ignored.
 
+Captures are the screenshots a console pull request carries, taken by
+`holophyte/capture_playwright.py` with a real Chromium. The fixture
+`python3 -m tests.console_fixture` builds the console, seeds a throwaway
+host with the `demo` project, serves it from a real host daemon and runs one
+command with `CONSOLE_URL` naming it; that command is the console's
+`capture` script, `playwright test` from the pinned `@playwright/test`.
+`console/playwright.config.ts` is Chromium only, one worker, no retries, a
+1440×900 light viewport, `baseURL` from `CONSOLE_URL`, and no `webServer`,
+since the fixture boots the daemon. A ticket's spec is
+`<KEY>.capture.ts` in the capture directory under `console/` (so it
+resolves the console's `@playwright/test`), and saves `NN-slug.png` files
+into `CAPTURE_OUT`; `console/e2e/CAPTURE-0.capture.ts` is the smoke spec,
+which writes the Board as `01-board.png`. Neither `bun test` nor the
+typecheck reaches `console/e2e/`, and Playwright's `console/test-results/`
+is git-ignored. The verify's capture command, from the repo root:
+
+```
+OUT=$(mktemp -d) && HOLOPHYTE_TICKET=CAPTURE-0 python3 holophyte/capture_playwright.py --dir console/e2e --config console/playwright.config.ts --boot "python3 -m tests.console_fixture --build 'bun --cwd=console run build' bun --cwd=console run capture" "$OUT"
+```
+
 Bun is a developer tool like ruff, never vendored. The operator step for the
 writer host: install it with the upstream installer
 (`curl -fsSL https://bun.sh/install | bash`) as the factory's user, so the
