@@ -46,9 +46,18 @@ class FilingRefused(ValueError):
 
 def ticket_problems(text, repo):
     """What filing refuses in `text`, checked against `repo`: the blocking
-    template violations plus the advisories `filing_refusals()` names."""
-    return ticket_template.filing_refusals(
-        ticket_template.validate(ticket_template.parse(text), repo=repo))
+    template violations plus the advisories `filing_refusals()` names,
+    then an Evidence section `repo`'s config cannot capture."""
+    ticket = ticket_template.parse(text)
+    problems = ticket_template.filing_refusals(
+        ticket_template.validate(ticket, repo=repo))
+    if repo:
+        # Deferred, as `task_contract()` is: holophyte imports this module.
+        from holophyte.pr_media import evidence_problems
+        from holophyte.project import Project
+        problems += evidence_problems(Project.locate(repo, adopt=False),
+                                      ticket.evidence_states)
+    return problems
 
 
 def file_ticket(conn, project_id, key, text, column="ready", priority=None,

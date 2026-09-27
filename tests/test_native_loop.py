@@ -37,6 +37,10 @@ from provider import FileProvider, board_for  # noqa: E402
 
 NATIVE = '[board]\nkind = "native"\nkey = "NAT"\n'
 DEPENDENT = VALID_BODY.replace("Depends on: none", "Depends on: NAT-1")
+EVIDENCE = VALID_BODY.replace(
+    "## Implementation notes",
+    "## Evidence\n\n- The thing on its page.\n\n## Implementation notes")
+CAPTURE = '[merge]\nmode = "pr"\nui_capture = "true"\nui_paths = ["web/**"]\n'
 
 
 def no_linear(*args, **kwargs):
@@ -119,6 +123,18 @@ class NativeLoopTests(LoopFixture):
             {"NAT-1": "merged", "NAT-2": "in_flight"}])
         self.assertIn("the first work", self.subjects())
         self.assertIn("the second work", self.subjects())
+
+    def test_evidence_the_project_stopped_capturing_is_not_claimed(self):
+        self.configure(NATIVE + CAPTURE)
+        self.assertEqual(self.file(EVIDENCE), "NAT-1")
+        self.configure(NATIVE)
+        self.board = board_for(self.project)
+
+        out = self.run_loop()
+
+        self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)], out)
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"}, out)
+        self.assertIn("[merge] ui_capture", out)
 
     def test_an_unmerged_dependency_is_stale_only_on_a_file_board(self):
         self.file(VALID_BODY)

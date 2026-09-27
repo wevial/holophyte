@@ -245,6 +245,21 @@ class FileTicketCliTests(unittest.TestCase):
                 self.assertIn(line, printed)
                 self.assertEqual(linear.mutations(), [])
 
+    def test_evidence_the_target_cannot_capture_is_neither_filed_nor_updated(self):
+        self.with_board()
+        self.ticket.write_text(TICKET.replace(
+            "## Implementation notes",
+            "## Evidence\n\n- The orders page with its Export button.\n\n"
+            "## Implementation notes"))
+
+        for args in ((), ("--update", "KO-7000")):
+            with self.subTest(args=args):
+                linear = FakeLinear()
+                status, printed = self.cli(*args, linear=linear)
+                self.assertEqual(status, 1)
+                self.assertIn("[merge] ui_capture", printed)
+                self.assertEqual(linear.mutations(), [])
+
     def test_a_stored_body_that_fails_validation_prints_the_id_and_exits_2(self):
         self.with_board()
         rewritten = TICKET.replace("**What:**", "What:").replace(

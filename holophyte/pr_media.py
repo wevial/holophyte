@@ -52,6 +52,32 @@ def implementer_brief(project, ticket, task_id):
             + "\n".join(f"{i:02d}: {state}" for i, state in enumerate(states, 1)))
 
 
+def evidence_problems(project, evidence_states):
+    """Why `project` cannot capture `evidence_states`: [] or one line.
+
+    Evidence is captured only for a pull request (`[merge] mode = "pr"`),
+    by `[merge] ui_capture` over `ui_paths`; anywhere else the section is
+    dropped unseen, so filing and claim refuse it. A body with no states
+    reads no config, and a malformed one is the refusal, not an exit.
+    """
+    if not evidence_states:
+        return []
+    try:
+        cfg = merge_config(project)
+    except SystemExit as error:
+        return [f"'Evidence' cannot be captured: {error}"]
+    if not cfg.ui_capture.strip():
+        return ["'Evidence' cannot be captured: [merge] ui_capture and"
+                f" ui_paths are unset in {project.config_path}; configure"
+                " them or omit the section"]
+    if cfg.mode != "pr":
+        return ["'Evidence' cannot be captured: evidence is captured only"
+                f" for a pull request, and [merge] mode is {cfg.mode!r}"
+                f" in {project.config_path}; set it to \"pr\" or omit"
+                " the section"]
+    return []
+
+
 def media_url(repo, branch, name, private):
     """Images use the raw host only when public; videos always link to blobs."""
     path = f'{repo}/{quote(branch)}/{quote(name)}'

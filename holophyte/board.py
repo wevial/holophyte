@@ -285,8 +285,14 @@ def body_problems(task, repo=None, on_pull_request=False):
         return []
     if on_pull_request:
         repo = None
-    return ticket_template.blocking(
-        ticket_template.validate(ticket_template.parse(body), repo=repo))
+    ticket = ticket_template.parse(body)
+    problems = ticket_template.blocking(ticket_template.validate(ticket, repo=repo))
+    if repo:  # An Evidence section the target cannot capture, as filing refuses.
+        from holophyte.pr_media import evidence_problems
+        from holophyte.project import Project
+        problems += evidence_problems(Project.locate(repo, adopt=False),
+                                      ticket.evidence_states)
+    return problems
 
 
 def body_problem(task, repo=None, on_pull_request=False):

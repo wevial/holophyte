@@ -20,11 +20,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from holophyte.project import Project  # noqa: E402 - after the sys.path insert
 
 
-def body(title="Add export endpoint", depends="none", what=True):
+def body(title="Add export endpoint", depends="none", what=True,
+         evidence=False):
     what_line = ("**What:** GET /orders.csv streams the current user's orders"
                  " as CSV.\n\n") if what else ""
+    evidence_section = ("## Evidence\n\n- The orders page with its Export"
+                        " button.\n\n") if evidence else ""
     return f"""\
 # {title}
 
@@ -56,7 +60,7 @@ Add a CSV export endpoint for the orders list.
 python3 -m unittest test_orders_export
 ```
 
-## Implementation notes
+{evidence_section}## Implementation notes
 
 - Endpoint lives beside the other order routes.
 
@@ -77,6 +81,7 @@ class StoreBoardTests(unittest.TestCase):
         repo = Path(tmp.name) / "repo"
         repo.mkdir()
         subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        self.repo = repo
         self.path = Path(tmp.name) / "store.sqlite3"
         self.conn = self.open()
         self.project_id = store.tickets.ensure_project(
@@ -187,6 +192,54 @@ class StoreBoardTests(unittest.TestCase):
         self.assertEqual(moved.exception.current, 2)
         self.assertEqual(self.row("NAT-1"), row)
         self.assertEqual(self.revisions("NAT-1"), revisions)
+
+    def configure(self, merge):
+        config = Project.locate(self.repo, adopt=False).config_path
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(f"[merge]\n{merge}\n" if merge else "")
+
+    def test_evidence_without_capture_configured_is_refused_ready(self):
+        with self.assertRaises(store.board.FilingRefused) as refused:
+            store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                    body(evidence=True))
+        self.assertIn("[merge] ui_capture", str(refused.exception))
+        self.assertEqual((self.ticket_count(), self.seq()), (0, 0))
+
+        draft = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                        body(evidence=True), column="backlog")
+        _, status, column, revision, _, _, _ = self.row(draft)
+        self.assertEqual((status, column), ("needs_spec", "backlog"))
+        with self.assertRaises(store.board.FilingRefused) as refused:
+            store.board.move_ticket(self.conn, self.project_id, draft,
+                                    "ready", revision)
+        self.assertIn("[merge] ui_capture", str(refused.exception))
+        self.assertEqual(self.row(draft)[2], "backlog")
+
+    def test_evidence_is_filed_only_where_a_pull_request_captures_it(self):
+        capture = 'ui_capture = "true"\nui_paths = ["web/**"]'
+        self.configure(capture)
+        with self.assertRaises(store.board.FilingRefused) as refused:
+            store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                    body(evidence=True))
+        self.assertIn("[merge] mode", str(refused.exception))
+        self.assertEqual(self.ticket_count(), 0)
+
+        self.configure('mode = "pr"\n' + capture)
+        filed = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                        body(evidence=True))
+        self.assertEqual(self.row(filed)[1], "ready")
+
+    def test_a_malformed_merge_table_refuses_only_an_evidence_body(self):
+        self.configure('mode = "bogus"')
+        filed = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                        body())
+        self.assertEqual(self.row(filed)[1], "ready")
+
+        with self.assertRaises(store.board.FilingRefused) as refused:
+            store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                    body("Export again", evidence=True))
+        self.assertIn("[merge] mode", str(refused.exception))
+        self.assertEqual(self.ticket_count(), 1)
 
 
 if __name__ == "__main__":
