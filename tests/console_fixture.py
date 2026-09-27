@@ -57,8 +57,9 @@ FINDINGS = [{"path": "holophyte/serve.py", "line": 12, "severity": "p1",
 def seed(home):
     """Seed `home` as a host with the `demo` project; answer the machine
     token. `HOLOPHYTE_HOME` names `home` while it runs, whatever it named
-    before, so nothing here writes to another home."""
-    home = Path(home)
+    before, so nothing here writes to another home. A relative `home` is
+    resolved first: the daemon takes the token file against its home."""
+    home = Path(home).resolve()
     with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}):
         path = _register(home)
         token = _serve_table(home)
@@ -247,7 +248,10 @@ def main(argv=None):
             token = seed(home)
         except Exception as bad:  # noqa: BLE001 - any seeding failure is named
             return failed(f"seeding {home} failed: {bad!r}")
-        daemon, bound = start_daemon(dict(os.environ))
+        try:
+            daemon, bound = start_daemon(dict(os.environ))
+        except OSError as bad:
+            return failed(f"the host daemon did not start: {bad}")
         if not isinstance(bound, int):
             sys.stderr.write("".join(bound))
             return failed("the host daemon did not start (factory.py --serve"

@@ -7,6 +7,8 @@ command a Python script that talks to the daemon and records what it saw.
 
 Run: python3 -m unittest discover -s tests -p 'test_console_fixture.py' -v
 """
+import contextlib
+import io
 import json
 import os
 import shlex
@@ -16,7 +18,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import urlsplit
+
+from holophyte.host import Host, settings
+from tests import console_fixture
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -127,6 +133,34 @@ class ConsoleFixtureTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(build, result.stderr)
+        self.assertFalse(marker.exists())
+
+    def test_a_relative_home_seeds_a_token_the_daemon_can_read(self):
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(self.root)
+
+        token = console_fixture.seed(Path("scratch"))
+
+        knobs = settings(Host.locate(Path("scratch")))
+        self.assertEqual(knobs.machine_token_file.read_text().strip(), token)
+
+    def test_a_daemon_that_cannot_spawn_is_named_and_the_command_not_run(self):
+        marker = self.root / "ran"
+        stderr = io.StringIO()
+        spawn = OSError(11, "Resource temporarily unavailable")
+
+        with patch.dict(os.environ), \
+                patch.object(console_fixture, "seed", return_value="t"), \
+                patch.object(console_fixture, "start_daemon",
+                             side_effect=spawn), \
+                contextlib.redirect_stderr(stderr):
+            code = console_fixture.main(
+                [sys.executable, "-c", f"open({str(marker)!r}, 'w')"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("host daemon did not start", stderr.getvalue())
+        self.assertIn("Resource temporarily unavailable", stderr.getvalue())
         self.assertFalse(marker.exists())
 
 
