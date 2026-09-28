@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -840,6 +841,78 @@ class IsolationTests(unittest.TestCase):
         self.assertTrue(
             Path(source).is_relative_to((self.root / "relative-home").resolve())
         )
+
+    def fake_codex_release(self, names=("codex", "codex-code-mode-host")):
+        release = self.root / "release"
+        release.mkdir()
+        for name in names:
+            (release / name).write_text("#!/bin/sh\n")
+            (release / name).chmod(0o755)
+        return release
+
+    def test_claude_implementer_mounts_no_codex_file(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        release = self.fake_codex_release()
+        for implementer in ("claude -p", {"harness": "claude"}):
+            with self.subTest(implementer=implementer):
+                self.table["agents"] = {"implementer_isolation": "container",
+                                        "implementer": implementer}
+                with patch.dict(os.environ, {"PATH": str(release)}):
+                    command, _ = isolation.container_command(
+                        isolation.route_for(self.target), worktree, {},
+                        ["claude", "-p"], "n")
+                self.assertNotIn("codex", " ".join(command))
+                self.assertEqual(command[-2:], ["claude", "-p"])
+
+    def test_codex_fallback_mounts_the_host_release_read_only(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        release = self.fake_codex_release()
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": {"harness": "claude"},
+                                "implementer_fallback": "codex exec -m model"}
+        with patch.dict(os.environ, {"PATH": str(release)}):
+            command, _ = isolation.container_command(
+                isolation.route_for(self.target), worktree, {}, ["codex"], "n")
+        mounts = [command[i + 1] for i, part in enumerate(command)
+                  if part == "--volume"]
+        self.assertIn(f"{release}/codex:/opt/codex/bin/codex:ro", mounts)
+        self.assertIn(f"{release}/codex-code-mode-host:"
+                      "/opt/codex/bin/codex-code-mode-host:ro", mounts)
+        (release / "codex-code-mode-host").unlink()
+        with (patch.dict(os.environ, {"PATH": str(release)}),
+              self.assertRaisesRegex(RuntimeError, "codex-code-mode-host")):
+            isolation.container_command(
+                isolation.route_for(self.target), worktree, {}, ["codex"], "n")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_codex_implementer_runs_the_host_release_read_only(self):
+        import shutil
+
+        from holophyte import isolation
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        if not shutil.which("codex"):
+            self.skipTest("Codex absent from the host PATH")
+        _, worktree = self.make_worktree()
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": "codex exec -m MODEL"}
+        route = replace(isolation.route_for(self.target), writable=False)
+        host = subprocess.run(["codex", "--version"], capture_output=True,
+                              text=True, check=True).stdout
+        code, output = isolation.launch(route, worktree, {}, ["codex", "--version"])
+        self.assertEqual((code, output.strip()), (0, host.strip()))
+        code, output = isolation.launch(
+            route, worktree, {}, ["/bin/sh", "-c", 'touch -c "$(command -v codex)"'])
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("Read-only file system", output)
 
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",

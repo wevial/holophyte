@@ -5,6 +5,7 @@ import hashlib
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import threading
@@ -24,6 +25,13 @@ class Route:
     credential: dict = field(default_factory=dict)
     memory: str = "4g"
     writable: bool = True
+    codex: bool = False
+
+
+def runs_codex(value):
+    from holophyte.harness import route_text
+
+    return str(route_text(value) or "").split()[:1] == ["codex"]
 
 
 def route_for(project):
@@ -50,7 +58,9 @@ def route_for(project):
         raise SystemExit("[agents] implementer_image must be an image name")
     credential = table.get("implementer_credential", {})
     validate_credential(credential)
-    return Route(backend, image, credential, memory, writable)
+    codex = any(runs_codex(table.get(key))
+                for key in ("implementer", "implementer_fallback"))
+    return Route(backend, image, credential, memory, writable, codex)
 
 
 def validate_credential(value):
@@ -126,6 +136,23 @@ def file_mount_flags(mounts):
         if not source.is_file() or ":" in str(source):
             raise RuntimeError(f"file mount {source} must be a regular file")
         flags += ["--volume", f"{source}:{source}:ro"]
+    return flags
+
+
+CODEX_BIN = "/opt/codex/bin"
+
+
+def codex_mount_flags():
+    found = shutil.which("codex")
+    release = Path(found).resolve(strict=True).parent if found else None
+    flags = []
+    for name in review_runner.CODEX_FILES:
+        source = release / name if release else Path(name)
+        if release is None or not source.is_file() or not os.access(source, os.X_OK):
+            raise RuntimeError(f"Codex release is missing executable: {source}")
+        if ":" in str(source):
+            raise RuntimeError(f"bind source {source} must not contain a colon")
+        flags += ["--volume", f"{source}:{CODEX_BIN}/{name}:ro"]
     return flags
 
 
@@ -213,6 +240,10 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
             raise RuntimeError("implementer credential must be a regular file")
         command += ["--volume", f"{source}:{credential['destination']}:ro"]
     command += file_mount_flags(mounts)
+    if route.codex:
+        command += codex_mount_flags()
+        argv = ["/bin/sh", "-c", f'PATH="{CODEX_BIN}:$PATH" exec "$@"', "codex",
+                *argv]
     values = dict(
         env or {},
         **caches,
