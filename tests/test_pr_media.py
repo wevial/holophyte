@@ -708,8 +708,9 @@ class MediaTests(unittest.TestCase):
             error = pr_media._capture("sh capture.sh", self.repo, self.root,
                                       "KO-16", [])
         pid = self.child_pid(pidfile)
-        while running(pid) and monotonic() - started < 1.5:
+        while running(pid) and monotonic() - started < 5:
             time.sleep(0.02)
+        self.assertLess(monotonic() - started, 0.5 + 1)
         self.assertEqual(error, "")
         self.assertFalse(running(pid))
 
