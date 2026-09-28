@@ -146,8 +146,13 @@ def _copied(spec, default, directory):
                       f"{default}: expected {directory}")
     handle, name = tempfile.mkstemp(prefix="holophyte-default-",
                                     suffix=".capture.ts", dir=directory)
-    with os.fdopen(handle, "wb") as file:
-        file.write(spec.read_bytes())
+    # run() removes only a copy it was handed, so a failed copy removes itself.
+    try:
+        with os.fdopen(handle, "wb") as file:
+            file.write(spec.read_bytes())
+    except BaseException:
+        os.unlink(name)
+        raise
     return Path(name)
 
 

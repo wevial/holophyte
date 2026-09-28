@@ -199,6 +199,20 @@ class FakeBootTests(unittest.TestCase):
         self.assertIn(default.read_text(), record["beside"].values())
         self.assertEqual(self.leftovers(), ["KO-7.capture.ts"])
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads a file without permission")
+    def test_an_unreadable_outside_default_leaves_no_copy(self):
+        default = self.outside_default()
+        default.chmod(0)
+        self.addCleanup(default.chmod, 0o644)
+
+        result = self.capture(ticket="HOLO-9",
+                              options=("--default", str(default)))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PermissionError", result.stderr)
+        self.assertFalse((self.repo / "record.json").exists())
+        self.assertEqual(self.leftovers(), ["KO-7.capture.ts"])
+
     def test_an_outside_default_without_a_capture_directory_refuses(self):
         default = self.outside_default()
 
