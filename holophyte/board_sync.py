@@ -25,7 +25,14 @@ one, which clears it. A gone answer leaves the push alone, and a closed
 ticket is still asked while it has one queued. The sends are made after
 each row's transaction commits, each only if the row, read again, still
 queues it and its status still maps to it; a raise is one printed line and
-the push waits for the next ask.
+the push waits for the next pass.
+
+A queued push does not wait for the interval: on a pass inside it, the
+project's tickets with a push queued and not seen gone, open or closed,
+are asked in one `states()` call naming only them, each answer settled as
+above, and the pending notes delivered after. That ask is not stamped, so
+the full ask keeps its interval, and a pass with nothing queued calls the
+board for nothing.
 
 A canceled answer for a ticket whose run is live in a work phase aborts
 that run through `abort_run()`, source `supervisor` and trigger
@@ -35,12 +42,13 @@ An abort or a walk re-reads the row and re-derives its push, so a push
 selected before it is never sent over it (operator_note event 10148).
 
 It is the one sender of a store-mode note too (KO-747): after the pushes,
-on a pass the board answered, each of the project's pending notes is
-posted oldest first, its last line `holophyte-note: ID`, and stamped
-posted only once the board took it. A raise records the note's
-`postError` and stops the project's delivery until the next ask; a
-closed ticket is still asked while it has a note pending, so a note that
-failed after its ticket closed is posted on a later ask. A
+on a pass the board answered or one inside the interval, which asks
+nothing for a note, each of the project's pending notes is posted oldest
+first, its last line `holophyte-note: ID`, and stamped posted only once
+the board took it. A raise records the note's `postError` and stops the
+project's delivery until the next pass; a closed ticket is still asked
+while it has a note pending, so a note that failed after its ticket
+closed is posted on a later pass. A
 response lost after the board kept the comment posts it again; the id
 line is what makes the duplicate recognisable.
 
@@ -68,10 +76,10 @@ CLOSED_ANSWERS = ("canceled", "completed")
 
 def observe_board(target, conn, project, board, now, out, asked, ask_ms):
     """Ask `board` the state of each of `project`'s open tickets and record
-    the answers; nothing unless `target`'s `[board] mode` is `store`, a
+    the answers; nothing unless `target`'s `[board] mode` is `store` and a
     board is given that is not native (KO-759: the store asking itself
-    writes revisions for nothing) and the project was not asked within
-    `ask_ms`. `asked`
+    writes revisions for nothing). Within `ask_ms` of the project's last
+    ask only what is queued is delivered (`_deliver_queued()`). `asked`
     is the store's `ReconcileMemory.states_asked`, by project id. A raise
     from the board is one printed line to `out` and no write."""
     if board is None or board_mode(target).mode != "store":
@@ -80,6 +88,7 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
         return
     asked_at = asked.get(project)
     if asked_at is not None and now - asked_at < ask_ms:
+        _deliver_queued(target, conn, project, board, now, out, ask_ms)
         return
     tickets = [*store.read.open_tickets(conn, project),
                *_closed_to_ask(conn, project)]
@@ -100,6 +109,31 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
             del asked[project]
         elif deadline.spent():
             asked[project] = previous
+    _apply(target, conn, board, tickets, answers, now, out, ask_ms)
+    _deliver(conn, project, board, out)
+
+
+def _deliver_queued(target, conn, project, board, now, out, ask_ms):
+    """A pass inside the ask interval: the queued pushes, after one
+    `states()` ask naming only their tickets, then the pending notes, which
+    need no answer. The ask is not stamped, so the full one keeps its
+    interval; a pass with nothing queued calls the board for nothing."""
+    tickets = _pushes_to_settle(conn, project)
+    if tickets:
+        deadline.check("the board's states of queued pushes")
+        try:
+            answers = board.states([t.linearIdentifier for t in tickets])
+        except Exception as e:  # noqa: BLE001 - no evidence, never the pass
+            print(f"[holo2] the board could not be asked the states of"
+                  f" queued pushes ({e}); a later pass asks again", file=out)
+            return
+        _apply(target, conn, board, tickets, answers, now, out, ask_ms)
+    _deliver(conn, project, board, out)
+
+
+def _apply(target, conn, board, tickets, answers, now, out, ask_ms):
+    """Record each ticket's answer, abort a canceled live run, and send
+    the pushes the answers settle."""
     sends = []
     for ticket in tickets:
         answer = answers.get(ticket.linearIdentifier)
@@ -112,7 +146,6 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
         if send is not None:
             sends.append((ticket.id, ticket.linearIdentifier, *send))
     _send(conn, board, sends, out)
-    _deliver(conn, project, board, out)
 
 
 def owed(target, conn, project, provider, now, out, knobs):
@@ -142,7 +175,7 @@ def _board_project(conn, provider):
 def _deliver(conn, project, board, out):
     """Post the project's pending notes oldest first, each outside any
     transaction and stamped in its own after; the first raise is recorded
-    on its note and the rest wait for the next ask."""
+    on its note and the rest wait for the next pass."""
     for note in store.read.pending_notes(conn, project):
         deadline.check(f"the post of note {note.id} on {note.identifier}")
         body = (f"**{_utc(note.at)}**\n\n{note.text}\n\n"
@@ -152,7 +185,7 @@ def _deliver(conn, project, board, out):
         except Exception as e:  # noqa: BLE001 - the note waits, never the pass
             store.mark_note_failed(conn, note.id, str(e) or type(e).__name__)
             print(f"[holo2] note {note.id} on {note.identifier} could not be"
-                  f" posted ({e}); it waits for the next ask", file=out)
+                  f" posted ({e}); it waits for the next pass", file=out)
             return
         store.mark_note_posted(conn, note.id)
 
@@ -171,7 +204,7 @@ def _send(conn, board, sends, out):
             board.set_state(issue_id, state)
         except Exception as e:  # noqa: BLE001 - the push waits, never the pass
             print(f"[holo2] the queued push of {identifier} to {state}"
-                  f" failed ({e}); it waits for the next ask", file=out)
+                  f" failed ({e}); it waits for the next pass", file=out)
             continue
         # The board now shows the sent state: a push queued before the
         # next ask is queued from it, not from the answer before (KO-761).
@@ -189,6 +222,16 @@ def _closed_to_ask(conn, project):
                 " ('merged', 'abandoned') AND (pushState IS NOT NULL OR"
                 " (goneSince IS NULL AND EXISTS (SELECT 1 FROM ticketNotes n"
                 " WHERE n.ticketId = t.id AND n.postedAt IS NULL)))"
+                " ORDER BY linearIdentifier", (project,))]
+
+
+def _pushes_to_settle(conn, project):
+    """The project's tickets, open or closed, with a push queued and not
+    seen gone: the ones a pass inside the ask interval asks about."""
+    return [store.read.ticket_by_id(conn, ticket_id) for (ticket_id,) in
+            conn.execute(
+                "SELECT id FROM tickets WHERE projectId = ? AND pushState"
+                " IS NOT NULL AND goneSince IS NULL"
                 " ORDER BY linearIdentifier", (project,))]
 
 
