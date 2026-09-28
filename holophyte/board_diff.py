@@ -1,14 +1,4 @@
-"""holophyte.board_diff: `--board-diff`, the store's copy of the ready
-queue held against the board's (KO-738).
-
-Phase 3 flips a project to store mode only when the two agree, and this
-is the command that says whether they do. It lists the board once, opens
-the store read-only, and prints one line per difference in a board-owned
-field (title, body, priority, labels, column), one per listed issue the
-store has no row for, and one per store row `ready` for claiming that the
-listing no longer names, then a summary line. It repairs nothing: the
-next mirror pass does that.
-"""
+"""`--board-diff`: the board's ready listing against the store's; it repairs nothing."""
 import json
 import sys
 
@@ -16,23 +6,10 @@ import store.read
 from holophyte.board import board_owned_labels, mirror_key
 from holophyte.claim_store import store_mode
 
-# The board-owned fields a task carries, named alike in the task dict and
-# `tickets`; the column is compared separately, since a task does not carry it.
 TASK_FIELDS = ("title", "body", "priority", "labels")
 
 
 def board_diff(target, board, out=None):
-    """Print every difference between `board`'s ready listing and the
-    store's rows for it; return 0 when there are none and 1 otherwise.
-
-    The project row is the one whose `linearTeamId` is the board's `team`,
-    as the supervisor's board fallback finds it, and each task is matched
-    to its row by `mirror_key()`. A field is compared only when the task
-    carries it (a file-board task has no `priority`); labels are compared
-    as `board_owned_labels()`, and every listed task's column is expected
-    to be `ready`. A `ready` row with no live run that the listing does not
-    name is one the board took out of the queue behind the store's back.
-    """
     out = out or sys.stdout
     if not target.store_path.exists():
         print(f"[holo2] no store at {target.store_path}", file=out)
@@ -54,11 +31,6 @@ def board_diff(target, board, out=None):
 
 
 def diff_lines(conn, team, tasks, store_mode=False):
-    """The difference lines for `tasks`, the board's ready listing, against
-    the store's rows under `team`'s project. In store mode (Phase 3 stage
-    3) a `ready` row the listing does not name is a difference only while
-    its column is `ready`: a ticket moved to Backlog leaves the queue by
-    its column, and the store already says so."""
     row = conn.execute("SELECT id FROM projects WHERE linearTeamId = ?",
                        (team,)).fetchone()
     project = row[0] if row is not None else None
@@ -75,6 +47,7 @@ def diff_lines(conn, team, tasks, store_mode=False):
                          " the store")
             continue
         lines.extend(field_lines(task, stored))
+    # In store mode a row moved off the ready column has left the queue by it.
     column = " AND boardColumn = 'ready'" if store_mode else ""
     for key, identifier in conn.execute(
             "SELECT linearIssueId, linearIdentifier FROM tickets"
@@ -87,8 +60,6 @@ def diff_lines(conn, team, tasks, store_mode=False):
 
 
 def field_lines(task, stored):
-    """One line per board-owned field `task` carries that its stored row,
-    `(title, body, priority, labels, boardColumn)`, holds otherwise."""
     lines = []
     for index, name in enumerate(TASK_FIELDS):
         board_value = task.get(name)
