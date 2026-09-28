@@ -65,6 +65,26 @@ RUN set -eu \
     && rm /tmp/ruff.tar.gz
 ENV PATH=/opt/ruff/bin:$PATH
 
+# The Claude CLI is pinned to one native build, the one the official
+# installer fetches for that version; its SHA-256 is the linux-x64 checksum in
+# the release's manifest.json, and a mismatch fails the build. The managed
+# settings make bypass the default permission mode: an implementer turn has no
+# one to ask, and the container is its boundary.
+ARG CLAUDE_VERSION=2.1.284
+ARG CLAUDE_SHA256=5cd90aabd83f8a15136c35aa37bb1d92b348993573316643dc3fe4e04afbf88f
+RUN set -eu \
+    && curl -fsSL -o /tmp/claude \
+        "https://downloads.claude.ai/claude-code-releases/${CLAUDE_VERSION}/linux-x64/claude" \
+    && echo "${CLAUDE_SHA256}  /tmp/claude" | sha256sum -c - \
+    && mkdir -p /opt/claude/bin /etc/claude-code \
+    && install -m 0755 /tmp/claude /opt/claude/bin/claude \
+    && rm /tmp/claude \
+    && printf '%s\n' '{"permissions": {"defaultMode": "bypassPermissions"}}' \
+        > /etc/claude-code/managed-settings.json \
+    && chmod 0644 /etc/claude-code/managed-settings.json
+ENV PATH=/opt/claude/bin:$PATH \
+    DISABLE_AUTOUPDATER=1
+
 # tomlkit is the factory's one Python dependency (`requirements.txt`, the
 # daemon's `PUT /config` patch): the suite imports it, so the reviewer's
 # `python3 -m unittest discover` needs it at the same pinned version.
