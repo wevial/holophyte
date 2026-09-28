@@ -888,6 +888,13 @@ class IsolationTests(unittest.TestCase):
             isolation.container_command(
                 isolation.route_for(self.target), worktree, {}, ["codex"], "n")
 
+    def test_quoted_codex_program_is_a_codex_implementer(self):
+        from holophyte.isolation import route_for
+
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": '"codex" exec -m model'}
+        self.assertTrue(route_for(self.target).codex)
+
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",

@@ -31,7 +31,10 @@ class Route:
 def runs_codex(value):
     from holophyte.harness import route_text
 
-    return str(route_text(value) or "").split()[:1] == ["codex"]
+    try:
+        return shlex.split(str(route_text(value) or ""))[:1] == ["codex"]
+    except ValueError:
+        return False
 
 
 def route_for(project):
