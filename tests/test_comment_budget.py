@@ -337,13 +337,15 @@ def citation_violations(modules, cited=CITED):
     return bad
 
 
-def functions(body, prefix=""):
-    for node in body:
+def functions(tree, prefix=""):
+    for node in ast.iter_child_nodes(tree):
         if isinstance(node, FUNCTIONS):
             yield prefix + node.name, node
-            yield from functions(node.body, f"{prefix}{node.name}.")
+            yield from functions(node, f"{prefix}{node.name}.")
         elif isinstance(node, ast.ClassDef):
-            yield from functions(node.body, f"{prefix}{node.name}.")
+            yield from functions(node, f"{prefix}{node.name}.")
+        else:
+            yield from functions(node, prefix)
 
 
 def complexity_exempt(root=ROOT):
@@ -351,7 +353,7 @@ def complexity_exempt(root=ROOT):
     for name in in_scope(root):
         text = (root / name).read_text()
         marks = comments(text)
-        for qualname, node in functions(ast.parse(text).body):
+        for qualname, node in functions(ast.parse(text)):
             if "noqa: C901" in marks.get(node.lineno, ""):
                 found.add(f"{name}::{qualname}")
     return found
@@ -578,6 +580,21 @@ class ComplexitySelfTests(unittest.TestCase):
         self.assertEqual(complexity_violations(found, exempt={}), [
             "holophyte/mod.py::C.busy: carries noqa: C901 with no "
             "COMPLEXITY_EXEMPT entry"])
+
+    def test_a_function_under_control_flow_is_found(self):
+        text = ("if True:\n"
+                "    def busy():  # noqa: C901\n"
+                "        return 1\n"
+                "try:\n"
+                "    pass\n"
+                "except ImportError:\n"
+                "    class C:\n"
+                "        def f(self):  # noqa: C901\n"
+                "            return 1\n")
+        with Repo({"holophyte/mod.py": text}) as repo:
+            found = complexity_exempt(repo.root)
+        self.assertEqual(found, {"holophyte/mod.py::busy",
+                                 "holophyte/mod.py::C.f"})
 
     def test_an_entry_with_no_noqa_is_stale(self):
         self.assertEqual(
