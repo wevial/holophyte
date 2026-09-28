@@ -9,10 +9,11 @@ capture script of its own:
 
 The spec is `DIR/<HOLOPHYTE_TICKET>.capture.ts`, outside the project's test
 tree; when it is absent and the ticket lists no evidence states, `--default`
-names the spec run instead. A generated config beside the spec imports the
-project's own config and points its test projects at that spec; the boot
-command runs with that config and `CAPTURE_OUT` set to OUTPUT, and the run
-fails unless an `NN-slug.png` landed.
+names the spec run instead; a default outside the working directory runs from
+a temporary copy in DIR, so it resolves the project's modules. A generated
+config beside the spec imports the project's own config and points its test
+projects at that spec; the boot command runs with that config and
+`CAPTURE_OUT` set to OUTPUT, and the run fails unless an `NN-slug.png` landed.
 
 Standard library only and no `holophyte` imports: it runs by path from a
 target's worktree, where the package is not on `sys.path`.
@@ -90,7 +91,8 @@ def _arguments(argv):
                         help="the project's config (default: %(default)s)")
     parser.add_argument("--default", metavar="SPEC",
                         help="spec run when the ticket has no spec of its own "
-                             "and HOLOPHYTE_EVIDENCE_STATES is empty")
+                             "and HOLOPHYTE_EVIDENCE_STATES is empty; one outside "
+                             "the working directory runs from a copy in --dir")
     parser.add_argument("output", metavar="OUTPUT",
                         help="directory the screenshots are written to")
     return parser.parse_args(argv)
@@ -127,6 +129,31 @@ def _spec(directory, ticket, default, states):
         raise Refusal(f"{missing}, and no default capture spec: "
                       f"expected {default}")
     return Path(default)
+
+
+def _copied(spec, default, directory):
+    """A copy in `directory` of a default spec outside the working directory.
+
+    Node resolves a spec's imports upward from its own directory, so a default
+    kept beside the factory's config runs from here; None for any other spec.
+    """
+    if not default or spec != Path(default):
+        return None
+    if Path(os.path.realpath(spec)).is_relative_to(os.path.realpath(".")):
+        return None
+    if not Path(directory).is_dir():
+        raise Refusal(f"no capture directory for the default capture spec "
+                      f"{default}: expected {directory}")
+    handle, name = tempfile.mkstemp(prefix="holophyte-default-",
+                                    suffix=".capture.ts", dir=directory)
+    # run() removes only a copy it was handed, so a failed copy removes itself.
+    try:
+        with os.fdopen(handle, "wb") as file:
+            file.write(spec.read_bytes())
+    except BaseException:
+        os.unlink(name)
+        raise
+    return Path(name)
 
 
 def _generated(config, directory, spec):
@@ -168,13 +195,18 @@ def run(argv):
     config = Path(args.config).absolute()
     if not config.is_file():
         raise Refusal(f"no Playwright config: expected {args.config}")
-    output.mkdir(parents=True, exist_ok=True)
-    generated = _generated(config, spec.parent.absolute(), spec)
+    copy = _copied(spec, args.default, args.dir)
+    spec = copy or spec
+    generated = None
     try:
+        output.mkdir(parents=True, exist_ok=True)
+        generated = _generated(config, spec.parent.absolute(), spec)
         _boot(args.boot, ["--config", generated,
                           REGEX_SPECIAL.sub(r"\\\g<0>", str(spec))], env)
     finally:
-        os.unlink(generated)
+        for made in (generated, copy):
+            if made:
+                os.unlink(made)
     if not any(shot.is_file() for shot in output.glob(SHOT)):
         raise Refusal(f"no screenshot in {output}: expected at least one "
                       f"NN-slug.png ({SHOT})")
@@ -185,7 +217,7 @@ def _terminated(signum, frame):
 
 
 def main(argv=None):
-    # A terminated run still unwinds, so the generated config is removed.
+    # A terminated run still unwinds, so the generated files are removed.
     signal.signal(signal.SIGTERM, _terminated)
     try:
         run(sys.argv[1:] if argv is None else argv)

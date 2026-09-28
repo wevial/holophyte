@@ -1,6 +1,7 @@
 """The Playwright capture runner, run as a script by its path (KO-650)."""
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -11,16 +12,21 @@ from pathlib import Path
 RUNNER = Path(__file__).resolve().parents[1] / "holophyte" / "capture_playwright.py"
 MODULES = "HOLOPHYTE_TEST_PLAYWRIGHT_MODULES"
 
-# Records its argv, environment and the config it was handed (None when it
-# does not exist), then writes the file named by FAKE_WRITES into CAPTURE_OUT
-# (a directory when the name ends in a slash) and exits with FAKE_EXIT.
+# Records its argv, environment, the config it was handed (None when it does
+# not exist) and the files beside that config, then writes the file named by
+# FAKE_WRITES into CAPTURE_OUT (a directory when the name ends in a slash) and
+# exits with FAKE_EXIT.
 FAKE = """\
 import json, os, sys
 config = sys.argv[sys.argv.index('--config') + 1]
+beside = os.path.dirname(config)
 with open('record.json', 'w') as file:
     json.dump({'argv': sys.argv[1:], 'env': dict(os.environ),
                'config_existed': os.path.exists(config),
-               'config': open(config).read() if os.path.exists(config) else None},
+               'config': open(config).read() if os.path.exists(config) else None,
+               'beside': {name: open(os.path.join(beside, name)).read()
+                          for name in os.listdir(beside)
+                          if os.path.isfile(os.path.join(beside, name))}},
               file)
 written = os.path.join(os.environ['CAPTURE_OUT'], os.environ['FAKE_WRITES'])
 if written.endswith('/'):
@@ -153,6 +159,70 @@ class FakeBootTests(unittest.TestCase):
         self.assertIn("console/e2e/GONE.capture.ts", result.stderr)
         self.assertFalse((self.repo / "record.json").exists())
 
+    def outside_default(self):
+        # Beside the factory's config, a sibling of the project.
+        default = self.repo.parent / "factory" / "CAPTURE-0.capture.ts"
+        default.parent.mkdir()
+        default.write_text("// the factory's default capture\n")
+        return default
+
+    def test_a_default_outside_the_working_directory_runs_from_a_copy(self):
+        default = self.outside_default()
+
+        result = self.capture(ticket="HOLO-9", writes="01-default.png",
+                              options=("--default", str(default)))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = self.record()
+        config = record["argv"][record["argv"].index("--config") + 1]
+        self.assertEqual(Path(config).parent,
+                         (self.repo / ".holophyte-capture").resolve())
+        copy = re.search(r'testMatch: \["([^"]+)"\]', record["config"])[1]
+        self.assertTrue(copy.endswith(".capture.ts"), copy)
+        self.assertEqual(record["beside"][copy], default.read_text())
+        self.assertEqual(self.leftovers(), ["KO-7.capture.ts"])
+        self.assertEqual(sorted(p.name for p in default.parent.iterdir()),
+                         ["CAPTURE-0.capture.ts"])
+
+    def test_a_failed_boot_removes_the_copy_of_an_outside_default(self):
+        default = self.outside_default()
+
+        result = self.capture(ticket="HOLO-9", code=1,
+                              options=("--default", str(default)))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("failed with exit 1", result.stderr)
+        record = self.record()
+        config = record["argv"][record["argv"].index("--config") + 1]
+        self.assertEqual(Path(config).parent,
+                         (self.repo / ".holophyte-capture").resolve())
+        self.assertIn(default.read_text(), record["beside"].values())
+        self.assertEqual(self.leftovers(), ["KO-7.capture.ts"])
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a file without permission")
+    def test_an_unreadable_outside_default_leaves_no_copy(self):
+        default = self.outside_default()
+        default.chmod(0)
+        self.addCleanup(default.chmod, 0o644)
+
+        result = self.capture(ticket="HOLO-9",
+                              options=("--default", str(default)))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PermissionError", result.stderr)
+        self.assertFalse((self.repo / "record.json").exists())
+        self.assertEqual(self.leftovers(), ["KO-7.capture.ts"])
+
+    def test_an_outside_default_without_a_capture_directory_refuses(self):
+        default = self.outside_default()
+
+        result = self.capture(ticket="HOLO-9",
+                              options=("--dir", "gone", "--default", str(default)))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("expected gone", result.stderr)
+        self.assertFalse((self.repo / "record.json").exists())
+
     def test_a_failed_boot_command_fails_the_run_and_cleans_up(self):
         result = self.capture(code=3)
 
@@ -233,6 +303,26 @@ class RealPlaywrightTests(unittest.TestCase):
         self.assertNotIn("app.spec.ts", {name for _, name in listed})
         self.assertEqual(sorted(p.name for p in (self.repo / "e2e").iterdir()),
                          ["CAPTURE+0.capture.ts", "app.spec.ts", "setup"])
+
+    def test_a_default_outside_the_project_resolves_the_project_modules(self):
+        # Node resolves @playwright/test upward from the spec's directory,
+        # which for this default holds no node_modules.
+        factory = tempfile.TemporaryDirectory()
+        self.addCleanup(factory.cleanup)
+        default = Path(factory.name) / "CAPTURE-0.capture.ts"
+        default.write_text(SPEC % "default")
+
+        result, listed = self.listed("HOLO-9", options=("--default", str(default)))
+
+        chromium = {name for project, name in listed if project == "chromium"}
+        self.assertEqual(len(chromium), 1, result.stderr)
+        self.assertTrue(chromium.pop().endswith(".capture.ts"), listed)
+        self.assertIn(("setup", "auth.setup.ts"), listed, result.stderr)
+        self.assertEqual(
+            sorted(p.name for p in (self.repo / ".holophyte-capture").iterdir()),
+            [".gitignore"])
+        self.assertEqual([p.name for p in Path(factory.name).iterdir()],
+                         ["CAPTURE-0.capture.ts"])
 
 
 def _suites(suites):

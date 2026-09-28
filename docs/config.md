@@ -956,6 +956,10 @@ project's test tree, and refuses when the spec is missing, unless the ticket
 lists no evidence states and `--default SPEC` names an existing spec, which
 then runs in its place (a ticket that lists states and wrote no spec is still
 refused, and a `--default` naming a missing file is refused naming it). A
+default outside the working directory, such as one kept beside the factory's
+config, runs from a temporary copy in the capture directory, so it resolves
+the project's modules and path aliases; the copy is removed after the run, and
+a missing capture directory is refused naming it. A
 generated config in the spec's directory imports the project's config and
 points every test project at that spec. Projects named in another project's `dependencies` keep their own
 `testMatch`, so a setup project still runs. The boot command runs with that
