@@ -47,3 +47,23 @@ class ImplementerImageTests(unittest.TestCase):
         settings = json.loads(output)
         self.assertEqual(settings["permissions"]["defaultMode"],
                          "bypassPermissions")
+
+    def test_node_24_and_npm_run(self):
+        code, output = self.launch("node", "--version")
+        self.assertEqual(code, 0, output)
+        self.assertTrue(output.strip().startswith("v24."), output)
+
+        code, output = self.launch("npm", "--version")
+        self.assertEqual(code, 0, output)
+        self.assertRegex(output.strip(), r"^\d+\.\d+\.\d+$")
+
+    def test_python3_creates_a_virtual_environment_under_home(self):
+        code, output = self.launch(
+            "sh", "-c",
+            "python3 -m venv /home/implementer/venv"
+            " && /home/implementer/venv/bin/python -c"
+            " 'import sys; print(sys.prefix)'")
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(output.strip().splitlines()[-1],
+                         "/home/implementer/venv", output)
