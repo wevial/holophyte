@@ -821,6 +821,45 @@ class IsolationTests(unittest.TestCase):
         self.assertNotIn("GOCACHE", run.call_args.kwargs["env"])
         self.assertFalse(home.exists())
 
+    def test_launch_without_cache_points_tmpdir_at_container_tmp(self):
+        from holophyte import isolation
+
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        command, host_env = isolation.container_command(
+            isolation.Route("container"), scratch, {}, ["true"], "n"
+        )
+        self.assertIn("--env=TMPDIR", command)
+        self.assertEqual(host_env["TMPDIR"], "/tmp")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_launch_creates_a_temporary_directory(self):
+        import shutil
+        import uuid
+
+        from holophyte import isolation
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        route = isolation.Route("container")
+        isolation.image_ready(route)
+        name = "holophyte-test-" + uuid.uuid4().hex
+        command, host_env = isolation.container_command(
+            route, scratch, {}, ["sh", "-c", "mktemp -d && echo ok > probe.txt"],
+            name,
+        )
+        try:
+            code, output = isolation.run_capped(command, scratch, 120, env=host_env)
+        finally:
+            isolation.review_runner._remove_container(name, env={"PATH": os.defpath})
+        self.assertEqual(code, 0, output)
+        self.assertEqual((scratch / "probe.txt").read_text(), "ok\n")
+
     def test_relative_state_home_mounts_an_absolute_session_directory(self):
         from holophyte import isolation
 

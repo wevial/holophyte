@@ -162,7 +162,6 @@ CACHE_ENVIRONMENT = {
     "GOTMPDIR": f"{CACHE}/go-tmp",
     "npm_config_cache": f"{CACHE}/npm",
     "BUN_INSTALL_CACHE_DIR": f"{CACHE}/bun",
-    "TMPDIR": "/tmp",
 }
 
 
@@ -217,6 +216,7 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
         env or {},
         **caches,
         HOME="/home/implementer",
+        TMPDIR="/tmp",
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL="/dev/null",
     )
