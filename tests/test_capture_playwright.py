@@ -173,39 +173,60 @@ SPEC = "import { test } from '@playwright/test';\n\ntest('%s', async () => {});\
 
 
 class RealPlaywrightTests(unittest.TestCase):
-    def test_the_generated_config_lists_the_capture_spec_and_the_setup(self):
+    def setUp(self):
         modules = os.environ.get(MODULES, "")
         if not (Path(modules) / "@playwright" / "test").is_dir():
             self.skipTest(f"{MODULES} does not name a node_modules directory "
                           "holding @playwright/test")
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        repo = Path(tmp.name)
-        (repo / "node_modules").symlink_to(Path(modules).resolve())
-        (repo / "package.json").write_text('{"type": "module"}\n')
-        (repo / "playwright.config.ts").write_text(PLAYWRIGHT_CONFIG)
-        (repo / "e2e" / "setup").mkdir(parents=True)
-        (repo / "e2e" / "app.spec.ts").write_text(SPEC % "app")
-        (repo / "e2e" / "setup" / "auth.setup.ts").write_text(SPEC % "auth")
-        (repo / ".holophyte-capture").mkdir()
-        (repo / ".holophyte-capture" / ".gitignore").write_text("*\n")
-        (repo / ".holophyte-capture" / "KO-7.capture.ts").write_text(SPEC % "capture")
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HOLOPHYTE_")}
+        self.repo = Path(tmp.name)
+        (self.repo / "node_modules").symlink_to(Path(modules).resolve())
+        (self.repo / "package.json").write_text('{"type": "module"}\n')
+        (self.repo / "playwright.config.ts").write_text(PLAYWRIGHT_CONFIG)
+        (self.repo / "e2e" / "setup").mkdir(parents=True)
+        (self.repo / "e2e" / "app.spec.ts").write_text(SPEC % "app")
+        (self.repo / "e2e" / "setup" / "auth.setup.ts").write_text(SPEC % "auth")
+        (self.repo / ".holophyte-capture").mkdir()
+        (self.repo / ".holophyte-capture" / ".gitignore").write_text("*\n")
 
+    def listed(self, ticket, options=()):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("HOLOPHYTE_")}
         result = subprocess.run(
             [sys.executable, str(RUNNER),
-             "--boot", "npx playwright test --list --reporter=json", "out"],
-            cwd=repo, env={**env, "HOLOPHYTE_TICKET": "KO-7"},
+             "--boot", "npx playwright test --list --reporter=json",
+             *options, "out"],
+            cwd=self.repo, env={**env, "HOLOPHYTE_TICKET": ticket},
             capture_output=True, text=True, timeout=180)
-
         listing = json.loads(result.stdout)
-        listed = {(test["projectName"], Path(spec["file"]).name)
-                  for suite in _suites(listing["suites"])
-                  for spec in suite.get("specs", [])
-                  for test in spec["tests"]}
+        return result, {(test["projectName"], Path(spec["file"]).name)
+                        for suite in _suites(listing["suites"])
+                        for spec in suite.get("specs", [])
+                        for test in spec["tests"]}
+
+    def test_the_generated_config_lists_the_capture_spec_and_the_setup(self):
+        spec = self.repo / ".holophyte-capture" / "KO-7.capture.ts"
+        spec.write_text(SPEC % "capture")
+
+        result, listed = self.listed("KO-7")
+
         self.assertIn(("chromium", "KO-7.capture.ts"), listed, result.stderr)
         self.assertIn(("setup", "auth.setup.ts"), listed, result.stderr)
         self.assertNotIn("app.spec.ts", {name for _, name in listed})
+
+    def test_a_default_spec_inside_the_test_tree_is_listed_alone(self):
+        # The default lives in the project's own testDir, beside a spec the
+        # capture must not run, and the generated config is written there.
+        (self.repo / "e2e" / "CAPTURE-0.capture.ts").write_text(SPEC % "default")
+
+        result, listed = self.listed(
+            "HOLO-9", options=("--default", "e2e/CAPTURE-0.capture.ts"))
+
+        self.assertIn(("chromium", "CAPTURE-0.capture.ts"), listed, result.stderr)
+        self.assertIn(("setup", "auth.setup.ts"), listed, result.stderr)
+        self.assertNotIn("app.spec.ts", {name for _, name in listed})
+        self.assertEqual(sorted(p.name for p in (self.repo / "e2e").iterdir()),
+                         ["CAPTURE-0.capture.ts", "app.spec.ts", "setup"])
 
 
 def _suites(suites):
