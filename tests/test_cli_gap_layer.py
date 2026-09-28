@@ -27,16 +27,16 @@ class GapLayerFlagTests(unittest.TestCase):
         self.addCleanup(env.stop)
         self.repo = root / "repo"
         self.repo.mkdir()
-        self.target = Project.locate(self.repo)
-        self.conn = open_store(self.target)
+        self.project = Project.locate(self.repo)
+        self.conn = open_store(self.project)
         self.addCleanup(self.conn.close)
-        self.project = store.tickets.ensure_project(self.conn, "team", self.repo)
+        self.project_id = store.tickets.ensure_project(self.conn, "team", self.repo)
         self.tickets = {n: self.mirror(n) for n in (1, 2, 3)}
         self.board = Mock()
 
     def mirror(self, number):
         return store.tickets.mirror_ticket(
-            self.conn, self.project, linear_issue_id=f"issue-{number}",
+            self.conn, self.project_id, linear_issue_id=f"issue-{number}",
             linear_identifier=f"KO-{number}", title="a gap",
             acceptance_criteria=["The gap is answered"],
             verification_commands=["echo ok"], time_box_ms=60000)
