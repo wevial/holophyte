@@ -35,6 +35,8 @@ for the operator.
   external tool has at least one test that runs the real tool (real `git` in
   a temporary repository), not only a fake.
 * Zero tests discovered, or an opaque shell failure, is a failure.
+* A test's name and assertions say what it checks; its comments and
+  docstrings cite no ticket and tell no incident story.
 
 ## Suite pins and conventions
 
@@ -42,6 +44,11 @@ These fail the `unit` check, which you do not run locally, so settle them in
 the same commit:
 * `tests/test_file_sizes.py`: 1000 lines a module, 1500 a test module. A file
   in `PINNED` may not grow past its pin; raise the pin in the same commit.
+* `tests/test_comment_budget.py`: each module under `holophyte/` and `store/`
+  and each top-level module has a pinned count of comment and docstring lines
+  and of lines citing a ticket id. Neither may grow; a lowered count lowers its
+  pin in the same commit. A new module holds at most one such line per 20 and
+  cites no ticket.
 * `tests/test_store_surface.py`: a public `store` function added or removed
   edits the allow-list with the ticket that needs it. No raw
   `UPDATE runs|tickets|projects` under `holophyte/`: use a named store writer.
@@ -49,7 +56,12 @@ the same commit:
   module in `docs/development.md`, a config key in `docs/config.md`, a daemon
   key in `docs/reference/http.md`.
 * Complexity above 12 fails ruff `C901`; an exemption is a per-function
-  `noqa: C901` naming its reason and the ticket that retires it.
+  `noqa: C901` naming its reason in a few words, and its `COMPLEXITY_EXEMPT`
+  entry in `tests/test_comment_budget.py` names the ticket that retires it.
+* A comment states only a constraint the code cannot express. History (which
+  ticket, which incident, what the code used to do) belongs in the commit
+  message and the store; a name that needs a comment is renamed or a block
+  extracted instead. No ticket id appears in a comment or docstring.
 * Boards are reached only through `provider.Board`, built by
   `board_for()`; never call `linear_provider` directly.
 * Schema changes bump `SCHEMA_VERSION` and stay additive where they can

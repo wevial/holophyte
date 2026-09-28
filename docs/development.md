@@ -343,8 +343,9 @@ stays small, and a violation that has to stand is suppressed with a per-line
 `# noqa: <CODE>` rather than a file-level or blanket ignore.
 
 Cyclomatic complexity above 12 is a lint failure (ruff `C901`); an exemption
-is a per-function `noqa: C901` that names its reason and the ticket that
-retires it.
+is a per-function `noqa: C901` that names its reason in a few words, and its
+`COMPLEXITY_EXEMPT` entry in `tests/test_comment_budget.py` names the ticket
+that retires it, or None while none is filed.
 
 Module size is a ratchet on the same terms: no source module over
 1000 lines, no test module over 1500. `tests/test_file_sizes.py` holds a
@@ -356,6 +357,17 @@ fail the suite, and a second check holds every entry to `wc -l`'s exact
 count. A slice that changes a listed unpinned module's size rewrites its
 entry in the same commit; a module back under its ceiling leaves the table.
 Pins are upper bounds; more than 150 lines of slack requires lowering the pin.
+
+Comments are a ratchet too. `tests/test_comment_budget.py` pins, for each
+module under `holophyte/` and `store/` and each top-level module, its count
+of comment and docstring lines (`PINNED`) and of lines citing a ticket id
+(`CITED`). Neither count may grow, and a lowered count lowers its entry in
+the same commit; a new module holds at most one such line per 20 lines and
+cites no ticket. A comment states only a constraint the code cannot
+express; history belongs in the commit message and the store. The suite
+reports the in-scope ratio against its 5% goal as a skipped test until
+the trim reaches it, and `code_changes()` witnesses that a trim removed
+only comments and docstrings.
 
 ruff is a developer tool, not a dependency: install it on the host with
 `pip install --user ruff` (or `uv tool install ruff`). It is never vendored.

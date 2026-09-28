@@ -1,0 +1,666 @@
+"""The comment budget: a ratchet on comment and docstring lines.
+
+Each module the factory runs, under `holophyte/` and `store/` and at the
+repository root, has a pinned count of comment and docstring lines in
+`PINNED` and of lines citing a ticket id in `CITED`. Neither may grow, a
+lowered count lowers its entry in the same commit, a new module holds at
+most one such line per 20 and cites no ticket. History belongs in git log
+and the store, not in code.
+
+Run: python3 -m unittest discover -s tests -p 'test_comment_budget.py' -v
+"""
+
+from __future__ import annotations
+
+import ast
+import io
+import re
+import subprocess
+import tempfile
+import tokenize
+import unittest
+from pathlib import Path
+from typing import NamedTuple
+
+from tests.test_file_sizes import line_count
+
+ROOT = Path(__file__).resolve().parent.parent
+
+SCOPE = ("holophyte/", "store/")
+CITATION = re.compile(r"\b(KO|HOLO|REL|LOTUS|CROTON)-[0-9]+\b")
+ALLOWANCE = 20
+TARGET = 0.05
+TARGET_ENFORCED = False
+
+PINNED = {
+    "factory.py": 30,
+    "holophyte/__init__.py": 20,
+    "holophyte/admission.py": 9,
+    "holophyte/agent_routes.py": 26,
+    "holophyte/agent_turns.py": 12,
+    "holophyte/agents.py": 182,
+    "holophyte/babysit_steps.py": 2,
+    "holophyte/babysitter.py": 101,
+    "holophyte/board.py": 529,
+    "holophyte/board_diff.py": 31,
+    "holophyte/board_import.py": 28,
+    "holophyte/board_sync.py": 124,
+    "holophyte/bot_threads.py": 2,
+    "holophyte/capture_playwright.py": 44,
+    "holophyte/check_fix.py": 38,
+    "holophyte/claim.py": 364,
+    "holophyte/claim_store.py": 90,
+    "holophyte/cli.py": 232,
+    "holophyte/cli_project.py": 25,
+    "holophyte/commit_hygiene.py": 11,
+    "holophyte/config.py": 318,
+    "holophyte/config_tables.py": 294,
+    "holophyte/conversation_comments.py": 2,
+    "holophyte/deadline.py": 44,
+    "holophyte/dispatch.py": 137,
+    "holophyte/environment_git.py": 14,
+    "holophyte/failure_reason.py": 5,
+    "holophyte/files.py": 93,
+    "holophyte/findings.py": 156,
+    "holophyte/fix_session.py": 7,
+    "holophyte/freshness.py": 139,
+    "holophyte/gates.py": 298,
+    "holophyte/harness.py": 158,
+    "holophyte/host.py": 102,
+    "holophyte/isolation.py": 4,
+    "holophyte/isolation_clone.py": 8,
+    "holophyte/isolation_git.py": 10,
+    "holophyte/isolation_return.py": 3,
+    "holophyte/locks.py": 15,
+    "holophyte/loop.py": 255,
+    "holophyte/main_checkout.py": 13,
+    "holophyte/maintainer_notes.py": 12,
+    "holophyte/media_store.py": 3,
+    "holophyte/merge_gate.py": 196,
+    "holophyte/merge_lock.py": 3,
+    "holophyte/merge_queue.py": 38,
+    "holophyte/missing_checks.py": 21,
+    "holophyte/native_board.py": 36,
+    "holophyte/operator.py": 140,
+    "holophyte/pause_notice.py": 15,
+    "holophyte/plain_text.py": 12,
+    "holophyte/pool.py": 125,
+    "holophyte/pool_handoff.py": 26,
+    "holophyte/pr.py": 184,
+    "holophyte/pr_activity.py": 9,
+    "holophyte/pr_contexts.py": 2,
+    "holophyte/pr_head.py": 4,
+    "holophyte/pr_media.py": 44,
+    "holophyte/pr_status.py": 96,
+    "holophyte/project.py": 124,
+    "holophyte/pullrequest.py": 105,
+    "holophyte/questions.py": 2,
+    "holophyte/reconcile.py": 230,
+    "holophyte/redact.py": 141,
+    "holophyte/reexec.py": 54,
+    "holophyte/report.py": 54,
+    "holophyte/reproduce.py": 90,
+    "holophyte/review.py": 274,
+    "holophyte/review_session.py": 6,
+    "holophyte/run.py": 35,
+    "holophyte/runs.py": 201,
+    "holophyte/serve.py": 411,
+    "holophyte/serve_actions.py": 69,
+    "holophyte/serve_board.py": 54,
+    "holophyte/serve_config.py": 105,
+    "holophyte/serve_host.py": 113,
+    "holophyte/serve_levers.py": 43,
+    "holophyte/serve_runs.py": 160,
+    "holophyte/serve_watch.py": 49,
+    "holophyte/session_arms.py": 2,
+    "holophyte/startup.py": 5,
+    "holophyte/status.py": 75,
+    "holophyte/stop.py": 49,
+    "holophyte/store_import.py": 40,
+    "holophyte/supervisor.py": 430,
+    "holophyte/supervisor_lock.py": 108,
+    "holophyte/sweep_host.py": 131,
+    "holophyte/sweep_report.py": 101,
+    "holophyte/thread_answers.py": 8,
+    "holophyte/thread_findings.py": 6,
+    "holophyte/thread_mentions.py": 9,
+    "holophyte/transcript_config.py": 2,
+    "holophyte/transcripts.py": 23,
+    "linear_provider.py": 392,
+    "provider.py": 175,
+    "review_runner.py": 117,
+    "store/__init__.py": 493,
+    "store/agent_routes.py": 2,
+    "store/board.py": 87,
+    "store/enums.py": 31,
+    "store/failure_kinds.py": 4,
+    "store/instructions.py": 2,
+    "store/launch_backoff.py": 14,
+    "store/notes.py": 12,
+    "store/operate.py": 446,
+    "store/operator_notes.py": 9,
+    "store/project_paths.py": 2,
+    "store/read.py": 323,
+    "store/repair.py": 36,
+    "store/revisions.py": 26,
+    "store/schema.py": 214,
+    "store/tickets.py": 249,
+    "store/working.py": 22,
+    "store/writes.py": 18,
+    "ticket_template.py": 197,
+}
+
+CITED = {
+    "holophyte/admission.py": 1,
+    "holophyte/agents.py": 4,
+    "holophyte/babysitter.py": 2,
+    "holophyte/board.py": 26,
+    "holophyte/board_diff.py": 1,
+    "holophyte/board_import.py": 1,
+    "holophyte/board_sync.py": 9,
+    "holophyte/capture_playwright.py": 1,
+    "holophyte/check_fix.py": 3,
+    "holophyte/claim.py": 20,
+    "holophyte/claim_store.py": 3,
+    "holophyte/cli.py": 5,
+    "holophyte/config.py": 6,
+    "holophyte/config_tables.py": 21,
+    "holophyte/dispatch.py": 10,
+    "holophyte/environment_git.py": 1,
+    "holophyte/files.py": 1,
+    "holophyte/freshness.py": 11,
+    "holophyte/gates.py": 5,
+    "holophyte/host.py": 1,
+    "holophyte/locks.py": 1,
+    "holophyte/loop.py": 15,
+    "holophyte/main_checkout.py": 1,
+    "holophyte/maintainer_notes.py": 2,
+    "holophyte/merge_gate.py": 11,
+    "holophyte/merge_lock.py": 1,
+    "holophyte/merge_queue.py": 2,
+    "holophyte/missing_checks.py": 2,
+    "holophyte/native_board.py": 2,
+    "holophyte/operator.py": 5,
+    "holophyte/pause_notice.py": 1,
+    "holophyte/plain_text.py": 1,
+    "holophyte/pool.py": 6,
+    "holophyte/pr.py": 4,
+    "holophyte/pr_activity.py": 1,
+    "holophyte/pr_head.py": 1,
+    "holophyte/pr_media.py": 5,
+    "holophyte/pr_status.py": 4,
+    "holophyte/project.py": 2,
+    "holophyte/pullrequest.py": 7,
+    "holophyte/reconcile.py": 16,
+    "holophyte/redact.py": 3,
+    "holophyte/reexec.py": 1,
+    "holophyte/report.py": 1,
+    "holophyte/reproduce.py": 4,
+    "holophyte/review.py": 3,
+    "holophyte/run.py": 1,
+    "holophyte/runs.py": 5,
+    "holophyte/serve.py": 11,
+    "holophyte/serve_actions.py": 6,
+    "holophyte/serve_board.py": 1,
+    "holophyte/serve_config.py": 5,
+    "holophyte/serve_levers.py": 1,
+    "holophyte/serve_runs.py": 1,
+    "holophyte/serve_watch.py": 1,
+    "holophyte/status.py": 1,
+    "holophyte/stop.py": 5,
+    "holophyte/store_import.py": 1,
+    "holophyte/supervisor.py": 16,
+    "holophyte/supervisor_lock.py": 1,
+    "holophyte/sweep_host.py": 2,
+    "holophyte/sweep_report.py": 1,
+    "holophyte/thread_mentions.py": 1,
+    "linear_provider.py": 18,
+    "provider.py": 15,
+    "review_runner.py": 2,
+    "store/__init__.py": 12,
+    "store/agent_routes.py": 1,
+    "store/board.py": 3,
+    "store/enums.py": 3,
+    "store/launch_backoff.py": 1,
+    "store/notes.py": 3,
+    "store/operate.py": 11,
+    "store/read.py": 26,
+    "store/repair.py": 1,
+    "store/revisions.py": 2,
+    "store/schema.py": 22,
+    "store/tickets.py": 6,
+    "ticket_template.py": 5,
+}
+
+# "path::function" to the ticket that retires its `noqa: C901`, or None.
+COMPLEXITY_EXEMPT = {
+    "holophyte/gates.py::split_and_clauses": None,
+    "ticket_template.py::validate": None,
+}
+
+BODIED = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+class Module(NamedTuple):
+    size: int
+    count: int
+    cited: tuple
+
+
+def in_scope(root=ROOT):
+    names = subprocess.check_output(
+        ["git", "ls-files", "*.py"], cwd=root, text=True).splitlines()
+    return sorted(n for n in names if n.startswith(SCOPE) or "/" not in n)
+
+
+def is_docstring(stmt):
+    return (isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str))
+
+
+def comments(text):
+    """Line number to comment token, a line-1 shebang left out."""
+    found = {}
+    for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+        if tok.type != tokenize.COMMENT:
+            continue
+        if tok.start[0] == 1 and tok.string.startswith("#!"):
+            continue
+        found[tok.start[0]] = tok.string
+    return found
+
+
+def counted_lines(text):
+    lines = set(comments(text))
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, BODIED) and node.body and is_docstring(node.body[0]):
+            first = node.body[0]
+            lines.update(range(first.lineno, first.end_lineno + 1))
+    return lines
+
+
+def measure(root=ROOT):
+    modules = {}
+    for name in in_scope(root):
+        path = root / name
+        text = path.read_text()
+        physical = text.splitlines()
+        lines = counted_lines(text)
+        cited = tuple(sorted(n for n in lines if CITATION.search(physical[n - 1])))
+        modules[name] = Module(line_count(path), len(lines), cited)
+    return modules
+
+
+def budget_violations(modules, pinned=PINNED):
+    bad = []
+    for name, module in modules.items():
+        pin = pinned.get(name)
+        if pin is None:
+            allowed = module.size // ALLOWANCE
+            if module.count > allowed:
+                bad.append(f"{name}: {module.count} comment and docstring "
+                           f"lines in {module.size}; an unlisted module is "
+                           f"allowed {allowed}")
+        elif module.count > pin:
+            bad.append(f"{name}: {module.count} comment and docstring lines "
+                       f"grew past its pin of {pin}")
+        elif module.count < pin:
+            bad.append(f"{name}: {module.count} comment and docstring lines "
+                       f"is under its pin of {pin}; lower the pin")
+    for name in sorted(set(pinned) - set(modules)):
+        bad.append(f"{name}: not a tracked in-scope file; the PINNED entry "
+                   f"is stale")
+    return bad
+
+
+def citation_violations(modules, cited=CITED):
+    bad = []
+    for name, module in modules.items():
+        entry = cited.get(name)
+        found = len(module.cited)
+        if entry is None:
+            bad.extend(f"{name}:{line}: cites a ticket id with no CITED entry"
+                       for line in module.cited)
+        elif entry == 0:
+            bad.append(f"{name}: a CITED entry of 0 is stale")
+        elif found > entry:
+            bad.append(f"{name}: {found} lines cite a ticket id, grew past "
+                       f"its CITED entry of {entry}")
+        elif found < entry:
+            bad.append(f"{name}: {found} lines cite a ticket id, under its "
+                       f"CITED entry of {entry}; lower the entry")
+    for name in sorted(set(cited) - set(modules)):
+        bad.append(f"{name}: not a tracked in-scope file; the CITED entry "
+                   f"is stale")
+    return bad
+
+
+def functions(tree, prefix=""):
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, FUNCTIONS):
+            yield prefix + node.name, node
+            yield from functions(node, f"{prefix}{node.name}.")
+        elif isinstance(node, ast.ClassDef):
+            yield from functions(node, f"{prefix}{node.name}.")
+        else:
+            yield from functions(node, prefix)
+
+
+def complexity_exempt(root=ROOT):
+    found = set()
+    for name in in_scope(root):
+        text = (root / name).read_text()
+        marks = comments(text)
+        for qualname, node in functions(ast.parse(text)):
+            if "noqa: C901" in marks.get(node.lineno, ""):
+                found.add(f"{name}::{qualname}")
+    return found
+
+
+def complexity_violations(found, exempt=COMPLEXITY_EXEMPT):
+    return ([f"{key}: carries noqa: C901 with no COMPLEXITY_EXEMPT entry"
+             for key in sorted(found - set(exempt))]
+            + [f"{key}: carries no noqa: C901; the COMPLEXITY_EXEMPT entry "
+               f"is stale" for key in sorted(set(exempt) - found)])
+
+
+def is_empty(stmt):
+    return isinstance(stmt, ast.Pass) or (
+        isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)
+        and stmt.value.value is Ellipsis)
+
+
+def bare(tree):
+    """The tree with every docstring dropped and an empty body read as pass."""
+    for node in ast.walk(tree):
+        if not isinstance(node, BODIED):
+            continue
+        body = node.body[1:] if node.body and is_docstring(node.body[0]) \
+            else node.body
+        if not isinstance(node, ast.Module) and all(map(is_empty, body)):
+            body = [ast.Pass()]
+        node.body = body
+    return tree
+
+
+def statement_name(stmt):
+    if isinstance(stmt, (*FUNCTIONS, ast.ClassDef)):
+        return stmt.name
+    targets = stmt.targets if isinstance(stmt, ast.Assign) else \
+        [stmt.target] if isinstance(stmt, ast.AnnAssign) else []
+    if len(targets) == 1 and isinstance(targets[0], ast.Name):
+        return targets[0].id
+    return None
+
+
+def statements(text):
+    dumps = {}
+    for position, stmt in enumerate(bare(ast.parse(text)).body):
+        key = statement_name(stmt) or f"#{position}"
+        if key in dumps:
+            key = f"{key}#{position}"
+        dumps[key] = ast.dump(stmt)
+    return dumps
+
+
+def code_changes(base, paths, root=ROOT):
+    """`path: name` for each top-level statement whose code differs between
+    `base` and the working tree once comments and docstrings are gone."""
+    changed = []
+    for path in paths:
+        old = statements(subprocess.check_output(
+            ["git", "show", f"{base}:{path}"], cwd=root, text=True))
+        new = statements((root / path).read_text())
+        changed.extend(f"{path}: {key}" for key in {**new, **old}
+                       if old.get(key) != new.get(key))
+    return changed
+
+
+class CommentBudget(unittest.TestCase):
+
+    def test_every_in_scope_module_holds_its_pins(self):
+        modules = measure()
+        self.assertEqual(budget_violations(modules), [])
+        self.assertEqual(citation_violations(modules), [])
+
+    def test_the_tables_are_exactly_what_the_measure_reads(self):
+        modules = measure()
+        self.assertEqual(PINNED, {n: m.count for n, m in modules.items()})
+        self.assertEqual(CITED, {n: len(m.cited)
+                                 for n, m in modules.items() if m.cited})
+        self.assertLessEqual(
+            {"holophyte/board.py", "store/__init__.py", "factory.py"},
+            set(PINNED))
+
+    def test_the_in_scope_ratio_against_the_target(self):
+        modules = measure().values()
+        count = sum(m.count for m in modules)
+        size = sum(m.size for m in modules)
+        message = (f"in-scope ratio {count / size:.1%}: {count} comment and "
+                   f"docstring lines in {size}; target {TARGET:.0%}")
+        if not TARGET_ENFORCED:
+            self.skipTest(message)
+        self.assertLessEqual(count / size, TARGET, message)
+
+    def test_every_noqa_c901_has_its_exemption_entry(self):
+        self.assertEqual(complexity_violations(complexity_exempt()), [])
+
+
+def git(root, *args):
+    return subprocess.check_output(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com",
+         "-c", "commit.gpgsign=false", *args],
+        cwd=root, text=True)
+
+
+class Repo:
+    """A temporary git repository whose files are added to the index."""
+
+    def __init__(self, files):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        git(self.root, "init", "-q")
+        self.write(files)
+
+    def write(self, files):
+        for name, text in files.items():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        git(self.root, "add", "-A")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.tmp.cleanup()
+
+
+def lines(n, counted=0):
+    """An n-line module whose first `counted` lines are comments."""
+    return "# c\n" * counted + "x = 1\n" * (n - counted)
+
+
+class MeasureSelfTests(unittest.TestCase):
+
+    def test_comments_docstrings_and_noqa_count_and_a_shebang_does_not(self):
+        text = ('#!/usr/bin/env python3\n'
+                '"""Module\ndocstring."""\n'
+                'import os  # noqa: F401\n'
+                'NOTE = "not a docstring"\n'
+                'class C:\n'
+                '    """One line."""\n'
+                '    def f(self):\n'
+                '        # whole line\n'
+                '        return "#"\n')
+        self.assertEqual(sorted(counted_lines(text)), [2, 3, 4, 7, 9])
+
+    def test_scope_is_the_packages_and_the_root_modules(self):
+        with Repo({"factory.py": "", "holophyte/a.py": "", "store/b.py": "",
+                   "tests/test_a.py": "", "contrib/c.py": "",
+                   "scripts/d.py": ""}) as repo:
+            self.assertEqual(sorted(measure(repo.root)),
+                             ["factory.py", "holophyte/a.py", "store/b.py"])
+
+
+class BudgetSelfTests(unittest.TestCase):
+
+    def test_each_budget_failure_has_its_message(self):
+        with Repo({"holophyte/over.py": lines(30, 4),
+                   "holophyte/under.py": lines(30, 2),
+                   "holophyte/new.py": lines(40, 3)}) as repo:
+            (repo.root / "holophyte/loose.py").write_text(lines(5))
+            bad = budget_violations(measure(repo.root), pinned={
+                "holophyte/over.py": 3, "holophyte/under.py": 3,
+                "holophyte/loose.py": 0})
+        self.assertEqual(bad, [
+            "holophyte/new.py: 3 comment and docstring lines in 40; "
+            "an unlisted module is allowed 2",
+            "holophyte/over.py: 4 comment and docstring lines grew past "
+            "its pin of 3",
+            "holophyte/under.py: 2 comment and docstring lines is under "
+            "its pin of 3; lower the pin",
+            "holophyte/loose.py: not a tracked in-scope file; the PINNED "
+            "entry is stale",
+        ])
+
+    def test_an_unlisted_module_at_its_allowance_passes(self):
+        with Repo({"store/new.py": lines(59, 2)}) as repo:
+            self.assertEqual(budget_violations(measure(repo.root), pinned={}),
+                             [])
+
+
+class CitationSelfTests(unittest.TestCase):
+
+    def test_docstring_and_comment_citations_fail_and_a_string_does_not(self):
+        text = ('"""Added for HOLO-12."""\n'
+                '\n'
+                '\n'
+                'def f():  # see KO-3\n'
+                '    raise ValueError("REL-4 is not a docstring")\n')
+        with Repo({"holophyte/mod.py": text}) as repo:
+            bad = citation_violations(measure(repo.root), cited={})
+        self.assertEqual(bad, [
+            "holophyte/mod.py:1: cites a ticket id with no CITED entry",
+            "holophyte/mod.py:4: cites a ticket id with no CITED entry",
+        ])
+
+    def test_every_ticket_prefix_is_caught(self):
+        for ticket in ("KO-1", "HOLO-1", "REL-1", "LOTUS-1", "CROTON-1"):
+            with self.subTest(ticket=ticket), \
+                    Repo({"store/mod.py": f"x = 1  # {ticket}\n"}) as repo:
+                self.assertEqual(
+                    citation_violations(measure(repo.root), cited={}),
+                    ["store/mod.py:1: cites a ticket id with no CITED entry"])
+
+    def test_a_citation_entry_is_exact_and_a_zero_or_untracked_entry_stale(self):
+        with Repo({"a.py": "# KO-1\n# KO-2\n", "b.py": "# KO-1\n",
+                   "c.py": "x = 1\n"}) as repo:
+            bad = citation_violations(measure(repo.root), cited={
+                "a.py": 1, "b.py": 2, "c.py": 0, "gone.py": 1})
+        self.assertEqual(bad, [
+            "a.py: 2 lines cite a ticket id, grew past its CITED entry of 1",
+            "b.py: 1 lines cite a ticket id, under its CITED entry of 2; "
+            "lower the entry",
+            "c.py: a CITED entry of 0 is stale",
+            "gone.py: not a tracked in-scope file; the CITED entry is stale",
+        ])
+
+
+class ComplexitySelfTests(unittest.TestCase):
+
+    def test_an_unlisted_exemption_fails_naming_the_function(self):
+        text = ("class C:\n"
+                "    def busy(self):  # noqa: C901 -- a long switch\n"
+                "        return 1\n")
+        with Repo({"holophyte/mod.py": text}) as repo:
+            found = complexity_exempt(repo.root)
+        self.assertEqual(complexity_violations(found, exempt={}), [
+            "holophyte/mod.py::C.busy: carries noqa: C901 with no "
+            "COMPLEXITY_EXEMPT entry"])
+
+    def test_a_function_under_control_flow_is_found(self):
+        text = ("if True:\n"
+                "    def busy():  # noqa: C901\n"
+                "        return 1\n"
+                "try:\n"
+                "    pass\n"
+                "except ImportError:\n"
+                "    class C:\n"
+                "        def f(self):  # noqa: C901\n"
+                "            return 1\n")
+        with Repo({"holophyte/mod.py": text}) as repo:
+            found = complexity_exempt(repo.root)
+        self.assertEqual(found, {"holophyte/mod.py::busy",
+                                 "holophyte/mod.py::C.f"})
+
+    def test_an_entry_with_no_noqa_is_stale(self):
+        self.assertEqual(
+            complexity_violations(set(), exempt={"a.py::f": None}),
+            ["a.py::f: carries no noqa: C901; the COMPLEXITY_EXEMPT entry "
+             "is stale"])
+
+    def test_the_two_standing_exemptions_are_listed(self):
+        found = complexity_exempt()
+        for key in ("holophyte/gates.py::split_and_clauses",
+                    "ticket_template.py::validate"):
+            self.assertIn(key, found)
+            self.assertIn(key, COMPLEXITY_EXEMPT)
+
+
+BEFORE = '''"""Module docstring,
+over two lines."""
+import os  # trailing
+
+
+# whole line
+def f():
+    """Function docstring."""
+    return 1  # trailing
+
+
+class Empty:
+    """Only a docstring."""
+
+
+def g():
+    """Another."""
+    # inside
+    return os.sep
+'''
+
+AFTER = '''import os
+
+
+def f():
+    return 1
+
+
+class Empty:
+    pass
+
+
+def g():
+    return os.sep
+'''
+
+
+class CodeChangesSelfTests(unittest.TestCase):
+
+    def test_removing_comments_and_docstrings_is_no_code_change(self):
+        with Repo({"holophyte/mod.py": BEFORE}) as repo:
+            git(repo.root, "commit", "-qm", "first")
+            repo.write({"holophyte/mod.py": AFTER})
+            self.assertEqual(code_changes("HEAD", ["holophyte/mod.py"],
+                                          root=repo.root), [])
+            repo.write({"holophyte/mod.py": AFTER.replace("return 1",
+                                                          "return 2")})
+            self.assertEqual(code_changes("HEAD", ["holophyte/mod.py"],
+                                          root=repo.root),
+                             ["holophyte/mod.py: f"])
+
+
+if __name__ == "__main__":
+    unittest.main()
