@@ -113,7 +113,22 @@ def image_ready(route):
         )
 
 
-def container_command(route, worktree, env, argv, name):
+RESERVED_DESTINATIONS = (Path("/workspace"), Path("/home/implementer"))
+
+
+def file_mount_flags(mounts):
+    flags = []
+    for path in mounts:
+        source = Path(path).resolve()
+        if any(source.is_relative_to(reserved) for reserved in RESERVED_DESTINATIONS):
+            raise RuntimeError(f"file mount {source} lands in the workspace or home")
+        if not source.is_file() or ":" in str(source):
+            raise RuntimeError(f"file mount {source} must be a regular file")
+        flags += ["--volume", f"{source}:{source}:ro"]
+    return flags
+
+
+def container_command(route, worktree, env, argv, name, mounts=()):
     uid, gid = os.getuid(), os.getgid()
     if uid == 0:
         raise RuntimeError("container implementer requires a non-root factory user")
@@ -141,6 +156,7 @@ def container_command(route, worktree, env, argv, name):
         if not source.is_file() or ":" in str(source):
             raise RuntimeError("implementer credential must be a regular file")
         command += ["--volume", f"{source}:{credential['destination']}:ro"]
+    command += file_mount_flags(mounts)
     values = dict(
         env or {},
         HOME="/home/implementer",
@@ -179,7 +195,7 @@ def unwinding_on_signal(name):
 
 
 def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
-           project=None):
+           project=None, mounts=()):
     """Preserve host process semantics; always remove isolated descendants."""
     hook = {"on_start": on_start} if on_start is not None else {}
     if route.backend == "none":
@@ -195,7 +211,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
                 else contextlib.nullcontext((worktree, {})))
     with unwinding_on_signal(name), checkout as (workspace, git_env):
         command, host_env = container_command(
-            route, workspace, dict(env or {}, **git_env), argv, name
+            route, workspace, dict(env or {}, **git_env), argv, name, mounts
         )
         try:
             return run_capped(command, workspace, timeout, env=host_env, **hook)

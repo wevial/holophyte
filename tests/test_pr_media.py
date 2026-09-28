@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import tempfile
 import time
@@ -13,6 +14,7 @@ from time import monotonic
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import review_runner
 from holophyte import pr_media, pullrequest
 from holophyte.gates import InfraFailure
 from tests.test_media_store import CREDS, receiver
@@ -140,7 +142,10 @@ class MediaTests(unittest.TestCase):
 
         def capture(argv, cwd, timeout, *, env):
             mounts = [argv[i + 1] for i, v in enumerate(argv) if v == '--volume']
-            self.assertEqual(len(mounts), 1)
+            self.assertEqual(len(mounts), 2)
+            runner = str(Path(review_runner.ROOT,
+                              'holophyte/capture_playwright.py').resolve())
+            self.assertEqual(mounts[1], f'{runner}:{runner}:ro')
             source, destination, mode = mounts[0].split(':')
             workspace = Path(source).resolve()
             self.assertTrue(workspace.is_dir())
@@ -788,6 +793,34 @@ class MediaTests(unittest.TestCase):
             section, _ = self.prepare()
         self.assertIn("failed (exit 3).\n\n```\nno spec at e2e/rel139.spec.ts\n```",
                       section)
+
+    @unittest.skipUnless(os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+                         "set HOLOPHYTE_TEST_DOCKER=1 for container integration")
+    def test_container_capture_reads_but_cannot_write_the_factory_runner(self):
+        import shutil
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        factory = self.root / "factory"
+        runner = factory / "holophyte" / "capture_playwright.py"
+        runner.parent.mkdir(parents=True)
+        runner.write_bytes(b"import sys\n")
+        self.config["agents"] = {"implementer_isolation": "container"}
+        worktree = self.root / "task"
+        self.git("worktree", "add", "-qb", "task", str(worktree))
+        output = worktree.resolve() / ".holophyte-capture"
+        output.mkdir()
+        path = shlex.quote(str(runner.resolve()))
+        read = f"sh -c 'test -f \"$0\" && test -r \"$0\"' {path}"
+        write = f"sh -c 'test -r \"$0\" || exit 9; echo tampered > \"$0\"' {path}"
+        with patch.object(review_runner, "ROOT", factory):
+            self.assertEqual(pr_media._capture(read, worktree, output, "KO-30", [],
+                                               project=self.target), "")
+            failed = pr_media._capture(write, worktree, output, "KO-30", [],
+                                       project=self.target)
+        self.assertIn("failed (exit", failed)
+        self.assertNotIn("(exit 9)", failed)
+        self.assertEqual(runner.read_bytes(), b"import sys\n")
 
     def test_successful_capture_has_no_output_block(self):
         self.candidate(script="import sys\nfrom pathlib import Path\n"
