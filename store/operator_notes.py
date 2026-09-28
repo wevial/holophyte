@@ -7,7 +7,6 @@ from store.schema import _transaction
 
 
 def send_back(conn, run_id, note, author):
-    """Record before releasing, atomically, refusing stale cards and live runs."""
     if not isinstance(note, str) or not note.strip():
         raise ValueError("note must be non-blank text")
     if not isinstance(author, str) or not author.strip():
@@ -33,11 +32,7 @@ def send_back(conn, run_id, note, author):
 
 
 def notes(conn, run_id, pending=False, pr_url=None):
-    """Read instructions for this candidate, including prior released attempts.
-
-    Consumption is an append-only event referencing the original event id.
-    The source instruction stays immutable; retries retain the amended contract.
-    """
+    """Consumption is an appended event; the instruction itself never changes."""
     if conn is None or run_id is None:
         return []
     rows = conn.execute(
@@ -65,7 +60,6 @@ def notes(conn, run_id, pending=False, pr_url=None):
 
 
 def consume(conn, run_id, event_ids, rnd):
-    """Mark the instructions consumed as their fix starts; retain round evidence."""
     with _transaction(conn):
         for event_id in event_ids:
             store.record_event(conn, run_id, "operator_note_consumed",
@@ -90,7 +84,7 @@ def report_lines(conn):
         note = conn.execute("SELECT payload FROM runEvents WHERE id = ?",
                             (data["event_id"],)).fetchone()
         instruction = json.loads(note[0])
-        # Escape control characters so private text cannot create report rows.
+        # Escaped so private text cannot create report rows.
         author = repr(instruction["author"])[1:-1]
         text = repr(instruction["note"])[1:-1]
         lines.append(f"Run {run_id} round {data['round']}: operator_note event "

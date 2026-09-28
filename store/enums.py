@@ -90,7 +90,7 @@ class OutcomeClass(str, Enum):
     INFRA = 'infra'
 
 
-# Resume accepts the same vocabulary, with its own nullable SQL spelling.
+# RunPhase's values under its own nullable SQL spelling.
 ResumePhase = Enum("ResumePhase", {e.name: e.value for e in RunPhase}, type=str)
 
 
@@ -214,17 +214,11 @@ RESUMABLE_WORK_PHASES = frozenset(
      RunPhase.ADDRESSING.value}
 )
 
-# The phase writer's legal edges, also rendered in the README. Resume owns
-# re-entry from a parked or failed run. Squashing is declared but unused by
-# the --no-ff merge path, so it has no outgoing edge.
+# Rendered in the README too; squashing is declared but unused by --no-ff merges.
 RUN_PHASE_TRANSITIONS = {
-    # `claimed -> merge_gate` is the approved candidate's run: `--approve`
-    # ended the parked run with `resumePhase = 'merge_gate'`, and the claim
-    # that follows reuses its worktree and branch and goes straight to the
-    # gate -- nothing to implement or review, the candidate already was.
+    # `-> merge_gate`: an approved candidate's run reuses its worktree.
     RunPhase.CLAIMED.value: frozenset({
         RunPhase.WORKING.value, RunPhase.MERGE_GATE.value,
-        # _sync_branch_from_origin parks a diverged carried PR before the gate.
         RunPhase.AWAITING_MERGE_APPROVAL.value,
         RunPhase.FAILED.value, RunPhase.KILLED.value}),
     RunPhase.WORKING.value: frozenset({
@@ -232,55 +226,37 @@ RUN_PHASE_TRANSITIONS = {
         RunPhase.KILLED.value}),
     RunPhase.VERIFYING.value: frozenset({
         RunPhase.REVIEWING.value, RunPhase.FAILED.value,
-        # _review_fix parks verification results for human approval.
         RunPhase.AWAITING_MERGE_APPROVAL.value,
         RunPhase.KILLED.value}),
     RunPhase.REVIEWING.value: frozenset({
         RunPhase.ADDRESSING.value, RunPhase.MERGE_GATE.value,
-        # _review_fix retries one rejected fix, or parks its review verdict.
         RunPhase.VERIFYING.value, RunPhase.AWAITING_MERGE_APPROVAL.value,
         RunPhase.FAILED.value, RunPhase.KILLED.value}),
     RunPhase.ADDRESSING.value: frozenset({
         RunPhase.VERIFYING.value, RunPhase.FAILED.value,
         RunPhase.KILLED.value}),
-    # `merge_gate -> done` is the pull request a person merged on GitHub
-    # while the babysitter still watched it (KO-653): the run ends merged
-    # with that merge commit, and records no `merging` step it never took.
-    # The factory's own merges still go `merge_gate -> merging -> done`.
+    # `-> done` here and below: a person merged the pull request on GitHub.
     RunPhase.MERGE_GATE.value: frozenset({
         RunPhase.MERGING.value, RunPhase.DONE.value,
-        # The babysitter verifies each new fix before its covering review.
         RunPhase.VERIFYING.value,
         RunPhase.AWAITING_MERGE_APPROVAL.value, RunPhase.FAILED.value,
         RunPhase.KILLED.value, RunPhase.REJECTED.value}),
-    # `awaiting_merge_approval -> done` is the pull request a person merged
-    # on GitHub while the run waited for `--approve`: the loop's reconcile
-    # ends the parked run merged with that merge commit (KO-359). The
-    # operator's own `--approve` still ends it `failed` (abandoned) and lets
-    # the next run merge.
     RunPhase.AWAITING_MERGE_APPROVAL.value: frozenset({
         RunPhase.DONE.value,
         RunPhase.FAILED.value, RunPhase.KILLED.value, RunPhase.REJECTED.value}),
     RunPhase.MERGING.value: frozenset({
         RunPhase.DONE.value, RunPhase.FAILED.value,
-        # A refused PR merge retries conflict fixes and the merge gate.
         RunPhase.VERIFYING.value, RunPhase.MERGE_GATE.value,
-        # _merge_pr parks a GitHub merge refusal on the open PR.
         RunPhase.AWAITING_MERGE_APPROVAL.value,
-        # _run_after parks when a post-merge command fails.
         RunPhase.BLOCKED_ON_OPERATOR.value,
         RunPhase.KILLED.value}),
     RunPhase.SQUASHING.value: frozenset(),
     RunPhase.DONE.value: frozenset(),
-    # `resume()`: a failed run re-enters its `resumePhase`, or `working`
-    # when none was recorded; a `blocked_on_operator` run always re-enters
-    # `working`.
     RunPhase.FAILED.value: RESUMABLE_WORK_PHASES,
     RunPhase.BLOCKED_ON_OPERATOR.value: frozenset({RunPhase.WORKING.value}),
     RunPhase.KILLED.value: frozenset(),
     RunPhase.REJECTED.value: frozenset(),
 }
-# KO-589: cooperative stop is legal from every live working boundary.
 for _phase in ("claimed", "working", "verifying", "reviewing", "addressing",
                "merge_gate", "merging", "squashing", "awaiting_merge_approval"):
     RUN_PHASE_TRANSITIONS[_phase] |= {"paused"}

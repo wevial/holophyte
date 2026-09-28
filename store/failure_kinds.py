@@ -1,7 +1,4 @@
-"""Conservative prefix-only classification of reasons written before schema 29."""
-
-# Deliberately no substring matching or outcomeClass inference: unknown prose
-# is evidence we cannot classify. Live writers supply their own kind.
+# Prefixes only: prose that matches none stays unclassified, never guessed.
 PREFIXES = {
     'verify': ('verify failed',),
     'review_route': ('reviewer returned no verdict', 'reviewer route failed',
@@ -36,7 +33,6 @@ PREFIXES = {
 
 
 def backfill(conn):
-    """Run once during migration, preserving reasons verbatim."""
     for kind, prefixes in PREFIXES.items():
         for prefix in prefixes:
             conn.execute(

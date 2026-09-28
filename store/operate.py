@@ -1,25 +1,4 @@
-"""store.operate: the operator API -- the writes that end and resume runs.
-
-Moved verbatim out of `store/__init__.py` (KO-393): `release()` and the
-`TERMINAL_PHASES`/`ENDED_PHASES`/`OUTCOME_CLASSES` constants it owns, the
-escalation-ladder commands `requeue()`/`approve()`/`babysit()`/`repoint()`
-with their refusals and the `_release_parked()` transaction `approve()` and
-`babysit()` share, `GATE_CONFLICT_REASON`/`is_gate_conflict()` and
-`repoint()`'s `FULL_SHA`, the §5 resume machinery (`RESUMABLE_*`/
-`PARKED_PHASES`, the re-exported `RUN_PHASE_TRANSITIONS` graph, `ResumeRefused`,
-`resume()`) and `record_intervention()` with the `INTERVENTION_*` unions
-it validates against. The `runEvents` writers, `park()` and
-`record_pr_seen()` are run lifecycle, not operator API, and stay home;
-so does `GuidanceNotAccepted` -- the package defines it once this module
-has bound `ResumeRefused`, and `resume()` reaches it through a deferred
-`from . import`. `_append_event`, `set_phase()` and
-`record_ledger()` are shared with the run API and imported back from the
-package; `walk_ticket` comes straight from `store.tickets`. The
-supervisor sweep's liveness bookkeeping followed in the same slice's
-review: `record_strike()`, `record_supervisor_heartbeat()`/
-`latest_supervisor_heartbeat()` and the `loopRestarts` trio. The package
-re-exports every name, so `store.release()` keeps working.
-"""
+"""store.operate: the operator API, the writes that end, resume and requeue runs."""
 from __future__ import annotations
 
 import getpass
@@ -34,9 +13,6 @@ from .enums import RunPhase as _Phase
 from .schema import _transaction
 from .tickets import walk_ticket
 
-# The `runs.phase` a run ends in for each `runs.outcome`, so `release()` cannot
-# leave a finished run parked in the phase it was working in. `killed` is its
-# own phase in §4; the other two failure outcomes share `failed`.
 TERMINAL_PHASES = {
     "paused": "paused",
     _enums.RunOutcome.REJECTED.value: _Phase.REJECTED.value,
@@ -46,77 +22,15 @@ TERMINAL_PHASES = {
     _enums.RunOutcome.FAILED.value: _Phase.FAILED.value,
 }
 
-# The phases those outcomes leave behind. A run with `endedAt` stamped and
-# sitting in one of them is over, and that pair is what `release()` refuses to
-# end a second time. A resumed run is not in the set: `resume()` moves a failed
-# run back to a work phase and clears its ending, so the run it hands back
-# moves and is releasable again.
 ENDED_PHASES = frozenset(TERMINAL_PHASES.values())
 
-# `runs.outcomeClass`: what a failure is evidence about. Mirrors the CHECK.
 OUTCOME_CLASSES = frozenset(e.value for e in _enums.OutcomeClass)
 
 
 def release(conn, run_id, outcome, reason=None, now=None,
             outcome_class="work", merge_sha=None, failure_kind=None, resume_phase=None,
             candidate_sha=None):
-    """End run `run_id` with `outcome` and give the ticket's lease back.
-
-    The mirror of `claim()`, and the reason a crashed loop does not brick the
-    ticket: `tickets.activeRunId` is the lease, so a run that ends without
-    clearing it blocks every later claim on that ticket forever. Callers
-    therefore release on failure paths too, not only on the happy one.
-
-    One `BEGIN IMMEDIATE`, for the same read-then-write reason `claim()` takes
-    it: stamp `endedAt`/`outcome`/`outcomeReason` and the terminal phase
-    `TERMINAL_PHASES` gives for the outcome, then clear the ticket's
-    `activeRunId`, moving its pointer to `lastRunId` so the finished run is
-    still reachable from the ticket.
-
-    Through `_transaction()` rather than a `BEGIN` of its own, so a caller
-    that has already opened one joins instead of raising. A process failing
-    *itself* has nothing to join for -- it is the only writer of its own run
-    -- but a process failing somebody else's run has to re-read the state it
-    decided on and clear the lease under one lock, or the lease is handed
-    to a second worker while the first is still writing. That is the
-    supervisor sweep, and this is where its re-check has to be able to sit.
-
-    The run's telemetry is finalized in the same transaction: `endedAt` is
-    the other end of the elapsed time `startedAt` opened, and
-    `reviewRoundCount` is counted off the run's own `reviewRounds` rows. Both
-    are written once, here, so a finished run carries how long it took and how
-    many rounds it needed without a reader having to re-derive either.
-
-    The terminal phase moves through `set_phase()`, so ending a run stamps a
-    heartbeat and appends the transition to the run's event stream like any
-    other phase change. A failure outcome also parks the phase the run stopped
-    in as its `resumePhase`, which is the only moment that phase is still
-    known: `runs.phase` reads `failed` from here on, and §5 resumes a failed
-    run into the phase it left.
-
-    Releasing a run that has already ended — `endedAt` stamped and parked in
-    one of `ENDED_PHASES` — does nothing at all: an unguarded second release
-    would re-end a `merged`/`done` run as `failed`/`failed`, and a repeat of
-    a failed release would read `failed` back as the phase it stopped in and
-    so wipe the `resumePhase` §5 resumes into. Both lease clears stay scoped
-    to *this* run id for the same reason, so no release can drop a lease a
-    newer run has since taken.
-
-    An unknown `run_id` is a caller bug and raises `ValueError`. `now` is
-    epoch milliseconds for `endedAt`, defaulting to the clock.
-
-    `outcome_class` is `runs.outcomeClass`: `work` unless the caller knows
-    the failure was the factory's own (`infra`), in which case the row is
-    kept out of the escalation count. An unknown class raises before any
-    write, the same as an unknown outcome.
-
-    `merge_sha` is `runs.mergeSha`: the merge commit a `merged` run landed
-    on main as, written here because this is the transaction that makes the
-    run merged and the loop is the only caller that still knows the sha. It
-    is the one fact FINDINGS cannot recover from the other columns. Only a
-    `merged` outcome may carry one; any other outcome with a sha is a caller
-    bug and raises before any write.
-    """
+    """End run `run_id` with `outcome` and give the ticket's lease back."""
     failure_kind = (_enums.FailureKind(failure_kind or "unclassified").value
                     if outcome == "failed" else None)
     reason = _redact_values(reason) if reason is not None else None
@@ -137,33 +51,16 @@ def release(conn, run_id, outcome, reason=None, now=None,
         if row is None:
             raise ValueError(f"no run {run_id}")
         ticket_id, ended_at, phase = row
+        # Ended already: a second ending would overwrite its outcome and resumePhase.
         if ended_at is not None and phase in ENDED_PHASES:
-            # Already over. Returning leaves the block having written nothing
-            # rather than re-stamping an ending over the real one; an owned
-            # transaction commits empty, and a joined one is the caller's to
-            # end either way.
             return
-        # Through `set_phase()` like every other phase move, so the run's last
-        # transition is in its event stream too: a merged run whose log stops
-        # at `merging` reads as a run that never finished.
         stopped_in = set_phase(conn, run_id, TERMINAL_PHASES[outcome],
                                note=f"run ended, outcome {outcome}", now=now)
-        # §5's "it re-enters the phase it left", recorded here because
-        # `release()` is the last caller that still knows what that phase was:
-        # after this write the run says `failed` and nothing else remembers
-        # where the work had got to. Only the four phases §5 calls mechanically
-        # resumable are worth recording — a run that failed while `claimed` or
-        # mid-merge has no work phase to go back to, and `resume()` reads the
-        # NULL as §4's edge back to `working`.
+        # The last moment the phase a failed run left is still known.
         resume_phase = resume_phase if outcome == "paused" else (stopped_in
                         if TERMINAL_PHASES[outcome] == "failed"
                         and stopped_in in RESUMABLE_WORK_PHASES
                         else None)
-        # `reviewRoundCount` is stamped here, from the rows themselves, for
-        # the same reason the phase is: this is the close-out, so this is the
-        # moment the count is final. Counting the run's own `reviewRounds`
-        # rather than trusting a caller's tally keeps the column from
-        # disagreeing with the rounds it summarizes.
         conn.execute(
             "UPDATE runs SET endedAt = ?, outcome = ?, outcomeReason = ?,"
             " outcomeClass = ?, resumePhase = ?, mergeSha = ?, failureKind = ?,"
@@ -182,57 +79,20 @@ def release(conn, run_id, outcome, reason=None, now=None,
 
 
 class RequeueRefused(Exception):
-    """A requeue `requeue()` will not do; nothing was written.
-
-    The ticket does not exist, still has a live run, is neither `in_flight`
-    nor `blocked_on_operator` after a failed, rejected or aborted run, or
-    its last run did not end so -- each the same answer to the operator:
-    this is not a failed ticket waiting to go back in the queue, so the
-    message names which and the command line exits on it.
-    """
+    pass
 
 
-# The outcome reason the merge gate fails a run with when merging `main`
-# into the branch conflicts (KO-342): `is_gate_conflict()` recognises it.
-# The loop composes the reason from this prefix so the two cannot drift apart.
+# The loop composes the merge gate's conflict reason from this prefix.
 GATE_CONFLICT_REASON = "merging main into "
 
 
 def is_gate_conflict(reason):
-    """Whether a run's `outcomeReason` is the merge gate's conflict park."""
     return (reason or "").startswith(GATE_CONFLICT_REASON) \
         and " conflicted on: " in reason
 
 
 def requeue(conn, ticket_id, note, now=None):
-    """Put a failed or rejected ticket back in the queue; return its last run.
-
-    The escalation ladder's rung-3 pair (`record_intervention()` then
-    `walk_ticket()`) as one rung-1 call: a run that fails leaves its ticket
-    `in_flight` with no active run, which `pickable()` refuses until an
-    operator moves it, and on 2026-09-03 that was five REPL sessions. Both
-    writes land in one `_transaction()`, so the ticket is never `ready`
-    without the `requeue` row that says why -- and the row carries `note`,
-    the operator's reason, rather than the mislabeled `close_out` those
-    sessions wrote.
-
-    A ticket parked `blocked_on_operator` after a failed or rejected run
-    is admitted too (KO-497), unless its run awaits merge approval, and so
-    is one `--abort` parked: its run ended `abandoned` carrying an `abort`
-    or `abort_close` intervention (KO-719), which `_aborted()` looks up.
-    Clear its question in the same transaction as the intervention and walk.
-    Candidates and pull requests still awaiting approval name the operator
-    command that applies instead -- except a `not_reproduced` park (KO-658),
-    whose question offers `--requeue` once the maintainer has added detail:
-    in the same transaction, after the intervention, its run is ended
-    `abandoned` (never a strike) the way `_release_parked()` ends one.
-
-    Refuses, with `RequeueRefused` and no write, anything else: an unknown
-    ticket, one shelved on the board, one with an active run, one not
-    `in_flight` (already `ready`, say), or one whose last run ended some
-    other way (merged, or abandoned but not aborted) or never ended.
-    Touches no board state: the loop mirrors the Linear status when it claims.
-    """
+    """Walk a failed, rejected or aborted ticket back to ready; return its last run."""
     with _transaction(conn):
         row = conn.execute(
             "SELECT linearIdentifier, status, activeRunId, lastRunId, boardState"
@@ -265,7 +125,6 @@ def requeue(conn, ticket_id, note, now=None):
 
 
 def _aborted(conn, run_id):
-    """Whether the run carries the `abort` or `abort_close` `--abort` records."""
     return run_id is not None and conn.execute(
         'SELECT 1 FROM interventions WHERE runId = ? AND "action" IN (?, ?)',
         (run_id, _enums.InterventionAction.ABORT.value,
@@ -273,11 +132,6 @@ def _aborted(conn, run_id):
 
 
 def _requeue_admits(identifier, status, last_run_id, run, aborted):
-    """`requeue()`'s refusals, before any write: raise `RequeueRefused`
-    naming the reason, or return whether the admitted run is a
-    `not_reproduced` park still to be ended. `run` is the newest run's
-    `(outcome, phase, prUrl, parkKind)`, None when the ticket has none;
-    `aborted` admits an `abandoned` one as `failed` (KO-719)."""
     parked = status == "blocked_on_operator"
     if parked and run is not None and run[1] == "awaiting_merge_approval":
         if run[3] == _enums.ParkKind.NOT_REPRODUCED.value:
@@ -305,51 +159,13 @@ def _requeue_admits(identifier, status, last_run_id, run, aborted):
 
 
 class ApproveRefused(Exception):
-    """An approval `approve()` will not do; nothing was written.
-
-    The ticket does not exist, has a live run, or its newest run is not
-    parked in `awaiting_merge_approval` -- each is the same answer to the
-    operator: there is no candidate waiting for "merge?" here, so the
-    message names the ticket's status and its run's phase, and the command
-    line exits on it.
-    """
+    pass
 
 
-# The phase an approved candidate's next run resumes into: written as the
-# parked run's `resumePhase` by `approve()`, read back by the loop's claim
-# path, which goes straight to the gate (`RUN_PHASE_TRANSITIONS['claimed']`).
 APPROVED_RESUME_PHASE = "merge_gate"
 
 
 def approve(conn, ticket_id, note, now=None):
-    """Release a ticket parked for merge approval; return the parked run's id.
-
-    The operator's answer to `merge?` under `[merge] approve = "human"`, as
-    one transaction: an `interventions` row with action `approve` carrying
-    `note`, the parked run ended -- outcome `abandoned`, because it neither
-    merged nor failed and the next run is what merges its candidate -- with
-    `resumePhase` set to `APPROVED_RESUME_PHASE`, and the ticket walked to
-    `ready`. The loop's next claim reads that `resumePhase` off the ticket's
-    newest run and, its worktree still standing, skips implementation and
-    review and takes the candidate straight to the merge gate. Under
-    `[merge] mode = "pr"` the candidate lands through its pull request: the
-    resumed run shepherds the PR and, once its checks are green and its
-    threads resolved, merges it through the API -- the approval is the
-    human's "merge" whatever `[merge] approve` says.
-
-    Ended rather than left parked: a run is one attempt and the merge is
-    the next one's, so an open row would keep readers pointing at a made
-    decision. `abandoned` is never a strike: the count reads `failed` only.
-
-    Refuses, with `ApproveRefused` and no write, anything that is not a
-    parked ticket: an unknown ticket, one with a live run, one whose status
-    is not `blocked_on_operator` (walked on by hand while its run still sat
-    parked, say), or one whose newest run is in any phase but
-    `awaiting_merge_approval` (ready with no run yet, failed, merged). The
-    refusal names the ticket's status and, past that, the run's phase.
-    Touches no board state: the loop mirrors the Linear status when it
-    claims.
-    """
     return _release_parked(
         conn, ticket_id, "approve", note,
         "approved for merge; the next claim resumes the candidate"
@@ -357,15 +173,6 @@ def approve(conn, ticket_id, note, now=None):
 
 
 def babysit(conn, ticket_id, note, now=None, source="human"):
-    """Send a PR-parked ticket back to the babysitter; return its run id.
-
-    The shared release transaction records a `babysit` intervention, ends the
-    run `abandoned` with its merge-gate resume point, clears `blockedQuestion`,
-    and readies the ticket. The next claim resumes the candidate on its PR.
-    This is "look again", not approval: human-approval mode parks again when
-    the PR is ready. All `approve()` refusals apply; a park without a PR is
-    also refused before any write, since releasing it would land locally.
-    `source` is `human` for --babysit, `supervisor` for new PR activity."""
     return _release_parked(
         conn, ticket_id, "babysit", note,
         "sent back to the babysitter; the next claim resumes the candidate"
@@ -375,12 +182,6 @@ def babysit(conn, ticket_id, note, now=None, source="human"):
 def _release_parked(conn, ticket_id, action, note, reason, now,
                     require_pr=False, source="human", guidance=None,
                     before_release=None):
-    """The transaction `approve()` and `babysit()` share: the intervention
-    row with `action`, the parked run ended `abandoned` for `reason` with
-    its resume point at the merge gate, the ticket walked to `ready`.
-    `require_pr` refuses, before the first write, a parked run that has no
-    `prUrl`. `before_release`, when supplied, records additional evidence
-    after the intervention and before release, in the same transaction."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -422,9 +223,9 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
                             source=source, guidance=guidance)
         if before_release is not None:
             before_release()
+        # Never a strike: the escalation count reads `failed` only.
         release(conn, last_run_id, "abandoned", reason, now=now)
-        # `release()` records a resume point for failed runs only; this one
-        # is the operator's, written once the ending is stamped.
+        # After `release()`, which records a resume point for failed runs only.
         conn.execute("UPDATE runs SET resumePhase = ?, approvedAt = ?,"
                      " approvedBy = ? WHERE id = ?",
                      (APPROVED_RESUME_PHASE, now if action == "approve" else None,
@@ -438,60 +239,13 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
 
 
 class RepointRefused(Exception):
-    """A re-point `repoint()` will not do; nothing was written.
-
-    The ticket does not exist, has a live run, its newest run is already
-    approved or is not parked in `awaiting_merge_approval`, or the sha is
-    not a full commit id --
-    each is the same answer to the operator: there is no parked candidate
-    here to move, or nothing a merge gate could hold a branch to, so the
-    message names the ticket and the reason, and the command line exits
-    on it.
-    """
+    pass
 
 
-# The shape of the one thing `repoint()` will record as a candidate: a full
-# 40-hex commit id, the form `git rev-parse HEAD` prints and the form the
-# park records. Either case is accepted (git does), and lowercased before
-# it is stored so `_candidate_drift()`'s equality test against the
-# lowercase form git prints holds. An abbreviated sha would pass that test
-# never, and a branch name would pass it only by accident.
 FULL_SHA = re.compile(r"[0-9a-fA-F]{40}\Z")
 
 
 def repoint(conn, ticket_id, sha, note, now=None):
-    """Move a parked candidate to `sha`; return `(run_id, old_sha)`.
-
-    The approve path holds a parked run's branch to the sha its park
-    recorded and fails, tree untouched, when the tip differs -- right for a
-    commit slipped in after the park, wrong for the one legitimate case: the
-    operator rebuilt the branch as the same commits on a rewritten `main`
-    (2026-09-05, three parked candidates after the unpushed history was
-    filtered). Before this the only way to re-point was raw SQL on
-    `runs.candidateSha`. This is that write as a recorded intervention, all
-    in one `_transaction()`: an `interventions` row with action `repoint`
-    carrying `note` as its `guidance`, a narrative `runEvents` row naming
-    the old and new shas, then `candidateSha` set to `sha`. `--approve` is
-    unchanged: the gate still holds the branch to the recorded sha, now the
-    rebuilt one.
-
-    Refuses, with `RepointRefused` and no write, anything that is not a
-    parked, not-yet-approved ticket with a well-formed sha: an unknown
-    ticket, one with a live run, one whose newest run carries a
-    `resumePhase` (approved: its release is already in flight, so the
-    refusal says to requeue instead), one whose newest run is in any phase
-    but `awaiting_merge_approval` (ready with no run yet, failed, merged),
-    or a `sha` that is not 40 hex characters (either case; it is stored
-    lowercased, the form git prints). The refusal names the ticket and the
-    reason. Touches no branch: rebasing the branch itself is the operator's
-    git work, before this call.
-
-    Two holds, both required. `park()` leaves `resumePhase` NULL and
-    `approve()` writes `merge_gate` there as it ends the run, so a run the
-    loop produced is refused by its phase alone; the `resumePhase` check
-    is the contract's own precondition, and it is what catches a row walked
-    by hand into a parked phase with an approval already recorded on it.
-    """
     if not isinstance(sha, str) or not FULL_SHA.match(sha):
         raise RepointRefused(
             f"ticket {ticket_id}: {sha!r} is not a full 40-hex commit id;"
@@ -540,39 +294,18 @@ def repoint(conn, ticket_id, sha, note, now=None):
     return last_run_id, old_sha
 
 
-# §5's resumable set, transcribed: "mechanically resumable — `failed`, or any
-# of working/verifying/reviewing/addressing where lastHeartbeat is older than
-# staleThresholdMs", plus `blocked_on_operator`, the one phase that takes an
-# answer. Staleness is deliberately not re-derived here: §5 says resume is
-# always safe to attempt, and whether a live run *should* be resumed is the
-# supervisor's judgement, not a fact this mutation can improve on.
-#
-# Everything else is refused. `claimed` has nothing to resume into, and
-# `merge_gate`, `awaiting_merge_approval`, `merging`, `squashing`, `done` and
-# `killed` are either mid-merge or over: none of them is a phase the §4
-# diagram draws a resume edge out of.
-#
-# The set is split because the working half is also what `release()` records
-# as a failed run's `resumePhase`: `failed` and `blocked_on_operator` are
-# phases a run is parked *in*, not phases work was interrupted in, so neither
-# is a phase to send a resumed run back to.
+# Staleness is the supervisor's judgement: resume is always safe to attempt.
 RESUMABLE_PHASES = RESUMABLE_WORK_PHASES | {
     _Phase.FAILED.value, _Phase.BLOCKED_ON_OPERATOR.value, "paused"}
-# The phases a run is parked *in*, alive and waiting for a person: the loop
-# wrote a question (or, under `[merge] approve = "human"`, an approved
-# candidate), gave the lease back and went home. Neither has a heartbeat by
-# design, so the supervisor sweep leaves both alone; `park()` is the write
-# that puts a run in `awaiting_merge_approval`, and the ticket that releases
-# it (`--approve`) is what moves it on.
+# No heartbeat by design, so the supervisor sweep leaves these alone.
 PARKED_PHASES = frozenset({
     _Phase.BLOCKED_ON_OPERATOR.value, _Phase.AWAITING_MERGE_APPROVAL.value})
 
 class ResumeRefused(Exception):
-    """A resume the state model does not allow; nothing was written."""
+    pass
 
 
 def pause(conn, run_id, note, source="human", now=None):
-    """Record a cooperative stop request before marking the live run, atomically."""
     with _transaction(conn):
         row = conn.execute("SELECT endedAt, outcome, stopRequested FROM runs"
                            " WHERE id = ?", (run_id,)).fetchone()
@@ -590,14 +323,6 @@ def pause(conn, run_id, note, source="human", now=None):
 
 
 def abort(conn, run_id, note, source="human", now=None, close=False, trigger="manual"):
-    """Record an emergency stop before marking the live run, atomically.
-
-    Shares `stopRequested` with `pause()`; the intervention's action tells the
-    two apart, and an abort supersedes a pending pause. `close` records it
-    as `abort_close`, which closes the run's pull request once the abort is
-    finished (KO-611) and supersedes a pending plain abort; `trigger` is the
-    intervention's (KO-741). A run that has ended, or sits where the state
-    model draws no edge to `failed`, is refused before anything is written."""
     with _transaction(conn):
         row = conn.execute(
             "SELECT r.endedAt, r.outcome, r.phase, r.stopRequested, i.action"
@@ -621,53 +346,7 @@ def abort(conn, run_id, note, source="human", now=None, close=False, trigger="ma
 
 
 def resume(conn, run_id, guidance=None, source="human", now=None, note=None):
-    """Resume `run_id`, optionally with `guidance`; return the phase re-entered.
-    `note`, the operator's reason, lands on the interventions row (KO-609).
-
-    State-model §5. Two rules, and the first one is the point of the ticket:
-
-    * **Guidance requires `blocked_on_operator`.** A non-None `guidance` on a
-      run in any other phase raises `GuidanceNotAccepted` before anything is
-      written. Mid-run injection is what makes supervisors unpredictable, so
-      the supervisor's `redirect` has to park the run with a question and wait
-      for the answer to come back through this one door. The converse is not a
-      rule: a bare resume of a blocked run is allowed, an operator saying
-      "never mind, carry on".
-    * **A bare resume re-enters the phase the run left.** For `failed` that is
-      `runs.resumePhase`, recorded by whoever failed it, falling back to
-      `working` — the only edge §4 draws out of `failed` — when nothing was
-      recorded. A run parked in `blocked_on_operator` always re-enters
-      `working` (§4 again: `blocked_on_operator --> working : guidance
-      provided`); an answered question resumes as work whatever the run was
-      doing when it stopped to ask. And a stale `working`/`verifying`/
-      `reviewing`/`addressing` run re-enters the phase it is already in, which
-      is that same rule with nothing to move.
-
-    `resumePhase` is cleared on the way out, so a later failure that records
-    nothing cannot resume into a phase left over from an earlier one.
-
-    Every accepted resume writes an `interventions` row — §2 keeps those out
-    of `runEvents` because they are queryable decisions. `source` says who
-    resumed (`human` or `supervisor`); the trigger is `manual` because §6's
-    triggers name why a run was *stopped*, and none names a resume.
-
-    Resuming a `failed` run clears the ending `release()` stamped --
-    `endedAt`, `outcome`, `outcomeReason`, `outcomeClass` back to default --
-    because the run is live again and everything that reads `endedAt` reads
-    it as "over": `set_phase()` refuses a stamped run (KO-213), the sweep
-    skips it, the FINDINGS window lists it; the release that ends the
-    resumed stretch writes a fresh ending over nothing. A resumed run's
-    `lastHeartbeat` stays where the worker left it: heartbeats are written
-    by whoever does the work, and stamping one here would claim liveness
-    this call has no evidence for. `now` is epoch milliseconds for the
-    intervention's `at`, defaulting to the clock.
-
-    Runs in one `_transaction()`, like the other writers, so a resume arriving
-    as the effect of a Linear webhook commits with its delivery id.
-    """
-    # An empty string is not an answer, and it is falsy, so a caller that let
-    # one through would have its "no guidance" and its "guidance" paths
-    # silently agree here while §5 says they are different calls.
+    """Resume `run_id`, optionally with `guidance`; return the phase re-entered."""
     if guidance is not None and (
         not isinstance(guidance, str) or not guidance.strip()
     ):
@@ -681,8 +360,7 @@ def resume(conn, run_id, guidance=None, source="human", now=None, note=None):
         if row is None:
             raise ResumeRefused(f"run {run_id} does not exist")
         phase, resume_phase = row
-        # The guidance gate is asked first: on a `done` run offered guidance
-        # both rules are broken, and the one worth naming is the injection.
+        # Asked first: when both rules are broken, the injection is the one to name.
         if guidance is not None and phase != "blocked_on_operator":
             from . import GuidanceNotAccepted
             raise GuidanceNotAccepted(
@@ -699,6 +377,7 @@ def resume(conn, run_id, guidance=None, source="human", now=None, note=None):
             target = "working"
         else:
             target = phase
+        # No heartbeat: this call has no evidence the run is alive.
         conn.execute(
             "UPDATE runs SET phase = ?, resumePhase = NULL, parkKind = NULL,"
             " stopRequested = NULL"
@@ -721,7 +400,6 @@ def resume(conn, run_id, guidance=None, source="human", now=None, note=None):
     return target
 
 
-# Validate interventions before SQLite reports a constraint failure.
 INTERVENTION_SOURCES = tuple(e.value for e in _enums.InterventionSource)
 INTERVENTION_TRIGGERS = tuple(e.value for e in _enums.InterventionTrigger)
 INTERVENTION_ACTIONS = tuple(e.value for e in _enums.InterventionAction)
@@ -740,12 +418,7 @@ def _validate_intervention(action, note, source, trigger):
 def record_intervention(conn, run_id, action, note, source="human",
                         trigger="manual", question=None, guidance=None,
                         now=None):
-    """Record an operator/supervisor decision and its narrative atomically.
-
-    Return the intervention id. `note` goes into a narrative event and ledger
-    entry, while question/guidance retain their intervention meanings. Redirect
-    requires a question. `now` defaults to current epoch milliseconds.
-    An enclosing transaction joins the event and row to the caller's write."""
+    """Record an operator or supervisor decision on a run; return its id."""
     _validate_intervention(action, note, source, trigger)
     if action == "redirect" and (
             not isinstance(question, str) or not question.strip()):
@@ -764,10 +437,6 @@ def record_intervention(conn, run_id, action, note, source="human",
             (run_id, source, trigger, action, question, guidance, now))
         _append_event(conn, run_id, "narrative", "intervention",
                       f"{source} {action}: {note}", now)
-        # The narrative's copy, in the same transaction: an operator's step
-        # is a ledger entry like a round or a merge, so a reader of the
-        # run's story sees it where it happened. A human is the operator;
-        # the supervisor is the loop's own machinery.
         record_ledger(conn, run_id, "intervention",
                       f"{source} {action}: {note}",
                       source="operator" if source == "human" else "loop",
@@ -775,42 +444,7 @@ def record_intervention(conn, run_id, action, note, source="human",
     return cursor.lastrowid
 
 
-# --- the supervisor sweep's strike tally --------------------------------------
-# A run whose loop has crashed stops heartbeating, but so does one whose host
-# is briefly wedged, so liveness is not a single sample: the sweep records what
-# it saw and only the second consecutive silent sighting is evidence. The
-# counting lives here rather than in the sweep because it is a read-then-write
-# over a store table, and two sweeps racing on one target must serialize on it
-# the way every other writer in this module does.
-
-
 def record_strike(conn, run_id, stale, heartbeat, now=None):
-    """Record one sweep's liveness sighting of run `run_id`; return its strikes.
-
-    `stale` is the sweep's verdict on this run's heartbeat, not a threshold
-    this decides: the sweep owns how old is too old (and 5/5 will make that
-    configurable), and this owns only how many sightings in a row say so.
-
-    A silent run's tally goes up by one and the row remembers the sweep that
-    last touched it. A run seen alive drops its row and answers 0 -- the
-    strikes a sweep counts are consecutive, so one heartbeat clears the count
-    rather than leaving a run one old sighting away from tripping forever.
-
-    Which is why `heartbeat` -- the run's `lastHeartbeat`, the timestamp the
-    caller's verdict was reached on -- is compared against the `lastSeen` of
-    the strike already on file. A sighting is only the *next* consecutive one
-    if the run has been silent throughout; a run that answered after the last
-    strike was recorded and then went quiet again has proved itself alive in
-    between, and starts over at one however few sweeps saw it do so. Counting
-    on sightings alone makes the tally consecutive in sweeps rather than in
-    silence, and a run heartbeating just slower than the sweep interval trips
-    while alive -- exactly the false positive two strikes exist to prevent.
-
-    An unknown `run_id` is a caller bug and raises `ValueError`, as everywhere
-    else here. `now` is epoch milliseconds for `lastSeen`, defaulting to the
-    clock; a sweep passes its own so every run in one pass is stamped with the
-    one time it was taken.
-    """
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -826,9 +460,8 @@ def record_strike(conn, run_id, stale, heartbeat, now=None):
                 "SELECT strikes, lastSeen FROM sweepStrikes WHERE runId = ?",
                 (run_id,)
             ).fetchone()
+            # A heartbeat since the strike on file starts the silence over.
             if row is None or heartbeat > row[1]:
-                # Nothing on file, or the run answered after what is: either
-                # way this is the first sighting of the silence it is in now.
                 strikes = 1
             else:
                 strikes = row[0] + 1
@@ -843,22 +476,11 @@ def record_strike(conn, run_id, stale, heartbeat, now=None):
 
 
 def record_supervisor_heartbeat(conn, pid, started_at, now=None):
-    """Record one completed pass of the supervisor `pid`; return its passes.
-
-    The supervisor is identified by `(pid, started_at)` rather than pid alone
-    because pids are reused: a supervisor started tomorrow with yesterday's
-    pid is a different watcher, and folding its passes into the old row would
-    make the old one look like it never died. The first call inserts the row
-    with one pass; every later call bumps `lastBeat` and the count. `now` is
-    epoch milliseconds, defaulting to the clock; the loop passes the instant
-    its sweep ran so the beat and the sweep it vouches for agree. Every beat
-    stamps `host` with this machine's hostname, so a store read elsewhere can
-    say which machine the watcher is on.
-    """
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
         conn.execute(
+            # Keyed with startedAt too, because pids are reused.
             "INSERT INTO supervisorHeartbeats"
             " (pid, startedAt, lastBeat, passes, host)"
             " VALUES (?, ?, ?, 1, ?)"
@@ -873,14 +495,6 @@ def record_supervisor_heartbeat(conn, pid, started_at, now=None):
 
 
 def latest_supervisor_heartbeat(conn):
-    """The newest supervisor heartbeat, or None when no supervisor has beaten.
-
-    `(pid, started_at, last_beat, passes, host)` for the row whose `lastBeat`
-    is most recent: the one supervisor that could still be alive, since any
-    other process's row stopped moving before it. `host` is None for a beat
-    written before the column existed. Read-only, so `--report` can ask it
-    of a store a live supervisor is writing to.
-    """
     row = conn.execute(
         "SELECT pid, startedAt, lastBeat, passes, host"
         " FROM supervisorHeartbeats"
@@ -889,16 +503,6 @@ def latest_supervisor_heartbeat(conn):
 
 
 def record_loop_restart(conn, project_id, sha, now=None):
-    """Note that the loop is about to re-exec itself from `sha`; return the id.
-
-    Written by the loop just before `os.execv()` replaces it, so a restart that
-    never comes back has left something a reader can see: the exec itself
-    prints nothing once it has failed, and every gate before it had passed.
-    `sha`: commit or JSON {leaving, arriving}; `now`: epoch ms, default clock.
-    the question "did the loop return?"; `record_loop_return()` and a claim
-    are the two ways of answering yes, `unreturned_loop_restarts()` is how the
-    sweep asks.
-    """
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -909,15 +513,6 @@ def record_loop_restart(conn, project_id, sha, now=None):
 
 
 def record_loop_return(conn, project_id, now=None):
-    """The loop's exit note: every open restart of `project_id` came back.
-
-    Called where the loop prints "no ready tickets" and exits clean -- the one
-    way a loop that restarted successfully can end without ever claiming, and
-    so without a heartbeat to vouch for it. Stamps `returnedAt` on every
-    restart row of the project not already returned, and returns how many it
-    stamped: zero for a loop that was not restarted, which is the common case
-    and not an error. `now` is epoch milliseconds, defaulting to the clock.
-    """
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -928,19 +523,6 @@ def record_loop_return(conn, project_id, now=None):
 
 
 def unreturned_loop_restarts(conn, grace_ms, now=None):
-    """Restarts older than `grace_ms` no loop activity has followed, once each.
-
-    A restart row counts as unreturned when it has no `returnedAt`, no run of
-    its project has a heartbeat newer than it -- `claim()` stamps a fresh
-    run's heartbeat at its claim time, so a claim is a heartbeat here -- and
-    it is at least `grace_ms` old at `now`, the time the exec is allowed to
-    take before its silence means something. Each row is returned as
-    `(id, project_id, sha, age_ms)` exactly once: this stamps `reportedAt` on
-    what it returns, in the caller's transaction when there is one, so the
-    sweep that prints the line is the sweep that records it and the next pass
-    is quiet about the same restart. A restart younger than the grace is not
-    returned and not stamped; it is asked about again on the next pass.
-    """
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -948,6 +530,7 @@ def unreturned_loop_restarts(conn, grace_ms, now=None):
             "SELECT id, projectId, sha, at FROM loopRestarts"
             " WHERE returnedAt IS NULL AND reportedAt IS NULL"
             "   AND at <= ?"
+            # A claim stamps its run's heartbeat, so it counts as a return.
             "   AND NOT EXISTS (SELECT 1 FROM runs"
             "                   WHERE runs.projectId = loopRestarts.projectId"
             "                     AND runs.lastHeartbeat > loopRestarts.at)"
@@ -959,13 +542,11 @@ def unreturned_loop_restarts(conn, grace_ms, now=None):
 
 
 def hold(conn, project_id, note):
-    """Stop new admission, recording the reason before the project changes."""
     from .tickets import set_admission
     return set_admission(conn, project_id, "held", note)
 
 
 def release_hold(conn, project_id, note):
-    """Enable admission again without changing any ticket or run."""
     from .tickets import set_admission
     return set_admission(conn, project_id, "enabled", note)
 
@@ -992,10 +573,7 @@ def _set_admission(conn, project_id, note, state, action):
 
 def record_project_intervention(conn, action, note, source="human",
                                 trigger="manual", project_id=None, now=None):
-    """Record a decision that belongs to the project, not to one run (KO-665).
-
-    Validated like `record_intervention()`; `project_id` defaults to the
-    store's only project. Only `migrate` may be recorded with no project."""
+    """Record a decision on the project rather than one run; return its id."""
     _validate_intervention(action, note, source, trigger)
     with _transaction(conn):
         projects = [row[0] for row in conn.execute("SELECT id FROM projects")]
@@ -1013,6 +591,4 @@ def record_project_intervention(conn, action, note, source="human",
              now if now is not None else int(time.time() * 1000))).lastrowid
 
 
-# The schema repair lives beside this module for its size; it records its
-# decision through `record_project_intervention()` above.
 from .repair import repair_references  # noqa: E402,F401

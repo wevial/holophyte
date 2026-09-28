@@ -1,9 +1,4 @@
-"""Persistent, project-owned evidence for a loop that cannot claim (KO-466).
-
-The two nullable project columns hold the deadline and a JSON reason document.
-The document retains the outage's start and previous interval across supervisor
-restarts; expiry permits a probe, and only a passing probe clears the outage.
-"""
+"""Project launch backoff: expiry permits a probe; only a passing one clears it."""
 import json
 
 import store
@@ -19,7 +14,6 @@ def current(conn, project):
 
 
 def event(conn, project, kind, note, now, run_id=None):
-    """Write startup evidence without inventing a claimed run."""
     if run_id is not None:
         store.record_event(conn, run_id, kind, note, now=now)
         return
@@ -30,7 +24,6 @@ def event(conn, project, kind, note, now, run_id=None):
 
 
 def intervention(conn, project, action, note, now, run_id=None):
-    """One decision per target, including targets with no previous run."""
     if run_id is not None:
         store.record_intervention(conn, run_id, action, note,
                                   source="supervisor", now=now)
@@ -42,11 +35,7 @@ def intervention(conn, project, action, note, now, run_id=None):
 
 
 def failure(conn, project, reason, now, *, pending=False, run_id=None):
-    """Record the first cause, then one intervention per exponential step.
-
-    A loop's startup failure is pending until the supervisor observes it.
-    That first observation backs off without spending another probe.
-    """
+    # A loop's startup failure is pending until the supervisor observes it.
     with store.transaction(conn):
         previous = current(conn, project)
         if pending and previous:
@@ -74,7 +63,6 @@ def clear(conn, project):
 
 
 def owed_project(conn, owed, project_id=None):
-    """Keep a ticket's project before its first run, or the board's identity."""
     ticket, run = next(((t, r) for t, r in owed if t is not None or r is not None),
                        (None, None))
     if project_id is not None:
