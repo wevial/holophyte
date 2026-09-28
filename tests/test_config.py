@@ -17,7 +17,7 @@ class FallbackConfigTests(ConfigTestCase):
         self.assertIn('implementer_fallback', str(error.exception))
         self.assertIn('equal implementer', str(error.exception))
 
-    def test_fallback_validation_and_review_model_exclusivity(self):
+    def test_fallback_validation_and_review_model_beside_fallbacks(self):
         for key in ('implementer_fallback', 'reviewer_fallback',
                     'adjudicator_fallback'):
             for value in ('42', '" "', '"./relative"'):
@@ -25,7 +25,14 @@ class FallbackConfigTests(ConfigTestCase):
                     self.locate(f'[agents]\n{key} = {value}\n')
                     with self.assertRaisesRegex(SystemExit, key):
                         check_config(self.project)
-            self.locate(f'[agents]\n{key} = "echo ready"\n'
-                        'review_model = "codex"\n')
-            with self.assertRaisesRegex(SystemExit, 'review_model'):
+            with self.subTest(key=key, beside='review_model'):
+                self.locate(f'[agents]\n{key} = "echo ready"\n'
+                            'review_model = "codex"\n')
                 check_config(self.project)
+                self.locate(f'[agents]\n{key} = "echo ready"\n'
+                            'reviewer = "echo review"\n'
+                            'review_model = "codex"\n')
+                with self.assertRaisesRegex(SystemExit,
+                                            r'review_model beside \[agents\] '
+                                            r'reviewer:'):
+                    check_config(self.project)
