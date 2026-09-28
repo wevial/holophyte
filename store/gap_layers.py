@@ -5,7 +5,7 @@ import time
 from .enums import GapLayer
 from .schema import _transaction
 
-TICKET_IDENTIFIER = re.compile(r"^[A-Z][A-Z0-9]*-[0-9]+$")
+TICKET_IDENTIFIER = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+\Z")
 
 
 def record_gap_layer(conn, ticket_id, layer, note, author, carried_by=None,

@@ -123,14 +123,15 @@ class GapLayerRecordTests(unittest.TestCase):
                          [(layer, 0) for layer in LADDER])
 
     def test_a_bad_argument_is_refused_before_any_row(self):
-        cases = {
-            "lint": dict(layer="lint"),
-            "note": dict(note="  "),
-            "author": dict(author=""),
-            "carried_by": dict(carried_by="holo 7"),
-            "not in the store": dict(ticket_id=999),
-        }
-        for problem, change in cases.items():
+        cases = [
+            ("lint", dict(layer="lint")),
+            ("note", dict(note="  ")),
+            ("author", dict(author="")),
+            ("carried_by", dict(carried_by="holo 7")),
+            ("carried_by", dict(carried_by="HOLO-7\n")),
+            ("not in the store", dict(ticket_id=999)),
+        ]
+        for problem, change in cases:
             call = dict(ticket_id=self.ko1, layer="guidance", note="lesson",
                         author="operator")
             call.update(change)
