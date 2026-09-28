@@ -2,19 +2,20 @@
 
 `snapshot()` answers the plain question in one dict: the store's projects
 and their admission, the live runs and their phase, the parked tickets and
-what they ask, how many tickets the claim would take, the schema version,
-and who holds the supervisor and merge locks. `render()` is the same as a
-few lines of text; `status_report()` is `--status`'s whole body, `--json`
-printing the dict instead. The keys are snake_case and stable: the JSON is
-the wire shape a later `doctor` and the shadow seat read.
+what they ask, the tickets a failed run left in flight with no run, how
+many tickets the claim would take, the schema version, and who holds the
+supervisor and merge locks. `render()` is the same as a few lines of text;
+`status_report()` is `--status`'s whole body, `--json` printing the dict
+instead. The keys are snake_case and stable: the JSON is the wire shape a
+later `doctor` and the shadow seat read.
 
 Reads only. The store is opened through `store.read.open_readonly()` and
 queried with the reads the sweep, `/status` and `/attention` already make
-(`live_runs()` over `SWEEPABLE_PHASES`, `blocked_tickets()`, and
-`ready_tickets()` in mirror mode or the store's queue, `claimable()`, in
-store mode); the locks are read with `read_supervisor_lock()` and
-`read_merge_lock()` and judged, never removed. Nothing here calls Linear or
-GitHub.
+(`live_runs()` over `SWEEPABLE_PHASES`, `blocked_tickets()`,
+`stranded_runs()`, and `ready_tickets()` in mirror mode or the store's
+queue, `claimable()`, in store mode); the locks are read with
+`read_supervisor_lock()` and `read_merge_lock()` and judged, never removed.
+Nothing here calls Linear or GitHub.
 
 With no project, `host_status_report()` is the host form: the registry
 (`holophyte.host`), the build, the home's sweep lock and `sweep.json`, and
@@ -61,6 +62,9 @@ def snapshot(target, conn, now=None):
         "parked": [{"run": ticket.runId, "ticket": ticket.linearIdentifier,
                     "question": ticket.blockedQuestion}
                    for ticket in store.read.blocked_tickets(conn)],
+        "stranded": [{"run": run.id, "ticket": run.linearIdentifier,
+                      "reason": run.outcomeReason, "ended_ms": run.endedAt}
+                     for run in store.read.stranded_runs(conn)],
         "ready": _ready(target, conn),
         "supervisor_lock": _supervisor_holder(supervisor_lock_path(target)),
         "merge_lock": _merge_holder(target, conn),
@@ -130,6 +134,9 @@ def render(snap):
     for parked in snap["parked"]:
         lines.append(f"parked {parked['ticket']} run {parked['run']}:"
                      f" {parked['question'] or '(no question)'}")
+    for stranded in snap["stranded"]:
+        lines.append(f"stranded {stranded['ticket']} run {stranded['run']}:"
+                     f" {stranded['reason'] or '(no reason)'}")
     lines.append(f"ready {snap['ready']}")
     lines.append(_lock_line("supervisor", snap["supervisor_lock"], "pid"))
     lines.append(_lock_line("merge", snap["merge_lock"], "run"))

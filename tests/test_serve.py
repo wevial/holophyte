@@ -893,14 +893,17 @@ class AttentionTests(ServeTestCase):
         kinds = [item["kind"] for item in body["items"]]
         self.assertEqual(kinds, ["blocked", "stale_run", "failed", "supervisor"])
 
-    def test_a_failure_older_than_a_day_drops_out(self):
+    def test_a_failure_stranding_its_ticket_stays_past_a_day(self):
         self.seed_attention(failed_ago=30 * self.HOUR)
         self.start()
 
         _, _, body = self.request("GET", "/attention")
 
         kinds = [item["kind"] for item in body["items"]]
-        self.assertEqual(kinds, ["blocked", "stale_run", "supervisor"])
+        self.assertEqual(kinds, ["blocked", "stale_run", "failed", "supervisor"])
+        failed = body["items"][2]
+        self.assertEqual((failed["ticket"], failed["run"], failed["reason"]),
+                         ("KO-9", self.failed, "verify red"))
 
     def test_nothing_wrong_is_working_with_a_live_run_else_none(self):
         self.seed()

@@ -139,3 +139,41 @@ class StoreModeReadyTests(SweepTestCase):
     def test_backlog_tickets_are_not_counted_ready(self):
         self.assertEqual(json.loads(self.status("--json"))["ready"], 1)
         self.assertIn("ready 1", self.status().splitlines())
+
+
+class StrandedStatusTests(SweepTestCase):
+    """KO-9's only run failed 30 hours ago and KO-9 is still in flight with
+    no run; KO-1's failed run was followed by a requeue to `ready`."""
+
+    status = StatusTests.status
+    REASON = "verify failed before merge; branch task/ko-9 preserved at abc1234"
+
+    def setUp(self):
+        super().setUp()
+        hour = 60 * MINUTE
+        requeued = self.a_run(claimed_at=T0 - 33 * hour)
+        store.release(self.conn, requeued, "failed", reason="verify red",
+                      now=T0 - 32 * hour)
+        store.requeue(self.conn, self.ticket_of[requeued], "retry later")
+        ticket = store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id="issue-9",
+            linear_identifier="KO-9", title="ticket 9",
+            acceptance_criteria=["Given ticket 9, then it is worked"],
+            verification_commands=["echo ok"])
+        store.tickets.transition(self.conn, ticket, "in_flight")
+        self.stranded = self.a_run(claimed_at=T0 - 31 * hour, ticket=ticket)
+        self.ended = T0 - 30 * hour
+        store.release(self.conn, self.stranded, "failed", reason=self.REASON,
+                      now=self.ended)
+
+    def test_text_has_one_stranded_line(self):
+        stranded = [line for line in self.status().splitlines()
+                    if line.startswith("stranded ")]
+        self.assertEqual(stranded,
+                         [f"stranded KO-9 run {self.stranded}: {self.REASON}"])
+
+    def test_json_holds_the_stranded_run_only(self):
+        snap = json.loads(self.status("--json"))
+        self.assertEqual(snap["stranded"], [{
+            "run": self.stranded, "ticket": "KO-9", "reason": self.REASON,
+            "ended_ms": self.ended}])

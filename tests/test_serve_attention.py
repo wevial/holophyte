@@ -2,6 +2,7 @@
 import io
 import sqlite3
 import unittest
+from time import time
 from unittest.mock import patch
 
 import holophyte.board
@@ -161,6 +162,55 @@ class FailedAttentionTests(ServeTestCase):
                 self.assertEqual(self.conn.execute(
                     "SELECT COUNT(*) FROM interventions").fetchone()[0], count)
                 self.assertEqual(list(self.conn.iterdump()), before)
+
+
+class StrandedAttentionTests(ServeTestCase):
+    """KO-7's only run failed 30 hours ago: past the window, it stays only
+    while it strands the ticket in flight with no run."""
+
+    HOUR = 60 * MIN
+    mirror_state = FailedAttentionTests.mirror_state
+    retry = FailedAttentionTests.retry
+
+    def setUp(self):
+        super().setUp()
+        self.now = int(time() * 1000)
+        self.conn = store.open(str(self.db))
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        project = store.tickets.ensure_project(self.conn, "team-1", self.target)
+        ticket = store.tickets.mirror_ticket(
+            self.conn, project, linear_issue_id="issue-7",
+            linear_identifier="KO-7", title="ticket 7",
+            acceptance_criteria=["Given ticket 7, then it is worked"],
+            verification_commands=["echo ok"], time_box_ms=25 * MIN)
+        store.tickets.transition(self.conn, ticket, "in_flight")
+        self.run = store.claim(self.conn, project, ticket,
+                               now=self.now - 31 * self.HOUR)
+        store.release(self.conn, self.run, "failed", reason="verify red",
+                      now=self.now - 30 * self.HOUR)
+        self.ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
+        self.start()
+
+    def failed_runs(self):
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        return [item["run"] for item in body["items"] if item["kind"] == "failed"]
+
+    def test_a_stranded_failure_is_listed(self):
+        self.assertEqual(self.failed_runs(), [self.run])
+
+    def test_requeued_to_ready_it_drops_out(self):
+        store.requeue(self.conn, self.ticket.id, "retry later")
+        self.assertEqual(self.failed_runs(), [])
+
+    def test_a_newer_live_attempt_drops_it(self):
+        self.retry()
+        self.assertEqual(self.failed_runs(), [])
+
+    def test_a_backlog_board_state_hides_it(self):
+        self.mirror_state("Backlog")
+        self.assertEqual(self.failed_runs(), [])
 
 
 class PausedAttentionTests(ServeTestCase):

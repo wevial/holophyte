@@ -464,8 +464,10 @@ the PR it waits on. `project` is the project path, as on `/status`.
 `level` is `none`, `working`, `attention` or `critical`; with no items it
 is `working` if any run is live. Items come in this order: `blocked` and
 `pr_open` tickets in ticket order, `stale_run`, `failed` within the last 24
-hours whose ticket has not since merged or been requeued, `supervisor`
-when not live. A daemon older than this endpoint answers 404, and the
+hours whose ticket has not since merged or been requeued, or at any age
+while it strands its ticket (its last run, the ticket `in_flight` with no
+active run, which only the operator will move on), oldest end first,
+`supervisor` when not live. A daemon older than this endpoint answers 404, and the
 drawer then computes the stale-run and supervisor rows itself from
 `/status`; any other failure of `/attention` is shown, never hidden.
 

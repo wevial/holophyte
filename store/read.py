@@ -759,6 +759,28 @@ def recent_failed_runs(conn, since_ms):
             for row in rows]
 
 
+def stranded_runs(conn):
+    """Every failed run that strands its ticket, oldest end first: the
+    ticket's last run, the ticket `in_flight` with no active run.
+
+    No window: a failure leaves its ticket in flight for a human on
+    purpose, and nothing but a human moves it on, however long ago it ended.
+    """
+    rows = conn.execute(
+        "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
+        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url, t.boardState"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " WHERE t.status = 'in_flight' AND t.activeRunId IS NULL"
+        " AND r.id = t.lastRunId AND r.outcome = 'failed'"
+        " ORDER BY r.endedAt, r.id").fetchall()
+    return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
+                            outcomeReason=row[2], endedAt=row[3],
+                            ticketStatus=row[4], attempt=row[5],
+                            prUrl=row[6], lastRunId=row[7], activeRunId=row[8],
+                            ticketUrl=row[9], boardState=row[10])
+            for row in rows]
+
+
 # --- reviewRounds ------------------------------------------------------------
 
 
