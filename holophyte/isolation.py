@@ -8,6 +8,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import tempfile
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -213,8 +214,11 @@ def credential_copy(route, task, project):
     source = Path(route.credential["file"]).expanduser().resolve(strict=True)
     if not source.is_file() or ":" in str(source):
         raise RuntimeError("implementer credential must be a regular file")
-    state = project_state(Path(task).resolve(strict=True), project)
-    scratch = private_directory(state / "credentials" / uuid.uuid4().hex)
+    try:
+        parent = project_state(Path(task).resolve(strict=True), project) / "credentials"
+    except subprocess.CalledProcessError:
+        parent = Path(tempfile.gettempdir())
+    scratch = private_directory(parent / f"holophyte-credential-{uuid.uuid4().hex}")
     try:
         copy = scratch / PurePosixPath(route.credential["destination"]).name
         shutil.copyfile(source, copy)

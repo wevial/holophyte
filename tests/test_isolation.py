@@ -141,6 +141,34 @@ class IsolationTests(unittest.TestCase):
         self.assertTrue(scratch.is_relative_to(state_dir(main).resolve()))
         self.assertFalse(scratch.exists())
 
+    def test_file_credential_launch_outside_a_repository_stages_its_copy(self):
+        from holophyte import isolation
+
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        credential = self.root / "auth.json"
+        credential.write_text("private")
+        route = isolation.Route("container", writable=False, credential={
+            "file": str(credential),
+            "destination": "/home/implementer/.agent/auth.json"})
+        seen = {}
+
+        def run(argv, cwd, timeout, env):
+            source = next(flag.split(":")[0] for flag in argv
+                          if flag.endswith(":/home/implementer/.agent:rw"))
+            seen["copy"] = Path(source) / "auth.json"
+            return 0, seen["copy"].read_text()
+
+        with (
+            patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(self.root)}),
+            patch.object(isolation, "image_ready"),
+            patch.object(isolation.review_runner, "_remove_container"),
+            patch.object(isolation, "run_capped", side_effect=run),
+        ):
+            self.assertEqual(
+                isolation.launch(route, scratch, {}, ["agent"]), (0, "private"))
+        self.assertFalse(seen["copy"].exists())
+
     def test_file_credential_beside_a_mounted_directory_mounts_its_copy(self):
         from holophyte import isolation
 
