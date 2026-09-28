@@ -88,6 +88,15 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["env"]["HOME"], "/home/implementer")
         self.assertEqual(argv[-2:], ["agent-cli", "task"])
 
+    def test_container_environment_drops_dotenv_quotes(self):
+        from holophyte import isolation
+
+        source = self.root / "allowed.env"
+        source.write_text('A="double"\n')
+        self.table["worktree"] = {"env_source": str(source), "env_allow": ["A"]}
+        self.table["agents"]["implementer_isolation"] = "container"
+        self.assertEqual(isolation.environment(self.target), {"A": "double"})
+
     def test_file_credential_and_timeout_cleanup(self):
         from holophyte import isolation
 

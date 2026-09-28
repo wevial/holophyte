@@ -33,7 +33,7 @@ OVER = {}
 PINNED = {
     "holophyte/babysitter.py": 1095, "holophyte/board.py": 1046,
     "holophyte/claim.py": 1001, "holophyte/cli.py": 821,
-    "holophyte/config.py": 904, "holophyte/dispatch.py": 327,
+    "holophyte/config.py": 915, "holophyte/dispatch.py": 327,
     "holophyte/config_tables.py": 766, "holophyte/findings.py": 391,
     "holophyte/gates.py": 924, "holophyte/loop.py": 919,
     "holophyte/merge_gate.py": 584,
@@ -58,7 +58,7 @@ PINNED = {
     "tests/test_cli.py": 328,
     "tests/test_cli_approve.py": 390, "tests/test_cli_requeue.py": 414,
     "tests/test_file_sizes.py": 280, "tests/test_holophyte_package.py": 421,
-    "tests/test_factory_config.py": 1214,
+    "tests/test_factory_config.py": 1235,
     "tests/test_factory_loop.py": 1416, "tests/test_merge_gate.py": 948,
     "tests/test_pool.py": 913, "tests/test_provider.py": 721, "tests/test_runs.py": 115,
     "tests/test_pullrequest.py": 1499, "tests/test_reconcile.py": 875,
