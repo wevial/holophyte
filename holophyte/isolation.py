@@ -169,8 +169,8 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
         "--volume",
         f"{workspace}:/workspace:{'rw' if route.writable else 'ro'}",
     ]
-    if route.writable:
-        session = session_directory(task or workspace, project)
+    if route.writable and task is not None:
+        session = session_directory(task, project)
         command += ["--volume", f"{session}:/home/implementer/.claude:rw"]
     credential = route.credential
     if "file" in credential:
@@ -217,7 +217,7 @@ def unwinding_on_signal(name):
 
 
 def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
-           project=None, mounts=()):
+           project=None, mounts=(), keep_session=False):
     """Preserve host process semantics; always remove isolated descendants."""
     hook = {"on_start": on_start} if on_start is not None else {}
     if route.backend == "none":
@@ -234,7 +234,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
     with unwinding_on_signal(name), checkout as (workspace, git_env):
         command, host_env = container_command(
             route, workspace, dict(env or {}, **git_env), argv, name, mounts,
-            task=worktree, project=project,
+            task=worktree if keep_session else None, project=project,
         )
         try:
             return run_capped(command, workspace, timeout, env=host_env, **hook)

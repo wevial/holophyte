@@ -126,10 +126,12 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(Path(run.call_args.args[1]).exists())
         argv = run.call_args.args[0]
         mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
-        self.assertEqual(mounts[0], f"{run.call_args.args[1]}:/workspace:rw")
-        self.assertTrue(mounts[1].endswith(":/home/implementer/.claude:rw"))
         self.assertEqual(
-            mounts[2:], [f"{credential}:/home/implementer/.agent/auth.json:ro"]
+            mounts,
+            [
+                f"{run.call_args.args[1]}:/workspace:rw",
+                f"{credential}:/home/implementer/.agent/auth.json:ro",
+            ],
         )
 
     def make_worktree(self):
@@ -791,7 +793,8 @@ class IsolationTests(unittest.TestCase):
             patch.object(isolation, "run_capped", return_value=(0, "done")) as run,
         ):
             isolation.launch(isolation.Route("container", writable=False),
-                             worktree, {}, ["agent"], project=self.target)
+                             worktree, {}, ["agent"], project=self.target,
+                             keep_session=True)
             self.assertFalse(state_dir(main).exists())
         self.assertNotIn(".claude", str(run.call_args.args[0]))
 
@@ -835,7 +838,8 @@ class IsolationTests(unittest.TestCase):
         route = isolation.Route("container")
 
         def turn(path, script):
-            return isolation.launch(route, path, {}, ["/bin/sh", "-ec", script])
+            return isolation.launch(route, path, {}, ["/bin/sh", "-ec", script],
+                                    keep_session=True)
 
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")}):
             code, output = turn(worktree, "mkdir -p ~/.claude; touch ~/.claude/marker")
