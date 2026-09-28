@@ -70,6 +70,8 @@ implementer's command and isolation settings.
 | `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default), `model` (default `"gpt-6-luna"`) and `effort` (default `"medium"`; one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
 | `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"medium"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
+| `review_fallback_model` | Default: Absent (disabled) | Non-empty Codex model ID, set together with `review_fallback_effort`; the container reviewer's fallback model, run in the same container. |
+| `review_fallback_effort` | Default: Absent (disabled) | `"low"`, `"medium"`, `"high"`, `"xhigh"`, set together with `review_fallback_model`; the fallback model's reasoning effort. |
 | `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |
 | `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and the project's toolchain. The reviewer image carries a pinned Claude CLI whose managed settings default to `bypassPermissions` (see [reviewing.md](reviewing.md)); its credential still comes from `implementer_credential`. Startup refuses a missing image and prints its build command. |
 | `implementer_credential` | Default: `{}` (no credential) | Either `{ env = "AGENT_API_KEY" }` to pass one named host variable, or `{ file = "~/.agent/auth.json", destination = "/home/implementer/.agent/auth.json" }` to mount one regular file read-only under the temporary home. |
@@ -93,6 +95,10 @@ adjudicator = "my-reviewer --final"
 # defaults. The effort is one of low, medium, high, xhigh.
 review_model  = "gpt-5.6-sol"
 review_effort = "medium"
+# A second pair the same container switches to when the first cannot run.
+# Optional; both keys or neither.
+review_fallback_model  = "gpt-5.6-sol"
+review_fallback_effort = "high"
 # Multiplier on the implementer turn's wall-clock budget: the ticket's
 # estimate times this is the cap each implementer turn is armed with, the
 # box the sweep and /status count the run against, and the hard ceiling the
@@ -328,6 +334,16 @@ startup switch attaches to the first affected run), and adds a fallback chip to
 the console's project header. A failed fallback probe stops the loop without
 recording a switch. `review_model` and `review_effort` cannot accompany fallback
 keys, just as they cannot accompany `reviewer`.
+
+`review_fallback_model` and `review_fallback_effort` give the container reviewer
+a fallback that never leaves the container. Both are required together, and like
+the primary pair they are refused beside a `reviewer` command or any fallback
+command. With the pair set, startup probes the container reviewer; when that
+probe fails it probes the fallback pair in the same container and, if it passes,
+records and activates the switch as for a fallback command. A review or
+adjudication turn whose container cannot stage, start or read the reviewer on
+the primary pair probes the fallback pair and runs the same round once on it; a
+second failure stops the turn as a `review_route` failure.
 
 `review_model` and `review_effort` choose what runs inside the hardened
 container when neither review role is overridden by a command. Both reach the
