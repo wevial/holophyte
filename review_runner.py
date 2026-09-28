@@ -24,8 +24,8 @@ IMAGE = "holophyte-reviewer:ubuntu24.04-v8"
 # `review_effort` leaves in place; `holophyte.config` reads the keys and hands
 # the pair to `run_review()`. `EFFORTS` is Codex's own vocabulary for
 # `model_reasoning_effort`.
-MODEL = "gpt-5.6-sol"
-EFFORT = "medium"
+MODEL = "gpt-6-astra"
+EFFORT = "high"
 EFFORTS = ("low", "medium", "high", "xhigh")
 
 

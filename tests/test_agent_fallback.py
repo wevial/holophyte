@@ -584,15 +584,36 @@ class ContainerReviewFallbackTests(SweepTestCase):
                          ('gpt-5.6-sol', 'high'))
         self.configure('[agents]\nreview_fallback_model = "gpt-5.6-sol"\n'
                        'review_fallback_effort = "high"\n'
-                       f'reviewer_fallback = "{sys.executable}"\n')
+                       'reviewer = "sh -c"\n')
         with self.assertRaisesRegex(SystemExit,
                                     r'review_fallback_\w+ beside \[agents\] '
-                                    r'reviewer_fallback'):
+                                    r'reviewer:'):
             check_config(self.project)
         self.configure('[agents]\nreview_fallback_model = "gpt-5.6-sol"\n')
         with self.assertRaisesRegex(SystemExit, r'review_fallback_model needs '
                                     r'\[agents\] review_fallback_effort'):
             check_config(self.project)
+
+    def test_the_pair_sits_beside_fallback_commands_but_not_a_reviewer(self):
+        from holophyte.config import check_config, review_route
+
+        pair_and_fallbacks = ('[agents]\nreview_model = "gpt-5.6-sol"\n'
+                              'review_effort = "xhigh"\n'
+                              f'reviewer_fallback = "{sys.executable}"\n'
+                              f'implementer_fallback = "{sys.executable}"\n')
+        self.configure(pair_and_fallbacks)
+        check_config(self.project)
+        self.assertEqual(review_route(self.project), ('gpt-5.6-sol', 'xhigh'))
+        self.configure(pair_and_fallbacks + 'reviewer = "sh -c"\n')
+        with self.assertRaisesRegex(SystemExit, r'review_model beside '
+                                    r'\[agents\] reviewer:'):
+            check_config(self.project)
+
+    def test_an_unset_pair_reviews_on_gpt_6_astra_at_high(self):
+        from holophyte.config import review_route
+
+        self.configure(f'[agents]\nreviewer_fallback = "{sys.executable}"\n')
+        self.assertEqual(review_route(self.project), ('gpt-6-astra', 'high'))
 
     def test_startup_switches_to_the_fallback_pair_for_later_turns(self):
         from holophyte.agent_routes import routes

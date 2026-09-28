@@ -273,7 +273,7 @@ def probe_configured_review(project, role, fallback, goal, cmd, clone, cap):
 def agent_route(project, role):
     """What ran `role`'s turn, named for the record the round leaves.
 
-    The profile of the container route the config chooses (`codex-sol-medium`
+    The profile of the container route the config chooses (`codex-astra-high`
     by default), the configured command when the target named one, or the
     harness when it wrote the role as a table. A
     `reviewRounds` row reading `codex-sol-medium` about a round some other

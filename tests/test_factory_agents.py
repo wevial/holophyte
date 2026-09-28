@@ -343,16 +343,16 @@ class AgentRouteTests(unittest.TestCase):
             base_sha=base,
             candidate_sha=candidate,
             prompt="review the candidate",
-            model="gpt-5.6-sol",
-            effort="medium",
-            profile="codex-sol-medium",
+            model="gpt-6-astra",
+            effort="high",
+            profile="codex-astra-high",
             timeout=1800,
             verdicts=None,
             carry=[],
             on_start=ANY,
         )
         self.assertEqual(holophyte.agents.agent_route(self.project, "review"),
-                         "codex-sol-medium")
+                         "codex-astra-high")
 
     @patch.object(review_runner, "run_review")
     def test_reviewer_runs_the_configured_model_and_effort(self, run_review):
@@ -447,7 +447,7 @@ class AgentRouteTests(unittest.TestCase):
         )
 
         self.assertEqual(result, "no verdict here")
-        self.assertEqual(run_review.call_args.kwargs["profile"], "codex-sol-medium")
+        self.assertEqual(run_review.call_args.kwargs["profile"], "codex-astra-high")
         self.assertIsNone(run_review.call_args.kwargs["verdicts"])
 
 
