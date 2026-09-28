@@ -15,6 +15,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from holophyte.config_tables import (
     AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
     BOARD_MODE_KEYS,
+    BOARD_PREFIX_ALIAS,
     CONSOLE_KEYS,
     LOOP_KEYS,
     MERGE_KEYS,
@@ -121,7 +123,8 @@ KNOWN_KEYS = {
 # `REPORT_KEYS`, with `[supervisor]`'s.
 KNOWN_KEYS["supervisor"] = frozenset(SUPERVISOR_KEYS)
 KNOWN_KEYS["loop"] = frozenset(LOOP_KEYS)
-KNOWN_KEYS["board"] = frozenset(BOARD_KEYS) | frozenset(BOARD_MODE_KEYS)
+KNOWN_KEYS["board"] = (frozenset(BOARD_KEYS) | frozenset(BOARD_MODE_KEYS)
+                      | {BOARD_PREFIX_ALIAS})
 # The capture allow-list stays out of `MERGE_KEYS`, which `merge_config()`
 # checks through `MERGE_VALUES`; `capture_environment()` checks it instead.
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS) | frozenset(
@@ -168,6 +171,7 @@ def check_config(project):
         raise SystemExit(str(error)) from None
     verify_config(project)
     check_config_keys(project)
+    board_alias_notice(project)
     harness.check_target(project)
     budget_scale(project)
     implementer_session(project)
@@ -185,6 +189,16 @@ def check_config(project):
     report_config(project)
     console_config(project)
     serve_config(project)
+
+
+def board_alias_notice(project):
+    """One stderr line when `[board]` still names its prefix `key`, the
+    deprecated alias of `prefix` (HOLO-8). Called from `check_config()`, so
+    once per command: the host sweep reads the table every minute."""
+    table = project.config().get("board")
+    if isinstance(table, dict) and BOARD_PREFIX_ALIAS in table:
+        print(f"[holo2] {project.config_path}: [board] key is deprecated; "
+              "rename it to prefix", file=sys.stderr)
 
 
 def implementer_session(project):

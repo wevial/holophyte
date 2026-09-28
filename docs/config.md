@@ -518,11 +518,12 @@ scheduler reads it: under `workers = 1` there is no pool to tick.
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
 | `project_id` | Default: None; required for a Linear board | Non-empty string naming the Linear project UUID; set to choose the project's queue. Refused on a native board. |
-| `team` | Default: None; required for a Linear board, `"native:KEY"` on a native one | Non-empty string naming the Linear team; set to resolve that team's workflow states. It is also the store's key for the project, so a project that moves from Linear to a native board keeps its `team`. |
+| `team` | Default: None; required for a Linear board, `"native:PREFIX"` on a native one | Non-empty string naming the Linear team; set to resolve that team's workflow states. It is also the store's key for the project, so a project that moves from Linear to a native board keeps its `team`. |
 | `label` | Default: Absent (no filter) | Non-empty string; set to claim only ready issues with this label. Refused on a native board. |
-| `key` | Default: None; required for a native board | An uppercase letter then up to nine uppercase letters or digits, such as `"HOLO"`; the `KEY` of a native board's `KEY-n` ticket identifiers. Refused on a Linear board, whose team names its tickets. |
+| `prefix` | Default: None; required for a native board | An uppercase letter then up to nine uppercase letters or digits, such as `"HOLO"`; the `PREFIX` of a native board's `PREFIX-n` ticket identifiers. Refused on a Linear board, whose team names its tickets. |
+| `key` | Default: None; deprecated alias of `prefix` | Read as `prefix` when `prefix` is not set; set to the same value as `prefix` it is ignored, set to a different one it is a startup error naming both. Each command's startup prints one notice while the table carries it: rename it to `prefix`. Refused on a Linear board. |
 | `mode` | Default: `"mirror"`; `"store"` on a native board | `"mirror"` or `"store"`; where the project's tickets are kept. `"mirror"` claims from the board's ready listing; `"store"` claims from the store's queue, at the revision admission judged. Flip one project at a time, held and drained, and only while `--board-diff` is empty. |
-| `kind` | Default: `"linear"` | `"linear"` or `"native"`; which board the project uses. A native board is the store: it takes `key`, defaults `team` to `"native:KEY"` and `mode` to `"store"`, and refuses `mode = "mirror"`. Every board member answers from the project's store and nothing asks Linear. |
+| `kind` | Default: `"linear"` | `"linear"` or `"native"`; which board the project uses. A native board is the store: it takes `prefix`, defaults `team` to `"native:PREFIX"` and `mode` to `"store"`, and refuses `mode = "mirror"`. Every board member answers from the project's store and nothing asks Linear. |
 
 ```toml
 [board]
