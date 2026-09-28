@@ -54,6 +54,21 @@ for headers in ({}, {"Authorization": "Bearer " + os.environ["CONSOLE_TOKEN"]}):
 open(sys.argv[1], "w").write(json.dumps(seen))
 """
 
+POLLED = """\
+import json, os, sys, urllib.error, urllib.request
+url = os.environ["CONSOLE_URL"]
+seen = {}
+for path in ("/status", "/attention", "/projects", "/projects/demo/status",
+             "/projects/demo/board", "/projects/demo/attention",
+             "/projects/demo/shipped?outcome=all"):
+    try:
+        with urllib.request.urlopen(url + path, timeout=10) as answer:
+            seen[path] = answer.read().decode()
+    except urllib.error.HTTPError as refused:
+        seen[path] = refused.read().decode()
+open(sys.argv[1], "w").write(json.dumps(seen))
+"""
+
 RECORD = """\
 import json, os, sys
 open(sys.argv[1], "w").write(json.dumps(
@@ -103,6 +118,15 @@ class ConsoleFixtureTests(unittest.TestCase):
                    in seen["/projects/demo/attention"]["items"]
                    if item["kind"] == "blocked"]
         self.assertEqual(blocked, ["DEMO-4"])
+
+    def test_no_route_the_console_polls_names_the_machine(self):
+        result, seen = self.script(POLLED)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for path, text in seen.items():
+            self.assertNotIn(socket.gethostname(), text, path)
+        (demo,) = json.loads(seen["/status"])["projects"]
+        self.assertEqual(demo["host"], "writer-host")
 
     def test_a_filing_needs_the_machine_token_the_command_is_given(self):
         result, seen = self.script(FILE)
