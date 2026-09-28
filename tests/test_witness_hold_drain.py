@@ -91,14 +91,19 @@ class HoldDrainWitness(LoopFixture):
                 memory=self.memory)
         return started[0] if started else None
 
-    def dry_run_import(self):
+    def dry_run_summary(self):
         """`--board-import --dry-run` against a Linear board holding KO-131
-        Done and KO-132 Todo; what it printed."""
+        Done and KO-132 Todo; its summary line, after checking it wrote
+        nothing."""
         linear = FakeLinear()
         linear.add("KO-131", "add a thing", VALID_BODY, state="Done")
         linear.add("KO-132", "add a thing", VALID_BODY)
         with patch.object(linear_provider, "_gql", linear.gql):
-            return self.cli("--board-import", "--dry-run")
+            out = self.cli("--board-import", "--dry-run")
+        self.assertIn("dry run: nothing written", out)
+        (summary,) = [line for line in out.splitlines()
+                      if line.startswith("[holo2] board import: ")]
+        return summary
 
     def board_state(self, identifier):
         state = self.files / f"{identifier}.state"
@@ -141,16 +146,23 @@ class HoldDrainWitness(LoopFixture):
         self.assertEqual(self.read("SELECT admission FROM projects"),
                          [("held",)])
 
+    def test_the_first_pass_leaves_the_sent_push_pending_until_it_settles(self):
+        self.drain()
+        self.sweep_pass()
+
+        summary = self.dry_run_summary()
+
+        self.assertTrue(
+            summary.endswith("; 1 pushes and 0 notes pending for Linear"),
+            summary)
+
     def test_the_dry_run_then_counts_nothing_pending_for_linear(self):
         self.drain()
         self.sweep_pass()
         self.assertIsNone(self.sweep_pass())
 
-        out = self.dry_run_import()
+        summary = self.dry_run_summary()
 
-        (summary,) = [line for line in out.splitlines()
-                      if line.startswith("[holo2] board import: ")]
         self.assertTrue(
             summary.endswith("; 0 pushes and 0 notes pending for Linear"),
             summary)
-        self.assertIn("dry run: nothing written", out)
