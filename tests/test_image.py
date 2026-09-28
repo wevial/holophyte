@@ -67,3 +67,28 @@ class ImplementerImageTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertEqual(output.strip().splitlines()[-1],
                          "/home/implementer/venv", output)
+
+    def test_browsers_path_holds_chromium_and_headless_shell(self):
+        code, output = self.launch(
+            "sh", "-c", 'echo "$PLAYWRIGHT_BROWSERS_PATH"'
+            ' && ls "$PLAYWRIGHT_BROWSERS_PATH"')
+
+        self.assertEqual(code, 0, output)
+        path, *entries = output.split()
+        self.assertTrue(path.startswith("/"), output)
+        self.assertTrue(any(re.fullmatch(r"chromium-\d+", e) for e in entries),
+                        output)
+        self.assertTrue(
+            any(re.fullmatch(r"chromium_headless_shell-\d+", e)
+                for e in entries), output)
+
+    def test_headless_shell_dumps_the_dom_of_a_data_url(self):
+        marker = "holophyte-capture-marker"
+        code, output = self.launch(
+            "sh", "-c",
+            'exec "$(find "$PLAYWRIGHT_BROWSERS_PATH" -type f'
+            ' -name chrome-headless-shell)" --no-sandbox --dump-dom "$1"',
+            "sh", f"data:text/html,<p>{marker}</p>")
+
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"<p>{marker}</p>", output)
