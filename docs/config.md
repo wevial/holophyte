@@ -120,7 +120,9 @@ runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
 and resumes with `claude -p --resume U --model M --effort E PROMPT`. The
 binary is `claude` on PATH, or the absolute path in the top-level
 `[harnesses]` table. Under container isolation the image supplies the bare
-`claude`, `[harnesses]` is ignored and no session is recorded.
+`claude` and `[harnesses]` is ignored; `U` is still recorded at dispatch, and
+the fix round's resume turn runs in the container against the session files
+kept for that worktree.
 
 ```toml
 [agents.implementer]
