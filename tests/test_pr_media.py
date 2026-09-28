@@ -336,10 +336,9 @@ class MediaTests(unittest.TestCase):
             push.assert_not_called()
             push_repo.assert_not_called()
         self.assertEqual(len(requests), 3)
-        prefixes = {path.rsplit("/", 1)[0] for _, path, _, _ in requests}
-        self.assertEqual(len(prefixes), 1)
-        prefix = prefixes.pop()
-        self.assertRegex(prefix, r"^/evidence/repo/KO-505/[A-Za-z0-9_-]{22}$")
+        for _, path, _, _ in requests:
+            self.assertRegex(path.rsplit("/", 1)[0],
+                             r"^/evidence/repo/KO-505/[A-Za-z0-9_-]{22}$")
         for method, path, headers, data in requests:
             self.assertEqual(method, "PUT")
             self.assertEqual(data, b"evidence")
@@ -349,9 +348,34 @@ class MediaTests(unittest.TestCase):
             self.assertIn("image/png" if path.endswith(".png") else "video/webm",
                           headers["Content-Type"])
         self.visibility.assert_not_called()
-        self.assertIn("30 days", body)
+        self.assertIn("Retention: 30 days", body)
         for value in CREDS.values():
             self.assertNotIn(value, body + str(self.ledger.call_args_list))
+
+    def test_bucket_gives_each_file_its_own_path_and_no_retention_keeps_it(self):
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       'for name in ("01-landing.png", "02-home.png"):\n'
+                       ' Path(sys.argv[1], name).write_bytes(b"evidence")\n')
+        self.config["merge"]["media_bucket"] = {
+            "endpoint": "https://objects.example.invalid", "bucket": "evidence",
+            "public_base": "https://media.example.invalid"}
+        keys = []
+
+        def upload(config, key, file):
+            keys.append(key)
+            return f"https://media.example.invalid/{key}"
+
+        with patch("holophyte.pr_media.media_store.upload", side_effect=upload):
+            body = self.open()
+        self.assertEqual(len(keys), 2)
+        first, second = (key.rsplit("/", 1)[0] for key in keys)
+        self.assertEqual(first.split("/")[:2], ["repo", "KO-505"])
+        self.assertEqual(second.split("/")[:2], ["repo", "KO-505"])
+        self.assertNotEqual(first.split("/")[2], second.split("/")[2])
+        self.assertFalse(second.startswith(first + "/") or second == first)
+        self.assertFalse(first.startswith(second + "/"))
+        self.assertIn("kept until the operator removes it", body)
+        self.assertNotIn("expires", body)
 
     def test_missing_bucket_credentials_reach_evidence_and_review_without_http(self):
         from holophyte.review import evidence_brief
