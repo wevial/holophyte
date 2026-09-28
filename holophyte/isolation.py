@@ -245,11 +245,11 @@ def credential_mount_flags(credential, scratch, mounted):
     if scratch is None:
         raise RuntimeError("a file credential needs its private copy")
     destination = PurePosixPath(credential["destination"])
-    for target, source in mounted.items():
-        if destination.parent == target or (
-                source is not None and destination.parent.is_relative_to(target)):
+    for mount_point, source in mounted.items():
+        if destination.parent == mount_point or (
+                source is not None and destination.parent.is_relative_to(mount_point)):
             if source is not None:
-                (source / destination.parent.relative_to(target)).mkdir(
+                (source / destination.parent.relative_to(mount_point)).mkdir(
                     mode=0o700, parents=True, exist_ok=True)
             return ["--volume", f"{scratch / destination.name}:{destination}:rw"]
     return ["--volume", f"{scratch}:{destination.parent}:rw"]
