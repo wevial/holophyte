@@ -211,9 +211,9 @@ def edit(project, identifier, expected, text, priority, labels):
 
 
 def new_ticket(project, text, column, priority):
-    """`file_ticket()` under the board's `key` as the console: 201 with the
-    new ticket at revision 1."""
-    key = board_config(project).key
+    """`file_ticket()` under the board's `prefix` as the console: 201 with
+    the new ticket at revision 1."""
+    key = board_config(project).prefix
 
     def act(conn, project_id):
         identifier = store.board.file_ticket(

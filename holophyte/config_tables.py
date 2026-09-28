@@ -282,17 +282,20 @@ def loop_config(project):
 # `label` (KO-432) is the one optional key: set to a non-empty string, it
 # names the label a ready issue must carry for the loop to see it at all;
 # absent, the board is every ready issue, as it has always been.
-# `key` (KO-749) is a native board's own: the `KEY` of its `KEY-n`
+# `prefix` (KO-749) is a native board's own: the `PREFIX` of its `PREFIX-n`
 # identifiers, required there and refused on Linear, whose team names them.
-# A native table's `team` defaults to `native:KEY`, the store's project key
-# for a project born native; a project that leaves Linear keeps its `team`,
-# so the store row survives the move and `key` is never derived from it.
+# A native table's `team` defaults to `native:PREFIX`, the store's project
+# key for a project born native; a project that leaves Linear keeps its
+# `team`, so the store row survives the move and `prefix` is never derived
+# from it. `key` is `prefix`'s deprecated alias (HOLO-8), read when `prefix`
+# is not set: a name ending in `key` reads as a secret to the redactor.
 BOARD_KEYS = {
     "project_id": None,
     "team": None,
     "label": None,
-    "key": None,
+    "prefix": None,
 }
+BOARD_PREFIX_ALIAS = "key"
 BoardConfig = collections.namedtuple("BoardConfig", BOARD_KEYS)
 # An uppercase letter, then up to nine uppercase letters or digits, so
 # `KEY-n` parses as an identifier everywhere one is parsed.
@@ -316,10 +319,12 @@ def board_config(project):
     `project_id` and `team` as non-empty strings -- half a board names no
     project to claim from or no team to resolve states in -- and may carry
     `label` the same way, the one optional key (KO-432): `None` when
-    absent, `3` or `""` refused; `key` is refused, the team names Linear's
-    tickets. A native table (KO-749) has to carry `key` in
-    `NATIVE_KEY_SHAPE`, may carry `team` (defaulting to `native:KEY`), and
-    refuses `project_id` and `label`, which name Linear's things. The
+    absent, `3` or `""` refused; `prefix` and `key` are refused, the team
+    names Linear's tickets. A native table (KO-749) has to carry `prefix`
+    in `NATIVE_KEY_SHAPE`, may carry `team` (defaulting to `native:PREFIX`),
+    and refuses `project_id` and `label`, which name Linear's things.
+    `key` is `prefix`'s deprecated alias (HOLO-8): read when `prefix` is
+    not set, and refused when both are set to different values. The
     refusal names the table, the key and the constraint, like a bad
     `[loop]` value. An absent table is `None`, and the caller decides
     whether its mode needs a board: `--report` and a read-only `--sweep`
@@ -336,25 +341,34 @@ def board_config(project):
             f"{type(table).__name__}")
     kind = board_mode(project).kind
     values = {key: _board_string(project, table, key) for key in BOARD_KEYS}
-    required = ("key",) if kind == "native" else ("project_id", "team")
-    refused = ("project_id", "label") if kind == "native" else ("key",)
+    alias = _board_string(project, table, BOARD_PREFIX_ALIAS)
+    required = ("prefix",) if kind == "native" else ("project_id", "team")
+    refused = (("project_id", "label") if kind == "native"
+               else ("prefix", BOARD_PREFIX_ALIAS))
+    for key in refused:
+        if table.get(key) is not None:
+            raise SystemExit(
+                f"[holo2] {project.config_path}: [board] {key} is not read "
+                f"by a {kind} board; remove it")
+    if alias is not None and values["prefix"] not in (None, alias):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [board] prefix "
+            f"{values['prefix']!r} and its deprecated alias [board] key "
+            f"{alias!r} differ; keep prefix and remove key")
+    named = "prefix" if values["prefix"] is not None or alias is None else "key"
+    values["prefix"] = values["prefix"] or alias
     for key in required:
         if values[key] is None:
             raise SystemExit(
                 f"[holo2] {project.config_path}: [board] {key} must be a "
                 f"non-empty string, got None")
-    for key in refused:
-        if values[key] is not None:
-            raise SystemExit(
-                f"[holo2] {project.config_path}: [board] {key} is not read "
-                f"by a {kind} board; remove it")
     if kind == "native":
-        if not NATIVE_KEY_SHAPE.fullmatch(values["key"]):
+        if not NATIVE_KEY_SHAPE.fullmatch(values["prefix"]):
             raise SystemExit(
-                f"[holo2] {project.config_path}: [board] key must be an "
+                f"[holo2] {project.config_path}: [board] {named} must be an "
                 "uppercase letter then up to nine uppercase letters or "
-                f"digits, got {values['key']!r}")
-        values["team"] = values["team"] or f"native:{values['key']}"
+                f"digits, got {values['prefix']!r}")
+        values["team"] = values["team"] or f"native:{values['prefix']}"
     return BoardConfig(**values)
 
 

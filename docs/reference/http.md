@@ -757,7 +757,7 @@ Content-Type: application/json
 `body` is the ticket's full text; `priority` (0 to 4) is optional, and
 `column`, `ready` by default or `backlog`, the column it lands in; any
 other is 400. The filing is the store's `file_ticket()` under the board's
-`[board] key`, authored `console`: 201 with the new `ticket` and its first
+`[board] prefix`, authored `console`: 201 with the new `ticket` and its first
 `revision`, 1; 422 with `problems` and nothing written when a body filed
 to `ready` fails the template or `Depends on:` names a ticket the project
 does not hold. A body filed to `backlog` with problems is saved as a

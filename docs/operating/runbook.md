@@ -203,7 +203,7 @@ python3 factory.py PROJECT --board-import --dry-run  # deliver: wait for 0 pushe
 python3 -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); print(d.execute('pragma integrity_check').fetchone()[0])" ~/.holophyte/<slug>/store.db ~/.holophyte/<slug>/store.db.pre-native
 python3 factory.py PROJECT --board-import --dry-run
 python3 factory.py PROJECT --board-import
-# config.toml [board]: kind = "native", key = "KEY"; keep team, drop project_id and label
+# config.toml [board]: kind = "native", prefix = "PREFIX"; keep team, drop project_id and label
 python3 factory.py PROJECT --release-hold --note "on the native board"
 ```
 
@@ -212,7 +212,7 @@ live runs finishing. The host sweep delivers the pending board pushes and
 notes; the import's summary counts them, and the switch waits for both to
 read 0, since nothing posts to Linear afterwards. The import upserts by
 board id, so rows, runs, ledger and `dependsOn` stay, old tickets keep
-`KO-n` and new ones take `KEY-n`; a failure rolls back and rerunning it is
+`KO-n` and new ones take `PREFIX-n`; a failure rolls back and rerunning it is
 the restart. `team` is the store's key for the project, so it stays as it
 was. Nothing in Linear is deleted or archived.
 

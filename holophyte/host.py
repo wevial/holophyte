@@ -302,7 +302,7 @@ def check_new(host, target):
 
 
 def native_key_conflict(target, host=None):
-    """The first reason `target`'s native `[board] key` is not its own on
+    """The first reason `target`'s native `[board] prefix` is not its own on
     the host, as one line; None when it is, when `target` is not native,
     and when its table cannot be read: the table's own reader refuses that.
 
@@ -319,32 +319,32 @@ def native_key_conflict(target, host=None):
     try:
         entries = host.projects()
     except HostError as bad:
-        return f"{bad}; cannot check [board] key {key} against it"
+        return f"{bad}; cannot check [board] prefix {key} against it"
     path = Path(target.path).resolve()
     entries = [entry for entry in entries if entry.error is None]
     for entry in entries:
         if entry.path != path and _native_key(entry.target) == key:
-            return (f"[holo2] [board] key {key} of {path} is already the"
-                    f" native board key of {entry.path}")
+            return (f"[holo2] [board] prefix {key} of {path} is already the"
+                    f" native board prefix of {entry.path}")
     targets = [entry.target for entry in entries]
     if path not in (entry.path for entry in entries):
         targets.append(target)
     for other in targets:
         identifier = _linear_identifier(other, key)
         if identifier is not None:
-            return (f"[holo2] [board] key {key} of {path} is a Linear team"
+            return (f"[holo2] [board] prefix {key} of {path} is a Linear team"
                     f" key on this host: the store of {other.path} holds"
                     f" {identifier}")
     return None
 
 
 def _native_key(target):
-    """`target`'s native `[board] key`, None when it has none or its
+    """`target`'s native `[board] prefix`, None when it has none or its
     config cannot be read."""
     try:
         if board_mode(target).kind != "native":
             return None
-        return board_config(target).key
+        return board_config(target).prefix
     except (SystemExit, Exception):
         return None
 

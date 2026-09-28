@@ -318,7 +318,7 @@ def board_for(target):
         return None
     if mode.kind == "native":
         from holophyte.native_board import NativeBoard
-        return NativeBoard(target, settings.key, settings.team)
+        return NativeBoard(target, settings.prefix, settings.team)
     return LinearBoard(settings.project_id, settings.team, settings.label,
                        store_mode=mode.mode == "store")
 

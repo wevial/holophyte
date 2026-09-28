@@ -1,6 +1,7 @@
-"""A native board's key is its own on the host (KO-752): `project add` and
-the loop's start refuse a `[board] key` another registered project's native
-board has, or a registered store holds as a Linear team key.
+"""A native board's prefix is its own on the host (KO-752): `project add`
+and the loop's start refuse a `[board] prefix` another registered project's
+native board has, or a registered store holds as a Linear team key; `key`,
+its deprecated alias (HOLO-8), is the same prefix.
 
 Run: python3 -m unittest discover -s tests -p 'test_native_key.py'
 """
@@ -8,17 +9,18 @@ import unittest
 from unittest.mock import patch
 
 import store
+from holophyte import host
 from holophyte.project import Project
 from tests.host_fixture import HostFixture
 
 
 class NativeKeyTest(HostFixture):
 
-    def native(self, directory, key):
-        """A repository whose `[board]` is native with `key`."""
+    def native(self, directory, key, name="prefix"):
+        """A repository whose `[board]` is native with `name = key`."""
         path = self.repo(directory)
         Project.locate(path, adopt=False).config_path.write_text(
-            f'[board]\nkind = "native"\nkey = "{key}"\n')
+            f'[board]\nkind = "native"\n{name} = "{key}"\n')
         return path
 
     def holding(self, path, team, *tickets):
@@ -59,6 +61,16 @@ class NativeKeyTest(HostFixture):
             self.cli("project", "add", str(second))
         self.assertIn(str(first), str(refused.exception.code))
         self.assertEqual([path for _, path in self.registered()], [first])
+
+    def test_a_prefix_and_its_key_alias_name_one_board(self):
+        registry = host.Host.locate()
+        first = self.native("first", "HOLO")
+        second = self.native("second", "HOLO", name="key")
+        for path in (first, second):
+            host.register(registry, Project.locate(path))
+        conflict = host.native_key_conflict(Project.locate(second), registry)
+        self.assertIn("[board] prefix HOLO", conflict)
+        self.assertIn(str(first), conflict)
 
     def test_own_native_and_linear_tickets_under_other_keys_pass(self):
         # HOLO-1 is native (its board id is its identifier); KO-5 is an old

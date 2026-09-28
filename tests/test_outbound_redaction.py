@@ -118,19 +118,30 @@ class OutboundRedactionTests(unittest.TestCase):
         # Redact before a comment's length cap can split a registered value.
         self.assertNotIn(SENTINEL[:10], board.comment_body(SENTINEL, limit=10))
 
-    def test_a_native_boards_key_survives_outbound_text(self):
+    def test_a_native_boards_prefix_survives_outbound_text(self):
         """The ticket prefix is not a credential: a title naming `HOLO-1`
         and the `HOLOPHYTE_HOME` variable leaves as written, while the
-        config's API key is still replaced."""
+        config's API key is still replaced. `prefix` needs no exemption;
+        its deprecated alias `key` (HOLO-8) does."""
+        text = "fix(board): refuse evidence (HOLO-1); set HOLOPHYTE_HOME"
+        for name, kept in (("prefix", text),
+                           ("key", text.replace("HOLO", "[redacted]"))):
+            with (self.subTest(name=name),
+                  patch.object(redact, "PUBLIC_PATHS", frozenset())):
+                self.target.config_path.write_text(
+                    f'[board]\nkind = "native"\n{name} = "HOLO"\n\n'
+                    '[linear]\napi_key = "lin_secret"\n')
+                self.target._config = None
+                secrets = redact.known_secrets(self.target.config())
+                self.assertEqual(redact.outbound(f"{text} lin_secret", secrets),
+                                 f"{kept} [redacted]")
+
+    def test_the_key_alias_stays_exempt_while_it_is_read(self):
         self.target.config_path.write_text(
-            '[board]\nkind = "native"\nkey = "HOLO"\n\n'
-            '[linear]\napi_key = "lin_secret"\n')
+            '[board]\nkind = "native"\nkey = "HOLO"\n')
         secrets = redact.known_secrets(self.target.config())
         text = "fix(board): refuse evidence (HOLO-1); set HOLOPHYTE_HOME"
         self.assertEqual(redact.outbound(text, secrets), text)
-        self.assertEqual(redact.outbound(f"{text} lin_secret", secrets),
-                         f"{text} [redacted]")
-
 
 if __name__ == "__main__":
     unittest.main()
