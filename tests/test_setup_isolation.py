@@ -46,7 +46,7 @@ class SetupIsolationTests(unittest.TestCase):
         if os.environ.get("HOLOPHYTE_TEST_DOCKER") != "1":
             self.skipTest("set HOLOPHYTE_TEST_DOCKER=1 for container integration")
         if not shutil.which("docker"):
-            self.skipTest("Docker absent")
+            self.fail("HOLOPHYTE_TEST_DOCKER=1 but docker is not on PATH")
 
     def test_host_route_runs_setup_with_the_host_home(self):
         worktree = self.make_worktree()
