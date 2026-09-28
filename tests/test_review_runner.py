@@ -661,13 +661,13 @@ class CandidateImageTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v7_and_nothing_still_names_an_older_tag(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v7")
+    def test_image_tag_is_v8_and_nothing_still_names_an_older_tag(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v8")
         stale = [
             path
             for pattern in ("*.py", "holophyte/*.py", "store/*.py", "docs/**/*.md")
             for path in ROOT.glob(pattern)
-            if re.search(r"ubuntu24\.04-v[123456]\b", path.read_text())
+            if re.search(r"ubuntu24\.04-v[1-7]\b", path.read_text())
         ]
         self.assertEqual(stale, [])
 
