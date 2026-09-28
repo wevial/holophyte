@@ -1,6 +1,7 @@
 """One implementer launch seam; host execution remains the default."""
 
 import contextlib
+import hashlib
 import os
 import re
 import shlex
@@ -128,7 +129,25 @@ def file_mount_flags(mounts):
     return flags
 
 
-def container_command(route, worktree, env, argv, name, mounts=()):
+def session_directory(task, project):
+    from holophyte.isolation_git import git
+    from holophyte.project import state_dir
+
+    task = Path(task).resolve(strict=True)
+    root = project.path if project is not None else Path(
+        git(task, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    ).parent
+    digest = hashlib.sha256(str(task).encode()).hexdigest()[:16]
+    path = (state_dir(root) / "sessions" / digest).resolve()
+    if ":" in str(path):
+        raise RuntimeError("session bind source must not contain a colon")
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.chmod(0o700)
+    return path
+
+
+def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
+                      project=None):
     uid, gid = os.getuid(), os.getgid()
     if uid == 0:
         raise RuntimeError("container implementer requires a non-root factory user")
@@ -150,6 +169,9 @@ def container_command(route, worktree, env, argv, name, mounts=()):
         "--volume",
         f"{workspace}:/workspace:{'rw' if route.writable else 'ro'}",
     ]
+    if route.writable and task is not None:
+        session = session_directory(task, project)
+        command += ["--volume", f"{session}:/home/implementer/.claude:rw"]
     credential = route.credential
     if "file" in credential:
         source = Path(credential["file"]).expanduser().resolve(strict=True)
@@ -195,7 +217,7 @@ def unwinding_on_signal(name):
 
 
 def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
-           project=None, mounts=()):
+           project=None, mounts=(), keep_session=False):
     """Preserve host process semantics; always remove isolated descendants."""
     hook = {"on_start": on_start} if on_start is not None else {}
     if route.backend == "none":
@@ -211,7 +233,8 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
                 else contextlib.nullcontext((worktree, {})))
     with unwinding_on_signal(name), checkout as (workspace, git_env):
         command, host_env = container_command(
-            route, workspace, dict(env or {}, **git_env), argv, name, mounts
+            route, workspace, dict(env or {}, **git_env), argv, name, mounts,
+            task=worktree if keep_session else None, project=project,
         )
         try:
             return run_capped(command, workspace, timeout, env=host_env, **hook)
