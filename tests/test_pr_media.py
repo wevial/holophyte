@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from time import monotonic
@@ -20,6 +21,15 @@ PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/"
     "x8AAwMCAO+jRZkAAAAASUVORK5CYII="
 )
+
+
+def running(pid):
+    """Whether `pid` is alive: a zombie awaiting its reaper is not."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except FileNotFoundError:
+        return False
+    return stat.rpartition(")")[2].split()[0] != "Z"
 
 
 class MediaTests(unittest.TestCase):
@@ -236,7 +246,9 @@ class MediaTests(unittest.TestCase):
         self.config['merge']['ui_capture_dir'] = '.holophyte-capture'
         for agents in ({}, {'implementer_isolation': 'none'}):
             self.config['agents'] = agents
-            with patch.object(pr_media.subprocess, 'Popen') as popen:
+            with (patch.object(pr_media.subprocess, 'Popen') as popen,
+                  patch.object(pr_media.os, 'killpg',
+                               side_effect=ProcessLookupError)):
                 popen.return_value.wait.return_value = 0
                 error = pr_media._capture('python3 capture.py', self.repo, self.root,
                                           'KO-530', ['Open'], project=self.target)
@@ -257,7 +269,8 @@ class MediaTests(unittest.TestCase):
         self.config['merge'].update(capture_env_source=str(source),
                                     capture_env_allow=['CAPTURE_KEY'])
         with (patch.dict(os.environ),
-              patch.object(pr_media.subprocess, 'Popen') as popen):
+              patch.object(pr_media.subprocess, 'Popen') as popen,
+              patch.object(pr_media.os, 'killpg', side_effect=ProcessLookupError)):
             os.environ.pop('CAPTURE_KEY', None)
             os.environ.pop('OTHER', None)
             popen.return_value.wait.return_value = 0
@@ -661,6 +674,49 @@ class MediaTests(unittest.TestCase):
             body = self.open()
         self.assertLess(monotonic() - started, 15)
         self.assertIn("Capture command `sh capture.sh` failed: timed out", body)
+
+    def leave_child(self, trap):
+        """A capture that starts a child running `trap`, then exits 0."""
+        pidfile = self.root / "child.pid"
+        (self.repo / "child.sh").write_text(
+            f"{trap}\necho $$ > {pidfile}.tmp\nmv {pidfile}.tmp {pidfile}\n"
+            "sleep 30 & wait\n")
+        (self.repo / "capture.sh").write_text(
+            f"sh child.sh &\nwhile [ ! -s {pidfile} ]; do sleep 0.01; done\n"
+            "exit 0\n")
+        return pidfile
+
+    def child_pid(self, pidfile):
+        pid = int(pidfile.read_text())
+        self.addCleanup(lambda: running(pid) and os.killpg(os.getpgid(pid), 9))
+        return pid
+
+    def test_exited_capture_stops_its_child_through_its_term_handler(self):
+        marker = self.root / "released"
+        pidfile = self.leave_child(f"trap 'touch {marker}; exit 0' TERM")
+        error = pr_media._capture("sh capture.sh", self.repo, self.root,
+                                  "KO-16", [])
+        pid = self.child_pid(pidfile)
+        self.assertEqual(error, "")
+        self.assertFalse(running(pid))
+        self.assertTrue(marker.exists())
+
+    def test_exited_capture_kills_a_child_ignoring_term_after_the_grace(self):
+        pidfile = self.leave_child("trap '' TERM")
+        started = monotonic()
+        with patch("holophyte.pr_media.CAPTURE_GRACE", 0.5):
+            error = pr_media._capture("sh capture.sh", self.repo, self.root,
+                                      "KO-16", [])
+        pid = self.child_pid(pidfile)
+        while running(pid) and monotonic() - started < 1.5:
+            time.sleep(0.02)
+        self.assertEqual(error, "")
+        self.assertFalse(running(pid))
+
+    def test_capture_leaving_no_child_returns_nothing(self):
+        (self.repo / "capture.sh").write_text("exit 0\n")
+        self.assertEqual(pr_media._capture("sh capture.sh", self.repo,
+                                           self.root, "KO-16", []), "")
 
     def prepare(self):
         notes = []
