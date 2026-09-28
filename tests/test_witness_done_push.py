@@ -1,9 +1,9 @@
 """A dependency's board pushes across a store-mode loop and the host sweep.
 
-The loop runs KO-131 while a host sweep pass sends its queued In Progress;
-the next pass, an ask interval later, sends the merged ticket's Done, and
-KO-132, blocked on the board by KO-131 until KO-131 closes, is released and
-runs.
+The loop runs a dependency while a host sweep pass sends its queued In
+Progress; the next pass, an ask interval later, sends the merged ticket's
+Done, and its dependent, blocked on the board until the dependency closes, is
+released and runs.
 
 Run: python3 -m unittest discover -s tests -p 'test_witness_done_push.py' -v
 """
@@ -31,8 +31,9 @@ from provider import CLOSED_STATE_NAMES  # noqa: E402
 
 
 class BlockingFiles(StoreFiles):
-    """The store-mode file board on which KO-131 blocks KO-132 until the
-    board shows KO-131 closed, as Linear drops a completed blocker."""
+    """The store-mode file board on which the dependency blocks its dependent
+    until the board shows the dependency closed, as Linear drops a completed
+    blocker."""
 
     def _blockers(self, task):
         if (task["id"] == "KO-132"
