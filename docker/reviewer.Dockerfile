@@ -42,6 +42,18 @@ RUN set -eu \
     && rm /tmp/node-linux-x64.tar.gz
 ENV PATH=/opt/node/bin:$PATH
 
+# Chromium and its headless shell are installed by Playwright's own installer
+# at the version both capture projects pin, with the system libraries it
+# names, so a project's own Playwright of that version finds them under
+# PLAYWRIGHT_BROWSERS_PATH; the container's home is an empty tmpfs. Another
+# Playwright version needs a new image.
+ARG PLAYWRIGHT_VERSION=1.62.1
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN set -eu \
+    && npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache \
+    && chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}"
+
 # Go is pinned to one release so a Go target's `go test` criteria can be
 # witnessed inside the container. The tarball's SHA-256 is copied from the Go
 # downloads page; a mismatch fails the build. GOTOOLCHAIN=local makes a module

@@ -53,7 +53,7 @@ review, from the size of the candidate's diff and the `[loop]` review keys
 [config.md](config.md)). The cap is printed and recorded in the run's ledger,
 and the terminal adjudication follows the last round it allows.
 
-The first review builds `holophyte-reviewer:ubuntu24.04-v8` automatically from
+The first review builds `holophyte-reviewer:ubuntu24.04-v9` automatically from
 the digest-pinned Ubuntu image; it carries git, python3 with its `venv`
 module, ripgrep, a pinned Bun (checksum-verified, on `PATH` under
 `/opt/bun/bin`) so console `bun` criteria can be witnessed inside the
@@ -62,7 +62,13 @@ container, a pinned Node.js 24 (checksum-verified against the release's
 so a Node project's commands find the tools inside it (the image carries
 the tools, not the install: a review does not re-run `[worktree] setup`, so
 `npm ci` is not run there, as above, and an `npx` verify command runs
-against the carried `node_modules`), and a pinned Go 1.26.6
+against the carried `node_modules`), Chromium and its headless shell for
+Playwright 1.62.1 (installed with their system libraries by that version's own
+`playwright install --with-deps chromium`, world-readable under the directory
+`PLAYWRIGHT_BROWSERS_PATH` names, `/opt/ms-playwright`) so a project's own
+Playwright 1.62.1 launches a browser for a `[merge] ui_capture` run in the
+container, whose home is an empty tmpfs (a project that moves to another
+Playwright version needs a new image, as a new Bun does), and a pinned Go 1.26.6
 (checksum-verified, under `/usr/local/go`, `GOTOOLCHAIN=local` so no other
 toolchain is ever downloaded, caches under the writable `/home/reviewer`) so a
 Go project's `go test` criteria can be witnessed too. It also installs
