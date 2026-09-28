@@ -197,8 +197,10 @@ STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 # The re-exec seam, as the supervisor's: a test patches it and the test
 # runner is never exec-ed.
 EXEC = os.execv
-# How long a failed run stays on `/attention`: a failure the operator has
-# not requeued or merged past in a day is one they have not looked at.
+# How long a failed run stays on `/attention` once its ticket has moved on
+# (requeued, parked): past a day the operator has seen it. A failure that
+# strands its ticket in flight with no run stays whatever its age, since
+# nothing but the operator will ever move that ticket.
 FAILED_WINDOW_MS = 24 * 60 * 60 * 1000
 # The console's built bundle: the repository's own, found from this package.
 CONSOLE_DIR = Path(__file__).resolve().parent.parent / "console" / "dist"
@@ -392,8 +394,10 @@ def attention(project, now=None, beat_stale_ms=None):
     every ticket parked `blocked_on_operator` with its question, as
     `paused` or `pr_open` when it is one (`parked_item()`); every live
     run whose heartbeat age exceeds `heartbeat_stale_ms`; every run that
-    ended `failed` within `FAILED_WINDOW_MS` and is its ticket's latest
-    attempt, with no different active run; then a supervisor not live.
+    ended `failed` within `FAILED_WINDOW_MS`, or at any age while it
+    strands its ticket in flight (`store.read.stranded_runs()`), and is
+    its ticket's latest attempt, with no different active run, by end
+    time then run id; then a supervisor not live.
     Each item that names a run carries the run's `pr_url` (`runs.prUrl`,
     null when it opened none), and each its `level`. `level` on the body
     is the worst over the items -- `attention` when there is any -- else
@@ -412,9 +416,13 @@ def attention(project, now=None, beat_stale_ms=None):
         blocked = store.read.blocked_tickets(conn)
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
         failed = store.read.recent_failed_runs(conn, now - FAILED_WINDOW_MS)
+        stranded = store.read.stranded_runs(conn)
         beat = store.read.supervisor_beat(conn)
     finally:
         conn.close()
+    windowed = {run.id for run in failed}
+    failed = sorted(failed + [run for run in stranded if run.id not in windowed],
+                    key=lambda run: (run.endedAt, run.id))
     knobs = sweep_config(project)
     items = [parked_item(ticket) for ticket in blocked
              if ticket.boardState not in ("Backlog", "Canceled", "Done")]

@@ -139,3 +139,58 @@ class StoreModeReadyTests(SweepTestCase):
     def test_backlog_tickets_are_not_counted_ready(self):
         self.assertEqual(json.loads(self.status("--json"))["ready"], 1)
         self.assertIn("ready 1", self.status().splitlines())
+
+
+class StrandedStatusTests(SweepTestCase):
+    """KO-9's only run failed 30 hours ago and KO-9 is still in flight with
+    no run; KO-1's failed run was followed by a requeue to `ready`."""
+
+    status = StatusTests.status
+    REASON = "verify failed before merge; branch task/ko-9 preserved at abc1234"
+
+    def setUp(self):
+        super().setUp()
+        hour = 60 * MINUTE
+        requeued = self.a_run(claimed_at=T0 - 33 * hour)
+        store.release(self.conn, requeued, "failed", reason="verify red",
+                      now=T0 - 32 * hour)
+        store.requeue(self.conn, self.ticket_of[requeued], "retry later")
+        self.ended = T0 - 30 * hour
+        self.stranded = self.strand(9, self.REASON, self.ended)
+
+    def strand(self, n, reason, ended):
+        """KO-n in flight, its only run failed at `ended` with `reason`."""
+        ticket = store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id=f"issue-{n}",
+            linear_identifier=f"KO-{n}", title=f"ticket {n}",
+            acceptance_criteria=[f"Given ticket {n}, then it is worked"],
+            verification_commands=["echo ok"])
+        store.tickets.transition(self.conn, ticket, "in_flight")
+        run = self.a_run(claimed_at=ended - 60 * MINUTE, ticket=ticket)
+        store.release(self.conn, run, "failed", reason=reason, now=ended)
+        return run
+
+    def test_text_has_one_stranded_line(self):
+        stranded = [line for line in self.status().splitlines()
+                    if line.startswith("stranded ")]
+        self.assertEqual(stranded,
+                         [f"stranded KO-9 run {self.stranded}: {self.REASON}"])
+
+    def test_json_holds_the_stranded_run_only(self):
+        snap = json.loads(self.status("--json"))
+        self.assertEqual(snap["stranded"], [{
+            "run": self.stranded, "ticket": "KO-9", "reason": self.REASON,
+            "ended_ms": self.ended}])
+
+    def test_a_reason_with_line_breaks_stays_one_line(self):
+        reason = "verify red\nTraceback: boom\r\nstranded KO-1 run 1: fake"
+        run = self.strand(10, reason, self.ended + 1)
+
+        lines = self.status().splitlines()
+
+        self.assertEqual([line for line in lines if line.startswith("stranded ")],
+                         [f"stranded KO-9 run {self.stranded}: {self.REASON}",
+                          f"stranded KO-10 run {run}: verify red\\nTraceback:"
+                          " boom\\nstranded KO-1 run 1: fake"])
+        snap = json.loads(self.status("--json"))
+        self.assertEqual(snap["stranded"][1]["reason"], reason)

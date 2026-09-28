@@ -198,6 +198,9 @@ EXPECTED_READ = [
     "rounds_of",
     "run_detail",
     "run_snapshot",
+    # HOLO-7: failed runs that strand their ticket in flight, for
+    # `/attention` and `--status` whatever their age.
+    "stranded_runs",
     "strike",
     # KO-218: the `serve` daemon's supervisor read, so it needs nothing from
     # `store` itself.
