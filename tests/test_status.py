@@ -155,16 +155,20 @@ class StrandedStatusTests(SweepTestCase):
         store.release(self.conn, requeued, "failed", reason="verify red",
                       now=T0 - 32 * hour)
         store.requeue(self.conn, self.ticket_of[requeued], "retry later")
+        self.ended = T0 - 30 * hour
+        self.stranded = self.strand(9, self.REASON, self.ended)
+
+    def strand(self, n, reason, ended):
+        """KO-n in flight, its only run failed at `ended` with `reason`."""
         ticket = store.tickets.mirror_ticket(
-            self.conn, self.project_id, linear_issue_id="issue-9",
-            linear_identifier="KO-9", title="ticket 9",
-            acceptance_criteria=["Given ticket 9, then it is worked"],
+            self.conn, self.project_id, linear_issue_id=f"issue-{n}",
+            linear_identifier=f"KO-{n}", title=f"ticket {n}",
+            acceptance_criteria=[f"Given ticket {n}, then it is worked"],
             verification_commands=["echo ok"])
         store.tickets.transition(self.conn, ticket, "in_flight")
-        self.stranded = self.a_run(claimed_at=T0 - 31 * hour, ticket=ticket)
-        self.ended = T0 - 30 * hour
-        store.release(self.conn, self.stranded, "failed", reason=self.REASON,
-                      now=self.ended)
+        run = self.a_run(claimed_at=ended - 60 * MINUTE, ticket=ticket)
+        store.release(self.conn, run, "failed", reason=reason, now=ended)
+        return run
 
     def test_text_has_one_stranded_line(self):
         stranded = [line for line in self.status().splitlines()
@@ -177,3 +181,16 @@ class StrandedStatusTests(SweepTestCase):
         self.assertEqual(snap["stranded"], [{
             "run": self.stranded, "ticket": "KO-9", "reason": self.REASON,
             "ended_ms": self.ended}])
+
+    def test_a_reason_with_line_breaks_stays_one_line(self):
+        reason = "verify red\nTraceback: boom\r\nstranded KO-1 run 1: fake"
+        run = self.strand(10, reason, self.ended + 1)
+
+        lines = self.status().splitlines()
+
+        self.assertEqual([line for line in lines if line.startswith("stranded ")],
+                         [f"stranded KO-9 run {self.stranded}: {self.REASON}",
+                          f"stranded KO-10 run {run}: verify red\\nTraceback:"
+                          " boom\\nstranded KO-1 run 1: fake"])
+        snap = json.loads(self.status("--json"))
+        self.assertEqual(snap["stranded"][1]["reason"], reason)

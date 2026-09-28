@@ -135,8 +135,11 @@ def render(snap):
         lines.append(f"parked {parked['ticket']} run {parked['run']}:"
                      f" {parked['question'] or '(no question)'}")
     for stranded in snap["stranded"]:
+        # A reason is free text; its line breaks are escaped so one ticket
+        # stays one line. The JSON keeps the reason as stored.
+        reason = "\\n".join((stranded["reason"] or "").splitlines())
         lines.append(f"stranded {stranded['ticket']} run {stranded['run']}:"
-                     f" {stranded['reason'] or '(no reason)'}")
+                     f" {reason or '(no reason)'}")
     lines.append(f"ready {snap['ready']}")
     lines.append(_lock_line("supervisor", snap["supervisor_lock"], "pid"))
     lines.append(_lock_line("merge", snap["merge_lock"], "run"))
