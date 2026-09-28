@@ -958,8 +958,8 @@ refused, and a `--default` naming a missing file is refused naming it). A
 generated config in the spec's directory imports the project's config and
 points every test project at that spec. Projects named in another project's `dependencies` keep their own
 `testMatch`, so a setup project still runs. The boot command runs with that
-config and the spec appended, and with `CAPTURE_OUT` set to the absolute
-output directory. After the command exits 0, the run fails unless at least
+config and the spec's path appended, regex-escaped because Playwright reads it
+as a file filter, and with `CAPTURE_OUT` set to the absolute output directory. After the command exits 0, the run fails unless at least
 one `NN-slug.png` was written. The options are `--boot COMMAND` (default
 `npx playwright test`), `--env NAME=VALUE` (repeatable; `{key}` in a value
 becomes the ticket key lowercased without its hyphen, `ABC-12` giving

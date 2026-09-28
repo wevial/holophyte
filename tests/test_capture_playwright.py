@@ -69,7 +69,7 @@ class FakeBootTests(unittest.TestCase):
         record = self.record()
         flag, config, spec = record["argv"][-3:]
         self.assertEqual((flag, spec),
-                         ("--config", ".holophyte-capture/KO-7.capture.ts"))
+                         ("--config", r"\.holophyte-capture/KO-7\.capture\.ts"))
         self.assertTrue(os.path.isabs(config), config)
         self.assertEqual(Path(config).parent,
                          (self.repo / ".holophyte-capture").resolve())
@@ -115,7 +115,7 @@ class FakeBootTests(unittest.TestCase):
         record = self.record()
         flag, config, spec = record["argv"][-3:]
         self.assertEqual((flag, spec),
-                         ("--config", "console/e2e/CAPTURE-0.capture.ts"))
+                         ("--config", r"console/e2e/CAPTURE-0\.capture\.ts"))
         self.assertEqual(Path(config).parent, default.parent.resolve())
         self.assertIn('testMatch: ["CAPTURE-0.capture.ts"]', record["config"])
         self.assertEqual(sorted(p.name for p in default.parent.iterdir()),
@@ -123,13 +123,18 @@ class FakeBootTests(unittest.TestCase):
 
     def test_listed_states_without_a_ticket_spec_refuse_despite_a_default(self):
         self.default_spec()
+        default = ("--default", "console/e2e/CAPTURE-0.capture.ts")
+        # States inherited from the factory, or handed over through --env.
+        for states, options in (
+                ("Board open\nCard moved", default),
+                (None, ("--env", "HOLOPHYTE_EVIDENCE_STATES=Board open", *default))):
+            with self.subTest(options=options):
+                result = self.capture(ticket="HOLO-9", states=states,
+                                      options=options)
 
-        result = self.capture(ticket="HOLO-9", states="Board open\nCard moved",
-                              options=("--default", "console/e2e/CAPTURE-0.capture.ts"))
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(".holophyte-capture/HOLO-9.capture.ts", result.stderr)
-        self.assertFalse((self.repo / "record.json").exists())
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(".holophyte-capture/HOLO-9.capture.ts", result.stderr)
+                self.assertFalse((self.repo / "record.json").exists())
 
     def test_a_ticket_spec_wins_over_the_default_and_a_missing_default_refuses(self):
         self.default_spec()
@@ -137,7 +142,7 @@ class FakeBootTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         record = self.record()
-        self.assertEqual(record["argv"][-1], ".holophyte-capture/KO-7.capture.ts")
+        self.assertEqual(record["argv"][-1], r"\.holophyte-capture/KO-7\.capture\.ts")
         self.assertIn('testMatch: ["KO-7.capture.ts"]', record["config"])
         (self.repo / "record.json").unlink()
 
@@ -217,16 +222,17 @@ class RealPlaywrightTests(unittest.TestCase):
     def test_a_default_spec_inside_the_test_tree_is_listed_alone(self):
         # The default lives in the project's own testDir, beside a spec the
         # capture must not run, and the generated config is written there.
-        (self.repo / "e2e" / "CAPTURE-0.capture.ts").write_text(SPEC % "default")
+        # Its `+` would be a quantifier in Playwright's regex file filter.
+        (self.repo / "e2e" / "CAPTURE+0.capture.ts").write_text(SPEC % "default")
 
         result, listed = self.listed(
-            "HOLO-9", options=("--default", "e2e/CAPTURE-0.capture.ts"))
+            "HOLO-9", options=("--default", "e2e/CAPTURE+0.capture.ts"))
 
-        self.assertIn(("chromium", "CAPTURE-0.capture.ts"), listed, result.stderr)
+        self.assertIn(("chromium", "CAPTURE+0.capture.ts"), listed, result.stderr)
         self.assertIn(("setup", "auth.setup.ts"), listed, result.stderr)
         self.assertNotIn("app.spec.ts", {name for _, name in listed})
         self.assertEqual(sorted(p.name for p in (self.repo / "e2e").iterdir()),
-                         ["CAPTURE-0.capture.ts", "app.spec.ts", "setup"])
+                         ["CAPTURE+0.capture.ts", "app.spec.ts", "setup"])
 
 
 def _suites(suites):
