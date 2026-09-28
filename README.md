@@ -45,6 +45,7 @@ python3 factory.py /path/to/repo --abort KO-n --note TEXT # end a run now, prese
 python3 factory.py /path/to/repo --abort KO-n --close-pr --note TEXT # ...and close its pull request
 python3 factory.py --repoint KO-n SHA --note TEXT /path/to/repo # move a parked candidate to a rebuilt branch tip
 python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # record a change landed outside the factory
+python3 factory.py /path/to/repo --gap-layer KEY-n LAYER --note TEXT [--carried-by KEY-n] # where a gap's lesson landed: impossible, static, witness, guidance, review or none
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
 python3 factory.py --file-ticket TICKET.md --update KEY-n --revision N [--priority urgent|high|medium|low] [--labels a,b] /path/to/repo # a native board's edit

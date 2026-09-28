@@ -44,6 +44,7 @@ from holophyte.operator import (
     approve,
     babysit_ticket,
     close_ticket,
+    gap_layer,
     main,
     repoint,
     report,
@@ -60,6 +61,7 @@ from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
 from provider import board_for
 from store import RevisionMoved
+from store.enums import GapLayer
 
 # The entry point the loop's spawned supervisor is started through: the
 # `factory.py` beside this package, by path, so the supervisor runs the same
@@ -172,10 +174,10 @@ def _note_checks(parser, args):
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
     if args.hold or args.release_hold or args.pause or args.resume \
-            or args.abort or args.cancel:
+            or args.abort or args.cancel or args.gap_layer:
         if not (args.note or "").strip():
-            parser.error("--hold, --release-hold, --pause, --resume, --abort"
-                         " and --cancel require --note TEXT")
+            parser.error("--hold, --release-hold, --pause, --resume, --abort,"
+                         " --cancel and --gap-layer require --note TEXT")
         return
     optional = args.approve or args.babysit or args.close or args.move
     if args.note is not None and args.requeue is None \
@@ -199,6 +201,15 @@ def _close_checks(parser, args):
         parser.error("--landed belongs to --close")
     if args.close_pr and not args.abort:
         parser.error("--close-pr belongs to --abort")
+
+
+def _gap_layer_checks(parser, args):
+    layers = [member.value for member in GapLayer]
+    if args.gap_layer is not None and args.gap_layer[1] not in layers:
+        parser.error(f"--gap-layer takes one of {', '.join(layers)}, not "
+                     f"{args.gap_layer[1]!r}")
+    if args.carried_by is not None and args.gap_layer is None:
+        parser.error("--carried-by belongs to --gap-layer")
 
 
 def _modifier_checks(parser, args):
@@ -330,6 +341,17 @@ def _legacy_cli(argv):
              "transaction; the branch itself is not touched; refuses a "
              "ticket not parked awaiting merge approval or a malformed "
              "sha, naming it, and writes nothing then")
+    modes.add_argument(
+        "--gap-layer", nargs=2, metavar=("KEY-n", "LAYER"),
+        help="record the correction layer the lesson of the gap the ticket "
+             "answers landed in -- impossible, static, witness, guidance, "
+             "review or none -- carrying --note, appended to the store's "
+             "gapLayers; writes no intervention row and changes no run, "
+             "ticket or project state")
+    parser.add_argument(
+        "--carried-by", metavar="KEY-n",
+        help="with --gap-layer: the ticket carrying the lesson when it is "
+             "not the gap's own")
     modes.add_argument(
         "--close", metavar="KO-n",
         help="close a ticket whose change landed outside the factory; requires "
@@ -504,6 +526,7 @@ def _legacy_cli(argv):
     _modifier_checks(parser, args)
     _note_checks(parser, args)
     _close_checks(parser, args)
+    _gap_layer_checks(parser, args)
     if args.target is None:
         return _host_mode(parser, args)
     if args.serve == "":
@@ -726,6 +749,11 @@ def _store_verb(args, target, board):
         babysit_ticket(target, args.babysit,
                         args.note if args.note is not None
                         else BABYSIT_DEFAULT_NOTE)
+        return True
+    if args.gap_layer is not None:
+        identifier, layer = args.gap_layer
+        gap_layer(target, identifier, layer, args.note,
+                  carried_by=args.carried_by)
         return True
     if args.close is not None:
         close_ticket(target, args.close, args.landed, args.note,

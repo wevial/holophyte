@@ -62,7 +62,7 @@ VERIFY_TIMEOUT = 300  # per-command wall-clock cap, verify and worktree setup
 
 # Role -> harness/model pins. Each gate uses a distinct, live-probed route:
 # Claude Code / Opus High implements; the local container boundary runs Codex
-# at `[agents] review_model` / `review_effort` (GPT-5.6 Sol Medium when the
+# at `[agents] review_model` / `review_effort` (GPT-6 Astra High when the
 # keys are absent) against a detached, zero-remote, read-only candidate.
 # These are the defaults an absent `[agents]` table leaves in place, not
 # assumptions: a target that names its own command for a role gets that one.
@@ -240,7 +240,7 @@ def check_document(project):
     check_worktree_setup(project)
 
 
-def agent_command(project, role, goal, *, fallback=False):
+def agent_command(project, role, goal, *, fallback=False, entry=0):
     """The configured argv for `role`, or None when the config names none.
 
     The goal is appended as the command's last argument, which is where both
@@ -263,6 +263,8 @@ def agent_command(project, role, goal, *, fallback=False):
     command = config_table(project, "agents").get(key)
     if command is None:
         return None
+    if fallback:
+        command = fallback_entries(project, role)[entry]
     if isinstance(command, dict):
         return harness.seat(project, role, fallback=fallback).turn(goal)
     if not isinstance(command, str):
@@ -283,17 +285,29 @@ def agent_command(project, role, goal, *, fallback=False):
     return argv + [goal]
 
 
+def fallback_entries(project, role):
+    key = AGENT_CONFIG_KEYS[role] + "_fallback"
+    value = config_table(project, "agents").get(key)
+    if key != "reviewer_fallback" or not isinstance(value, list):
+        return [] if value is None else [value]
+    if not value or not all(isinstance(each, str) and each.strip()
+                            for each in value):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] {key} must be a command "
+            "string or a non-empty list of non-empty command strings")
+    return value
+
+
 def check_agent_fallbacks(project):
     """Fallback commands obey the primary grammar and name a distinct route."""
     for role, key in AGENT_CONFIG_KEYS.items():
-        fallback = agent_command(project, role, "", fallback=True)
-        if fallback is None:
-            continue
-        primary = agent_command(project, role, "")
-        if fallback == primary:
-            raise SystemExit(f"[holo2] {project.config_path}: [agents] "
-                             f"{key}_fallback may not equal {key}")
-        check_command_path(project, key + "_fallback", fallback[0])
+        for entry in range(len(fallback_entries(project, role))):
+            fallback = agent_command(project, role, "", fallback=True,
+                                     entry=entry)
+            if fallback == agent_command(project, role, ""):
+                raise SystemExit(f"[holo2] {project.config_path}: [agents] "
+                                 f"{key}_fallback may not equal {key}")
+            check_command_path(project, key + "_fallback", fallback[0])
     review_route(project)
     review_route(project, fallback=True)
 
@@ -310,19 +324,17 @@ def review_route(project, *, fallback=False):
     fallback to the default -- the operator asked for a route, and quietly
     running another would answer a different question than the config asked.
 
-    Any of these keys beside a `reviewer` or fallback command is refused as
-    contradictory: the command opts the reviewer out of the container, and
-    the pair chooses what runs inside it. (An `adjudicator` override alone
-    leaves the reviewer in the container, so the pair still has a job.)
+    Any of these keys beside a `reviewer` command is refused: the command
+    opts the reviewer out of the container the pair routes. A fallback
+    command beside the pair runs only when the container route fails, and
+    an `adjudicator` override leaves the reviewer in the container.
     """
     agents = config_table(project, "agents")
-    command = next((k for k in ("reviewer", *AGENT_FALLBACK_KEYS)
-                    if k in agents), None)
     for key in (*REVIEW_ROUTE_KEYS, *REVIEW_FALLBACK_KEYS):
-        if key in agents and command:
+        if key in agents and "reviewer" in agents:
             raise SystemExit(
                 f"[holo2] {project.config_path}: [agents] {key} beside [agents] "
-                f"{command}: the command opts out of the container "
+                f"reviewer: the command opts out of the container "
                 f"the pair routes -- drop one of the two")
     present = [key for key in REVIEW_FALLBACK_KEYS if key in agents]
     if len(present) == 1:

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import store.read
 import store.schema
 from holophyte.config_tables import report_config
+from store.gap_layers import gap_layer_counts
 from store.working import agent_work, effective_work, verify_work
 
 # Render timing and review counts from the store without writing or claiming.
@@ -180,6 +181,9 @@ def report_lines(conn, target=None):
         live += approval_lines(conn)
         live += failure_lines(conn)
         live += toil_lines(conn, now)
+        live.append("gap layers: " + ", ".join(
+            f"{layer} {count}"
+            for layer, count in gap_layer_counts(conn).items()))
     finally:
         if owns_transaction:
             conn.rollback()  # Release only our read transaction, even on errors.

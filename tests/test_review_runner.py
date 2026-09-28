@@ -190,10 +190,10 @@ class ReviewerBoundaryTests(unittest.TestCase):
         self.assertIn("--json", rendered)
         # With no route named, the container runs today's pair, handed to the
         # script as arguments after the goal rather than spelled into it.
-        self.assertEqual(command[-4:], ["review", "review", "gpt-5.6-sol",
-                                        'model_reasoning_effort="medium"'])
+        self.assertEqual(command[-4:], ["review", "review", "gpt-6-astra",
+                                        'model_reasoning_effort="high"'])
         self.assertIn('-m "$2" -c "$3"', rendered)
-        self.assertNotIn("gpt-5.6-sol", command[command.index("-c") + 1])
+        self.assertNotIn("gpt-6-astra", command[command.index("-c") + 1])
 
     def test_container_runs_the_model_and_effort_it_is_handed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -209,19 +209,19 @@ class ReviewerBoundaryTests(unittest.TestCase):
                 prompt="review",
                 uid=1000,
                 gid=1000,
-                model="gpt-6-astra",
+                model="gpt-5.6-sol",
                 effort="medium",
             )
 
         # `-m "$2"` and `-c "$3"` in the script, the pair as the arguments the
         # script reads them from: the quoting stays the shell's, not Python's.
-        self.assertEqual(command[-2:], ["gpt-6-astra",
+        self.assertEqual(command[-2:], ["gpt-5.6-sol",
                                         'model_reasoning_effort="medium"'])
         self.assertIn('-m "$2" -c "$3"', "\n".join(command))
-        self.assertNotIn("gpt-5.6-sol", "\n".join(command))
+        self.assertNotIn("gpt-6-astra", "\n".join(command))
         self.assertEqual(review_runner.profile_for("gpt-6-astra", "medium"),
                          "codex-astra-medium")
-        self.assertEqual(review_runner.PROFILE, "codex-sol-medium")
+        self.assertEqual(review_runner.PROFILE, "codex-astra-high")
 
     def test_run_review_refuses_a_route_the_profile_does_not_name(self):
         # Refused before any staging: a `reviewRounds` row naming one route

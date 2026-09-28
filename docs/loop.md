@@ -106,7 +106,7 @@ machines it walks. Back to the [README](index.md).
    shell programs (including semicolon-separated command lists) execute verbatim
    with their own shell exit semantics; the instrumented first-failure and
    clause-level reporting guarantees do not apply to them.
-5. Local reviewer agent (Codex / GPT-5.6 Sol at medium effort) reviews the
+5. Local reviewer agent (Codex / GPT-6 Astra at high effort) reviews the
    diff against the task inside the hardened container boundary described in
    [Reviewing](reviewing.md);
    findings go back to the implementer for one fix round. The number of

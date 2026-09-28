@@ -584,15 +584,36 @@ class ContainerReviewFallbackTests(SweepTestCase):
                          ('gpt-5.6-sol', 'high'))
         self.configure('[agents]\nreview_fallback_model = "gpt-5.6-sol"\n'
                        'review_fallback_effort = "high"\n'
-                       f'reviewer_fallback = "{sys.executable}"\n')
+                       'reviewer = "sh -c"\n')
         with self.assertRaisesRegex(SystemExit,
                                     r'review_fallback_\w+ beside \[agents\] '
-                                    r'reviewer_fallback'):
+                                    r'reviewer:'):
             check_config(self.project)
         self.configure('[agents]\nreview_fallback_model = "gpt-5.6-sol"\n')
         with self.assertRaisesRegex(SystemExit, r'review_fallback_model needs '
                                     r'\[agents\] review_fallback_effort'):
             check_config(self.project)
+
+    def test_the_pair_sits_beside_fallback_commands_but_not_a_reviewer(self):
+        from holophyte.config import check_config, review_route
+
+        pair_and_fallbacks = ('[agents]\nreview_model = "gpt-5.6-sol"\n'
+                              'review_effort = "xhigh"\n'
+                              f'reviewer_fallback = "{sys.executable}"\n'
+                              f'implementer_fallback = "{sys.executable}"\n')
+        self.configure(pair_and_fallbacks)
+        check_config(self.project)
+        self.assertEqual(review_route(self.project), ('gpt-5.6-sol', 'xhigh'))
+        self.configure(pair_and_fallbacks + 'reviewer = "sh -c"\n')
+        with self.assertRaisesRegex(SystemExit, r'review_model beside '
+                                    r'\[agents\] reviewer:'):
+            check_config(self.project)
+
+    def test_an_unset_pair_reviews_on_gpt_6_astra_at_high(self):
+        from holophyte.config import review_route
+
+        self.configure(f'[agents]\nreviewer_fallback = "{sys.executable}"\n')
+        self.assertEqual(review_route(self.project), ('gpt-6-astra', 'high'))
 
     def test_startup_switches_to_the_fallback_pair_for_later_turns(self):
         from holophyte.agent_routes import routes
@@ -683,6 +704,113 @@ class ContainerReviewFallbackTests(SweepTestCase):
         self.assertEqual(raised.exception.failure_kind, 'review_route')
         self.assertEqual(self.reviews, [('gpt-6-astra', 'medium', 'judge')])
         self.assertEqual(self.switches(), [])
+
+class ReviewerFallbackListTests(SweepTestCase):
+    def setUp(self):
+        from holophyte.gates import sh
+
+        super().setUp()
+        sh(['git', 'init', '-q', str(self.target)])
+        sh(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.test',
+            'commit', '--allow-empty', '-qm', 'base'], cwd=self.target)
+        self.sha = sh(['git', 'rev-parse', 'HEAD'], cwd=self.target)
+        self.calls = self.root / 'calls'
+        self.addCleanup(reset, self.project)
+
+    def reviewer(self, name, down=False):
+        path = self.root / name
+        path.write_text(
+            f'#!{sys.executable}\nimport subprocess, sys\n'
+            f'with open({str(self.calls)!r}, "a") as f:\n'
+            f' f.write({name!r} + " " + sys.argv[-1] + "\\n")\n'
+            f'if {down!r}:\n sys.exit("Quota exhausted")\n'
+            f'if sys.argv[-1] == {agents.REVIEW_PROBE_GOAL!r}:\n'
+            ' print("ready", subprocess.check_output(\n'
+            '     ["git", "rev-parse", "HEAD"], text=True).strip())\n'
+            'else:\n print("VERDICT: PASS")\n')
+        path.chmod(0o755)
+        return str(path)
+
+    def configure_fallback(self, value):
+        self.configure(f'[agents]\nreviewer_fallback = {value}\n')
+
+    def start(self):
+        """Startup with the container reviewer unable to start."""
+        import review_runner
+
+        down = review_runner.ReviewBoundaryError('container produced no events')
+        with patch.object(agents.review_runner, 'run_review', side_effect=down), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            started = agents.startup_routes(self.project,
+                                            SimpleNamespace(team='team-1'))
+        return started, out.getvalue()
+
+    def review(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return agents.agent(self.project, 'review', 'judge', self.target,
+                                base_sha=self.sha, candidate_sha=self.sha,
+                                conn=self.conn, run_id=self.a_run())
+
+    def switches(self):
+        return [json.loads(row[0]) for row in self.conn.execute(
+            "SELECT guidance FROM interventions WHERE action='route_fallback'")]
+
+    def test_a_list_switches_to_its_first_entry_whose_probe_passes(self):
+        from holophyte.agent_routes import routes
+        from holophyte.config import check_config
+
+        devin = self.reviewer('devin-review', down=True)
+        claude = self.reviewer('claude-review')
+        self.configure_fallback(f'["{devin}", "{claude}"]')
+        check_config(self.project)
+        started, output = self.start()
+        self.assertTrue(started)
+        self.assertEqual(routes(self.project).commands, {'review': claude})
+        self.assertEqual(self.review(), 'VERDICT: PASS')
+        self.assertIn('Quota exhausted', output)
+        self.assertEqual(self.calls.read_text().splitlines(), [
+            'devin-review ' + agents.REVIEW_PROBE_GOAL,
+            'claude-review ' + agents.REVIEW_PROBE_GOAL,
+            'claude-review judge'])
+        switch, = self.switches()
+        self.assertEqual((switch['seat'], switch['command']), ('reviewer', claude))
+
+    def test_a_list_whose_every_probe_fails_ends_as_one_failed_fallback(self):
+        from holophyte.agent_routes import routes
+
+        first = self.reviewer('devin-review', down=True)
+        second = self.reviewer('claude-review', down=True)
+        for value, probed in ((f'"{first}"', ['devin-review']),
+                              (f'["{first}", "{second}"]',
+                               ['devin-review', 'claude-review'])):
+            with self.subTest(reviewer_fallback=value):
+                self.calls.unlink(missing_ok=True)
+                self.configure_fallback(value)
+                started, output = self.start()
+                self.assertFalse(started)
+                self.assertEqual(routes(self.project).commands, {})
+                self.assertEqual(self.switches(), [])
+                self.assertEqual(self.calls.read_text().splitlines(), [
+                    f'{name} {agents.REVIEW_PROBE_GOAL}' for name in probed])
+                self.assertEqual(output.count('Quota exhausted'), len(probed))
+
+    def test_a_string_still_switches_and_a_malformed_list_is_refused(self):
+        from holophyte.agent_routes import routes
+        from holophyte.config import check_config
+
+        devin = self.reviewer('devin-review')
+        self.configure_fallback(f'"{devin}"')
+        check_config(self.project)
+        self.assertTrue(self.start()[0])
+        self.assertEqual(routes(self.project).commands, {'review': devin})
+        self.assertEqual(self.review(), 'VERDICT: PASS')
+        for value in ('[]', f'["{devin}", 3]', f'["{devin}", ""]'):
+            with self.subTest(reviewer_fallback=value):
+                self.configure_fallback(value)
+                with self.assertRaisesRegex(SystemExit,
+                                            r'\[agents\] reviewer_fallback must'):
+                    check_config(self.project)
+
 
 class FailedRouteLoopTests(LoopFixture):
     def test_failed_fallback_probe_stops_even_when_work_failures_continue(self):

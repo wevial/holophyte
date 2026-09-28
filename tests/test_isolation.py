@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -65,9 +66,10 @@ class IsolationTests(unittest.TestCase):
             agents.agent(self.target, "implement", "task", worktree, timeout=17)
         argv = run.call_args.args[0]
         mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
-        self.assertEqual(len(mounts), 2)
+        self.assertEqual(len(mounts), 3)
         self.assertTrue(mounts[0].endswith("/clone:/workspace:rw"))
         self.assertTrue(mounts[1].endswith(":/home/implementer/.claude:rw"))
+        self.assertTrue(mounts[2].endswith("/cache:/home/implementer/.cache:rw"))
         for flag in (
             "--read-only",
             "--cap-drop=ALL",
@@ -100,8 +102,9 @@ class IsolationTests(unittest.TestCase):
 
     def test_file_credential_and_timeout_cleanup(self):
         from holophyte import isolation
+        from holophyte.project import state_dir
 
-        _, worktree = self.make_worktree()
+        main, worktree = self.make_worktree()
         credential = self.root / "auth.json"
         credential.write_text("private")
         route = isolation.Route(
@@ -130,6 +133,7 @@ class IsolationTests(unittest.TestCase):
             mounts,
             [
                 f"{run.call_args.args[1]}:/workspace:rw",
+                f"{(state_dir(main) / 'cache').resolve()}:/home/implementer/.cache:rw",
                 f"{credential}:/home/implementer/.agent/auth.json:ro",
             ],
         )
@@ -795,8 +799,67 @@ class IsolationTests(unittest.TestCase):
             isolation.launch(isolation.Route("container", writable=False),
                              worktree, {}, ["agent"], project=self.target,
                              keep_session=True)
-            self.assertFalse(state_dir(main).exists())
+            self.assertFalse((state_dir(main) / "sessions").exists())
         self.assertNotIn(".claude", str(run.call_args.args[0]))
+
+    def test_launch_outside_a_repository_mounts_no_cache(self):
+        from holophyte import isolation
+
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        home = self.root / "holophyte-home"
+        with (
+            patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home),
+                                    "GIT_CEILING_DIRECTORIES": str(self.root)}),
+            patch.object(isolation, "image_ready"),
+            patch.object(isolation.review_runner, "_remove_container"),
+            patch.object(isolation, "run_capped", return_value=(0, "done")) as run,
+        ):
+            isolation.launch(isolation.Route("container", writable=False),
+                             scratch, {}, ["agent"])
+        argv = run.call_args.args[0]
+        self.assertNotIn(".cache", str(argv))
+        self.assertNotIn("GOCACHE", run.call_args.kwargs["env"])
+        self.assertFalse(home.exists())
+
+    def test_launch_without_cache_points_tmpdir_at_container_tmp(self):
+        from holophyte import isolation
+
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        command, host_env = isolation.container_command(
+            isolation.Route("container"), scratch, {}, ["true"], "n"
+        )
+        self.assertIn("--env=TMPDIR", command)
+        self.assertEqual(host_env["TMPDIR"], "/tmp")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_launch_creates_a_temporary_directory(self):
+        import shutil
+        import uuid
+
+        from holophyte import isolation
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        route = isolation.Route("container")
+        isolation.image_ready(route)
+        name = "holophyte-test-" + uuid.uuid4().hex
+        command, host_env = isolation.container_command(
+            route, scratch, {}, ["sh", "-c", "mktemp -d && echo ok > probe.txt"],
+            name,
+        )
+        try:
+            code, output = isolation.run_capped(command, scratch, 120, env=host_env)
+        finally:
+            isolation.review_runner._remove_container(name, env={"PATH": os.defpath})
+        self.assertEqual(code, 0, output)
+        self.assertEqual((scratch / "probe.txt").read_text(), "ok\n")
 
     def test_relative_state_home_mounts_an_absolute_session_directory(self):
         from holophyte import isolation
@@ -817,6 +880,85 @@ class IsolationTests(unittest.TestCase):
         self.assertTrue(
             Path(source).is_relative_to((self.root / "relative-home").resolve())
         )
+
+    def fake_codex_release(self, names=("codex", "codex-code-mode-host")):
+        release = self.root / "release"
+        release.mkdir()
+        for name in names:
+            (release / name).write_text("#!/bin/sh\n")
+            (release / name).chmod(0o755)
+        return release
+
+    def test_claude_implementer_mounts_no_codex_file(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        release = self.fake_codex_release()
+        for implementer in ("claude -p", {"harness": "claude"}):
+            with self.subTest(implementer=implementer):
+                self.table["agents"] = {"implementer_isolation": "container",
+                                        "implementer": implementer}
+                with patch.dict(os.environ, {"PATH": str(release)}):
+                    command, _ = isolation.container_command(
+                        isolation.route_for(self.target), worktree, {},
+                        ["claude", "-p"], "n")
+                self.assertNotIn("codex", " ".join(command))
+                self.assertEqual(command[-2:], ["claude", "-p"])
+
+    def test_codex_fallback_mounts_the_host_release_read_only(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        release = self.fake_codex_release()
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": {"harness": "claude"},
+                                "implementer_fallback": "codex exec -m model"}
+        with patch.dict(os.environ, {"PATH": str(release)}):
+            command, _ = isolation.container_command(
+                isolation.route_for(self.target), worktree, {}, ["codex"], "n")
+        mounts = [command[i + 1] for i, part in enumerate(command)
+                  if part == "--volume"]
+        self.assertIn(f"{release}/codex:/opt/codex/bin/codex:ro", mounts)
+        self.assertIn(f"{release}/codex-code-mode-host:"
+                      "/opt/codex/bin/codex-code-mode-host:ro", mounts)
+        (release / "codex-code-mode-host").unlink()
+        with (patch.dict(os.environ, {"PATH": str(release)}),
+              self.assertRaisesRegex(RuntimeError, "codex-code-mode-host")):
+            isolation.container_command(
+                isolation.route_for(self.target), worktree, {}, ["codex"], "n")
+
+    def test_quoted_codex_program_is_a_codex_implementer(self):
+        from holophyte.isolation import route_for
+
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": '"codex" exec -m model'}
+        self.assertTrue(route_for(self.target).codex)
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_codex_implementer_runs_the_host_release_read_only(self):
+        import shutil
+
+        from holophyte import isolation
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        if not shutil.which("codex"):
+            self.skipTest("Codex absent from the host PATH")
+        _, worktree = self.make_worktree()
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": "codex exec -m MODEL"}
+        route = replace(isolation.route_for(self.target), writable=False)
+        host = subprocess.run(["codex", "--version"], capture_output=True,
+                              text=True, check=True).stdout
+        code, output = isolation.launch(route, worktree, {}, ["codex", "--version"])
+        self.assertEqual((code, output.strip()), (0, host.strip()))
+        code, output = isolation.launch(
+            route, worktree, {}, ["/bin/sh", "-c", 'touch -c "$(command -v codex)"'])
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("Read-only file system", output)
 
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
@@ -851,6 +993,59 @@ class IsolationTests(unittest.TestCase):
         for path in (worktree, other):
             self.assertEqual(git(path, "status", "--porcelain"), before[path])
             self.assertEqual(list(path.rglob("marker")), [])
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_tool_caches_persist_per_project(self):
+        import shutil
+
+        from holophyte import isolation
+        from holophyte.isolation_git import git
+        from holophyte.project import state_dir
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        main, worktree = self.make_worktree()
+        other = self.root / "other-project"
+        other.mkdir()
+        git(other, "init", "-q", "-b", "main")
+        git(other, "config", "user.name", "Configured Author")
+        git(other, "config", "user.email", "author@example.test")
+        git(other, "commit", "--allow-empty", "-qm", "base")
+        build = (
+            "mkdir /tmp/module; cd /tmp/module;"
+            " printf 'module example.test/m\\n\\ngo 1.26\\n' > go.mod;"
+            " printf 'package main\\n\\nfunc main() {}\\n' > main.go;"
+            " echo '{}' > package.json; go build -o /dev/null . >&2;"
+            " go env GOMODCACHE GOCACHE GOTMPDIR; npm config get cache; bun pm cache"
+        )
+        count = (
+            'cache=$(go env GOCACHE); if [ -e "$cache" ];'
+            ' then find "$cache" -type f > /tmp/files; wc -l < /tmp/files;'
+            " else echo 0; fi"
+        )
+
+        def turn(path, script, writable=True):
+            route = isolation.Route("container", writable=writable)
+            return isolation.launch(route, path, {}, ["/bin/sh", "-ec", script])
+
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")}):
+            for writable in (True, False):
+                code, output = turn(worktree, build, writable)
+                self.assertEqual(code, 0, output)
+                paths = output.split()[-5:]
+                self.assertEqual(len(paths), 5, output)
+                for path in paths:
+                    self.assertTrue(path.startswith("/home/implementer/.cache/"),
+                                    output)
+            self.assertTrue(any((state_dir(main) / "cache").rglob("*")))
+            code, output = turn(worktree, count, writable=False)
+            self.assertEqual(code, 0, output)
+            self.assertGreater(int(output.split()[-1]), 0, output)
+            code, output = turn(other, count)
+            self.assertEqual((code, int(output.split()[-1])), (0, 0), output)
 
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",

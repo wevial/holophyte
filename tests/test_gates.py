@@ -294,7 +294,11 @@ class IsolatedVerifyTests(unittest.TestCase):
 
         def filesystem_runner(argv, cwd, timeout, *, env):
             mounts = [argv[i + 1] for i, v in enumerate(argv) if v == '--volume']
-            self.assertEqual(len(mounts), 1)
+            self.assertEqual(len(mounts), 2)
+            cache, cache_destination, _ = mounts[1].split(':')
+            self.assertEqual(cache_destination, isolation.CACHE)
+            self.assertTrue(Path(cache).is_relative_to(
+                holophyte.project.state_dir(self.target.path).resolve()))
             source, destination, mode = mounts[0].split(':')
             workspace = Path(source).resolve()
             self.assertTrue(workspace.is_dir())

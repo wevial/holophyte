@@ -27,6 +27,8 @@ FINISHED = (
 # both windows of the wall clock.
 NO_TOIL = ["toil 24h: 0 human interventions, 0 merged",
            "toil 7d: 0 human interventions, 0 merged"]
+NO_GAPS = ("gap layers: impossible 0, static 0, witness 0, guidance 0,"
+           " review 0, none 0")
 
 
 class LiveReportTests(ReportStoreCase):
@@ -94,8 +96,8 @@ class LiveReportTests(ReportStoreCase):
             lines = report.report_lines(self.conn)
         self.assertEqual(lines[0], "in flight:")
         self.assertTrue(lines[1].startswith("KO-454  merge_gate"))
-        self.assertEqual(lines[3:5], NO_TOIL)
-        self.assertEqual("\n".join(lines[5:]), FINISHED)
+        self.assertEqual(lines[3:6], [*NO_TOIL, NO_GAPS])
+        self.assertEqual("\n".join(lines[6:]), FINISHED)
         self.assertFalse(self.conn.in_transaction)
         following = report.report_lines(self.conn)
         self.assertEqual(following[0], "in flight: none")
@@ -141,7 +143,8 @@ class LiveReportTests(ReportStoreCase):
             self.assertEqual(lines[3:5], [
                 f"toil {window}: 0 human interventions, 1 merged, 0.00 per"
                 " merge" for window in ("24h", "7d")])
-            self.assertEqual("\n".join(lines[5:]), FINISHED)
+            self.assertEqual(lines[5], NO_GAPS)
+            self.assertEqual("\n".join(lines[6:]), FINISHED)
             out = io.StringIO()
             with patch.object(sys, "stdout", out):
                 holophyte.cli.cli(["--report", str(self.target)])
@@ -149,7 +152,7 @@ class LiveReportTests(ReportStoreCase):
 
     def test_no_unfinished_runs(self):
         self.assertEqual(report.report_lines(self.conn),
-                         ["in flight: none", "", *NO_TOIL,
+                         ["in flight: none", "", *NO_TOIL, NO_GAPS,
                           *FINISHED.splitlines()])
 
     def test_actual_is_split_into_agent_and_verify_columns(self):

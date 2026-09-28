@@ -308,10 +308,10 @@ class CloseOutRegenerationTests(unittest.TestCase):
         # the merged run's own close-out entry -- which only exists because the
         # window is rendered after the run is released.
         self.assertIn("Round 1: changes_requested · reviewer "
-                      "codex-sol-medium · verify passed", findings)
+                      "codex-astra-high · verify passed", findings)
         self.assertIn("- store.py:7 [p2] store.py:7: the migration is missing",
                       findings)
-        self.assertIn("Round 2: pass · reviewer codex-sol-medium", findings)
+        self.assertIn("Round 2: pass · reviewer codex-astra-high", findings)
         # The merged run's entry names the `--no-ff` merge commit itself --
         # the close-out's own FINDINGS commit sits above it on main -- and
         # the sha was stamped on the run by the release, not read from git

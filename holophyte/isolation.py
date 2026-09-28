@@ -5,6 +5,7 @@ import hashlib
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import threading
@@ -24,6 +25,16 @@ class Route:
     credential: dict = field(default_factory=dict)
     memory: str = "4g"
     writable: bool = True
+    codex: bool = False
+
+
+def runs_codex(value):
+    from holophyte.harness import route_text
+
+    try:
+        return shlex.split(str(route_text(value) or ""))[:1] == ["codex"]
+    except ValueError:
+        return False
 
 
 def route_for(project):
@@ -50,7 +61,9 @@ def route_for(project):
         raise SystemExit("[agents] implementer_image must be an image name")
     credential = table.get("implementer_credential", {})
     validate_credential(credential)
-    return Route(backend, image, credential, memory, writable)
+    codex = any(runs_codex(table.get(key))
+                for key in ("implementer", "implementer_fallback"))
+    return Route(backend, image, credential, memory, writable, codex)
 
 
 def validate_credential(value):
@@ -129,25 +142,71 @@ def file_mount_flags(mounts):
     return flags
 
 
-def session_directory(task, project):
-    from holophyte.isolation_git import git
-    from holophyte.project import state_dir
+CODEX_BIN = "/opt/codex/bin"
 
-    task = Path(task).resolve(strict=True)
-    root = project.path if project is not None else Path(
-        git(task, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    ).parent
-    digest = hashlib.sha256(str(task).encode()).hexdigest()[:16]
-    path = (state_dir(root) / "sessions" / digest).resolve()
+
+def codex_mount_flags():
+    found = shutil.which("codex")
+    release = Path(found).resolve(strict=True).parent if found else None
+    flags = []
+    for name in review_runner.CODEX_FILES:
+        source = release / name if release else Path(name)
+        if release is None or not source.is_file() or not os.access(source, os.X_OK):
+            raise RuntimeError(f"Codex release is missing executable: {source}")
+        if ":" in str(source):
+            raise RuntimeError(f"bind source {source} must not contain a colon")
+        flags += ["--volume", f"{source}:{CODEX_BIN}/{name}:ro"]
+    return flags
+
+
+def private_directory(path):
+    path = path.resolve()
     if ":" in str(path):
-        raise RuntimeError("session bind source must not contain a colon")
+        raise RuntimeError(f"bind source {path} must not contain a colon")
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.chmod(0o700)
     return path
 
 
+def project_state(task, project):
+    from holophyte.isolation_git import git
+    from holophyte.project import state_dir
+
+    root = project.path if project is not None else Path(
+        git(task, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    ).parent
+    return state_dir(root)
+
+
+def session_directory(task, project):
+    task = Path(task).resolve(strict=True)
+    digest = hashlib.sha256(str(task).encode()).hexdigest()[:16]
+    return private_directory(project_state(task, project) / "sessions" / digest)
+
+
+CACHE = "/home/implementer/.cache"
+CACHE_ENVIRONMENT = {
+    "GOPATH": f"{CACHE}/go",
+    "GOMODCACHE": f"{CACHE}/go/pkg/mod",
+    "GOCACHE": f"{CACHE}/go-build",
+    "GOTMPDIR": f"{CACHE}/go-tmp",
+    "npm_config_cache": f"{CACHE}/npm",
+    "BUN_INSTALL_CACHE_DIR": f"{CACHE}/bun",
+}
+
+
+def cache_directory(task, project):
+    try:
+        state = project_state(Path(task).resolve(strict=True), project)
+    except subprocess.CalledProcessError:
+        return None
+    cache = private_directory(state / "cache")
+    (cache / "go-tmp").mkdir(exist_ok=True)
+    return cache
+
+
 def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
-                      project=None):
+                      project=None, cache_for=None):
     uid, gid = os.getuid(), os.getgid()
     if uid == 0:
         raise RuntimeError("container implementer requires a non-root factory user")
@@ -172,6 +231,10 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
     if route.writable and task is not None:
         session = session_directory(task, project)
         command += ["--volume", f"{session}:/home/implementer/.claude:rw"]
+    cache = cache_directory(cache_for, project) if cache_for is not None else None
+    caches = {} if cache is None else CACHE_ENVIRONMENT
+    if cache is not None:
+        command += ["--volume", f"{cache}:{CACHE}:rw"]
     credential = route.credential
     if "file" in credential:
         source = Path(credential["file"]).expanduser().resolve(strict=True)
@@ -179,9 +242,15 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
             raise RuntimeError("implementer credential must be a regular file")
         command += ["--volume", f"{source}:{credential['destination']}:ro"]
     command += file_mount_flags(mounts)
+    if route.codex:
+        command += codex_mount_flags()
+        argv = ["/bin/sh", "-c", f'PATH="{CODEX_BIN}:$PATH" exec "$@"', "codex",
+                *argv]
     values = dict(
         env or {},
+        **caches,
         HOME="/home/implementer",
+        TMPDIR="/tmp",
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL="/dev/null",
     )
@@ -235,6 +304,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
         command, host_env = container_command(
             route, workspace, dict(env or {}, **git_env), argv, name, mounts,
             task=worktree if keep_session else None, project=project,
+            cache_for=worktree,
         )
         try:
             return run_capped(command, workspace, timeout, env=host_env, **hook)

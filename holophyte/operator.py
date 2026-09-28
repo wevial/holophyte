@@ -35,6 +35,7 @@ from holophyte.runs import open_store
 from holophyte.startup import banner
 from holophyte.supervisor import linear_budget_low, supervisor_liveness_line
 from store import operator_notes
+from store.gap_layers import record_gap_layer
 
 BABYSIT_DEFAULT_NOTE = "sent back to the babysitter"
 
@@ -466,6 +467,23 @@ def close_ticket(target, identifier, landed, note=None, out=None, provider=None)
         except CloseRefused as refused:
             raise SystemExit(f"[holo2] {identifier}: {refused}") from None
         print(f"[holo2] {identifier} closed: {landed}; no factory merge",
+              file=out)
+    finally:
+        conn.close()
+
+
+def gap_layer(target, identifier, layer, note, carried_by=None, out=None):
+    out = sys.stdout if out is None else out
+    conn = _operator_store(target)
+    try:
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        try:
+            record_gap_layer(conn, ticket_id, layer, note, getpass.getuser(),
+                             carried_by=carried_by)
+        except ValueError as refused:
+            raise SystemExit(f"[holo2] {identifier}: {refused}") from None
+        carried = f", carried by {carried_by}" if carried_by else ""
+        print(f"[holo2] {identifier} gap layer recorded: {layer}{carried}",
               file=out)
     finally:
         conn.close()
