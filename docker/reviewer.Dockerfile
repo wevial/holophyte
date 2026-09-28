@@ -7,6 +7,7 @@ RUN apt-get update \
         git \
         python3 \
         python3-pip \
+        python3-venv \
         ripgrep \
         unzip \
     && rm -rf /var/lib/apt/lists/*
@@ -26,6 +27,32 @@ RUN set -eu \
     && ln -s bun /opt/bun/bin/bunx \
     && rm /tmp/bun-linux-x64.zip
 ENV PATH=/opt/bun/bin:$PATH
+
+# Node.js is pinned to one release so a target's `npm ci` and `npx` setup and
+# verify commands run inside the container. The tarball's SHA-256 is copied
+# from the release's SHASUMS256.txt; a mismatch fails the build.
+ARG NODE_VERSION=24.18.0
+ARG NODE_SHA256=783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8
+RUN set -eu \
+    && curl -fsSL -o /tmp/node-linux-x64.tar.gz \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+    && echo "${NODE_SHA256}  /tmp/node-linux-x64.tar.gz" | sha256sum -c - \
+    && mkdir -p /opt/node \
+    && tar -C /opt/node --strip-components=1 -xzf /tmp/node-linux-x64.tar.gz \
+    && rm /tmp/node-linux-x64.tar.gz
+ENV PATH=/opt/node/bin:$PATH
+
+# Chromium and its headless shell are installed by Playwright's own installer
+# at the version both capture projects pin, with the system libraries it
+# names, so a project's own Playwright of that version finds them under
+# PLAYWRIGHT_BROWSERS_PATH; the container's home is an empty tmpfs. Another
+# Playwright version needs a new image.
+ARG PLAYWRIGHT_VERSION=1.62.1
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN set -eu \
+    && npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.npm /root/.cache \
+    && chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}"
 
 # Go is pinned to one release so a Go target's `go test` criteria can be
 # witnessed inside the container. The tarball's SHA-256 is copied from the Go
@@ -64,6 +91,26 @@ RUN set -eu \
     && chmod 0755 /opt/ruff/bin/ruff \
     && rm /tmp/ruff.tar.gz
 ENV PATH=/opt/ruff/bin:$PATH
+
+# The Claude CLI is pinned to one native build, the one the official
+# installer fetches for that version; its SHA-256 is the linux-x64 checksum in
+# the release's manifest.json, and a mismatch fails the build. The managed
+# settings make bypass the default permission mode: an implementer turn has no
+# one to ask, and the container is its boundary.
+ARG CLAUDE_VERSION=2.1.284
+ARG CLAUDE_SHA256=5cd90aabd83f8a15136c35aa37bb1d92b348993573316643dc3fe4e04afbf88f
+RUN set -eu \
+    && curl -fsSL -o /tmp/claude \
+        "https://downloads.claude.ai/claude-code-releases/${CLAUDE_VERSION}/linux-x64/claude" \
+    && echo "${CLAUDE_SHA256}  /tmp/claude" | sha256sum -c - \
+    && mkdir -p /opt/claude/bin /etc/claude-code \
+    && install -m 0755 /tmp/claude /opt/claude/bin/claude \
+    && rm /tmp/claude \
+    && printf '%s\n' '{"permissions": {"defaultMode": "bypassPermissions"}}' \
+        > /etc/claude-code/managed-settings.json \
+    && chmod 0644 /etc/claude-code/managed-settings.json
+ENV PATH=/opt/claude/bin:$PATH \
+    DISABLE_AUTOUPDATER=1
 
 # tomlkit is the factory's one Python dependency (`requirements.txt`, the
 # daemon's `PUT /config` patch): the suite imports it, so the reviewer's

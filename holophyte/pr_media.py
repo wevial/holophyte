@@ -16,6 +16,7 @@ from dataclasses import asdict
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
+import review_runner
 import ticket_template
 from holophyte import isolation, media_store, pr, redact
 from holophyte.config import capture_environment
@@ -160,9 +161,11 @@ def _capture(command, wt, output, task_id, states, *, project=None):
     if route.backend == 'container':
         destination = Path('/workspace') / output.relative_to(Path(wt).resolve())
         argv = ['/bin/sh', '-c', shlex.join(shlex.split(command) + [str(destination)])]
+        runner = review_runner.ROOT / 'holophyte' / 'capture_playwright.py'
         try:
             code, printed = isolation.launch(route, wt, env, argv,
-                                             timeout=CAPTURE_TIMEOUT)
+                                             timeout=CAPTURE_TIMEOUT,
+                                             mounts=[runner])
         except subprocess.TimeoutExpired as expired:
             return _failed(command, None, expired.output, project)
         return _failed(command, code, printed, project) if code else ''

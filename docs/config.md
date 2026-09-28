@@ -67,11 +67,13 @@ implementer's command and isolation settings.
 | `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` `"codex"` and optional `model` and `effort` (default `"gpt-5.6-sol"`, `"medium"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"cursor"` or `"devin"` with a required `model` and no `effort`; override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
-| `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default), `model` (default `"gpt-6-luna"`) and `effort` (default `"medium"`; one of `"low"`, `"medium"`, `"high"`, `"xhigh"`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
+| `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default, or `"claude"`), `model` and `effort` (`codex`: default `"gpt-6-luna"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`; `claude`: default `"opus"`, `"high"`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
 | `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"medium"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
-| `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |
-| `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and the project's toolchain. Startup refuses a missing image and prints its build command. |
+| `review_fallback_model` | Default: Absent (disabled) | Non-empty Codex model ID, set together with `review_fallback_effort`; the container reviewer's fallback model, run in the same container. |
+| `review_fallback_effort` | Default: Absent (disabled) | `"low"`, `"medium"`, `"high"`, `"xhigh"`, set together with `review_fallback_model`; the fallback model's reasoning effort. |
+| `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. A writable implementer turn also mounts a per-task-worktree directory (mode 0700, under the project's state directory) at the home's `.claude`, so Claude session files survive into the next turn in that worktree; a read-only launch, such as the live probe, and the verify and capture containers get none. |
+| `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and the project's toolchain. The reviewer image carries a pinned Claude CLI whose managed settings default to `bypassPermissions` (see [reviewing.md](reviewing.md)); its credential still comes from `implementer_credential`. Startup refuses a missing image and prints its build command. |
 | `implementer_credential` | Default: `{}` (no credential) | Either `{ env = "AGENT_API_KEY" }` to pass one named host variable, or `{ file = "~/.agent/auth.json", destination = "/home/implementer/.agent/auth.json" }` to mount one regular file read-only under the temporary home. |
 | `implementer_resume` | Default: absent (disabled) | Command string containing `{session}`; the findings prompt is appended as the last argv element. Refused beside a table implementer, whose adapter builds the resume. |
 | `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. Refused beside a table implementer, whose adapter records the session. |
@@ -93,6 +95,10 @@ adjudicator = "my-reviewer --final"
 # defaults. The effort is one of low, medium, high, xhigh.
 review_model  = "gpt-5.6-sol"
 review_effort = "medium"
+# A second pair the same container switches to when the first cannot run.
+# Optional; both keys or neither.
+review_fallback_model  = "gpt-5.6-sol"
+review_fallback_effort = "high"
 # Multiplier on the implementer turn's wall-clock budget: the ticket's
 # estimate times this is the cap each implementer turn is armed with, the
 # box the sweep and /status count the run against, and the hard ceiling the
@@ -104,7 +110,7 @@ budget_scale = 1.5
 A role can instead be a table naming a harness adapter in
 `holophyte/harness.py`. Only `implementer`, `reviewer`, `adjudicator` and
 `critic` may be tables, and only for a role the harness supports; today that
-is `claude` for `implementer`, `codex` for `implementer`, `reviewer`,
+is `claude` for `implementer` and `critic`, `codex` for `implementer`, `reviewer`,
 `adjudicator` and `critic`, `devin` for `implementer`, `reviewer` and
 `adjudicator`, and `cursor` for `reviewer` and `adjudicator`. Unknown keys, an unknown harness, a role the harness does not
 serve, or an option the harness requires or refuses are startup errors.
@@ -223,7 +229,10 @@ model   = "grok-4.7-high"   # required; passed to --model
 `"codex"`. Its turn runs as `codex exec -m M -c model_reasoning_effort=E
 --dangerously-bypass-approvals-and-sandbox PROMPT`, `M` and `E` defaulting to
 `gpt-6-luna` and `medium`, with its cwd a detached worktree of `main` under a
-temporary directory that is removed on every exit. Startup probes it after the
+temporary directory that is removed on every exit. With `harness = "claude"`
+the turn is `claude -p --session-id U --model M --effort E PROMPT` in a fresh
+session, `M` and `E` defaulting to `opus` and `high`, in the same detached
+worktree; its reply is read as a Codex reply is. Startup probes it after the
 writer; a failed probe prints "critic route down; claims skip the relevance
 check" and the loop carries on without the critic. Under `[loop] workers > 1`
 only the scheduler probes it; each worker inherits that outcome rather than
@@ -233,6 +242,13 @@ probing again.
 [agents.critic]
 model  = "gpt-6-luna"   # optional; passed to -m
 effort = "medium"       # optional; low, medium, high or xhigh
+```
+
+```toml
+[agents.critic]
+harness = "claude"
+model   = "sonnet"   # optional; passed to --model
+effort  = "high"     # optional; passed to --effort as written
 ```
 
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,
@@ -328,6 +344,16 @@ startup switch attaches to the first affected run), and adds a fallback chip to
 the console's project header. A failed fallback probe stops the loop without
 recording a switch. `review_model` and `review_effort` cannot accompany fallback
 keys, just as they cannot accompany `reviewer`.
+
+`review_fallback_model` and `review_fallback_effort` give the container reviewer
+a fallback that never leaves the container. Both are required together, and like
+the primary pair they are refused beside a `reviewer` command or any fallback
+command. With the pair set, startup probes the container reviewer; when that
+probe fails it probes the fallback pair in the same container and, if it passes,
+records and activates the switch as for a fallback command. A review or
+adjudication turn whose container cannot stage, start or read the reviewer on
+the primary pair probes the fallback pair and runs the same round once on it; a
+second failure stops the turn as a `review_route` failure.
 
 `review_model` and `review_effort` choose what runs inside the hardened
 container when neither review role is overridden by a command. Both reach the
@@ -581,7 +607,7 @@ them succeeding says nothing about these two keys.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `setup` | Default: `[]` | List of non-empty shell command strings; set to install the project's dependencies before agent turns. |
+| `setup` | Default: `[]` | List of non-empty shell command strings; set to install the project's dependencies before agent turns. Setup runs where verify commands run: under `implementer_isolation = "container"` it runs in the image, so commands name tools by the names the image puts on `PATH`, not by host paths. |
 | `setup_timeout_sec` | Default: `300` seconds | Finite positive number; increase for slower dependency installation. |
 | `branch_prefix` | Default: `"task"` | Legal single git branch segment (constraints below); change to follow the project's branch naming convention. |
 | `env_source` | Default: absent | Source dotenv path, with `~` expanded; relative paths resolve beside config.toml. Requires `env_allow`. |

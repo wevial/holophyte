@@ -162,6 +162,15 @@ class InterventionAction(str, Enum):
     ABORT_CLOSE = 'abort_close'
 
 
+class GapLayer(str, Enum):
+    IMPOSSIBLE = 'impossible'
+    STATIC = 'static'
+    WITNESS = 'witness'
+    GUIDANCE = 'guidance'
+    REVIEW = 'review'
+    NONE = 'none'
+
+
 # Line breaks are part of the existing sqlite_master SQL contract.
 _WRAPPING = {
     TicketStatus: {4: 26},
@@ -192,6 +201,7 @@ CONSTRAINED_COLUMNS = {
     ('interventions', 'source'): InterventionSource,
     ('interventions', 'trigger'): InterventionTrigger,
     ('interventions', 'action'): InterventionAction,
+    ('gapLayers', 'layer'): GapLayer,
 }
 
 

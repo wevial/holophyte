@@ -473,7 +473,7 @@ class MergeModeFixture(LoopFixture):
                    comments=(), open_pr=None, close_exit=0,
                    refuse_labels=False, refuse_reactions=False,
                    refuse_rerun=False, merge_queue=None, merge_groups=(),
-                   plan_gated_rules=False):
+                   plan_gated_rules=False, fetch_from=None):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -504,6 +504,9 @@ class MergeModeFixture(LoopFixture):
         read's page n answers the workflow runs `merge_groups[n-1]` (KO-714).
         `plan_gated_rules` refuses the rules and protection reads with the
         403 GitHub gives a plan that cannot have them (HOLO-11).
+        An unqualified `git fetch origin` is swallowed, or with `fetch_from`
+        runs the real fetch of that repository's branches into origin's
+        remote-tracking refs.
         `push_exit` and `push_sh` control push failure and an optional
         delay; a pull request's REST close (`PATCH`, KO-611) answers
         closed, or fails with `close_exit`. A push
@@ -549,13 +552,15 @@ class MergeModeFixture(LoopFixture):
         for n, page in enumerate(comments, 1):
             (pages / f"{n:03d}.json").write_text(json.dumps(page))
         real_git = shutil.which("git")
-        # Unqualified fetch stays local; fetches with a refspec use real git.
+        fetch = ("exit 0" if fetch_from is None else
+                 f'exec "{real_git}" fetch -q "{fetch_from}"'
+                 " '+refs/heads/*:refs/remotes/origin/*'")
         # Pushes are witnessed in push_log, and ls-remote reads that remote
         # head independently of the API; ancestry and worktrees use real git.
         (bindir / "git").write_text(
             "#!/bin/sh\n"
             'if [ "$1" = fetch ] && [ "$#" = 2 ] && [ "$2" = origin ];'
-            " then exit 0; fi\n"
+            f" then {fetch}; fi\n"
             'if [ "$1" = ls-remote ] && [ "$2" = origin ]; then\n'
             f'  tail -1 "{self.push_log}" | awk \'{{print $2}}\'\n'
             '  exit 0\n'

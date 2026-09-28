@@ -597,7 +597,8 @@ class DevinImplementerTests(ClaudeTableTests):
 
 
 class CriticTableTests(unittest.TestCase):
-    """`[agents.critic]`: table-only, Codex with the critic's own defaults."""
+    """`[agents.critic]`: table-only, Codex with the critic's own defaults,
+    or Claude."""
 
     def target(self, config):
         tmp = tempfile.TemporaryDirectory()
@@ -621,11 +622,22 @@ class CriticTableTests(unittest.TestCase):
             "codex", "exec", "-m", "gpt-6-astra",
             "-c", "model_reasoning_effort=high", *bypass])
 
+    def test_a_claude_critic_is_accepted_and_a_claude_reviewer_refused(self):
+        critic = self.target('[agents.critic]\nharness = "claude"\n'
+                             'model = "sonnet"\neffort = "high"\n')
+        holophyte.config.check_document(critic)
+        turn = holophyte.harness.critic_seat(critic).turn("GOAL")
+        self.assertEqual(turn[:3], ["claude", "-p", "--session-id"])
+        self.assertEqual(turn[4:], ["--model", "sonnet", "--effort", "high",
+                                    "GOAL"])
+        with self.assertRaisesRegex(
+                SystemExit, r"\[agents\.reviewer\] harness: 'claude' supports "
+                            r"critic, implementer, not reviewer"):
+            holophyte.config.check_document(self.target(
+                '[agents.reviewer]\nharness = "claude"\nmodel = "sonnet"\n'))
+
     def test_critic_refusals_name_the_table_and_the_problem(self):
         for config, message in (
-            ('[agents.critic]\nharness = "claude"\n',
-             r"\[agents\.critic\] harness: 'claude' supports implementer, "
-             r"not critic"),
             ('[agents.critic]\neffort = "max"\n',
              r"\[agents\.critic\] effort must be one of .*'max'"),
             ('[agents]\ncritic = "codex exec"\n',

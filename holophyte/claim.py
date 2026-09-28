@@ -178,7 +178,7 @@ def run_worktree_setup(project, wt, conn=None, run_id=None):
                   f"worktree setup: {len(commands)} command(s) in {wt}")
     for n, command in enumerate(commands, 1):
         try:
-            ok, out = run_verify(command, wt, timeout=timeout)
+            ok, out = run_verify(command, wt, timeout=timeout, project=project)
         except subprocess.TimeoutExpired as e:
             ok, out = False, timeout_report(command, e)
         if not ok:

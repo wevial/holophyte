@@ -93,6 +93,7 @@ AGENT_CONFIG_KEYS = {
 # for the reviewer and the adjudicator alike -- they share the container, so
 # they share the pair. Read by `review_route()`.
 REVIEW_ROUTE_KEYS = ("review_model", "review_effort")
+REVIEW_FALLBACK_KEYS = ("review_fallback_model", "review_fallback_effort")
 
 # The programs the default routes stand on, and how long the startup probe
 # waits for the Docker daemon to answer. A daemon that takes longer than this
@@ -112,6 +113,7 @@ DOCKER_PROBE_TIMEOUT = 5
 KNOWN_KEYS = {
     "verify": frozenset({"always", "before_merge", "timeout_sec"}),
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
+              | frozenset(REVIEW_FALLBACK_KEYS)
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",
@@ -293,34 +295,44 @@ def check_agent_fallbacks(project):
                              f"{key}_fallback may not equal {key}")
         check_command_path(project, key + "_fallback", fallback[0])
     review_route(project)
+    review_route(project, fallback=True)
 
 
-def review_route(project):
+def review_route(project, *, fallback=False):
     """The `(model, effort)` pair the review container runs, per the config.
 
     `[agents] review_model` and `review_effort` when set, `REVIEW_MODEL` and
-    `REVIEW_EFFORT` when not. Model routing is explicit factory policy, so a
-    key that is present is held to what the route can run: the model is a
+    `REVIEW_EFFORT` when not; with `fallback`, `review_fallback_model` and
+    `review_fallback_effort`, which come as a pair, or None when unset. A
+    key that is present is held to what the route can run: the model a
     non-empty string, the effort one of Codex's `REVIEW_EFFORTS`. A value
     outside that is a startup error naming the table and the key, not a
     fallback to the default -- the operator asked for a route, and quietly
     running another would answer a different question than the config asked.
 
-    Either key beside a `reviewer` command is refused as contradictory: the
-    override opts the reviewer out of the container, and the pair chooses
-    what runs inside it, so one of the two lines is not doing what its author
-    believes. (An `adjudicator` override alone leaves the reviewer in the
-    container, so the pair still has a job.)
+    Any of these keys beside a `reviewer` or fallback command is refused as
+    contradictory: the command opts the reviewer out of the container, and
+    the pair chooses what runs inside it. (An `adjudicator` override alone
+    leaves the reviewer in the container, so the pair still has a job.)
     """
     agents = config_table(project, "agents")
-    model_key, effort_key = REVIEW_ROUTE_KEYS
-    for key in REVIEW_ROUTE_KEYS:
-        if key in agents and any(k in agents for k in ("reviewer",
-                                                       *AGENT_FALLBACK_KEYS)):
+    command = next((k for k in ("reviewer", *AGENT_FALLBACK_KEYS)
+                    if k in agents), None)
+    for key in (*REVIEW_ROUTE_KEYS, *REVIEW_FALLBACK_KEYS):
+        if key in agents and command:
             raise SystemExit(
                 f"[holo2] {project.config_path}: [agents] {key} beside [agents] "
-                f"reviewer or fallback command: the command opts out of the container "
+                f"{command}: the command opts out of the container "
                 f"the pair routes -- drop one of the two")
+    present = [key for key in REVIEW_FALLBACK_KEYS if key in agents]
+    if len(present) == 1:
+        missing, = set(REVIEW_FALLBACK_KEYS) - set(present)
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] {present[0]} needs "
+            f"[agents] {missing} beside it")
+    if fallback and not present:
+        return None
+    model_key, effort_key = REVIEW_FALLBACK_KEYS if fallback else REVIEW_ROUTE_KEYS
     model = agents.get(model_key, REVIEW_MODEL)
     if not isinstance(model, str) or not model.strip():
         raise SystemExit(

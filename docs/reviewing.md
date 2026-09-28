@@ -53,15 +53,34 @@ review, from the size of the candidate's diff and the `[loop]` review keys
 [config.md](config.md)). The cap is printed and recorded in the run's ledger,
 and the terminal adjudication follows the last round it allows.
 
-The first review builds `holophyte-reviewer:ubuntu24.04-v6` automatically from
-the digest-pinned Ubuntu image; it carries git, python3, ripgrep, a pinned
-Bun (checksum-verified, on `PATH` under `/opt/bun/bin`) so console `bun`
-criteria can be witnessed inside the container, and a pinned Go 1.26.6
+The first review builds `holophyte-reviewer:ubuntu24.04-v9` automatically from
+the digest-pinned Ubuntu image; it carries git, python3 with its `venv`
+module, ripgrep, a pinned Bun (checksum-verified, on `PATH` under
+`/opt/bun/bin`) so console `bun` criteria can be witnessed inside the
+container, a pinned Node.js 24 (checksum-verified against the release's
+`SHASUMS256.txt`, `node`, `npm` and `npx` on `PATH` under `/opt/node/bin`),
+so a Node project's commands find the tools inside it (the image carries
+the tools, not the install: a review does not re-run `[worktree] setup`, so
+`npm ci` is not run there, as above, and an `npx` verify command runs
+against the carried `node_modules`), Chromium and its headless shell for
+Playwright 1.62.1 (installed with their system libraries by that version's own
+`playwright install --with-deps chromium`, world-readable under the directory
+`PLAYWRIGHT_BROWSERS_PATH` names, `/opt/ms-playwright`) so a project's own
+Playwright 1.62.1 launches a browser for a `[merge] ui_capture` run in the
+container, whose home is an empty tmpfs (a project that moves to another
+Playwright version needs a new image, as a new Bun does), and a pinned Go 1.26.6
 (checksum-verified, under `/usr/local/go`, `GOTOOLCHAIN=local` so no other
 toolchain is ever downloaded, caches under the writable `/home/reviewer`) so a
 Go project's `go test` criteria can be witnessed too. It also installs
 `tomlkit` at the version `requirements.txt` pins, so the factory's own suite
-imports inside the container; a change to the Dockerfile moves the tag so the
+imports inside the container, and a pinned Claude CLI (the native linux-x64
+build, checksum-verified against its release manifest, on `PATH` under
+`/opt/claude/bin`, `DISABLE_AUTOUPDATER=1`) whose managed settings at
+`/etc/claude-code/managed-settings.json` make `bypassPermissions` the default
+permission mode, so a Claude implementer turn under
+`implementer_isolation = "container"` runs its tools without asking; the
+container is its boundary. The reviewer carries no Claude credential, so the
+CLI is inert in a review. A change to the Dockerfile moves the tag so the
 next review rebuilds instead of reusing the cached image. The image follows
 the candidate: the runner reads the tag and the Dockerfile out of the candidate
 commit, so a candidate that changed either is reviewed in an image built from

@@ -28,6 +28,7 @@ from loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task  # noqa: 
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.claim  # noqa: E402 - after the sys.path insert above
+import holophyte.freshness  # noqa: E402 - after the sys.path insert above
 import holophyte.harness  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.pool  # noqa: E402 - after the sys.path insert above
@@ -355,6 +356,46 @@ class CriticClaimTests(LoopFixture):
 
 
 SEEN = SimpleNamespace(trips=[], watched=[])
+
+
+class ClaudeCriticTests(LoopFixture):
+    def setUp(self):
+        super().setUp()
+        self.calls = self.target.parent / "claude-calls.jsonl"
+        stub = self.target.parent / "claude"
+        stub.write_text(
+            f"#!{sys.executable}\nimport json, sys\n"
+            f"with open({str(self.calls)!r}, 'a') as calls:\n"
+            "    calls.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+            "print('Looked at main.\\nFRESHNESS: STALE already done by KO-5')\n")
+        stub.chmod(0o755)
+        self.configure('[agents.critic]\nharness = "claude"\nmodel = "sonnet"\n'
+                       f'effort = "high"\n[harnesses]\nclaude = "{stub}"\n'
+                       '[loop]\ncritic_after_hours = 12\n')
+        self.addCleanup(reset, self.project)
+
+    def test_a_claude_critic_runs_print_mode_and_its_verdict_parks(self):
+        task = filed(13, 1)
+        provider = StubProvider(task)
+        conn = holophyte.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+
+        with patch.object(sys, "stdout", io.StringIO()):
+            admitted = holophyte.freshness.critic_admits(
+                self.project, conn, project_id, provider, task)
+
+        self.assertFalse(admitted)
+        [argv] = [json.loads(line)
+                  for line in self.calls.read_text().splitlines()]
+        self.assertEqual(argv[0], "-p")
+        pairs = list(zip(argv, argv[1:]))
+        self.assertIn(("--model", "sonnet"), pairs)
+        self.assertIn(("--effort", "high"), pairs)
+        self.assertIn("Ticket KO-131:", argv[-1])
+        comments = dict(provider.comments)
+        self.assertIn("critic: stale", comments["iss-131"])
+        self.assertIn("already done by KO-5", comments["iss-131"])
 
 
 class CriticAnswerTests(unittest.TestCase):
