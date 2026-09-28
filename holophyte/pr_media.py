@@ -298,13 +298,17 @@ def _publish_git(project, wt, output, files, task_id, note, media_repo):
 
 
 def _publish_bucket(project, output, files, task_id, config):
-    prefix = f'{project.path.name}/{task_id}/{secrets.token_urlsafe(16)}'
+    # A fresh token per file: one image's URL must not lead to another's.
+    prefix = f'{project.path.name}/{task_id}'
     urls = {file: media_store.upload(
-        config, f'{prefix}/{file.relative_to(output).as_posix()}', file)
+        config, f'{prefix}/{secrets.token_urlsafe(16)}/'
+        f'{file.relative_to(output).as_posix()}', file)
         for file in files}
     days = config.get("retention_days")
-    retention = (f'{days} days' if days else 'not specified')
-    return (f'Media lives in an object bucket. Retention: {retention}; '
+    if not days:
+        return ('Media lives in an object bucket and is kept until the '
+                'operator removes it.'), urls
+    return (f'Media lives in an object bucket. Retention: {days} days; '
             'evidence expires under the bucket lifecycle set by the operator.'), urls
 
 

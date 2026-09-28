@@ -995,15 +995,15 @@ review thread to resolve. Unmentioned conversation comments are ignored.
 | `endpoint` | Default: None; required when the table is present | HTTP(S) URL without credentials, query, fragment or whitespace; set the S3-compatible API endpoint. |
 | `bucket` | Default: None; required when the table is present | Non-empty S3 bucket name using lowercase letters, digits, dots and hyphens; set the destination bucket. |
 | `public_base` | Default: None; required when the table is present | HTTP(S) URL without credentials, query, fragment or whitespace; set the public URL prefix from which readers fetch objects. |
-| `retention_days` | Default: Absent (displayed as "not specified") | Positive integer when set; set to describe the lifecycle policy you configured on the bucket. |
+| `retention_days` | Default: Absent (no expiry: evidence is kept until the operator removes it) | Positive integer when set; set to describe the lifecycle expiry you configured on the bucket, and leave it absent when the bucket has none. |
 
 Bucket publishing takes precedence over both git publishers. Set
 `HOLOPHYTE_MEDIA_ACCESS_KEY_ID` and `HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY` in
 the writer's environment, never in this file. The operator must configure
-public reads and lifecycle expiry on the bucket; `retention_days` is display
-metadata and does not install an expiry policy. The validator uses 1 as its
-validation fallback when the key is omitted, but the publisher displays
-"not specified" until the operator supplies a value.
+public reads, and any lifecycle expiry, on the bucket; `retention_days` is
+display metadata and does not install an expiry policy. The validator uses 1
+as its validation fallback when the key is omitted, but the publisher then
+says the evidence is kept until the operator removes it.
 
 ```toml
 [merge.media_bucket]
