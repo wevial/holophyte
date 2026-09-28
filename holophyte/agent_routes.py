@@ -22,17 +22,19 @@ def command_secrets(project):
     table = project.config().get('agents') or {}
     for seat in AGENT_CONFIG_KEYS.values():
         for key in (seat, seat + '_fallback'):
-            command = table.get(key, '')
-            if not isinstance(command, str):
-                continue  # A harness table carries no free-form arguments.
-            for arg in shlex.split(command)[1:]:
-                # An assignment's value may start with a dash; only bare
-                # option names are excluded from argument redaction.
-                if arg.startswith('-') and '=' not in arg:
-                    continue
-                value = arg.split('=', 1)[-1]
-                if value:
-                    secrets.add(value)
+            configured = table.get(key, '')
+            for command in (configured if isinstance(configured, list)
+                            else [configured]):
+                if not isinstance(command, str):
+                    continue  # A harness table carries no free-form arguments.
+                for arg in shlex.split(command)[1:]:
+                    # An assignment's value may start with a dash; only bare
+                    # option names are excluded from argument redaction.
+                    if arg.startswith('-') and '=' not in arg:
+                        continue
+                    value = arg.split('=', 1)[-1]
+                    if value:
+                        secrets.add(value)
     return secrets
 
 

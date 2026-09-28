@@ -36,6 +36,7 @@ from holophyte.config import (
     agent_command,
     budget_scale,
     carry_directories,
+    fallback_entries,
     review_profile,
     review_route,
     sweep_config,
@@ -114,6 +115,7 @@ class ProbeResult:
     launch_error: str = None
     seat: str = "implementer"
     expected_commit: str = None
+    entry: int = 0
 
     @property
     def timed_out(self):
@@ -191,9 +193,21 @@ def probe_implementer(project, timeout=None):
 
 
 def probe_seat(project, role, *, fallback=False, timeout=None):
-    """Probe the exact command, in a scratch checkout for review wrappers."""
+    """Probe the exact command; a fallback list in order, to its first pass."""
+    probe = None
+    for entry in range(max(len(fallback_entries(project, role)), 1)
+                       if fallback else 1):
+        if probe is not None:
+            print(probe_diagnostic(project, probe))
+        probe = probe_route(project, role, fallback, timeout, entry)
+        if probe is None or probe.ok:
+            break
+    return probe
+
+
+def probe_route(project, role, fallback, timeout, entry):
     goal = REVIEW_PROBE_GOAL if role in ("review", "adjudicate") else PROBE_GOAL
-    cmd = agent_command(project, role, goal, fallback=fallback)
+    cmd = agent_command(project, role, goal, fallback=fallback, entry=entry)
     default = cmd is None
     pair = None
     if default and role == "implement":
@@ -238,12 +252,13 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
             if isinstance(partial, bytes):
                 partial = partial.decode(errors="replace")
             return ProbeResult(cmd, None, partial, cap, seat=AGENT_CONFIG_KEYS[role],
-                               expected_commit=sha)
+                               expected_commit=sha, entry=entry)
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
             return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
-                               seat=AGENT_CONFIG_KEYS[role], expected_commit=sha)
+                               seat=AGENT_CONFIG_KEYS[role], expected_commit=sha,
+                               entry=entry)
     return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role],
-                       expected_commit=sha)
+                       expected_commit=sha, entry=entry)
 
 
 def container_fallback_profile(project, role):
@@ -733,10 +748,9 @@ def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=No
     from store.agent_routes import switched
 
     state = routes(project)
-    command = ((project.config().get("agents") or {}).get(
-        AGENT_CONFIG_KEYS[role] + "_fallback")
-        or container_fallback_profile(project, role))
-    if not command or role in state.commands:
+    commands = (fallback_entries(project, role)
+                or [container_fallback_profile(project, role)])
+    if not commands[0] or role in state.commands:
         return False
     probe = probe or probe_seat(project, role, fallback=True)
     if not probe.ok:
@@ -745,6 +759,7 @@ def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=No
         print(diagnostic)
         raise InfraFailure(
             diagnostic, "infra" if role == "implement" else "review_route")
+    command = commands[probe.entry]
     evidence = {"seat": AGENT_CONFIG_KEYS[role],
                 "reason": route_prose(project, reason),
                 "command": safe_command(project, command)}

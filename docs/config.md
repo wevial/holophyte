@@ -79,7 +79,7 @@ implementer's command and isolation settings.
 | `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. Refused beside a table implementer, whose adapter records the session. |
 | `budget_scale` | Default: `1.0` | Finite number from 1.0 to 3.0; increase for a slower implementer harness. |
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
-| `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup reviewer. |
+| `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary, or a non-empty list of them; set for a probed backup reviewer. A list is probed in order when the primary fails, and the first entry that passes is recorded and used. |
 | `adjudicator_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup adjudicator. |
 
 ```toml
