@@ -232,8 +232,13 @@ def credential_mount_flags(credential, scratch, mounted):
     if scratch is None:
         raise RuntimeError("a file credential needs its private copy")
     destination = PurePosixPath(credential["destination"])
-    if str(destination.parent) in mounted:
-        return ["--volume", f"{scratch / destination.name}:{destination}:rw"]
+    for target, source in mounted.items():
+        if destination.parent == target or (
+                source is not None and destination.parent.is_relative_to(target)):
+            if source is not None:
+                (source / destination.parent.relative_to(target)).mkdir(
+                    mode=0o700, parents=True, exist_ok=True)
+            return ["--volume", f"{scratch / destination.name}:{destination}:rw"]
     return ["--volume", f"{scratch}:{destination.parent}:rw"]
 
 
@@ -260,16 +265,16 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
         "--volume",
         f"{workspace}:/workspace:{'rw' if route.writable else 'ro'}",
     ]
-    mounted = {"/home/implementer"}
+    mounted = {PurePosixPath("/home/implementer"): None}
     if route.writable and task is not None:
         session = session_directory(task, project)
         command += ["--volume", f"{session}:/home/implementer/.claude:rw"]
-        mounted.add("/home/implementer/.claude")
+        mounted[PurePosixPath("/home/implementer/.claude")] = session
     cache = cache_directory(cache_for, project) if cache_for is not None else None
     caches = {} if cache is None else CACHE_ENVIRONMENT
     if cache is not None:
         command += ["--volume", f"{cache}:{CACHE}:rw"]
-        mounted.add(CACHE)
+        mounted[PurePosixPath(CACHE)] = cache
     credential = route.credential
     if "file" in credential:
         command += credential_mount_flags(credential, credential_scratch, mounted)
