@@ -118,6 +118,19 @@ class OutboundRedactionTests(unittest.TestCase):
         # Redact before a comment's length cap can split a registered value.
         self.assertNotIn(SENTINEL[:10], board.comment_body(SENTINEL, limit=10))
 
+    def test_a_native_boards_key_survives_outbound_text(self):
+        """The ticket prefix is not a credential: a title naming `HOLO-1`
+        and the `HOLOPHYTE_HOME` variable leaves as written, while the
+        config's API key is still replaced."""
+        self.target.config_path.write_text(
+            '[board]\nkind = "native"\nkey = "HOLO"\n\n'
+            '[linear]\napi_key = "lin_secret"\n')
+        secrets = redact.known_secrets(self.target.config())
+        text = "fix(board): refuse evidence (HOLO-1); set HOLOPHYTE_HOME"
+        self.assertEqual(redact.outbound(text, secrets), text)
+        self.assertEqual(redact.outbound(f"{text} lin_secret", secrets),
+                         f"{text} [redacted]")
+
 
 if __name__ == "__main__":
     unittest.main()

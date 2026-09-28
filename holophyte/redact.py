@@ -6,7 +6,8 @@ value back wherever the client sends the placeholder. A secret is the
 value of any key whose name ends in `token` or `key` -- `api_key`,
 `token`, `"api key"` -- wherever the document puts it: a bare, quoted or
 dotted key under a `[table]` or `[[array]]` header, or a pair inside an
-inline table; `token_file`, a path, is not one. A table whose own name is
+inline table; `token_file`, a path, is not one, nor is `[board] key`, a
+native board's ticket prefix. A table whose own name is
 secret -- `[extra.api_key]`, `api_key.value = ...`, `api_key = { ... }`
 -- is a secret whole: every pair under it is redacted, whichever of the
 three ways TOML writes it.
@@ -38,6 +39,10 @@ REDACTED = "[redacted]"
 # last segment (`linear.api_key` is `api_key`), so a path like
 # `token_file` is not one.
 SECRET_SUFFIXES = ("token", "key")
+# Paths whose name reads as a secret but whose value is a public
+# identifier: a native board's ticket prefix (KO-756) is printed in every
+# ticket id, so hiding it corrupts outbound titles and protects nothing.
+PUBLIC_PATHS = frozenset({("board", "key")})
 # The environment variables a credential reaches the process by:
 # `linear_provider`'s board key and `holophyte.pr`'s forge tokens.
 ENV_SECRETS = ("LINEAR_API_KEY", "GH_TOKEN", "GITHUB_TOKEN",
@@ -60,11 +65,18 @@ def is_secret(key):
     return key.endswith(SECRET_SUFFIXES)
 
 
+def secret_at(path):
+    """Whether the indexed `path` names a secret: its last key `is_secret()`
+    and the path is not one of the `PUBLIC_PATHS`."""
+    return is_secret(path[-1]) and path not in PUBLIC_PATHS
+
+
 def under_secret(path):
-    """Whether any key segment of the indexed `path` `is_secret()`: the
-    pair itself, or a table it sits in by header, dotted key or inline
+    """Whether the indexed `path` or any of its prefixes is `secret_at()`:
+    the pair itself, or a table it sits in by header, dotted key or inline
     table -- the three ways TOML writes the same document."""
-    return any(is_secret(p) for p in path if isinstance(p, str))
+    return any(secret_at(path[:n + 1])
+               for n, p in enumerate(path) if isinstance(p, str))
 
 
 def spans(text):
@@ -325,7 +337,7 @@ def secret_leaves(document):
     def walk(node, prefix, under):
         for key, value in node.items():
             path = prefix + (key,)
-            secret = under or is_secret(key)
+            secret = under or secret_at(path)
             if isinstance(value, dict):
                 # A secret-named table is its pairs' business: each is a
                 # leaf below, and `redact()` accepts the placeholder at

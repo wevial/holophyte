@@ -11,7 +11,7 @@ document *means*, not what the scanner did to produce it.
 import tomllib
 import unittest
 
-from holophyte.redact import REDACTED, redact, restore
+from holophyte.redact import REDACTED, known_secrets, redact, restore
 
 DOCUMENT = '''\
 # top-level secret and a path that only looks like one
@@ -124,6 +124,34 @@ class RedactRule(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             restore(DOCUMENT + '\n[other]\ntoken = "[redacted]"\n', DOCUMENT)
         self.assertIn("[other] token", str(caught.exception))
+
+
+# A native board's ticket prefix (KO-756), printed in every ticket id.
+NATIVE_BOARD = '''\
+[board]
+kind = "native"
+key = "HOLO"
+
+[linear]
+api_key = "lin_secret"
+'''
+
+
+class BoardKey(unittest.TestCase):
+
+    def test_a_native_boards_key_is_shown_and_not_a_known_secret(self):
+        secrets = known_secrets(tomllib.loads(NATIVE_BOARD), environ={})
+        self.assertIn("lin_secret", secrets)
+        self.assertNotIn("HOLO", secrets)
+        shown = redact(NATIVE_BOARD)
+        self.assertIn('key = "HOLO"', shown)
+        self.assertNotIn("lin_secret", shown)
+        self.assertEqual(tomllib.loads(shown)["linear"]["api_key"], REDACTED)
+
+    def test_a_key_in_any_other_table_is_still_a_secret(self):
+        text = NATIVE_BOARD + '\n[extra]\nkey = "s3cr3t"\n'
+        self.assertIn("s3cr3t", known_secrets(tomllib.loads(text), environ={}))
+        self.assertNotIn("s3cr3t", redact(text))
 
 
 if __name__ == "__main__":
