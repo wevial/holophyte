@@ -883,7 +883,11 @@ class IsolationTests(unittest.TestCase):
             " echo '{}' > package.json; go build -o /dev/null . >&2;"
             " go env GOMODCACHE GOCACHE GOTMPDIR; npm config get cache; bun pm cache"
         )
-        count = 'find "$(go env GOCACHE)" -type f | wc -l'
+        count = (
+            'cache=$(go env GOCACHE); if [ -e "$cache" ];'
+            ' then find "$cache" -type f > /tmp/files; wc -l < /tmp/files;'
+            " else echo 0; fi"
+        )
 
         def turn(path, script):
             return isolation.launch(route, path, {}, ["/bin/sh", "-ec", script])
