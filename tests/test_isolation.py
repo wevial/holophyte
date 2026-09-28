@@ -65,8 +65,9 @@ class IsolationTests(unittest.TestCase):
             agents.agent(self.target, "implement", "task", worktree, timeout=17)
         argv = run.call_args.args[0]
         mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
-        self.assertEqual(len(mounts), 1)
+        self.assertEqual(len(mounts), 2)
         self.assertTrue(mounts[0].endswith("/clone:/workspace:rw"))
+        self.assertTrue(mounts[1].endswith(":/home/implementer/.claude:rw"))
         for flag in (
             "--read-only",
             "--cap-drop=ALL",
@@ -778,6 +779,79 @@ class IsolationTests(unittest.TestCase):
                     isolation.Route("container"), worktree, {}, ["true"], "n", [path]
                 )
 
+    def test_read_only_launch_creates_no_session_directory(self):
+        from holophyte import isolation
+        from holophyte.project import state_dir
+
+        main, worktree = self.make_worktree()
+        self.target.path = main
+        home = self.root / "holophyte-home"
+        with (
+            patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}),
+            patch.object(isolation, "image_ready"),
+            patch.object(isolation.review_runner, "_remove_container"),
+            patch.object(isolation, "run_capped", return_value=(0, "done")) as run,
+        ):
+            isolation.launch(isolation.Route("container", writable=False),
+                             worktree, {}, ["agent"], project=self.target,
+                             keep_session=True)
+            self.assertFalse(state_dir(main).exists())
+        self.assertNotIn(".claude", str(run.call_args.args[0]))
+
+    def test_relative_state_home_mounts_an_absolute_session_directory(self):
+        from holophyte import isolation
+
+        main, worktree = self.make_worktree()
+        self.target.path = main
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.root)
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": "relative-home"}):
+            command, _ = isolation.container_command(
+                isolation.Route("container"), worktree, {}, ["true"], "n",
+                task=worktree, project=self.target,
+            )
+        source = next(flag.split(":")[0] for flag in command
+                      if flag.endswith(":/home/implementer/.claude:rw"))
+        self.assertTrue(Path(source).is_absolute(), source)
+        self.assertTrue(Path(source).is_dir())
+        self.assertTrue(
+            Path(source).is_relative_to((self.root / "relative-home").resolve())
+        )
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_session_files_persist_per_task_worktree(self):
+        import shutil
+
+        from holophyte import isolation
+        from holophyte.isolation_git import git
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        main, worktree = self.make_worktree()
+        other = self.root / "other"
+        git(main, "worktree", "add", "-qb", "other", str(other))
+        before = {path: git(path, "status", "--porcelain")
+                  for path in (worktree, other)}
+        route = isolation.Route("container")
+
+        def turn(path, script):
+            return isolation.launch(route, path, {}, ["/bin/sh", "-ec", script],
+                                    keep_session=True)
+
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")}):
+            code, output = turn(worktree, "mkdir -p ~/.claude; touch ~/.claude/marker")
+            self.assertEqual(code, 0, output)
+            code, output = turn(worktree, 'ls -A "$HOME/.claude"')
+            self.assertEqual((code, output.split()), (0, ["marker"]))
+            code, output = turn(other, 'ls -A "$HOME/.claude"')
+            self.assertEqual((code, output.split()), (0, []))
+        for path in (worktree, other):
+            self.assertEqual(git(path, "status", "--porcelain"), before[path])
+            self.assertEqual(list(path.rglob("marker")), [])
+
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
@@ -836,3 +910,63 @@ class IsolationTests(unittest.TestCase):
         )
         self.assertEqual((worktree / "created").read_text(), "content\n")
         self.assertEqual(git(main, "log", "-1", "--format=%s"), "base")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_claude_fix_round_resumes_the_session_its_turn_opened(self):
+        import shutil
+        import uuid
+
+        import store
+        from holophyte import fix_session
+        from holophyte.project import Project
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        context = self.root / "stub"
+        context.mkdir()
+        (context / "claude").write_text(
+            '#!/bin/sh\ncase "$2" in\n'
+            '  --session-id) touch "$HOME/.claude/$3" ;;\n'
+            '  --resume) test -f "$HOME/.claude/$3" ;;\n'
+            "  *) exit 2 ;;\nesac\n"
+        )
+        (context / "Dockerfile").write_text(
+            "FROM ubuntu:24.04\nCOPY --chmod=755 claude /usr/local/bin/claude\n"
+        )
+        image = f"holophyte-test-claude-stub:{uuid.uuid4().hex[:12]}"
+        subprocess.run(["docker", "build", "--pull=false", "-q", "-t", image,
+                        str(context)], check=True, capture_output=True)
+        self.addCleanup(subprocess.run, ["docker", "image", "rm", "-f", image],
+                        capture_output=True)
+        main, worktree = self.make_worktree()
+        holo = self.root / "holo"
+        holo.mkdir()
+        (holo / "config.toml").write_text(
+            f'[agents]\nimplementer_isolation = "container"\n'
+            f'implementer_image = "{image}"\n'
+            '[agents.implementer]\nharness = "claude"\n'
+        )
+        target = Project(path=main, holo_dir=holo, store_path=holo / "store.db",
+                         config_path=holo / "config.toml",
+                         worktrees=self.root / "worktrees")
+        conn = store.open(target.store_path)
+        self.addCleanup(conn.close)
+        store.init(conn)
+        project = store.ensure_project(conn, "test", main)
+        ticket = store.mirror_ticket(conn, project, "KO-1", "KO-1", "session",
+                                     acceptance_criteria=["resume"],
+                                     verification_commands=["true"])
+        run = store.claim(conn, project, ticket)
+
+        first = agents.agent(target, "implement", "implement", worktree,
+                             conn=conn, run_id=run)
+        self.assertEqual(first.exit_code, 0, first)
+        argv, reason = fix_session.resume_argv(target, conn, run)
+        self.assertIsNone(reason)
+        self.assertEqual(argv[:3], ["claude", "-p", "--resume"])
+        resumed = agents.agent(target, "implement", "findings", worktree,
+                               conn=conn, run_id=run, argv=argv)
+        self.assertEqual(resumed.exit_code, 0, resumed)

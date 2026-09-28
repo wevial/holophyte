@@ -72,7 +72,7 @@ implementer's command and isolation settings.
 | `review_effort` | Default: `"high"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
 | `review_fallback_model` | Default: Absent (disabled) | Non-empty Codex model ID, set together with `review_fallback_effort`; the container reviewer's fallback model, run in the same container. |
 | `review_fallback_effort` | Default: Absent (disabled) | `"low"`, `"medium"`, `"high"`, `"xhigh"`, set together with `review_fallback_model`; the fallback model's reasoning effort. |
-| `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. |
+| `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. A writable implementer turn also mounts a per-task-worktree directory (mode 0700, under the project's state directory) at the home's `.claude`, so Claude session files survive into the next turn in that worktree; a Claude table implementer's session id is recorded at dispatch, so its fix round resumes that session in the container (a Codex or Devin implementer's fix round starts fresh); a read-only launch, such as the live probe, and the verify and capture containers get none. |
 | `implementer_image` | Default: reviewer image (`review_runner.IMAGE`) | Image containing the exact configured implementer CLI and the project's toolchain. The reviewer image carries a pinned Claude CLI whose managed settings default to `bypassPermissions` (see [reviewing.md](reviewing.md)); its credential still comes from `implementer_credential`. Startup refuses a missing image and prints its build command. |
 | `implementer_credential` | Default: `{}` (no credential) | Either `{ env = "AGENT_API_KEY" }` to pass one named host variable, or `{ file = "~/.agent/auth.json", destination = "/home/implementer/.agent/auth.json" }` to mount one regular file read-only under the temporary home. |
 | `implementer_resume` | Default: absent (disabled) | Command string containing `{session}`; the findings prompt is appended as the last argv element. Refused beside a table implementer, whose adapter builds the resume. |
@@ -120,7 +120,9 @@ runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
 and resumes with `claude -p --resume U --model M --effort E PROMPT`. The
 binary is `claude` on PATH, or the absolute path in the top-level
 `[harnesses]` table. Under container isolation the image supplies the bare
-`claude`, `[harnesses]` is ignored and no session is recorded.
+`claude` and `[harnesses]` is ignored; `U` is still recorded at dispatch, and
+the fix round's resume turn runs in the container against the session files
+kept for that worktree.
 
 ```toml
 [agents.implementer]

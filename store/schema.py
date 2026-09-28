@@ -369,6 +369,20 @@ CREATE TABLE IF NOT EXISTS ticketNotes (
     postError TEXT,
     UNIQUE (ticketId, dedupKey)
 );
+
+-- gapLayers: where the lesson of a gap the operator found landed on the
+-- correction ladder, append-only; a ticket's highest id is its current layer.
+-- `carriedBy` names the ticket carrying the lesson when it is not the gap's.
+CREATE TABLE IF NOT EXISTS gapLayers (
+    id        INTEGER PRIMARY KEY,
+    ticketId  INTEGER NOT NULL REFERENCES tickets (id),
+    layer     TEXT    NOT NULL
+        {_enums.check_clause('layer', _enums.GapLayer)},
+    note      TEXT    NOT NULL,
+    carriedBy TEXT,
+    author    TEXT    NOT NULL,
+    at        INTEGER NOT NULL
+);
 """
 
 # interventions: supervisor/human actions on a run (state-model §2). Kept out
@@ -410,7 +424,7 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 35 admits the `abort_close` intervention action (KO-611).
 # Version 36 admits the `not_reproduced` run park kind (KO-657).
 # Version 37 adds ticket revisions, ticket notes and board columns (KO-733).
-SCHEMA_VERSION = 37
+SCHEMA_VERSION = 38
 
 # The oldest SCHEMA_VERSION whose builds can still read and write a store at
 # SCHEMA_VERSION (KO-661). Each migration records it in its `migrate` note,

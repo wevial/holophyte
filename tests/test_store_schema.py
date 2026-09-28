@@ -1352,7 +1352,8 @@ class Version26EnumMigrationTests(unittest.TestCase):
     def rows(conn):
         return {table: conn.execute(f'SELECT * FROM "{table}" ORDER BY id').fetchall()
                 for table in dict.fromkeys(t for t, _ in store.enums.CONSTRAINED_COLUMNS
-                                           if t != 'ticketRevisions')}
+                                           if t not in ('ticketRevisions',
+                                                        'gapLayers'))}
 
     def test_rows_survive_and_each_enum_still_rejects_invalid_inserts(self):
         conn = store.open(self.path)
@@ -1379,6 +1380,9 @@ class Version26EnumMigrationTests(unittest.TestCase):
         self.assertEqual(enum_checks(conn), {
             key: store.enums.check_clause(key[1], enum)
             for key, enum in store.enums.CONSTRAINED_COLUMNS.items()})
+        # The migration leaves gapLayers empty; give it a row to clone.
+        conn.execute("INSERT INTO gapLayers (ticketId, layer, note, author, at)"
+                     " VALUES (1, 'none', 'lesson', 'test', 1)")
         # Clone a populated row while avoiding unrelated UNIQUE constraints.
         replacements = {'id': 'NULL', 'linearTeamId': "'new-team'",
                         'linearIssueId': "'new-issue'", 'attempt': '999',

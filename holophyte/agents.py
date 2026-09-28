@@ -584,7 +584,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     code, out = isolation.launch(isolation.route_for(project), cwd,
                                  isolation.environment(project), cmd,
                                  timeout=cap, runner=run_capped, project=project,
-                                 **hook)
+                                 keep_session=True, **hook)
     return ImplementerOutput(out.strip(), code, dispatched_route)
 
 
