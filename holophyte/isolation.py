@@ -225,7 +225,20 @@ def credential_copy(route, task, project):
         copy.chmod(0o600)
         yield scratch
     finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+        remove_scratch(scratch)
+
+
+def remove_scratch(scratch):
+    try:
+        scratch.chmod(0o700)
+        for directory, names, _ in os.walk(scratch):
+            for name in names:
+                if not (path := Path(directory, name)).is_symlink():
+                    path.chmod(0o700)
+        shutil.rmtree(scratch)
+    except OSError as error:
+        raise RuntimeError(
+            f"implementer credential copy remains at {scratch}: {error}") from error
 
 
 def credential_mount_flags(credential, scratch, mounted):

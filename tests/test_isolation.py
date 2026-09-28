@@ -185,6 +185,41 @@ class IsolationTests(unittest.TestCase):
         self.assertIn(f"{scratch}/.netrc:/home/implementer/.netrc:rw", command)
         self.assertFalse(scratch.exists())
 
+    def test_file_credential_copy_is_removed_after_the_turn_locks_its_directory(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        credential = self.root / "auth.json"
+        credential.write_text("private")
+        route = isolation.Route("container", credential={
+            "file": str(credential),
+            "destination": "/home/implementer/.agent/auth.json"})
+        with isolation.credential_copy(route, worktree, None) as scratch:
+            (scratch / "sessions").mkdir()
+            (scratch / "sessions" / "log").write_text("state")
+            (scratch / "sessions").chmod(0o500)
+            scratch.chmod(0o500)
+        self.assertFalse(scratch.exists())
+
+    def test_file_credential_copy_left_behind_is_reported(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        credential = self.root / "auth.json"
+        credential.write_text("private")
+        route = isolation.Route("container", credential={
+            "file": str(credential),
+            "destination": "/home/implementer/.agent/auth.json"})
+        with (
+            patch.object(isolation.shutil, "rmtree",
+                         side_effect=PermissionError("denied")),
+            self.assertRaisesRegex(RuntimeError, "credential copy remains") as caught,
+        ):
+            with isolation.credential_copy(route, worktree, None) as scratch:
+                pass
+        self.assertIn(str(scratch), str(caught.exception))
+        self.assertTrue((scratch / "auth.json").exists())
+
     def test_file_credential_below_a_persistent_mount_mounts_only_its_copy(self):
         from holophyte import isolation
 
