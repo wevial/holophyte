@@ -451,11 +451,9 @@ def critic_seat(target):
 def agent_session(target, role, argv):
     """The session id a table-form `role`'s turn `argv` runs under, None
     for a command string -- its session, if any, is read from its output
-    through `implementer_session` -- for an adapter that learns it from the
-    output (`agents.record_session()` reads that), and for a container
-    turn, which records none."""
-    from holophyte.isolation import route_for
+    through `implementer_session` -- and for an adapter that learns it from
+    the output (`agents.record_session()` reads that)."""
     resolved = seat(target, role)
-    if resolved is None or route_for(target).backend == "container":
+    if resolved is None:
         return None
     return resolved.session(argv)

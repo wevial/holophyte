@@ -65,7 +65,7 @@ PINNED = {
     "holophyte/fix_session.py": 7,
     "holophyte/freshness.py": 139,
     "holophyte/gates.py": 298,
-    "holophyte/harness.py": 158,
+    "holophyte/harness.py": 157,
     "holophyte/host.py": 102,
     "holophyte/isolation.py": 4,
     "holophyte/isolation_clone.py": 8,
