@@ -138,7 +138,7 @@ def session_directory(task, project):
         git(task, "rev-parse", "--path-format=absolute", "--git-common-dir")
     ).parent
     digest = hashlib.sha256(str(task).encode()).hexdigest()[:16]
-    path = state_dir(root) / "sessions" / digest
+    path = (state_dir(root) / "sessions" / digest).resolve()
     if ":" in str(path):
         raise RuntimeError("session bind source must not contain a colon")
     path.mkdir(mode=0o700, parents=True, exist_ok=True)

@@ -795,6 +795,26 @@ class IsolationTests(unittest.TestCase):
             self.assertFalse(state_dir(main).exists())
         self.assertNotIn(".claude", str(run.call_args.args[0]))
 
+    def test_relative_state_home_mounts_an_absolute_session_directory(self):
+        from holophyte import isolation
+
+        main, worktree = self.make_worktree()
+        self.target.path = main
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.root)
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": "relative-home"}):
+            command, _ = isolation.container_command(
+                isolation.Route("container"), worktree, {}, ["true"], "n",
+                task=worktree, project=self.target,
+            )
+        source = next(flag.split(":")[0] for flag in command
+                      if flag.endswith(":/home/implementer/.claude:rw"))
+        self.assertTrue(Path(source).is_absolute(), source)
+        self.assertTrue(Path(source).is_dir())
+        self.assertTrue(
+            Path(source).is_relative_to((self.root / "relative-home").resolve())
+        )
+
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
