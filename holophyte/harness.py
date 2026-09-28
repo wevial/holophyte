@@ -59,7 +59,7 @@ class Claude(Adapter):
     `effort` is passed through as written: the CLI owns its list of levels.
     """
     name = "claude"
-    roles = frozenset({"implementer"})
+    roles = frozenset({"implementer", "critic"})
 
     def turn(self, binary, options, role):
         return [binary, "-p", "--session-id", str(uuid.uuid4()),
@@ -428,14 +428,16 @@ def seat(target, role, *, fallback=False):
 
 
 def critic_table(where, table):
-    """`[agents.critic]` with its defaults filled in: harness `codex`,
-    model `CRITIC_MODEL`, effort `CRITIC_EFFORT` -- passed as options,
-    since `Codex.route()`'s own defaults are the reviewer's. The critic has
-    no command-string form, so `[agents] critic = "..."` is refused."""
+    """`[agents.critic]` with its defaults filled in: harness `codex` and,
+    for Codex, model `CRITIC_MODEL` and effort `CRITIC_EFFORT`, since
+    `Codex.route()`'s own defaults are the reviewer's. The critic has no
+    command-string form, so `[agents] critic = "..."` is refused."""
     if not isinstance(table, dict):
         raise SystemExit(
             f"{where}: [agents] critic: the critic has no command-string form; "
             f"write it as the [agents.critic] table")
+    if table.get("harness", "codex") != "codex":
+        return table
     from holophyte.config import CRITIC_EFFORT, CRITIC_MODEL
     return {"harness": "codex", "model": CRITIC_MODEL,
             "effort": CRITIC_EFFORT, **table}
