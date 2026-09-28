@@ -472,7 +472,8 @@ class MergeModeFixture(LoopFixture):
     def fake_route(self, push_exit=0, push_sh="", states=None,
                    comments=(), open_pr=None, close_exit=0,
                    refuse_labels=False, refuse_reactions=False,
-                   refuse_rerun=False, merge_queue=None, merge_groups=()):
+                   refuse_rerun=False, merge_queue=None, merge_groups=(),
+                   plan_gated_rules=False):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -501,6 +502,8 @@ class MergeModeFixture(LoopFixture):
         branch tip), makes the rules read answer a `merge_queue` rule and
         `enqueuePullRequest` succeed at `ENQUEUED_AT`; the Actions runs
         read's page n answers the workflow runs `merge_groups[n-1]` (KO-714).
+        `plan_gated_rules` refuses the rules and protection reads with the
+        403 GitHub gives a plan that cannot have them (HOLO-11).
         `push_exit` and `push_sh` control push failure and an optional
         delay; a pull request's REST close (`PATCH`, KO-611) answers
         closed, or fails with `close_exit`. A push
@@ -580,7 +583,10 @@ class MergeModeFixture(LoopFixture):
             'if [ "$1" = api ]; then\n'
             '  case "$*" in\n'
             '    *check-runs*) echo \'{"check_runs":[]}\'; exit 0;;\n'
-            "    *rules/branches/*) echo '"
+            + ('    *branches/main*) echo "gh: Upgrade to GitHub Pro or make'
+               ' this repository public to enable this feature. (HTTP 403)"'
+               ' >&2; exit 1;;\n' if plan_gated_rules else '')
+            + "    *rules/branches/*) echo '"
             + ('[{"type":"merge_queue","parameters":{}}]' if merge_queue
                else "[]") + "'; exit 0;;\n"
             '    */branches/*) echo \'{}\'; exit 0;;\n'

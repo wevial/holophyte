@@ -43,6 +43,9 @@ ACTIONS_APP = "github-actions"
 WORKFLOW_RUN_RE = re.compile(r"/actions/runs/(\d+)/job/\d+")
 # Page size for the check-runs and rollup-context reads.
 CHECK_RUNS_PAGE = 100
+# GitHub's refusal of a branch's rules or protection on a plan that cannot
+# have them (a private repository on GitHub Free): no rules, not unknown.
+PLAN_GATED = "Upgrade to GitHub Pro or make this repository public"
 
 # One page of threads per call; `$after` walks the rest, so a PR with more
 # than `THREADS_PAGE` open threads is read to the end before the
@@ -277,12 +280,22 @@ def _check_reads(target, pull, sha):
         with contextlib.suppress(InfraFailure):
             runs = _check_runs_of(target, pull, sha)
     with contextlib.suppress(InfraFailure):
-        required = _required_contexts(rest(
-            target, pull, "GET",
-            f"repos/{pull.owner}/{pull.name}/rules/branches/main"))
+        required = _required_contexts(main_rules(target, pull))
     if required is not None:
         required += _protected_contexts(target, pull)
     return runs, required
+
+
+def main_rules(target, pull):
+    """The rules answer for `main`; `[]` where GitHub refuses it because
+    the repository's plan cannot have rules. Any other failure raises."""
+    try:
+        return rest(target, pull, "GET",
+                    f"repos/{pull.owner}/{pull.name}/rules/branches/main")
+    except InfraFailure as e:
+        if PLAN_GATED in str(e):
+            return []
+        raise
 
 
 def _protected_contexts(target, pull):

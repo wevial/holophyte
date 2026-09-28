@@ -13,8 +13,10 @@ sys.path.insert(0, str(HERE))  # discovery never imports `fake_agent`
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture  # noqa: E402
 
+import holophyte.babysitter  # noqa: E402 - after the sys.path insert above
 import holophyte.merge_queue  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
+from holophyte.gates import InfraFailure  # noqa: E402 - after the insert
 
 # The queue's merge commit, distinct from the REST merge's `MERGE_SHA`.
 QUEUE_SHA = "c0ffee" * 6 + "c0ff"
@@ -197,6 +199,42 @@ class MergeQueueTests(MergeModeFixture):
                       self.question())
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("awaiting_merge_approval", None)])
+
+
+class PlanGatedRulesTests(MergeModeFixture):
+    """HOLO-11: a repository whose plan cannot have rules refuses main's
+    rules read with a 403; that is no rules, so no checks is green."""
+
+    def test_a_plan_refused_rules_read_with_no_checks_merges_through_rest(
+            self):
+        self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
+        self.fake_route(plan_gated_rules=True)
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+
+        self.assertIn("gh api --hostname github.com --method GET"
+                      " repos/example/repo/rules/branches/main",
+                      self.recorded())
+        self.assertEqual(
+            len([c for c in self.recorded() if "--method PUT" in c]), 1)
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_a_network_failure_on_the_rules_read_still_raises(self):
+        pull = holophyte.pr.PullRequest(
+            "github.com", "example", "repo", 7,
+            "https://github.com/example/repo/pull/7")
+        down = InfraFailure("GitHub did not answer GET repos/example/repo"
+                            "/rules/branches/main: <urlopen error"
+                            " [Errno -3] Temporary failure in name"
+                            " resolution>")
+        with patch.object(holophyte.pr, "_call", side_effect=down), \
+                self.assertRaisesRegex(InfraFailure, "did not answer"):
+            holophyte.merge_queue.merge_queue_required(None, pull)
 
 
 if __name__ == "__main__":
