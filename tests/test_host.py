@@ -261,6 +261,20 @@ class HostStatusTests(HostFixture):
         self.assertIsNone(projects["beta"]["error"])
         self.assertIn("no store at", projects["gamma"]["error"])
 
+    def test_a_refused_board_mode_is_its_projects_error(self):
+        # `board_mode()` refuses with SystemExit, which is not an Exception:
+        # the report must still carry the other project and exit 1.
+        alpha, beta = self.repo("alpha"), self.repo("beta")
+        self.cli("project", "add", str(alpha))
+        self.cli("project", "add", str(beta))
+        Project.locate(beta).config_path.write_text('[board]\nmode = "bogus"\n')
+        code, out = self.cli("--status", "--json")
+        self.assertEqual(code, 1)
+        projects = {p["path"]: p for p in json.loads(out)["projects"]}
+        self.assertIsNone(projects[str(alpha)]["error"])
+        self.assertIsNotNone(projects[str(alpha)]["store"])
+        self.assertIn("[board] mode", projects[str(beta)]["error"])
+
     def test_only_status_serve_and_supervise_have_a_host_form(self):
         for argv in ([], ["--sweep"], ["--report"], ["--once"],
                      ["--status", "--once"]):

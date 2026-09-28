@@ -15,12 +15,14 @@ from unittest.mock import patch
 import holophyte.cli
 import holophyte.status
 import store
+import store.board
 import store.schema
 import store.tickets
 from holophyte.gates import merge_lock_path
 from holophyte.supervisor_lock import supervisor_lock_path
 from tests.phase_fixture import park_run
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase, Tripwire, no_network
+from tests.test_store_board import body
 
 QUESTION = "Which branch is canonical?"
 
@@ -117,3 +119,23 @@ class StatusTests(SweepTestCase):
         self.status()
         self.status("--json")
         self.assertEqual(digests(), before)
+
+
+class StoreModeReadyTests(SweepTestCase):
+    """A native board's store: `ready` counts what the claim would take,
+    not a `ready` ticket shelved in the backlog column."""
+
+    status = StatusTests.status
+
+    def setUp(self):
+        super().setUp()
+        self.configure('[board]\nkind = "native"\nkey = "NAT"\n')
+        for title, column in (("Shelve the orders export", "backlog"),
+                              ("Shelve the ledger page", "backlog"),
+                              ("Add export endpoint", "ready")):
+            store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                    body(title), column=column, now=T0)
+
+    def test_backlog_tickets_are_not_counted_ready(self):
+        self.assertEqual(json.loads(self.status("--json"))["ready"], 1)
+        self.assertIn("ready 1", self.status().splitlines())

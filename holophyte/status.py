@@ -2,16 +2,17 @@
 
 `snapshot()` answers the plain question in one dict: the store's projects
 and their admission, the live runs and their phase, the parked tickets and
-what they ask, how many tickets are ready, the schema version, and who holds
-the supervisor and merge locks. `render()` is the same as a few lines of
-text; `status_report()` is `--status`'s whole body, `--json` printing the
-dict instead. The keys are snake_case and stable: the JSON is the wire shape
-a later `doctor` and the shadow seat read.
+what they ask, how many tickets the claim would take, the schema version,
+and who holds the supervisor and merge locks. `render()` is the same as a
+few lines of text; `status_report()` is `--status`'s whole body, `--json`
+printing the dict instead. The keys are snake_case and stable: the JSON is
+the wire shape a later `doctor` and the shadow seat read.
 
 Reads only. The store is opened through `store.read.open_readonly()` and
 queried with the reads the sweep, `/status` and `/attention` already make
-(`live_runs()` over `SWEEPABLE_PHASES`, `blocked_tickets()`,
-`ready_tickets()`); the locks are read with `read_supervisor_lock()` and
+(`live_runs()` over `SWEEPABLE_PHASES`, `blocked_tickets()`, and
+`ready_tickets()` in mirror mode or the store's queue, `claimable()`, in
+store mode); the locks are read with `read_supervisor_lock()` and
 `read_merge_lock()` and judged, never removed. Nothing here calls Linear or
 GitHub.
 
@@ -24,6 +25,7 @@ import sys
 from time import time
 
 import store.read
+from holophyte.claim_store import store_mode
 from holophyte.gates import merge_lock_path, read_merge_lock
 from holophyte.serve_runs import json_host
 from holophyte.supervisor import SWEEPABLE_PHASES, factory_revision
@@ -59,10 +61,22 @@ def snapshot(target, conn, now=None):
         "parked": [{"run": ticket.runId, "ticket": ticket.linearIdentifier,
                     "question": ticket.blockedQuestion}
                    for ticket in store.read.blocked_tickets(conn)],
-        "ready": len(store.read.ready_tickets(conn)),
+        "ready": _ready(target, conn),
         "supervisor_lock": _supervisor_holder(supervisor_lock_path(target)),
         "merge_lock": _merge_holder(target, conn),
     }
+
+
+def _ready(target, conn):
+    """How many tickets the claim would take, branched as the sweep's
+    `owed()` is but with no board sync: the store's queue, `claimable()`,
+    summed over its projects in store mode, where a `ready` ticket shelved
+    in the backlog column is not claimed; `ready_tickets()` in mirror mode,
+    whose rows no store-mode sync ever gave a column."""
+    if not store_mode(target):
+        return len(store.read.ready_tickets(conn))
+    return sum(len(store.read.claimable(conn, project))
+               for (project,) in conn.execute("SELECT id FROM projects"))
 
 
 def _supervisor_holder(path):
@@ -174,8 +188,9 @@ def _host_project(entry, now):
     if entry.error:
         return row
     # The project boundary: whatever reading this one project raises -- a
-    # locked or corrupt store, an unreadable lock file -- is its `error`,
-    # and the report goes on to the next.
+    # locked or corrupt store, an unreadable lock file, a `[board]` table
+    # `board_mode()` refuses with `SystemExit` -- is its `error`, and the
+    # report goes on to the next.
     try:
         if not entry.target.store_path.exists():
             row["error"] = f"no store at {entry.target.store_path}"
@@ -185,7 +200,7 @@ def _host_project(entry, now):
             row["store"] = snapshot(entry.target, conn, now)
         finally:
             conn.close()
-    except Exception as bad:
+    except (Exception, SystemExit) as bad:
         row["error"] = f"{type(bad).__name__}: {bad}"
     return row
 
