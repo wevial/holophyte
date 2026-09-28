@@ -27,7 +27,7 @@ def running(pid):
     """Whether `pid` is alive: a zombie awaiting its reaper is not."""
     try:
         stat = Path(f"/proc/{pid}/stat").read_text()
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
         return False
     return stat.rpartition(")")[2].split()[0] != "Z"
 
