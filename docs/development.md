@@ -65,7 +65,10 @@ Each module, one line:
 - `holophyte/board_sync.py` — `observe_board()` (KO-739): in store mode
   the host sweep's ask of the board's `states()` for every open ticket,
   once per `board_ask_sec` — the state name and column recorded, an
-  issue seen gone twice walked `abandoned` or its live run paused.
+  issue seen gone twice walked `abandoned` or its live run paused. On
+  every pass between those asks it delivers what is queued: the pending
+  notes, and the queued pushes after one `states()` ask naming only their
+  tickets.
 - `holophyte/deadline.py` — the host sweep's bound on its network calls:
   `check()` before each unit of Linear or GitHub work, and `admit()`
   before each Linear or GitHub request, which past the bound fails as an

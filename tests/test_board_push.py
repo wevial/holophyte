@@ -37,6 +37,27 @@ class RecordingBoard(FileProvider):
         super().set_state(issue_id, state_name)
 
 
+class CallRecordingBoard(RecordingBoard):
+    """The recording board, also recording each `states()` and `comment()`
+    call, in order with the pushes, in `calls`."""
+
+    def __init__(self, root, store_mode):
+        super().__init__(root, store_mode)
+        self.calls = []
+
+    def states(self, identifiers):
+        self.calls.append(("states", list(identifiers)))
+        return super().states(identifiers)
+
+    def set_state(self, issue_id, state_name):
+        self.calls.append(("set_state", issue_id, state_name))
+        super().set_state(issue_id, state_name)
+
+    def comment(self, task_id, body):
+        self.calls.append(("comment", task_id))
+        super().comment(task_id, body)
+
+
 class LostResponseBoard(RecordingBoard):
     """Applies the state, then raises, as a response lost on the way back."""
 
@@ -67,10 +88,13 @@ class QueuedPushTests(SweepTestCase):
             "SELECT pushState, pushFrom, pushAt, boardState FROM tickets"
             " WHERE id = ?", (ticket or self.ticket,)).fetchone()
 
-    def observe(self, board, at):
+    def observe(self, board, at, asked_at=None):
+        """One observation at `at`; the project last asked at `asked_at`,
+        or never, which takes the full ask."""
         out = io.StringIO()
+        asked = {} if asked_at is None else {self.project_id: asked_at}
         observe_board(self.project, self.conn, self.project_id, board, at,
-                      out, {}, ASK)
+                      out, asked, ASK)
         return out.getvalue()
 
     def queue_in_progress(self):
@@ -195,6 +219,30 @@ class QueuedPushTests(SweepTestCase):
         self.observe(board, T0)
         self.assertEqual(board.pushed, [])
         self.assertEqual(self.push_row()[:2], (None, None))
+
+
+    def test_inside_the_interval_a_note_is_posted_without_an_ask(self):
+        note = store.record_note(self.conn, self.ticket, "ledger", "merged",
+                                 dedup_key="merged", now=T0)
+        board = CallRecordingBoard(self.files, store_mode=True)
+        self.observe(board, T0 + MINUTE, asked_at=T0)
+        self.assertEqual(board.calls, [("comment", "KO-1")])
+        self.assertEqual(self.conn.execute(
+            "SELECT postedAt IS NOT NULL FROM ticketNotes WHERE id = ?",
+            (note,)).fetchone(), (1,))
+
+        idle = CallRecordingBoard(self.files, store_mode=True)
+        self.observe(idle, T0 + 2 * MINUTE, asked_at=T0)
+        self.assertEqual(idle.calls, [])
+
+    def test_inside_the_interval_a_person_s_move_drops_the_queued_push(self):
+        self.queue_in_progress()
+        (self.files / "KO-1.state").write_text("Backlog\n")
+        board = RecordingBoard(self.files, store_mode=True)
+        self.observe(board, T0 + MINUTE, asked_at=T0)
+        self.assertEqual(board.pushed, [])
+        self.assertEqual(self.push_row(), (None, None, None, "Backlog"))
+        self.assertEqual((self.files / "KO-1.state").read_text(), "Backlog\n")
 
 
 class CanceledPushTests(SweepTestCase):

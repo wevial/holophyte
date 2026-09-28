@@ -41,10 +41,15 @@ class CountingFiles(FileProvider):
     def __init__(self, root):
         super().__init__(root)
         self.listed = 0
+        self.asked = []
 
     def listing(self):
         self.listed += 1
         return super().listing()
+
+    def states(self, identifiers):
+        self.asked.append(list(identifiers))
+        return super().states(identifiers)
 
 
 def never(*args, **kwargs):
@@ -61,13 +66,13 @@ class SweepStoreQueueTests(SweepTestCase):
         (files / "KO-1.md").write_text(VALID_BODY)
         self.board = CountingFiles(files)
 
-    def reconcile(self, at):
+    def reconcile(self, at, budget_low=False):
         """One sweep pass at `at`; the pairs a loop start was owed for, or
         None when none was started."""
         started = []
         with patch("holophyte.reconcile._reconcile_pull_requests"), \
                 patch("holophyte.supervisor.linear_budget_low",
-                      return_value=False), \
+                      return_value=budget_low), \
                 patch("holophyte.supervisor.board_ready", never), \
                 patch("holophyte.supervisor.start_loop_for",
                       lambda target, conn, owed, *a, **k: started.append(owed)):
@@ -192,3 +197,38 @@ class SweepStoreQueueTests(SweepTestCase):
             self.assertEqual(sync_board(self.project, self.conn,
                                         self.project_id, self.board, now=T0),
                              SYNCED)
+
+    def an_open_ticket_with_nothing_queued(self):
+        """KO-2, open on the board and in the store, with no push or note."""
+        (self.board.root / "KO-2.md").write_text(VALID_BODY)
+        store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id="KO-2",
+            linear_identifier="KO-2", title="another thing",
+            acceptance_criteria=["Given it, then it works"],
+            verification_commands=["echo ok"], board_state="Todo")
+
+    def test_a_pass_inside_the_ask_interval_delivers_what_is_queued(self):
+        """A push and a note wait one sweep pass, not `board_ask_sec`: the
+        push is sent after an ask naming only its ticket."""
+        note = self.queued_push_and_note()
+        self.an_open_ticket_with_nothing_queued()
+        self.memory.states_asked[self.project_id] = T0
+
+        self.reconcile(T0 + MINUTE)
+
+        self.assertEqual(self.delivered(note), ("In Progress", 1))
+        self.assertEqual(self.board.asked, [["KO-1"]])
+
+    def test_a_low_budget_pass_inside_the_interval_leaves_them_waiting(self):
+        note = self.queued_push_and_note()
+        self.an_open_ticket_with_nothing_queued()
+        self.memory.states_asked[self.project_id] = T0
+
+        self.reconcile(T0 + MINUTE, budget_low=True)
+
+        self.assertEqual(self.board.asked, [])
+        self.assertEqual(self.board.listed, 0)
+        self.assertEqual(self.delivered(note), (None, 0))
+        self.assertEqual(self.conn.execute(
+            "SELECT pushState FROM tickets WHERE linearIdentifier = 'KO-1'"
+        ).fetchone(), ("In Progress",))
