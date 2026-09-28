@@ -603,6 +603,14 @@ def parse_environment(text, label="env_source"):
     return values
 
 
+def process_value(value):
+    """`value` for a process environment: one matching pair of surrounding
+    quotes removed, as a dotenv loader would, and nothing else evaluated."""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
+
+
 def worktree_environment(project):
     """Validate and read the allow-list; None preserves targets without it.
 
@@ -617,10 +625,13 @@ def capture_environment(project):
 
     Only `pr_media._capture()` adds these values to a command's environment:
     they are never written to the worktree and never reach agent turns,
-    verify commands or `isolation.environment()`.
+    verify commands or `isolation.environment()`. Values lose their
+    surrounding dotenv quotes, since no dotenv loader reads them.
     """
-    return allowed_environment(project, "merge", "capture_env_source",
-                               "capture_env_allow")
+    values = allowed_environment(project, "merge", "capture_env_source",
+                                 "capture_env_allow")
+    return None if values is None else {
+        name: process_value(value) for name, value in values.items()}
 
 
 def allowed_environment(project, name, source_key, allow_key):

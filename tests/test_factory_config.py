@@ -781,6 +781,27 @@ class WorktreeSetupTests(ConfigTestCase):
             'PUBLIC=sentinel-crlf\r\nQUOTED="quoted value"\r\n'),
             {"PUBLIC": "sentinel-crlf", "QUOTED": '"quoted value"'})
 
+    def test_capture_environment_drops_one_matching_pair_of_quotes(self):
+        self.locate("")
+        source = self.project.config_path.parent / "capture.env"
+        source.write_text("A=\"double\"\nB='single'\nC=bare\nD=\"unbalanced\n")
+        self.write_config(f'[merge]\ncapture_env_source = "{source}"\n'
+                          'capture_env_allow = ["A", "B", "C", "D"]\n')
+        self.assertEqual(holophyte.config.capture_environment(self.project),
+                         {"A": "double", "B": "single", "C": "bare",
+                          "D": '"unbalanced'})
+
+    def test_worktree_environment_file_keeps_quotes_as_written(self):
+        self.locate("")
+        source = self.project.config_path.parent / "source.env"
+        source.write_text('A="double"\n')
+        self.write_config(f'[worktree]\nenv_source = "{source}"\n'
+                          'env_allow = ["A"]\n')
+        wt = self.worktree()
+        subprocess.run(["git", "init", "-q", str(wt)], check=True)
+        holophyte.claim.write_worktree_environment(self.project, wt)
+        self.assertEqual((wt / ".env").read_text(), 'A="double"\n')
+
     def worktree(self):
         """A throwaway directory standing in for a freshly cut task worktree."""
         tmp = tempfile.TemporaryDirectory()

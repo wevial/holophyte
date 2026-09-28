@@ -79,11 +79,13 @@ def validate_credential(value):
 
 
 def environment(project):
-    from holophyte.config import worktree_environment
+    """A container turn's `[worktree]` values, dotenv quotes removed."""
+    from holophyte.config import process_value, worktree_environment
 
     if route_for(project).backend == "none":
         return None
-    return worktree_environment(project) or {}
+    values = worktree_environment(project) or {}
+    return {name: process_value(value) for name, value in values.items()}
 
 
 def image_ready(route):
