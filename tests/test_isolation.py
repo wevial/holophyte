@@ -766,6 +766,41 @@ class IsolationTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     route_for(self.target)
 
+    def test_file_mount_refuses_workspace_and_home_destinations(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        for path in ("/workspace/capture.py", "/home/implementer/capture.py"):
+            with self.subTest(path=path), self.assertRaisesRegex(
+                RuntimeError, "workspace or home"
+            ):
+                isolation.container_command(
+                    isolation.Route("container"), worktree, {}, ["true"], "n", [path]
+                )
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_implementer_turn_has_no_capture_runner(self):
+        import shutil
+
+        import review_runner
+        from holophyte import isolation
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        _, worktree = self.make_worktree()
+        runner = review_runner.ROOT / "holophyte" / "capture_playwright.py"
+        self.assertTrue(runner.is_file())
+        code, output = isolation.launch(
+            isolation.Route("container"),
+            worktree,
+            {},
+            ["/bin/sh", "-c", 'test ! -e "$0"', str(runner.resolve())],
+        )
+        self.assertEqual(code, 0, output)
+
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
