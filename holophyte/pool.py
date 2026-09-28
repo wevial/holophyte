@@ -83,6 +83,7 @@ def worker(target, provider):
     """Worker processes own and probe their fallback routes independently."""
     from holophyte.agent_routes import reset, routes
     from holophyte.agents import startup_routes
+    from holophyte.config import REVIEW_FALLBACK_KEYS
     from holophyte.config_tables import AGENT_FALLBACK_KEYS
 
     slot = os.environ.get(WORKER_SLOT_ENV)
@@ -96,7 +97,8 @@ def worker(target, provider):
     reset(target)
     routes(target).critic_failed = os.environ.get(CRITIC_DOWN_ENV) == "1"
     try:
-        if "writer" in configured or any(k in configured for k in AGENT_FALLBACK_KEYS):
+        if "writer" in configured or any(
+                k in configured for k in (*AGENT_FALLBACK_KEYS, *REVIEW_FALLBACK_KEYS)):
             if not startup_routes(target, provider, critic=False):
                 return WORKER_STOP
         result = _worker(target, provider)

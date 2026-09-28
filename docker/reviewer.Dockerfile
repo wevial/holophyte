@@ -7,6 +7,7 @@ RUN apt-get update \
         git \
         python3 \
         python3-pip \
+        python3-venv \
         ripgrep \
         unzip \
     && rm -rf /var/lib/apt/lists/*
@@ -26,6 +27,20 @@ RUN set -eu \
     && ln -s bun /opt/bun/bin/bunx \
     && rm /tmp/bun-linux-x64.zip
 ENV PATH=/opt/bun/bin:$PATH
+
+# Node.js is pinned to one release so a target's `npm ci` and `npx` setup and
+# verify commands run inside the container. The tarball's SHA-256 is copied
+# from the release's SHASUMS256.txt; a mismatch fails the build.
+ARG NODE_VERSION=24.18.0
+ARG NODE_SHA256=783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8
+RUN set -eu \
+    && curl -fsSL -o /tmp/node-linux-x64.tar.gz \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+    && echo "${NODE_SHA256}  /tmp/node-linux-x64.tar.gz" | sha256sum -c - \
+    && mkdir -p /opt/node \
+    && tar -C /opt/node --strip-components=1 -xzf /tmp/node-linux-x64.tar.gz \
+    && rm /tmp/node-linux-x64.tar.gz
+ENV PATH=/opt/node/bin:$PATH
 
 # Go is pinned to one release so a Go target's `go test` criteria can be
 # witnessed inside the container. The tarball's SHA-256 is copied from the Go

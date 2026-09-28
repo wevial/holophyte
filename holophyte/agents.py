@@ -195,14 +195,20 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
     goal = REVIEW_PROBE_GOAL if role in ("review", "adjudicate") else PROBE_GOAL
     cmd = agent_command(project, role, goal, fallback=fallback)
     default = cmd is None
-    if default:
+    pair = None
+    if default and role == "implement":
         if fallback or (agent_command(project, role, "", fallback=True) is None
-                        and not (role == "implement" and
-                                 isolation.route_for(project).backend == "container")):
+                        and isolation.route_for(project).backend != "container"):
             return None
-        cmd = ([DEFAULT_IMPLEMENTER, "-p", PROBE_GOAL, "--model", IMPL_MODEL,
-                "--effort", IMPL_EFFORT] if role == "implement" else
-               ["default-review", review_profile(*review_route(project))])
+        cmd = [DEFAULT_IMPLEMENTER, "-p", PROBE_GOAL, "--model", IMPL_MODEL,
+               "--effort", IMPL_EFFORT]
+    elif default:
+        pair = (review_route(project, fallback=fallback)
+                if role in ("review", "adjudicate") else None)
+        if pair is None or not (fallback or container_fallback_profile(project, role)
+                                or agent_command(project, role, "", fallback=True)):
+            return None
+        cmd = ["default-review", review_profile(*pair)]
     cap = PROBE_TIMEOUT if timeout is None else timeout
     sha = None
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
@@ -215,10 +221,9 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
             if default and role != "implement":
                 out = review_runner.run_review(
                     repo=Path(scratch), base_sha=sha, candidate_sha=sha,
-                    prompt=goal, model=review_route(project)[0],
-                    effort=review_route(project)[1],
-                    profile=review_profile(*review_route(project)),
-                    timeout=cap, verdicts=None, carry=carry_directories(project))
+                    prompt=goal, model=pair[0], effort=pair[1],
+                    profile=review_profile(*pair),
+                    timeout=cap, verdicts=None)
                 code = 0
             elif role == "implement":
                 code, out = isolation.launch(
@@ -239,6 +244,14 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
                                seat=AGENT_CONFIG_KEYS[role], expected_commit=sha)
     return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role],
                        expected_commit=sha)
+
+
+def container_fallback_profile(project, role):
+    if (role not in ("review", "adjudicate")
+            or AGENT_CONFIG_KEYS[role] in (project.config().get("agents") or {})):
+        return None
+    pair = review_route(project, fallback=True)
+    return review_profile(*pair) if pair else None
 
 
 def probe_configured_review(project, role, fallback, goal, cmd, clone, cap):
@@ -411,7 +424,14 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         def launch():
             return recorded_turn(project, requested_role, role, conn, run_id,
                                  lambda: _agent(project, role, goal, cwd, **kwargs))
-        output = launch()
+        try:
+            output = launch()
+        except InfraFailure as failure:
+            if not (isinstance(failure.__cause__, review_runner.ReviewBoundaryError)
+                    and argv is None and container_fallback_profile(project, role)
+                    and activate_fallback(project, role, str(failure), conn, run_id)):
+                raise
+            return launch()
         command = getattr(output, "command", agent_route(project, role))
         reason = outage_reason(command, output)
         if (argv is None and reason
@@ -465,7 +485,9 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     if role in ("review", "adjudicate") and not (base_sha and candidate_sha):
         raise ValueError(f"{role} requires exact base_sha and candidate_sha")
     goal = outbound(goal, known_secrets(project.config()))
-    command = routes(project).commands.get(role)
+    switched = (role in routes(project).commands
+                and container_fallback_profile(project, role) is not None)
+    command = None if switched else routes(project).commands.get(role)
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(project, role, goal))
     session_id = (agent_session(project, role, cmd)
@@ -479,7 +501,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     if cmd is None:
         if role != "implement":
             from holophyte.runs import heartbeat_while
-            model, effort = review_route(project)
+            model, effort = review_route(project, fallback=switched)
             # An abort or a sweep kills the container's client; the runner
             # then removes the container (KO-592).
             kill = GroupKill()
@@ -711,8 +733,9 @@ def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=No
     from store.agent_routes import switched
 
     state = routes(project)
-    command = (project.config().get("agents") or {}).get(
+    command = ((project.config().get("agents") or {}).get(
         AGENT_CONFIG_KEYS[role] + "_fallback")
+        or container_fallback_profile(project, role))
     if not command or role in state.commands:
         return False
     probe = probe or probe_seat(project, role, fallback=True)
@@ -758,7 +781,9 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
 
     table = project.config().get("agents") or {}
     for role, seat in AGENT_CONFIG_KEYS.items():
-        if role != "implement" and seat + "_fallback" not in table:
+        has_fallback = seat + "_fallback" in table or (
+            role == "review" and container_fallback_profile(project, role))
+        if role != "implement" and not has_fallback:
             continue
         probe = ((implementer_probe or probe_implementer)(project)
                  if role == "implement" else
@@ -766,7 +791,7 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
         if probe is None:
             continue
         print(probe_diagnostic(project, probe))
-        if not probe.ok and seat + "_fallback" in table:
+        if not probe.ok and has_fallback:
             fallback = probe_seat(project, role, fallback=True)
             if fallback.ok and activate:
                 conn = open_store(project)
