@@ -62,7 +62,7 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
              r"\[agents\.implementer\] harness"),
             (table + 'sandbox = "none"\n', r"\[agents\.implementer\] sandbox"),
             ('[agents.reviewer]\nharness = "claude"\n',
-             r"\[agents\.reviewer\] harness: 'claude' supports implementer,"),
+             r"\[agents\.reviewer\] harness: 'claude' supports .*, not reviewer"),
             (table + '[harnesses]\nclaude = "bin/claude"\n', r"\[harnesses\] claude"),
             ("[agents]\nimplementer_session = 'id: (.+)'\n" + table,
              r"\[agents\] implementer_session"),
