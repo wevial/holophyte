@@ -17,7 +17,8 @@ def record_gap_layer(conn, ticket_id, layer, note, author, carried_by=None,
         raise ValueError("note is blank")
     if not isinstance(author, str) or not author.strip():
         raise ValueError("author is blank")
-    if carried_by is not None and not TICKET_IDENTIFIER.match(carried_by):
+    if carried_by is not None and (not isinstance(carried_by, str)
+                                   or not TICKET_IDENTIFIER.match(carried_by)):
         raise ValueError(f"carried_by {carried_by!r} is not a ticket"
                          " identifier such as KO-7")
     if now is None:

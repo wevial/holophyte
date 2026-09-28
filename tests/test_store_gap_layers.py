@@ -129,6 +129,7 @@ class GapLayerRecordTests(unittest.TestCase):
             ("author", dict(author="")),
             ("carried_by", dict(carried_by="holo 7")),
             ("carried_by", dict(carried_by="HOLO-7\n")),
+            ("carried_by", dict(carried_by=7)),
             ("not in the store", dict(ticket_id=999)),
         ]
         for problem, change in cases:
