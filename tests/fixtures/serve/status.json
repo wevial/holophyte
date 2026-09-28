@@ -19,9 +19,9 @@
   },
   "route_labels": {
     "implementer": "claude opus",
-    "reviewer": "codex gpt-5.6-sol",
+    "reviewer": "codex gpt-6-astra",
     "reviewer_fallback": null,
-    "adjudicator": "codex gpt-5.6-sol",
+    "adjudicator": "codex gpt-6-astra",
     "writer": "claude opus"
   },
   "workers_on_previous_build": 0,

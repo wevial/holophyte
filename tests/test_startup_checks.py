@@ -214,7 +214,7 @@ class StartupCheckTests(ConfigTestCase):
 
         self.locate()
         self.assertEqual(holophyte.config.review_route(self.project),
-                         ("gpt-5.6-sol", "medium"))
+                         ("gpt-6-astra", "high"))
 
     def test_a_missing_docker_is_a_startup_error_naming_the_override_key(self):
         self.stub_path(docker=None, system=False)

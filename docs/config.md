@@ -63,13 +63,13 @@ implementer's command and isolation settings.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"` or `"codex"`) and optional `model` and `effort` (`claude`: default `"opus"`, `"high"`; `codex`: default `"gpt-5.6-sol"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"devin"` with a required `model` and no `effort`; override to select another implementer harness. A table's adapter builds the argv, records the session id (`claude` at dispatch, `codex` from its banner after the turn, `devin` from `devin list --format json` in the task worktree after the turn) and builds the resume argv. |
-| `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` `"codex"` and optional `model` and `effort` (default `"gpt-5.6-sol"`, `"medium"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"cursor"` or `"devin"` with a required `model` and no `effort`; override only to supply an independent review route outside the container. |
+| `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"` or `"codex"`) and optional `model` and `effort` (`claude`: default `"opus"`, `"high"`; `codex`: default `"gpt-6-astra"`, `"high"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"devin"` with a required `model` and no `effort`; override to select another implementer harness. A table's adapter builds the argv, records the session id (`claude` at dispatch, `codex` from its banner after the turn, `devin` from `devin list --format json` in the task worktree after the turn) and builds the resume argv. |
+| `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` `"codex"` and optional `model` and `effort` (default `"gpt-6-astra"`, `"high"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"cursor"` or `"devin"` with a required `model` and no `effort`; override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
 | `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default, or `"claude"`), `model` and `effort` (`codex`: default `"gpt-6-luna"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`; `claude`: default `"opus"`, `"high"`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
-| `review_model` | Default: `"gpt-5.6-sol"` | Non-empty Codex model ID; change for a different container review model. |
-| `review_effort` | Default: `"medium"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
+| `review_model` | Default: `"gpt-6-astra"` | Non-empty Codex model ID; change for a different container review model. |
+| `review_effort` | Default: `"high"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
 | `review_fallback_model` | Default: Absent (disabled) | Non-empty Codex model ID, set together with `review_fallback_effort`; the container reviewer's fallback model, run in the same container. |
 | `review_fallback_effort` | Default: Absent (disabled) | `"low"`, `"medium"`, `"high"`, `"xhigh"`, set together with `review_fallback_model`; the fallback model's reasoning effort. |
 | `implementer_isolation` | Default: `"none"` | `"container"` isolates turns and live probes. Optional table form: `{ backend = "container", memory = "4g", writable = true }`; memory is a positive integer with `m` or `g` suffix; writable controls the workspace mount. A writable implementer turn also mounts a per-task-worktree directory (mode 0700, under the project's state directory) at the home's `.claude`, so Claude session files survive into the next turn in that worktree; a Claude table implementer's session id is recorded at dispatch, so its fix round resumes that session in the container (a Codex or Devin implementer's fix round starts fresh); a read-only launch, such as the live probe, and the verify and capture containers get none. |
@@ -93,8 +93,8 @@ adjudicator = "my-reviewer --final"
 # The Codex model and reasoning effort the review container runs, for the
 # reviewer and the adjudicator alike. Optional; the values shown are the
 # defaults. The effort is one of low, medium, high, xhigh.
-review_model  = "gpt-5.6-sol"
-review_effort = "medium"
+review_model  = "gpt-6-astra"
+review_effort = "high"
 # A second pair the same container switches to when the first cannot run.
 # Optional; both keys or neither.
 review_fallback_model  = "gpt-5.6-sol"
@@ -344,13 +344,13 @@ turns and retries its primary at the next start. Each switch prints its reason
 and command, records a `route_fallback` project intervention and run event (a
 startup switch attaches to the first affected run), and adds a fallback chip to
 the console's project header. A failed fallback probe stops the loop without
-recording a switch. `review_model` and `review_effort` cannot accompany fallback
-keys, just as they cannot accompany `reviewer`.
+recording a switch. `review_model` and `review_effort` may sit beside fallback
+keys, which run only when the container route fails, but not beside `reviewer`.
 
 `review_fallback_model` and `review_fallback_effort` give the container reviewer
 a fallback that never leaves the container. Both are required together, and like
-the primary pair they are refused beside a `reviewer` command or any fallback
-command. With the pair set, startup probes the container reviewer; when that
+the primary pair they are refused beside a `reviewer` command but not beside a
+fallback command. With the pair set, startup probes the container reviewer; when that
 probe fails it probes the fallback pair in the same container and, if it passes,
 records and activates the switch as for a fallback command. A review or
 adjudication turn whose container cannot stage, start or read the reviewer on
@@ -361,8 +361,8 @@ second failure stops the turn as a `review_route` failure.
 container when neither review role is overridden by a command. Both reach the
 container script as arguments, never as text spelled into it. The profile a
 review round records is `codex-TAIL-EFFORT`, where TAIL is the model id's last
-dash-separated segment: the default records `codex-sol-medium`, and
-`gpt-6-astra` at medium records `codex-astra-medium`, so the row names what
+dash-separated segment: the default records `codex-astra-high`, and
+`gpt-5.6-sol` at medium records `codex-sol-medium`, so the row names what
 actually ran. An effort outside the four above or an empty model is a startup
 error naming the key. Either key beside a `reviewer` command is refused as
 contradictory: the override opts the reviewer out of the container the pair

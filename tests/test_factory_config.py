@@ -621,7 +621,7 @@ class AgentCommandTests(ConfigTestCase):
             self.WORKTREE, 1800,
         )
         # The reviewer still goes through the hardened container, not argv.
-        self.assertEqual(run_review.call_args.kwargs["profile"], "codex-sol-medium")
+        self.assertEqual(run_review.call_args.kwargs["profile"], "codex-astra-high")
 
     def test_an_implementer_override_replaces_the_argv(self):
         self.locate('[agents]\n'
@@ -682,7 +682,7 @@ class AgentCommandTests(ConfigTestCase):
         # The override ran the review round, so the row names it; the
         # adjudicator went through the default container and says so.
         self.assertEqual(record.call_args_list[0].args[4], "my-reviewer")
-        self.assertEqual(record.call_args_list[1].args[4], "codex-sol-medium")
+        self.assertEqual(record.call_args_list[1].args[4], "codex-astra-high")
 
     def test_an_unusable_command_is_an_error_not_a_silent_default(self):
         for config, expected in (
