@@ -53,7 +53,7 @@ review, from the size of the candidate's diff and the `[loop]` review keys
 [config.md](config.md)). The cap is printed and recorded in the run's ledger,
 and the terminal adjudication follows the last round it allows.
 
-The first review builds `holophyte-reviewer:ubuntu24.04-v6` automatically from
+The first review builds `holophyte-reviewer:ubuntu24.04-v7` automatically from
 the digest-pinned Ubuntu image; it carries git, python3, ripgrep, a pinned
 Bun (checksum-verified, on `PATH` under `/opt/bun/bin`) so console `bun`
 criteria can be witnessed inside the container, and a pinned Go 1.26.6
@@ -61,7 +61,14 @@ criteria can be witnessed inside the container, and a pinned Go 1.26.6
 toolchain is ever downloaded, caches under the writable `/home/reviewer`) so a
 Go project's `go test` criteria can be witnessed too. It also installs
 `tomlkit` at the version `requirements.txt` pins, so the factory's own suite
-imports inside the container; a change to the Dockerfile moves the tag so the
+imports inside the container, and a pinned Claude CLI (the native linux-x64
+build, checksum-verified against its release manifest, on `PATH` under
+`/opt/claude/bin`, `DISABLE_AUTOUPDATER=1`) whose managed settings at
+`/etc/claude-code/managed-settings.json` make `bypassPermissions` the default
+permission mode, so a Claude implementer turn under
+`implementer_isolation = "container"` runs its tools without asking; the
+container is its boundary. The reviewer carries no Claude credential, so the
+CLI is inert in a review. A change to the Dockerfile moves the tag so the
 next review rebuilds instead of reusing the cached image. The image follows
 the candidate: the runner reads the tag and the Dockerfile out of the candidate
 commit, so a candidate that changed either is reviewed in an image built from
