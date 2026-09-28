@@ -22,6 +22,7 @@ from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
 CAPTURE_TIMEOUT = 300
+CAPTURE_GRACE = 30  # HOLO-13: a timed-out capture's teardown runs.
 TAIL_LINES = 20  # KO-623: a failed capture shows why.
 RECEIPT_VERSION = 5  # KO-604: sections name the sha they capture.
 # The first line under an Evidence heading: the candidate it shows (KO-604).
@@ -171,13 +172,28 @@ def _capture(command, wt, output, task_id, states, *, project=None):
         try:
             code = process.wait(timeout=CAPTURE_TIMEOUT)
         except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
+            _stop(process)
             code = None
         if code == 0:
             return ''
         log.seek(0)
         return _failed(command, code, log.read(), project)
+
+
+def _stop(process):
+    """TERM the capture's group, then KILL it if it outlives the grace."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=CAPTURE_GRACE)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
 
 
 def _push(wt, output, files, task_id):
