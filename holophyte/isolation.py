@@ -167,7 +167,10 @@ CACHE_ENVIRONMENT = {
 
 
 def cache_directory(task, project):
-    state = project_state(Path(task).resolve(strict=True), project)
+    try:
+        state = project_state(Path(task).resolve(strict=True), project)
+    except subprocess.CalledProcessError:
+        return None
     cache = private_directory(state / "cache")
     (cache / "go-tmp").mkdir(exist_ok=True)
     return cache
@@ -199,10 +202,10 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
     if route.writable and task is not None:
         session = session_directory(task, project)
         command += ["--volume", f"{session}:/home/implementer/.claude:rw"]
-    caches = {}
-    if cache_for is not None:
-        command += ["--volume", f"{cache_directory(cache_for, project)}:{CACHE}:rw"]
-        caches = CACHE_ENVIRONMENT
+    cache = cache_directory(cache_for, project) if cache_for is not None else None
+    caches = {} if cache is None else CACHE_ENVIRONMENT
+    if cache is not None:
+        command += ["--volume", f"{cache}:{CACHE}:rw"]
     credential = route.credential
     if "file" in credential:
         source = Path(credential["file"]).expanduser().resolve(strict=True)
@@ -267,7 +270,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
         command, host_env = container_command(
             route, workspace, dict(env or {}, **git_env), argv, name, mounts,
             task=worktree if keep_session else None, project=project,
-            cache_for=worktree if route.writable else None,
+            cache_for=worktree,
         )
         try:
             return run_capped(command, workspace, timeout, env=host_env, **hook)

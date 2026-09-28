@@ -798,8 +798,28 @@ class IsolationTests(unittest.TestCase):
             isolation.launch(isolation.Route("container", writable=False),
                              worktree, {}, ["agent"], project=self.target,
                              keep_session=True)
-            self.assertFalse(state_dir(main).exists())
+            self.assertFalse((state_dir(main) / "sessions").exists())
         self.assertNotIn(".claude", str(run.call_args.args[0]))
+
+    def test_launch_outside_a_repository_mounts_no_cache(self):
+        from holophyte import isolation
+
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        home = self.root / "holophyte-home"
+        with (
+            patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home),
+                                    "GIT_CEILING_DIRECTORIES": str(self.root)}),
+            patch.object(isolation, "image_ready"),
+            patch.object(isolation.review_runner, "_remove_container"),
+            patch.object(isolation, "run_capped", return_value=(0, "done")) as run,
+        ):
+            isolation.launch(isolation.Route("container", writable=False),
+                             scratch, {}, ["agent"])
+        argv = run.call_args.args[0]
+        self.assertNotIn(".cache", str(argv))
+        self.assertNotIn("GOCACHE", run.call_args.kwargs["env"])
+        self.assertFalse(home.exists())
 
     def test_relative_state_home_mounts_an_absolute_session_directory(self):
         from holophyte import isolation
@@ -875,7 +895,6 @@ class IsolationTests(unittest.TestCase):
         git(other, "config", "user.name", "Configured Author")
         git(other, "config", "user.email", "author@example.test")
         git(other, "commit", "--allow-empty", "-qm", "base")
-        route = isolation.Route("container")
         build = (
             "mkdir /tmp/module; cd /tmp/module;"
             " printf 'module example.test/m\\n\\ngo 1.26\\n' > go.mod;"
@@ -889,18 +908,21 @@ class IsolationTests(unittest.TestCase):
             " else echo 0; fi"
         )
 
-        def turn(path, script):
+        def turn(path, script, writable=True):
+            route = isolation.Route("container", writable=writable)
             return isolation.launch(route, path, {}, ["/bin/sh", "-ec", script])
 
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")}):
-            code, output = turn(worktree, build)
-            self.assertEqual(code, 0, output)
-            paths = output.split()[-5:]
-            self.assertEqual(len(paths), 5, output)
-            for path in paths:
-                self.assertTrue(path.startswith("/home/implementer/.cache/"), output)
+            for writable in (True, False):
+                code, output = turn(worktree, build, writable)
+                self.assertEqual(code, 0, output)
+                paths = output.split()[-5:]
+                self.assertEqual(len(paths), 5, output)
+                for path in paths:
+                    self.assertTrue(path.startswith("/home/implementer/.cache/"),
+                                    output)
             self.assertTrue(any((state_dir(main) / "cache").rglob("*")))
-            code, output = turn(worktree, count)
+            code, output = turn(worktree, count, writable=False)
             self.assertEqual(code, 0, output)
             self.assertGreater(int(output.split()[-1]), 0, output)
             code, output = turn(other, count)
