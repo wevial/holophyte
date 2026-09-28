@@ -643,6 +643,29 @@ class ContainerReviewFallbackTests(SweepTestCase):
         self.assertEqual(raised.exception.failure_kind, 'review_route')
         self.assertEqual(len(self.switches()), 1)
 
+    def test_startup_probe_stages_without_the_worktree_carry(self):
+        import tempfile
+
+        import review_runner
+
+        (self.target / '.gitignore').write_text('.venv/\n')
+        (self.target / '.venv').mkdir()
+        self.configure(self.PAIRS + '[worktree]\ncarry = [".venv"]\n')
+        staged = []
+        def run_review(*, repo, base_sha, candidate_sha, carry=(), **_):
+            with tempfile.TemporaryDirectory() as root:
+                review_runner.stage_candidate(repo, Path(root) / 'stage', base_sha,
+                                              candidate_sha, carry=carry)
+            staged.append(candidate_sha)
+            return f'ready {candidate_sha}'
+        with patch.object(agents.review_runner, 'run_review',
+                          side_effect=run_review), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertTrue(agents.startup_routes(
+                self.project, SimpleNamespace(team='team-1')))
+        self.assertEqual(len(staged), 1)
+        self.assertEqual(self.switches(), [])
+
     def test_without_the_pair_startup_skips_the_reviewer_and_turns_stay_primary(self):
         from holophyte.gates import InfraFailure
 

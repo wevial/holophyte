@@ -223,7 +223,7 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
                     repo=Path(scratch), base_sha=sha, candidate_sha=sha,
                     prompt=goal, model=pair[0], effort=pair[1],
                     profile=review_profile(*pair),
-                    timeout=cap, verdicts=None, carry=carry_directories(project))
+                    timeout=cap, verdicts=None)
                 code = 0
             elif role == "implement":
                 code, out = isolation.launch(
