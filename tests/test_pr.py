@@ -231,3 +231,45 @@ class RequiredStatusContextTests(unittest.TestCase):
         with self.assertRaisesRegex(InfraFailure, "repeated.*cursor"):
             status_contexts_of(SimpleNamespace(), pull, node, graphql)
         self.assertEqual(graphql.call_count, 1)
+
+
+class PlanGatedRulesTests(unittest.TestCase):
+    """HOLO-11: a private repository on GitHub Free refuses main's rules
+    and protection reads alike; that refusal is no rules, not unknown."""
+    PLAN = ("gh api {} failed: gh: Upgrade to GitHub Pro or make this"
+            " repository public to enable this feature. (HTTP 403)")
+
+    def read_checks(self, runs, refusal=PLAN):
+        from holophyte import pr_status
+        pull = pr.PullRequest("github.com", "example", "repo", 7,
+                              "https://github.com/example/repo/pull/7")
+        node = {"headRefOid": "head", "commits": {"nodes": [
+            {"commit": {"statusCheckRollup": None}}]}}
+
+        def rest(target, pull, method, path, payload=None):
+            if "check-runs" in path:
+                return {"total_count": len(runs), "check_runs": runs}
+            raise InfraFailure(refusal.format(path))
+        with patch.object(pr_status, "graphql",
+                          return_value={"repository": {"pullRequest": node}}), \
+                patch.object(pr_status, "rest", side_effect=rest):
+            return pr_status.pr_state(SimpleNamespace(), pull)
+
+    def test_no_runs_under_a_plan_refusal_is_green_with_nothing_missing(self):
+        state = self.read_checks([])
+        self.assertEqual(state.checks, "success")
+        self.assertEqual(state.missing_checks, ())
+
+    def test_runs_still_pending_or_red_under_a_plan_refusal(self):
+        for status, conclusion, expected in (
+                ("in_progress", None, "pending"),
+                ("completed", "failure", "failure")):
+            with self.subTest(status=status):
+                state = self.read_checks([{"name": "unit", "status": status,
+                                           "conclusion": conclusion}])
+                self.assertEqual(state.checks, expected)
+
+    def test_any_other_refusal_stays_pending(self):
+        state = self.read_checks([], "gh api {} failed: gh: Resource not"
+                                     " accessible by integration (HTTP 403)")
+        self.assertEqual(state.checks, "pending")

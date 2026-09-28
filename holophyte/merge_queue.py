@@ -128,8 +128,7 @@ def red_group(target, conn, run_id, pull, left):
 
 def merge_queue_required(target, pull):
     """Whether the rules answer for `main` holds a `merge_queue` rule."""
-    rules = pr.rest(target, pull, "GET",
-                    f"repos/{pull.repo}/rules/branches/{pr.BASE}")
+    rules = pr_status.main_rules(target, pull)
     return isinstance(rules, list) and any(
         isinstance(rule, dict) and rule.get("type") == "merge_queue"
         for rule in rules)
