@@ -1,6 +1,7 @@
 """PR evidence against a real local bare remote."""
 
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -40,9 +41,10 @@ def start_time(pid):
 
 
 def running(pid, start=None):
-    """Whether `pid` is alive: a zombie or a pid reused since `start` is not."""
+    """Whether `pid` is alive: a zombie, a task being reaped (X) or a pid
+    reused since `start` is not."""
     fields = stat_fields(pid)
-    if fields is None or fields[0] == "Z":
+    if fields is None or fields[0] in ("Z", "X", "x"):
         return False
     return start is None or fields[19] == start
 
@@ -731,9 +733,13 @@ class MediaTests(unittest.TestCase):
     def child_pid(self, pidfile):
         pid = int(pidfile.read_text())
         start = start_time(pid)
-        self.addCleanup(
-            lambda: running(pid, start) and os.killpg(os.getpgid(pid), 9))
+        self.addCleanup(self.kill_child, pid, start)
         return pid, start
+
+    def kill_child(self, pid, start):
+        with contextlib.suppress(ProcessLookupError):
+            if running(pid, start):
+                os.killpg(os.getpgid(pid), 9)
 
     def test_exited_capture_stops_its_child_through_its_term_handler(self):
         marker = self.root / "released"
