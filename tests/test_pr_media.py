@@ -640,6 +640,28 @@ class MediaTests(unittest.TestCase):
         with patch("holophyte.pr_media.CAPTURE_TIMEOUT", 0.05):
             self.assertIn("timed out", self.open())
 
+    def test_timed_out_capture_runs_its_term_handler(self):
+        marker = self.root / "released"
+        self.candidate()
+        (self.repo / "capture.sh").write_text(
+            f"trap 'touch {marker}; exit 0' TERM\nsleep 30 & wait\n")
+        self.config["merge"]["ui_capture"] = "sh capture.sh"
+        with patch("holophyte.pr_media.CAPTURE_TIMEOUT", 0.5):
+            body = self.open()
+        self.assertTrue(marker.exists())
+        self.assertIn("Capture command `sh capture.sh` failed: timed out", body)
+
+    def test_capture_ignoring_term_is_killed_after_the_grace(self):
+        self.candidate()
+        (self.repo / "capture.sh").write_text("trap '' TERM\nsleep 30\n")
+        self.config["merge"]["ui_capture"] = "sh capture.sh"
+        started = monotonic()
+        with (patch("holophyte.pr_media.CAPTURE_TIMEOUT", 0.5),
+              patch("holophyte.pr_media.CAPTURE_GRACE", 0.5)):
+            body = self.open()
+        self.assertLess(monotonic() - started, 15)
+        self.assertIn("Capture command `sh capture.sh` failed: timed out", body)
+
     def prepare(self):
         notes = []
         with (patch("holophyte.pr.origin_url",
