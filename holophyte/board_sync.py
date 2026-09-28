@@ -1,62 +1,4 @@
-"""holophyte.board_sync: a store-mode project's rows following the board.
-
-In store mode the store is where tickets are claimed from, so its rows
-must follow the board's columns and survive the board losing an issue
-(KO-739). `observe_board()` is the host sweep's step: once per
-`board_ask_sec` it asks the board's `states()` about every open ticket of
-the project, live ones included, and records what it heard. An open or
-canceled answer writes the state name and the column (a column change is
-a new revision authored `board`); a completed one writes the name, and
-walking a closed ticket stays `_reconcile_mirror()`'s. A gone answer
-stamps `goneSince`; a second one at least `board_ask_sec` later retires
-the ticket -- an idle one walked `abandoned` under a `reconcile` row, a
-live run asked to pause on the question. Seeing the issue again clears the
-stamp. A board that cannot be asked is no evidence and changes nothing.
-
-It is also the one sender of a store-mode status push (KO-740), which
-`mirror_push()` queues on the ticket rather than sends. Each answer `S`
-settles the queued push by three rows: `S` the wanted state is landed, and
-the push is cleared; `S` the state it was queued from is not landed, and it
-is sent again while the ticket's status still maps to it; any other `S` is
-a person's move, already recorded above, and the push is dropped so the
-move stands. A push queued before the row was ever observed is sent from
-`S`, unless `S` is already the wanted state or a canceled or completed
-one, which clears it. A gone answer leaves the push alone, and a closed
-ticket is still asked while it has one queued. The sends are made after
-each row's transaction commits, each only if the row, read again, still
-queues it and its status still maps to it; a raise is one printed line and
-the push waits for the next pass.
-
-A queued push does not wait for the interval: on a pass inside it, the
-project's tickets with a push queued and not seen gone, open or closed,
-are asked in one `states()` call naming only them, each answer settled as
-above, and the pending notes delivered after. That ask is not stamped, so
-the full ask keeps its interval, and a pass with nothing queued calls the
-board for nothing.
-
-A canceled answer for a ticket whose run is live in a work phase aborts
-that run through `abort_run()`, source `supervisor` and trigger
-`linear_cancelled`, after the row's transaction (KO-741): the run ends
-`abandoned` with its work kept on the branch, and the ticket with it.
-An abort or a walk re-reads the row and re-derives its push, so a push
-selected before it is never sent over it (operator_note event 10148).
-
-It is the one sender of a store-mode note too (KO-747): after the pushes,
-on a pass the board answered or one inside the interval, which asks
-nothing for a note, each of the project's pending notes is posted oldest
-first, its last line `holophyte-note: ID`, and stamped posted only once
-the board took it. A raise records the note's `postError` and stops the
-project's delivery until the next pass; a closed ticket is still asked
-while it has a note pending, so a note that failed after its ticket
-closed is posted on a later pass. A
-response lost after the board kept the comment posts it again; the id
-line is what makes the duplicate recognisable.
-
-`owed()` is the sweep's answer to which tickets a project with no live
-loop is owed one for (Phase 3 stage 3): in store mode the store's own
-`claimable()` queue, after a sync on `board_ask_sec` when no loop is live
-to make one; in mirror mode the `ready` rows, as ever.
-"""
+"""Store-mode rows following the board; the one sender of their pushes and notes."""
 import contextlib
 from datetime import datetime, timezone
 
@@ -75,15 +17,9 @@ CLOSED_ANSWERS = ("canceled", "completed")
 
 
 def observe_board(target, conn, project, board, now, out, asked, ask_ms):
-    """Ask `board` the state of each of `project`'s open tickets and record
-    the answers; nothing unless `target`'s `[board] mode` is `store` and a
-    board is given that is not native (KO-759: the store asking itself
-    writes revisions for nothing). Within `ask_ms` of the project's last
-    ask only what is queued is delivered (`_deliver_queued()`). `asked`
-    is the store's `ReconcileMemory.states_asked`, by project id. A raise
-    from the board is one printed line to `out` and no write."""
     if board is None or board_mode(target).mode != "store":
         return
+    # A native board is the store: asking it writes revisions for nothing.
     if getattr(board, "native", False) is True:
         return
     asked_at = asked.get(project)
@@ -99,7 +35,7 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
     asked[project] = now
     try:
         answers = board.states([t.linearIdentifier for t in tickets])
-    except Exception as e:  # noqa: BLE001 - no evidence, never the pass
+    except Exception as e:
         print(f"[holo2] the board could not be asked its tickets' states"
               f" ({e}); a later pass asks again", file=out)
         return
@@ -114,16 +50,12 @@ def observe_board(target, conn, project, board, now, out, asked, ask_ms):
 
 
 def _deliver_queued(target, conn, project, board, now, out, ask_ms):
-    """A pass inside the ask interval: the queued pushes, after one
-    `states()` ask naming only their tickets, then the pending notes, which
-    need no answer. The ask is not stamped, so the full one keeps its
-    interval; a pass with nothing queued calls the board for nothing."""
     tickets = _pushes_to_settle(conn, project)
     if tickets:
         deadline.check("the board's states of queued pushes")
         try:
             answers = board.states([t.linearIdentifier for t in tickets])
-        except Exception as e:  # noqa: BLE001 - no evidence, never the pass
+        except Exception as e:
             print(f"[holo2] the board could not be asked the states of"
                   f" queued pushes ({e}); a later pass asks again", file=out)
             return
@@ -132,8 +64,6 @@ def _deliver_queued(target, conn, project, board, now, out, ask_ms):
 
 
 def _apply(target, conn, board, tickets, answers, now, out, ask_ms):
-    """Record each ticket's answer, abort a canceled live run, and send
-    the pushes the answers settle."""
     sends = []
     for ticket in tickets:
         answer = answers.get(ticket.linearIdentifier)
@@ -149,12 +79,6 @@ def _apply(target, conn, board, tickets, answers, now, out, ask_ms):
 
 
 def owed(target, conn, project, provider, now, out, knobs):
-    """The `(ticket id, run id)` pairs `project` is owed a loop for. Mirror
-    mode: `store.read.ready_tickets()`, exactly as before. Store mode: the
-    store's queue, `claimable()`, after one `sync_board()` of the project
-    the provider's team keys, throttled to `knobs.board_ask_ms` on the
-    shared `boardAskedAt`; its printed lines go to `out`. Another project
-    row in the store is not synced."""
     if not store_mode(target):
         return store.read.ready_tickets(conn, project)
     if provider is not None and project == _board_project(conn, provider):
@@ -173,16 +97,15 @@ def _board_project(conn, provider):
 
 
 def _deliver(conn, project, board, out):
-    """Post the project's pending notes oldest first, each outside any
-    transaction and stamped in its own after; the first raise is recorded
-    on its note and the rest wait for the next pass."""
     for note in store.read.pending_notes(conn, project):
         deadline.check(f"the post of note {note.id} on {note.identifier}")
         body = (f"**{_utc(note.at)}**\n\n{note.text}\n\n"
                 f"holophyte-note: {note.id}")
+        # A response lost after the board kept the comment posts it again; the id
+        # line is what makes the duplicate recognisable.
         try:
             board.comment(note.issueId, body)
-        except Exception as e:  # noqa: BLE001 - the note waits, never the pass
+        except Exception as e:
             store.mark_note_failed(conn, note.id, str(e) or type(e).__name__)
             print(f"[holo2] note {note.id} on {note.identifier} could not be"
                   f" posted ({e}); it waits for the next pass", file=out)
@@ -191,31 +114,23 @@ def _deliver(conn, project, board, out):
 
 
 def _send(conn, board, sends, out):
-    """Send the settled pushes, each after its row's transaction. Each row
-    is read again first: a worker may have moved the ticket on since its
-    push was settled, and a push its status no longer maps to, or no
-    longer queued, is not sent over the newer one."""
     for ticket_id, identifier, issue_id, state in sends:
+        # A worker may have moved the ticket on since its push was settled.
         current = store.read.ticket_by_id(conn, ticket_id)
         if (current is None or current.pushState != state
                 or not _pushes(current.status, state)):
             continue
         try:
             board.set_state(issue_id, state)
-        except Exception as e:  # noqa: BLE001 - the push waits, never the pass
+        except Exception as e:
             print(f"[holo2] the queued push of {identifier} to {state}"
                   f" failed ({e}); it waits for the next pass", file=out)
             continue
-        # The board now shows the sent state: a push queued before the
-        # next ask is queued from it, not from the answer before (KO-761).
+        # A push queued before the next ask is queued from the state just sent.
         store.set_board_state(conn, ticket_id, state)
 
 
 def _closed_to_ask(conn, project):
-    """The project's closed tickets that still have a push queued -- a
-    merge or abandonment is pushed like any other status -- or a note
-    pending delivery, so the ask that gates delivery is made while one
-    waits (KO-747)."""
     return [store.read.ticket_by_id(conn, ticket_id) for (ticket_id,) in
             conn.execute(
                 "SELECT id FROM tickets t WHERE projectId = ? AND status IN"
@@ -226,8 +141,6 @@ def _closed_to_ask(conn, project):
 
 
 def _pushes_to_settle(conn, project):
-    """The project's tickets, open or closed, with a push queued and not
-    seen gone: the ones a pass inside the ask interval asks about."""
     return [store.read.ticket_by_id(conn, ticket_id) for (ticket_id,) in
             conn.execute(
                 "SELECT id FROM tickets WHERE projectId = ? AND pushState"
@@ -236,11 +149,6 @@ def _pushes_to_settle(conn, project):
 
 
 def _record(conn, ticket, answer, now, out, ask_ms):
-    """One ticket's answer, written under one transaction that re-reads
-    the row; a row closed since the open read is left alone but for its
-    queued push. Answer `(push, run)`: the push to send, as `(issue id,
-    state)`, and the live run a canceled answer is to abort, each or None;
-    neither is acted on here."""
     with store.transaction(conn):
         row = conn.execute(
             "SELECT status, activeRunId, lastRunId, goneSince, pushState"
@@ -268,9 +176,6 @@ def _record(conn, ticket, answer, now, out, ask_ms):
 
 
 def _rederive(conn, ticket_id, answer, now):
-    """The push re-derived after an abort or walk changed the row: an
-    abandoned or merged ticket, or a canceled or completed answer, clears
-    it; the push to send, as `(issue id, state)`, or None."""
     with store.transaction(conn):
         ticket = store.read.ticket_by_id(conn, ticket_id)
         if ticket.pushState is None:
@@ -285,46 +190,35 @@ def _rederive(conn, ticket_id, answer, now):
 
 
 def _settle(conn, ticket_id, answer, now):
-    """The three-row rule on the ticket's queued push, the board having
-    answered `answer`; the push to send, as `(issue id, state)`, or None."""
     ticket = store.read.ticket_by_id(conn, ticket_id)
     wanted, seen = ticket.pushState, answer["name"]
     if wanted is None:
         return None
     if seen == wanted or (ticket.pushFrom is not None
                           and seen != ticket.pushFrom):
-        # Landed, or a person's move: either way nothing is left to send.
         store.clear_push(conn, ticket_id)
         return None
     if answer["state"] in CLOSED_ANSWERS:
-        # A closed column is never sent from, even the one queued from:
-        # the push would reopen a completed or canceled issue.
+        # Sending from a closed column would reopen a completed or canceled issue.
         store.clear_push(conn, ticket_id)
         return None
     if not _pushes(ticket.status, wanted):
-        # The status has moved on to one that does not push this state.
         store.clear_push(conn, ticket_id)
         return None
     if ticket.pushFrom is None:
-        # Never observed when queued: `seen` is the state it is sent from.
         store.record_push(conn, ticket_id, wanted, now)
     return ticket.linearIssueId, wanted
 
 
 def _pushes(status, state):
-    """Whether a ticket at `status` pushes `state`: its mirror state, or
-    Backlog for a `needs_spec` one, which a stale park queues (KO-766)."""
     return (MIRROR_STATES.get(status) == state
             or (status == "needs_spec" and state == BACKLOG_STATE))
 
 
 def _gone(conn, ticket, row, now, out, ask_ms):
-    """A gone answer: stamp the first sighting, retire on a later one;
-    answer whether it retired the ticket."""
     if row[3] is None:
         store.set_gone_since(conn, ticket.id, now)
-    # A ticket parked on its pull request or a question is left as it
-    # is: the person it waits on decides it.
+    # A ticket parked on its pull request or a question waits on its person.
     elif now - row[3] >= ask_ms and row[0] != "blocked_on_operator":
         _retire(conn, ticket, row, now, out)
         return True
@@ -332,17 +226,15 @@ def _gone(conn, ticket, row, now, out, ask_ms):
 
 
 def _abortable(conn, run_id):
-    """`run_id` when it is live in a work phase with no abort pending: a
-    run parked on its pull request is `_close_canceled()`'s (KO-660)."""
     if run_id is None or abort_requested(conn, run_id):
         return None
     (phase,) = conn.execute("SELECT phase FROM runs WHERE id = ?",
                             (run_id,)).fetchone()
+    # A run parked on its pull request is reconcile's _close_canceled() to end.
     return None if phase in store.PARKED_PHASES else run_id
 
 
 def _abort_canceled(target, conn, board, ticket, run_id, out):
-    """Abort the canceled ticket's live run; a refusal is one printed line."""
     note = f"{ticket.linearIdentifier} was canceled on the board"
     try:
         ended = abort_run(target, conn, run_id, note, provider=board,
@@ -356,8 +248,6 @@ def _abort_canceled(target, conn, board, ticket, run_id, out):
 
 
 def _retire(conn, ticket, row, now, out):
-    """The second gone sighting: pause a live run on the question, or walk
-    an idle ticket `abandoned`, the `reconcile` row recorded first."""
     status, active_run, last_run, gone_since = row
     identifier = ticket.linearIdentifier
     question = f"the board no longer has {identifier}"

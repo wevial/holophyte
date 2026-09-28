@@ -1,12 +1,4 @@
-"""`--board-import`: copy every open Linear issue into the store (KO-756).
-
-Stage 6 of the move off Linear: before a project's `[board] kind` is set to
-`"native"`, each open issue of its Linear board, Backlog included, is
-upserted into the store by board id (the issue UUID), so nothing the store
-lacks is lost when nothing reads Linear again. Rows, runs, ledger and
-`dependsOn` the store already holds stay as they are. Setting `kind` is the
-maintainer's step (the runbook's "Move a project to the native board").
-"""
+"""`--board-import`: upsert every open issue of the board into the store."""
 import sys
 
 import store
@@ -14,25 +6,12 @@ from holophyte.board import body_problems, mirror_key, mirror_task, on_pull_requ
 
 
 class _DryRun(Exception):
-    """Raised out of the import's transaction so a dry run rolls back."""
+    pass
 
 
 def board_import(project, board, dry_run=False, out=None):
-    """Upsert `board.open_issues()` into `project`'s store; return 0.
-
-    The board is asked first, outside any transaction, and every issue is
-    then mirrored in one `store.transaction()` the way the queue mirror
-    does: its column from the answer, specced by `body_problems()`. A row
-    the store holds keeps its `dependsOn` (`depends_on=None`); a new one
-    takes the issue's `blocked_by`. One line per issue says `new`,
-    `changed` (its revision moved) or `unchanged`, and a summary counts
-    them with the pushes and notes still pending for Linear. A dry run
-    raises out of the transaction after the summary, so it rolls back, as
-    a failure part-way does; running it again is the restart, the upsert
-    being keyed by board id.
-    """
     out = out or sys.stdout
-    # Opening creates an absent file, so a dry run refuses one first.
+    # store.open() creates an absent file, so a dry run refuses one first.
     if dry_run and not project.store_path.is_file():
         raise SystemExit(f"[holo2] no store at {project.store_path}")
     issues = board.open_issues()
@@ -61,12 +40,10 @@ def board_import(project, board, dry_run=False, out=None):
 
 
 def _import_issue(conn, project, project_id, task):
-    """Mirror one open issue; return `new`, `changed` or `unchanged`."""
     before = _revision(conn, project_id, task)
     problems = body_problems(
         task, project.path,
         on_pull_request=on_pull_request(conn, project_id, task))
-    # A held row keeps its dependsOn; a new one takes the board's blockers.
     depends_on = task.get("blocked_by", []) if before is None else None
     mirror_task(conn, project_id, task, specced=not problems,
                 depends_on=depends_on)
@@ -77,7 +54,6 @@ def _import_issue(conn, project, project_id, task):
 
 
 def _revision(conn, project_id, task):
-    """The stored row's revision for `task`, or None with no row."""
     row = conn.execute(
         "SELECT revision FROM tickets WHERE linearIssueId = ? AND projectId = ?",
         (mirror_key(task), project_id)).fetchone()
@@ -85,7 +61,6 @@ def _revision(conn, project_id, task):
 
 
 def _pending(conn, project_id):
-    """The project's pushes and notes not yet delivered to Linear."""
     pushes = conn.execute(
         "SELECT COUNT(*) FROM tickets WHERE projectId = ?"
         " AND pushState IS NOT NULL", (project_id,)).fetchone()[0]

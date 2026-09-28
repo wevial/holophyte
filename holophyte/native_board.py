@@ -1,17 +1,4 @@
-"""`NativeBoard`: a `[board] kind = "native"` project's board, the store.
-
-A native board has no second copy to sync, read back or post notes to
-(KO-754): its reads answer from the project's store, its lease and state
-writes do nothing -- a claim's lease read-back then stands -- and
-`comment()` only records the note. Filing, editing and the body read-back
-go through `store.board`, so `--file-ticket` reaches the store through the
-same `file()`, `update()` and `stored_body()` it drives on Linear, and
-`--move` and `--cancel` through `move()` and `cancel()`, which only a
-native board has (KO-764). Nothing here imports or asks Linear.
-
-The store is opened per call, read-only for a read; a read of a store not
-created yet answers as a board with no tickets.
-"""
+"""A native project's board: the store itself, with no second copy and no Linear."""
 from __future__ import annotations
 
 import hashlib
@@ -25,7 +12,6 @@ import store.tickets
 from provider import GONE, parse_body
 from store.read import claimable, open_readonly
 
-# `--file-ticket`'s workflow state names as a native ticket's column.
 STATE_COLUMNS = {"Todo": "ready", "Backlog": "backlog"}
 _COLUMNS = ("id, linearIssueId, linearIdentifier, title, body, timeBoxMs,"
             " priority, labels, url, boardState, boardUpdatedAt, filedAt,"
@@ -33,9 +19,6 @@ _COLUMNS = ("id, linearIssueId, linearIdentifier, title, body, timeBoxMs,"
 
 
 class NativeBoard:
-    """The `Board` members answered from `project`'s store; see the module
-    docstring. `team` is the store's project key, `key` the `KEY` of the
-    board's `KEY-n` identifiers."""
 
     store_mode = True
     native = True
@@ -46,10 +29,7 @@ class NativeBoard:
         self.team = team
         self.last_listing = None
 
-    # --- store access --------------------------------------------------------
-
     def _write(self):
-        """A writable connection and this board's project id."""
         from holophyte.runs import open_store
         conn = open_store(self.project)
         project_id = store.tickets.ensure_project(conn, self.team,
@@ -57,8 +37,6 @@ class NativeBoard:
         return conn, project_id
 
     def _rows(self, where, params):
-        """This project's ticket rows matching `where`; [] without a store
-        or a project row."""
         if not Path(self.project.store_path).exists():
             return []
         with closing(open_readonly(self.project.store_path)) as conn:
@@ -79,8 +57,6 @@ class NativeBoard:
             row = conn.execute("SELECT id FROM projects WHERE linearTeamId = ?",
                                (self.team,)).fetchone()
             return [] if row is None else [t.id for t in claimable(conn, row[0])]
-
-    # --- reads ---------------------------------------------------------------
 
     def fetch_task(self, issue_id):
         row = self._row(issue_id)
@@ -127,8 +103,7 @@ class NativeBoard:
         raise RuntimeError("a native board's queue is the store's: claim from"
                            " the store, not the board")
 
-    # --- writes --------------------------------------------------------------
-
+    # State and lease writes have no second copy to reach; a lease read-back stands.
     def set_state(self, issue_id, state_name):
         pass
 
@@ -151,8 +126,7 @@ class NativeBoard:
             store.record_note(conn, row[0], "comment", body, f"comment:{digest}")
 
     def file(self, title, body, estimate, state, priority=None, blockers=()):
-        """File `body` in the column `state` names; its title, estimate and
-        blockers are the body's own, as the store reads them from it."""
+        # The store reads the title, estimate and blockers from the body itself.
         if state not in STATE_COLUMNS:
             raise RuntimeError(f"a native board files into Todo or Backlog,"
                                f" not {state!r}")
@@ -164,9 +138,6 @@ class NativeBoard:
 
     def update(self, identifier, title, body, estimate, blockers=(), *,
                revision=None, priority=None, labels=None):
-        """Replace the body at `revision`, the one the editor read; the
-        store resolves the body's `Depends on:`, so nothing is added or
-        kept beside it."""
         if revision is None:
             raise RuntimeError(f"updating {identifier} on a native board needs"
                                " --revision, the revision the edit was read at")
@@ -178,8 +149,6 @@ class NativeBoard:
         return [], []
 
     def move(self, identifier, column, revision, note=None):
-        """Move `identifier` to `column`, `ready` or `backlog`, at
-        `revision`, the one the mover read; answer its new revision."""
         conn, project_id = self._write()
         with closing(conn):
             return store.board.move_ticket(conn, project_id, identifier,
@@ -187,8 +156,6 @@ class NativeBoard:
                                            note=note)
 
     def cancel(self, identifier, revision, note):
-        """Cancel `identifier` at `revision`; answer its new revision and
-        the live run the cancel asked to end, or None without one."""
         conn, project_id = self._write()
         with closing(conn):
             revision = store.board.cancel_ticket(conn, project_id, identifier,
@@ -211,9 +178,6 @@ def _json(values):
 
 
 def _task(row):
-    """A ticket row as the task dict: its body parsed as a board parses it,
-    with the row's own fields over it and `store_revision` naming the
-    revision it was read at, so a mirror of it never reverts a later edit."""
     (_, issue_id, identifier, title, body, time_box_ms, priority, labels, url,
      state_name, updated_at, filed_at, column, status, revision) = row
     task = parse_body(identifier, body)
@@ -221,7 +185,7 @@ def _task(row):
                 labels=json.loads(labels), url=url, board_state=state_name,
                 updatedAt=updated_at, filed_at=filed_at,
                 column=None if status == "merged" else column,
-                store_revision=revision)
+                store_revision=revision)  # so its mirror never reverts a later edit
     if time_box_ms is not None:
         task["budget_min"] = time_box_ms // 60000
     return task

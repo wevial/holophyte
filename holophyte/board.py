@@ -1,11 +1,4 @@
-"""Project the store's ticket state and run narrative onto Linear.
-
-Mirrors validate ticket contracts, publish state and lease labels, and warn
-on best-effort board failures. Escalation parks repeatedly failing tickets;
-close-out releases their runs and refreshes the rendered findings window.
-`ledger()` stores full entries before posting cleaned, capped board copies.
-`file_ticket()` validates operator-supplied tickets before and after filing.
-"""
+"""The store's ticket state and run narrative, projected onto the board."""
 import contextlib
 import fcntl
 import hashlib
@@ -28,16 +21,11 @@ from holophyte.redact import safe_print as print
 from holophyte.report import host_label
 from holophyte.runs import warn_on_run
 
-# The prefix of the board lease label (KO-351): `holo:HOST`, `holo:` and the
-# writer's `[report] host_label`, so the ready column says which writer holds
-# a ticket where the store lease, private to one writer's store, cannot.
 LEASE_LABEL_PREFIX = "holo:"
 
 
 def board_owned_labels(labels):
-    """`labels` without the ones the factory writes: the `holo:` lease labels
-    and `stale` (`freshness.STALE_LABEL`, named here because that module
-    imports this one) -- what the store records as the board's (KO-736)."""
+    # "stale" is freshness.STALE_LABEL, spelled out: freshness imports this module.
     return [label for label in labels
             if not label.startswith(LEASE_LABEL_PREFIX) and label != "stale"]
 
@@ -52,8 +40,6 @@ _COMMENT_BANNERS = (
 
 
 def comment_body(text, limit=BOARD_COMMENT_LIMIT):
-    """Keep at most `limit` cleaned characters plus a notice counting the cut.
-    The store retains the original text, including banners and omitted prose."""
     text = outbound(text)
     text = re.sub(
         r"(?m)^<!-- devin-review-badge-begin -->[^\n]*\n"
@@ -72,53 +58,22 @@ def comment_body(text, limit=BOARD_COMMENT_LIMIT):
 
 
 def lease_host(target):
-    """The host half of this writer's lease label: `[report] host_label`,
-    or the hostname when the target sets no label -- a writer without a
-    label still has to hold its tickets against another writer, and the
-    hostname is the name the store already records for its runs."""
     return host_label(target, socket.gethostname())
 
 
 def lease_label(target):
-    """This writer's board lease label, `holo:HOST`: the one label its
-    claims write and its close-outs, requeues and backed-off claims take
-    off. One per writer, not per run: the store, which knows which of this
-    writer's runs is live, is what keeps a late removal off a fresh claim's
-    label (`release_lease_label()`), and `lease_turn()` is what keeps a
-    fresh claim out of the gap between that look and the removal."""
     return LEASE_LABEL_PREFIX + lease_host(target)
 
 
 def lease_turn_path(target):
-    """The lease turn for `target`, beside its store in the state directory
-    -- never in the repository, where a task's `git add -A` could commit it."""
+    # Beside the store, never in the repository, where `git add -A` could commit it.
     return target.holo_dir / "lease.lock"
 
 
 @contextlib.contextmanager
 def lease_turn(target):
-    """Hold `target`'s turn at the board lease label for the block.
-
-    A blocking flock on a permanent file beside the store, created once and
-    never unlinked (unlinking a flock file is what lets two holders exist),
-    so every loop and every close-out on this store locks the same inode.
-    Two things take it: a claim, for the span of `store.claim()` and the
-    label write that follows, and a close-out's `release_lease_label()`,
-    for the span of its look at the store and the removal. It exists
-    because that look and that removal are two operations with a network
-    call between them, and a sibling loop's claim landing in the gap --
-    lease taken, label written -- was stripped off the board by the
-    removal that followed, leaving the ticket free for another writer to
-    claim while this store's fresh run was live (the review of KO-351).
-    Under the turn no claim of this store can move between the look and
-    the removal, so a live run the store names is always seen before its
-    label is touched.
-
-    Not the store's write lock, on purpose: that one is held for the
-    microseconds of a transaction, never across a network call, and a
-    loop working another ticket is not stalled by this one -- only
-    claims and lease releases queue here, each for one board round trip.
-    """
+    # Held across a board call, so it is not the store's write lock. The file is
+    # never unlinked: unlinking a flock file lets two holders exist.
     path = lease_turn_path(target)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
@@ -126,15 +81,10 @@ def lease_turn(target):
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
     finally:
-        os.close(fd)  # drops the flock
+        os.close(fd)
 
 
 def lease_turn_held(target):
-    """Whether somebody holds `target`'s lease turn right now: a claim or
-    a close-out of this store is between its look and its write, which is
-    a loop (or a close-out) live on the store whatever its heartbeats say.
-    A non-blocking try at the same flock, given straight back; a missing
-    file is nobody's turn, and is not created here."""
     path = lease_turn_path(target)
     if not path.exists():
         return False
@@ -144,60 +94,32 @@ def lease_turn_held(target):
     except BlockingIOError:
         return True
     finally:
-        os.close(fd)  # drops the flock, when it was taken
+        os.close(fd)
     return False
 
 
 def lease_holders(labels):
-    """The hosts whose `holo:` labels are in `labels`, in board order; []
-    without one (a board that does not label, or a task dict older than
-    the key)."""
     return [str(label)[len(LEASE_LABEL_PREFIX):] for label in labels or []
             if str(label).startswith(LEASE_LABEL_PREFIX)]
 
 
 def foreign_lease_holders(labels, host):
-    """The hosts other than `host` holding a `holo:` lease in `labels`, in
-    board order."""
     return [holder for holder in lease_holders(labels) if holder != host]
 
 
 def drop_lease_label(conn, ticket_id, provider, issue_id, label):
-    """Take exactly `label` off `issue_id`, once; never raise. A board that
-    refuses leaves a `warning` row naming the label another writer will
-    refuse the ticket on, and this writer's next claim treats as stale."""
     try:
         provider.unlabel_issue(issue_id, label)
-    except Exception as e:  # noqa: BLE001 - best-effort board write
+    except Exception as e:
         warn(conn, ticket_id, f"the lease label {label} could not be removed"
                               f" from {issue_id} ({e}); another writer will"
                               " refuse the ticket until it is")
 
 
 def release_lease_label(target, conn, ticket_id, provider, run_id):
-    """Take this writer's lease label off the ticket's issue for run
-    `run_id`'s close-out; never raise.
-
-    The board half of every close-out that gives the store lease back -- a
-    merge, a failure, a park, a sweep, a requeue -- so a label never
-    outlives the lease it mirrors. The label names the writer, not the
-    run, so the store decides whether it is still this run's to remove: a
-    close-out that runs late, after a fresh claim of this store has
-    re-asserted the same label under a new live run, leaves it on, since
-    the ticket's `activeRunId` names that other run.
-
-    That look and the removal run under `lease_turn()`, as the claim's
-    lease-and-label does (see `close_out_failure()` for why the write
-    lock is not held across a network call): without the turn a sibling
-    loop could claim the ticket and write the same label between the
-    look and the removal, taking the fresh run's lease off the board.
-    Under the turn a claim either lands before the look, which then sees
-    its run and leaves the label alone, or waits out the removal.
-    Best-effort like `mirror_push()`; a storeless or boardless caller
-    has nothing to release.
-    """
     if conn is None or provider is None:
         return
+    # The label names the writer, not the run: a fresh claim may have re-asserted it.
     with lease_turn(target):
         ticket = store.read.ticket_by_id(conn, ticket_id)
         if ticket is None or ticket.activeRunId not in (None, run_id):
@@ -207,22 +129,10 @@ def release_lease_label(target, conn, ticket_id, provider, run_id):
 
 
 def mirror_key(task):
-    """The `linearIssueId` a task's mirror is keyed by.
-
-    The canonical issue UUID when the provider has one, and the human label
-    otherwise. Written once here because two callers now have to agree on it:
-    `mirror_task()` mirrors under this id, and the failure-pattern check below
-    has to find that same row *before* anything is claimed.
-    """
     return task.get("issue_id") or task["id"]
 
 
 def on_pull_request(conn, project_id, task):
-    """Whether the mirrored ticket's last run holds a pull request URL.
-    Asked before the mirror, so a ticket never mirrored is not on one.
-    The claim and the queue mirror both pass it to `body_problem()`, so a
-    ticket sent back to its pull request is judged alike by each (KO-680).
-    """
     row = conn.execute(
         "SELECT r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
         " WHERE t.linearIssueId = ? AND t.projectId = ?",
@@ -231,20 +141,10 @@ def on_pull_request(conn, project_id, task):
 
 
 def store_status(conn, ticket_id):
-    """The store's status column for `ticket_id`, for a printed decision."""
     return store.read.ticket_by_id(conn, ticket_id).status
 
 
 def task_contract(task):
-    """A provider task's contract as `(title, criteria, commands, evidence_states)`.
-
-    Both sides use this mapping: `mirror_task()` mirrors the ticket, so
-    the snapshot `store.claim()` freezes off that row is this contract, and
-    `merge_drift()` snapshots the live ticket the same way. Two hand-rolled
-    mappings would eventually disagree about, say, a ticket carrying no verify
-    command, and the disagreement would read as drift on a ticket nobody
-    touched. Positional, in the order `store.contract_snapshot()` takes them.
-    """
     return (task["title"],
             list(task.get("criteria") or ()),
             [task["verify"]] if task.get("verify") else [],
@@ -252,34 +152,6 @@ def task_contract(task):
 
 
 def body_problems(task, repo=None, on_pull_request=False):
-    """Every blocking template violation in the offered ticket's body.
-
-    The claim-time contract gate. `ticket_template.validate()` is what a
-    ticket is held to before it enters the queue, and until now nothing on
-    the claim path asked it: KO-165 was claimed with literal angle-bracket
-    placeholders in its title, summary and first criterion and no What line,
-    the title-only implementer skipped the in-scope work, review passed it,
-    and the merge shadowed fifteen runs of history. The validator refuses
-    that body; this is the call that puts it in the way.
-
-    Advisories are scope guidance, not violations, so `blocking()` filters
-    them out and an advisory-only body is claimed as before. The loop
-    prints the first per refusal (`body_problem()`); a store-mode board
-    gets the full list as one note (`note_problems()`, KO-745).
-
-    A task with no body at all (`None`, not `""`) is not judged: a provider
-    that hands no body has nothing to validate; an empty description is
-    the emptiest invalid body there is.
-
-    `repo` is the target repository's path; with it the validator also
-    refuses a body naming a path that repository gitignores, which the
-    reviewer's export of the candidate can never contain.
-
-    `on_pull_request` says the ticket's last run holds a pull request URL:
-    its candidate is already on that pull request, where the paths main
-    lacks live, so the repository checks are skipped entirely (KO-598) and
-    only a first claim is refused for them (KO-655).
-    """
     body = task.get("body")
     if body is None:
         return []
@@ -287,7 +159,7 @@ def body_problems(task, repo=None, on_pull_request=False):
         repo = None
     ticket = ticket_template.parse(body)
     problems = ticket_template.blocking(ticket_template.validate(ticket, repo=repo))
-    if repo:  # An Evidence section the target cannot capture, as filing refuses.
+    if repo:
         from holophyte.pr_media import evidence_problems
         from holophyte.project import Project
         problems += evidence_problems(Project.locate(repo, adopt=False),
@@ -296,7 +168,6 @@ def body_problems(task, repo=None, on_pull_request=False):
 
 
 def body_problem(task, repo=None, on_pull_request=False):
-    """The first of `body_problems()`, or None for a body that passes."""
     problems = body_problems(task, repo, on_pull_request)
     return problems[0] if problems else None
 
@@ -305,11 +176,6 @@ VALIDATION_HEADING = "Not claimed: this ticket's body fails the template"
 
 
 def note_problems(conn, ticket_id, kind, body, problems, text=None):
-    """Record one `kind` note on `ticket_id` naming every one of `problems`
-    (KO-745), keyed on a sha256 of `body` and `problems`: an unchanged
-    refusal seen again is the same note, an edited body that still fails
-    is a new one. `text` defaults to a heading and one bullet per problem;
-    the note holds it as `comment_body()` caps it."""
     if text is None:
         bullets = "\n".join(f"* {problem}" for problem in problems)
         text = f"**{VALIDATION_HEADING}**\n\n{bullets}"
@@ -320,32 +186,15 @@ def note_problems(conn, ticket_id, kind, body, problems, text=None):
 
 
 def merge_drift(conn, run_id, provider, issue_id):
-    """The contract fields that moved between the claim and now, () if
-    none, with the live task the answer was read from (None when none was).
-
-    The merge gate's question: the run was implemented, reviewed and verified
-    against the ticket as it stood at the claim, so a body a human edited
-    while the run was working means the candidate answers a contract that no
-    longer exists. Asked here rather than continuously because this is the
-    last moment the answer can still change anything — before it, an edit is
-    something a fix round could absorb; after it, the branch is in main.
-
-    Best-effort in one direction only: a provider that cannot re-read a
-    ticket, a Linear that is down, a deleted issue, and a run claimed
-    before the snapshot column existed all return `()` — not "nothing
-    changed" but "this gate has no evidence", and refusing a verified
-    merge on missing evidence would turn every Linear outage into a
-    stuck queue. A failed read is a warning on the run so the silence is
-    recorded; drift itself is the caller's to act on.
-    """
+    # () means no evidence, not no drift: refusing on it would stall the queue.
     if conn is None or run_id is None or provider is None:
         return (), None
     fetch = getattr(provider, "fetch_task", None)
     if fetch is None:
-        return (), None  # a provider with no re-read; nothing to compare
+        return (), None
     claimed = store.run_contract(conn, run_id)
     if claimed is None:
-        return (), None  # claimed before the snapshot existed
+        return (), None
     try:
         live = fetch(issue_id)
     except Exception as e:
@@ -363,19 +212,13 @@ def merge_drift(conn, run_id, provider, issue_id):
 
 
 def refresh_board_states(conn, project, provider):
-    """Refresh workflow names even for tickets absent from the ready listing.
-
-    Fetching by identifier can see Backlog, unlike the claim query. Only
-    boardState is refreshed: neither the frozen contract nor claim status
-    follows this read. A missing issue or failed read preserves the cache.
-    """
     if project is None:
         return
     for ticket in store.read.open_tickets(conn, project):
         deadline.check(f"{ticket.linearIdentifier}'s board state")
         try:
             task = provider.fetch_task(ticket.linearIdentifier)
-        except Exception as error:  # any transport failure leaves the cache intact
+        except Exception as error:
             print(f"[holo2] board state refresh skipped {ticket.linearIdentifier}:"
                   f" {error}")
             continue
@@ -387,60 +230,6 @@ def refresh_board_states(conn, project, provider):
 
 def mirror_task(conn, project, task, specced=True, depends_on=None,
                 column=None):
-    """Mirror the offered ticket's live body into the store; return its id.
-
-    The first half of a claim, split from the lease so the loop can ask the
-    store about the ticket *as it is now* before it opens a run. The mirror is
-    an upsert with no lease of its own, so a ticket that turns out to be
-    unpickable has cost nothing but a refreshed row — which is the row the
-    next offer is judged on. The lease itself is `store.claim()`, taken by
-    `main()` once the fresh row has said yes; that is what stops two loops
-    from working one project at once.
-
-    Where the mirror lands is the store's routing rule (§2) applied to what
-    the provider parsed: a ticket carrying both acceptance criteria and a
-    verify command is `ready`, and one missing either is `needs_spec` and not
-    pickable. The loop still picks in Linear, so what that decides here is
-    whether the ticket can legally enter `in_flight` — an under-specced mirror
-    cannot, and the board simply keeps saying whatever a human last set.
-
-    The two ids the mirror stores are different ids: `linearIssueId` is the
-    canonical issue UUID the provider hands over as `issue_id`, and is what
-    the mirror is keyed and re-found by, while `linearIdentifier` is the
-    human "KO-123" label. Storing the label in both would key the mirror on
-    the mutable one — a later UUID-carrying writer would mirror the same
-    issue a second time under its real id. A provider with no UUID gets a
-    mirror keyed on the identifier it does have.
-
-    `depends_on=None`, the default, on purpose: the claim's task carries
-    no dependency list, so the store's copy is the only one and
-    `mirror_ticket()` keeps it when the caller says nothing — `[]` would
-    clear a blocked ticket's dependencies in the very row the pickability
-    gate reads next. Store mode's queue mirror does know the list — the
-    board's open blockers (KO-743) — and passes it, `[]` included.
-
-    `specced=False` mirrors the ticket with its criteria and verify command
-    withheld — the same row a criteria-less body produces: `needs_spec`,
-    which `pickable()` refuses. That is how a body the template validator
-    rejects is parked, whatever its lists say; the rows keep no word for
-    "malformed" and the printed refusal names the problem.
-
-    `blocked_on_deps` is also the empty pass's park for a ticket the board
-    stopped listing (KO-425): the listing naming it again ends the wait,
-    so a specced mirror walks the row back to `ready` on this shared path
-    — the admit step and the scheduler's queue mirror both — and
-    `pickable()` re-parks one still blocked. `blocked_on_operator` is a
-    human's and never moved.
-
-    The board's other fields ride along (KO-736): `priority`, the
-    board-owned labels, `filed_at` and `updatedAt`, each kept as stored when
-    the task lacks it, and `column`: the task's own when a one-issue read
-    gave it one (None, completed, keeps the stored column), else `ready`,
-    the listing's. The store records a revision when a
-    board-owned one changed. A task a store-mode claim built from a row
-    carries `store_revision`, and is written only while the row is still
-    at it (Phase 3 stage 3): an edit landed since is not reverted.
-    """
     title, criteria, commands, _states = task_contract(task)
     if column is None:
         column = task.get("column", "ready")
@@ -455,8 +244,6 @@ def mirror_task(conn, project, task, specced=True, depends_on=None,
         acceptance_criteria=criteria,
         verification_commands=commands,
         time_box_ms=task["budget_min"] * 60 * 1000,
-        # Serve the body the loop read (KO-328); a task without one
-        # mirrors as empty, as body_problem() expects.
         body=task.get("body") or "",
         url=task.get("url"),
         board_state=task.get("board_state"),
@@ -466,6 +253,7 @@ def mirror_task(conn, project, task, specced=True, depends_on=None,
         board_column=column,
         filed_at=task.get("filed_at"),
         board_updated_at=task.get("updatedAt"),
+        # None keeps the stored dependencies; [] clears them.
         depends_on=depends_on,
         expected_revision=task.get("store_revision"),
     )
@@ -482,31 +270,9 @@ def mirror_task(conn, project, task, specced=True, depends_on=None,
 
 def release_run(conn, run_id, merged, reason=None, outcome_class="work",
                 merge_sha=None, failure_kind=None):
-    """Give the lease back when the loop is done with a run, merged or not.
-
-    Called from the loop's `finally`, because the failure paths are the ones
-    that matter: a run that dies holding the lease blocks every later claim on
-    the project, and a preserved branch is meant to wait for a human without
-    also freezing the queue.
-
-    A failure reason names the phase the run stopped in, read back from the
-    store rather than remembered here: on a crash the loop's own idea of where
-    it was died with the exception, while the phase `set_phase()` last wrote
-    is exactly where the run got to. A caller that knows better says so with
-    `reason` — the supervisor sweep does, because "stopped in phase working"
-    is true of a swept run and says nothing about why it was swept.
-
-    `merge_sha` is the merge commit a merged run landed on main as, stamped
-    on the row in the same transaction that ends the run; None when the
-    caller has none to give.
-    """
     if merged:
         store.release(conn, run_id, "merged", merge_sha=merge_sha)
         return
-    # No preservation claim in the default: the paths that delete or keep a
-    # branch say so themselves in the reason they pass, and stamping
-    # "preserved" on a reason-less failure lied on every deletion path
-    # (KO-146 incident, run 10).
     from holophyte.failure_reason import record
 
     record(conn, run_id, reason)
@@ -515,50 +281,21 @@ def release_run(conn, run_id, merged, reason=None, outcome_class="work",
                   outcome_class=outcome_class, failure_kind=failure_kind)
 
 
-# --- Linear as the notice board ----------------------------------------------
-# State-model §1: Holophyte owns the in-flight substate and Linear is where it
-# gets posted, so ticket status travels one way — store to Linear, never read
-# back — and `mirror_push()` is the loop's only writer of a workflow state.
-# That is what stops loop logic from depending on which column a human dragged
-# a card into: the drag is overwritten by the next push, and nothing branches
-# on it.
-#
-# The table is module-level config rather than five literals at the call sites
-# because the thing likeliest to change is the mapping, not the pushing —
-# per-project mappings and §9's team-vs-project question (does a project or a
-# team own these state names?) both land here. Neither is answered here.
 MIRROR_STATES = {
     "ready": "Todo",
     "in_flight": "In Progress",
     "merged": "Done",
     "abandoned": "Canceled",
-    # No Linear state means "waiting on an operator", so a blocked ticket goes
-    # back to the column a human picks work out of, until there is a state
-    # that says it properly. Telling the operator what is being waited on is a
-    # comment, and status comments are not this projection's business.
+    # No board state says "waiting on an operator"; Todo is where one looks.
     "blocked_on_operator": "Todo",
 }
-# `needs_spec` and `blocked_on_deps` are deliberately unmapped: neither is a
-# statement about the board — an unspecced ticket is wherever its author left
-# it, and a dependency-blocked one is the resolver's business — so the
-# projection leaves those tickets' Linear state alone rather than inventing a
-# column for them.
+# needs_spec and blocked_on_deps are unmapped: their board state is left alone.
 
 
 def warn(conn, ticket_id, summary):
-    """Record a warning on the ticket's run and print it; never raise.
-
-    Best-effort work that failed is still something the run has to account
-    for, so it goes in the same event stream as the phase changes, as a
-    `warning` row a reader can pick out of the narrative — written against
-    the ticket's active run, or its last one once released, because that
-    is the stream a reader of this ticket is already reading.
-    """
     run_id = None
     if conn is not None:
         ticket = store.read.ticket_by_id(conn, ticket_id)
-        # A ticket with no run has nothing to hang the row on; the printed
-        # line is then the whole record.
         if ticket is not None:
             run_id = (ticket.activeRunId if ticket.activeRunId is not None
                       else ticket.lastRunId)
@@ -566,30 +303,6 @@ def warn(conn, ticket_id, summary):
 
 
 def mirror_push(conn, ticket_id, provider):
-    """Project the ticket's stored status onto its Linear state; return it.
-
-    Last-write-wins and one-way: the store's `tickets.status` is the truth,
-    `MIRROR_STATES` says what that truth looks like on the board, and nothing
-    is read back. Returns the state pushed, or None when there was nothing to
-    push — an unmapped status, or a push that failed.
-
-    A store-mode board (`provider.store_mode`, KO-740) is not called: the
-    push is queued on the ticket beside the board state last observed, and
-    the host sweep's observation alone delivers it (`holophyte.board_sync`),
-    so a retry never undoes a person's later move. The state is returned as
-    queued, or as already shown when the row shows it. A native board
-    (`provider.native`, KO-759) is the store: the state is returned and
-    nothing is queued, since there is no board to deliver it to.
-
-    Failure is a warning, not an error. Linear being unreachable must not
-    fail a run that has already merged, so a push that raises leaves the
-    board stale, the store right, and a `warning` row in the run's stream.
-    That is the failure §1 asks for: the notice board may be behind, the
-    loop may not be wrong.
-
-    A `conn` of None makes this a no-op, like the rest of the store seam: a
-    storeless `run_task()` holds no status to project.
-    """
     if conn is None:
         return None
     ticket = store.read.ticket_by_id(conn, ticket_id)
@@ -600,8 +313,7 @@ def mirror_push(conn, ticket_id, provider):
     state = MIRROR_STATES.get(status)
     if state is None:
         return None
-    # `is True`, not truthiness: a `Mock` board answers any attribute, and a
-    # board that never said store mode pushes inline.
+    # `is True`, not truthiness: a Mock board answers any attribute.
     if getattr(provider, "native", False) is True:
         return state
     if getattr(provider, "store_mode", False) is True:
@@ -618,24 +330,6 @@ def mirror_push(conn, ticket_id, provider):
 
 
 def mirror_status(conn, ticket_id, status, provider):
-    """Move the ticket to `status` in the store, then push the move to Linear.
-
-    The pair the loop calls at a boundary that changes ticket status, in that
-    order: the store is written first because it is the truth, and Linear is
-    told afterwards because it is a copy.
-
-    Returns whether the store took the move, not what was pushed, because the
-    two failures are not the same kind of thing. A push that does not land
-    leaves a stale board and a `mirror_push()` warning, and the caller carries
-    on regardless; a move the §3 diagram does not draw means the ticket is not
-    where the caller thought it was, and only the caller knows whether its
-    next step still makes sense. So the refusal is warned about, nothing is
-    pushed — the board keeps showing the status the ticket actually has — and
-    False says the status change did not happen.
-
-    A storeless caller gets False for the same reason `mirror_push()` gets
-    None: there is no status here to move or to project.
-    """
     if conn is None:
         return False
     try:
@@ -647,67 +341,16 @@ def mirror_status(conn, ticket_id, status, provider):
     return True
 
 
-# --- failure-pattern escalation ----------------------------------------------
-# A rollback catches one failure; nothing here caught a *pattern*. A ticket the
-# loop cannot finish stays non-terminal on the board, so the provider offers it
-# again on the next pass, and the pass after that, forever — the loop has no
-# memory of having already tried. The store does: one `runs` row per attempt,
-# each stamped with the outcome it ended on. So the escalation is a count over
-# rows that already exist, asked at the two moments that can act on it — when a
-# run closes out, and before the next one is claimed.
-#
-# The threshold is a module constant rather than project config on purpose:
-# per-project policy is a real question (a flaky integration suite deserves a
-# higher bar than a typo fix) and this is not the ticket that answers it. The
-# seam is here, with one name to change.
 MAX_FAILED_RUNS = 2
 
 
 def failure_history(conn, ticket_id):
-    """The ticket's failed runs since a human last intervened, oldest first.
-
-    One query for both halves of the escalation, as `(attempt, reason)` rows:
-    its length is what trips the threshold and its reasons are what the human
-    is told. Reading them together is what stops the comment from listing a
-    different set of runs from the one that blocked the ticket.
-
-    Bounded on the left by the newest `source='human'` interventions row on
-    any of the ticket's runs. A recorded human action (a resume, an operator
-    close-out) is a human taking the ticket back: the failures before it are
-    that human's accepted history, not evidence to keep re-parking on — so
-    one unblock buys a fresh MAX_FAILED_RUNS rather than exactly one attempt
-    forever. A board drag writes no interventions row and so — deliberately,
-    per the escalation's original rule (69fe923) — forgives nothing; a
-    `source='supervisor'` row grants no amnesty either (a deliberate
-    boundary, not a description of existing rows).
-
-    Two bounds, because timestamps alone cannot draw this line: failures
-    count by `endedAt` against the newest human row's `at`, and a failed
-    run carrying a human `close_out` row of its own is excluded *by
-    identity* — the canonical repair records the close-out first and
-    releases the run a clock-read later, so `endedAt`-vs-`at` ordering is
-    jitter, and a hand-dispositioned run must not be the strike that
-    re-parks the ticket on its next failure.
-
-    Only `outcomeClass = 'work'` rows count. An `infra` failure — a claim
-    race, a reviewer container that would not start — is the factory
-    failing, not the ticket, and is neither a strike nor a line in the
-    comment; `--report` still lists it.
-    """
     since = store.read.latest_human_intervention_at(conn, ticket_id)
     return [(run.attempt, run.outcomeReason) for run
             in store.read.failed_attempts_since(conn, ticket_id, since)]
 
 
 def escalation_comment(history):
-    """The Linear comment a blocked ticket gets: one line per failed run.
-
-    The status alone says the factory gave up without saying what it kept
-    hitting, and the reasons are already written — `release()` stamps each run
-    with the phase it stopped in. So the comment is a rendering, not a new
-    account of the failures, and a run that ended with nothing recorded says
-    so rather than being left off the list.
-    """
     lines = [f"**Blocked after {len(history)} failed runs.** Counted since"
              " the last recorded human intervention, if any; attempt numbers"
              " are lifetime. The factory will not claim this ticket again"
@@ -724,43 +367,14 @@ STRIKE_QUESTION_TAIL = (
 
 
 def strike_question(count):
-    """The question the escalation parks a ticket on: the count, then a
-    fixed sentence, fixed so `is_strike_question()` can tell the loop's
-    own park from a module's (a merge conflict, `merge?`, an open pull
-    request) when both leave the ticket `blocked_on_operator` with
-    enough counted failures behind it (KO-345)."""
     return f"{count}{STRIKE_QUESTION_TAIL}"
 
 
 def is_strike_question(question):
-    """Whether `question` is the escalation's, as `strike_question()` wrote
-    it, rather than a park reason of a module's own."""
     return bool(question) and question.endswith(STRIKE_QUESTION_TAIL)
 
 
 def escalate(conn, ticket_id, provider):
-    """Park a ticket whose failed runs have reached `MAX_FAILED_RUNS`.
-
-    Returns whether the ticket *is* blocked when this call returns, not
-    whether this call is what blocked it — the two differ on every pass
-    after the first, and the claim path reads the first answer, so a
-    ticket already blocked keeps refusing claims instead of being worked
-    again the moment the escalation stops being news.
-
-    Only an `in_flight` ticket is escalated, the same rule as the edge the
-    store draws. A ticket sitting anywhere else is not the loop's to park:
-    `merged` work the board keeps re-offering collects failed claims too,
-    and blocking it would lie about finished work — the stale-board
-    re-push in `main()` is what that case wants instead.
-
-    The block is the ordinary status move plus one comment, in that order and
-    with the same discipline as `mirror_push()`: the store is the truth and is
-    written first, Linear is a copy and is told after, and a comment that does
-    not land is a warning on the run rather than a failure of the escalation.
-    A store-mode board gets the comment as a note keyed by the run whose
-    failure tripped the escalation, written with the park in one
-    transaction, for the host sweep to post (KO-742).
-    """
     if conn is None:
         return False
     ticket = store.read.ticket_by_id(conn, ticket_id)
@@ -769,7 +383,7 @@ def escalate(conn, ticket_id, provider):
     status, issue_id = ticket.status, ticket.linearIssueId
     identifier = ticket.linearIdentifier
     if status == "blocked_on_operator":
-        return True  # already parked; the answer, not a second escalation
+        return True
     if status != "in_flight":
         return False
     history = failure_history(conn, ticket_id)
@@ -778,8 +392,7 @@ def escalate(conn, ticket_id, provider):
     question = strike_question(len(history))
     body = comment_body(escalation_comment(history))
     if getattr(provider, "store_mode", False) is True:
-        # One transaction: a park committed alone would make every later
-        # call return early above, and the note would never be written.
+        # A park committed alone would return early above and never write the note.
         run_id = ticket.activeRunId or ticket.lastRunId
         with store.transaction(conn):
             if not block_ticket(conn, ticket_id, provider, question):
@@ -800,17 +413,6 @@ def escalate(conn, ticket_id, provider):
 
 
 def block_ticket(conn, ticket_id, provider, question, park_kind="question"):
-    """Park `ticket_id` as `blocked_on_operator`, asking `question`.
-
-    The status move through `mirror_status()`, then the question into the
-    column the schema reserves for it, so a supervisor or `/attention`
-    reading the store can see what is waited on without asking Linear.
-    Returns whether the store took the move; a refused move writes none.
-
-    The one way a ticket is parked, whoever parks it: the escalation after
-    one failure too many, and the merge gate under `[merge] approve =
-    "human"`, whose question is `merge?`.
-    """
     if not mirror_status(conn, ticket_id, "blocked_on_operator", provider):
         return False
     store.set_question(conn, ticket_id, redact_values(question),
@@ -821,50 +423,8 @@ def block_ticket(conn, ticket_id, provider, question, park_kind="question"):
 def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=None,
                       confirm=None, outcome_class="work", refresh=True,
                       failure_kind=None):
-    """End a failed run the one way the factory ends failed runs.
-
-    Three writes in a fixed order, and the order is the point. The failure
-    record goes first, inside `release()`'s transaction, which stamps the
-    outcome and only then clears the ticket's lease: a crash between them
-    leaves a failed-looking run still holding a lease, which a human or a
-    later release can free, rather than a free lease under a run that
-    still looks alive — the double-claim hazard, and the one asymmetry
-    worth ordering for. Then the escalation, a count over the row just
-    written, so a failure is escalated on the pass that recorded it. Then
-    the window, regenerated last so the entry that ends the run is in it.
-
-    Factored out of the loop's `finally` because the supervisor sweep fails
-    runs too, and a run failed by the sweep has to close out identically to
-    one the loop failed itself — same outcome, same lease, same escalation
-    counter, same rendered entry. The only thing the sweep supplies of its own
-    is the `reason`, and the only thing it does differently is that the
-    process being failed is not the caller.
-
-    Which is what `confirm` is for. A caller failing somebody else's run
-    decided that from a read, and between that read and this write the run's
-    own process may have heartbeated, changed phase or finished — so the
-    decision is re-reached here instead, inside the transaction that writes
-    the failure and under the write lock that keeps the run's process out of
-    it. Returning false abandons the close-out with none of it written, and
-    this answers false in turn; the callback may also record what it is about
-    to do -- or that it declined to -- because a note of a failure that then
-    did not happen is worse than no note, and a decline nobody wrote down is
-    indistinguishable from a sweep that never came. The loop's own `finally`
-    passes nothing: a process failing itself cannot race itself, and there is
-    no verdict of its own to re-reach.
-
-    Only the release is under that lock. The escalation may call Linear,
-    and a supervisor holding the write lock across a network call would
-    stall every live loop until it answers — so it stays outside, where
-    a failed push leaves a stale board, not a half-closed run.
-
-    `outcome_class` is the row's `outcomeClass`: `work` unless the failure
-    was an `InfraFailure`, in which case the escalation that follows does
-    not count it.
-
-    `refresh=False` leaves rendering to the pool worker under the merge lock
-    (KO-343); release, ref cleanup and escalation still run.
-    """
+    # release() stamps the failure before it frees the lease; the board calls
+    # after it stay outside the write lock, which never spans a network call.
     with store.transaction(conn):
         if confirm is not None and not confirm():
             return False
@@ -872,8 +432,6 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
                     failure_kind=failure_kind)
     cleanup_review_refs(target.path, run_id)
     escalate(conn, ticket_id, provider)
-    # The board lease goes with the store lease, in the same close-out
-    # (KO-351); outside the lock for the reason the escalation is.
     release_lease_label(target, conn, ticket_id, provider, run_id)
     if refresh:
         refresh_findings(target, conn)
@@ -881,11 +439,6 @@ def close_out_failure(target, conn, run_id, ticket_id, reason=None, provider=Non
 
 
 def ledger(conn, run_id, task_id, kind, text, provider):
-    """Store the full narrative, then post a cleaned board copy best-effort.
-
-    A store-mode board (KO-742) is not called: the entry and its cleaned,
-    capped copy as a note on the run's ticket are one transaction, and the
-    host sweep posts the note."""
     if conn is not None and run_id is not None:
         if getattr(provider, "store_mode", False) is True:
             with store.transaction(conn):
@@ -902,7 +455,6 @@ def ledger(conn, run_id, task_id, kind, text, provider):
 
 
 def post_ledger_comment(task_id, text, provider):
-    """Project an already-recorded narrative to the board without another row."""
     from datetime import datetime, timezone
     text = redact_values(text)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -915,72 +467,14 @@ def post_ledger_comment(task_id, text, provider):
         print(f"[holo2] board comment failed ({e}); record kept in the store")
 
 
-# --- Operator command: filing a ticket from a file --------------------------
-
-# The priorities `--file-ticket` may create an issue with, each the word for
-# one of Linear's integers (urgent 1, high 2, medium 3, low 4); absent, the
-# issue is created with none, as before the flag existed.
 FILE_TICKET_PRIORITIES = {"urgent": 1, "high": 2, "medium": 3, "low": 4}
 
 def _ticket_problems(text, repo):
-    """What filing refuses in `text`, checked against `repo`: the store's
-    `ticket_problems()`, the one composition every filer uses (KO-750)."""
     return store.board.ticket_problems(text, repo)
 
 
 def file_ticket(target, path, state, board, out=None, priority=None,
                 update=None, revision=None, labels=None):
-    """`--file-ticket`'s whole body: validate `path`, create the issue in the
-    target's `board`, relate it, read it back and validate that.
-
-    `priority` is one of `FILE_TICKET_PRIORITIES`' words or None; the word
-    is mapped to Linear's integer for the create call and printed as given
-    at the end of the filed line, and None sends no priority at all.
-
-    Returns 0 with the filed line printed, 1 with the first problem printed
-    and nothing created when the file fails validation, and 2 with the
-    identifier *and* the first problem printed when the body Linear stored
-    fails it: the ticket exists then, and the operator has to fix it there,
-    so its identifier is printed before the problem and is never lost.
-    Both passes refuse `filing_refusals()`: a verify line discovering the
-    whole suite and a literal schema version are refused here, where they
-    are cheapest to fix, and stay advisories at claim (KO-708).
-
-    The re-read is the point of the command. Every ticket the loop refused
-    as `needs_spec` this week was valid on disk and broken in transfer -- a
-    client rewriting bold and autolinks -- so the file is validated twice,
-    once as written and once as Linear gives it back, and only the second
-    pass says the transfer was clean.
-
-    `update` is an identifier (`KO-n`) or None. Given, no issue is created:
-    that issue's title, description and estimate are replaced from the file
-    (state and priority stay as they are), and the same read-back validates
-    what Linear stored, with the same exits. Every contract revision on
-    2026-09-03 was a hand patch through a client that rewrote the body, and
-    two of them left a ticket the loop skipped as `needs_spec`; this is the
-    file going to the board checked in both directions, as filing is.
-
-    A dependency is part of the contract, so once the body is stored the
-    blockers the file names and the board does not yet hold are recorded,
-    the way filing records them, and named on the printed line with a `+`.
-    A blocker the board holds and the file no longer names is left in place
-    and named too: the gate follows the file upward, and a narrowed contract
-    is the operator's deliberate removal, never a side effect. KO-279 gained
-    a `Depends on:` by update on 2026-09-07 and was claimed before that
-    blocker had run, because the update changed the text and not the gate.
-
-    `board` is the target's board as `board_for()` builds it, and the
-    ticket goes through its `file()`, `update()` and `stored_body()` alone:
-    Linear today, any board that has those members tomorrow. `cli()`
-    resolves it before the file is read: a target with no board exits
-    there, naming the key.
-
-    `revision`, `priority` and `labels` go to `update()` when given: a
-    native board's edit is made at the revision it was read at (KO-760).
-    A refusal from `file()` or `update()` -- the store's `FilingRefused`,
-    a `store.RevisionMoved`, or on a native board a `RuntimeError` -- is
-    printed as one line with exit 1, and nothing was written.
-    """
     out = out or sys.stdout
     text = Path(path).read_text()
     ticket = ticket_template.parse(text)
@@ -1001,6 +495,7 @@ def file_ticket(target, path, state, board, out=None, priority=None,
     except refusals as refused:
         print(f"[holo2] {path}: {refused}", file=out)
         return 1
+    # A client can rewrite a valid body in transfer, so the stored one is checked too.
     stored = _ticket_problems(board.stored_body(identifier), target.path)
     if stored:
         print(f"[holo2] {identifier}: as stored by Linear, {stored[0]}",
@@ -1011,8 +506,6 @@ def file_ticket(target, path, state, board, out=None, priority=None,
 
 def _file_or_update(board, ticket, text, state, priority, update, revision,
                     labels, out):
-    """`file_ticket()`'s write: update `update` or file a new ticket, print
-    the line saying which, and answer the identifier."""
     if update is not None:
         identifier = update
         given = {"revision": revision, "labels": labels,
