@@ -11,6 +11,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import time
 from dataclasses import asdict
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
@@ -22,7 +23,7 @@ from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
 CAPTURE_TIMEOUT = 300
-CAPTURE_GRACE = 30  # HOLO-13: a timed-out capture's teardown runs.
+CAPTURE_GRACE = 30  # HOLO-13, HOLO-16: a stopped capture's teardown runs.
 TAIL_LINES = 20  # KO-623: a failed capture shows why.
 RECEIPT_VERSION = 5  # KO-604: sections name the sha they capture.
 # The first line under an Evidence heading: the candidate it shows (KO-604).
@@ -172,8 +173,8 @@ def _capture(command, wt, output, task_id, states, *, project=None):
         try:
             code = process.wait(timeout=CAPTURE_TIMEOUT)
         except subprocess.TimeoutExpired:
-            _stop(process)
             code = None
+        _stop(process)  # HOLO-16: nothing the capture started outlives it.
         if code == 0:
             return ''
         log.seek(0)
@@ -181,19 +182,25 @@ def _capture(command, wt, output, task_id, states, *, project=None):
 
 
 def _stop(process):
-    """TERM the capture's group, then KILL it if it outlives the grace."""
+    """TERM the capture's group, then KILL whatever outlives the grace."""
+    if not _signal_group(process, signal.SIGTERM):
+        return
+    deadline = time.monotonic() + CAPTURE_GRACE
+    while process.poll() is None or _signal_group(process, 0):
+        if time.monotonic() >= deadline:
+            _signal_group(process, signal.SIGKILL)
+            process.wait()
+            return
+        time.sleep(0.05)
+
+
+def _signal_group(process, sig):
+    """Send `sig` to the capture's group: False when the group is empty."""
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        os.killpg(process.pid, sig)
     except ProcessLookupError:
-        pass
-    try:
-        process.wait(timeout=CAPTURE_GRACE)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
+        return False
+    return True
 
 
 def _push(wt, output, files, task_id):
