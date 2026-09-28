@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import store
 import store.board
+import store.gap_layers
 import store.operate
 import store.read
 import store.schema
@@ -286,7 +287,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # KO-457: persisted work boundaries and live read.
                                  (store.working, ["agent_work", "effective_work",
                                                   "settle_work", "verify_work",
-                                                  "working"])):
+                                                  "working"]),
+                                 # The gap layer record's writer and count.
+                                 (store.gap_layers, ["gap_layer_counts",
+                                                     "record_gap_layer"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
             missing = sorted(set(expected) - set(actual))

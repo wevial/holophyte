@@ -107,6 +107,9 @@ DOCUMENTED_COLUMNS = {
     # A note on a ticket and its post to the board, deduplicated (KO-733).
     "ticketNotes": {"id", "ticketId", "runId", "at", "author", "kind",
                     "dedupKey", "text", "postedAt", "postError"},
+    # Where each gap's lesson landed on the correction ladder, append-only.
+    "gapLayers": {"id", "ticketId", "layer", "note", "carriedBy", "author",
+                  "at"},
 }
 
 

@@ -134,6 +134,7 @@ PINNED = {
     "store/board.py": 87,
     "store/enums.py": 7,
     "store/failure_kinds.py": 1,
+    "store/gap_layers.py": 1,
     "store/instructions.py": 1,
     "store/launch_backoff.py": 2,
     "store/notes.py": 1,
