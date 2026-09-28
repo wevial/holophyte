@@ -284,6 +284,9 @@ The store is its own package:
   ticket, joining the caller's transaction so a ledger entry and its board
   note land together (KO-742); `mark_note_posted()` and `mark_note_failed()`
   record the host sweep's post of it (KO-747).
+- `store/gap_layers.py` — `record_gap_layer()` appends the correction layer
+  a gap's lesson landed in, and `gap_layer_counts()` counts each gap's latest
+  layer in ladder order.
 - `store/instructions.py` — persist replies on recorded thread instructions.
 - `store/agent_routes.py` — atomic fallback intervention and event records.
 - `store/launch_backoff.py` — persistent route outages, retry deadlines and
