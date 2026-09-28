@@ -129,25 +129,52 @@ def file_mount_flags(mounts):
     return flags
 
 
-def session_directory(task, project):
-    from holophyte.isolation_git import git
-    from holophyte.project import state_dir
-
-    task = Path(task).resolve(strict=True)
-    root = project.path if project is not None else Path(
-        git(task, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    ).parent
-    digest = hashlib.sha256(str(task).encode()).hexdigest()[:16]
-    path = (state_dir(root) / "sessions" / digest).resolve()
+def private_directory(path):
+    path = path.resolve()
     if ":" in str(path):
-        raise RuntimeError("session bind source must not contain a colon")
+        raise RuntimeError(f"bind source {path} must not contain a colon")
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.chmod(0o700)
     return path
 
 
+def project_state(task, project):
+    from holophyte.isolation_git import git
+    from holophyte.project import state_dir
+
+    root = project.path if project is not None else Path(
+        git(task, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    ).parent
+    return state_dir(root)
+
+
+def session_directory(task, project):
+    task = Path(task).resolve(strict=True)
+    digest = hashlib.sha256(str(task).encode()).hexdigest()[:16]
+    return private_directory(project_state(task, project) / "sessions" / digest)
+
+
+CACHE = "/home/implementer/.cache"
+CACHE_ENVIRONMENT = {
+    "GOPATH": f"{CACHE}/go",
+    "GOMODCACHE": f"{CACHE}/go/pkg/mod",
+    "GOCACHE": f"{CACHE}/go-build",
+    "GOTMPDIR": f"{CACHE}/go-tmp",
+    "npm_config_cache": f"{CACHE}/npm",
+    "BUN_INSTALL_CACHE_DIR": f"{CACHE}/bun",
+    "TMPDIR": "/tmp",
+}
+
+
+def cache_directory(task, project):
+    state = project_state(Path(task).resolve(strict=True), project)
+    cache = private_directory(state / "cache")
+    (cache / "go-tmp").mkdir(exist_ok=True)
+    return cache
+
+
 def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
-                      project=None):
+                      project=None, cache_for=None):
     uid, gid = os.getuid(), os.getgid()
     if uid == 0:
         raise RuntimeError("container implementer requires a non-root factory user")
@@ -172,6 +199,10 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
     if route.writable and task is not None:
         session = session_directory(task, project)
         command += ["--volume", f"{session}:/home/implementer/.claude:rw"]
+    caches = {}
+    if cache_for is not None:
+        command += ["--volume", f"{cache_directory(cache_for, project)}:{CACHE}:rw"]
+        caches = CACHE_ENVIRONMENT
     credential = route.credential
     if "file" in credential:
         source = Path(credential["file"]).expanduser().resolve(strict=True)
@@ -181,6 +212,7 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
     command += file_mount_flags(mounts)
     values = dict(
         env or {},
+        **caches,
         HOME="/home/implementer",
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL="/dev/null",
@@ -235,6 +267,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
         command, host_env = container_command(
             route, workspace, dict(env or {}, **git_env), argv, name, mounts,
             task=worktree if keep_session else None, project=project,
+            cache_for=worktree if route.writable else None,
         )
         try:
             return run_capped(command, workspace, timeout, env=host_env, **hook)
