@@ -581,7 +581,7 @@ them succeeding says nothing about these two keys.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `setup` | Default: `[]` | List of non-empty shell command strings; set to install the project's dependencies before agent turns. |
+| `setup` | Default: `[]` | List of non-empty shell command strings; set to install the project's dependencies before agent turns. Setup runs where verify commands run: under `implementer_isolation = "container"` it runs in the image, so commands name tools by the names the image puts on `PATH`, not by host paths. |
 | `setup_timeout_sec` | Default: `300` seconds | Finite positive number; increase for slower dependency installation. |
 | `branch_prefix` | Default: `"task"` | Legal single git branch segment (constraints below); change to follow the project's branch naming convention. |
 | `env_source` | Default: absent | Source dotenv path, with `~` expanded; relative paths resolve beside config.toml. Requires `env_allow`. |
