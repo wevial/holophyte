@@ -4,12 +4,15 @@ A target names this script as its `[merge] ui_capture` command, so it has no
 capture script of its own:
 
     python3 PATH/holophyte/capture_playwright.py [--boot COMMAND]
-        [--env NAME=VALUE ...] [--dir DIR] [--config FILE] OUTPUT
+        [--env NAME=VALUE ...] [--dir DIR] [--config FILE] [--default SPEC]
+        OUTPUT
 
 The spec is `DIR/<HOLOPHYTE_TICKET>.capture.ts`, outside the project's test
-tree. A generated config beside it imports the project's own config and points
-its test projects at that spec; the boot command runs with that config and
-`CAPTURE_OUT` set to OUTPUT, and the run fails unless an `NN-slug.png` landed.
+tree; when it is absent and the ticket lists no evidence states, `--default`
+names the spec run instead. A generated config beside the spec imports the
+project's own config and points its test projects at that spec; the boot
+command runs with that config and `CAPTURE_OUT` set to OUTPUT, and the run
+fails unless an `NN-slug.png` landed.
 
 Standard library only and no `holophyte` imports: it runs by path from a
 target's worktree, where the package is not on `sys.path`.
@@ -35,6 +38,8 @@ from pathlib import Path  # noqa: E402 - after the sys.path repair above
 TICKET = re.compile(r"^[A-Za-z]+-[0-9]+$")
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SHOT = "[0-9][0-9]-*.png"
+# Playwright reads a positional filter as a JavaScript regular expression.
+REGEX_SPECIAL = re.compile(r"[.*+?^${}()|[\]\\]")
 
 # Plain JavaScript, which a TypeScript config also accepts. The imported
 # config's relative paths would resolve against this file's directory, so a
@@ -83,6 +88,9 @@ def _arguments(argv):
              ".holophyte-capture)")
     parser.add_argument("--config", default="playwright.config.ts",
                         help="the project's config (default: %(default)s)")
+    parser.add_argument("--default", metavar="SPEC",
+                        help="spec run when the ticket has no spec of its own "
+                             "and HOLOPHYTE_EVIDENCE_STATES is empty")
     parser.add_argument("output", metavar="OUTPUT",
                         help="directory the screenshots are written to")
     return parser.parse_args(argv)
@@ -105,6 +113,20 @@ def _extra_env(pairs, key):
                           f"{ENV_NAME.pattern}; got {pair!r}")
         extra[name] = value.replace("{key}", key)
     return extra
+
+
+def _spec(directory, ticket, default, states):
+    """The ticket's own spec, else `default` for a ticket listing no states."""
+    spec = Path(directory) / f"{ticket}.capture.ts"
+    if spec.is_file():
+        return spec
+    missing = f"no capture spec for {ticket}: expected {spec}"
+    if not default or states.strip():
+        raise Refusal(missing)
+    if not Path(default).is_file():
+        raise Refusal(f"{missing}, and no default capture spec: "
+                      f"expected {default}")
+    return Path(default)
 
 
 def _generated(config, directory, spec):
@@ -140,17 +162,17 @@ def run(argv):
     ticket = _ticket()
     key = ticket.lower().replace("-", "")
     extra = _extra_env(args.env, key)
-    spec = Path(args.dir) / f"{ticket}.capture.ts"
-    if not spec.is_file():
-        raise Refusal(f"no capture spec for {ticket}: expected {spec}")
+    env = {**os.environ, **extra, "CAPTURE_OUT": str(output)}
+    spec = _spec(args.dir, ticket, args.default,
+                 env.get("HOLOPHYTE_EVIDENCE_STATES", ""))
     config = Path(args.config).absolute()
     if not config.is_file():
         raise Refusal(f"no Playwright config: expected {args.config}")
     output.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, **extra, "CAPTURE_OUT": str(output)}
-    generated = _generated(config, Path(args.dir).absolute(), spec)
+    generated = _generated(config, spec.parent.absolute(), spec)
     try:
-        _boot(args.boot, ["--config", generated, str(spec)], env)
+        _boot(args.boot, ["--config", generated,
+                          REGEX_SPECIAL.sub(r"\\\g<0>", str(spec))], env)
     finally:
         os.unlink(generated)
     if not any(shot.is_file() for shot in output.glob(SHOT)):

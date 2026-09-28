@@ -11,15 +11,17 @@ from pathlib import Path
 RUNNER = Path(__file__).resolve().parents[1] / "holophyte" / "capture_playwright.py"
 MODULES = "HOLOPHYTE_TEST_PLAYWRIGHT_MODULES"
 
-# Records its argv, environment and whether the config it was handed exists,
-# then writes the file named by FAKE_WRITES into CAPTURE_OUT (a directory when
-# the name ends in a slash) and exits with FAKE_EXIT.
+# Records its argv, environment and the config it was handed (None when it
+# does not exist), then writes the file named by FAKE_WRITES into CAPTURE_OUT
+# (a directory when the name ends in a slash) and exits with FAKE_EXIT.
 FAKE = """\
 import json, os, sys
 config = sys.argv[sys.argv.index('--config') + 1]
 with open('record.json', 'w') as file:
     json.dump({'argv': sys.argv[1:], 'env': dict(os.environ),
-               'config_existed': os.path.exists(config)}, file)
+               'config_existed': os.path.exists(config),
+               'config': open(config).read() if os.path.exists(config) else None},
+              file)
 written = os.path.join(os.environ['CAPTURE_OUT'], os.environ['FAKE_WRITES'])
 if written.endswith('/'):
     os.makedirs(written)
@@ -39,16 +41,19 @@ class FakeBootTests(unittest.TestCase):
         (self.repo / "playwright.config.ts").write_text("export default {};\n")
         (self.repo / "fake.py").write_text(FAKE)
 
-    def capture(self, ticket="KO-7", writes="01-open.png", code=0):
+    def capture(self, ticket="KO-7", writes="01-open.png", code=0,
+                options=(), states=None):
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("HOLOPHYTE_")}
         env.update(FAKE_WRITES=writes, FAKE_EXIT=str(code))
         if ticket:
             env["HOLOPHYTE_TICKET"] = ticket
+        if states is not None:
+            env["HOLOPHYTE_EVIDENCE_STATES"] = states
         return subprocess.run(
             [sys.executable, str(RUNNER),
              "--boot", shlex.join([sys.executable, "fake.py"]),
-             "--env", "HANDLE=-capture-{key}", "out"],
+             "--env", "HANDLE=-capture-{key}", *options, "out"],
             cwd=self.repo, env=env, capture_output=True, text=True, timeout=60)
 
     def record(self):
@@ -64,7 +69,7 @@ class FakeBootTests(unittest.TestCase):
         record = self.record()
         flag, config, spec = record["argv"][-3:]
         self.assertEqual((flag, spec),
-                         ("--config", ".holophyte-capture/KO-7.capture.ts"))
+                         ("--config", r"\.holophyte-capture/KO-7\.capture\.ts"))
         self.assertTrue(os.path.isabs(config), config)
         self.assertEqual(Path(config).parent,
                          (self.repo / ".holophyte-capture").resolve())
@@ -94,6 +99,60 @@ class FakeBootTests(unittest.TestCase):
                 self.assertIn(named, result.stderr)
                 self.assertFalse((self.repo / "record.json").exists())
 
+    def default_spec(self):
+        default = self.repo / "console" / "e2e" / "CAPTURE-0.capture.ts"
+        default.parent.mkdir(parents=True)
+        default.write_text("")
+        return default
+
+    def test_a_ticket_without_spec_or_states_runs_the_default_spec(self):
+        default = self.default_spec()
+
+        result = self.capture(ticket="HOLO-9", writes="01-default.png",
+                              options=("--default", "console/e2e/CAPTURE-0.capture.ts"))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = self.record()
+        flag, config, spec = record["argv"][-3:]
+        self.assertEqual((flag, spec),
+                         ("--config", r"console/e2e/CAPTURE-0\.capture\.ts"))
+        self.assertEqual(Path(config).parent, default.parent.resolve())
+        self.assertIn('testMatch: ["CAPTURE-0.capture.ts"]', record["config"])
+        self.assertEqual(sorted(p.name for p in default.parent.iterdir()),
+                         ["CAPTURE-0.capture.ts"])
+
+    def test_listed_states_without_a_ticket_spec_refuse_despite_a_default(self):
+        self.default_spec()
+        default = ("--default", "console/e2e/CAPTURE-0.capture.ts")
+        # States inherited from the factory, or handed over through --env.
+        for states, options in (
+                ("Board open\nCard moved", default),
+                (None, ("--env", "HOLOPHYTE_EVIDENCE_STATES=Board open", *default))):
+            with self.subTest(options=options):
+                result = self.capture(ticket="HOLO-9", states=states,
+                                      options=options)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(".holophyte-capture/HOLO-9.capture.ts", result.stderr)
+                self.assertFalse((self.repo / "record.json").exists())
+
+    def test_a_ticket_spec_wins_over_the_default_and_a_missing_default_refuses(self):
+        self.default_spec()
+        result = self.capture(options=("--default", "console/e2e/CAPTURE-0.capture.ts"))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = self.record()
+        self.assertEqual(record["argv"][-1], r"\.holophyte-capture/KO-7\.capture\.ts")
+        self.assertIn('testMatch: ["KO-7.capture.ts"]', record["config"])
+        (self.repo / "record.json").unlink()
+
+        result = self.capture(ticket="HOLO-9",
+                              options=("--default", "console/e2e/GONE.capture.ts"))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("console/e2e/GONE.capture.ts", result.stderr)
+        self.assertFalse((self.repo / "record.json").exists())
+
     def test_a_failed_boot_command_fails_the_run_and_cleans_up(self):
         result = self.capture(code=3)
 
@@ -119,39 +178,61 @@ SPEC = "import { test } from '@playwright/test';\n\ntest('%s', async () => {});\
 
 
 class RealPlaywrightTests(unittest.TestCase):
-    def test_the_generated_config_lists_the_capture_spec_and_the_setup(self):
+    def setUp(self):
         modules = os.environ.get(MODULES, "")
         if not (Path(modules) / "@playwright" / "test").is_dir():
             self.skipTest(f"{MODULES} does not name a node_modules directory "
                           "holding @playwright/test")
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        repo = Path(tmp.name)
-        (repo / "node_modules").symlink_to(Path(modules).resolve())
-        (repo / "package.json").write_text('{"type": "module"}\n')
-        (repo / "playwright.config.ts").write_text(PLAYWRIGHT_CONFIG)
-        (repo / "e2e" / "setup").mkdir(parents=True)
-        (repo / "e2e" / "app.spec.ts").write_text(SPEC % "app")
-        (repo / "e2e" / "setup" / "auth.setup.ts").write_text(SPEC % "auth")
-        (repo / ".holophyte-capture").mkdir()
-        (repo / ".holophyte-capture" / ".gitignore").write_text("*\n")
-        (repo / ".holophyte-capture" / "KO-7.capture.ts").write_text(SPEC % "capture")
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HOLOPHYTE_")}
+        self.repo = Path(tmp.name)
+        (self.repo / "node_modules").symlink_to(Path(modules).resolve())
+        (self.repo / "package.json").write_text('{"type": "module"}\n')
+        (self.repo / "playwright.config.ts").write_text(PLAYWRIGHT_CONFIG)
+        (self.repo / "e2e" / "setup").mkdir(parents=True)
+        (self.repo / "e2e" / "app.spec.ts").write_text(SPEC % "app")
+        (self.repo / "e2e" / "setup" / "auth.setup.ts").write_text(SPEC % "auth")
+        (self.repo / ".holophyte-capture").mkdir()
+        (self.repo / ".holophyte-capture" / ".gitignore").write_text("*\n")
 
+    def listed(self, ticket, options=()):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("HOLOPHYTE_")}
         result = subprocess.run(
             [sys.executable, str(RUNNER),
-             "--boot", "npx playwright test --list --reporter=json", "out"],
-            cwd=repo, env={**env, "HOLOPHYTE_TICKET": "KO-7"},
+             "--boot", "npx playwright test --list --reporter=json",
+             *options, "out"],
+            cwd=self.repo, env={**env, "HOLOPHYTE_TICKET": ticket},
             capture_output=True, text=True, timeout=180)
-
         listing = json.loads(result.stdout)
-        listed = {(test["projectName"], Path(spec["file"]).name)
-                  for suite in _suites(listing["suites"])
-                  for spec in suite.get("specs", [])
-                  for test in spec["tests"]}
+        return result, {(test["projectName"], Path(spec["file"]).name)
+                        for suite in _suites(listing["suites"])
+                        for spec in suite.get("specs", [])
+                        for test in spec["tests"]}
+
+    def test_the_generated_config_lists_the_capture_spec_and_the_setup(self):
+        spec = self.repo / ".holophyte-capture" / "KO-7.capture.ts"
+        spec.write_text(SPEC % "capture")
+
+        result, listed = self.listed("KO-7")
+
         self.assertIn(("chromium", "KO-7.capture.ts"), listed, result.stderr)
         self.assertIn(("setup", "auth.setup.ts"), listed, result.stderr)
         self.assertNotIn("app.spec.ts", {name for _, name in listed})
+
+    def test_a_default_spec_inside_the_test_tree_is_listed_alone(self):
+        # The default lives in the project's own testDir, beside a spec the
+        # capture must not run, and the generated config is written there.
+        # Its `+` would be a quantifier in Playwright's regex file filter.
+        (self.repo / "e2e" / "CAPTURE+0.capture.ts").write_text(SPEC % "default")
+
+        result, listed = self.listed(
+            "HOLO-9", options=("--default", "e2e/CAPTURE+0.capture.ts"))
+
+        self.assertIn(("chromium", "CAPTURE+0.capture.ts"), listed, result.stderr)
+        self.assertIn(("setup", "auth.setup.ts"), listed, result.stderr)
+        self.assertNotIn("app.spec.ts", {name for _, name in listed})
+        self.assertEqual(sorted(p.name for p in (self.repo / "e2e").iterdir()),
+                         ["CAPTURE+0.capture.ts", "app.spec.ts", "setup"])
 
 
 def _suites(suites):

@@ -952,17 +952,21 @@ A Playwright project can name the factory's own runner as `ui_capture`
 instead of shipping a capture script: `python3 HOLOPHYTE/holophyte/capture_playwright.py`
 with the options below (or `python3 -m holophyte.capture_playwright`). It
 runs the spec `DIR/<HOLOPHYTE_TICKET>.capture.ts`, which lives outside the
-project's test tree, and refuses when the spec is missing. A generated
-config in `DIR` imports the project's config and points every test project at
-that spec. Projects named in another project's `dependencies` keep their own
+project's test tree, and refuses when the spec is missing, unless the ticket
+lists no evidence states and `--default SPEC` names an existing spec, which
+then runs in its place (a ticket that lists states and wrote no spec is still
+refused, and a `--default` naming a missing file is refused naming it). A
+generated config in the spec's directory imports the project's config and
+points every test project at that spec. Projects named in another project's `dependencies` keep their own
 `testMatch`, so a setup project still runs. The boot command runs with that
-config and the spec appended, and with `CAPTURE_OUT` set to the absolute
-output directory. After the command exits 0, the run fails unless at least
+config and the spec's path appended, regex-escaped because Playwright reads it
+as a file filter, and with `CAPTURE_OUT` set to the absolute output directory. After the command exits 0, the run fails unless at least
 one `NN-slug.png` was written. The options are `--boot COMMAND` (default
 `npx playwright test`), `--env NAME=VALUE` (repeatable; `{key}` in a value
 becomes the ticket key lowercased without its hyphen, `ABC-12` giving
 `abc12`), `--dir DIR` (default `HOLOPHYTE_CAPTURE_DIR`, else
-`.holophyte-capture`) and `--config FILE` (default `playwright.config.ts`).
+`.holophyte-capture`), `--config FILE` (default `playwright.config.ts`) and
+`--default SPEC` (default none).
 For example: `ui_capture = "python3 HOLOPHYTE/holophyte/capture_playwright.py
 --boot 'bash BOOT_SCRIPT' --env HANDLE=-capture-{key} --env WORKERS=1"`.
 
