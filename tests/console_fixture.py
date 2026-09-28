@@ -35,6 +35,8 @@ from unittest.mock import patch
 REPO = Path(__file__).resolve().parent.parent
 KEY = "DEMO"
 NAME = "demo"
+# What the daemon calls this machine: a role, as captures are published.
+HOST_LABEL = "writer-host"
 SEC = 1000
 MIN = 60 * SEC
 HOUR = 60 * MIN
@@ -69,7 +71,8 @@ def seed(home):
 
 def _register(home):
     """A git repository `home/demo` with a native board, registered as
-    `project add` registers it; its path."""
+    `project add` registers it, its hostname shown as `HOST_LABEL`; its
+    path."""
     import holophyte.cli
     from holophyte.project import Project
 
@@ -79,7 +82,8 @@ def _register(home):
     target.holo_dir.mkdir(parents=True, exist_ok=True)
     target.config_path.write_text(
         f'[board]\nkind = "native"\nkey = "{KEY}"\n'
-        f'[serve]\nname = "{NAME}"\n')
+        f'[serve]\nname = "{NAME}"\n'
+        f'[report]\nhost_label = "{HOST_LABEL}"\n')
     with open(os.devnull, "w") as quiet, patch.object(sys, "stdout", quiet):
         code = holophyte.cli.cli(["project", "add", str(path)])
     if code:
