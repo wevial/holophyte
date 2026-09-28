@@ -58,8 +58,11 @@ the digest-pinned Ubuntu image; it carries git, python3 with its `venv`
 module, ripgrep, a pinned Bun (checksum-verified, on `PATH` under
 `/opt/bun/bin`) so console `bun` criteria can be witnessed inside the
 container, a pinned Node.js 24 (checksum-verified against the release's
-`SHASUMS256.txt`, `node`, `npm` and `npx` on `PATH` under `/opt/node/bin`) so
-a project's `npm ci` and `npx` commands run inside it, and a pinned Go 1.26.6
+`SHASUMS256.txt`, `node`, `npm` and `npx` on `PATH` under `/opt/node/bin`),
+so a Node project's commands find the tools inside it (the image carries
+the tools, not the install: a review does not re-run `[worktree] setup`, so
+`npm ci` is not run there, as above, and an `npx` verify command runs
+against the carried `node_modules`), and a pinned Go 1.26.6
 (checksum-verified, under `/usr/local/go`, `GOTOOLCHAIN=local` so no other
 toolchain is ever downloaded, caches under the writable `/home/reviewer`) so a
 Go project's `go test` criteria can be witnessed too. It also installs
