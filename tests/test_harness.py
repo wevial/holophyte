@@ -596,6 +596,73 @@ class DevinImplementerTests(ClaudeTableTests):
         self.assertEqual(json.loads(payload), {"arm": "resume", "resumed": True})
 
 
+class ContainerImplementerTests(unittest.TestCase):
+    """A table implementer under `implementer_isolation = "container"`, its
+    container launch replaced by one that records the argv it was handed."""
+
+    setUp = ClaudeTableTests.setUp
+    session = ClaudeTableTests.session
+
+    def configure(self, table):
+        self.target.config_path.write_text(
+            '[agents]\nimplementer_isolation = "container"\n' + table
+            + '[loop]\nfix_session = "resume"\n')
+
+    def launch_turn(self, run):
+        launched = []
+
+        def launch(route, cwd, env, argv, **kwargs):
+            self.assertEqual(route.backend, "container")
+            launched.append(argv)
+            return 0, "fake turn ran"
+
+        with patch.object(holophyte.agents.isolation, "launch", launch):
+            run()
+        [argv] = launched
+        return argv
+
+    def test_a_claude_turn_records_the_session_id_its_argv_carries(self):
+        self.configure(CONFIG)
+        argv = self.launch_turn(lambda: holophyte.agents.agent(
+            self.target, "implement", "implement the thing", self.repo,
+            conn=self.conn, run_id=self.run))
+        chosen = argv[argv.index("--session-id") + 1]
+        self.assertEqual(str(uuid.UUID(chosen, version=4)), chosen)
+        self.assertEqual(
+            holophyte.harness.agent_session(self.target, "implement", argv),
+            chosen)
+        self.assertEqual(self.session(), chosen)
+
+    def test_its_fix_round_resumes_that_session_with_the_image_binary(self):
+        self.configure(CONFIG)
+        argv = self.launch_turn(lambda: holophyte.agents.agent(
+            self.target, "implement", "implement the thing", self.repo,
+            conn=self.conn, run_id=self.run))
+        chosen = argv[argv.index("--session-id") + 1]
+        self.assertEqual(
+            holophyte.fix_session.resume_argv(self.target, self.conn, self.run),
+            (["claude", "-p", "--resume", chosen, "--model", "sonnet",
+              "--effort", "low"], None))
+
+    def test_a_devin_turn_records_no_session(self):
+        self.configure('[agents.implementer]\nharness = "devin"\n'
+                       'model = "opus"\n')
+        fake = Path(os.environ["PATH"].split(os.pathsep)[0]) / "devin"
+        fake.write_text(f"#!{sys.executable}\n{FAKE_DEVIN_IMPLEMENTER}")
+        fake.chmod(0o755)
+        self.launch_turn(lambda: holophyte.loop._timed(
+            self.target, self.conn, self.run, 60, self.repo, 1,
+            "implement the thing"))
+        self.assertFalse(self.calls.exists())
+        self.assertIsNone(self.session())
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind = 'agent_session'"
+        ).fetchone(), (0,))
+        self.assertEqual(
+            holophyte.fix_session.resume_argv(self.target, self.conn, self.run),
+            (None, "no recorded session"))
+
+
 class CriticTableTests(unittest.TestCase):
     """`[agents.critic]`: table-only, Codex with the critic's own defaults,
     or Claude."""

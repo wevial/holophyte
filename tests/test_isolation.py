@@ -910,3 +910,63 @@ class IsolationTests(unittest.TestCase):
         )
         self.assertEqual((worktree / "created").read_text(), "content\n")
         self.assertEqual(git(main, "log", "-1", "--format=%s"), "base")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_claude_fix_round_resumes_the_session_its_turn_opened(self):
+        import shutil
+        import uuid
+
+        import store
+        from holophyte import fix_session
+        from holophyte.project import Project
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        context = self.root / "stub"
+        context.mkdir()
+        (context / "claude").write_text(
+            '#!/bin/sh\ncase "$2" in\n'
+            '  --session-id) touch "$HOME/.claude/$3" ;;\n'
+            '  --resume) test -f "$HOME/.claude/$3" ;;\n'
+            "  *) exit 2 ;;\nesac\n"
+        )
+        (context / "Dockerfile").write_text(
+            "FROM ubuntu:24.04\nCOPY --chmod=755 claude /usr/local/bin/claude\n"
+        )
+        image = f"holophyte-test-claude-stub:{uuid.uuid4().hex[:12]}"
+        subprocess.run(["docker", "build", "--pull=false", "-q", "-t", image,
+                        str(context)], check=True, capture_output=True)
+        self.addCleanup(subprocess.run, ["docker", "image", "rm", "-f", image],
+                        capture_output=True)
+        main, worktree = self.make_worktree()
+        holo = self.root / "holo"
+        holo.mkdir()
+        (holo / "config.toml").write_text(
+            f'[agents]\nimplementer_isolation = "container"\n'
+            f'implementer_image = "{image}"\n'
+            '[agents.implementer]\nharness = "claude"\n'
+        )
+        target = Project(path=main, holo_dir=holo, store_path=holo / "store.db",
+                         config_path=holo / "config.toml",
+                         worktrees=self.root / "worktrees")
+        conn = store.open(target.store_path)
+        self.addCleanup(conn.close)
+        store.init(conn)
+        project = store.ensure_project(conn, "test", main)
+        ticket = store.mirror_ticket(conn, project, "KO-1", "KO-1", "session",
+                                     acceptance_criteria=["resume"],
+                                     verification_commands=["true"])
+        run = store.claim(conn, project, ticket)
+
+        first = agents.agent(target, "implement", "implement", worktree,
+                             conn=conn, run_id=run)
+        self.assertEqual(first.exit_code, 0, first)
+        argv, reason = fix_session.resume_argv(target, conn, run)
+        self.assertIsNone(reason)
+        self.assertEqual(argv[:3], ["claude", "-p", "--resume"])
+        resumed = agents.agent(target, "implement", "findings", worktree,
+                               conn=conn, run_id=run, argv=argv)
+        self.assertEqual(resumed.exit_code, 0, resumed)
