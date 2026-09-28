@@ -8,7 +8,7 @@ command family, [below](#project-commands).
 | Invocation | Does | Touches |
 | --- | --- | --- |
 | `factory.py PROJECT` | runs the loop: claim, work, verify, review, merge, repeat; exits on an empty board or a failed run; re-execs after a self-merge. Under `[loop] workers > 1` it is the scheduler of a pool of `--worker` children instead (see [The loop](../loop.md#the-pool)) | Linear, store, worktrees, `main`, `FINDINGS.md` |
-| `--report PROJECT` | prints the estimate-vs-actual table and the supervisor liveness line, then a `failures KIND: N` line per failure kind among the failed runs (`unclassified` for one with no kind) | store, read-only |
+| `--report PROJECT` | prints the estimate-vs-actual table and the supervisor liveness line, then a `failures KIND: N` line per failure kind among the failed runs (`unclassified` for one with no kind), and a `gap layers:` line counting the gaps whose latest recorded layer is each of the six, in ladder order | store, read-only |
 | `--sweep PROJECT` | prints what an acting sweep would do; lists stray review containers; a `failures KIND: N` line per failure kind among the failed runs | store (sightings only) |
 | `--sweep --act PROJECT` | fails tripped runs, releases their leases, removes stray containers; prints the same `failures KIND: N` lines | store, Docker |
 | `--board-diff PROJECT` | prints one line per board-owned field (title, body, priority, labels, column) where the store's row differs from the board's ready listing, one per listed issue with no store row, one per `ready` row with no live run the listing no longer names (in `[board] mode = "store"` only while its column is `ready`, since a store-mode ticket leaves the queue by its column), then a summary; exits 0 with none, 1 otherwise; a project with no `[board]` table exits naming the key | Linear (read), store, read-only |
@@ -28,6 +28,7 @@ command family, [below](#project-commands).
 | `--hold --note TEXT PROJECT` | holds the project's admission: a `hold` intervention carrying the note; no new ticket is claimed while existing runs finish; creates the project's store row from `[board]` when it has none; refuses a project already held, or one with neither a row nor `[board]` | store |
 | `--release-hold --note TEXT PROJECT` | enables admission again: a `release_hold` intervention carrying the note; refuses a project already enabled, or one with neither a row nor `[board]` | store |
 | `--close KO-n --landed URL [--note TEXT] PROJECT` | closes a ticket whose change landed outside the factory: a `close_out` intervention on its last run naming `URL` and the note, the question cleared and the ticket walked to `merged` with no merge sha, in one transaction; then the lease label removed, the board issue moved and the ledger posted as a comment; refuses a ticket already merged, one with a live run, or one whose last run did not end `rejected`, `failed`, `abandoned` or `killed` | store, Linear |
+| `--gap-layer KEY-n LAYER --note TEXT [--carried-by KEY-n] PROJECT` | records the correction layer the lesson of the gap ticket `KEY-n` answers landed in: appends one `gapLayers` row with `LAYER` (`impossible`, `static`, `witness`, `guidance`, `review` or `none`), the note, the operator's user as author and `--carried-by`, the ticket carrying the lesson when it is not the gap's own; `--report`'s `gap layers:` line counts each ticket's latest row. No `interventions` row is written: the verb changes no run, ticket or project state, and an intervention would count as human toil in `--report` and `/status`. An unknown layer is a usage error (exit 2); a ticket the store does not hold exits 1 naming it | store |
 | `--file-ticket TICKET.md [--state Todo\|Backlog] [--priority urgent\|high\|medium\|low] PROJECT` | validates, creates the issue in the Linear project the project's `[board]` names, reads it back, validates again | Linear |
 | `--worker PROJECT` | internal, spawned by the scheduler under `[loop] workers > 1`: claims one ticket, works it to merge or park, exits with the run's status (0 merged, 1 failed, 2 parked, 3 nothing to claim, 4 stopped for a human); skips the startup probes, the sweep and the supervisor spawn, which the scheduler ran for the pool | Linear, store, worktrees, `main`, `FINDINGS.md` |
 | `--file-ticket TICKET.md --update KO-n PROJECT` | same, replacing an existing issue's title, body and estimate; a blocker the file's `Depends on:` names and the board lacks is recorded and printed as `+KO-a`, one the board holds and the file no longer names is printed as `board also holds KO-c` -- relations are added, never removed | Linear |
@@ -80,8 +81,8 @@ any other mode without a project is a usage error.
 Every mode validates every `config.toml` table it can see and refuses an
 unknown key. The loop, `--worker`, `--supervise`, `--requeue`, `--approve`,
 `--babysit`, `--close`, `--abort` and `--file-ticket` need a `[board]`
-table; `--pause`, `--resume`, `--hold`, `--release-hold` and `--repoint` do
-not; `--move` and `--cancel` need a native one. The loop additionally live-probes each configured agent
+table; `--pause`, `--resume`, `--hold`, `--release-hold`, `--repoint` and
+`--gap-layer` do not; `--move` and `--cancel` need a native one. The loop additionally live-probes each configured agent
 route and the reviewer image before claiming, and runs a read-only sweep
 whose output it prints.
 
