@@ -536,6 +536,131 @@ class AgentFallbackTests(SweepTestCase):
         ).fetchone()[0], 0)
 
 
+class ContainerReviewFallbackTests(SweepTestCase):
+    PAIRS = ('[agents]\nreview_model = "gpt-6-astra"\nreview_effort = "medium"\n'
+             'review_fallback_model = "gpt-5.6-sol"\n'
+             'review_fallback_effort = "high"\n')
+
+    def setUp(self):
+        from holophyte.gates import sh
+
+        super().setUp()
+        sh(['git', 'init', '-q', str(self.target)])
+        sh(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.test',
+            'commit', '--allow-empty', '-qm', 'base'], cwd=self.target)
+        self.sha = sh(['git', 'rev-parse', 'HEAD'], cwd=self.target)
+        self.addCleanup(reset, self.project)
+
+    def container(self, down):
+        """The review runner, with the models in `down` unable to start."""
+        import review_runner
+
+        self.reviews = []
+        def run_review(*, candidate_sha, prompt, model, effort, **_):
+            self.reviews.append((model, effort, prompt))
+            if model in down:
+                raise review_runner.ReviewBoundaryError(
+                    f'{model}: container produced no events')
+            return (f'ready {candidate_sha}' if prompt == agents.REVIEW_PROBE_GOAL
+                    else 'VERDICT: PASS')
+        return patch.object(agents.review_runner, 'run_review',
+                            side_effect=run_review)
+
+    def review(self, run=None):
+        return agents.agent(self.project, 'review', 'judge', self.target,
+                            base_sha=self.sha, candidate_sha=self.sha,
+                            conn=self.conn, run_id=run)
+
+    def switches(self):
+        return [json.loads(row[0]) for row in self.conn.execute(
+            "SELECT guidance FROM interventions WHERE action='route_fallback'")]
+
+    def test_config_accepts_the_pair_and_refuses_half_or_beside_commands(self):
+        from holophyte.config import check_config, review_route
+
+        self.configure(self.PAIRS)
+        check_config(self.project)
+        self.assertEqual(review_route(self.project, fallback=True),
+                         ('gpt-5.6-sol', 'high'))
+        self.configure('[agents]\nreview_fallback_model = "gpt-5.6-sol"\n'
+                       'review_fallback_effort = "high"\n'
+                       f'reviewer_fallback = "{sys.executable}"\n')
+        with self.assertRaisesRegex(SystemExit,
+                                    r'review_fallback_\w+ beside \[agents\] '
+                                    r'reviewer_fallback'):
+            check_config(self.project)
+        self.configure('[agents]\nreview_fallback_model = "gpt-5.6-sol"\n')
+        with self.assertRaisesRegex(SystemExit, r'review_fallback_model needs '
+                                    r'\[agents\] review_fallback_effort'):
+            check_config(self.project)
+
+    def test_startup_switches_to_the_fallback_pair_for_later_turns(self):
+        from holophyte.agent_routes import routes
+
+        self.configure(self.PAIRS)
+        self.addCleanup(reset, self.project)
+        with self.container(down={'gpt-6-astra'}), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertTrue(agents.startup_routes(
+                self.project, SimpleNamespace(team='team-1')))
+            self.assertEqual(routes(self.project).commands,
+                             {'review': 'codex-sol-high'})
+            self.assertEqual(self.review(self.a_run()), 'VERDICT: PASS')
+        self.assertIn('reviewer route down', out.getvalue())
+        self.assertEqual(self.reviews, [
+            ('gpt-6-astra', 'medium', agents.REVIEW_PROBE_GOAL),
+            ('gpt-5.6-sol', 'high', agents.REVIEW_PROBE_GOAL),
+            ('gpt-5.6-sol', 'high', 'judge')])
+        switch, = self.switches()
+        self.assertEqual((switch['seat'], switch['command']),
+                         ('reviewer', 'codex-sol-high'))
+        self.assertEqual(agents.agent_route(self.project, 'review'),
+                         'codex-sol-high')
+
+    def test_boundary_error_mid_run_retries_the_round_on_the_fallback_pair(self):
+        from holophyte.gates import InfraFailure
+
+        self.configure(self.PAIRS)
+        run = self.a_run()
+        with self.container(down={'gpt-6-astra'}), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.review(run), 'VERDICT: PASS')
+        self.assertEqual(self.reviews, [
+            ('gpt-6-astra', 'medium', 'judge'),
+            ('gpt-5.6-sol', 'high', agents.REVIEW_PROBE_GOAL),
+            ('gpt-5.6-sol', 'high', 'judge')])
+        switch, = self.switches()
+        self.assertIn('container produced no events', switch['reason'])
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE runId=? "
+            "AND kind='route_fallback'", (run,)).fetchone()[0], 1)
+
+        reset(self.project)
+        with self.container(down={'gpt-6-astra', 'gpt-5.6-sol'}), \
+                contextlib.redirect_stdout(io.StringIO()), \
+                self.assertRaises(InfraFailure) as raised:
+            self.review(self.a_run())
+        self.assertEqual(raised.exception.failure_kind, 'review_route')
+        self.assertEqual(len(self.switches()), 1)
+
+    def test_without_the_pair_startup_skips_the_reviewer_and_turns_stay_primary(self):
+        from holophyte.gates import InfraFailure
+
+        self.configure('[agents]\nreview_model = "gpt-6-astra"\n'
+                       'review_effort = "medium"\n')
+        with self.container(down=set()), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertTrue(agents.startup_routes(
+                self.project, SimpleNamespace(team='team-1')))
+            self.assertEqual(self.reviews, [])
+            self.assertEqual(self.review(self.a_run()), 'VERDICT: PASS')
+        with self.container(down={'gpt-6-astra'}), \
+                self.assertRaises(InfraFailure) as raised:
+            self.review(self.a_run())
+        self.assertEqual(raised.exception.failure_kind, 'review_route')
+        self.assertEqual(self.reviews, [('gpt-6-astra', 'medium', 'judge')])
+        self.assertEqual(self.switches(), [])
+
 class FailedRouteLoopTests(LoopFixture):
     def test_failed_fallback_probe_stops_even_when_work_failures_continue(self):
         primary = self.db.parent / 'codex-primary'

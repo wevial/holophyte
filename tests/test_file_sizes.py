@@ -33,11 +33,11 @@ OVER = {}
 PINNED = {
     "holophyte/babysitter.py": 1095, "holophyte/board.py": 599,
     "holophyte/claim.py": 1001, "holophyte/cli.py": 821,
-    "holophyte/config.py": 915, "holophyte/dispatch.py": 327,
+    "holophyte/config.py": 927, "holophyte/dispatch.py": 327,
     "holophyte/config_tables.py": 766, "holophyte/findings.py": 391,
     "holophyte/gates.py": 924, "holophyte/loop.py": 919,
     "holophyte/merge_gate.py": 584,
-    "holophyte/operator.py": 539, "holophyte/pool.py": 436,
+    "holophyte/operator.py": 539, "holophyte/pool.py": 438,
     "holophyte/pr.py": 768, "holophyte/pr_status.py": 553,
     "holophyte/pullrequest.py": 465,
     "holophyte/reconcile.py": 743, "holophyte/reexec.py": 98,
