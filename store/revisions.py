@@ -1,13 +1,4 @@
-"""store.revisions: one `ticketRevisions` row per change of a ticket's
-board-owned fields (KO-736).
-
-The board owns a ticket's title, body, priority, labels and column; the
-store keeps each version of them as a numbered revision, and
-`tickets.revision` names the current one. `mirror_ticket()` is the one
-writer: it heals a row an older build changed without a revision, writes
-the board's fields, then records them. `store.read.ticket_revisions()`
-reads them back for `/tickets/KO-n` (KO-737).
-"""
+"""One `ticketRevisions` row per change of a ticket's board-owned fields."""
 from __future__ import annotations
 
 import json
@@ -15,25 +6,10 @@ import time
 
 from .schema import _transaction
 
-# The fields a revision holds, in `tickets` and `ticketRevisions` alike.
 BOARD_FIELDS = ("title", "body", "priority", "labels", "boardColumn")
 
 
 def record_board_fields(conn, ticket_id, author="board", now=None):
-    """Record ticket `ticket_id`'s board-owned fields as its next revision
-    when they differ from its latest one; return the new revision number,
-    or None when nothing changed.
-
-    Compares the `tickets` row as it stands with its highest-numbered
-    `ticketRevisions` row, so a ticket with none -- inserted by a build
-    that wrote no revisions, at `revision` 0 -- records revision 1. Labels
-    are compared as lists, not as JSON text. `author` names who made the
-    change: `board` for a mirror's write, `unrecorded` for the healing
-    pass over a write an older build made without a revision. `now` is
-    epoch milliseconds for `at`, defaulting to the clock.
-
-    Runs in one `_transaction()`, so it joins the caller's.
-    """
     if now is None:
         now = int(time.time() * 1000)
     columns = ", ".join(BOARD_FIELDS)
@@ -62,7 +38,6 @@ def record_board_fields(conn, ticket_id, author="board", now=None):
 
 
 def _same(recorded, current):
-    """Do two `BOARD_FIELDS` tuples hold the same fields?"""
     labels = BOARD_FIELDS.index("labels")
     return all(
         json.loads(a) == json.loads(b) if index == labels else a == b

@@ -1,4 +1,3 @@
-"""One persisted work interval per run, independent of its wall-clock lifetime."""
 from contextlib import contextmanager
 from contextvars import ContextVar
 from time import time
@@ -10,7 +9,7 @@ _active = ContextVar('working_runs', default=frozenset())
 
 
 def effective_work(run, now=None):
-    """Read committed plus in-flight milliseconds; None means unmeasured."""
+    """Committed plus in-flight milliseconds; None means unmeasured."""
     if run.workingMs is None:
         return None
     now = int(time() * 1000) if now is None else now
@@ -23,10 +22,7 @@ def _open_verify(run, now):
 
 
 def agent_work(run, now=None):
-    """Read effective work less its verify part, the time the box judges.
-
-    An open verify span is not counted; an open agent span is. A run claimed
-    before `verifyMs` existed has no split, so all its work counts."""
+    """Work less its verify part; a run from before `verifyMs` has no split."""
     now = int(time() * 1000) if now is None else now
     spent = effective_work(run, now)
     if spent is None or run.verifyMs is None:
@@ -35,7 +31,6 @@ def agent_work(run, now=None):
 
 
 def verify_work(run, now=None):
-    """Read committed plus in-flight verify milliseconds; None means unmeasured."""
     if run.verifyMs is None:
         return None
     now = int(time() * 1000) if now is None else now
@@ -43,12 +38,6 @@ def verify_work(run, now=None):
 
 
 def settle_work(conn, run_id, now=None):
-    """Commit and clear the interval atomically, joining a sweep transaction.
-
-    A verify span also adds to verifyMs. NULL totals stay unmeasured. A second
-    settlement (including a late work return after a sweep) writes nothing
-    and cannot change the run's outcome.
-    """
     now = int(time() * 1000) if now is None else now
     with transaction(conn):
         conn.execute(
@@ -82,15 +71,7 @@ def _start_work(conn, run_id, verify):
 
 @contextmanager
 def working(conn, run_id, *, verify=False):
-    """Finally-safe role/verify boundary; nested wrappers share the outer span.
-
-    `verify=True` marks the span as verify time. A nested call keeps the
-    outer span's kind.
-
-    Only this context's outer owner settles. Other callers cannot take over
-    an already running interval; starting work also requires the ticket lease.
-    No transaction is held across the work itself.
-    """
+    """Nested calls share the outermost span, whose owner alone settles it."""
     key = (conn, run_id)
     if conn is None or run_id is None or key in _active.get():
         yield

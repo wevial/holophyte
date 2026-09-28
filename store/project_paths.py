@@ -1,9 +1,8 @@
-"""Canonical project identities without guessing legacy working directories."""
 from pathlib import Path
 
 
 def canonical_projects(conn):
-    """Read canonical paths, refusing ambiguous rows before identity decisions."""
+    """Refuse a relative repoPath rather than guess what it was relative to."""
     paths = {}
     for project, stored in conn.execute(
             "SELECT id, repoPath FROM projects ORDER BY id"):

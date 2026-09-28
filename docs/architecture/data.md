@@ -16,6 +16,21 @@ from `tickets.body` at claim time. No SQL schema migration is needed.
 Older snapshots without the key compare as an empty list; adding evidence
 after a claim is contract drift.
 
+## Conventions
+
+A new table or column follows the ones already there:
+
+- **camelCase** table and column names (`reviewRounds`, `runEvents`,
+  `activeRunId`), one casing across the whole file.
+- **List fields are JSON text.** SQLite has no array type, so a list of
+  strings or objects is stored as a JSON document defaulting to `'[]'`.
+- **Optional fields are nullable; everything else is NOT NULL.**
+- **Union types are CHECK constraints**, so an unknown status, phase or
+  verdict is refused by the database, not by a caller who remembered to
+  look. `store/enums.py` holds each vocabulary and renders its CHECK.
+- **Rows are keyed by a synthetic `id INTEGER PRIMARY KEY`**, which other
+  tables reference by that id.
+
 ## Tables
 
 | Table | One row per | Written by | Notes |

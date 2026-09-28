@@ -1,4 +1,3 @@
-"""Record an explicitly configured route substitution (KO-467)."""
 import json
 from time import time
 
@@ -7,7 +6,7 @@ from store import launch_backoff
 
 
 def switched(conn, project, evidence, run_id=None):
-    """One project intervention and an event, atomically before activation."""
+    """Record the substitution atomically, before the fallback is activated."""
     now = int(time() * 1000)
     note = json.dumps(evidence)
     with store.transaction(conn):
