@@ -54,7 +54,7 @@ def file_story(conn, parent_id, witnesses, children, standing_orders=(),
 
 
 def replan_story(conn, parent_id, witnesses, children, standing_orders,
-                 now=None):
+                 now=None, body_revised=False):
     witnesses = [dict(witness) for witness in witnesses]
     children = [(ticket_id, role, tuple(keys))
                 for ticket_id, role, keys in children]
@@ -79,7 +79,8 @@ def replan_story(conn, parent_id, witnesses, children, standing_orders,
                      " WHEN state IN (?, ?) THEN 'planned' ELSE state END"
                      " WHERE ticketId = ?",
                      (json.dumps(orders), *OPEN_STATES, parent_id))
-        _record_plan_revision(conn, parent_id, now)
+        if not body_revised:
+            _record_plan_revision(conn, parent_id, now)
         return _story_state(conn, parent_id)
 
 
@@ -437,9 +438,6 @@ def _check_replanned(conn, parent_id, child_ids):
 
 
 def _record_plan_revision(conn, parent_id, now):
-    if conn.execute("SELECT 1 FROM ticketRevisions WHERE ticketId = ?"
-                    " AND at = ?", (parent_id, now)).fetchone():
-        return
     columns = ", ".join(BOARD_FIELDS)
     (revision,) = conn.execute(
         "SELECT COALESCE(MAX(revision), 0) + 1 FROM ticketRevisions"

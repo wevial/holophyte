@@ -262,7 +262,8 @@ def _update_rows(conn, project_id, key, directory, parent_id, identifier,
     before = _plan_state(conn, parent_id)
     lines, filed, rows = [], [], []
     now = int(time.time() * 1000)
-    if before[0] != text:
+    body_revised = before[0] != text
+    if body_revised:
         store.board.edit_ticket(conn, project_id, identifier, text, revision,
                                 now=now)
     identifiers = {child.slug: headers[child.name] for child in children
@@ -296,7 +297,8 @@ def _update_rows(conn, project_id, key, directory, parent_id, identifier,
     state = store.stories.story(conn, parent_id).state
     if after != before:
         state = store.stories.replan_story(conn, parent_id, witnesses, rows,
-                                           story.standing_orders, now=now)
+                                           story.standing_orders, now=now,
+                                           body_revised=body_revised)
     (current,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
                               (parent_id,)).fetchone()
     lines.append(f"story {identifier} is {state} at revision {current}")

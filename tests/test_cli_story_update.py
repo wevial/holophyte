@@ -134,6 +134,24 @@ class StoryUpdateCliTests(ConfigTestCase):
         self.assertEqual(self.story_state(), "planned")
         self.assertEqual(self.update(parent_revision)[0], 0)
 
+    def test_a_plan_change_in_the_same_millisecond_still_moves_the_revision(self):
+        revision = self.approve()
+        story = self.directory / "story.md"
+        story.write_text(story.read_text().replace(
+            "Orders can be exported as CSV.",
+            "Every order can be exported as CSV."))
+        path = self.child("01-c")
+        with patch("time.time", return_value=1_700_000_000.0):
+            self.assertEqual(self.update(revision)[0], 0)
+            path.write_text(path.read_text().replace("Depends on: a, b",
+                                                     "Depends on: a"))
+            status, lines = self.update(revision + 1)
+
+        self.assertEqual(status, 0, lines)
+        self.assertEqual(self.ticket("NAT-4")[3], ["NAT-2"])
+        self.assertEqual(self.ticket("NAT-1")[2], revision + 2)
+        self.assertEqual(self.update(revision + 1)[0], 1)
+
     def test_a_new_child_file_is_filed_with_its_header(self):
         revision = self.approve()
         path = self.child("05-e")
