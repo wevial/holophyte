@@ -347,11 +347,47 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         self.assertIn("denied for [redacted]", reason)
         self.assertEqual(self.started(), [])
 
-    def test_a_value_the_environment_refuses_leaves_no_file_value_behind(self):
-        self.fixture("print('ready')\n",
-                     "HOLO_FIXTURE_CREDENTIAL=loop-only\nBROKEN=a\x00b\n")
+    def test_a_file_systemd_would_read_is_read_past_its_bad_lines(self):
+        self.fixture(
+            "ok = os.environ.get('HOLO_FIXTURE_CREDENTIAL') == 'loop-only'\n"
+            "print('ready' if ok else 'credential missing')\n"
+            "raise SystemExit(0 if ok else 1)\n",
+            "# a comment = with an equals sign\n; another = one\n"
+            "a line with no assignment\nBROKEN=a\x00b\n"
+            "  HOLO_FIXTURE_CREDENTIAL = loop-only  \n")
         with self.sweep_environment():
-            with contextlib.suppress(ValueError):
+            self.one_pass(T0)
+        self.assertEqual(self.count("launch_backoff"), 0)
+        self.assertEqual(self.started(), ["--user start holophyte-loop@repo"])
+
+    def test_an_overlay_refused_part_way_leaves_no_file_value_behind(self):
+        self.fixture("print('ready')\n", "HOLO_FIXTURE_CREDENTIAL=loop-only\n")
+        values = {"HOLO_FIXTURE_CREDENTIAL": "loop-only",
+                  "SECOND": "also-loop-only", "BROKEN": "a\x00b"}
+        with self.sweep_environment(), patch(
+                "holophyte.host.unit_environment", return_value=values):
+            os.environ["SECOND"] = "the sweep's own"
+            with self.assertRaises(ValueError):
                 self.one_pass(T0)
             self.assertNotIn("HOLO_FIXTURE_CREDENTIAL", os.environ)
+            self.assertEqual(os.environ["SECOND"], "the sweep's own")
         self.assertFalse(self.calls.exists())
+        self.assertEqual(self.started(), [])
+
+    def test_the_files_holophyte_settings_and_values_stay_out_of_the_sweep(self):
+        from holophyte.redact import redact_values
+
+        self.fixture(
+            "home = os.environ.get('HOLOPHYTE_HOME')\n"
+            "ok = os.environ.get('HOLO_FIXTURE_CREDENTIAL') and home != '/unit/home'\n"
+            "print('ready' if ok else 'unit home seen')\n"
+            "raise SystemExit(0 if ok else 1)\n",
+            "HOLOPHYTE_HOME=/unit/home\nHOLO_FIXTURE_CREDENTIAL=loop-only\n"
+            "UNIT_SETTING=plain-unit-setting\n")
+        with self.sweep_environment():
+            home = os.environ["HOLOPHYTE_HOME"]
+            self.one_pass(T0)
+            self.assertEqual(os.environ["HOLOPHYTE_HOME"], home)
+        self.assertEqual(self.count("launch_backoff"), 0)
+        self.assertEqual(self.started(), ["--user start holophyte-loop@repo"])
+        self.assertEqual(redact_values("plain-unit-setting"), "plain-unit-setting")

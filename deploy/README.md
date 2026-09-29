@@ -31,8 +31,9 @@ commented out: a `PATH` naming where those CLIs live, and an optional
 adjust them before enabling. Without the `PATH`, the reconcile and the
 route probe fail on a missing executable. Before it starts a loop, the
 sweep probes the implementer route with that loop's
-`~/.holophyte/NAME/serve.env` laid over its own environment, so a
-credential only the loop unit reads need not be copied into `host.env`.
+`~/.holophyte/NAME/serve.env`, less its `HOLOPHYTE_*` settings, laid over
+its own environment for the probe alone, so a credential only the loop
+unit reads need not be copied into `host.env`.
 
 - `deploy/holophyte.target` — `Wants=` the socket and the timer, and is the
   only host unit with an `[Install]` section. `systemctl --user enable --now

@@ -784,10 +784,10 @@ def launch_route_ready(target, conn, project, run_id, now, out):
             if (probe is not None and not probe.ok and (
                     target.config().get("agents") or {}).get("implementer_fallback")):
                 probe = probe_seat(target, "implement", fallback=True)
-        if probe is None or probe.ok:
-            launch_backoff.clear(conn, project)
-            return True
-        reason = probe_diagnostic(target, probe)
+            if probe is None or probe.ok:
+                launch_backoff.clear(conn, project)
+                return True
+            reason = probe_diagnostic(target, probe)
     note = launch_backoff.failure(conn, project, reason, now, run_id=run_id)
     print("[holo2] " + " ".join(note.splitlines()), file=out)
     return False

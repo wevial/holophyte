@@ -25,10 +25,10 @@ import time
 import tomllib
 from pathlib import Path
 
-from holophyte.config import parse_environment, process_value, serve_config
+from holophyte.config import ENV_NAME, process_value, serve_config
 from holophyte.config_tables import board_config, board_mode, split_address
 from holophyte.project import DEFAULT_HOLOPHYTE_HOME, Project
-from holophyte.redact import register_values
+from holophyte.redact import values_held
 
 HOST_FILE = "host.toml"
 # The known shape of the file: a key outside it is refused, as the project
@@ -72,27 +72,37 @@ class HostProject:
     error: str | None = None
 
 
+def unit_environment(text):
+    values = {}
+    for line in text.splitlines():
+        name, separator, value = line.strip().partition("=")
+        name, value = name.strip(), process_value(value.strip())
+        if (separator and ENV_NAME.fullmatch(name) and "\0" not in value
+                and not name.startswith("HOLOPHYTE_")):
+            values[name] = value
+    return values
+
+
 @contextlib.contextmanager
 def loop_unit_environment(target):
     path = home() / serve_config(target).name / "serve.env"
     try:
-        text = path.read_text()
+        values = unit_environment(path.read_text())
     except FileNotFoundError:
-        yield
-        return
-    values = parse_environment(text, str(path))
-    register_values(values.values())
-    saved = {name: os.environ.get(name) for name in values}
-    try:
-        os.environ.update({name: process_value(v)
-                           for name, v in values.items()})
-        yield
-    finally:
-        for name, value in saved.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
+        values = {}
+    saved = {}
+    with values_held(values.values()):
+        try:
+            for name, value in values.items():
+                saved[name] = os.environ.get(name)
                 os.environ[name] = value
+            yield
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
 
 
 def _stamp(path):
