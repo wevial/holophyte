@@ -32,7 +32,7 @@ OVER = {}
 # Lower a pin when it sits more than 150 lines above its file's count.
 PINNED = {
     "holophyte/babysitter.py": 1095, "holophyte/board.py": 599,
-    "holophyte/claim.py": 1001, "holophyte/cli.py": 849,
+    "holophyte/claim.py": 1001, "holophyte/cli.py": 854,
     "holophyte/config.py": 943, "holophyte/dispatch.py": 327,
     "holophyte/config_tables.py": 787, "holophyte/findings.py": 391,
     "holophyte/gates.py": 926, "holophyte/loop.py": 919,

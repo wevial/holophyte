@@ -28,6 +28,7 @@ from pathlib import Path
 from holophyte.board import FILE_TICKET_PRIORITIES, file_ticket
 from holophyte.board_diff import board_diff
 from holophyte.board_import import board_import
+from holophyte.cli_story import add_story_arguments, story_verb
 from holophyte.config import (
     check_agent_commands,
     check_config,
@@ -103,7 +104,8 @@ def _file_ticket_only(parser, args):
             parser.error("--update says which issue --file-ticket replaces "
                          "the body of; it names nothing by itself")
         for flag, value in (("--state", args.state),
-                            ("--priority", args.priority)):
+                            ("--priority", None if args.file_story
+                             else args.priority)):
             if value is not None:
                 parser.error(f"{flag} is what --file-ticket creates the "
                              "issue with; it names nothing by itself")
@@ -485,8 +487,8 @@ def _legacy_cli(argv):
              "(default %s)" % FILE_TICKET_STATES[0])
     parser.add_argument(
         "--priority", choices=tuple(FILE_TICKET_PRIORITIES),
-        help="with --file-ticket: the priority the issue is created with "
-             "(default none)")
+        help="with --file-ticket or --file-story: the priority the issue or "
+             "the story's tickets are created with (default none)")
     parser.add_argument(
         "--update", metavar="KO-n",
         help="with --file-ticket: replace that issue's title, description "
@@ -519,6 +521,7 @@ def _legacy_cli(argv):
                        help="hold project admission; requires --note")
     modes.add_argument("--release-hold", action="store_true",
                        help="release project hold; requires --note")
+    add_story_arguments(parser, modes)
     args = parser.parse_args(argv)
     eager_import()
     _file_ticket_only(parser, args)
@@ -715,6 +718,8 @@ def _store_verb(args, target, board):
     """Run the operator verb the command line names, if it is one of the
     verbs that write the store and exit, including `--close`, which also
     projects the result to the board. No agent route has to resolve first."""
+    if story_verb(args, target, board):
+        return True
     # Parks the ticket and may end the run here, which projects to the board
     # like `--close`, so a target with no board exits here naming the key.
     if args.abort:
