@@ -172,6 +172,10 @@ Each module, one line:
   `store.read.claimable()` row, admits it at its revision, reads that one
   issue back from the board and claims only at the admitted revision,
   admitting a moved ticket again at most `READMIT_LIMIT` times an ask.
+- `holophyte/story_claim.py` — a story's guards: `refusal()` keeps the
+  store-mode claim off a child whose story is not approved, `held_open()`
+  notes a board Done on a story parent instead of walking it `merged`, and
+  `walk_closed()` abandons the story of a parent the board canceled.
 - `holophyte/native_board.py` — `NativeBoard` (KO-754), the board
   `board_for()` builds for `[board] kind = "native"`: its reads answer from
   the project's store, filing, editing and the body read-back go through

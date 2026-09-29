@@ -26,6 +26,7 @@ from .notes import record_note
 from .operate import abort
 from .revisions import record_board_fields
 from .schema import _transaction
+from .stories import abandon_story, story
 from .tickets import mirror_ticket, transition, walk_ticket
 from .writes import set_board_state
 
@@ -191,6 +192,9 @@ def cancel_ticket(conn, project_id, identifier, expected_revision, note,
                   trigger="manual")
         elif status != "blocked_on_operator":
             walk_ticket(conn, ticket_id, "abandoned")
+        found = story(conn, ticket_id)
+        if found is not None and found.ticketId == ticket_id:
+            abandon_story(conn, ticket_id, note, author, now=now)
     return revision
 
 
