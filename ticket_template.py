@@ -952,6 +952,9 @@ def _parse_args(argv):
 
 
 def main(argv):
+    if any(arg.partition("=")[0] == "--story" for arg in argv):
+        import story_template
+        return story_template.main(argv)
     parsed = _parse_args(argv)
     if parsed == HELP:
         print(USAGE)
