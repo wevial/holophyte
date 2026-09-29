@@ -16,11 +16,11 @@ from loop_fixture import (  # noqa: E402
     a_task,
 )
 
-import holophyte.claim  # noqa: E402
-import holophyte.dispatch  # noqa: E402
-import holophyte.runs  # noqa: E402
+import holophyte.loop.claim  # noqa: E402
+import holophyte.loop.dispatch  # noqa: E402
+import holophyte.loop.runs  # noqa: E402
 import store.tickets as tickets  # noqa: E402
-from holophyte.freshness import park_stale  # noqa: E402
+from holophyte.review.freshness import park_stale  # noqa: E402
 
 # Two blocking problems: the Summary placeholder INVALID_BODY carries, and
 # no What line.
@@ -40,14 +40,14 @@ class StoreModeBoard(StubProvider):
 class ValidationNoteTests(LoopFixture):
     def setUp(self):
         super().setUp()
-        self.conn = holophyte.runs.open_store(self.project)
+        self.conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(self.conn.close)
         self.project_id = tickets.ensure_project(
             self.conn, StubProvider.TEAM, str(self.target))
 
     def mirror(self, provider):
         with patch.object(sys, "stdout", io.StringIO()):
-            holophyte.dispatch._mirror_queue(self.project, self.conn,
+            holophyte.loop.dispatch._mirror_queue(self.project, self.conn,
                                              self.project_id, provider)
 
     def notes(self, kind):
@@ -89,7 +89,7 @@ class ValidationNoteTests(LoopFixture):
         self.mirror(board)
 
         with patch.object(sys, "stdout", io.StringIO()):
-            admitted = holophyte.claim._admit_ticket(
+            admitted = holophyte.loop.claim._admit_ticket(
                 self.project, self.conn, self.project_id, board, task,
                 SimpleNamespace(trips=[], watched=[]))
 

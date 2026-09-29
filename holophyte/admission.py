@@ -1,7 +1,7 @@
 """Project admission reads and the CLI's recorded operator commands."""
 import store
-from holophyte.config_tables import board_config
-from holophyte.runs import open_store
+from holophyte.config.config_tables import board_config
+from holophyte.loop.runs import open_store
 from store.project_paths import canonical_projects
 
 
@@ -72,7 +72,7 @@ def held_idle(held, pool, conn, project):
 
 
 def reconcile_tick(target, conn, project, provider, first_tick):
-    from holophyte.reconcile import _reconcile_pull_requests
+    from holophyte.host.reconcile import _reconcile_pull_requests
     if not first_tick:
         _reconcile_pull_requests(target, conn, project, provider)
 

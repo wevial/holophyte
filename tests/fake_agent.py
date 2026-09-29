@@ -1,6 +1,6 @@
 """A scripted stand-in for the loop's agent turns — zero real agent calls.
 
-`holophyte.loop.run_task()` reaches the outside world at exactly one point: the
+`holophyte.loop.loop.run_task()` reaches the outside world at exactly one point: the
 module-level `agent(target, role, goal, cwd, ...)` call it makes for every implement,
 review and adjudicate turn. Everything else the loop does — cutting the
 worktree, the verify gate, the fix commits, the `--no-ff` merge — is real git
@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.gates
+import holophyte.loop.gates
 
 IMPLEMENT = "implement"
 REVIEW_ROLES = ("review", "adjudicate")
@@ -204,16 +204,17 @@ def block_until_killed(cwd, printed="", timeout=1):
     waiting out the ticket's budget would take the minutes the estimate
     says.
     """
-    holophyte.gates.run_capped(
+    holophyte.loop.gates.run_capped(
         ["sh", "-c", 'printf %s "$1"; sleep 600', "sh", printed],
         cwd, timeout=timeout)
 
 
 class FakeAgent:
-    """A drop-in for `holophyte.agents.agent` that replays `script`, one step per turn.
+    """A drop-in for `holophyte.agents.agents.agent` that replays `script`, one step per
+    turn.
 
-    Patch it over the real callable — `patch.object(holophyte.loop, "agent", fake)` —
-    and the loop runs unchanged with no agent process anywhere in it. The
+    Patch it over the real callable — `patch.object(holophyte.loop.loop, "agent", fake)`
+    — and the loop runs unchanged with no agent process anywhere in it. The
     effective seats it dispatched are kept in order, so a test can assert the flow
     the loop actually walked rather than the flow the script hoped for.
     """
@@ -227,7 +228,7 @@ class FakeAgent:
                  candidate_sha=None, timeout=None, on_start=None, run_id=None,
                  review_round=None):
         # Like agent(), dispatch the requested turn through its effective seat.
-        from holophyte.agents import effective_role
+        from holophyte.agents.agents import effective_role
         role = effective_role(target, role)
         n = len(self.turns) + 1
         if not self.script:
@@ -286,7 +287,7 @@ class SpawnGuard:
 def no_agent_processes(guard=None):
     """Fail the test if anything under it spawns a real agent process.
 
-    The independent oracle for "zero API calls": patching `holophyte.loop.agent` is
+    The independent oracle for "zero API calls": patching `holophyte.loop.loop.agent` is
     what the test *does*, and asserting on the same patch would only restate
     it. This watches the process boundary underneath instead, so an agent
     reached by any other path — a review route the fake never covered, a

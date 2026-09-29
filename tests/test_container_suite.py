@@ -16,9 +16,9 @@ class ContainerSuiteTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_whole_suite_passes_inside_an_isolated_launch(self):
-        from holophyte import isolation
-        from holophyte.isolation_git import git
-        from holophyte.project import Project
+        from holophyte.config.project import Project
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")

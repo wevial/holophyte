@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli
-import holophyte.config
-from holophyte import config_tables
+import holophyte.cli.cli
+import holophyte.config.config
+from holophyte.config import config_tables
 
 # `config_fixture` is a helper, not a test module: discovery never imports it,
 # and how this file is imported decides whether `tests/` is on the path at all.
@@ -22,9 +22,9 @@ def refused(case, toml):
     refusal's message, which names the config path and is never followed
     by the report."""
     target = case.locate(toml).path
-    with patch.object(holophyte.cli, "report") as report, \
+    with patch.object(holophyte.cli.cli, "report") as report, \
             case.assertRaises(SystemExit) as raised:
-        holophyte.cli.cli([str(target), "--report"])
+        holophyte.cli.cli.cli([str(target), "--report"])
     message = str(raised.exception)
     case.assertIn(str(case.project.config_path), message)
     report.assert_not_called()
@@ -171,8 +171,8 @@ class RunCapTests(ConfigTestCase):
         loads and the value is what the reader hands back."""
         target = self.locate("[supervisor]\nrun_cap = 2\n").path
 
-        with patch.object(holophyte.cli, "report") as report:
-            holophyte.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.cli, "report") as report:
+            holophyte.cli.cli.cli([str(target), "--report"])
 
         report.assert_called_once_with(self.project)
 
@@ -204,9 +204,9 @@ class BoardAskSecTests(ConfigTestCase):
             with self.subTest(line=line):
                 target = self.locate(f"[supervisor]\n{line}\n").path
 
-                with patch.object(holophyte.cli, "report") as report:
+                with patch.object(holophyte.cli.cli, "report") as report:
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
+                        holophyte.cli.cli.cli([str(target), "--report"])
 
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)
@@ -279,10 +279,10 @@ class BoardLabelTests(ConfigTestCase):
         self.assertIsNone(config_tables.board_config(self.project).label)
 
         target = self.locate(self.BOARD + 'label = "holophyte"\n').path
-        with patch.object(holophyte.cli, "check_agent_commands"), \
-                patch.object(holophyte.cli, "check_worktree_setup"), \
-                patch.object(holophyte.cli, "main") as main:
-            holophyte.cli.cli([str(target)])
+        with patch.object(holophyte.cli.cli, "check_agent_commands"), \
+                patch.object(holophyte.cli.cli, "check_worktree_setup"), \
+                patch.object(holophyte.cli.cli, "main") as main:
+            holophyte.cli.cli.cli([str(target)])
         self.assertEqual(main.call_args.args[1]._label, "holophyte")
 
     def test_a_bad_label_is_a_startup_error_naming_the_key(self):
@@ -292,11 +292,11 @@ class BoardLabelTests(ConfigTestCase):
         for line in ("label = 3", 'label = ""'):
             with self.subTest(line=line):
                 target = self.locate(self.BOARD + line + "\n").path
-                with patch.object(holophyte.cli, "check_agent_commands"
+                with patch.object(holophyte.cli.cli, "check_agent_commands"
                                   ) as routes, \
-                        patch.object(holophyte.cli, "main") as main, \
+                        patch.object(holophyte.cli.cli, "main") as main, \
                         self.assertRaises(SystemExit) as raised:
-                    holophyte.cli.cli([str(target)])
+                    holophyte.cli.cli.cli([str(target)])
                 routes.assert_not_called()
                 main.assert_not_called()
                 message = str(raised.exception)
@@ -313,10 +313,10 @@ class BoardModeTests(ConfigTestCase):
 
     def start(self, target):
         """`cli([target])`, the loop's startup, with `main` patched."""
-        with patch.object(holophyte.cli, "check_agent_commands"), \
-                patch.object(holophyte.cli, "check_worktree_setup"), \
-                patch.object(holophyte.cli, "main") as main:
-            holophyte.cli.cli([str(target)])
+        with patch.object(holophyte.cli.cli, "check_agent_commands"), \
+                patch.object(holophyte.cli.cli, "check_worktree_setup"), \
+                patch.object(holophyte.cli.cli, "main") as main:
+            holophyte.cli.cli.cli([str(target)])
         return main
 
     def test_the_keys_default_to_today_and_a_store_board_starts(self):
@@ -339,11 +339,11 @@ class BoardModeTests(ConfigTestCase):
                                    ('kind = "jira"', "[board] kind", "native")):
             with self.subTest(line=line):
                 target = self.locate(self.BOARD + line + "\n").path
-                with patch.object(holophyte.cli, "check_agent_commands"), \
-                        patch.object(holophyte.cli, "check_worktree_setup"), \
-                        patch.object(holophyte.cli, "main") as main, \
+                with patch.object(holophyte.cli.cli, "check_agent_commands"), \
+                        patch.object(holophyte.cli.cli, "check_worktree_setup"), \
+                        patch.object(holophyte.cli.cli, "main") as main, \
                         self.assertRaises(SystemExit) as raised:
-                    holophyte.cli.cli([str(target)])
+                    holophyte.cli.cli.cli([str(target)])
                 main.assert_not_called()
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)
@@ -358,12 +358,14 @@ class ConsoleConfigTests(ConfigTestCase):
     def test_an_absent_table_is_no_daemons(self):
         self.locate()
 
-        self.assertEqual(holophyte.config.console_config(self.project).daemons, ())
+        self.assertEqual(
+            holophyte.config.config.console_config(self.project).daemons, ()
+        )
 
     def test_a_list_of_addresses_is_read_in_order(self):
         self.locate('[console]\ndaemons = ["writer-2:7710", "writer-3:7711"]\n')
 
-        self.assertEqual(holophyte.config.console_config(self.project).daemons,
+        self.assertEqual(holophyte.config.config.console_config(self.project).daemons,
                          ("writer-2:7710", "writer-3:7711"))
 
     def test_a_bad_entry_is_a_startup_error_naming_the_key_and_the_entry(self):

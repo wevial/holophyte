@@ -24,8 +24,8 @@ from test_claim_freshness import GONE, STALE_BODY  # noqa: E402
 from test_store_claim_loop import STORE_MODE, StoreFiles  # noqa: E402
 
 import store  # noqa: E402
-from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.supervisor import (  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
+from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
@@ -51,7 +51,7 @@ class StaleParkWitness(LoopFixture):
         self.knobs = sweep_config(self.project)
 
     def run_loop(self):
-        with patch("holophyte.freshness.critic_admits",
+        with patch("holophyte.review.freshness.critic_admits",
                    lambda *args: True), \
                 patch.object(sys, "stdout", io.StringIO()):
             self.loop(Commit("the scripted work"), APPROVE,
@@ -62,11 +62,11 @@ class StaleParkWitness(LoopFixture):
         started = []
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        with patch("holophyte.reconcile._reconcile_pull_requests"), \
-                patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.reconcile._reconcile_pull_requests"), \
+                patch("holophyte.host.supervisor.linear_budget_low",
                       return_value=False), \
-                patch("holophyte.supervisor.board_ready", never), \
-                patch("holophyte.supervisor.start_loop_for",
+                patch("holophyte.host.supervisor.board_ready", never), \
+                patch("holophyte.host.supervisor.start_loop_for",
                       lambda target, conn, owed, *a, **k: started.append(owed)):
             reconcile_parked_pull_requests(
                 self.project, conn, now, self.board, io.StringIO(),

@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
 import linear_provider  # noqa: E402
-from holophyte.native_board import NativeBoard  # noqa: E402
+from holophyte.board.native_board import NativeBoard  # noqa: E402
 from provider import board_for  # noqa: E402
 from tests.test_provider import FakeLinear, ticket_body  # noqa: E402
 

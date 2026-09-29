@@ -21,14 +21,14 @@ from fake_agent import (  # noqa: E402
 )
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 
-import holophyte.loop  # noqa: E402
-import holophyte.merge_gate  # noqa: E402
-import holophyte.operator  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
+import holophyte.loop.loop  # noqa: E402
+import holophyte.loop.merge_gate  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
+from holophyte.loop.runs import open_store  # noqa: E402
 from provider import board_for  # noqa: E402
 from store.stories import approve_story, file_story  # noqa: E402
 
@@ -78,7 +78,7 @@ class SiblingMergesThenCommit(Commit):
         (wt / "shared.txt").write_text(SHARED.replace("one", "ONE"))
         test.git("commit", "-q", "-am", "the sibling's work", cwd=wt)
         sha = test.git("rev-parse", "HEAD", cwd=wt).strip()
-        holophyte.merge_gate._merge(test.project, test.conn, a_run, test.board,
+        holophyte.loop.merge_gate._merge(test.project, test.conn, a_run, test.board,
                                     "NAT-3", "the sibling's work", "sibling",
                                     wt, sha)
         return super().play(cwd, turn)
@@ -127,10 +127,10 @@ class StoryDriftTests(LoopFixture):
 
         out = io.StringIO()
         with no_agent_processes(), patch.object(sys, "stdout", out), \
-                patch.object(holophyte.loop, "agent", agent), \
-                patch("holophyte.freshness.critic_admits",
+                patch.object(holophyte.loop.loop, "agent", agent), \
+                patch("holophyte.review.freshness.critic_admits",
                       return_value=True):
-            holophyte.operator.main(self.project, self.board)
+            holophyte.cli.operator.main(self.project, self.board)
         return fake, out.getvalue()
 
     def b_run(self):

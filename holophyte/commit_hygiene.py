@@ -2,8 +2,8 @@
 import re
 import subprocess
 
-from holophyte.config import merge_config
-from holophyte.gates import InfraFailure
+from holophyte.config.config import merge_config
+from holophyte.loop.gates import InfraFailure
 
 
 def _git(wt, *args, data=None):

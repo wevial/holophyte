@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import LoopFixture, no_agent_processes  # noqa: E402
 from provider_fence_fixture import FenceConformanceMixin  # noqa: E402
 
-import holophyte.operator  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
 import linear_provider  # noqa: E402
 import provider as board_seam  # noqa: E402
 import ticket_template  # noqa: E402
@@ -518,7 +518,7 @@ class LabelGatePassTests(LoopFixture):
         out = io.StringIO()
         with patch.object(linear_provider, "_gql", board.gql), \
                 no_agent_processes(), patch.object(sys, "stdout", out):
-            self.rc = holophyte.operator.main(self.project, provider)
+            self.rc = holophyte.cli.operator.main(self.project, provider)
 
         self.assertIsNone(self.rc)
         self.assertIn("[holo2] Linear has no ready tickets. done.",

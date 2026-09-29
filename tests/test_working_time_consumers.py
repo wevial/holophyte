@@ -3,8 +3,13 @@
 from unittest.mock import patch
 
 import store
-from holophyte import babysitter, loop, pr, report, serve, serve_runs, supervisor
-from holophyte.check_fix import CheckFix
+from holophyte.babysit import babysitter
+from holophyte.babysit.check_fix import CheckFix
+from holophyte.cli import report
+from holophyte.host import supervisor
+from holophyte.loop import loop
+from holophyte.pr import pr
+from holophyte.serve import serve, serve_runs
 from store.working import settle_work, working
 from tests.phase_fixture import finish_run
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase
@@ -187,7 +192,7 @@ class WorkingConsumers(SweepTestCase):
                 # A spent check rerun keeps the babysit's wait in the worker.
                 patch.object(babysitter, "CheckFix", lambda: CheckFix(reran=True)),
                 patch(
-                    "holophyte.pullrequest._park_on_pr",
+                    "holophyte.pr.pullrequest._park_on_pr",
                     side_effect=loop.MergeParked("parked"),
                 ) as park,
             ):

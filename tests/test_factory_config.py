@@ -15,18 +15,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
 
-import holophyte.agents
-import holophyte.claim
-import holophyte.cli
-import holophyte.config
-import holophyte.gates
-import holophyte.loop
-import holophyte.operator
-import holophyte.project
+import holophyte.agents.agents
+import holophyte.cli.cli
+import holophyte.cli.operator
+import holophyte.config.config
+import holophyte.config.project
+import holophyte.host.supervisor
+import holophyte.host.supervisor_lock
+import holophyte.loop.claim
+import holophyte.loop.gates
+import holophyte.loop.loop
+import holophyte.loop.runs
 import holophyte.redact
-import holophyte.runs
-import holophyte.supervisor
-import holophyte.supervisor_lock
 import review_runner
 import store
 
@@ -51,9 +51,9 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
             with self.subTest(value=value):
                 self.locate(f"[agents]\nimplementer_session = {value}\n")
                 with self.assertRaisesRegex(SystemExit, "implementer_session"):
-                    holophyte.config.check_document(self.project)
+                    holophyte.config.config.check_document(self.project)
         self.locate("[agents]\nimplementer_session = 'session id: ([0-9a-f-]{36})'\n")
-        holophyte.config.check_document(self.project)
+        holophyte.config.config.check_document(self.project)
 
     def test_harness_table_refusals_name_the_key(self):
         table = '[agents.implementer]\nharness = "claude"\n'
@@ -86,21 +86,21 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
             with self.subTest(config=config):
                 self.locate(config)
                 with self.assertRaisesRegex(SystemExit, message):
-                    holophyte.config.check_document(self.project)
+                    holophyte.config.config.check_document(self.project)
         self.locate(table + '[harnesses]\nclaude = "/opt/claude/bin/claude"\n')
-        holophyte.config.check_document(self.project)
+        holophyte.config.config.check_document(self.project)
         self.locate('[agents.reviewer]\nharness = "devin"\nmodel = "opus"\n')
-        holophyte.config.check_document(self.project)
+        holophyte.config.config.check_document(self.project)
         self.locate('[agents.implementer]\nharness = "devin"\nmodel = "opus"\n')
-        holophyte.config.check_document(self.project)
+        holophyte.config.config.check_document(self.project)
 
     def test_codex_implementer_table_defaults_and_refuses_an_unknown_effort(self):
         table = '[agents.implementer]\nharness = "codex"\n'
         self.locate(table)
-        holophyte.config.check_document(self.project)
+        holophyte.config.config.check_document(self.project)
         self.locate(table + 'effort = "max"\n')
         with self.assertRaisesRegex(SystemExit, r"\[agents\.implementer\] effort"):
-            holophyte.config.check_document(self.project)
+            holophyte.config.config.check_document(self.project)
 
     def test_worktree_environment_refusals(self):
         self.locate("")
@@ -120,7 +120,7 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
                     "config": lambda self: {"worktree": tomllib.loads(config)},
                 })()
                 with self.assertRaises(SystemExit) as caught:
-                    holophyte.config.check_document(target)
+                    holophyte.config.config.check_document(target)
                 self.assertIn(message, str(caught.exception))
                 self.assertNotIn("sentinel-config-value", str(caught.exception))
 
@@ -143,12 +143,12 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
                     "config": lambda self: {"merge": tomllib.loads(config)},
                 })()
                 with self.assertRaises(SystemExit) as caught:
-                    holophyte.config.check_document(target)
+                    holophyte.config.config.check_document(target)
                 self.assertIn(message, str(caught.exception))
                 self.assertNotIn("sentinel-capture", str(caught.exception))
         self.locate(f'[merge]\ncapture_env_source = "{source}"\n'
                     'capture_env_allow = ["CAPTURE_KEY"]\n')
-        holophyte.config.check_document(self.project)
+        holophyte.config.config.check_document(self.project)
         with patch("builtins.print") as printed:
             holophyte.redact.safe_print("token sentinel-capture here")
         printed.assert_called_once_with("token [redacted] here")
@@ -158,44 +158,44 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
             with self.subTest(value=value):
                 self.locate(f'[merge]\nstrip_attribution = {value}\n')
                 with self.assertRaisesRegex(SystemExit, "strip_attribution"):
-                    holophyte.config.check_document(self.project)
+                    holophyte.config.config.check_document(self.project)
 
     def test_merge_changes_log_default_override_and_validation(self):
         for value, expected in ((None, False), ("false", False), ("true", True)):
             self.locate("" if value is None else f"[merge]\npr_changes_log = {value}\n")
-            holophyte.config.check_document(self.project)
-            self.assertIs(holophyte.config.merge_config(self.project).pr_changes_log,
+            holophyte.config.config.check_document(self.project)
+            self.assertIs(holophyte.config.config.merge_config(self.project).pr_changes_log,
                           expected)
         for value in ('"true"', "1", "0", "1.5", "[]", "{}"):
             with self.subTest(value=value):
                 self.locate(f"[merge]\npr_changes_log = {value}\n")
                 with self.assertRaisesRegex(SystemExit, "pr_changes_log.*boolean"):
-                    holophyte.config.check_document(self.project)
+                    holophyte.config.config.check_document(self.project)
 
     def test_merge_mention_handle(self):
         self.locate("")
-        self.assertEqual(holophyte.config.merge_config(self.project).mention_handle,
+        self.assertEqual(holophyte.config.config.merge_config(self.project).mention_handle,
                          "holophyte")
         self.locate('[merge]\nmention_handle = "factory-bot"\n')
-        self.assertEqual(holophyte.config.merge_config(self.project).mention_handle,
+        self.assertEqual(holophyte.config.config.merge_config(self.project).mention_handle,
                          "factory-bot")
 
     def test_merge_check_wait_default_override_and_validation(self):
         for value, expected in ((None, 1800), ("3600", 3600)):
             self.locate("" if value is None else f"[merge]\ncheck_wait_sec = {value}\n")
-            holophyte.config.check_document(self.project)
-            self.assertEqual(holophyte.config.merge_config(self.project).check_wait_sec,
+            holophyte.config.config.check_document(self.project)
+            self.assertEqual(holophyte.config.config.merge_config(self.project).check_wait_sec,
                              expected)
         for value in ("0", "-5", "true", "1.5", '"60"'):
             with self.subTest(value=value), \
                     self.assertRaisesRegex(SystemExit, "check_wait_sec"):
                 self.locate(f"[merge]\ncheck_wait_sec = {value}\n")
-                holophyte.config.check_document(self.project)
+                holophyte.config.config.check_document(self.project)
 
     def test_an_absent_config_file_loads_as_empty(self):
         target = self.locate().path
         self.assertEqual(self.project.config_path,
-                         holophyte.project.state_dir(target) / "config.toml")
+                         holophyte.config.project.state_dir(target) / "config.toml")
         self.assertFalse(self.project.config_path.exists())
         self.assertEqual(self.project.config(), {})
 
@@ -216,7 +216,7 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         self.write_config("[agents\n")
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.cli.cli([str(target), "--report"])
+            holophyte.cli.cli.cli([str(target), "--report"])
 
         self.assertIn(str(self.project.config_path), str(raised.exception))
 
@@ -226,7 +226,7 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         for name in ("one", "two"):
             path = self.root / name / "repo"
             path.mkdir(parents=True)
-            target = holophyte.project.Project.locate(path)
+            target = holophyte.config.project.Project.locate(path)
             target.config_path.parent.mkdir(parents=True)
             target.config_path.write_text(
                 f'[agents]\nimplementer = "harness-{name} run"\n')
@@ -239,10 +239,14 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
                          "harness-two run")
         self.assertEqual(first.config()["agents"]["implementer"],
                          "harness-one run")
-        self.assertEqual(holophyte.config.agent_command(first, "implement", "go"),
-                         ["harness-one", "run", "go"])
-        self.assertEqual(holophyte.config.agent_command(second, "implement", "go"),
-                         ["harness-two", "run", "go"])
+        self.assertEqual(
+            holophyte.config.config.agent_command(first, "implement", "go"),
+            ["harness-one", "run", "go"],
+        )
+        self.assertEqual(
+            holophyte.config.config.agent_command(second, "implement", "go"),
+            ["harness-two", "run", "go"],
+        )
 
     def test_importing_the_module_names_no_target(self):
         home = Path(tempfile.mkdtemp())
@@ -265,15 +269,15 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         home = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, home)
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}), \
-                patch.object(holophyte.project, "load_config",
+                patch.object(holophyte.config.project, "load_config",
                              side_effect=AssertionError("config read")) as load, \
-                patch.object(holophyte.project.Project, "locate",
+                patch.object(holophyte.config.project.Project, "locate",
                              autospec=True) as locate, \
-                patch.object(holophyte.project, "adopt_legacy_state",
+                patch.object(holophyte.config.project, "adopt_legacy_state",
                              autospec=True) as adopt:
             with contextlib.redirect_stdout(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli(["--help"])
+                holophyte.cli.cli.cli(["--help"])
 
         self.assertEqual(raised.exception.code, 0)
         load.assert_not_called()
@@ -290,13 +294,13 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         self.addCleanup(shutil.rmtree, home)
         stderr = io.StringIO()
         with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(home)}), \
-                patch.object(holophyte.project.Project, "locate",
+                patch.object(holophyte.config.project.Project, "locate",
                              autospec=True) as locate, \
-                patch.object(holophyte.project, "adopt_legacy_state",
+                patch.object(holophyte.config.project, "adopt_legacy_state",
                              autospec=True) as adopt:
             with contextlib.redirect_stderr(stderr), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli([])
+                holophyte.cli.cli.cli([])
 
         self.assertNotEqual(raised.exception.code, 0)
         self.assertIn("usage:", stderr.getvalue())
@@ -313,11 +317,13 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
                                '[agents]\nimplementer = "harness run"\n').path
 
         self.assertEqual(self.project.config()["notifier"], {"channel": "#factory"})
-        command = holophyte.config.agent_command(self.project, "implement", "do it")
+        command = holophyte.config.config.agent_command(
+            self.project, "implement", "do it"
+        )
         self.assertEqual(command, ["harness", "run", "do it"])
         # And startup tolerates the table: a report against this config runs.
-        with patch.object(holophyte.cli, "report") as report:
-            holophyte.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.cli, "report") as report:
+            holophyte.cli.cli.cli([str(target), "--report"])
         report.assert_called_once_with(self.project)
 
 
@@ -334,9 +340,9 @@ class KnownKeyTests(ConfigTestCase):
     def test_an_unknown_key_in_a_known_table_is_a_startup_error(self):
         target = self.locate('[worktree]\nsetup_timeout_min = 10\n').path
 
-        with patch.object(holophyte.cli, "report") as report:
+        with patch.object(holophyte.cli.cli, "report") as report:
             with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli([str(target), "--report"])
+                holophyte.cli.cli.cli([str(target), "--report"])
 
         message = str(raised.exception)
         self.assertIn(str(self.project.config_path), message)
@@ -359,7 +365,7 @@ class KnownKeyTests(ConfigTestCase):
                 self.locate(config)
 
                 with self.assertRaises(SystemExit) as raised:
-                    holophyte.config.check_config_keys(self.project)
+                    holophyte.config.config.check_config_keys(self.project)
 
                 self.assertIn(str(self.project.config_path), str(raised.exception))
 
@@ -370,8 +376,8 @@ class KnownKeyTests(ConfigTestCase):
             '[supervisor]\nheartbeat_stale_min = 7\n'
             '[loop]\nstop_on_failure = false\n').path
 
-        with patch.object(holophyte.cli, "report") as report:
-            holophyte.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.cli, "report") as report:
+            holophyte.cli.cli.cli([str(target), "--report"])
 
         report.assert_called_once_with(self.project)
 
@@ -391,7 +397,7 @@ class StateDirectoryTests(ConfigTestCase):
         self.assertTrue(holo.name.startswith("repo-"), holo)
         self.assertEqual(self.project.config_path, holo / "config.toml")
         self.assertEqual(self.project.store_path, holo / "store.db")
-        self.assertEqual(holophyte.supervisor_lock.supervisor_lock_path(self.project),
+        self.assertEqual(holophyte.host.supervisor_lock.supervisor_lock_path(self.project),
                          holo / "supervisor.lock")
         # The worktree directory is heavy git state, not factory state, and
         # keeps its own sibling address.
@@ -406,8 +412,8 @@ class StateDirectoryTests(ConfigTestCase):
         one.parent.mkdir()
         two.parent.mkdir()
 
-        first = holophyte.project.Project.locate(one).holo_dir
-        second = holophyte.project.Project.locate(two).holo_dir
+        first = holophyte.config.project.Project.locate(one).holo_dir
+        second = holophyte.config.project.Project.locate(two).holo_dir
 
         self.assertNotEqual(first, second)
         self.assertEqual(first.parent, second.parent)
@@ -417,12 +423,12 @@ class StateDirectoryTests(ConfigTestCase):
         holo = self.project.holo_dir
         self.assertFalse(holo.exists())
 
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
-        lock = holophyte.supervisor_lock.acquire_supervisor_lock(
-            holophyte.supervisor_lock.supervisor_lock_path(self.project),
+        lock = holophyte.host.supervisor_lock.acquire_supervisor_lock(
+            holophyte.host.supervisor_lock.supervisor_lock_path(self.project),
             self.project.path)
-        self.addCleanup(holophyte.supervisor_lock.release_supervisor_lock, lock)
+        self.addCleanup(holophyte.host.supervisor_lock.release_supervisor_lock, lock)
 
         self.assertTrue((holo / "store.db").exists())
         self.assertTrue((holo / "supervisor.lock").exists())
@@ -434,7 +440,7 @@ class StateDirectoryTests(ConfigTestCase):
         self.locate()
         out = io.StringIO()
 
-        holophyte.operator.report(self.project, out=out)
+        holophyte.cli.operator.report(self.project, out=out)
 
         self.assertIn("no store at", out.getvalue())
         self.assertFalse(self.project.holo_dir.exists())
@@ -462,7 +468,7 @@ class LegacyAdoptionTests(ConfigTestCase):
     def locate(self, config=None):
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            self.project = holophyte.project.Project.locate(self.target)
+            self.project = holophyte.config.project.Project.locate(self.target)
         self.printed = printed.getvalue()
         return self.project
 
@@ -512,7 +518,7 @@ class LegacyAdoptionTests(ConfigTestCase):
 
     def test_two_stores_are_refused_rather_than_one_shadowing_the_other(self):
         holo = self.legacy_directory()
-        new = holophyte.project.state_dir(self.target)
+        new = holophyte.config.project.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "store.db").write_bytes(b"new store\n")
 
@@ -537,7 +543,7 @@ class LegacyAdoptionTests(ConfigTestCase):
         """
         holo = self.legacy_directory()
         (holo / "config.toml").unlink()
-        new = holophyte.project.state_dir(self.target)
+        new = holophyte.config.project.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "config.toml").write_text("[agents]\n")
 
@@ -549,7 +555,7 @@ class LegacyAdoptionTests(ConfigTestCase):
 
     def test_a_file_already_at_the_new_address_is_refused_not_overwritten(self):
         holo = self.legacy_directory()
-        new = holophyte.project.state_dir(self.target)
+        new = holophyte.config.project.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "config.toml").write_text("[agents]\nimplementer = \"new\"\n")
 
@@ -575,11 +581,11 @@ class LegacyAdoptionTests(ConfigTestCase):
         `cli()` asks; nothing else does.
         """
         holo = self.legacy_directory()
-        new = holophyte.project.state_dir(self.target)
+        new = holophyte.config.project.state_dir(self.target)
         new.mkdir(parents=True)
         (new / "store.db").write_bytes(b"new store\n")
 
-        target = holophyte.project.Project.locate(self.target, adopt=False)
+        target = holophyte.config.project.Project.locate(self.target, adopt=False)
 
         self.assertEqual((holo / "store.db").read_bytes(), b"legacy store\n")
         self.assertEqual(target.store_path.read_bytes(), b"new store\n")
@@ -604,16 +610,22 @@ class AgentCommandTests(ConfigTestCase):
     def test_an_absent_config_leaves_todays_routes_byte_identical(self):
         self.locate()
 
-        with patch.object(holophyte.agents, "run_capped") as run:
+        with patch.object(holophyte.agents.agents, "run_capped") as run:
             run.return_value = (0, "implemented")
-            holophyte.agents.agent(self.project, "implement", "make the change",
+            holophyte.agents.agents.agent(self.project, "implement", "make the change",
                                    self.WORKTREE)
         with patch.object(review_runner, "run_review") as run_review:
             run_review.return_value = "VERDICT: APPROVE"
-            holophyte.agents.agent(self.project, "review", "review it", self.WORKTREE,
-                          base_sha="1" * 40, candidate_sha="2" * 40)
+            holophyte.agents.agents.agent(
+                self.project,
+                "review",
+                "review it",
+                self.WORKTREE,
+                base_sha="1" * 40,
+                candidate_sha="2" * 40,
+            )
 
-        self.assertIsNone(holophyte.config.agent_command(
+        self.assertIsNone(holophyte.config.config.agent_command(
             self.project, "implement", "make the change"))
         run.assert_called_once_with(
             ["claude", "-p", "make the change",
@@ -627,9 +639,9 @@ class AgentCommandTests(ConfigTestCase):
         self.locate('[agents]\n'
                       'implementer = "claude --model sonnet --effort medium -p"\n')
 
-        with patch.object(holophyte.agents, "run_capped") as run:
+        with patch.object(holophyte.agents.agents, "run_capped") as run:
             run.return_value = (0, "implemented")
-            result = holophyte.agents.agent(self.project, "implement",
+            result = holophyte.agents.agents.agent(self.project, "implement",
                                             "make the change", self.WORKTREE)
 
         self.assertEqual(result, "implemented")
@@ -644,14 +656,19 @@ class AgentCommandTests(ConfigTestCase):
     def test_a_reviewer_override_replaces_the_container_route(self):
         self.locate('[agents]\nreviewer = "my-reviewer --diff"\n')
 
-        with patch.object(review_runner, "run_review") as run_review, \
-                patch.object(holophyte.agents, "publish_review_refs") as publish, \
-                patch.object(holophyte.agents, "check_review_refs"), \
-                patch.object(holophyte.agents, "review_scratch",
-                             return_value=contextlib.nullcontext(Path("/scratch"))), \
-                patch.object(holophyte.agents, "run_capped") as run:
+        with (
+            patch.object(review_runner, "run_review") as run_review,
+            patch.object(holophyte.agents.agents, "publish_review_refs") as publish,
+            patch.object(holophyte.agents.agents, "check_review_refs"),
+            patch.object(
+                holophyte.agents.agents,
+                "review_scratch",
+                return_value=contextlib.nullcontext(Path("/scratch")),
+            ),
+            patch.object(holophyte.agents.agents, "run_capped") as run,
+        ):
             run.return_value = (0, "VERDICT: APPROVE")
-            result = holophyte.agents.agent(self.project, "review", "review it",
+            result = holophyte.agents.agents.agent(self.project, "review", "review it",
                                             self.WORKTREE,
                                    base_sha="1" * 40, candidate_sha="2" * 40)
 
@@ -667,15 +684,27 @@ class AgentCommandTests(ConfigTestCase):
         )
         # Overriding the reviewer leaves the adjudicator on its default route.
         self.assertIsNone(
-            holophyte.config.agent_command(self.project, "adjudicate", "adjudicate it"))
+            holophyte.config.config.agent_command(
+                self.project, "adjudicate", "adjudicate it"
+            )
+        )
 
     def test_the_round_records_the_route_that_actually_ran_it(self):
         self.locate('[agents]\nreviewer = "my-reviewer --diff"\n')
 
         with patch.object(store, "record_review_round") as record:
-            holophyte.runs.record_round(self.project, object(), "run-1", 1, "review",
-                                 "VERDICT: APPROVE", "echo ok", True, "")
-            holophyte.runs.record_round(self.project, object(), "run-1", 2,
+            holophyte.loop.runs.record_round(
+                self.project,
+                object(),
+                "run-1",
+                1,
+                "review",
+                "VERDICT: APPROVE",
+                "echo ok",
+                True,
+                "",
+            )
+            holophyte.loop.runs.record_round(self.project, object(), "run-1", 2,
                                         "adjudicate",
                                  "VERDICT: PASS", "echo ok", True, "")
 
@@ -694,7 +723,7 @@ class AgentCommandTests(ConfigTestCase):
                 self.locate(config)
 
                 with self.assertRaises(SystemExit) as raised:
-                    holophyte.config.agent_command(self.project, "implement",
+                    holophyte.config.config.agent_command(self.project, "implement",
                                                    "make the change")
 
                 self.assertIn(str(self.project.config_path), str(raised.exception))
@@ -708,7 +737,7 @@ class BudgetScaleTests(ConfigTestCase):
     def test_an_absent_key_is_the_unscaled_budget(self):
         self.locate()
 
-        self.assertEqual(holophyte.config.budget_scale(self.project), 1.0)
+        self.assertEqual(holophyte.config.config.budget_scale(self.project), 1.0)
 
     def test_a_scale_inside_the_range_is_read(self):
         for line in ("budget_scale = 1.5", "budget_scale = 2",
@@ -716,7 +745,7 @@ class BudgetScaleTests(ConfigTestCase):
             with self.subTest(line=line):
                 self.locate(f"[agents]\n{line}\n")
 
-                self.assertEqual(holophyte.config.budget_scale(self.project),
+                self.assertEqual(holophyte.config.config.budget_scale(self.project),
                                  float(line.split("= ")[1]))
 
     def test_a_scale_outside_the_range_is_a_startup_error(self):
@@ -729,9 +758,9 @@ class BudgetScaleTests(ConfigTestCase):
             with self.subTest(line=line):
                 target = self.locate(f"[agents]\n{line}\n").path
 
-                with patch.object(holophyte.cli, "report") as report:
+                with patch.object(holophyte.cli.cli, "report") as report:
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target), "--report"])
+                        holophyte.cli.cli.cli([str(target), "--report"])
 
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)
@@ -746,8 +775,8 @@ class BudgetScaleTests(ConfigTestCase):
         config loads and the value is what the reader hands back."""
         target = self.locate("[agents]\nbudget_scale = 2\n").path
 
-        with patch.object(holophyte.cli, "report") as report:
-            holophyte.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.cli, "report") as report:
+            holophyte.cli.cli.cli([str(target), "--report"])
 
         report.assert_called_once_with(self.project)
 
@@ -758,9 +787,9 @@ class BudgetScaleTests(ConfigTestCase):
         self.locate("[agents]\nbudget_scale = 1.5\n")
 
         worktree = Path("/tmp/holophyte-scale")
-        with patch.object(holophyte.agents, "run_capped") as run:
+        with patch.object(holophyte.agents.agents, "run_capped") as run:
             run.return_value = (0, "implemented")
-            holophyte.agents.agent(self.project, "implement", "make the change",
+            holophyte.agents.agents.agent(self.project, "implement", "make the change",
                                    worktree, timeout=60 * 60)
 
         self.assertEqual(run.call_args.args[2], 45 * 60)
@@ -777,7 +806,7 @@ class WorktreeSetupTests(ConfigTestCase):
     """
 
     def test_crlf_environment_preserves_values_without_carriage_returns(self):
-        self.assertEqual(holophyte.config.parse_environment(
+        self.assertEqual(holophyte.config.config.parse_environment(
             'PUBLIC=sentinel-crlf\r\nQUOTED="quoted value"\r\n'),
             {"PUBLIC": "sentinel-crlf", "QUOTED": '"quoted value"'})
 
@@ -787,7 +816,7 @@ class WorktreeSetupTests(ConfigTestCase):
         source.write_text("A=\"double\"\nB='single'\nC=bare\nD=\"unbalanced\n")
         self.write_config(f'[merge]\ncapture_env_source = "{source}"\n'
                           'capture_env_allow = ["A", "B", "C", "D"]\n')
-        self.assertEqual(holophyte.config.capture_environment(self.project),
+        self.assertEqual(holophyte.config.config.capture_environment(self.project),
                          {"A": "double", "B": "single", "C": "bare",
                           "D": '"unbalanced'})
 
@@ -799,7 +828,7 @@ class WorktreeSetupTests(ConfigTestCase):
                           'env_allow = ["A"]\n')
         wt = self.worktree()
         subprocess.run(["git", "init", "-q", str(wt)], check=True)
-        holophyte.claim.write_worktree_environment(self.project, wt)
+        holophyte.loop.claim.write_worktree_environment(self.project, wt)
         self.assertEqual((wt / ".env").read_text(), 'A="double"\n')
 
     def worktree(self):
@@ -814,19 +843,19 @@ class WorktreeSetupTests(ConfigTestCase):
         # The gate's one subprocess call, resolved where `run_verify` lives:
         # `run_worktree_setup` reaches it through `run_verify`, so a
         # command that ran would trip this sentinel.
-        with patch.object(holophyte.gates, "run_capped",
+        with patch.object(holophyte.loop.gates, "run_capped",
                           side_effect=AssertionError("ran a setup command")):
             self.assertEqual(
-                holophyte.claim.run_worktree_setup(self.project, self.worktree()),
+                holophyte.loop.claim.run_worktree_setup(self.project, self.worktree()),
                              (True, ""))
-        self.assertEqual(holophyte.config.setup_commands(self.project), [])
+        self.assertEqual(holophyte.config.config.setup_commands(self.project), [])
 
     def test_the_commands_run_in_the_worktree_in_the_order_written(self):
         wt = self.worktree()
         self.locate('[worktree]\nsetup = ["pwd > where.txt", '
                       '"cp where.txt copied.txt"]\n')
 
-        ok, report = holophyte.claim.run_worktree_setup(self.project, wt)
+        ok, report = holophyte.loop.claim.run_worktree_setup(self.project, wt)
 
         self.assertTrue(ok)
         self.assertEqual(report, "")
@@ -842,7 +871,7 @@ class WorktreeSetupTests(ConfigTestCase):
         self.locate('[worktree]\nsetup = ["echo building; exit 3", '
                       '"touch never.txt"]\n')
 
-        ok, report = holophyte.claim.run_worktree_setup(self.project, wt)
+        ok, report = holophyte.loop.claim.run_worktree_setup(self.project, wt)
 
         self.assertFalse(ok)
         self.assertIn("command 1 of 2", report)
@@ -857,7 +886,7 @@ class WorktreeSetupTests(ConfigTestCase):
         wt = self.worktree()
         self.locate('[worktree]\nsetup = ["echo first && false && echo third"]\n')
 
-        ok, report = holophyte.claim.run_worktree_setup(self.project, wt)
+        ok, report = holophyte.loop.claim.run_worktree_setup(self.project, wt)
 
         self.assertFalse(ok)
         self.assertIn("clause 2 of 3", report)
@@ -868,7 +897,7 @@ class WorktreeSetupTests(ConfigTestCase):
         wt = self.worktree()
         self.locate('[worktree]\nsetup = ["exit 1"]\n')
 
-        ok, report = holophyte.claim.run_worktree_setup(self.project, wt)
+        ok, report = holophyte.loop.claim.run_worktree_setup(self.project, wt)
 
         self.assertFalse(ok)
         self.assertIn("failed silently", report)
@@ -883,9 +912,9 @@ class WorktreeSetupTests(ConfigTestCase):
                                             output="resolving packages\n")
 
         # The cap fires inside `run_capped`, the gate's one subprocess call,
-        # resolved in `holophyte.gates` where `run_verify` reads it.
-        with patch.object(holophyte.gates, "run_capped", side_effect=expired):
-            ok, report = holophyte.claim.run_worktree_setup(self.project, wt)
+        # resolved in `holophyte.loop.gates` where `run_verify` reads it.
+        with patch.object(holophyte.loop.gates, "run_capped", side_effect=expired):
+            ok, report = holophyte.loop.claim.run_worktree_setup(self.project, wt)
 
         self.assertFalse(ok)
         self.assertIn("command 1 of 2", report)
@@ -928,10 +957,10 @@ class WorktreeSetupTests(ConfigTestCase):
         self.locate('[worktree]\nsetup = ["echo resolving; touch %s; '
                       '(sleep 3; touch %s) & sleep 30"]\n' % (started, escaped))
 
-        with patch.object(holophyte.config, "VERIFY_TIMEOUT", 1.0), \
+        with patch.object(holophyte.config.config, "VERIFY_TIMEOUT", 1.0), \
                 KillWatch(escaped) as watch:
             began = time.monotonic()
-            ok, report = holophyte.claim.run_worktree_setup(self.project, wt)
+            ok, report = holophyte.loop.claim.run_worktree_setup(self.project, wt)
             elapsed = time.monotonic() - began
 
         self.assertFalse(ok)
@@ -954,7 +983,7 @@ class WorktreeSetupTests(ConfigTestCase):
                       'setup_timeout_sec = 1\n')
 
         start = time.monotonic()
-        ok, report = holophyte.claim.run_worktree_setup(self.project, wt)
+        ok, report = holophyte.loop.claim.run_worktree_setup(self.project, wt)
 
         self.assertFalse(ok)
         self.assertLess(time.monotonic() - start, 10)
@@ -964,8 +993,8 @@ class WorktreeSetupTests(ConfigTestCase):
     def test_the_default_setup_cap_is_the_verify_cap(self):
         self.locate('[worktree]\nsetup = ["make deps"]\n')
 
-        self.assertEqual(holophyte.config.setup_timeout(self.project),
-                         holophyte.config.VERIFY_TIMEOUT)
+        self.assertEqual(holophyte.config.config.setup_timeout(self.project),
+                         holophyte.config.config.VERIFY_TIMEOUT)
 
     def test_an_unusable_setup_timeout_is_a_startup_error(self):
         for value in ("0", "-5", "true", '"10"', "inf"):
@@ -973,12 +1002,17 @@ class WorktreeSetupTests(ConfigTestCase):
                 target = self.locate(f'[worktree]\nsetup_timeout_sec = {value}\n').path
 
                 # The default routes are this host's business, not the table's.
-                with patch.object(holophyte.config, "check_default_implementer"), \
-                        patch.object(holophyte.config, "check_default_reviewer"), \
-                        patch.object(holophyte.cli, "main",
-                                     side_effect=AssertionError("claimed work")):
+                with (
+                    patch.object(holophyte.config.config, "check_default_implementer"),
+                    patch.object(holophyte.config.config, "check_default_reviewer"),
+                    patch.object(
+                        holophyte.cli.cli,
+                        "main",
+                        side_effect=AssertionError("claimed work"),
+                    ),
+                ):
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target)])
+                        holophyte.cli.cli.cli([str(target)])
 
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)
@@ -991,12 +1025,17 @@ class WorktreeSetupTests(ConfigTestCase):
             with self.subTest(value=value):
                 target = self.locate(f'[worktree]\ncarry = {value}\n').path
 
-                with patch.object(holophyte.config, "check_default_implementer"), \
-                        patch.object(holophyte.config, "check_default_reviewer"), \
-                        patch.object(holophyte.cli, "main",
-                                     side_effect=AssertionError("claimed work")):
+                with (
+                    patch.object(holophyte.config.config, "check_default_implementer"),
+                    patch.object(holophyte.config.config, "check_default_reviewer"),
+                    patch.object(
+                        holophyte.cli.cli,
+                        "main",
+                        side_effect=AssertionError("claimed work"),
+                    ),
+                ):
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target)])
+                        holophyte.cli.cli.cli([str(target)])
 
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)
@@ -1005,19 +1044,19 @@ class WorktreeSetupTests(ConfigTestCase):
     def test_an_absent_carry_is_an_empty_list(self):
         self.locate('[worktree]\nsetup = ["make deps"]\n')
 
-        self.assertEqual(holophyte.config.carry_directories(self.project), [])
+        self.assertEqual(holophyte.config.config.carry_directories(self.project), [])
 
         self.locate('[worktree]\ncarry = ["console/node_modules", ".venv"]\n')
-        self.assertEqual(holophyte.config.carry_directories(self.project),
+        self.assertEqual(holophyte.config.config.carry_directories(self.project),
                          ["console/node_modules", ".venv"])
 
     def test_a_silent_timeout_is_reported_as_silence(self):
         wt = self.worktree()
         self.locate('[worktree]\nsetup = ["make deps"]\n')
 
-        with patch.object(holophyte.gates, "run_capped", side_effect=
+        with patch.object(holophyte.loop.gates, "run_capped", side_effect=
                           subprocess.TimeoutExpired("make deps", 300)):
-            ok, report = holophyte.claim.run_worktree_setup(self.project, wt)
+            ok, report = holophyte.loop.claim.run_worktree_setup(self.project, wt)
 
         self.assertFalse(ok)
         self.assertIn("no output before the timeout", report)
@@ -1028,8 +1067,8 @@ class WorktreeSetupTests(ConfigTestCase):
         conn = object()
 
         with patch.object(store, "set_phase") as set_phase, \
-                patch("holophyte.stop.stop_if_requested"):
-            holophyte.claim.run_worktree_setup(self.project, wt, conn, "run-1")
+                patch("holophyte.loop.stop.stop_if_requested"):
+            holophyte.loop.claim.run_worktree_setup(self.project, wt, conn, "run-1")
 
         set_phase.assert_called_once()
         self.assertEqual(set_phase.call_args.args[2], "working")
@@ -1046,7 +1085,7 @@ class WorktreeSetupTests(ConfigTestCase):
                 self.locate(config)
 
                 with self.assertRaises(SystemExit) as raised:
-                    holophyte.config.setup_commands(self.project)
+                    holophyte.config.config.setup_commands(self.project)
 
                 self.assertIn(str(self.project.config_path), str(raised.exception))
                 self.assertIn(expected, str(raised.exception))
@@ -1055,7 +1094,7 @@ class WorktreeSetupTests(ConfigTestCase):
         self.locate('[worktree]\nsetup = [7]\n')
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.config.check_worktree_setup(self.project)
+            holophyte.config.config.check_worktree_setup(self.project)
 
         self.assertIn("command string", str(raised.exception))
 
@@ -1065,8 +1104,8 @@ class WorktreeSetupTests(ConfigTestCase):
         from the daemon's `PUT /config` (KO-356), a dropped connection."""
         for config, table, check in (
             ('worktree = "invalid"\n', "[worktree]",
-             holophyte.config.check_worktree_setup),
-            ("agents = 3\n", "[agents]", holophyte.config.review_route),
+             holophyte.config.config.check_worktree_setup),
+            ("agents = 3\n", "[agents]", holophyte.config.config.review_route),
         ):
             with self.subTest(table=table):
                 self.locate(config)
@@ -1084,22 +1123,22 @@ class WorktreeSetupTests(ConfigTestCase):
         # exist yet.
         self.locate('[worktree]\nsetup = ["holophyte-no-such-tool --install"]\n')
 
-        self.assertIsNone(holophyte.config.check_worktree_setup(self.project))
+        self.assertIsNone(holophyte.config.config.check_worktree_setup(self.project))
 
     def test_an_absent_table_checks_nothing(self):
         self.locate()
 
-        self.assertIsNone(holophyte.config.check_worktree_setup(self.project))
+        self.assertIsNone(holophyte.config.config.check_worktree_setup(self.project))
 
     def test_a_run_checks_the_table_before_claiming_anything(self):
         target = self.locate('[worktree]\nsetup = "make deps"\n').path
 
-        with patch.object(holophyte.config, "check_default_implementer"), \
-                patch.object(holophyte.config, "check_default_reviewer"), \
-                patch.object(holophyte.cli, "main",
+        with patch.object(holophyte.config.config, "check_default_implementer"), \
+                patch.object(holophyte.config.config, "check_default_reviewer"), \
+                patch.object(holophyte.cli.cli, "main",
                              side_effect=AssertionError("claimed work")) as main:
             with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli([str(target)])
+                holophyte.cli.cli.cli([str(target)])
 
         self.assertIn("must be a list", str(raised.exception))
         main.assert_not_called()
@@ -1109,8 +1148,8 @@ class WorktreeSetupTests(ConfigTestCase):
         # that reading's problem.
         target = self.locate('[worktree]\nsetup = [7]\n').path
 
-        with patch.object(holophyte.cli, "report") as report:
-            holophyte.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.cli, "report") as report:
+            holophyte.cli.cli.cli([str(target), "--report"])
 
         report.assert_called_once_with(self.project)
 
@@ -1118,11 +1157,13 @@ class WorktreeSetupTests(ConfigTestCase):
         for config in (None, '[worktree]\nsetup = ["true"]\n'):
             with self.subTest(config=config):
                 self.locate(config)
-                self.assertEqual(holophyte.config.branch_prefix(self.project), "task")
+                self.assertEqual(
+                    holophyte.config.config.branch_prefix(self.project), "task"
+                )
 
     def test_a_named_branch_prefix_is_read_back(self):
         self.locate('[worktree]\nbranch_prefix = "factory"\n')
-        self.assertEqual(holophyte.config.branch_prefix(self.project), "factory")
+        self.assertEqual(holophyte.config.config.branch_prefix(self.project), "factory")
 
     def test_an_illegal_branch_prefix_is_a_startup_error_before_any_claim(self):
         """Empty, slashed, whitespace or git-refused characters: the run that
@@ -1132,12 +1173,17 @@ class WorktreeSetupTests(ConfigTestCase):
             with self.subTest(value=value):
                 target = self.locate(f'[worktree]\nbranch_prefix = {value}\n').path
 
-                with patch.object(holophyte.config, "check_default_implementer"), \
-                        patch.object(holophyte.config, "check_default_reviewer"), \
-                        patch.object(holophyte.cli, "main",
-                                     side_effect=AssertionError("claimed work")):
+                with (
+                    patch.object(holophyte.config.config, "check_default_implementer"),
+                    patch.object(holophyte.config.config, "check_default_reviewer"),
+                    patch.object(
+                        holophyte.cli.cli,
+                        "main",
+                        side_effect=AssertionError("claimed work"),
+                    ),
+                ):
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli([str(target)])
+                        holophyte.cli.cli.cli([str(target)])
 
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)
@@ -1184,7 +1230,7 @@ class ReviewRefTests(ConfigTestCase):
         reviewer.chmod(0o755)
         self.locate(f'[agents]\nreviewer = "{reviewer}"\n')
 
-        reply = holophyte.agents.agent(self.project, "review", "review it", root,
+        reply = holophyte.agents.agents.agent(self.project, "review", "review it", root,
                               base_sha=self.base, candidate_sha=self.head)
 
         # What the command printed is the pair the round is about, read out of
@@ -1196,7 +1242,7 @@ class ReviewRefTests(ConfigTestCase):
         self.locate('[agents]\nreviewer = "true"\n')
 
         with self.assertRaises(review_runner.ReviewBoundaryError):
-            holophyte.agents.agent(self.project, "review", "review it", root,
+            holophyte.agents.agents.agent(self.project, "review", "review it", root,
                           base_sha=self.base, candidate_sha="0" * 40)
 
         # Nothing was published: a refused round leaves no ref claiming a
@@ -1213,7 +1259,7 @@ class ReviewRefTests(ConfigTestCase):
         unrelated = self.commit(root, "unrelated.txt")
 
         with self.assertRaises(review_runner.ReviewBoundaryError):
-            holophyte.agents.agent(self.project, "adjudicate", "judge it", root,
+            holophyte.agents.agents.agent(self.project, "adjudicate", "judge it", root,
                           base_sha=unrelated, candidate_sha=self.head)
 
     def test_the_default_route_is_left_to_stage_its_own_refs(self):
@@ -1222,10 +1268,10 @@ class ReviewRefTests(ConfigTestCase):
         self.locate()
         root = self.repo()
 
-        with patch.object(holophyte.agents, "publish_review_refs") as publish, \
+        with patch.object(holophyte.agents.agents, "publish_review_refs") as publish, \
                 patch.object(review_runner, "run_review") as run_review:
             run_review.return_value = "VERDICT: APPROVE"
-            holophyte.agents.agent(self.project, "review", "review it", root,
+            holophyte.agents.agents.agent(self.project, "review", "review it", root,
                           base_sha=self.base, candidate_sha=self.head)
 
         publish.assert_not_called()

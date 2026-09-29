@@ -32,8 +32,8 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board  # noqa: E402 - after the sys.path insert above
-import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
+import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.host.reconcile  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -229,7 +229,10 @@ class ReconcileTests(LoopFixture):
                         return subprocess.CompletedProcess(
                             args, 128, stdout="", stderr="fatal: transport unavailable")
                     return real_run(args, **kwargs)
-                with patch("holophyte.claim.subprocess.run", side_effect=fail_remote):
+
+                with patch(
+                    "holophyte.loop.claim.subprocess.run", side_effect=fail_remote
+                ):
                     printed = self.cancel_tree()
                 self.assertTrue(wt.is_dir())
                 line = next(line for line in printed.splitlines()
@@ -438,7 +441,7 @@ class QueueMirrorTests(LoopFixture):
         a, b, c = self.queue()
         conn = store.open(str(self.db))
         project = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
-        ticket = holophyte.board.mirror_task(conn, project, c)
+        ticket = holophyte.board.board.mirror_task(conn, project, c)
         tickets.transition(conn, ticket, "blocked_on_deps")
         tickets.transition(conn, ticket, "blocked_on_operator")
         conn.close()
@@ -501,7 +504,7 @@ class RejectedPullRequestTests(MergeModeFixture):
         helpers.fake_client(self, dict(helpers.CLOSED_PULL, timelineItems={
             "nodes": [{"actor": {"login": "alice"}}]}))
         provider = StubProvider()
-        label = holophyte.board.lease_label(self.project)
+        label = holophyte.board.board.lease_label(self.project)
         provider.labels["iss-131"] = [label]
         provider.closed = {"KO-131": "canceled"}
         self.main_output(provider=provider)
@@ -542,12 +545,12 @@ class FailedRunPullRequestTests(MergeModeFixture):
                          " blockedQuestion = NULL")
         H.fake_client(self, pull)
         provider = StubProvider()
-        label = holophyte.board.lease_label(self.project)
+        label = holophyte.board.board.lease_label(self.project)
         provider.labels["iss-131"] = [label]
         before = self.read("SELECT id FROM interventions")
         out = io.StringIO()
         with patch.object(sys, "stdout", out):
-            holophyte.reconcile._reconcile_pull_requests(
+            holophyte.host.reconcile._reconcile_pull_requests(
                 self.project, conn,
                 conn.execute("SELECT id FROM projects").fetchone()[0], provider)
         return provider, before, out.getvalue()
@@ -607,7 +610,8 @@ class ContentWakeTests(MergeModeFixture):
                     commits={'nodes': [{'commit': {'oid': 'old-commit',
                         'committedDate': H.T1, 'statusCheckRollup':
                         {'state': 'SUCCESS'}}}]}, reviewDecision='APPROVED')
-        from holophyte import pr_status, reconcile
+        from holophyte.host import reconcile
+        from holophyte.pr import pr_status
         conn = store.open(self.db)
         self.addCleanup(conn.close)
         with patch.object(pr_status, 'graphql', return_value={
@@ -647,8 +651,8 @@ class ContentWakeTests(MergeModeFixture):
             cases.append(({field: {'nodes': [item]}}, label))
         conn = store.open(self.db)
         self.addCleanup(conn.close)
-        import holophyte.pr_status as ps
-        from holophyte.reconcile import _rebabysit
+        import holophyte.pr.pr_status as ps
+        from holophyte.host.reconcile import _rebabysit
         ticket = store.read.blocked_tickets(conn)[0]
         pull = ps.parse_pr_url(self.URL)
         for content, expected in cases:
@@ -674,7 +678,7 @@ class ContentWakeTests(MergeModeFixture):
     def test_two_empty_passes_raise_attention_until_real_content_arrives(self):
         from test_pullrequest import MergeModePullRequestTests as H
 
-        from holophyte.serve import parked_item
+        from holophyte.serve.serve import parked_item
         H.parked_with_mark(self, H.T1, 0)
         conn = store.open(self.db)
         self.addCleanup(conn.close)
@@ -716,7 +720,8 @@ class ContentWakeTests(MergeModeFixture):
     def test_newly_pushed_old_commit_wakes_once_after_a_real_park_read(self):
         from test_pullrequest import MergeModePullRequestTests as H
 
-        from holophyte import pr_status, reconcile
+        from holophyte.host import reconcile
+        from holophyte.pr import pr_status
         H.parked_with_mark(self, H.T1, 0)
         conn = store.open(self.db)
         self.addCleanup(conn.close)
@@ -747,7 +752,8 @@ class ContentWakeTests(MergeModeFixture):
     def test_overflow_budget_prevents_dispatch_for_connections_and_replies(self):
         from test_pullrequest import MergeModePullRequestTests as H
 
-        from holophyte import pr_status, reconcile
+        from holophyte.host import reconcile
+        from holophyte.pr import pr_status
         H.parked_with_mark(self, H.T1, 0)
         conn = store.open(self.db)
         self.addCleanup(conn.close)
@@ -888,7 +894,7 @@ class CiParkTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state(checks=checks,
                                               updated_at=updated_at)])
         self.github(park_read or self.pull(updated_at, checks))
-        with patch("holophyte.pr.SLEEP", self.fail), \
+        with patch("holophyte.pr.pr.SLEEP", self.fail), \
                 patch.object(sys, "stdout", io.StringIO()):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
@@ -912,9 +918,9 @@ class CiParkTests(MergeModeFixture):
         asked = self.github(pull)
         conn = store.open(self.db)
         self.addCleanup(conn.close)
-        with patch("holophyte.ci_wake.time", return_value=time.time() + later_s), \
+        with patch("holophyte.host.ci_wake.time", return_value=time.time() + later_s), \
                 patch.object(sys, "stdout", io.StringIO()):
-            holophyte.reconcile._reconcile_pull_requests(
+            holophyte.host.reconcile._reconcile_pull_requests(
                 self.project, conn,
                 conn.execute("SELECT id FROM projects").fetchone()[0],
                 StubProvider())
@@ -949,9 +955,9 @@ class CiParkTests(MergeModeFixture):
         pending = self.pull(self.OLD, "PENDING")
         self.ci_parked("PENDING")
         self.age()
-        low = holophyte.reconcile.GitHubBudget()
+        low = holophyte.host.reconcile.GitHubBudget()
         low.remaining, low.reset_at = 0, "2099-01-01T00:00:00Z"
-        with patch.object(holophyte.reconcile, "GITHUB_BUDGET", low):
+        with patch.object(holophyte.host.reconcile, "GITHUB_BUDGET", low):
             self.assertEqual(self.reconcile(pending, later_s=1801), [])
         self.reconcile(pending)
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])

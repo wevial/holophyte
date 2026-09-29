@@ -21,16 +21,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.board
-import holophyte.cli
-import holophyte.project
-import holophyte.stop
+import holophyte.board.board
+import holophyte.cli.cli
+import holophyte.config.project
+import holophyte.loop.stop
 import linear_provider
 import store
 import store.read
 import store.tickets
-from holophyte.config_tables import board_config
-from holophyte.runs import open_store
+from holophyte.config.config_tables import board_config
+from holophyte.loop.runs import open_store
 from tests.fake_agent import APPROVE, Commit
 from tests.loop_fixture import LoopFixture, StubProvider, a_task
 from tests.phase_fixture import park_run
@@ -72,7 +72,7 @@ class RequeueCliTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        self.target = holophyte.project.Project.locate(self.repo)
+        self.target = holophyte.config.project.Project.locate(self.repo)
         self.with_board()
         conn = open_store(self.target)
         self.addCleanup(conn.close)
@@ -102,8 +102,8 @@ class RequeueCliTests(unittest.TestCase):
         # records the call instead of reaching for the network.
         self.board = StubBoard.instance = None
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
-                patch.object(holophyte.cli, "board_for", stub_board_for):
-            holophyte.cli.cli([str(self.repo), *args])
+                patch.object(holophyte.cli.cli, "board_for", stub_board_for):
+            holophyte.cli.cli.cli([str(self.repo), *args])
         self.board = StubBoard.instance
         return out.getvalue(), err.getvalue()
 
@@ -124,7 +124,7 @@ class RequeueCliTests(unittest.TestCase):
                 task = linear_provider.parse_task({
                     "identifier": "KO-1", "id": "issue-1", "title": "a ticket",
                     "description": "", "state": {"name": state}})
-                holophyte.board.mirror_task(self.conn, self.project_id, task)
+                holophyte.board.board.mirror_task(self.conn, self.project_id, task)
                 before = list(self.conn.iterdump())
                 with self.assertRaisesRegex(SystemExit, state):
                     self.cli("--requeue", "KO-1", "--note", "retry")
@@ -211,8 +211,8 @@ class RequeueCliTests(unittest.TestCase):
         with the note as its question; `--requeue` is the way back."""
         store.abort(self.conn, self.run, "claimed before the body was fixed",
                     now=T0 + MINUTE)
-        with self.assertRaises(holophyte.stop.Aborted):
-            holophyte.stop.end_aborted(self.conn, self.run)
+        with self.assertRaises(holophyte.loop.stop.Aborted):
+            holophyte.loop.stop.end_aborted(self.conn, self.run)
         self.assertEqual(self.conn.execute(
             "SELECT status, blockedQuestion FROM tickets WHERE id = ?",
             (self.ticket,)).fetchone(),
@@ -334,7 +334,7 @@ class RequeuedClaimTests(LoopFixture):
         self.addCleanup(conn.close)
         project_id = store.tickets.ensure_project(
             conn, StubProvider.TEAM, self.target)
-        ticket = holophyte.board.mirror_task(conn, project_id, a_task())
+        ticket = holophyte.board.board.mirror_task(conn, project_id, a_task())
         run = store.claim(conn, project_id, ticket, now=T0)
         store.tickets.transition(conn, ticket, "in_flight")
         for n, (verdict, messages) in enumerate(rounds, 1):

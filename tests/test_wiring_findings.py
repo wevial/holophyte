@@ -21,11 +21,11 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.findings  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.review  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.review.findings  # noqa: E402 - after the sys.path insert above
+import holophyte.review.review  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -88,12 +88,12 @@ class CitationMountTests(unittest.TestCase):
         """`/workspace/` was the read-only mount; since KO-366 the agent runs
         on the writable copy at `/home/reviewer/candidate`, and a citation to
         either is the same repository file."""
-        findings = holophyte.review.parse_findings(
-            "- [loop.py](/workspace/holophyte/loop.py:345) one\n"
-            "- [loop.py](/home/reviewer/candidate/holophyte/loop.py:400) two\n")
+        findings = holophyte.review.review.parse_findings(
+            "- [loop.py](/workspace/holophyte/loop/loop.py:345) one\n"
+            "- [loop.py](/home/reviewer/candidate/holophyte/loop/loop.py:400) two\n")
         self.assertEqual(
             [(finding["path"], finding["line"]) for finding in findings],
-            [("holophyte/loop.py", 345), ("holophyte/loop.py", 400)])
+            [("holophyte/loop/loop.py", 345), ("holophyte/loop/loop.py", 400)])
 
 
 class RenderedWindowTests(unittest.TestCase):
@@ -108,7 +108,9 @@ class RenderedWindowTests(unittest.TestCase):
         store.init(self.conn)
         self.project_id = tickets.ensure_project(self.conn, "team-1",
                                                  self.root / "repo")
-        self.project = holophyte.project.Project.locate(self.root / "repo", adopt=False)
+        self.project = holophyte.config.project.Project.locate(
+            self.root / "repo", adopt=False
+        )
 
     def complete_run(self, n, merge_sha=None):
         """One merged run of its own ticket, stamped a minute apart per `n`."""
@@ -128,7 +130,7 @@ class RenderedWindowTests(unittest.TestCase):
         self.complete_run(1)
         self.complete_run(2, merge_sha="abc1234def5678901234567890abcdef12345678")
 
-        rendered = holophyte.findings.render_findings(self.conn)
+        rendered = holophyte.review.findings.render_findings(self.conn)
 
         self.assertIn(
             "## 2023-11-14T22:14:50Z — KO-1\nMERGED to main.\n"
@@ -145,7 +147,7 @@ class RenderedWindowTests(unittest.TestCase):
         self.conn.commit()
 
         (run,) = store.read.ended_runs(self.conn)
-        entry = holophyte.findings.run_entry(run)
+        entry = holophyte.review.findings.run_entry(run)
 
         self.assertEqual(
             entry.splitlines()[1],
@@ -156,11 +158,11 @@ class RenderedWindowTests(unittest.TestCase):
         for n in range(1, 31):
             self.complete_run(n)
 
-        rendered = holophyte.findings.render_findings(self.conn)
+        rendered = holophyte.review.findings.render_findings(self.conn)
 
         headings = [line for line in rendered.splitlines()
                     if line.startswith("## ")]
-        self.assertEqual(len(headings), holophyte.findings.FINDINGS_WINDOW)
+        self.assertEqual(len(headings), holophyte.review.findings.FINDINGS_WINDOW)
         self.assertIn(
             "[5 earlier entries in holophyte.db — query runs/reviewRounds]",
             rendered)
@@ -182,15 +184,15 @@ class RenderedWindowTests(unittest.TestCase):
                        "message": "the migration is missing"}],
             started_at=1_700_000_100_000, ended_at=1_700_000_160_000)
 
-        first = holophyte.findings.render_findings(self.conn)
-        second = holophyte.findings.render_findings(self.conn)
+        first = holophyte.review.findings.render_findings(self.conn)
+        second = holophyte.review.findings.render_findings(self.conn)
 
         self.assertEqual(first, second)
         # And identical read back over a connection of its own, so the answer
         # cannot depend on anything this one accumulated.
         other = store.open(str(self.root / "holophyte.db"))
         self.addCleanup(other.close)
-        self.assertEqual(first, holophyte.findings.render_findings(other))
+        self.assertEqual(first, holophyte.review.findings.render_findings(other))
 
     def test_regeneration_preserves_the_frozen_preamble(self):
         preamble = ("## 2026-08-22T06:21:20Z — KO-105\n"
@@ -199,17 +201,17 @@ class RenderedWindowTests(unittest.TestCase):
         path.write_text(preamble)
         self.complete_run(1)
 
-        holophyte.findings.write_findings(self.project, self.conn, path)
+        holophyte.review.findings.write_findings(self.project, self.conn, path)
         first = path.read_text()
         self.complete_run(2)
-        holophyte.findings.write_findings(self.project, self.conn, path)
+        holophyte.review.findings.write_findings(self.project, self.conn, path)
         second = path.read_text()
 
         # Untouched, and still the top of the file after a second pass that
         # had a marker to find rather than a bare ledger.
         self.assertTrue(first.startswith(preamble), first[:200])
         self.assertTrue(second.startswith(preamble), second[:200])
-        self.assertEqual(second.count(holophyte.findings.FINDINGS_MARKER), 1)
+        self.assertEqual(second.count(holophyte.review.findings.FINDINGS_MARKER), 1)
         self.assertEqual(second.count("MERGED to main. Verify: passed."), 1)
         self.assertIn("KO-2", second)
 
@@ -228,12 +230,12 @@ class RenderedWindowTests(unittest.TestCase):
         path.write_text(preamble)
         self.complete_run(1)
 
-        holophyte.findings.write_findings(self.project, self.conn, path)
-        holophyte.findings.write_findings(self.project, self.conn, path)
+        holophyte.review.findings.write_findings(self.project, self.conn, path)
+        holophyte.review.findings.write_findings(self.project, self.conn, path)
 
         rendered = path.read_text()
         self.assertTrue(rendered.startswith(preamble), rendered[:300])
-        marker = holophyte.findings.FINDINGS_MARKER
+        marker = holophyte.review.findings.FINDINGS_MARKER
         self.assertEqual(len([line for line in rendered.splitlines()
                               if line.strip() == marker]), 1)
 
@@ -263,7 +265,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
         self.db = root / "repo.holophyte.db"
         # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.project = holophyte.project.Project(
+        self.project = holophyte.config.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -292,8 +294,8 @@ class CloseOutRegenerationTests(unittest.TestCase):
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
-            with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.project, provider)
+            with patch.object(holophyte.loop.loop, "agent", fake_agent):
+                holophyte.cli.operator.main(self.project, provider)
 
     def test_a_close_out_renders_and_commits_the_runs_entries(self):
         self.project.config_path.write_text('[report]\nfindings = "repo"\n')
@@ -303,7 +305,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
             "VERDICT: APPROVE")
 
         findings = (self.target / "FINDINGS.md").read_text()
-        self.assertIn(holophyte.findings.FINDINGS_MARKER, findings)
+        self.assertIn(holophyte.review.findings.FINDINGS_MARKER, findings)
         # The round the reviewer filed, the approval that ended the loop, and
         # the merged run's own close-out entry -- which only exists because the
         # window is rendered after the run is released.
@@ -434,7 +436,7 @@ class MalformedRoundRowTests(unittest.TestCase):
             (1_700_000_500_000, self.run_id))
         self.conn.commit()
 
-        rendered = holophyte.findings.render_findings(self.conn)
+        rendered = holophyte.review.findings.render_findings(self.conn)
 
         for number in range(1, 4):
             self.assertIn(f"Round {number}:", rendered)
@@ -444,7 +446,7 @@ class MalformedRoundRowTests(unittest.TestCase):
         self.assertLess(rendered.index("Round 1:"), rendered.index("Round 3:"))
         self.assertIn("MERGED to main", rendered)
         self.assertIn("actual: n/a", rendered)
-        self.assertEqual(rendered, holophyte.findings.render_findings(self.conn))
+        self.assertEqual(rendered, holophyte.review.findings.render_findings(self.conn))
 
     def test_malformed_round_rows_render_as_placeholders(self):
         self.raw_round(1, "not json at all")
@@ -458,7 +460,7 @@ class MalformedRoundRowTests(unittest.TestCase):
             self.conn, self.run_id, 6, "pass", "codex-sol-medium",
             started_at=1_700_000_360_000, ended_at=1_700_000_390_000)
 
-        rendered = holophyte.findings.render_findings(self.conn)
+        rendered = holophyte.review.findings.render_findings(self.conn)
 
         for number in range(1, 7):
             self.assertIn(f"Round {number}:", rendered)
@@ -469,7 +471,7 @@ class MalformedRoundRowTests(unittest.TestCase):
         self.assertEqual(rendered.count("- (malformed finding)"), 2)
         self.assertEqual(rendered.count("verify unreadable"), 2)
         # Still a function of the rows alone.
-        self.assertEqual(rendered, holophyte.findings.render_findings(self.conn))
+        self.assertEqual(rendered, holophyte.review.findings.render_findings(self.conn))
 
     def test_pathologically_nested_findings_do_not_overflow_the_render(self):
         """Depth, not syntax, is the other way a JSON column refuses to decode.
@@ -484,7 +486,7 @@ class MalformedRoundRowTests(unittest.TestCase):
         self.raw_round(1, nested)
         self.raw_round(2, "[]", results=nested)
 
-        rendered = holophyte.findings.render_findings(self.conn)
+        rendered = holophyte.review.findings.render_findings(self.conn)
 
         self.assertIn("Round 1: changes_requested", rendered)
         self.assertIn("Findings: unparseable", rendered)

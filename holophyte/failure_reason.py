@@ -56,7 +56,7 @@ def verify(output, command, context):
 
 
 def adjudication(reply, criteria, decision, context):
-    from holophyte.review import criteria_block
+    from holophyte.review.review import criteria_block
 
     block = criteria_block(reply)
     failed = [{'number': n, 'status': block.get(n, ('unwitnessed', ''))[0],

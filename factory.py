@@ -31,7 +31,7 @@ stop.
 """
 import sys
 
-from holophyte.cli import cli
+from holophyte.cli.cli import cli
 
 if __name__ == "__main__":
     sys.exit(cli())

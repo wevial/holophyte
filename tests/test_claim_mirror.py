@@ -36,11 +36,11 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board  # noqa: E402 - after the sys.path insert above
-import holophyte.dispatch  # noqa: E402
-import holophyte.operator  # noqa: E402
-import holophyte.pool  # noqa: E402
-import holophyte.runs  # noqa: E402
+import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402
+import holophyte.loop.dispatch  # noqa: E402
+import holophyte.loop.pool  # noqa: E402
+import holophyte.loop.runs  # noqa: E402
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -62,7 +62,7 @@ class OffBoardMirrorTests(LoopFixture):
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                              str(self.target))
-            ticket = holophyte.board.mirror_task(conn, project, task)
+            ticket = holophyte.board.board.mirror_task(conn, project, task)
             run_id = None
             if run:
                 run_id = store.claim(conn, project, ticket)
@@ -126,7 +126,7 @@ class OffBoardMirrorTests(LoopFixture):
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                              str(self.target))
-            ticket = holophyte.board.mirror_task(conn, project, held)
+            ticket = holophyte.board.board.mirror_task(conn, project, held)
             tickets.transition(conn, ticket, "blocked_on_deps")
             conn.commit()
         finally:
@@ -149,10 +149,10 @@ class OffBoardMirrorTests(LoopFixture):
         ran it and the relisted ticket stayed parked (the KO-425 review's
         reproduction)."""
         provider = StubProvider(a_task(1))
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        ticket = holophyte.board.mirror_task(conn, project_id, a_task(1))
+        ticket = holophyte.board.board.mirror_task(conn, project_id, a_task(1))
         tickets.transition(conn, ticket, "blocked_on_deps")
         conn.commit()
 
@@ -163,14 +163,14 @@ class OffBoardMirrorTests(LoopFixture):
             provider.queue.clear()
 
         self.configure("[loop]\nworkers = 2\nstop_on_failure = false\n")
-        pool = FakePool([(holophyte.pool.WORKER_MERGED, merged)])
-        with patch.object(holophyte.pool, "SPAWN", pool.spawn), \
-                patch.object(holophyte.pool, "WAIT", pool.wait), \
+        pool = FakePool([(holophyte.loop.pool.WORKER_MERGED, merged)])
+        with patch.object(holophyte.loop.pool, "SPAWN", pool.spawn), \
+                patch.object(holophyte.loop.pool, "WAIT", pool.wait), \
                 patch.object(sys, "orig_argv",
                              ["python3", "-u", "factory.py",
                               str(self.target)]), \
                 patch.object(sys, "stdout", io.StringIO()):
-            self.rc = holophyte.operator.main(self.project, provider)
+            self.rc = holophyte.cli.operator.main(self.project, provider)
 
         # One worker for the relisted ticket; without the mirror-path
         # recovery the count was zero and nothing spawned.
@@ -200,10 +200,10 @@ class SentBackMirrorTests(LoopFixture):
         leaves it in."""
         task = dict(a_task(), body=self.BODY)
         provider = StubProvider(task)
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        ticket = holophyte.board.mirror_task(conn, project_id, task)
+        ticket = holophyte.board.board.mirror_task(conn, project_id, task)
         run_id = store.claim(conn, project_id, ticket)
         tickets.transition(conn, ticket, "in_flight")
         if pr_url:
@@ -213,7 +213,7 @@ class SentBackMirrorTests(LoopFixture):
         conn.commit()
 
         with patch.object(sys, "stdout", io.StringIO()):
-            listing = holophyte.dispatch._mirror_queue(
+            listing = holophyte.loop.dispatch._mirror_queue(
                 self.project, conn, project_id, provider)
 
         self.assertEqual([t["id"] for t in listing], ["KO-131"])

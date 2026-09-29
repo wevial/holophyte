@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import holophyte
-import holophyte.operator
-import holophyte.pr_status
+import holophyte.cli.operator
+import holophyte.pr.pr_status
 import store
 import store.tickets
 from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle, Reply
@@ -153,8 +153,8 @@ class BabysitHelpers:
     def resume_with_conversation(self, *states, initial_state=None):
         self.fake_route(states=[initial_state or self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
-        holophyte.operator.babysit_ticket(
-            self.project, "KO-131", holophyte.operator.BABYSIT_DEFAULT_NOTE,
+        holophyte.cli.operator.babysit_ticket(
+            self.project, "KO-131", holophyte.cli.operator.BABYSIT_DEFAULT_NOTE,
             out=io.StringIO())
         for path in self.api_dir.iterdir():
             path.unlink()
@@ -181,8 +181,8 @@ class BabysitHelpers:
         fixes = [Commit("Resolve main", path="tests/test_file_sizes.py",
                         body="branch's line\nmain's line\n"), APPROVE, Idle("")
                  ] if changed else []
-        with patch.object(holophyte.pr, "SLEEP", naps.append), \
-                patch("holophyte.babysitter.time",
+        with patch.object(holophyte.pr.pr, "SLEEP", naps.append), \
+                patch("holophyte.babysit.babysitter.time",
                       side_effect=lambda: 1000 + sum(naps)):
             out = self.main_output(work, review, Idle(""), *fixes,
                                    provider=self.provider())
@@ -197,7 +197,7 @@ class BabysitHelpers:
             states += [self.pr_state(checks="PENDING"), self.pr_state()]
         self.serve(*states)
         naps = []
-        with patch.object(holophyte.pr, "SLEEP", naps.append):
+        with patch.object(holophyte.pr.pr, "SLEEP", naps.append):
             fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE,
                                 Idle(""), provider=self.provider())
         return old, fake, naps
@@ -211,7 +211,7 @@ class BabysitHelpers:
         for path in self.api_dir.iterdir():
             path.unlink()
         # Supervisor context remains available to re-review fix rounds.
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         try:
             ticket = store.read.ticket_by_identifier(conn, "KO-131")
             store.babysit(conn, ticket.id, "repair the pin", source="supervisor")
@@ -278,12 +278,12 @@ class BabysitHelpers:
                          [("merged", self.MERGE_SHA)])
 
     def _state_with_rest(self, rest):
-        pull = holophyte.pr_status.parse_pr_url(self.URL)
-        with patch.object(holophyte.pr_status, "graphql",
+        pull = holophyte.pr.pr_status.parse_pr_url(self.URL)
+        with patch.object(holophyte.pr.pr_status, "graphql",
                           lambda *a, **k: self.pr_state(checks="SUCCESS")
                           ["data"]), \
-                patch.object(holophyte.pr_status, "rest", rest):
-            return holophyte.pr_status.pr_state(self.project, pull)
+                patch.object(holophyte.pr.pr_status, "rest", rest):
+            return holophyte.pr.pr_status.pr_state(self.project, pull)
 
 
 class ConflictRefusalCases(BabysitHelpers):
@@ -359,7 +359,7 @@ class ConflictRefusalCases(BabysitHelpers):
     def test_conflict_push_waits_for_the_head_to_catch_up(self):
         review = self.conflict_refusal(heads=("old", "pushed"))
         naps = []
-        with patch.object(holophyte.pr, "SLEEP", naps.append):
+        with patch.object(holophyte.pr.pr, "SLEEP", naps.append):
             self.loop(Commit("candidate"), review, Idle(""), APPROVE, Idle(""),
                       provider=self.provider())
         self.assert_conflict_merge_landed()
@@ -370,7 +370,7 @@ class ConflictRefusalCases(BabysitHelpers):
     def test_conflict_push_stale_api_uses_remote_head(self):
         review = self.conflict_refusal(heads=("old",))
         naps = []
-        with patch.object(holophyte.pr, "SLEEP", naps.append):
+        with patch.object(holophyte.pr.pr, "SLEEP", naps.append):
             self.loop(Commit("candidate"), review, Idle(""), APPROVE, Idle(""),
                       provider=self.provider())
         original, pushed = [sha for _, sha in self.pushed()]
@@ -384,7 +384,7 @@ class ConflictRefusalCases(BabysitHelpers):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.loop(Commit("candidate"), review, Idle(""), provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
-        holophyte.operator.approve(self.project, "KO-131", "merge this candidate",
+        holophyte.cli.operator.approve(self.project, "KO-131", "merge this candidate",
                                    out=io.StringIO())
         fake, _ = self.loop(provider=self.provider())
         self.assertEqual(fake.roles, [])

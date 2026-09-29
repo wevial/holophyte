@@ -13,7 +13,7 @@ import babysit_fixture as cases  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture, StubProvider, a_task  # noqa: E402
 
-import holophyte.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
 
 RERUN = "repos/example/repo/actions/runs/77/rerun-failed-jobs"
 JOB = "https://github.com/example/repo/actions/runs/77/job/"
@@ -37,7 +37,7 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         self.fake_route(refuse_rerun=refuse_rerun)
         self.job_log.write_text("FAIL: test_x (tests.test_y.Case.test_x)")
         self.naps = []
-        self.enterContext(patch.object(holophyte.pr, "SLEEP", self.naps.append))
+        self.enterContext(patch.object(holophyte.pr.pr, "SLEEP", self.naps.append))
         heads, served = [], list(after_rerun or [self.RERUN_RED])
         def check_runs(target, pull, sha):
             heads.extend([sha] if sha not in heads else [])
@@ -46,7 +46,7 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
             if not self.reruns():
                 return [self.UNIT]
             return [served.pop(0) if len(served) > 1 else served[0]]
-        self.enterContext(patch("holophyte.pr_status._check_runs_of", check_runs))
+        self.enterContext(patch("holophyte.pr.pr_status._check_runs_of", check_runs))
 
     def reruns(self):
         return [line for line in self.recorded() if "rerun-failed-jobs" in line]
@@ -86,8 +86,8 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         # Review finding: a fixed nap before the settle overran the deadline.
         self.red_check(self.UNIT, config="check_wait_sec = 60\n")
         clock = {"side_effect": lambda: sum(self.naps)}
-        with patch("holophyte.babysitter.monotonic", **clock), \
-                patch("holophyte.check_fix.monotonic", **clock):
+        with patch("holophyte.babysit.babysitter.monotonic", **clock), \
+                patch("holophyte.babysit.check_fix.monotonic", **clock):
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 provider=self.provider())
         self.assertEqual(sum(self.naps), 60)

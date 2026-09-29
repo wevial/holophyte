@@ -2,7 +2,7 @@ import type { Fetch } from "./poll";
 import type { BoardState } from "./types";
 
 /** One revision of a ticket's board-owned fields, as `/tickets/ID`
- *  serves its `current` and `claimed` (holophyte/serve.py `revision_json()`).
+ *  serves its `current` and `claimed` (holophyte/serve/serve.py `revision_json()`).
  *  `column` is `backlog`, `ready`, `canceled`, or null when none was named. */
 export interface TicketRevision {
   revision: number | null;

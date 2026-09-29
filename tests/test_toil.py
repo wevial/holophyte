@@ -2,12 +2,12 @@
 `--report` prints them and `/status` carries them."""
 from time import time
 
-import holophyte.report as report
-import holophyte.serve
+import holophyte.cli.report as report
+import holophyte.serve.serve
 import store
 import store.read
 import store.tickets
-from holophyte.project import Project
+from holophyte.config.project import Project
 from tests.phase_fixture import finish_run
 from tests.serve_fixture import MIN, ServeTestCase
 
@@ -82,7 +82,7 @@ class ToilTests(ServeTestCase):
         self.conn.commit()
         self.assertIn("toil 24h: 3 human interventions, 0 merged (requeue 3)",
                       report.report_lines(self.conn))
-        code, body = holophyte.serve.status(Project.locate(self.target),
+        code, body = holophyte.serve.serve.status(Project.locate(self.target),
                                             now=self.now)
         self.assertEqual(code, 200)
         self.assertEqual(body["toil"]["24h"], {

@@ -1,8 +1,8 @@
 """A hold arriving during scheduling drains workers without admitting more."""
 from unittest.mock import patch
 
-import holophyte.pool
-import holophyte.runs
+import holophyte.loop.pool
+import holophyte.loop.runs
 import store
 from tests import test_pool
 
@@ -12,7 +12,7 @@ class PoolHoldTests(test_pool.LoopFixture):
 
     def test_disabled_loop_does_not_claim(self):
         provider = test_pool.StubProvider(test_pool.a_task(1))
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = store.ensure_project(conn, provider.team, self.target)
         store.set_admission(conn, project_id, "disabled", "retired")
@@ -25,13 +25,13 @@ class PoolHoldTests(test_pool.LoopFixture):
         self.assertEqual(conn.execute("SELECT count(*) FROM runs").fetchone(), (0,))
 
     def test_hold_drains_workers_and_acknowledges_return_with_exit_status(self):
-        for exit_code, expected in ((holophyte.pool.WORKER_MERGED, 0),
-                                    (holophyte.pool.WORKER_FAILED, 0),
+        for exit_code, expected in ((holophyte.loop.pool.WORKER_MERGED, 0),
+                                    (holophyte.loop.pool.WORKER_FAILED, 0),
                                     (-9, 1)):
             with self.subTest(exit_code=exit_code):
                 provider = test_pool.StubProvider(
                     test_pool.a_task(1), test_pool.a_task(2))
-                conn = holophyte.runs.open_store(self.project)
+                conn = holophyte.loop.runs.open_store(self.project)
                 try:
                     project_id = store.ensure_project(conn, provider.team, self.target)
                     restart = store.record_loop_restart(conn, project_id, "candidate")
@@ -53,7 +53,7 @@ class PoolHoldTests(test_pool.LoopFixture):
                         pool = self.run_scheduler(3, provider, [
                             (test_pool.TICK, hold_while_running),
                             (exit_code, still_draining),
-                            (holophyte.pool.WORKER_MERGED, still_draining),
+                            (holophyte.loop.pool.WORKER_MERGED, still_draining),
                         ])
                         self.assertEqual(listing.call_count, calls_at_hold[0])
                     self.assertEqual(len(pool.spawned), 2)

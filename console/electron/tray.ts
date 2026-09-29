@@ -79,7 +79,7 @@ export type AttentionItem = {
 };
 export type Attention = { level?: string; now?: number; items?: AttentionItem[] };
 export type Runs = { rows?: { ticket: string; outcome?: string; ended_ms?: number | null }[] };
-/** A host daemon's root `/status` (holophyte/serve_host.py `host_status()`):
+/** A host daemon's root `/status` (holophyte/serve/serve_host.py `host_status()`):
  *  the last sweep and every registered project, no `project` of its own. */
 export type HostStatus = {
   now?: number;

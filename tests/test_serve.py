@@ -26,14 +26,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # `-m unittest tests.<name>` resolves the sibling fixtures as discovery does.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import holophyte.cli  # noqa: E402 - after the sys.path insert above
-import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.serve  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.serve  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.schema  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
-from holophyte.serve_config import TOMLKIT_MISSING  # noqa: E402
+from holophyte.serve.serve_config import TOMLKIT_MISSING  # noqa: E402
 from tests.host_fixture import factory_checkout, git
 from tests.phase_fixture import advance_phase, finish_run, park_run
 from tests.serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
@@ -136,11 +136,11 @@ class TokenTests(ServeTestCase):
 
     def test_a_non_loopback_bind_without_a_token_file_is_a_startup_error(self):
         self.seed()
-        project = holophyte.project.Project.locate(self.target)
+        project = holophyte.config.project.Project.locate(self.target)
         for address in ("0.0.0.0:0", "[::]:0", "10.0.0.1:0"):
             with self.subTest(address=address), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.serve.serve(project, address, out=io.StringIO())
+                holophyte.serve.serve.serve(project, address, out=io.StringIO())
             self.assertIn("[serve] token_file", str(raised.exception))
             self.assertNotEqual(raised.exception.code, 0)
 
@@ -148,7 +148,7 @@ class TokenTests(ServeTestCase):
         self.seed()
         with contextlib.redirect_stdout(io.StringIO()), \
                 self.assertRaises(SystemExit) as raised:
-            holophyte.cli.cli([str(self.target), "--serve", "0.0.0.0:0"])
+            holophyte.cli.cli.cli([str(self.target), "--serve", "0.0.0.0:0"])
         self.assertIn("[serve] token_file", str(raised.exception))
 
     def test_status_is_401_without_the_token_and_200_with_it(self):
@@ -214,7 +214,7 @@ class TokenTests(ServeTestCase):
     def configured(self, path):
         """The target with `[serve] token_file` pointing at `path`."""
         (self.db.parent / "config.toml").write_text(self.token_config(path))
-        return holophyte.project.Project.locate(self.target)
+        return holophyte.config.project.Project.locate(self.target)
 
     def test_a_group_or_world_readable_token_file_is_refused(self):
         self.seed()
@@ -223,7 +223,7 @@ class TokenTests(ServeTestCase):
             project = self.configured(path)
             with self.subTest(mode=oct(mode)), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.serve.serve(project, "0.0.0.0:0", out=io.StringIO())
+                holophyte.serve.serve.serve(project, "0.0.0.0:0", out=io.StringIO())
             message = str(raised.exception)
             self.assertIn(f"{mode:04o}", message)
             self.assertIn(str(path), message)
@@ -235,7 +235,7 @@ class TokenTests(ServeTestCase):
             project = self.configured(path)
             with self.subTest(path=path.name), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.serve.serve(project, "0.0.0.0:0", out=io.StringIO())
+                holophyte.serve.serve.serve(project, "0.0.0.0:0", out=io.StringIO())
             self.assertIn(str(path), str(raised.exception))
 
     MACHINE_TOKEN = "machine-wide-token-value"
@@ -304,7 +304,7 @@ class StatusTests(ServeTestCase):
         self.assertTrue(
             5 * SEC <= supervisor["heartbeat_age_ms"] < 5 * SEC + SLACK,
             supervisor)
-        knobs = holophyte.config_tables.sweep_config(self.project)
+        knobs = holophyte.config.config_tables.sweep_config(self.project)
         self.assertEqual(body["thresholds"],
                          {"heartbeat_stale_ms": knobs.heartbeat_stale_ms,
                           "strikes": knobs.stale_strikes,
@@ -1129,7 +1129,7 @@ class ActionFailureTests(ServeTestCase):
         self.start(f'[serve]\ntoken_file = "{token}"\nactions = true\n')
         out = io.StringIO()
         with contextlib.redirect_stderr(out), patch.object(
-                holophyte.serve, "send_back_action", side_effect=failure):
+                holophyte.serve.serve, "send_back_action", side_effect=failure):
             return (*self.request("POST", "/actions/send-back", TokenTests.BEARER,
                                   {"run": self.run}), out.getvalue())
 
@@ -1154,21 +1154,21 @@ class ActionFailureTests(ServeTestCase):
 class ParseAddressTests(unittest.TestCase):
 
     def test_a_bare_port_binds_loopback(self):
-        self.assertEqual(holophyte.serve.parse_address("7710"),
+        self.assertEqual(holophyte.serve.serve.parse_address("7710"),
                          ("127.0.0.1", 7710))
-        self.assertEqual(holophyte.serve.parse_address("0"), ("127.0.0.1", 0))
+        self.assertEqual(holophyte.serve.serve.parse_address("0"), ("127.0.0.1", 0))
 
     def test_host_port_is_the_pair_as_typed(self):
-        self.assertEqual(holophyte.serve.parse_address("100.64.0.9:7710"),
+        self.assertEqual(holophyte.serve.serve.parse_address("100.64.0.9:7710"),
                          ("100.64.0.9", 7710))
-        self.assertEqual(holophyte.serve.parse_address("::1:8787"),
+        self.assertEqual(holophyte.serve.serve.parse_address("::1:8787"),
                          ("::1", 8787))
 
     def test_anything_else_is_refused_naming_both_shapes(self):
         for text in (":7710", "host:", "abc", "-1", "7710 ", "host:7a"):
             with self.subTest(text=text):
                 with self.assertRaises(ValueError) as raised:
-                    holophyte.serve.parse_address(text)
+                    holophyte.serve.serve.parse_address(text)
                 message = str(raised.exception)
                 self.assertIn("PORT|HOST:PORT", message)
                 self.assertIn(repr(text), message)
@@ -1182,7 +1182,7 @@ class CliTests(ServeTestCase):
                 stderr = io.StringIO()
                 with contextlib.redirect_stderr(stderr), \
                         self.assertRaises(SystemExit) as raised:
-                    holophyte.cli.cli([str(self.target), *argv])
+                    holophyte.cli.cli.cli([str(self.target), *argv])
                 self.assertEqual(raised.exception.code, 2)
                 self.assertIn("PORT|HOST:PORT", stderr.getvalue())
                 self.assertFalse(self.db.exists())
@@ -1213,7 +1213,7 @@ class CliTests(ServeTestCase):
         try:
             with contextlib.redirect_stdout(out), \
                     contextlib.redirect_stderr(io.StringIO()):
-                code = holophyte.cli.cli([str(self.target), "--serve", address])
+                code = holophyte.cli.cli.cli([str(self.target), "--serve", address])
         except SystemExit as refused:
             raise self.failureException(str(refused)) from None
         finally:
@@ -1245,7 +1245,7 @@ class RefusedStartTests(unittest.TestCase):
                 before = set(threading.enumerate())
                 result = unittest.TestResult()
                 started = monotonic()
-                with patch.object(holophyte.serve, "require_tomlkit",
+                with patch.object(holophyte.serve.serve, "require_tomlkit",
                                   side_effect=SystemExit(TOMLKIT_MISSING)), \
                         patch("os.kill") as kill:
                     CliTests(method).run(result)
@@ -1270,9 +1270,9 @@ class DisconnectedClientTests(unittest.TestCase):
         client_side.close()
         out = io.StringIO()
         with contextlib.redirect_stderr(out), \
-                patch.object(holophyte.serve.StatusHandler, "do_GET",
+                patch.object(holophyte.serve.serve.StatusHandler, "do_GET",
                              lambda handler: handler.answer(404, {})):
-            holophyte.serve.StatusHandler(server_side, ("local", 0), COUNTER)
+            holophyte.serve.serve.StatusHandler(server_side, ("local", 0), COUNTER)
         self.assertEqual(out.getvalue(),
                          "[holo2] client disconnected: '/missing\\x1b[31m'\n")
         self.assertNotIn("Traceback", out.getvalue())
@@ -1284,11 +1284,11 @@ class DisconnectedClientTests(unittest.TestCase):
         client_side.sendall(b"GET /status HTTP/1.0\r\n\r\n")
         out = io.StringIO()
         with contextlib.redirect_stderr(out), \
-                patch.object(holophyte.serve.StatusHandler, "do_GET",
+                patch.object(holophyte.serve.serve.StatusHandler, "do_GET",
                              lambda handler: handler.answer(200, {})), \
                 patch("socketserver._SocketWriter.write",
                       side_effect=[None, ConnectionResetError()]):
-            holophyte.serve.StatusHandler(server_side, ("local", 0), COUNTER)
+            holophyte.serve.serve.StatusHandler(server_side, ("local", 0), COUNTER)
         self.assertEqual(len(out.getvalue().splitlines()), 1)
         self.assertIn("/status", out.getvalue())
         self.assertNotIn("Traceback", out.getvalue())
@@ -1393,7 +1393,7 @@ class FollowsCodeTests(ServeTestCase):
         a SIGTERM stops it; `(printed, events)` where `events` holds "EXEC"
         once the seam was called."""
         self.seed()
-        project = holophyte.project.Project.locate(self.target)
+        project = holophyte.config.project.Project.locate(self.target)
         out = io.StringIO()
         self.events = []
         returned = threading.Event()
@@ -1410,12 +1410,12 @@ class FollowsCodeTests(ServeTestCase):
                     os.kill(os.getpid(), signal.SIGTERM)
         helper = threading.Thread(target=drive)
         helper.start()
-        with patch.object(holophyte.serve, "factory_revision", revision), \
-                patch.object(holophyte.serve, "EXEC",
+        with patch.object(holophyte.serve.serve, "factory_revision", revision), \
+                patch.object(holophyte.serve.serve, "EXEC",
                              lambda *_: self.events.append("EXEC")), \
                 patch.object(sys, "orig_argv", ["python3", "factory.py"]):
             try:
-                code = holophyte.serve.serve(project, "127.0.0.1:0", out=out,
+                code = holophyte.serve.serve.serve(project, "127.0.0.1:0", out=out,
                                              interval=self.INTERVAL)
             finally:
                 returned.set()
@@ -1447,7 +1447,7 @@ class FollowsCodeTests(ServeTestCase):
             answers.append((response.status, json.loads(response.read())))
             conn.close()
 
-        with patch.object(holophyte.serve, "status", slow_status):
+        with patch.object(holophyte.serve.serve, "status", slow_status):
             printed = self.serve_with(revision, client)
 
         self.assertEqual(answers, [(200, {"slow": True})])

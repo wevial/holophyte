@@ -23,12 +23,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli
-import holophyte.config
-import holophyte.project
+import holophyte.cli.cli
+import holophyte.config.config
+import holophyte.config.project
 import linear_provider
 import ticket_template
-from holophyte.board import file_ticket
+from holophyte.board.board import file_ticket
 from provider import FileProvider
 
 TICKET = """\
@@ -165,7 +165,7 @@ class FileTicketCliTests(unittest.TestCase):
         self.repo.mkdir()
         (self.repo / "test_orders_export.py").touch()
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
-        self.target = holophyte.project.Project.locate(self.repo)
+        self.target = holophyte.config.project.Project.locate(self.repo)
         self.ticket = self.root / "tickets" / "01-export.md"
         self.ticket.parent.mkdir()
         self.ticket.write_text(TICKET)
@@ -182,7 +182,7 @@ class FileTicketCliTests(unittest.TestCase):
         out = io.StringIO()
         with patch.object(linear_provider, "_gql", linear), \
                 contextlib.redirect_stdout(out):
-            status = holophyte.cli.cli(
+            status = holophyte.cli.cli.cli(
                 [str(self.repo), "--file-ticket", str(self.ticket), *args])
         return status, out.getvalue()
 
@@ -321,7 +321,7 @@ class FileTicketCliTests(unittest.TestCase):
         err = io.StringIO()
         with self.assertRaises(SystemExit) as raised, \
                 contextlib.redirect_stderr(err):
-            holophyte.cli.cli([str(self.repo), "--priority", "high"])
+            holophyte.cli.cli.cli([str(self.repo), "--priority", "high"])
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("--file-ticket", err.getvalue())
 
@@ -453,7 +453,7 @@ class FileTicketCliTests(unittest.TestCase):
         err = io.StringIO()
         with self.assertRaises(SystemExit) as raised, \
                 contextlib.redirect_stderr(err):
-            holophyte.cli.cli([str(self.repo), "--update", "KO-7000"])
+            holophyte.cli.cli.cli([str(self.repo), "--update", "KO-7000"])
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("--update", err.getvalue())
         self.assertIn("--file-ticket", err.getvalue())

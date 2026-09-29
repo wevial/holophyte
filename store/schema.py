@@ -524,7 +524,7 @@ SCHEMA_VERSION = 40
 #   path from it).
 #
 # A literal, never an expression: `fetched_schema()` in
-# holophyte/pool_handoff.py reads it with `ast.literal_eval`.
+# holophyte/loop/pool_handoff.py reads it with `ast.literal_eval`.
 READABLE_FROM = 40
 
 # How long a connection waits for another writer's lock before raising

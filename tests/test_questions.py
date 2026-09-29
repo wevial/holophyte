@@ -11,7 +11,9 @@ from unittest.mock import patch
 
 import store
 import store.tickets
-from holophyte import pr, questions, redact, thread_mentions
+from holophyte import questions, redact
+from holophyte.babysit import thread_mentions
+from holophyte.pr import pr
 
 
 class QuestionsTests(unittest.TestCase):

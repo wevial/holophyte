@@ -22,7 +22,7 @@ from procs import (  # noqa: E402 - after the sys.path insert above
 )
 from waiting import wait_for  # noqa: E402 - after the sys.path insert above
 
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 
 
 class VerifyClauseDiagnosticsTests(unittest.TestCase):
@@ -34,7 +34,7 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
         (self.cwd / "sub" / "value.txt").write_text("payload\n")
 
     def test_failing_clause_of_a_chain_is_named_with_index_and_status(self):
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "echo first && python3 -c 'import sys; print(\"boom\"); sys.exit(3)' "
             "&& echo never", self.cwd)
 
@@ -46,7 +46,7 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
 
     def test_executed_clauses_are_shown_and_short_circuited_ones_are_not(self):
         # KO-109 acceptance criteria, verbatim command.
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "printf first && sh -c 'exit 7' && printf never", self.cwd)
 
         self.assertFalse(ok)
@@ -57,7 +57,7 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("clause 3 (", out)
 
     def test_a_clause_that_exits_the_shell_is_still_attributed(self):
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "echo before && exit 7 && echo never", self.cwd)
 
         self.assertFalse(ok)
@@ -69,7 +69,7 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
         # Round-2 review blocker: `printf first` leaves no trailing newline,
         # so the next clause marker glues onto "first" and `boom` used to be
         # credited to clause 1 while failing clause 2 read as silent.
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "printf first && sh -c 'echo boom; exit 7' && printf never",
             self.cwd)
 
@@ -84,7 +84,7 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
         self.assertIn("first", clause1)
 
     def test_silent_clause_failure_is_reported_as_silence(self):
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "echo starting && grep -q absent sub/value.txt", self.cwd)
 
         self.assertFalse(ok)
@@ -92,25 +92,25 @@ class VerifyClauseDiagnosticsTests(unittest.TestCase):
         self.assertIn("failed silently", out)
 
     def test_clauses_run_in_one_shell_so_state_carries_across_them(self):
-        ok, out = holophyte.gates.run_verify("cd sub && cat value.txt", self.cwd)
+        ok, out = holophyte.loop.gates.run_verify("cd sub && cat value.txt", self.cwd)
 
         self.assertTrue(ok, out)
         self.assertEqual(out, "payload")
 
     def test_chain_with_a_top_level_or_keeps_its_original_semantics(self):
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "test -f missing.txt && echo found || echo recovered", self.cwd)
 
         self.assertTrue(ok, out)
         self.assertIn("recovered", out)
 
     def test_and_inside_a_trailing_comment_is_not_an_operator(self):
-        ok, out = holophyte.gates.run_verify("true # && false", self.cwd)
+        ok, out = holophyte.loop.gates.run_verify("true # && false", self.cwd)
 
         self.assertTrue(ok, out)
 
     def test_a_trailing_comment_after_a_real_chain_stays_with_its_clause(self):
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "echo one && grep -q absent sub/value.txt # why", self.cwd)
 
         self.assertFalse(ok)
@@ -140,8 +140,8 @@ class VerifyTimeoutTests(unittest.TestCase):
         # verify, not a `TimeoutExpired` escaping into the loop.
         # The command is kept verbatim (a `touch` clause would change the
         # clause count the assertions name), so the 1 s cap is the margin.
-        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0):
-            ok, out = holophyte.gates.run_verify("echo a && sleep 5", self.cwd)
+        with patch.object(holophyte.loop.gates, "VERIFY_TIMEOUT", 1.0):
+            ok, out = holophyte.loop.gates.run_verify("echo a && sleep 5", self.cwd)
 
         self.assertFalse(ok)
         self.assertIn("timed out after 1s", out)
@@ -166,10 +166,10 @@ class VerifyTimeoutTests(unittest.TestCase):
         cmd = ("echo resolving; touch %s; (sleep 3; touch %s) & sleep 5"
                % (started, escaped))
 
-        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0), \
+        with patch.object(holophyte.loop.gates, "VERIFY_TIMEOUT", 1.0), \
                 KillWatch(escaped) as watch:
             began = time.monotonic()
-            ok, out = holophyte.gates.run_verify(cmd, self.cwd)
+            ok, out = holophyte.loop.gates.run_verify(cmd, self.cwd)
             elapsed = time.monotonic() - began
 
         self.assertFalse(ok)
@@ -195,9 +195,9 @@ class VerifyTimeoutTests(unittest.TestCase):
         cmd = ("echo before; touch %s; setsid sh -c 'sleep 3' & sleep 5"
                % started)
 
-        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0), \
-                patch.object(holophyte.gates, "REAP_GRACE", 0.1):
-            ok, out = holophyte.gates.run_verify(cmd, self.cwd)
+        with patch.object(holophyte.loop.gates, "VERIFY_TIMEOUT", 1.0), \
+                patch.object(holophyte.loop.gates, "REAP_GRACE", 0.1):
+            ok, out = holophyte.loop.gates.run_verify(cmd, self.cwd)
 
         self.assertFalse(ok)
         self.assertIn("timed out after 1s", out)
@@ -229,14 +229,14 @@ class VacuousGreenTests(unittest.TestCase):
         # the gate is RED with the zero-test evidence visible — that is the
         # KO-107 property; the detector's report shape is pinned by the
         # exit-0 test below.
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "python3 -m unittest discover -s suite -p 'test_absent*'", self.cwd)
 
         self.assertFalse(ok)
         self.assertIn("Ran 0 tests", out)
 
     def test_pytest_collecting_no_items_is_red(self):
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "printf '%s\\n' 'collected 0 items' 'no tests ran in 0.01s'",
             self.cwd)
 
@@ -245,14 +245,14 @@ class VacuousGreenTests(unittest.TestCase):
         self.assertIn("zero-test summary: collected 0 items", out)
 
     def test_unittest_run_that_executed_tests_stays_green(self):
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "python3 -m unittest discover -s suite -p 'test_real*'", self.cwd)
 
         self.assertTrue(ok, out)
         self.assertIn("Ran 1 test", out)
 
     def test_pytest_collecting_items_stays_green(self):
-        ok, out = holophyte.gates.run_verify(
+        ok, out = holophyte.loop.gates.run_verify(
             "printf '%s\\n' 'collected 10 items' '10 passed in 0.4s'",
             self.cwd)
 
@@ -273,7 +273,7 @@ class ContractCheckTests(unittest.TestCase):
         self.contracts = [("config/tunnel.yml", "8622")]
 
     def test_declared_literal_present_keeps_the_gate_green(self):
-        ok, out = holophyte.gates.run_verify("printf 'suite ok\n'", self.cwd,
+        ok, out = holophyte.loop.gates.run_verify("printf 'suite ok\n'", self.cwd,
                                      self.contracts)
 
         self.assertTrue(ok, out)
@@ -284,7 +284,7 @@ class ContractCheckTests(unittest.TestCase):
         self.conf.write_text("service: http://localhost:8000\n")
 
         # The command itself still exits 0 — only the contract has drifted.
-        ok, out = holophyte.gates.run_verify("printf 'suite ok\n'", self.cwd,
+        ok, out = holophyte.loop.gates.run_verify("printf 'suite ok\n'", self.cwd,
                                      self.contracts)
 
         self.assertFalse(ok)
@@ -297,7 +297,7 @@ class ContractCheckTests(unittest.TestCase):
         # reviewer, so the path and the missing literal are all it may carry.
         self.conf.write_text("token: hunter2-do-not-log\nport: 8000\n")
 
-        ok, out = holophyte.gates.run_verify("printf 'suite ok\n'", self.cwd,
+        ok, out = holophyte.loop.gates.run_verify("printf 'suite ok\n'", self.cwd,
                                      self.contracts)
 
         self.assertFalse(ok)
@@ -307,13 +307,13 @@ class ContractCheckTests(unittest.TestCase):
     def test_ticket_without_contract_checks_is_unaffected(self):
         self.conf.write_text("service: http://localhost:8000\n")
 
-        ok, out = holophyte.gates.run_verify("printf 'suite ok\n'", self.cwd)
+        ok, out = holophyte.loop.gates.run_verify("printf 'suite ok\n'", self.cwd)
 
         self.assertTrue(ok, out)
         self.assertNotIn("contract check", out)
 
     def test_declared_file_that_does_not_exist_is_red(self):
-        ok, out = holophyte.gates.run_verify("printf 'suite ok\n'", self.cwd,
+        ok, out = holophyte.loop.gates.run_verify("printf 'suite ok\n'", self.cwd,
                                      [("config/gone.yml", "8622")])
 
         self.assertFalse(ok)
@@ -321,7 +321,7 @@ class ContractCheckTests(unittest.TestCase):
         self.assertIn("config/gone.yml", out)
 
     def test_absolute_declared_path_is_refused_rather_than_read(self):
-        ok, out = holophyte.gates.run_verify("printf 'suite ok\n'", self.cwd,
+        ok, out = holophyte.loop.gates.run_verify("printf 'suite ok\n'", self.cwd,
                                      [("/etc/hostname", "8622")])
 
         self.assertFalse(ok)

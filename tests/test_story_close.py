@@ -19,21 +19,21 @@ from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 from test_store_claim_loop import STORE_MODE  # noqa: E402
 
-import holophyte.gates  # noqa: E402
-import holophyte.loop  # noqa: E402
-import holophyte.operator  # noqa: E402
-import holophyte.story_close  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
+import holophyte.loop.gates  # noqa: E402
+import holophyte.loop.loop  # noqa: E402
+import holophyte.story.story_close  # noqa: E402
 import linear_provider  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.gates import merge_lock  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
-from holophyte.supervisor import (  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
+from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
-from holophyte.witness import (  # noqa: E402
+from holophyte.loop.gates import merge_lock  # noqa: E402
+from holophyte.loop.runs import open_store  # noqa: E402
+from holophyte.story.witness import (  # noqa: E402
     run_witnesses,
     witness_pass,
     witness_step,
@@ -122,10 +122,10 @@ class StoryCloseTests(StoryCloseFixture):
                          APPROVE)
         out = io.StringIO()
         with no_agent_processes(), patch.object(sys, "stdout", out), \
-                patch.object(holophyte.loop, "agent", fake), \
-                patch("holophyte.freshness.critic_admits",
+                patch.object(holophyte.loop.loop, "agent", fake), \
+                patch("holophyte.review.freshness.critic_admits",
                       return_value=True):
-            holophyte.operator.main(self.project, self.board)
+            holophyte.cli.operator.main(self.project, self.board)
 
         tip = self.tip()
         self.assertEqual(self.read(
@@ -145,7 +145,7 @@ class StoryCloseTests(StoryCloseFixture):
         parent, child = self.tickets()
         self.approve(parent, child, [witness("W1", W1_FILE)])
         green_at = self.commit(W1_FILE, PASSES, "w1 lands")
-        real_lock = holophyte.story_close.merge_lock
+        real_lock = holophyte.story.story_close.merge_lock
         landed = []
 
         @contextlib.contextmanager
@@ -154,7 +154,7 @@ class StoryCloseTests(StoryCloseFixture):
             with real_lock(*args, **kwargs) as path:
                 yield path
 
-        with patch.object(holophyte.story_close, "merge_lock",
+        with patch.object(holophyte.story.story_close, "merge_lock",
                           lock_after_a_merge):
             self.step()
 
@@ -174,7 +174,7 @@ class StoryCloseTests(StoryCloseFixture):
         tip = self.commit(W1_FILE, PASSES, "w1 lands")
 
         with merge_lock(self.project, None), \
-                patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0):
+                patch.object(holophyte.loop.gates, "MERGE_LOCK_WAIT_SEC", 0):
             self.step()
         self.assertEqual(story(self.conn, parent).state, "approved")
 
@@ -316,10 +316,10 @@ class StoreModeCloseTests(StoryCloseFixture):
             board_state="Todo", board_column="ready") for n in (1, 2)]
 
     def sweep(self, now):
-        with patch("holophyte.reconcile._reconcile_pull_requests"), \
-                patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.reconcile._reconcile_pull_requests"), \
+                patch("holophyte.host.supervisor.linear_budget_low",
                       return_value=False), \
-                patch("holophyte.supervisor.start_loop_for"):
+                patch("holophyte.host.supervisor.start_loop_for"):
             reconcile_parked_pull_requests(
                 self.project, self.conn, now, self.board, io.StringIO(),
                 knobs=self.knobs, memory=self.memory)

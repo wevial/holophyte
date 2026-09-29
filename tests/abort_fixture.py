@@ -11,8 +11,8 @@ from unittest.mock import patch
 from fake_agent import IMPLEMENT, Commit, FakeAgent
 from loop_fixture import BRANCH, VALID_BODY, StubProvider, a_task
 
-import holophyte.agents as agents
-import holophyte.config_tables
+import holophyte.agents.agents as agents
+import holophyte.config.config_tables
 import store
 
 NOTE = "host going down"
@@ -66,7 +66,7 @@ class AbortTurnCases:
     def test_abort_kills_the_turn_group_commits_wip_and_parks(self):
         # A 3 s stale threshold beats every 1.5 s.
         self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n")
-        beat_s = holophyte.config_tables.sweep_config(
+        beat_s = holophyte.config.config_tables.sweep_config(
             self.project).heartbeat_stale_ms / 2000
         db, seen, fake = self.db, {}, FakeAgent()
 
@@ -121,7 +121,7 @@ class AbortTurnCases:
     def test_abort_kills_a_configured_reviewers_group(self):
         self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n[agents]\n"
                        "reviewer = \"sh -c 'sleep 30 & exec sleep 30'\"\n")
-        beat_s = holophyte.config_tables.sweep_config(
+        beat_s = holophyte.config.config_tables.sweep_config(
             self.project).heartbeat_stale_ms / 2000
         implementer, seen, real = FakeAgent(Commit("work")), {}, agents.run_capped
 

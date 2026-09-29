@@ -7,12 +7,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import holophyte.cli
+import holophyte.cli.cli
 import store
 import store.tickets
-from holophyte.board import lease_label
-from holophyte.project import Project
-from holophyte.runs import open_store
+from holophyte.board.board import lease_label
+from holophyte.config.project import Project
+from holophyte.loop.runs import open_store
 
 URL = "https://example.org/project/pull/122"
 
@@ -44,9 +44,9 @@ class CloseFlagTests(unittest.TestCase):
 
     def cli(self, *args):
         out = io.StringIO()
-        with patch("holophyte.cli.board_for", return_value=self.board), \
+        with patch("holophyte.cli.cli.board_for", return_value=self.board), \
                 contextlib.redirect_stdout(out):
-            holophyte.cli.cli([str(self.repo), *args])
+            holophyte.cli.cli.cli([str(self.repo), *args])
         return out.getvalue()
 
     def end(self, outcome="rejected"):
@@ -148,7 +148,7 @@ class CloseFlagTests(unittest.TestCase):
 
     def test_landed_is_required_before_opening_store(self):
         err = io.StringIO()
-        with patch("holophyte.operator._operator_store") as opened, \
+        with patch("holophyte.cli.operator._operator_store") as opened, \
                 contextlib.redirect_stderr(err):
             with self.assertRaises(SystemExit) as raised:
                 self.cli("--close", "KO-1")

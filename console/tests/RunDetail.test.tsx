@@ -50,14 +50,14 @@ const DETAIL: RunDetailBody = {
       ended_ms: null,
       verdict: "changes_requested",
       findings: [
-        { path: "holophyte/serve.py", line: 12, severity: "nit", message: "Trailing comma" },
+        { path: "holophyte/serve/serve.py", line: 12, severity: "nit", message: "Trailing comma" },
         {
-          path: "/home/reviewer/candidate/holophyte/runs.py",
+          path: "/home/reviewer/candidate/holophyte/loop/runs.py",
           line: 40,
           severity: "p1",
           message:
             "- [P1] **Lease is never released** — " +
-            "[holophyte/runs.py](/home/reviewer/candidate/holophyte/runs.py:40) " +
+            "[holophyte/loop/runs.py](/home/reviewer/candidate/holophyte/loop/runs.py:40) " +
             "returns before `release()` runs",
         },
         {
@@ -70,7 +70,7 @@ const DETAIL: RunDetailBody = {
             "goes back to the implementer (tests/test_gates.py witnesses it)",
         },
         {
-          path: "holophyte/loop.py",
+          path: "holophyte/loop/loop.py",
           line: 345,
           severity: "p0",
           message: "Merge gate conflict fails the run outright",
@@ -83,7 +83,7 @@ const DETAIL: RunDetailBody = {
 
 /** Files as `/runs/91/files` serves them: the branch has one change so far. */
 const FILES: RunFilesBody = {
-  files: [{ path: "holophyte/serve.py", status: "M", added: 12, deleted: 3 }],
+  files: [{ path: "holophyte/serve/serve.py", status: "M", added: 12, deleted: 3 }],
   total_added: 12,
   total_deleted: 3,
 };
@@ -132,15 +132,15 @@ test("the newest round's findings are cards pilled must, must, should, nit with 
   // The p1 card's stored path still carries the reviewer container's mount;
   // the location shows the repository's own.
   expect(cards.map((card) => card.querySelector("[data-location]")!.textContent)).toEqual([
-    "holophyte/runs.py:40",
-    "holophyte/loop.py:345",
+    "holophyte/loop/runs.py:40",
+    "holophyte/loop/loop.py:345",
     "criteria:2",
-    "holophyte/serve.py:12",
+    "holophyte/serve/serve.py:12",
   ]);
   expect(within(cards[1]!).getByText("Merge gate conflict fails the run outright")).toBeTruthy();
   expect(document.querySelector("[data-severity-counts]")!.textContent).toBe("2 must · 1 should");
   expect(document.querySelector("[data-files-label]")!.textContent).toBe("1 · +12 −3");
-  expect(document.querySelector("[data-file] [data-path]")!.textContent).toBe("holophyte/serve.py");
+  expect(document.querySelector("[data-file] [data-path]")!.textContent).toBe("holophyte/serve/serve.py");
   expect(screen.getByText("Review 2 of 2 · reviewing")).toBeTruthy();
   expect(document.querySelector("[data-started]")!.textContent).toBe(`started ${formatClock(T)} · writer`);
   const box = document.querySelector("[data-box]")!;

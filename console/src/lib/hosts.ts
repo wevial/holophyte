@@ -292,7 +292,7 @@ export function supervisorStale(onHost: boolean, status: Status): boolean {
 export const UNREACHABLE = "unreachable";
 
 /** The sweep states a host daemon's root `/attention` leaves alone
- *  (holophyte/serve_host.py `SWEEP_OK`). */
+ *  (holophyte/serve/serve_host.py `SWEEP_OK`). */
 export const SWEEP_OK = new Set(["fresh", "running"]);
 
 /** Whether `host` is the record a host daemon's own items ride on: its

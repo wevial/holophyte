@@ -36,12 +36,12 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
-from holophyte.gates import MergeParked  # noqa: E402 - after the sys.path insert
-from holophyte.stop import command  # noqa: E402 - after the sys.path insert above
+from holophyte.loop.gates import MergeParked  # noqa: E402 - after the sys.path insert
+from holophyte.loop.stop import command  # noqa: E402 - after the sys.path insert above
 
 # Spelled out rather than imported: the loop's parse is what is under test.
 DECLARED = "OUTCOME: NOT_REPRODUCED"
@@ -116,7 +116,7 @@ class NotReproducedTests(LoopFixture):
                          {"base": self.base, "candidate": head})
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        self.assertEqual(holophyte.board.failure_history(conn, 1), [])
+        self.assertEqual(holophyte.board.board.failure_history(conn, 1), [])
 
     def test_a_passing_evidence_check_parks_without_a_strike(self):
         fake, _ = self.loop(Declare("test the modal"), REPRODUCED)
@@ -194,7 +194,7 @@ class ResumedRouteTests(LoopFixture):
             [("paused", None), (None, "not_reproduced")])
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        self.assertEqual(holophyte.board.failure_history(conn, 1), [])
+        self.assertEqual(holophyte.board.board.failure_history(conn, 1), [])
         return fake
 
     def test_a_pause_after_the_declaring_turn_resumes_at_the_evidence_check(self):
@@ -220,7 +220,7 @@ class AnsweredParkTests(LoopFixture):
     def test_requeue_after_added_detail_is_a_fresh_attempt_without_a_strike(self):
         self.loop(Declare("test the modal"), REPRODUCED)
 
-        holophyte.operator.requeue(self.project, "KO-131",
+        holophyte.cli.operator.requeue(self.project, "KO-131",
                                    "the name empties after a second rename",
                                    out=io.StringIO())
 
@@ -244,13 +244,13 @@ class AnsweredParkTests(LoopFixture):
                          [("abandoned",), ("merged",)])
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        self.assertEqual(holophyte.board.failure_history(conn, 1), [])
+        self.assertEqual(holophyte.board.board.failure_history(conn, 1), [])
 
     def test_approve_lands_the_tests_locally_with_no_agent_turn(self):
         self.configure('[merge]\nmode = "local"\n')
         self.loop(Declare("test the modal"), REPRODUCED)
         test_commit = self.git("rev-parse", BRANCH).strip()
-        holophyte.operator.approve(self.project, "KO-131", "keep the guard",
+        holophyte.cli.operator.approve(self.project, "KO-131", "keep the guard",
                                    out=io.StringIO())
 
         fake, _ = self.loop()
@@ -269,7 +269,7 @@ class AnsweredParkPullRequestTests(MergeModeFixture):
         self.loop(Declare("test the modal"), REPRODUCED,
                   provider=self.provider())
         self.assertEqual(self.recorded(), [])
-        holophyte.operator.approve(self.project, "KO-131", "keep the guard",
+        holophyte.cli.operator.approve(self.project, "KO-131", "keep the guard",
                                    out=io.StringIO())
 
         fake, _ = self.loop(
@@ -290,9 +290,9 @@ class StorelessTests(LoopFixture):
     def test_a_storeless_run_parks_by_raising_merge_parked(self):
         fake = FakeAgent(Declare("test the modal"), REPRODUCED)
         with no_agent_processes(), \
-                patch.object(holophyte.loop, "agent", fake), \
+                patch.object(holophyte.loop.loop, "agent", fake), \
                 self.assertRaises(MergeParked) as parked:
-            holophyte.loop.run_task(self.project, a_task(),
+            holophyte.loop.loop.run_task(self.project, a_task(),
                                     provider=StubProvider(a_task()))
 
         head = self.git("rev-parse", BRANCH).strip()

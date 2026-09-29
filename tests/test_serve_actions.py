@@ -1,4 +1,4 @@
-"""`POST /actions/...` (`holophyte.serve_actions`): the unit actions and
+"""`POST /actions/...` (`holophyte.serve.serve_actions`): the unit actions and
 the requeue action behind the token, with their interventions rows.
 
 Run: python3 -m unittest discover -s tests -p 'test_serve_actions*' -v
@@ -19,8 +19,8 @@ import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
 from serve_action_fixture import UnitActionCases  # noqa: E402
 from serve_fixture import MIN, ServeTestCase  # noqa: E402 - after the insert
 
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.serve  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.serve  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
@@ -180,9 +180,9 @@ class ActionsTests(UnitActionCases, ServeTestCase):
     def test_actions_without_a_token_file_are_a_startup_error_on_loopback(self):
         self.seed()
         (self.db.parent / "config.toml").write_text("[serve]\nactions = true\n")
-        project = holophyte.project.Project.locate(self.target)
+        project = holophyte.config.project.Project.locate(self.target)
         with self.assertRaises(SystemExit) as raised:
-            holophyte.serve.serve(project, "127.0.0.1:0", out=io.StringIO())
+            holophyte.serve.serve.serve(project, "127.0.0.1:0", out=io.StringIO())
         message = str(raised.exception)
         self.assertIn("[serve] token_file", message)
         self.assertIn("actions", message)

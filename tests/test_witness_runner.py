@@ -11,9 +11,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import store
-from holophyte import config_tables
-from holophyte.project import Project
-from holophyte.witness import LOG_TAIL_BYTES, main_tip, red_kind, run_witnesses
+from holophyte.config import config_tables
+from holophyte.config.project import Project
+from holophyte.story.witness import LOG_TAIL_BYTES, main_tip, red_kind, run_witnesses
 from store.stories import approve_story, file_story, witness_ledger
 
 PYTHON = shlex.quote(sys.executable)
@@ -514,7 +514,7 @@ class MainTipTests(WitnessRunnerFixture, unittest.TestCase):
         target = self.project('[merge]\nmode = "pr"\n')
 
         started = time.monotonic()
-        with patch("holophyte.pr.PR_TIMEOUT", 1), \
+        with patch("holophyte.pr.pr.PR_TIMEOUT", 1), \
                 self.assertRaisesRegex(RuntimeError, "did not answer in 1s"):
             main_tip(target)
 

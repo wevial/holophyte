@@ -116,10 +116,10 @@ class PlanAdvisoryTests(StoryGraphCase):
     def test_unordered_children_naming_one_file_are_advised(self):
         children = plan()
         for child in children[:2]:
-            child[3] = ["Wire the export into `holophyte/cli.py`."]
+            child[3] = ["Wire the export into `holophyte/cli/cli.py`."]
         self.assert_advised(self.planned(children),
                             "children 01-a and 02-b both name "
-                            "holophyte/cli.py with no dependency path")
+                            "holophyte/cli/cli.py with no dependency path")
 
 
 if __name__ == "__main__":

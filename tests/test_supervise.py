@@ -22,16 +22,16 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.board  # noqa: E402 - after the sys.path insert above
-import holophyte.cli  # noqa: E402 - after the sys.path insert above
-import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
-import holophyte.pr  # noqa: E402 - after the sys.path insert above
-import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.runs  # noqa: E402 - after the sys.path insert above
-import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
-import holophyte.supervisor_lock  # noqa: E402 - after the sys.path insert above
-import holophyte.sweep_report  # noqa: E402 - after the sys.path insert above
+import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
+import holophyte.host.supervisor_lock  # noqa: E402 - after the sys.path insert above
+import holophyte.host.sweep_report  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 
@@ -66,8 +66,8 @@ class SuperviseTests(SweepTestCase):
         # provider is a tripwire below, so the values are never sent.
         (self.db.parent / "config.toml").write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n')
-        self.project = holophyte.project.Project.locate(self.target)
-        self.lock = holophyte.supervisor_lock.supervisor_lock_path(self.project)
+        self.project = holophyte.config.project.Project.locate(self.target)
+        self.lock = holophyte.host.supervisor_lock.supervisor_lock_path(self.project)
 
     def supervise(self, wait):
         """The mode with an injected sleep, and the provider as a tripwire."""
@@ -75,7 +75,9 @@ class SuperviseTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network():
-                code = holophyte.supervisor.supervise(self.project, wait=wait, out=out)
+                code = holophyte.host.supervisor.supervise(
+                    self.project, wait=wait, out=out
+                )
         return code, out.getvalue()
 
     def heartbeats(self):
@@ -90,16 +92,17 @@ class SuperviseTests(SweepTestCase):
         holder = subprocess.Popen(["sleep", "60"])
         self.addCleanup(holder.wait)
         self.addCleanup(holder.kill)
-        holophyte.supervisor_lock.acquire_supervisor_lock(self.lock, self.project.path,
-                                        pid=holder.pid, now=T0)
-        now = int(holophyte.supervisor.time() * 1000)
+        holophyte.host.supervisor_lock.acquire_supervisor_lock(
+            self.lock, self.project.path, pid=holder.pid, now=T0
+        )
+        now = int(holophyte.host.supervisor.time() * 1000)
         store.record_supervisor_heartbeat(self.conn, holder.pid, T0,
                                           now=now - 12_000)
         self.conn.commit()
 
         with patch.object(sys, "stderr", io.StringIO()), \
                 self.assertRaises(SystemExit) as exited:
-            holophyte.cli.cli(["--supervise", str(self.target)])
+            holophyte.cli.cli.cli(["--supervise", str(self.target)])
 
         message = str(exited.exception)
         self.assertIn(f"pid {holder.pid}", message.splitlines()[0])
@@ -114,8 +117,10 @@ class SuperviseTests(SweepTestCase):
         else entirely -- either way not this starter's to remove."""
         self.lock.write_text("")
 
-        with self.assertRaises(holophyte.supervisor_lock.SupervisorHeld) as refused:
-            holophyte.supervisor_lock.acquire_supervisor_lock(self.lock,
+        with self.assertRaises(
+            holophyte.host.supervisor_lock.SupervisorHeld
+        ) as refused:
+            holophyte.host.supervisor_lock.acquire_supervisor_lock(self.lock,
                                                               self.project.path,
                                             pid=os.getpid(), now=T0)
 
@@ -174,9 +179,9 @@ class SuperviseTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", io.StringIO()):
-                holophyte.supervisor.supervise_pass(self.project, pid, T0,
+                holophyte.host.supervisor.supervise_pass(self.project, pid, T0,
                                                     now=T0 + 6 * MINUTE)
-                holophyte.supervisor.supervise_pass(self.project, pid, T0,
+                holophyte.host.supervisor.supervise_pass(self.project, pid, T0,
                                                     now=T0 + 12 * MINUTE)
 
         self.assertEqual(
@@ -202,8 +207,8 @@ class LoopRestartTests(SweepTestCase):
     SECOND = 1000
 
     def lines(self, now):
-        return holophyte.sweep_report.sweep_lines(
-            holophyte.supervisor.sweep(self.project, self.conn, now))
+        return holophyte.host.sweep_report.sweep_lines(
+            holophyte.host.supervisor.sweep(self.project, self.conn, now))
 
     def restart_lines(self, now):
         return [line for line in self.lines(now) if "re-exec" in line]
@@ -280,9 +285,9 @@ class LoopRestartTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network():
-                holophyte.supervisor.supervise_pass(self.project, os.getpid(), T0,
+                holophyte.host.supervisor.supervise_pass(self.project, os.getpid(), T0,
                                        now=T0 + 200 * self.SECOND, out=out)
-                holophyte.supervisor.supervise_pass(self.project, os.getpid(), T0,
+                holophyte.host.supervisor.supervise_pass(self.project, os.getpid(), T0,
                                        now=T0 + 260 * self.SECOND, out=out)
 
         self.assertEqual(
@@ -305,11 +310,11 @@ class SupervisorConfigTests(SweepTestCase):
         once, and this test wants the file it just wrote.
         """
         (self.db.parent / "config.toml").write_text(text)
-        self.project = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.config.project.Project.locate(self.target)
 
     def test_an_absent_table_is_the_documented_defaults(self):
 
-        self.assertEqual(holophyte.config_tables.sweep_config(self.project),
+        self.assertEqual(holophyte.config.config_tables.sweep_config(self.project),
                          (5 * MINUTE, 2, 1.5, 3.0, 0.5, 60, 2 * MINUTE,
                           10 * MINUTE))
 
@@ -317,27 +322,35 @@ class SupervisorConfigTests(SweepTestCase):
         """A heartbeat two and three minutes old on two consecutive sweeps:
         not even a strike under the default five, a trip under one."""
         run_id = self.a_run()
-        holophyte.supervisor.sweep(self.project, self.conn, T0 + 2 * MINUTE)
-        default = holophyte.supervisor.sweep(self.project, self.conn, T0 + 3 * MINUTE)
+        holophyte.host.supervisor.sweep(self.project, self.conn, T0 + 2 * MINUTE)
+        default = holophyte.host.supervisor.sweep(
+            self.project, self.conn, T0 + 3 * MINUTE
+        )
         self.assertEqual(default.trips, [])
         self.assertIsNone(self.strikes(run_id))
 
         self.configure("[supervisor]\nheartbeat_stale_min = 1\n")
-        holophyte.supervisor.sweep(self.project, self.conn, T0 + 2 * MINUTE)
-        result = holophyte.supervisor.sweep(self.project, self.conn, T0 + 3 * MINUTE)
+        holophyte.host.supervisor.sweep(self.project, self.conn, T0 + 2 * MINUTE)
+        result = holophyte.host.supervisor.sweep(
+            self.project, self.conn, T0 + 3 * MINUTE
+        )
 
         trip, = result.trips
         self.assertEqual((trip.run_id, trip.condition),
-                         (run_id, holophyte.supervisor.STALE_HEARTBEAT))
+                         (run_id, holophyte.host.supervisor.STALE_HEARTBEAT))
         self.assertIn("over 2 consecutive sweeps", trip.evidence)
 
     def test_stale_strikes_moves_how_many_sightings_a_trip_needs(self):
         run_id = self.a_run()
         self.configure("[supervisor]\nstale_strikes = 3\n")
 
-        holophyte.supervisor.sweep(self.project, self.conn, T0 + 6 * MINUTE)
-        second = holophyte.supervisor.sweep(self.project, self.conn, T0 + 12 * MINUTE)
-        third = holophyte.supervisor.sweep(self.project, self.conn, T0 + 18 * MINUTE)
+        holophyte.host.supervisor.sweep(self.project, self.conn, T0 + 6 * MINUTE)
+        second = holophyte.host.supervisor.sweep(
+            self.project, self.conn, T0 + 12 * MINUTE
+        )
+        third = holophyte.host.supervisor.sweep(
+            self.project, self.conn, T0 + 18 * MINUTE
+        )
 
         self.assertEqual(second.trips, [])
         (line,) = second.watched
@@ -347,7 +360,7 @@ class SupervisorConfigTests(SweepTestCase):
     def test_unknown_keys_in_the_table_are_left_alone(self):
         self.configure("[supervisor]\nstale_heartbeat_min = 7\n")
 
-        self.assertEqual(holophyte.config_tables.sweep_config(self.project).heartbeat_stale_ms,
+        self.assertEqual(holophyte.config.config_tables.sweep_config(self.project).heartbeat_stale_ms,
                          5 * MINUTE)
 
     def test_a_value_outside_its_constraint_is_refused_at_startup(self):
@@ -382,9 +395,9 @@ class SupervisorConfigTests(SweepTestCase):
             with self.subTest(line=line):
                 self.configure(f"[supervisor]\n{line}\n")
                 with self.assertRaises(SystemExit) as raised, \
-                        patch.object(holophyte.sweep_report, "time",
+                        patch.object(holophyte.host.sweep_report, "time",
                                      lambda: (T0 + 6 * MINUTE) / 1000):
-                    holophyte.cli.cli(["--sweep", str(self.target)])
+                    holophyte.cli.cli.cli(["--sweep", str(self.target)])
                 message = str(raised.exception)
                 self.assertIn(f"[supervisor] {key}", message)
                 self.assertIn(constraint, message)
@@ -404,7 +417,7 @@ class SupervisorConfigTests(SweepTestCase):
             with self.subTest(line=line):
                 self.configure(line + "\n")
                 with self.assertRaises(SystemExit) as raised:
-                    holophyte.config_tables.sweep_config(self.project)
+                    holophyte.config.config_tables.sweep_config(self.project)
                 message = str(raised.exception)
                 self.assertIn("[supervisor] must be a table", message)
                 self.assertIn(f"got {kind}", message)
@@ -415,11 +428,11 @@ class SupervisorConfigTests(SweepTestCase):
         store.record_loop_restart(self.conn, self.project_id, "abc1234", now=T0)
         self.configure("[supervisor]\nrestart_grace_sec = 300\n")
 
-        patient = holophyte.supervisor.sweep(self.project, self.conn, T0 + 200_000)
+        patient = holophyte.host.supervisor.sweep(self.project, self.conn, T0 + 200_000)
         self.assertEqual(patient.restarts, ())
 
         self.configure("[supervisor]\nrestart_grace_sec = 120\n")
-        default = holophyte.supervisor.sweep(self.project, self.conn, T0 + 200_000)
+        default = holophyte.host.supervisor.sweep(self.project, self.conn, T0 + 200_000)
         self.assertEqual(default.restarts, (("abc1234", 200_000),))
 
     def test_sweep_interval_sec_is_the_supervisor_s_sleep(self):
@@ -434,8 +447,9 @@ class SupervisorConfigTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network():
-                code = holophyte.supervisor.supervise(self.project, wait=stop_after_one,
-                                                      out=out)
+                code = holophyte.host.supervisor.supervise(
+                    self.project, wait=stop_after_one, out=out
+                )
 
         self.assertEqual(code, 0)
         self.assertEqual(slept, [7])
@@ -451,11 +465,11 @@ class HeartbeatWhileTests(SweepTestCase):
     """
 
     def knobs(self, stale_ms):
-        return holophyte.config_tables.sweep_config(self.project)._replace(
+        return holophyte.config.config_tables.sweep_config(self.project)._replace(
             heartbeat_stale_ms=stale_ms)
 
     def sweep_now(self, knobs):
-        return holophyte.supervisor.sweep(
+        return holophyte.host.supervisor.sweep(
             self.project, self.conn, int(time.time() * 1000), knobs=knobs)
 
     def test_a_loop_that_beats_is_alive_and_one_that_stopped_is_dead(self):
@@ -466,7 +480,7 @@ class HeartbeatWhileTests(SweepTestCase):
         knobs = self.knobs(stale_ms=300)
         stale_span = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
 
-        with holophyte.runs.heartbeat_while(self.conn, run_id, 0.05):
+        with holophyte.loop.runs.heartbeat_while(self.conn, run_id, 0.05):
             phase_before = store.run_phase(self.conn, run_id)
             time.sleep(stale_span)
             alive = self.sweep_now(knobs)
@@ -521,8 +535,8 @@ class HostLabelTests(SweepTestCase):
         (self.db.parent / "config.toml").write_text(
             f'[report]\nhost_label = "{self.LABEL}"\n'
             '[board]\nproject_id = "p-1"\nteam = "T"\n')
-        self.project = holophyte.project.Project.locate(self.target)
-        self.lock = holophyte.supervisor_lock.supervisor_lock_path(self.project)
+        self.project = holophyte.config.project.Project.locate(self.target)
+        self.lock = holophyte.host.supervisor_lock.supervisor_lock_path(self.project)
 
     def test_the_sweep_table_and_watched_line_show_the_label(self):
         self.a_run()
@@ -542,19 +556,19 @@ class HostLabelTests(SweepTestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network(), \
-                    patch.object(holophyte.supervisor, "supervise_pass"):
-                holophyte.supervisor.supervise(
+                    patch.object(holophyte.host.supervisor, "supervise_pass"):
+                holophyte.host.supervisor.supervise(
                     self.project, wait=lambda _i: os.kill(os.getpid(), signal.SIGTERM),
                     out=out)
         holder = subprocess.Popen(["sleep", "60"])
         self.addCleanup(holder.wait)
         self.addCleanup(holder.kill)
-        holophyte.supervisor_lock.acquire_supervisor_lock(
+        holophyte.host.supervisor_lock.acquire_supervisor_lock(
             self.lock, self.project.path, pid=holder.pid, now=T0)
 
         with patch.object(sys, "stderr", io.StringIO()), \
                 self.assertRaises(SystemExit) as exited:
-            holophyte.cli.cli(["--supervise", str(self.target)])
+            holophyte.cli.cli.cli(["--supervise", str(self.target)])
 
         hostname = socket.gethostname()
         self.assertIn(f"as pid {os.getpid()} on {self.LABEL}", out.getvalue())
@@ -580,7 +594,7 @@ class ParkedPullRequestTests(SweepTestCase):
         (self.db.parent / "config.toml").write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n'
             '[merge]\nmode = "pr"\napprove = "human"\n')
-        self.project = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.config.project.Project.locate(self.target)
 
     def parked_on_pr(self):
         """A run parked on its pull request the way `_park_on_pr()` leaves
@@ -598,7 +612,7 @@ class ParkedPullRequestTests(SweepTestCase):
         return run_id
 
     def fake_github(self, answer):
-        """`holophyte.pr_status.graphql` faked at the pull-status read: answers
+        """`holophyte.pr.pr_status.graphql` faked at the pull-status read: answers
         `answer` (raised when it is an exception) and records each ask."""
         asked = []
 
@@ -608,7 +622,7 @@ class ParkedPullRequestTests(SweepTestCase):
                 raise answer
             return {"repository": {"pullRequest": answer}}
 
-        patcher = patch.object(holophyte.pr_status, "graphql", graphql)
+        patcher = patch.object(holophyte.pr.pr_status, "graphql", graphql)
         patcher.start()
         self.addCleanup(patcher.stop)
         return asked
@@ -616,7 +630,7 @@ class ParkedPullRequestTests(SweepTestCase):
     def one_pass(self, at, provider=None):
         out = io.StringIO()
         with no_network():
-            holophyte.supervisor.supervise_pass(
+            holophyte.host.supervisor.supervise_pass(
                 self.project, os.getpid(), T0, now=at, provider=provider, out=out)
         return out.getvalue()
 
@@ -712,7 +726,7 @@ class ParkedPullRequestTests(SweepTestCase):
         self.seen_before_activity(run_id)
         self.fake_github(self.ACTIVE_PULL)
         calls = self.fake_systemctl()
-        lock = holophyte.board.lease_turn_path(self.project)
+        lock = holophyte.board.board.lease_turn_path(self.project)
         lock.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
         self.addCleanup(os.close, fd)
@@ -1036,7 +1050,7 @@ class ParkedPullRequestTests(SweepTestCase):
         booting loop's own, and the pass starts nothing."""
         self.ready_ticket()
         calls = self.fake_systemctl()
-        lock = holophyte.board.lease_turn_path(self.project)
+        lock = holophyte.board.board.lease_turn_path(self.project)
         lock.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
         self.addCleanup(os.close, fd)

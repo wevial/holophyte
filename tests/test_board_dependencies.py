@@ -24,8 +24,8 @@ sys.path.insert(0, str(HERE))
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 from test_provider import FakeLinear  # noqa: E402
 
-import holophyte.dispatch  # noqa: E402
-import holophyte.runs  # noqa: E402
+import holophyte.loop.dispatch  # noqa: E402
+import holophyte.loop.runs  # noqa: E402
 import linear_provider  # noqa: E402
 import provider as board_seam  # noqa: E402
 import store.tickets as tickets  # noqa: E402
@@ -55,17 +55,17 @@ class BoardDependencyTests(LoopFixture):
     def mirror(self, store_mode):
         """One queue-mirror pass over the board; the listing it returned."""
         board = board_seam.LinearBoard("proj", "team", store_mode=store_mode)
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, board.team, self.target)
         with patch.object(sys, "stdout", io.StringIO()):
-            listed = holophyte.dispatch._mirror_queue(
+            listed = holophyte.loop.dispatch._mirror_queue(
                 self.project, conn, project_id, board)
         conn.commit()
         return [t["id"] for t in listed]
 
     def rows(self):
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         try:
             return {ident: (json.loads(deps), status, column)
                     for ident, deps, status, column in conn.execute(
@@ -93,7 +93,7 @@ class BoardDependencyTests(LoopFixture):
         self.assertEqual(self.rows()["KO-2"], ([], "ready", "ready"))
 
     def test_mirror_mode_lists_only_the_unblocked_and_keeps_dependencies(self):
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         project_id = tickets.ensure_project(conn, "team", self.target)
         tickets.mirror_ticket(conn, project_id, "uuid-KO-3", "KO-3", "a thing",
                               depends_on=["uuid-KO-9"])

@@ -3,8 +3,8 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-import holophyte.agents
-import holophyte.runs
+import holophyte.agents.agents
+import holophyte.loop.runs
 import store
 import store.tickets
 from tests.config_fixture import ConfigTestCase
@@ -53,9 +53,9 @@ class ConfiguredHeartbeatTests(ConfigTestCase):
         # The window is 3 s so no beat judged against it is late, and the
         # beat every 30 ms rather than every 1.5 s, as in
         # `tests/test_claim_lock_wait.py`, so two beats take a moment.
-        beat = holophyte.runs.heartbeat_while
+        beat = holophyte.loop.runs.heartbeat_while
         self.enterContext(patch.object(
-            holophyte.runs, "heartbeat_while",
+            holophyte.loop.runs, "heartbeat_while",
             lambda conn, run_id, interval_s, on_swept=None:
                 beat(conn, run_id, 0.03, on_swept)))
 
@@ -68,7 +68,7 @@ class ConfiguredHeartbeatTests(ConfigTestCase):
             acceptance_criteria=["beats during the command"],
             verification_commands=["true"])
         run_id = store.claim(self.conn, self.project_id, ticket)
-        reply = holophyte.agents.agent(
+        reply = holophyte.agents.agents.agent(
             self.project, role, "review it", self.repo,
             base_sha=self.sha, candidate_sha=self.sha,
             conn=self.conn, run_id=run_id)

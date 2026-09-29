@@ -16,13 +16,13 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.agents
-import holophyte.config
-import holophyte.fix_session
-import holophyte.harness
-import holophyte.loop
-import holophyte.project
-import holophyte.runs
+import holophyte.agents.agents
+import holophyte.agents.fix_session
+import holophyte.agents.harness
+import holophyte.config.config
+import holophyte.config.project
+import holophyte.loop.loop
+import holophyte.loop.runs
 import store
 
 # The fake harness: records its argv, then sleeps past the cap when the
@@ -55,7 +55,7 @@ class ClaudeTableTests(unittest.TestCase):
         holo = root / "holo"
         holo.mkdir()
         (holo / "config.toml").write_text(CONFIG + '[loop]\nfix_session = "resume"\n')
-        self.target = holophyte.project.Project(
+        self.target = holophyte.config.project.Project(
             path=self.repo, holo_dir=holo, store_path=holo / "store.db",
             config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
         bin_dir = root / "bin"
@@ -86,7 +86,7 @@ class ClaudeTableTests(unittest.TestCase):
                                  (self.run,)).fetchone()[0]
 
     def implement(self, goal, timeout=60):
-        return holophyte.agents.agent(self.target, "implement", goal, self.repo,
+        return holophyte.agents.agents.agent(self.target, "implement", goal, self.repo,
                                       timeout=timeout, conn=self.conn,
                                       run_id=self.run)
 
@@ -112,9 +112,9 @@ class ClaudeTableTests(unittest.TestCase):
         [first] = self.received()
         sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.repo,
                                       text=True).strip()
-        holophyte.fix_session.fix_turn(
+        holophyte.agents.fix_session.fix_turn(
             self.target, self.conn, self.run, 60, self.repo, 1, "the ticket",
-            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop._timed,
+            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop.loop._timed,
             check_cap=lambda *args: None)
         _, resumed = self.received()
         self.assertEqual(resumed[:-1], ["-p", "--resume", first[2], "--model",
@@ -171,7 +171,7 @@ class TableReviewCase(unittest.TestCase):
         self.holo = root / "holo"
         self.holo.mkdir()
         (self.holo / "config.toml").write_text(self.CONFIG)
-        self.target = holophyte.project.Project(
+        self.target = holophyte.config.project.Project(
             path=self.repo, holo_dir=self.holo, store_path=self.holo / "store.db",
             config_path=self.holo / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -208,7 +208,7 @@ class TableReviewCase(unittest.TestCase):
             "SELECT payload FROM runEvents WHERE kind = ? ORDER BY seq", (kind,))]
 
     def dispatch(self, role, goal, review_round=1):
-        return holophyte.agents.agent(
+        return holophyte.agents.agents.agent(
             self.target, role, goal, self.repo, base_sha=self.base,
             candidate_sha=self.candidate, timeout=60, conn=self.conn,
             run_id=self.run, review_round=review_round)
@@ -247,7 +247,7 @@ class CodexTableTests(TableReviewCase):
         (self.holo / "config.toml").write_text(
             '[agents]\nimplementer_isolation = "container"\n' + CODEX_CONFIG
             + f'[harnesses]\ncodex = "{pinned}"\n')
-        self.target = holophyte.project.Project(
+        self.target = holophyte.config.project.Project(
             path=self.repo, holo_dir=self.holo, store_path=self.target.store_path,
             config_path=self.target.config_path, worktrees=self.target.worktrees)
         self.dispatch("review", "review the candidate")
@@ -379,7 +379,7 @@ class DevinTableTests(TableReviewCase):
         # A 3 s stale threshold beats every 1.5 s.
         (self.holo / "config.toml").write_text(
             self.CONFIG + "[supervisor]\nheartbeat_stale_min = 0.05\n")
-        real = holophyte.agents.run_capped
+        real = holophyte.agents.agents.run_capped
 
         def run_capped(cmd, cwd, timeout, on_start=None, **kwargs):
             def started(proc):
@@ -391,8 +391,8 @@ class DevinTableTests(TableReviewCase):
                     other.close()
             return real(cmd, cwd, timeout, on_start=started, **kwargs)
 
-        with patch.object(holophyte.agents, "run_capped", run_capped), \
-                self.assertRaises(holophyte.runs.RunSwept):
+        with patch.object(holophyte.agents.agents, "run_capped", run_capped), \
+                self.assertRaises(holophyte.loop.runs.RunSwept):
             self.dispatch("review", "stall until swept")
         [turn] = self.received()
         self.assertEqual(turn["argv"][-1], "stall until swept")
@@ -430,7 +430,7 @@ class CodexImplementerTests(ClaudeTableTests):
         self.addCleanup(env.stop)
 
     def implement(self, goal, budget_min=1):
-        return holophyte.loop._timed(self.target, self.conn, self.run, 60,
+        return holophyte.loop.loop._timed(self.target, self.conn, self.run, 60,
                                      self.repo, budget_min, goal)
 
     def test_implement_turn_runs_the_adapter_argv_and_records_its_session(self):
@@ -451,9 +451,9 @@ class CodexImplementerTests(ClaudeTableTests):
         self.implement("implement the thing")
         sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.repo,
                                       text=True).strip()
-        holophyte.fix_session.fix_turn(
+        holophyte.agents.fix_session.fix_turn(
             self.target, self.conn, self.run, 60, self.repo, 1, "the ticket",
-            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop._timed,
+            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop.loop._timed,
             check_cap=lambda *args: None)
         _, resumed = self.received()
         self.assertEqual(resumed[:-1], ["exec", "resume", SESSION,
@@ -508,7 +508,7 @@ class DevinImplementerTests(ClaudeTableTests):
         fake.chmod(0o755)
 
     def implement(self, goal, budget_min=1):
-        return holophyte.loop._timed(self.target, self.conn, self.run, 60,
+        return holophyte.loop.loop._timed(self.target, self.conn, self.run, 60,
                                      self.repo, budget_min, goal)
 
     def assert_turn_then_list(self, goal):
@@ -548,7 +548,7 @@ class DevinImplementerTests(ClaudeTableTests):
         self.assertIsNone(self.session())
 
     def test_a_run_swept_while_its_session_is_listed_kills_the_list(self):
-        real = holophyte.agents.run_capped
+        real = holophyte.agents.agents.run_capped
 
         def run_capped(cmd, cwd, timeout, on_start=None, **kwargs):
             def started(proc):
@@ -570,9 +570,9 @@ class DevinImplementerTests(ClaudeTableTests):
 
         began = time.monotonic()
         with patch.dict(os.environ, {"FAKE_LIST_STALLS": "1"}), \
-                patch.object(holophyte.agents, "run_capped", run_capped), \
-                self.assertRaises(holophyte.runs.RunSwept):
-            holophyte.loop._timed(self.target, self.conn, self.run, 0.05,
+                patch.object(holophyte.agents.agents, "run_capped", run_capped), \
+                self.assertRaises(holophyte.loop.runs.RunSwept):
+            holophyte.loop.loop._timed(self.target, self.conn, self.run, 0.05,
                                   self.repo, 1, "implement the thing")
         self.assertLess(time.monotonic() - began, 20)
         self.assert_turn_then_list("implement the thing")
@@ -582,9 +582,9 @@ class DevinImplementerTests(ClaudeTableTests):
         self.implement("implement the thing")
         sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.repo,
                                       text=True).strip()
-        holophyte.fix_session.fix_turn(
+        holophyte.agents.fix_session.fix_turn(
             self.target, self.conn, self.run, 60, self.repo, 1, "the ticket",
-            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop._timed,
+            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop.loop._timed,
             check_cap=lambda *args: None)
         _, _, resumed, _ = self.received()
         self.assertEqual(resumed["argv"][:-1], [*DEVIN_IMPLEMENTER, "-r",
@@ -616,31 +616,31 @@ class ContainerImplementerTests(unittest.TestCase):
             launched.append(argv)
             return 0, "fake turn ran"
 
-        with patch.object(holophyte.agents.isolation, "launch", launch):
+        with patch.object(holophyte.agents.agents.isolation, "launch", launch):
             run()
         [argv] = launched
         return argv
 
     def test_a_claude_turn_records_the_session_id_its_argv_carries(self):
         self.configure(CONFIG)
-        argv = self.launch_turn(lambda: holophyte.agents.agent(
+        argv = self.launch_turn(lambda: holophyte.agents.agents.agent(
             self.target, "implement", "implement the thing", self.repo,
             conn=self.conn, run_id=self.run))
         chosen = argv[argv.index("--session-id") + 1]
         self.assertEqual(str(uuid.UUID(chosen, version=4)), chosen)
         self.assertEqual(
-            holophyte.harness.agent_session(self.target, "implement", argv),
+            holophyte.agents.harness.agent_session(self.target, "implement", argv),
             chosen)
         self.assertEqual(self.session(), chosen)
 
     def test_its_fix_round_resumes_that_session_with_the_image_binary(self):
         self.configure(CONFIG)
-        argv = self.launch_turn(lambda: holophyte.agents.agent(
+        argv = self.launch_turn(lambda: holophyte.agents.agents.agent(
             self.target, "implement", "implement the thing", self.repo,
             conn=self.conn, run_id=self.run))
         chosen = argv[argv.index("--session-id") + 1]
         self.assertEqual(
-            holophyte.fix_session.resume_argv(self.target, self.conn, self.run),
+            holophyte.agents.fix_session.resume_argv(self.target, self.conn, self.run),
             (["claude", "-p", "--resume", chosen, "--model", "sonnet",
               "--effort", "low"], None))
 
@@ -650,7 +650,7 @@ class ContainerImplementerTests(unittest.TestCase):
         fake = Path(os.environ["PATH"].split(os.pathsep)[0]) / "devin"
         fake.write_text(f"#!{sys.executable}\n{FAKE_DEVIN_IMPLEMENTER}")
         fake.chmod(0o755)
-        self.launch_turn(lambda: holophyte.loop._timed(
+        self.launch_turn(lambda: holophyte.loop.loop._timed(
             self.target, self.conn, self.run, 60, self.repo, 1,
             "implement the thing"))
         self.assertFalse(self.calls.exists())
@@ -659,7 +659,7 @@ class ContainerImplementerTests(unittest.TestCase):
             "SELECT count(*) FROM runEvents WHERE kind = 'agent_session'"
         ).fetchone(), (0,))
         self.assertEqual(
-            holophyte.fix_session.resume_argv(self.target, self.conn, self.run),
+            holophyte.agents.fix_session.resume_argv(self.target, self.conn, self.run),
             (None, "no recorded session"))
 
 
@@ -672,12 +672,12 @@ class CriticTableTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
         (root / "config.toml").write_text(config)
-        return holophyte.project.Project(
+        return holophyte.config.project.Project(
             path=root, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=root / "worktrees")
 
     def turn(self, config):
-        return holophyte.harness.critic_seat(self.target(config)).turn("GOAL")
+        return holophyte.agents.harness.critic_seat(self.target(config)).turn("GOAL")
 
     def test_critic_turn_defaults_to_codex_luna_medium_and_takes_overrides(self):
         bypass = ["--dangerously-bypass-approvals-and-sandbox", "GOAL"]
@@ -692,15 +692,15 @@ class CriticTableTests(unittest.TestCase):
     def test_a_claude_critic_is_accepted_and_a_claude_reviewer_refused(self):
         critic = self.target('[agents.critic]\nharness = "claude"\n'
                              'model = "sonnet"\neffort = "high"\n')
-        holophyte.config.check_document(critic)
-        turn = holophyte.harness.critic_seat(critic).turn("GOAL")
+        holophyte.config.config.check_document(critic)
+        turn = holophyte.agents.harness.critic_seat(critic).turn("GOAL")
         self.assertEqual(turn[:3], ["claude", "-p", "--session-id"])
         self.assertEqual(turn[4:], ["--model", "sonnet", "--effort", "high",
                                     "GOAL"])
         with self.assertRaisesRegex(
                 SystemExit, r"\[agents\.reviewer\] harness: 'claude' supports "
                             r"critic, implementer, not reviewer"):
-            holophyte.config.check_document(self.target(
+            holophyte.config.config.check_document(self.target(
                 '[agents.reviewer]\nharness = "claude"\nmodel = "sonnet"\n'))
 
     def test_critic_refusals_name_the_table_and_the_problem(self):
@@ -712,7 +712,7 @@ class CriticTableTests(unittest.TestCase):
         ):
             with self.subTest(config=config):
                 with self.assertRaisesRegex(SystemExit, message):
-                    holophyte.config.check_document(self.target(config))
+                    holophyte.config.config.check_document(self.target(config))
 
 
 if __name__ == "__main__":

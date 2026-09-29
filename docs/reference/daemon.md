@@ -54,7 +54,7 @@ project has no supervisor unit, and the host sweep's own action,
 written in that project's store, as on a project daemon; a store locked
 when the action writes is that project's 503. Every read a host daemon
 makes waits at most one second for a store's lock (`HOST_READ_WAIT_S` in
-`holophyte/serve_host.py`), not the store's own thirty, so an action can
+`holophyte/serve/serve_host.py`), not the store's own thirty, so an action can
 answer 503 `database is locked` during a brief write lock where a project
 daemon would have waited ([HTTP endpoints](http.md#the-host-daemon)).
 
@@ -251,7 +251,7 @@ fix turns retain the failure and recovery path.
 The loop records one `detail`-level runEvent of kind `implementer_output`:
 its summary is the last non-empty line of the implementer's final message
 and its payload the message's last 4000 characters
-(`OUTPUT_TAIL` in `holophyte/loop.py`), passed through the prose redactor
+(`OUTPUT_TAIL` in `holophyte/loop/loop.py`), passed through the prose redactor
 (`redact_prose()` in `holophyte/redact.py`): every credential the config
 and the environment hold, and every `name = value` pair with a secret's
 name wherever it sits in the text, read `[redacted]`. It sits beside the

@@ -13,7 +13,7 @@ from fake_agent import APPROVE, Commit  # noqa: E402
 from loop_fixture import BRANCH, LoopFixture, StubProvider, a_task  # noqa: E402
 
 import store.read  # noqa: E402
-from holophyte.board import failure_history  # noqa: E402
+from holophyte.board.board import failure_history  # noqa: E402
 
 SECOND = "Given the thing, when it runs twice, then it works twice"
 

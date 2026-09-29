@@ -18,13 +18,13 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-import holophyte.cli  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402
+import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.board import mirror_task  # noqa: E402
-from holophyte.board_import import board_import  # noqa: E402
+from holophyte.board.board import mirror_task  # noqa: E402
+from holophyte.board.board_import import board_import  # noqa: E402
 
 TEAM = "team-1"
 CRITERIA = ["Given the ticket, then it is worked"]
@@ -90,7 +90,7 @@ class BoardImportTests(unittest.TestCase):
     def locate(self, name):
         repo = self.root / name
         repo.mkdir()
-        target = holophyte.project.Project.locate(repo)
+        target = holophyte.config.project.Project.locate(repo)
         target.store_path.parent.mkdir(parents=True, exist_ok=True)
         return target
 
@@ -181,7 +181,7 @@ class NativeRefusalTests(unittest.TestCase):
         self.addCleanup(home.stop)
         repo = root / "repo"
         repo.mkdir()
-        target = holophyte.project.Project.locate(repo)
+        target = holophyte.config.project.Project.locate(repo)
         target.config_path.parent.mkdir(parents=True, exist_ok=True)
         target.config_path.write_text('[board]\nkind = "native"\nkey = "NAT"\n')
 
@@ -191,7 +191,7 @@ class NativeRefusalTests(unittest.TestCase):
         with patch.object(linear_provider, "_gql", asked), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 self.assertRaises(SystemExit) as raised:
-            holophyte.cli.cli(["--board-import", str(repo)])
+            holophyte.cli.cli.cli(["--board-import", str(repo)])
 
         self.assertIsInstance(raised.exception.code, str)  # exits 1
         self.assertIn("[board] kind", raised.exception.code)

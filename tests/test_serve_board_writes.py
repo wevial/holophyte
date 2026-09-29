@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
-from holophyte.project import Project  # noqa: E402
+from holophyte.config.project import Project  # noqa: E402
 from tests.host_fixture import HostFixture  # noqa: E402
 from tests.test_serve_board import NATIVE, ServeBoardCase  # noqa: E402
 from tests.test_store_board import body  # noqa: E402

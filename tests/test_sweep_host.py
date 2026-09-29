@@ -27,19 +27,19 @@ from host_fixture import REPO, HostFixture  # noqa: E402
 from loop_fixture import StubProvider  # noqa: E402
 from phase_fixture import advance_phase  # noqa: E402
 
-import holophyte.cli  # noqa: E402
-import holophyte.supervisor_lock as supervisor_lock  # noqa: E402
-import holophyte.sweep_host as sweep_host  # noqa: E402
+import holophyte.cli.cli  # noqa: E402
+import holophyte.host.supervisor_lock as supervisor_lock  # noqa: E402
+import holophyte.host.sweep_host as sweep_host  # noqa: E402
 import store  # noqa: E402
 import store.launch_backoff  # noqa: E402
 import store.schema  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte import deadline  # noqa: E402
-from holophyte.host import Host  # noqa: E402
-from holophyte.pr_status import PullStatus  # noqa: E402
-from holophyte.project import Project  # noqa: E402
-from holophyte.reconcile import GITHUB_BUDGET  # noqa: E402
-from holophyte.supervisor import supervisor_liveness_line  # noqa: E402
+from holophyte.config.project import Project  # noqa: E402
+from holophyte.host.host import Host  # noqa: E402
+from holophyte.host.reconcile import GITHUB_BUDGET  # noqa: E402
+from holophyte.host.supervisor import supervisor_liveness_line  # noqa: E402
+from holophyte.pr.pr_status import PullStatus  # noqa: E402
 from provider import LinearBoard  # noqa: E402
 
 MINUTE = 60 * 1000
@@ -118,7 +118,7 @@ class HostSweepFixture(HostFixture):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.started_loops = []
-        patcher = patch("holophyte.supervisor.start_loop_for",
+        patcher = patch("holophyte.host.supervisor.start_loop_for",
                         lambda target, *a, **k:
                         self.started_loops.append(target.path.name))
         patcher.start()
@@ -169,8 +169,8 @@ class HostSweepFixture(HostFixture):
 
         out = io.StringIO()
         with patch.object(sweep_host, "_provider", lambda _target: provider), \
-                patch("holophyte.pr_status.pull_status", pull_status), \
-                patch("holophyte.supervisor.linear_budget_low",
+                patch("holophyte.pr.pr_status.pull_status", pull_status), \
+                patch("holophyte.host.supervisor.linear_budget_low",
                       return_value=False):
             code = sweep_host.supervise_host(Host.locate(), once=True, out=out,
                                              clock=lambda: at)
@@ -180,8 +180,8 @@ class HostSweepFixture(HostFixture):
         """`run_once()` with GitHub's read replaced by `pull_status`."""
         out = io.StringIO()
         with patch.object(sweep_host, "_provider", lambda _target: provider), \
-                patch("holophyte.pr_status.pull_status", pull_status), \
-                patch("holophyte.supervisor.linear_budget_low",
+                patch("holophyte.pr.pr_status.pull_status", pull_status), \
+                patch("holophyte.host.supervisor.linear_budget_low",
                       return_value=False):
             code = sweep_host.supervise_host(Host.locate(), once=True, out=out,
                                              clock=lambda: at)
@@ -541,8 +541,8 @@ import sys, time
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, sys.argv[1])
-import holophyte.sweep_host as sweep_host
-from holophyte.host import Host
+import holophyte.host.sweep_host as sweep_host
+from holophyte.host.host import Host
 
 def reconcile(entry, seen, state, now, out):
     if entry.name == "beta":
@@ -852,12 +852,12 @@ class RegisteredProjectTests(HostSweepFixture):
     def test_the_loop_spawns_nothing_for_a_registered_project(self):
         spawned = []
         loose = self.repo("loose")
-        with patch.object(holophyte.cli, "SPAWN",
+        with patch.object(holophyte.cli.cli, "SPAWN",
                           lambda argv, **_: spawned.append(argv) or
                           type("Child", (), {"pid": 1})()):
             out = io.StringIO()
-            holophyte.cli.start_supervisor(self.target("alpha"), out=out)
-            holophyte.cli.start_supervisor(Project.locate(loose), out=out)
+            holophyte.cli.cli.start_supervisor(self.target("alpha"), out=out)
+            holophyte.cli.cli.start_supervisor(Project.locate(loose), out=out)
 
         self.assertIn(f"the host sweep watches {self.paths['alpha']}",
                       out.getvalue())
@@ -874,7 +874,7 @@ class RegisteredProjectTests(HostSweepFixture):
         self.assertEqual(self.started_loops, [])
 
     def test_a_hand_supervise_of_a_registered_project_is_refused(self):
-        with patch.object(holophyte.cli, "supervise",
+        with patch.object(holophyte.cli.cli, "supervise",
                           lambda *a: self.fail("supervised a registered"
                                                " project")), \
                 self.assertRaises(SystemExit) as refused:

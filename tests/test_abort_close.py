@@ -18,7 +18,7 @@ sys.path.insert(0, str(HERE))
 from fake_agent import APPROVE, IMPLEMENT, Commit, FakeAgent, Idle, Reply  # noqa: E402
 from loop_fixture import BRANCH, MergeModeFixture  # noqa: E402
 
-import holophyte.cli  # noqa: E402
+import holophyte.cli.cli  # noqa: E402
 
 NOTE = "wrong approach"
 BOARD = '[board]\nteam = "team-1"\nproject_id = "project-1"\n'
@@ -31,10 +31,10 @@ class AbortCloseTests(MergeModeFixture):
         """`factory.py TARGET --abort KO-131 FLAGS --note NOTE` through the
         real command line; the board is the loop's stub."""
         out = io.StringIO()
-        with patch.object(holophyte.cli, "board_for",
+        with patch.object(holophyte.cli.cli, "board_for",
                           return_value=self.provider()), \
                 contextlib.redirect_stdout(out):
-            holophyte.cli.cli([str(self.target), "--abort", "KO-131", *flags,
+            holophyte.cli.cli.cli([str(self.target), "--abort", "KO-131", *flags,
                                "--note", NOTE])
         return out.getvalue()
 
@@ -154,6 +154,6 @@ class AbortCloseTests(MergeModeFixture):
         err = io.StringIO()
         with contextlib.redirect_stderr(err), \
                 self.assertRaises(SystemExit) as exited:
-            holophyte.cli.cli([str(self.target), "--close-pr"])
+            holophyte.cli.cli.cli([str(self.target), "--close-pr"])
         self.assertNotEqual(exited.exception.code, 0)
         self.assertIn("--abort", err.getvalue())

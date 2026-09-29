@@ -3,9 +3,9 @@ import io
 from dataclasses import FrozenInstanceError
 from unittest.mock import patch
 
-import holophyte.claim
-import holophyte.operator
-import holophyte.run
+import holophyte.cli.operator
+import holophyte.loop.claim
+import holophyte.loop.run
 from tests.fake_agent import APPROVE, Commit, Idle
 from tests.loop_fixture import BRANCH
 
@@ -13,7 +13,7 @@ from tests.loop_fixture import BRANCH
 def landing_path(case, mode):
     """Capture the claim and landing values around real gates and merges."""
     claims, landed = [], []
-    build, land = holophyte.claim.claimed_run, holophyte.run.land
+    build, land = holophyte.loop.claim.claimed_run, holophyte.loop.run.land
 
     def claim(*args, **kwargs):
         run = build(*args, **kwargs, clock=lambda: 100.0)
@@ -46,14 +46,16 @@ def landing_path(case, mode):
         case.configure('[merge]\napprove = "' + ('human' if mode == 'approved'
                        else 'auto') + '"\n'
                        'after = ["git log -1 --format=%B > after.txt"]\n')
-    with patch.object(holophyte.claim, 'claimed_run', side_effect=claim), \
-            patch.object(holophyte.run, 'land', side_effect=capture):
+    with patch.object(holophyte.loop.claim, 'claimed_run', side_effect=claim), \
+            patch.object(holophyte.loop.run, 'land', side_effect=capture):
         script = [Commit('candidate'), APPROVE]
         if mode == 'pr':
             script.append(Idle(''))
         case.loop(*script, provider=case.provider())
         if mode == 'approved':
-            holophyte.operator.approve(case.project, 'KO-131', 'ok', out=io.StringIO())
+            holophyte.cli.operator.approve(
+                case.project, 'KO-131', 'ok', out=io.StringIO()
+            )
             case.loop(provider=case.provider())
     case.assertEqual(len(landed), 1)
     run = landed[0]

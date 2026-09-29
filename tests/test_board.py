@@ -2,7 +2,7 @@
 import unittest
 
 import store
-from holophyte import board
+from holophyte.board import board
 from tests.serve_fixture import MIN, ServeTestCase
 
 

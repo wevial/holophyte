@@ -43,7 +43,7 @@ export interface FindingParts {
   criterion: string | null;
 }
 
-// The reviewer's checklist line, the shape `holophyte/review.py` writes and
+// The reviewer's checklist line, the shape `holophyte/review/review.py` writes and
 // reads: `CRITERION n: met|not met|unwitnessed — reason`, with the
 // criterion's own text on the following lines.
 const CRITERION_RE = /^\s*CRITERION\s+(\d+)\s*:\s*(met|not met|unwitnessed)\b\s*(?:[-–—:]+\s*)?(.*)$/i;
@@ -134,7 +134,7 @@ function findingKey(finding: Finding): string {
   return [identity.path, identity.line ?? -1, identity.severity].join("\x1f");
 }
 
-// The ledger row a changes-requested round leaves (holophyte/loop.py):
+// The ledger row a changes-requested round leaves (holophyte/loop/loop.py):
 // "Round N: REQUEST_CHANGES -> fix round", the reviewer's verdict, then
 // "Implementer response:" and the fix round's reply, whose ADDRESS /
 // FOLLOW_UP / DECLINE lines are the implementer's adjudications.

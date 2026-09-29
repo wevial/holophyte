@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli
-import holophyte.report as report
+import holophyte.cli.cli
+import holophyte.cli.report as report
 import store
 import store.tickets
 from tests.phase_fixture import advance_phase, finish_run
@@ -39,8 +39,8 @@ class LiveReportTests(ReportStoreCase):
             self.completed_run(1, 5, 25, 0, "merged")
 
     def test_failure_counts_in_report_and_sweep(self):
-        from holophyte.project import Project
-        from holophyte.sweep_report import sweep_report
+        from holophyte.config.project import Project
+        from holophyte.host.sweep_report import sweep_report
 
         for number, kind in enumerate(('verify', 'infra', 'verify', 'budget'), 20):
             run = self.live_run(number, NOW - 1000, 'working')
@@ -50,7 +50,9 @@ class LiveReportTests(ReportStoreCase):
         self.assertEqual([line for line in report.report_lines(self.conn)
                           if line.startswith('failures ')], expected)
         out = io.StringIO()
-        with patch('holophyte.sweep_report.review_container_lines', return_value=[]):
+        with patch(
+            'holophyte.host.sweep_report.review_container_lines', return_value=[]
+        ):
             sweep_report(Project.locate(self.target), conn=self.conn, out=out, now=NOW)
         for line in expected:
             self.assertIn(line, out.getvalue().splitlines())
@@ -137,7 +139,7 @@ class LiveReportTests(ReportStoreCase):
     def test_live_block_precedes_unchanged_finished_table_and_cli(self):
         self.live_run(454, NOW - 19 * 60_000, "merge_gate", URL)
         expected = ["in flight:", f"KO-454  merge_gate  19m  hb 12s  {URL}", ""]
-        with patch("holophyte.report.time.time", return_value=NOW / 1000):
+        with patch("holophyte.cli.report.time.time", return_value=NOW / 1000):
             lines = report.report_lines(self.conn)
             self.assertEqual(lines[:3], expected)
             # At NOW, KO-1's merge is inside both windows.
@@ -148,7 +150,7 @@ class LiveReportTests(ReportStoreCase):
             self.assertEqual("\n".join(lines[7:]), FINISHED)
             out = io.StringIO()
             with patch.object(sys, "stdout", out):
-                holophyte.cli.cli(["--report", str(self.target)])
+                holophyte.cli.cli.cli(["--report", str(self.target)])
         self.assertEqual(out.getvalue().splitlines()[1:4], expected)
 
     def test_no_unfinished_runs(self):
@@ -200,7 +202,7 @@ class MigrationReportTests(ReportStoreCase):
         store.record_intervention(self.conn, run, "migrate", "operator note")
         out = io.StringIO()
         with patch.object(sys, "stdout", out):
-            holophyte.cli.cli(["--report", str(self.target)])
+            holophyte.cli.cli.cli(["--report", str(self.target)])
         line = next(line for line in out.getvalue().splitlines()
                     if line.startswith("store schema"))
         self.assertIn(
@@ -208,10 +210,14 @@ class MigrationReportTests(ReportStoreCase):
         self.assertIn("by abc1234, pid 4321, factory.py)", line)
 
     def test_readers_allow_a_store_without_migration_history(self):
-        import holophyte.serve_runs
+        import holophyte.serve.serve_runs
         self.conn.execute("DELETE FROM interventions WHERE action = 'migrate'")
         self.conn.execute("ALTER TABLE interventions DROP COLUMN note")
         self.conn.commit()
         self.assertEqual(report.migration_header(self.conn), [])
         self.assertEqual(
-            holophyte.serve_runs.migration_rows(self.conn, 0, 10, self.project_id), [])
+            holophyte.serve.serve_runs.migration_rows(
+                self.conn, 0, 10, self.project_id
+            ),
+            [],
+        )

@@ -50,17 +50,17 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board  # noqa: E402 - after the sys.path insert above
-import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
-import holophyte.dispatch  # noqa: E402 - after the sys.path insert above
-import holophyte.findings  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.merge_gate  # noqa: E402 - after the sys.path insert above
-import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.runs  # noqa: E402 - after the sys.path insert above
-import holophyte.serve  # noqa: E402 - after the sys.path insert above
-import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
+import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.dispatch  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.merge_gate  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
+import holophyte.review.findings  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.serve  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -71,12 +71,12 @@ class LockFailureWordingTests(LoopFixture):
         only pull-request mode's verify out): the gate's verify merges
         `main` into the branch and judges what lands on main next."""
         log = self.target.parent / "lock.log"
-        path = holophyte.gates.merge_lock_path(self.project)
+        path = holophyte.loop.gates.merge_lock_path(self.project)
         verify = (f"if [ -e {shlex.quote(str(path))} ]; then echo locked;"
                   f" else echo free; fi >> {shlex.quote(str(log))}")
         # With no earlier pass to cite, as when `main` has moved: the
         # gate's verify runs rather than repeating the round's answer.
-        with patch.object(holophyte.gates, "_pass_key", return_value=None):
+        with patch.object(holophyte.loop.gates, "_pass_key", return_value=None):
             self.loop(Commit("candidate"), APPROVE,
                       provider=StubProvider(dict(a_task(), verify=verify)))
         # The review round's verify, then the gate's.
@@ -84,10 +84,10 @@ class LockFailureWordingTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_gate_lock_timeout_records_typed_park(self):
-        path = holophyte.gates.merge_lock_path(self.project)
+        path = holophyte.loop.gates.merge_lock_path(self.project)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("7 0\n")
-        with patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0):
+        with patch.object(holophyte.loop.gates, "MERGE_LOCK_WAIT_SEC", 0):
             self.loop(Commit("candidate"), APPROVE)
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("merge_lock",)])
         question, = self.read("SELECT blockedQuestion FROM tickets")[0]
@@ -95,13 +95,13 @@ class LockFailureWordingTests(LoopFixture):
             f"merge lock: merge lock {path} held by run 7"))
 
     def test_gate_lock_failure_keeps_gate_wording(self):
-        gates = holophyte.gates
+        gates = holophyte.loop.gates
         path = gates.merge_lock_path(self.project)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("7 0\n")
         with patch.object(gates, 'MERGE_LOCK_WAIT_SEC', 0):
             with self.assertRaises(gates.MergeLockHeld) as caught:
-                with holophyte.merge_gate._gate_lock(
+                with holophyte.loop.merge_gate._gate_lock(
                         self.project, None, 8, None, 'KO-2', 'task/test', 'abc', 60):
                     self.fail('entered a held lock')
         self.assertEqual(str(caught.exception),
@@ -156,7 +156,7 @@ class CrashReasonTests(LoopFixture):
 
     def crash_in_record_round(self):
         """A run whose review round's store write raises the way a locked
-        store does, from inside `holophyte/runs.py`: the innermost frame in
+        store does, from inside `holophyte/loop/runs.py`: the innermost frame in
         the factory's own code is `record_round`, the write's caller."""
         with patch.object(store, "record_review_round",
                           side_effect=self.LOCKED):
@@ -168,7 +168,7 @@ class CrashReasonTests(LoopFixture):
         self.assertEqual(self.rc, 1)
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertRegex(reason, r"^OperationalError: database is locked"
-                                 r" \(at holophyte/runs\.py:record_round:\d+\)$")
+                                 r" \(at holophyte/loop/runs\.py:record_round:\d+\)$")
         self.assertIn(f"[holo2] run crashed: {reason}", out)
 
     def test_traceback_is_an_event(self):
@@ -202,7 +202,7 @@ class CrashReasonTests(LoopFixture):
             # library's `json` package and nothing else.
             e = err.with_traceback(err.__traceback__.tb_next)
 
-        reason = holophyte.dispatch.crash_reason(e)
+        reason = holophyte.loop.dispatch.crash_reason(e)
 
         self.assertTrue(reason.startswith("JSONDecodeError: Expecting"), reason)
         self.assertNotIn("(at ", reason)
@@ -321,8 +321,8 @@ class MergeApprovalTests(LoopFixture):
 
         self.loop(Commit("the scripted work"), APPROVE)
 
-        import holophyte.serve
-        code, body = holophyte.serve.attention(self.project)
+        import holophyte.serve.serve
+        code, body = holophyte.serve.serve.attention(self.project)
         self.assertEqual(code, 200)
         blocked = [item for item in body["items"] if item["kind"] == "blocked"]
         # The item names the parked run; this path records no `redirect`
@@ -354,7 +354,7 @@ class MergeApprovalTests(LoopFixture):
         conn = sqlite3.connect(self.db)
         self.addCleanup(conn.close)
         for (ticket_id,) in conn.execute("SELECT id FROM tickets"):
-            self.assertEqual(holophyte.board.failure_history(conn, ticket_id),
+            self.assertEqual(holophyte.board.board.failure_history(conn, ticket_id),
                              [])
 
     def test_approve_then_the_next_claim_merges_the_candidate_unreviewed(self):
@@ -372,7 +372,7 @@ class MergeApprovalTests(LoopFixture):
                   provider=StubProvider(dict(task)))
         marker.unlink()
         out = io.StringIO()
-        holophyte.operator.approve(self.project, "KO-131", "ok", out=out)
+        holophyte.cli.operator.approve(self.project, "KO-131", "ok", out=out)
         self.assertIn("KO-131 approved: run 1", out.getvalue())
 
         fake, guard = self.loop(provider=StubProvider(dict(task)))
@@ -406,9 +406,9 @@ class MergeApprovalTests(LoopFixture):
         on this path as on a fresh cut."""
         self.configure('[merge]\napprove = "human"\n')
         self.loop(Commit("the scripted work"), APPROVE)
-        holophyte.operator.approve(self.project, "KO-131", "ok", out=io.StringIO())
+        holophyte.cli.operator.approve(self.project, "KO-131", "ok", out=io.StringIO())
         seen = []
-        real = holophyte.merge_gate.set_phase
+        real = holophyte.loop.merge_gate.set_phase
 
         def watching(conn, run_id, phase, note=None):
             (branch,) = conn.execute(
@@ -416,7 +416,7 @@ class MergeApprovalTests(LoopFixture):
             seen.append((run_id, phase, branch))
             return real(conn, run_id, phase, note)
 
-        with patch.object(holophyte.merge_gate, "set_phase", watching):
+        with patch.object(holophyte.loop.merge_gate, "set_phase", watching):
             self.loop()
 
         self.assertEqual(seen[0], (2, "merge_gate", BRANCH))
@@ -436,11 +436,11 @@ class MergeApprovalTests(LoopFixture):
         self.loop(Commit("the scripted work"), APPROVE,
                   provider=StubProvider(a_task()))
         with self.assertRaises(SystemExit) as refused:
-            holophyte.operator.babysit_ticket(
+            holophyte.cli.operator.babysit_ticket(
                 self.project, "KO-131", "sent back to the babysitter",
                 out=io.StringIO())
         self.assertIn("no pull request", str(refused.exception))
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         try:
             store.record_intervention(conn, 1, "babysit", "look again")
             store.release(conn, 1, "abandoned", "released by hand")
@@ -479,7 +479,7 @@ class MergeApprovalTests(LoopFixture):
                 wt = self.worktrees / "ko-131-add-a-thing"
                 self.loop(Commit("the scripted work"), APPROVE)
                 approved = self.git("rev-parse", "HEAD", cwd=wt).strip()
-                holophyte.operator.approve(self.project, "KO-131", "ok",
+                holophyte.cli.operator.approve(self.project, "KO-131", "ok",
                                        out=io.StringIO())
                 (wt / "later.txt").write_text("added after the approval\n")
                 if tamper == "commit":
@@ -532,7 +532,7 @@ class MergeApprovalTests(LoopFixture):
                  cwd=clone)
         theirs = self.git("rev-parse", "HEAD", cwd=clone).strip()
         self.git("fetch", "-q", str(clone), f"{BRANCH}:{BRANCH}", cwd=bare)
-        holophyte.operator.approve(self.project, "KO-131", "ok", out=io.StringIO())
+        holophyte.cli.operator.approve(self.project, "KO-131", "ok", out=io.StringIO())
 
         fake, _ = self.loop()
 
@@ -625,7 +625,7 @@ class SelfHostingTests(LoopFixture):
     def setUp(self):
         super().setUp()
         self.execs = []
-        patcher = patch.object(holophyte.operator, "EXEC",
+        patcher = patch.object(holophyte.cli.operator, "EXEC",
                                lambda *args: self.execs.append(args))
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -633,8 +633,8 @@ class SelfHostingTests(LoopFixture):
     def host_the_factory_in(self, repo):
         """Make the module look imported from `repo`, the way it is when the
         target is the factory's own checkout."""
-        patcher = patch.object(holophyte.operator, "__file__",
-                               str(repo / "holophyte" / "operator.py"))
+        patcher = patch.object(holophyte.cli.operator, "__file__",
+                               str(repo / "holophyte" / "cli" / "operator.py"))
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -698,12 +698,12 @@ class SelfHostingTests(LoopFixture):
         self.addCleanup(shutil.rmtree, holo, ignore_errors=True)
 
         def target(path):
-            return holophyte.project.Project(
+            return holophyte.config.project.Project(
                 path=path, holo_dir=holo, store_path=holo / "store.db",
                 config_path=holo / "config.toml", worktrees=holo / "wt")
 
-        self.assertTrue(holophyte.operator.self_hosted(target(ROOT)))
-        self.assertFalse(holophyte.operator.self_hosted(target(ROOT / "holophyte")))
+        self.assertTrue(holophyte.cli.operator.self_hosted(target(ROOT)))
+        self.assertFalse(holophyte.cli.operator.self_hosted(target(ROOT / "holophyte")))
 
     def test_a_merge_into_another_repository_does_not_re_execute(self):
         self.host_the_factory_in(ROOT)
@@ -744,7 +744,7 @@ class HeartbeatTests(LoopFixture):
         self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n"
                        "stale_strikes = 1\n")
         patch_beats(self, delay_ms, silent)
-        knobs = holophyte.config_tables.sweep_config(self.project)
+        knobs = holophyte.config.config_tables.sweep_config(self.project)
         budget_s = knobs.heartbeat_stale_ms * knobs.stale_strikes / 1000
         db, project = self.db, self.project
         sightings = []
@@ -759,7 +759,7 @@ class HeartbeatTests(LoopFixture):
                     deadline = time.monotonic() + budget_s * 5 / 3
                     while time.monotonic() < deadline:
                         time.sleep(0.4)
-                        result = holophyte.supervisor.sweep(
+                        result = holophyte.host.supervisor.sweep(
                             project, conn, int(time.time() * 1000), knobs=knobs)
                         sightings.append((
                             result.trips,
@@ -888,7 +888,7 @@ class FindingsModeTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         rendered = (self.target / "FINDINGS.md").read_text()
-        self.assertIn(holophyte.findings.FINDINGS_MARKER, rendered)
+        self.assertIn(holophyte.review.findings.FINDINGS_MARKER, rendered)
         self.assertIn("KO-131", rendered)
         self.assertEqual(self.findings_commits(),
                          ["Complete task KO-131: add a thing"])

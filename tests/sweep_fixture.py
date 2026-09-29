@@ -17,9 +17,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.cli  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.sweep_report  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.host.sweep_report  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import advance_phase, seed_observed_phase  # noqa: E402
@@ -61,12 +61,12 @@ class SweepTestCase(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.project.state_dir(self.target) / "store.db"
+        self.db = holophyte.config.project.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
         # The `Project` every sweep here is handed. The acting sweep writes
         # FINDINGS.md into whichever target it names, so it is this test's
         # repository and never the one this suite is running in.
-        self.project = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.config.project.Project.locate(self.target)
         self.conn = store.open(str(self.db))
         self.addCleanup(self.conn.close)
         store.init(self.conn)
@@ -122,7 +122,7 @@ class SweepTestCase(unittest.TestCase):
         """Give the target a config file and a `Project` that reads it, the
         way `cli()`'s target does -- a `Project` parses its config once."""
         (self.db.parent / "config.toml").write_text(toml)
-        self.project = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.config.project.Project.locate(self.target)
 
     def run_sweep(self, at, *flags):
         """The mode end to end, with the provider and the network as tripwires.
@@ -131,7 +131,7 @@ class SweepTestCase(unittest.TestCase):
         cannot arrange, so `time` is what `at` replaces -- the seam the sweep
         itself takes as a parameter.
         """
-        holophyte.cli.eager_import()  # Resolve the build before hiding git on PATH.
+        holophyte.cli.cli.eager_import()  # Resolve the build before hiding git on PATH.
         out = io.StringIO()
         # No `docker` either: the review-container check asks the host's
         # daemon, and these tests are about the store.
@@ -140,9 +140,12 @@ class SweepTestCase(unittest.TestCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}), \
                 patch.dict(os.environ, {"PATH": str(no_docker)}):
-            with no_network(), patch.object(sys, "stdout", out), \
-                    patch.object(holophyte.sweep_report, "time", lambda: at / 1000):
-                holophyte.cli.cli(["--sweep", *flags, str(self.target)])
+            with (
+                no_network(),
+                patch.object(sys, "stdout", out),
+                patch.object(holophyte.host.sweep_report, "time", lambda: at / 1000),
+            ):
+                holophyte.cli.cli.cli(["--sweep", *flags, str(self.target)])
         return out.getvalue().splitlines()
 
     def strikes(self, run_id):

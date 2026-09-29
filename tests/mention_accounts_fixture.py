@@ -2,9 +2,9 @@
 from fake_agent import APPROVE, Commit, Idle
 from loop_fixture import BRANCH
 
-import holophyte.pr_status
-from holophyte import babysitter, thread_mentions
-from holophyte.config_tables import merge_config
+import holophyte.pr.pr_status
+from holophyte.babysit import babysitter, thread_mentions
+from holophyte.config.config_tables import merge_config
 
 
 class MentionAccountCases:
@@ -52,7 +52,7 @@ class MentionAccountCases:
                    for login, kind in (("stranger", "User"), ("robot", "Bot"))]
         self.fake_route(states=[self.pr_state(threads)])
         self.git("branch", BRANCH)
-        pull = holophyte.pr_status.parse_pr_url(self.URL)
+        pull = holophyte.pr.pr_status.parse_pr_url(self.URL)
         state = babysitter._settled_state(self.project, None, None, 1, pull)
         merge = merge_config(self.project)
         classified = [thread_mentions.classify(t, merge.mention_handle,
@@ -79,8 +79,10 @@ class MentionAccountCases:
                                         "@holophyte fix: change tokens")
         self.fake_route(states=[state])
         self.git("branch", BRANCH)
-        pull = holophyte.pr_status.parse_pr_url(self.URL)
-        self.assertEqual(holophyte.pr_status.pr_state(self.project, pull).threads, ())
+        pull = holophyte.pr.pr_status.parse_pr_url(self.URL)
+        self.assertEqual(
+            holophyte.pr.pr_status.pr_state(self.project, pull).threads, ()
+        )
         replies = [data["body"] for kind, data in self.api_calls()
                    if kind == "conversation"]
         self.assertEqual(len(replies), 1)
@@ -90,5 +92,7 @@ class MentionAccountCases:
         state["data"]["repository"]["pullRequest"]["comments"]["nodes"].append(
             self.comment(2, ("factory", "User"), replies[0]))
         self.serve(state)
-        self.assertEqual(holophyte.pr_status.pr_state(self.project, pull).threads, ())
+        self.assertEqual(
+            holophyte.pr.pr_status.pr_state(self.project, pull).threads, ()
+        )
         self.assertEqual(sum(kind == "conversation" for kind, _ in self.api_calls()), 1)

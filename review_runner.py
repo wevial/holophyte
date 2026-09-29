@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent
 IMAGE = "holophyte-reviewer:ubuntu24.04-v9"
 # The Codex route the container runs, and the profile a round records for
 # it. The pair is the default an absent `[agents] review_model` /
-# `review_effort` leaves in place; `holophyte.config` reads the keys and hands
+# `review_effort` leaves in place; `holophyte.config.config` reads the keys and hands
 # the pair to `run_review()`. `EFFORTS` is Codex's own vocabulary for
 # `model_reasoning_effort`.
 MODEL = "gpt-6-astra"
@@ -118,7 +118,7 @@ def _commit(repo: Path, revision: str) -> str:
 
 
 def _fingerprint(repo: Path, run_id=None) -> str:
-    from holophyte.agents import review_refs
+    from holophyte.agents.agents import review_refs
 
     base_ref, candidate_ref = review_refs(run_id)
     facts = [
@@ -222,7 +222,7 @@ def stage_candidate(
     stage.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     _run(["git", "init", "-q", str(stage)])
     _git(stage, "fetch", "--quiet", "--no-tags", str(source), base, candidate)
-    from holophyte.agents import review_refs
+    from holophyte.agents.agents import review_refs
 
     base_ref, candidate_ref = review_refs(run_id)
     _git(stage, "update-ref", base_ref, base)
@@ -284,7 +284,7 @@ def container_command(
     it: the quoting is the shell's, so none of the three can rewrite the
     command. The effort reaches Codex as its `-c` assignment, already spelled.
     """
-    from holophyte.agents import review_refs
+    from holophyte.agents.agents import review_refs
 
     mounts = [
         f"{workspace.expanduser().resolve(strict=True)}:/workspace:ro",

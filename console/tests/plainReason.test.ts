@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { plainReason } from "../src/lib/attention";
 
-// Each fixture line is one `RunFailure` message as holophyte/loop.py raises
+// Each fixture line is one `RunFailure` message as holophyte/loop/loop.py raises
 // it, lifted from a real run's `outcomeReason`.
 
 test("a terminal adjudication reads as the verdict, with the branch and whole sha", () => {
@@ -15,7 +15,7 @@ test("a terminal adjudication reads as the verdict, with the branch and whole sh
 
 test("a leftover worktree whose preserved commits conflict with main reads as the conflict, with the branch and sha", () => {
   const raw =
-    "preserved commits on task/ko-301-the-sweep-frees-a-lease conflict with a main that moved on and the implementer left the merge unresolved in holophyte/loop.py, tests/test_sweep.py; a human resolves the merge before this ticket is run again; branch task/ko-301-the-sweep-frees-a-lease preserved at 9b1c2d3e4f50";
+    "preserved commits on task/ko-301-the-sweep-frees-a-lease conflict with a main that moved on and the implementer left the merge unresolved in holophyte/loop/loop.py, tests/test_sweep.py; a human resolves the merge before this ticket is run again; branch task/ko-301-the-sweep-frees-a-lease preserved at 9b1c2d3e4f50";
   expect(plainReason(raw)).toEqual({
     sentence: "Preserved branch conflicts with the moved main",
     branch: "task/ko-301-the-sweep-frees-a-lease",
@@ -57,23 +57,23 @@ test("an implementer that exited without committing reads as such, on a fresh or
 
 test("an implementer that died reads as the crash, named by the exception's type", () => {
   // `crash_reason()`'s line for run 103 (KO-273): the type, the message, the factory frame.
-  expect(plainReason("OperationalError: database is locked (at holophyte/runs.py:record_round:212)")).toEqual({
+  expect(plainReason("OperationalError: database is locked (at holophyte/loop/runs.py:record_round:212)")).toEqual({
     sentence: "Run crashed with OperationalError",
     branch: null,
     sha: null,
   });
   // `sh()` failing under the implementer turn, whitespace collapsed to one line.
   expect(
-    plainReason("RuntimeError: `['git', 'rev-parse', 'HEAD']` failed: fatal: not a git repository (at holophyte/loop.py:_implement:913)").sentence,
+    plainReason("RuntimeError: `['git', 'rev-parse', 'HEAD']` failed: fatal: not a git repository (at holophyte/loop/loop.py:_implement:913)").sentence,
   ).toBe("Run crashed with RuntimeError");
   // No factory frame on the traceback: the bare `TYPE: message` form.
   expect(plainReason("KeyError: 'branch'").sentence).toBe("Run crashed with KeyError");
 });
 
 test("a reason from no known family shows its first line up to the first semicolon", () => {
-  const raw = "merge of task/ko-260-x into main conflicted on: holophyte/loop.py; branch and worktree preserved\nsecond line";
+  const raw = "merge of task/ko-260-x into main conflicted on: holophyte/loop/loop.py; branch and worktree preserved\nsecond line";
   expect(plainReason(raw)).toEqual({
-    sentence: "merge of task/ko-260-x into main conflicted on: holophyte/loop.py",
+    sentence: "merge of task/ko-260-x into main conflicted on: holophyte/loop/loop.py",
     branch: null,
     sha: null,
   });

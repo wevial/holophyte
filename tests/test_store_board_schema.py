@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import store
-from holophyte.pool_handoff import _literal
+from holophyte.loop.pool_handoff import _literal
 
 FROZEN = Path(__file__).with_name("store_pre_revisions.sql")
 

@@ -10,12 +10,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli
-import holophyte.project
+import holophyte.cli.cli
+import holophyte.config.project
 import store
 import store.read
 import store.tickets
-from holophyte import store_import
+from holophyte.cli import store_import
 from tests.phase_fixture import finish_run
 
 AT = 1_700_000_000_000
@@ -54,7 +54,7 @@ class ImportStoreDryRunTests(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.dest = holophyte.project.state_dir(self.target) / "store.db"
+        self.dest = holophyte.config.project.state_dir(self.target) / "store.db"
         self.dest.parent.mkdir(parents=True)
         self.source = root / "other.db"
         # Closed before the command runs, so each file is whole on disk and
@@ -67,7 +67,7 @@ class ImportStoreDryRunTests(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                holophyte.cli.cli([*flags, str(self.target)])
+                holophyte.cli.cli.cli([*flags, str(self.target)])
             except SystemExit as exit_:
                 return out.getvalue(), err.getvalue(), exit_
         return out.getvalue(), err.getvalue(), None

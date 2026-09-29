@@ -21,14 +21,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli
-import holophyte.project
-import holophyte.report
-import holophyte.serve_runs
+import holophyte.cli.cli
+import holophyte.cli.report
+import holophyte.config.project
+import holophyte.serve.serve_runs
 import store
 import store.read
 import store.tickets
-from holophyte.runs import open_store
+from holophyte.loop.runs import open_store
 from tests.phase_fixture import finish_run, park_run
 
 MINUTE = 60 * 1000
@@ -48,7 +48,7 @@ class ApproveCliTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        self.target = holophyte.project.Project.locate(self.repo)
+        self.target = holophyte.config.project.Project.locate(self.repo)
         self.target.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.target.config_path.write_text(
             '[board]\nproject_id = "p-1"\nteam = "T"\n')
@@ -85,7 +85,7 @@ class ApproveCliTests(unittest.TestCase):
     def cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            holophyte.cli.cli([str(self.repo), *args])
+            holophyte.cli.cli.cli([str(self.repo), *args])
         return out.getvalue(), err.getvalue()
 
     def interventions(self):
@@ -182,8 +182,8 @@ class ApproveCliTests(unittest.TestCase):
         self.assertEqual(stamp(), (T0 + 4 * MINUTE, "operator"))
         self.assertIn(
             f"KO-1 run {self.run}: approved by operator at 2023-11-14T22:17:20+00:00",
-            holophyte.report.report_lines(self.conn))
-        status, detail = holophyte.serve_runs.run_detail(
+            holophyte.cli.report.report_lines(self.conn))
+        status, detail = holophyte.serve.serve_runs.run_detail(
             self.target, str(self.run))
         self.assertEqual(status, 200)
         self.assertEqual((detail["run"]["approved_at"],
@@ -257,7 +257,7 @@ class ApproveCliTests(unittest.TestCase):
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
             " 'intervention'", (self.run,)).fetchone()
         self.assertEqual(
-            summary, f"human approve: {holophyte.cli.APPROVE_DEFAULT_NOTE}")
+            summary, f"human approve: {holophyte.cli.cli.APPROVE_DEFAULT_NOTE}")
 
     def test_a_ticket_not_parked_is_refused_naming_its_state(self):
         """Ready with no run, in flight with a live run, merged: each exits

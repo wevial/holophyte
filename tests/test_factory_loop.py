@@ -51,19 +51,19 @@ from pause_fixture import PauseFailureCases  # noqa: E402
 from review_session_fixture import ReviewSessionCases  # noqa: E402
 from run_landing_fixture import landing_path  # noqa: E402
 
-import holophyte.agents  # noqa: E402 - after the sys.path insert above
-import holophyte.board  # noqa: E402 - after the sys.path insert above
-import holophyte.claim  # noqa: E402 - after the sys.path insert above
-import holophyte.config  # noqa: E402 - after the sys.path insert above
-import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.merge_gate  # noqa: E402 - after the sys.path insert above
-import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.pr  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.runs  # noqa: E402 - after the sys.path insert above
-import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.config.config  # noqa: E402 - after the sys.path insert above
+import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.merge_gate  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -159,7 +159,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         class CappedSession(Commit):
             def play(step, cwd, turn):
                 super().play(cwd, turn)
-                commands = holophyte.agents.routes(self.project).commands
+                commands = holophyte.agents.agents.routes(self.project).commands
                 commands["implement"] = "fallback-cli"
                 raise subprocess.TimeoutExpired(
                     "fallback-cli", 1, output=b"session id: capped-session")
@@ -179,15 +179,15 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         self.addCleanup(conn.close)
         run_id = self.read("SELECT id FROM runs")[0][0]
         # The writer may use the implementer CLI but remains out of scope.
-        with (patch.object(holophyte.loop, "heartbeat_while",
+        with (patch.object(holophyte.loop.loop, "heartbeat_while",
                            return_value=contextlib.nullcontext()),
-              patch.object(holophyte.loop, "agent",
+              patch.object(holophyte.loop.loop, "agent",
                            return_value="session id: excluded")):
-            holophyte.loop._timed(self.project, conn, run_id, 1, self.target, 1,
+            holophyte.loop.loop._timed(self.project, conn, run_id, 1, self.target, 1,
                                   "write", role="write")
             self.configure("[agents]\nimplementer_isolation = 'container'\n"
                            "implementer_session = 'session id: ([a-z-]+)'\n")
-            holophyte.loop._timed(self.project, conn, run_id, 1, self.target, 1,
+            holophyte.loop.loop._timed(self.project, conn, run_id, 1, self.target, 1,
                                   "implement")
 
         self.assertEqual(self.read("SELECT providerSessionId FROM runs"), [(None,)])
@@ -706,7 +706,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
                      (t1 + 1, last_run))
         conn.commit()
 
-        self.assertEqual(holophyte.board.failure_history(conn, 1), [])
+        self.assertEqual(holophyte.board.board.failure_history(conn, 1), [])
 
     def test_a_supervisor_intervention_grants_no_amnesty(self):
         """Supervisor intervention does not reset the work-failure count."""
@@ -745,7 +745,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
     def test_branch_is_recorded_at_worktree_cut(self):
         """Record the branch before the first working-phase event."""
         seen = []
-        real = holophyte.claim.set_phase
+        real = holophyte.loop.claim.set_phase
 
         def watching(conn, run_id, phase, note=None):
             (branch,) = conn.execute(
@@ -753,7 +753,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
             seen.append((phase, branch))
             return real(conn, run_id, phase, note)
 
-        with patch.object(holophyte.claim, "set_phase", watching):
+        with patch.object(holophyte.loop.claim, "set_phase", watching):
             self.loop(Commit("the scripted work"), APPROVE)
 
         first_working = next(entry for entry in seen if entry[0] == "working")
@@ -853,7 +853,7 @@ class RunCapTests(LoopFixture):
         is the store's, not a simulated one. Once: later rounds' `reviewing`
         transitions pass through untouched.
         """
-        real = holophyte.loop.set_phase
+        real = holophyte.loop.loop.set_phase
         done = []
 
         def watching(conn, run_id, phase, note=None):
@@ -865,7 +865,7 @@ class RunCapTests(LoopFixture):
                         " WHERE id = ?", (int(minutes * 60 * 1000), run_id))
             return real(conn, run_id, phase, note)
 
-        return patch.object(holophyte.loop, "set_phase", watching)
+        return patch.object(holophyte.loop.loop, "set_phase", watching)
 
     def test_a_fix_turn_the_cap_has_no_room_for_is_refused(self):
         """Refuse a fix turn that cannot fit within the run's remaining cap."""
@@ -945,7 +945,7 @@ class GateConflictImplementerTests(LoopFixture):
         self.addCleanup(conn.close)
         project = tickets.ensure_project(conn, StubProvider.TEAM,
                                        str(self.target))
-        ticket = holophyte.board.mirror_task(conn, project, a_task())
+        ticket = holophyte.board.board.mirror_task(conn, project, a_task())
         run_id = store.claim(conn, project, ticket)
         tickets.transition(conn, ticket, "in_flight")
         store.set_branch(conn, run_id, branch)
@@ -960,8 +960,8 @@ class GateConflictImplementerTests(LoopFixture):
         seen = self.target.parent / "verify-ran-on.txt"
         fake = FakeAgent(Commit("merge main into the branch",
                                 path="README.md", body="merged\n"))
-        with patch.object(holophyte.loop, "agent", fake):
-            ok, merged = holophyte.merge_gate._merge_gate(
+        with patch.object(holophyte.loop.loop, "agent", fake):
+            ok, merged = holophyte.loop.merge_gate._merge_gate(
                 self.project, conn, run_id, provider, "KO-131", "iss-131",
                 branch, wt, 60, sha,
                 f"git rev-parse HEAD > '{seen}'", [], "add a thing", 5)
@@ -1007,10 +1007,10 @@ class GateConflictImplementerTests(LoopFixture):
                 (cwd / "README.md").write_text("edited again\n")
                 return "staged the resolution, then kept editing it"
 
-        with patch.object(holophyte.loop, "agent",
+        with patch.object(holophyte.loop.loop, "agent",
                           FakeAgent(StageThenReEdit())):
-            with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                holophyte.merge_gate._sync_main_into_branch(
+            with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
+                holophyte.loop.merge_gate._sync_main_into_branch(
                     self.project, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
@@ -1026,7 +1026,7 @@ class GateConflictImplementerTests(LoopFixture):
             subprocess.run(["git", "rev-parse", "-q", "--verify",
                             "MERGE_HEAD"], cwd=wt,
                            capture_output=True).returncode, 0)
-        self.assertEqual(holophyte.claim.merge_conflicts(wt), [])
+        self.assertEqual(holophyte.loop.claim.merge_conflicts(wt), [])
         self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
         self.assertEqual(
             self.read("SELECT status FROM tickets"),
@@ -1046,9 +1046,9 @@ class GateConflictImplementerTests(LoopFixture):
         fake = FakeAgent(CommitMergeLeavingEdits(
             "merge main into the branch", path="README.md",
             body="merged\n"))
-        with patch.object(holophyte.loop, "agent", fake):
-            with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                holophyte.merge_gate._sync_main_into_branch(
+        with patch.object(holophyte.loop.loop, "agent", fake):
+            with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
+                holophyte.loop.merge_gate._sync_main_into_branch(
                     self.project, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
@@ -1088,10 +1088,10 @@ class GateConflictImplementerTests(LoopFixture):
                                check=True, capture_output=True)
                 return "aborted the merge and reset the branch to main"
 
-        with patch.object(holophyte.loop, "agent",
+        with patch.object(holophyte.loop.loop, "agent",
                           FakeAgent(AbortThenResetToMain())):
-            with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                holophyte.merge_gate._sync_main_into_branch(
+            with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
+                holophyte.loop.merge_gate._sync_main_into_branch(
                     self.project, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
@@ -1126,9 +1126,9 @@ class GateConflictImplementerTests(LoopFixture):
         fake = FakeAgent(CommitMergeThenTimeout(
             "merge main into the branch", path="README.md",
             body="merged\n"))
-        with patch.object(holophyte.loop, "agent", fake):
-            with self.assertRaises(holophyte.gates.RunFailure) as failed:
-                holophyte.merge_gate._sync_main_into_branch(
+        with patch.object(holophyte.loop.loop, "agent", fake):
+            with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
+                holophyte.loop.merge_gate._sync_main_into_branch(
                     self.project, conn, run_id, provider, "KO-131", branch,
                     wt, sha, 60, "add a thing", 5)
 
@@ -1167,13 +1167,13 @@ class GateConflictImplementerTests(LoopFixture):
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
-        ticket = holophyte.board.mirror_task(conn, project_id, a_task())
+        ticket = holophyte.board.board.mirror_task(conn, project_id, a_task())
         run_id = store.claim(conn, project_id, ticket)
         tickets.transition(conn, ticket, "in_flight")
         store.set_branch(conn, run_id, branch)
         fake = FakeAgent()  # no steps: any turn asked for is a ScriptError
-        with patch.object(holophyte.loop, "agent", fake):
-            merged = holophyte.merge_gate._sync_main_into_branch(
+        with patch.object(holophyte.loop.loop, "agent", fake):
+            merged = holophyte.loop.merge_gate._sync_main_into_branch(
                 self.project, conn, run_id, StubProvider(a_task()), "KO-131",
                 branch, wt, sha, 60, "add a thing", 5)
 
@@ -1190,9 +1190,9 @@ class TransportRetryTests(LoopFixture):
 
             def play(inner, cwd, turn):
                 # Exercise the real exit-code capture at the agent boundary.
-                with patch.object(holophyte.agents, "run_capped",
+                with patch.object(holophyte.agents.agents, "run_capped",
                                   return_value=(code, message)):
-                    return holophyte.agents.agent(
+                    return holophyte.agents.agents.agent(
                         self.project, "implement", "task", cwd)
         return FailedTurn()
 
@@ -1203,8 +1203,8 @@ class TransportRetryTests(LoopFixture):
             nonlocal elapsed
             elapsed += seconds
 
-        with patch.object(holophyte.loop, "sleep", side_effect=wait) as nap, \
-                patch.object(holophyte.loop, "retry_clock",
+        with patch.object(holophyte.loop.loop, "sleep", side_effect=wait) as nap, \
+                patch.object(holophyte.loop.loop, "retry_clock",
                              side_effect=lambda: time.monotonic() + elapsed):
             fake, _ = self.loop(self.failed_turn("FETCH FAILED"),
                                 Commit("recovered"), APPROVE)
@@ -1219,7 +1219,7 @@ class TransportRetryTests(LoopFixture):
         self.assertLessEqual(fake.turns[1].timeout, fake.turns[0].timeout - 30)
 
     def test_two_transport_failures_preserve_branch_without_a_strike(self):
-        with patch.object(holophyte.loop, "sleep"):
+        with patch.object(holophyte.loop.loop, "sleep"):
             fake, _ = self.loop(self.failed_turn("ECONNRESET"),
                                 self.failed_turn("ECONNRESET"))
         self.assertEqual(fake.roles, ["implement", "implement"])
@@ -1243,7 +1243,7 @@ class TransportRetryTests(LoopFixture):
                     conn = store.open(str(self.db))
                     self.addCleanup(conn.close)
                     tickets.walk_ticket(conn, 1, "ready")
-                with patch.object(holophyte.loop, "sleep") as nap:
+                with patch.object(holophyte.loop.loop, "sleep") as nap:
                     fake, _ = self.loop(self.failed_turn(message, code))
                 nap.assert_not_called()
                 self.assertEqual(fake.roles, ["implement"])
@@ -1264,13 +1264,13 @@ class NoCommitOutputTests(LoopFixture):
         """Wrap the loop's `sh` so the moment the worktree is removed, the
         store is read for the event: the order witness."""
         seen = []
-        real = holophyte.loop.sh
+        real = holophyte.loop.loop.sh
 
         def sh(args, cwd=None):
             if args[:3] == ["git", "worktree", "remove"]:
                 seen.append(self.events())
             return real(args, cwd)
-        patcher = patch.object(holophyte.loop, "sh", sh)
+        patcher = patch.object(holophyte.loop.loop, "sh", sh)
         patcher.start()
         self.addCleanup(patcher.stop)
         return seen
@@ -1317,7 +1317,7 @@ class NoCommitOutputTests(LoopFixture):
         provider = StubProvider(a_task())
         with no_agent_processes():
             with patch.dict(sys.modules, {"linear_provider": provider}):
-                holophyte.operator.main(self.project, provider)
+                holophyte.cli.operator.main(self.project, provider)
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(self.events(), [("a second line",
@@ -1350,7 +1350,7 @@ class NoCommitOutputTests(LoopFixture):
         self.assertIn("the token_file path is /run/secrets/x", payload)
 
     def test_the_payload_keeps_only_the_last_characters_up_to_the_constant(self):
-        cap = holophyte.loop.OUTPUT_TAIL
+        cap = holophyte.loop.loop.OUTPUT_TAIL
         head = "first line\n"
         message = head + "x" * cap
 
@@ -1388,7 +1388,7 @@ class VerifyTimeoutRoundTests(LoopFixture):
     TASK = dict(a_task(), verify="echo started && sleep 5")
 
     def run_capped_loop(self, *script):
-        with patch.object(holophyte.gates, "VERIFY_TIMEOUT", 1.0):
+        with patch.object(holophyte.loop.gates, "VERIFY_TIMEOUT", 1.0):
             return self.loop(*script, provider=StubProvider(self.TASK))
 
     def test_an_approved_round_that_only_timed_out_fails_without_a_fix_turn(self):

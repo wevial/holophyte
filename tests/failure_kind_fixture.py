@@ -4,7 +4,7 @@ from unittest.mock import patch
 from fake_agent import MALFORMED, REQUEST_CHANGES, Commit, Idle
 from loop_fixture import CommitThenTimeout, StubProvider, a_task
 
-from holophyte.gates import MergeLockHeld
+from holophyte.loop.gates import MergeLockHeld
 
 
 class FailureKindCases:
@@ -31,7 +31,7 @@ class FailureKindCases:
 
     def test_merge_lock_kind_survives_dispatch(self):
         reason = 'merge lock held by run 9; waited 240s'
-        with patch('holophyte.loop.run_task', side_effect=MergeLockHeld(reason)):
+        with patch('holophyte.loop.loop.run_task', side_effect=MergeLockHeld(reason)):
             self.loop()
         self.assertEqual(self.read('SELECT failureKind, outcomeReason FROM runs'),
                          [('merge_lock', reason)])

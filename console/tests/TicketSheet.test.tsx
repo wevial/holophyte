@@ -231,7 +231,7 @@ const NATIVE = "http://writer:7710/projects/nat";
 /** A host daemon's native board, each ticket at a revision: `GET
  *  /tickets/ID` serves it with `current`, and a write whose `If-Match`
  *  names the revision now lands as the next one while any other answers
- *  409 with `current`, as holophyte/serve_board.py does. Every request is
+ *  409 with `current`, as holophyte/serve/serve_board.py does. Every request is
  *  recorded. */
 function nativeDaemon(tickets: Record<string, { revision: number; body: string; column: string; run?: number }>) {
   const writes: { url: string; method: string; ifMatch: string | null; authorization: string | null; body: unknown }[] = [];

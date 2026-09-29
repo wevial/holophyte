@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from holophyte.claim import run_worktree_setup
+from holophyte.loop.claim import run_worktree_setup
 
 WRITE_HOME = 'printf %s "$HOME" > home.txt'
 

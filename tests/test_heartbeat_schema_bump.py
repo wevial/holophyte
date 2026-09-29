@@ -10,8 +10,9 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import store
-from holophyte import operator, pool, runs
-from holophyte.config_tables import loop_config
+from holophyte.cli import operator
+from holophyte.config.config_tables import loop_config
+from holophyte.loop import pool, runs
 from tests.loop_fixture import TICK, FakePool, LoopFixture, StubProvider, a_task
 from tests.schema_fixture import move_ahead_additively
 
@@ -228,7 +229,7 @@ class LoopSchemaBumpTests(LoopFixture):
         provider = StubProvider(a_task())
         out = io.StringIO()
         with patch.object(operator, 'open_store', return_value=conn), \
-                patch('holophyte.dispatch._startup_sweep', return_value=set()), \
+                patch('holophyte.loop.dispatch._startup_sweep', return_value=set()), \
                 patch.object(operator, '_reconcile_at_startup'), \
                 patch.object(operator, '_claim_next') as claim, \
                 patch.object(operator, 'EXEC') as execute, redirect_stdout(out):

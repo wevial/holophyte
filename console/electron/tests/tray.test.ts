@@ -96,7 +96,7 @@ describe("buildSummary", () => {
   });
 });
 
-// A host daemon's root /status (holophyte/serve_host.py host_status()):
+// A host daemon's root /status (holophyte/serve/serve_host.py host_status()):
 // the sweep ended 30 s before its clock, and one project reporting its host.
 const HOST_ADDRESS = "192.0.2.10:7710";
 const HOST_STATUS: HostStatus = {

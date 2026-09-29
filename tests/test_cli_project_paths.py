@@ -8,8 +8,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.admission
-import holophyte.cli
-import holophyte.project
+import holophyte.cli.cli
+import holophyte.config.project
 import store
 
 
@@ -32,13 +32,13 @@ class ProjectPathTests(unittest.TestCase):
         alias.symlink_to(repo, target_is_directory=True)
         project = store.ensure_project(self.conn, "original-team", alias)
         store.set_admission(self.conn, project, "disabled", "retired")
-        target = holophyte.project.Project.locate(repo)
+        target = holophyte.config.project.Project.locate(repo)
         target.holo_dir.mkdir(parents=True)
         target.config_path.write_text('[board]\nteam = "changed-team"\n'
                                       'project_id = "fresh-project"\n')
         with self.assertRaisesRegex(
                 SystemExit, f"project {project} already registered: {repo}"):
-            holophyte.cli.cli(["project", "add", str(repo), "--store",
+            holophyte.cli.cli.cli(["project", "add", str(repo), "--store",
                                str(self.root / "store.db")])
         self.assertEqual(self.conn.execute(
             "SELECT linearTeamId, repoPath, admission, holdNote FROM projects "
@@ -59,7 +59,7 @@ class ProjectPathTests(unittest.TestCase):
         elsewhere = self.root / "elsewhere"
         elsewhere.mkdir()
         with chdir(elsewhere):
-            target = holophyte.project.Project.locate(repo)
+            target = holophyte.config.project.Project.locate(repo)
             self.assertEqual(holophyte.admission.state(self.conn, target),
                              ("disabled", "retired"))
             with self.assertRaisesRegex(ValueError, "already registered"):
@@ -81,7 +81,7 @@ class ProjectPathTests(unittest.TestCase):
                 lambda: store.register_project(self.conn, "changed-team", repo),
                 lambda: store.ensure_project(self.conn, "team", repo),
                 lambda: holophyte.admission.state(
-                    self.conn, holophyte.project.Project.locate(repo)),
+                    self.conn, holophyte.config.project.Project.locate(repo)),
             ):
                 with self.subTest(operation=operation):
                     with self.assertRaisesRegex(

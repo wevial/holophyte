@@ -10,18 +10,18 @@ every file; this page lists what each seam promises.
 
 | Seam | Where | Promise |
 | --- | --- | --- |
-| **`Project`** | `holophyte/project.py` | Everything about where a project's state lives, as a value: repository path, state directory, store path, config path. No module-level globals name a project; a function that needs one takes it. Two projects can exist in one process, which is what the tests, the daemon and a future port need. |
+| **`Project`** | `holophyte/config/project.py` | Everything about where a project's state lives, as a value: repository path, state directory, store path, config path. No module-level globals name a project; a function that needs one takes it. Two projects can exist in one process, which is what the tests, the daemon and a future port need. |
 | **`Board`** | `provider.py` | The board as a protocol: the loop's members (`claim_next`, `fetch_task`, `set_state`, `comment`, labels and the rest) and the filing members `file`, `update`, `stored_body`. `board_for()` builds a project's board from `[board] kind`; `LinearBoard` lazily imports the GraphQL module; `FileProvider` reads a directory of `<ID>.md` files for tests and offline runs. Neither the loop nor `--file-ticket` names Linear. |
 | **`store.read`** | `store/read.py` | Typed, read-only views; the only SQL outside `store/__init__.py`. Every consumer that renders state (report, sweep, findings, serve) goes through it. |
-| **`runs`** | `holophyte/runs.py` | The loop's store seam: `open_store`, `set_phase`, `heartbeat_while`, `record_round`, `warn_on_run`, `review_round_cap`. Six helpers, so a wiring change extends one file instead of threading SQL through the loop. |
-| **`gates`** | `holophyte/gates.py` | Worktree cutting and reuse, the verify gate, process-group reaping. Takes a project and a ticket, returns a red or green report. |
-| **`agents`** | `holophyte/agents.py` | `agent_route()` (which command, which model, from `[agents]`) and `agent()` (one turn of a role in a process group with a budget). The implementer and the reviewer are both routes; `review_runner` is the reviewer's transport. |
-| **`review`** | `holophyte/review.py` | Reviewer prose in, structured findings and a verdict out: the `CRITERION n:` checklist parser, the witness-test resolver, the finding key. |
-| **`findings`** | `holophyte/findings.py` | The `FINDINGS.md` window renderer, byte-stable, from `EndedRun` and `ReviewRound` rows only. |
-| **`board`** | `holophyte/board.py` | Linear as a notice board: mirror a ticket into the store with its contract snapshot, push status, detect drift at merge, escalate a twice-failed ticket, file and update tickets from files. |
-| **`reexec`** | `holophyte/reexec.py` | Replace the process with the same command line, through an `EXEC` seam tests can intercept, shared by the loop and the project daemon; and `systemctl --user` on the deploy units (the loop's, the sweep's), shared by the supervisor and the daemon's actions. |
-| **`host`** | `holophyte/host.py` | The host registry, `host.toml`: the projects the host daemon serves and the host sweep watches, by path, re-read when it changes; written by `project add` and `project remove` alone. A route name resolves through `Host.project()` alone. Opens no store. |
-| **`config`** | `holophyte/config.py`, `holophyte/config_tables.py` | Every `config.toml` table as a typed value with defaults, validated at startup; unknown keys are startup errors. |
+| **`runs`** | `holophyte/loop/runs.py` | The loop's store seam: `open_store`, `set_phase`, `heartbeat_while`, `record_round`, `warn_on_run`, `review_round_cap`. Six helpers, so a wiring change extends one file instead of threading SQL through the loop. |
+| **`gates`** | `holophyte/loop/gates.py` | Worktree cutting and reuse, the verify gate, process-group reaping. Takes a project and a ticket, returns a red or green report. |
+| **`agents`** | `holophyte/agents/agents.py` | `agent_route()` (which command, which model, from `[agents]`) and `agent()` (one turn of a role in a process group with a budget). The implementer and the reviewer are both routes; `review_runner` is the reviewer's transport. |
+| **`review`** | `holophyte/review/review.py` | Reviewer prose in, structured findings and a verdict out: the `CRITERION n:` checklist parser, the witness-test resolver, the finding key. |
+| **`findings`** | `holophyte/review/findings.py` | The `FINDINGS.md` window renderer, byte-stable, from `EndedRun` and `ReviewRound` rows only. |
+| **`board`** | `holophyte/board/board.py` | Linear as a notice board: mirror a ticket into the store with its contract snapshot, push status, detect drift at merge, escalate a twice-failed ticket, file and update tickets from files. |
+| **`reexec`** | `holophyte/loop/reexec.py` | Replace the process with the same command line, through an `EXEC` seam tests can intercept, shared by the loop and the project daemon; and `systemctl --user` on the deploy units (the loop's, the sweep's), shared by the supervisor and the daemon's actions. |
+| **`host`** | `holophyte/host/host.py` | The host registry, `host.toml`: the projects the host daemon serves and the host sweep watches, by path, re-read when it changes; written by `project add` and `project remove` alone. A route name resolves through `Host.project()` alone. Opens no store. |
+| **`config`** | `holophyte/config/config.py`, `holophyte/config/config_tables.py` | Every `config.toml` table as a typed value with defaults, validated at startup; unknown keys are startup errors. |
 
 ## What depends on what
 
@@ -87,7 +87,7 @@ Three rules hold the graph in this shape: `serve` reads through
 `store.read`, and its action endpoints (`serve_actions`) write only through
 the store API (`store.record_intervention()`, `store.requeue()`,
 `store.operator_notes.send_back()`);
-`holophyte.config` never imports `factory` or the loop (no cycles); and
+`holophyte.config.config` never imports `factory` or the loop (no cycles); and
 nothing outside `store/` writes SQL. The host forms sit on top of the
 project ones: `serve_host` is `serve`'s handler under a `/projects/NAME`
 prefix, one `Project` per registry entry, and `sweep_host` runs the

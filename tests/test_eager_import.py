@@ -19,7 +19,7 @@ class EagerImportTests(unittest.TestCase):
                                 ignore=shutil.ignore_patterns('__pycache__'))
             for module in root.glob('*.py'):
                 shutil.copy2(module, checkout / module.name)
-            babysitter = checkout / 'holophyte' / 'babysitter.py'
+            babysitter = checkout / 'holophyte' / 'babysit' / 'babysitter.py'
             linear = checkout / 'linear_provider.py'
             for module in (babysitter, linear):
                 with module.open('a') as stream:
@@ -32,20 +32,20 @@ class EagerImportTests(unittest.TestCase):
             script = '''
 import json, sys
 from unittest.mock import patch
-from holophyte.cli import cli
+from holophyte.cli.cli import cli
 
 def worker(*args):
     print(json.dumps(sorted(sys.modules)), flush=True)
     sys.stdin.readline()
-    from holophyte import babysitter
+    from holophyte.babysit import babysitter
     import linear_provider
     print(babysitter.build_witness(), flush=True)
     print(linear_provider.build_witness(), flush=True)
 
-with patch('holophyte.startup.build_sha', return_value='original'), \
-     patch('holophyte.cli.Project'), patch('holophyte.cli.check_config'), \\
-     patch('holophyte.cli.board_for', return_value=object()), \\
-     patch('holophyte.cli.worker', worker):
+with patch('holophyte.host.startup.build_sha', return_value='original'), \
+     patch('holophyte.cli.cli.Project'), patch('holophyte.cli.cli.check_config'), \\
+     patch('holophyte.cli.cli.board_for', return_value=object()), \\
+     patch('holophyte.cli.cli.worker', worker):
     cli(['.', '--worker'])
 '''
             with subprocess.Popen(

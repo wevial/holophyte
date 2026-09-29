@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import holophyte.board
+import holophyte.board.board
 import ticket_template as tt
 from tests.test_ticket_template import FILLED
 
@@ -46,7 +46,7 @@ class RepositoryChecksTests(unittest.TestCase):
                     f'{advisory}{label}: tests/test_missing.py'])
                 self.assertEqual(self.problems(body), [])
                 self.assertIsNone(
-                    holophyte.board.body_problem({'body': body}, self.repo))
+                    holophyte.board.board.body_problem({'body': body}, self.repo))
 
     def test_missing_verify_path_blocks_unless_declared_new(self):
         # REL-137: `TransactionTable.tsx` was a directory's name, not a file.
@@ -55,7 +55,7 @@ class RepositoryChecksTests(unittest.TestCase):
         blocker = 'path does not exist in verify command: tests/test_missing.py'
         self.assertEqual(self.problems(body), [blocker])
         self.assertEqual(
-            holophyte.board.body_problem({'body': body}, self.repo), blocker)
+            holophyte.board.board.body_problem({'body': body}, self.repo), blocker)
         declared = body.replace('Endpoint lives beside the other order routes.',
                                 'Add a new test file `tests/test_missing.py`.')
         self.assertEqual(self.missing(declared), [])

@@ -8,10 +8,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import holophyte.cli
+import holophyte.cli.cli
 import store.tickets
-from holophyte.project import Project
-from holophyte.runs import open_store
+from holophyte.config.project import Project
+from holophyte.loop.runs import open_store
 from store.gap_layers import record_gap_layer
 
 LAYERS = ("impossible", "static", "witness", "guidance", "review", "none")
@@ -43,10 +43,10 @@ class GapLayerFlagTests(unittest.TestCase):
 
     def cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
-        with patch("holophyte.cli.board_for", return_value=self.board), \
+        with patch("holophyte.cli.cli.board_for", return_value=self.board), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                holophyte.cli.cli([str(self.repo), *args])
+                holophyte.cli.cli.cli([str(self.repo), *args])
             except SystemExit as exited:
                 return exited.code, out.getvalue() + err.getvalue()
         return 0, out.getvalue()

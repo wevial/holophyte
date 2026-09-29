@@ -1,6 +1,6 @@
 import type { AttentionItem } from "./types";
 
-/** One entry of `GET /ledger` (holophyte/serve.py `ledger()`), as the
+/** One entry of `GET /ledger` (holophyte/serve/serve.py `ledger()`), as the
  *  daemon spells it: newest first on the wire. An `intervention` entry
  *  from a daemon with KO-308 also says what it `cleared` and how long that
  *  had `waited_ms`; an older daemon leaves both out, which reads as null. */
@@ -29,7 +29,7 @@ export interface LedgerBody {
   limit: number;
 }
 
-/** The daemon's `/runs/N/ledger` body (holophyte/serve.py `run_ledger()`):
+/** The daemon's `/runs/N/ledger` body (holophyte/serve/serve.py `run_ledger()`):
  *  one run's entries, oldest first. */
 export interface RunLedgerBody {
   run_id: number;

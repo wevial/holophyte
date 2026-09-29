@@ -1,5 +1,5 @@
 """`/runs/N/ledger`, `/runs/N/files` and the ledger window and wait: the
-run and ledger read routes (`holophyte.serve_runs`) over the socket.
+run and ledger read routes (`holophyte.serve.serve_runs`) over the socket.
 
 Run: python3 -m unittest discover -s tests -p 'test_serve_ledger*' -v
 """

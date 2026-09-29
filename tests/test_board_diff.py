@@ -13,12 +13,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.board
-import holophyte.cli
-import holophyte.project
+import holophyte.board.board
+import holophyte.cli.cli
+import holophyte.config.project
 import store.tickets
-from holophyte.board_diff import board_diff
-from holophyte.runs import open_store
+from holophyte.board.board_diff import board_diff
+from holophyte.loop.runs import open_store
 from provider import FileProvider
 
 TICKET = """\
@@ -55,13 +55,13 @@ class BoardDiffTests(unittest.TestCase):
             (self.boards / f"{identifier}.md").write_text(
                 TICKET.format(title=f"ticket {identifier}"))
         self.board = FileProvider(self.boards)
-        self.target = holophyte.project.Project.locate(self.repo)
+        self.target = holophyte.config.project.Project.locate(self.repo)
         conn = open_store(self.target)
         try:
             project = store.tickets.ensure_project(conn, self.board.team,
                                                    self.repo)
             for task in self.board.ready_issues():
-                holophyte.board.mirror_task(conn, project, task)
+                holophyte.board.board.mirror_task(conn, project, task)
         finally:
             conn.close()
 
@@ -100,13 +100,13 @@ class BoardDiffTests(unittest.TestCase):
         self.target.config_path.write_text('[board]\nteam = "KO"\n'
                                            'project_id = "project-1"\n')
         out = io.StringIO()
-        with patch.object(holophyte.cli, "board_for",
+        with patch.object(holophyte.cli.cli, "board_for",
                           lambda target: self.board), \
-                patch.object(holophyte.cli, "main") as loop, \
-                patch.object(holophyte.cli, "supervise") as supervisor, \
-                patch.object(holophyte.cli, "start_supervisor") as spawn, \
+                patch.object(holophyte.cli.cli, "main") as loop, \
+                patch.object(holophyte.cli.cli, "supervise") as supervisor, \
+                patch.object(holophyte.cli.cli, "start_supervisor") as spawn, \
                 contextlib.redirect_stdout(out):
-            status = holophyte.cli.cli([str(self.repo), "--board-diff"])
+            status = holophyte.cli.cli.cli([str(self.repo), "--board-diff"])
         self.assertEqual(status, 1)
         self.assertIn("[holo2] board diff: 1 difference", out.getvalue())
         loop.assert_not_called()
@@ -123,14 +123,15 @@ class BoardDiffTests(unittest.TestCase):
         before = {p.name: p.read_bytes() for p in self.root.iterdir()
                   if p.is_file()}
         out = io.StringIO()
-        with patch.object(holophyte.cli, "board_for",
+        with patch.object(holophyte.cli.cli, "board_for",
                           lambda target: self.board), \
                 contextlib.redirect_stdout(out):
-            holophyte.cli.cli([str(repo), "--board-diff"])
+            holophyte.cli.cli.cli([str(repo), "--board-diff"])
         self.assertEqual({p.name: p.read_bytes() for p in self.root.iterdir()
                           if p.is_file()}, before)
         self.assertFalse(
-            holophyte.project.Project.locate(repo, adopt=False).holo_dir.exists())
+            holophyte.config.project.Project.locate(repo, adopt=False).holo_dir.exists()
+        )
         self.assertNotIn("adopt", out.getvalue())
 
     def test_in_store_mode_a_row_shelved_by_its_column_is_no_difference(self):
@@ -154,5 +155,5 @@ class BoardDiffTests(unittest.TestCase):
                 "[holo2] board diff: 1 difference"]))):
             with self.subTest(mode=mode):
                 self.target.config_path.write_text(board + mode)
-                self.target = holophyte.project.Project.locate(self.repo)
+                self.target = holophyte.config.project.Project.locate(self.repo)
                 self.assertEqual(self.diff(), expected)

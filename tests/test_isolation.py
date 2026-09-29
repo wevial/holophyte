@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from holophyte import agents
+from holophyte.agents import agents
 
 
 class IsolationTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class IsolationTests(unittest.TestCase):
         )
 
     def test_none_preserves_process_call(self):
-        from holophyte.project import state_dir
+        from holophyte.config.project import state_dir
 
         for backend in (None, "none"):
             if backend:
@@ -39,7 +39,7 @@ class IsolationTests(unittest.TestCase):
             self.assertFalse(state_dir(self.root).exists())
 
     def test_container_boundary(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         main, worktree = self.make_worktree()
         self.target.path = main
@@ -92,7 +92,7 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(argv[-2:], ["agent-cli", "task"])
 
     def test_container_environment_drops_dotenv_quotes(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         source = self.root / "allowed.env"
         source.write_text('A="double"\n')
@@ -101,8 +101,8 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(isolation.environment(self.target), {"A": "double"})
 
     def test_file_credential_and_timeout_cleanup(self):
-        from holophyte import isolation
-        from holophyte.project import state_dir
+        from holophyte.config.project import state_dir
+        from holophyte.isolation import isolation
 
         main, worktree = self.make_worktree()
         credential = self.root / "auth.json"
@@ -142,7 +142,7 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(scratch.exists())
 
     def test_file_credential_launch_outside_a_repository_stages_its_copy(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         scratch = self.root / "scratch"
         scratch.mkdir()
@@ -170,7 +170,7 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(seen["copy"].exists())
 
     def test_file_credential_beside_a_mounted_directory_mounts_its_copy(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         _, worktree = self.make_worktree()
         credential = self.root / "netrc"
@@ -186,7 +186,7 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(scratch.exists())
 
     def test_file_credential_copy_is_removed_after_the_turn_locks_its_directory(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         _, worktree = self.make_worktree()
         credential = self.root / "auth.json"
@@ -202,7 +202,7 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(scratch.exists())
 
     def test_file_credential_copy_left_behind_is_reported(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         _, worktree = self.make_worktree()
         credential = self.root / "auth.json"
@@ -221,7 +221,7 @@ class IsolationTests(unittest.TestCase):
         self.assertTrue((scratch / "auth.json").exists())
 
     def test_file_credential_below_a_persistent_mount_mounts_only_its_copy(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         _, worktree = self.make_worktree()
         credential = self.root / "auth.json"
@@ -241,7 +241,7 @@ class IsolationTests(unittest.TestCase):
             self.assertFalse(any(mount.endswith(f"/{nested}:rw") for mount in mounts))
 
     def make_worktree(self):
-        from holophyte.isolation_git import git
+        from holophyte.isolation.isolation_git import git
 
         main = self.root / "main"
         main.mkdir()
@@ -254,7 +254,7 @@ class IsolationTests(unittest.TestCase):
         return main, worktree
 
     def test_linked_worktree_commit_returns_without_host_config(self):
-        from holophyte.isolation_git import git, isolated_git
+        from holophyte.isolation.isolation_git import git, isolated_git
 
         main, worktree = self.make_worktree()
         original = (worktree / ".git").read_text()
@@ -282,7 +282,7 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(git(worktree, "status", "--porcelain"), "")
 
     def test_interrupted_index_restore_preserves_host_staging(self):
-        from holophyte import isolation_git
+        from holophyte.isolation import isolation_git
 
         _, worktree = self.make_worktree()
         staged = worktree / "staged"
@@ -320,7 +320,7 @@ class IsolationTests(unittest.TestCase):
                          "new staged content")
 
     def test_interrupted_object_import_never_publishes_partial_object(self):
-        from holophyte import isolation_git
+        from holophyte.isolation import isolation_git
 
         main, _ = self.make_worktree()
         source = main / ".git" / "objects"
@@ -342,9 +342,9 @@ class IsolationTests(unittest.TestCase):
                                  path.read_bytes())
 
     def test_container_resolves_pending_merge_with_both_parents(self):
-        from holophyte import isolation
-        from holophyte.claim import reuse_leftover
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.claim import reuse_leftover
 
         main, worktree = self.make_worktree()
         git(main, "branch", "-M", "main")
@@ -379,8 +379,8 @@ class IsolationTests(unittest.TestCase):
                                   "--git-path", "MERGE_HEAD")).exists())
 
     def test_inconclusive_turn_preserves_pending_merge_and_staging(self):
-        from holophyte import isolation
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
 
         main, worktree = self.make_worktree()
         for directory, content in ((main, "main"), (worktree, "task")):
@@ -416,9 +416,9 @@ class IsolationTests(unittest.TestCase):
     def test_copy_back_refuses_unsafe_entries_without_losing_work(self):
         import socket
 
-        from holophyte import isolation
-        from holophyte.gates import InfraFailure
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import InfraFailure
 
         _, worktree = self.make_worktree()
         (worktree / "keep").write_text("valuable uncommitted work")
@@ -455,7 +455,7 @@ class IsolationTests(unittest.TestCase):
                     self.assertFalse((worktree / "nested").exists())
 
     def carry_worktree(self, carry):
-        from holophyte.isolation_git import git
+        from holophyte.isolation.isolation_git import git
 
         main, worktree = self.make_worktree()
         (worktree / ".gitignore").write_text("deps/\nnode_modules/\nmissing/\n")
@@ -468,7 +468,7 @@ class IsolationTests(unittest.TestCase):
         return worktree
 
     def recorded_volumes(self, launch, turn=lambda clone: None):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         volumes = []
 
@@ -484,7 +484,7 @@ class IsolationTests(unittest.TestCase):
             return launch(), volumes
 
     def test_nested_carry_is_mounted_and_survives_the_copy_back(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         worktree = self.carry_worktree(["tracked/node_modules"])
         installed = worktree / "tracked" / "node_modules" / "dep"
@@ -504,9 +504,9 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual((worktree / "tracked" / "file").read_text(), "edited\n")
 
     def test_tracked_or_escaping_carry_fails_the_launch_naming_it(self):
-        from holophyte import isolation
-        from holophyte.gates import InfraFailure
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import InfraFailure
 
         worktree = self.carry_worktree([])
         outside = self.root / "outside"
@@ -534,8 +534,8 @@ class IsolationTests(unittest.TestCase):
     def test_copy_back_refuses_a_linked_carry_parent_and_keeps_the_install(self):
         import shutil
 
-        from holophyte import isolation
-        from holophyte.gates import InfraFailure
+        from holophyte.isolation import isolation
+        from holophyte.loop.gates import InfraFailure
 
         worktree = self.carry_worktree(["tracked/node_modules"])
         installed = worktree / "tracked" / "node_modules" / "dep"
@@ -558,7 +558,7 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(list(outside.iterdir()), [])
 
     def test_carry_linked_to_another_worktree_mounts_that_worktrees_directory(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         worktree = self.carry_worktree(["deps"])
         (worktree / "deps").mkdir()
@@ -570,7 +570,7 @@ class IsolationTests(unittest.TestCase):
         self.assertTrue((main / "deps").is_symlink())
 
     def test_capture_launch_mounts_the_carry_instead_of_copying_it(self):
-        from holophyte import pr_media
+        from holophyte.pr import pr_media
 
         worktree = self.carry_worktree(["deps"])
         self.table["agents"]["implementer_isolation"] = "container"
@@ -587,8 +587,8 @@ class IsolationTests(unittest.TestCase):
         self.assertIn(f"{worktree.resolve() / 'deps'}:/workspace/deps:rw", volumes)
 
     def test_clone_turn_returns_commit_and_dirty_file_safely(self):
-        from holophyte import isolation
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
 
         _, worktree = self.make_worktree()
         sentinel = self.root / "hook-ran"
@@ -630,9 +630,9 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(mounts[0].exists())
 
     def test_clone_turn_commit_leaves_local_capture_spec_out(self):
-        from holophyte import isolation
-        from holophyte.claim import run_worktree_setup
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.claim import run_worktree_setup
 
         main, worktree = self.make_worktree()
         config = {"merge": {"ui_capture_dir": ".holophyte-capture",
@@ -661,9 +661,9 @@ class IsolationTests(unittest.TestCase):
             (worktree / ".holophyte-capture/KO-7.capture.ts").read_text(), "spec\n")
 
     def test_real_timeout_returns_committed_and_dirty_clone_work(self):
-        from holophyte import isolation
-        from holophyte.gates import run_capped
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import run_capped
 
         _, worktree = self.make_worktree()
         mounts = []
@@ -695,8 +695,8 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(mounts[0].exists())
 
     def test_copy_back_rolls_back_failed_destination_mutation(self):
-        from holophyte.gates import InfraFailure
-        from holophyte.isolation_clone import copy_files
+        from holophyte.isolation.isolation_clone import copy_files
+        from holophyte.loop.gates import InfraFailure
 
         source = self.root / "source"
         destination = self.root / "destination"
@@ -743,8 +743,8 @@ class IsolationTests(unittest.TestCase):
                 self.assertEqual(set(self.root.iterdir()), {source, destination})
 
     def test_failed_copy_back_rollback_retains_original_backup(self):
-        from holophyte.gates import InfraFailure
-        from holophyte.isolation_clone import copy_files
+        from holophyte.isolation.isolation_clone import copy_files
+        from holophyte.loop.gates import InfraFailure
 
         source = self.root / "source"
         destination = self.root / "destination"
@@ -776,9 +776,9 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual((kept[0] / "deps" / "installed").read_text(), "package")
 
     def test_clone_rewritten_history_is_infrastructure_failure(self):
-        from holophyte import isolation
-        from holophyte.gates import InfraFailure
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import InfraFailure
 
         _, worktree = self.make_worktree()
         before = git(worktree, "rev-parse", "HEAD")
@@ -797,9 +797,9 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(git(worktree, "rev-parse", "HEAD"), before)
 
     def test_clone_refuses_environment_history_and_excludes_dirty_environment(self):
-        from holophyte import isolation
-        from holophyte.gates import InfraFailure
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import InfraFailure
 
         main, worktree = self.make_worktree()
         git(main, "branch", "-M", "main")
@@ -834,8 +834,8 @@ class IsolationTests(unittest.TestCase):
     def test_signal_removes_clone_and_preserves_worktree(self):
         import signal
 
-        from holophyte import isolation
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
 
         _, worktree = self.make_worktree()
         before = git(worktree, "rev-parse", "HEAD")
@@ -855,7 +855,7 @@ class IsolationTests(unittest.TestCase):
         self.assertTrue((worktree / ".git").is_file())
 
     def test_copy_back_needs_only_writable_destination(self):
-        from holophyte.isolation_clone import copy_files
+        from holophyte.isolation.isolation_clone import copy_files
 
         source = self.root / "source"
         parent = self.root / "readonly"
@@ -873,9 +873,9 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual({p.name for p in destination.iterdir()}, {"file"})
 
     def test_racing_branch_update_preserves_worktree_and_index(self):
-        from holophyte import isolation_clone
-        from holophyte.gates import InfraFailure
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation_clone
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import InfraFailure
 
         _, worktree = self.make_worktree()
         with self.assertRaisesRegex(InfraFailure, "changed|lock|fast-forward"):
@@ -910,8 +910,8 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual((worktree / "staged").read_text(), "valuable staged work")
 
     def test_return_locks_refs_and_index_during_file_replacement(self):
-        from holophyte import isolation_clone
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation_clone
+        from holophyte.isolation.isolation_git import git
 
         _, worktree = self.make_worktree()
         old = git(worktree, "rev-parse", "HEAD")
@@ -941,9 +941,9 @@ class IsolationTests(unittest.TestCase):
         git(worktree, "reset", "--hard", old)  # Locks were released.
 
     def test_failed_ref_commit_restores_working_files_and_index(self):
-        from holophyte import isolation_clone, isolation_return
-        from holophyte.gates import InfraFailure
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation_clone, isolation_return
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import InfraFailure
 
         _, worktree = self.make_worktree()
         (worktree / "keep").write_text("valuable staged work")
@@ -975,7 +975,7 @@ class IsolationTests(unittest.TestCase):
         git(worktree, "commit", "-qm", "locks released")
 
     def test_turn_clone_keeps_identity_in_clone_config_not_environment(self):
-        from holophyte import isolation_clone
+        from holophyte.isolation import isolation_clone
 
         _, worktree = self.make_worktree()
         with isolation_clone.turn_clone(worktree) as (clone, env):
@@ -989,7 +989,7 @@ class IsolationTests(unittest.TestCase):
                                               "user.email author@example.test"])
 
     def test_host_git_ignores_inherited_repository_locations(self):
-        from holophyte.isolation_git import git
+        from holophyte.isolation.isolation_git import git
 
         main, worktree = self.make_worktree()
         (worktree / "file").write_text("task content")
@@ -1009,7 +1009,7 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(git(main, "status", "--porcelain"), "")
 
     def test_config_rejects_invalid_boundaries(self):
-        from holophyte.isolation import route_for
+        from holophyte.isolation.isolation import route_for
 
         for key, value in [
             ("implementer_isolation", "vm"),
@@ -1026,7 +1026,7 @@ class IsolationTests(unittest.TestCase):
                     route_for(self.target)
 
     def test_file_mount_refuses_workspace_and_home_destinations(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         _, worktree = self.make_worktree()
         for path in ("/workspace/capture.py", "/home/implementer/capture.py"):
@@ -1038,8 +1038,8 @@ class IsolationTests(unittest.TestCase):
                 )
 
     def test_read_only_launch_creates_no_session_directory(self):
-        from holophyte import isolation
-        from holophyte.project import state_dir
+        from holophyte.config.project import state_dir
+        from holophyte.isolation import isolation
 
         main, worktree = self.make_worktree()
         self.target.path = main
@@ -1057,7 +1057,7 @@ class IsolationTests(unittest.TestCase):
         self.assertNotIn(".claude", str(run.call_args.args[0]))
 
     def test_launch_outside_a_repository_mounts_no_cache(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         scratch = self.root / "scratch"
         scratch.mkdir()
@@ -1077,7 +1077,7 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(home.exists())
 
     def test_launch_without_cache_points_tmpdir_at_container_tmp(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         scratch = self.root / "scratch"
         scratch.mkdir()
@@ -1088,7 +1088,7 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(host_env["TMPDIR"], "/tmp")
 
     def test_container_tmp_allows_running_programs(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         scratch = self.root / "scratch"
         scratch.mkdir()
@@ -1109,7 +1109,7 @@ class IsolationTests(unittest.TestCase):
         import shutil
         import uuid
 
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1137,7 +1137,7 @@ class IsolationTests(unittest.TestCase):
         import shutil
         import uuid
 
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1167,7 +1167,7 @@ class IsolationTests(unittest.TestCase):
         self.assertNotIn("noexec", options)
 
     def test_relative_state_home_mounts_an_absolute_session_directory(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         main, worktree = self.make_worktree()
         self.target.path = main
@@ -1195,7 +1195,7 @@ class IsolationTests(unittest.TestCase):
         return release
 
     def test_claude_implementer_mounts_no_codex_file(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         _, worktree = self.make_worktree()
         release = self.fake_codex_release()
@@ -1211,7 +1211,7 @@ class IsolationTests(unittest.TestCase):
                 self.assertEqual(command[-2:], ["claude", "-p"])
 
     def test_codex_fallback_mounts_the_host_release_read_only(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         _, worktree = self.make_worktree()
         release = self.fake_codex_release()
@@ -1233,7 +1233,7 @@ class IsolationTests(unittest.TestCase):
                 isolation.route_for(self.target), worktree, {}, ["codex"], "n")
 
     def test_quoted_codex_program_is_a_codex_implementer(self):
-        from holophyte.isolation import route_for
+        from holophyte.isolation.isolation import route_for
 
         self.table["agents"] = {"implementer_isolation": "container",
                                 "implementer": '"codex" exec -m model'}
@@ -1246,7 +1246,7 @@ class IsolationTests(unittest.TestCase):
     def test_real_codex_implementer_runs_the_host_release_read_only(self):
         import shutil
 
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1272,8 +1272,8 @@ class IsolationTests(unittest.TestCase):
     def test_real_session_files_persist_per_task_worktree(self):
         import shutil
 
-        from holophyte import isolation
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1306,9 +1306,9 @@ class IsolationTests(unittest.TestCase):
     def test_real_tool_caches_persist_per_project(self):
         import shutil
 
-        from holophyte import isolation
-        from holophyte.isolation_git import git
-        from holophyte.project import state_dir
+        from holophyte.config.project import state_dir
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1360,7 +1360,7 @@ class IsolationTests(unittest.TestCase):
         import shutil
 
         import review_runner
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1384,8 +1384,8 @@ class IsolationTests(unittest.TestCase):
         import uuid
 
         import review_runner
-        from holophyte import isolation
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1414,8 +1414,8 @@ class IsolationTests(unittest.TestCase):
     def test_real_file_credential_is_a_writable_private_copy(self):
         import shutil
 
-        from holophyte import isolation
-        from holophyte.project import state_dir
+        from holophyte.config.project import state_dir
+        from holophyte.isolation import isolation
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1449,7 +1449,7 @@ class IsolationTests(unittest.TestCase):
     def test_real_file_credential_below_the_session_keeps_its_state(self):
         import shutil
 
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1479,7 +1479,7 @@ class IsolationTests(unittest.TestCase):
     def test_real_launch_writes_carry_directories_in_the_worktree(self):
         import shutil
 
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1507,8 +1507,8 @@ class IsolationTests(unittest.TestCase):
     def test_real_container_commit(self):
         import shutil
 
-        from holophyte import isolation
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1545,8 +1545,8 @@ class IsolationTests(unittest.TestCase):
     def test_real_launch_leaves_other_repositories_their_own_identity(self):
         import shutil
 
-        from holophyte import isolation
-        from holophyte.isolation_git import git
+        from holophyte.isolation import isolation
+        from holophyte.isolation.isolation_git import git
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -1575,8 +1575,8 @@ class IsolationTests(unittest.TestCase):
         import uuid
 
         import store
-        from holophyte import fix_session
-        from holophyte.project import Project
+        from holophyte.agents import fix_session
+        from holophyte.config.project import Project
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")

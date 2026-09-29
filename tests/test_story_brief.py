@@ -16,15 +16,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 
-import holophyte.loop  # noqa: E402
-import holophyte.operator  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
+import holophyte.loop.loop  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.stories  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
-from holophyte.story_claim import (  # noqa: E402
+from holophyte.loop.runs import open_store  # noqa: E402
+from holophyte.story.story_claim import (  # noqa: E402
     STANDING_ORDERS,
     UPSTREAM,
     WITNESS,
@@ -200,10 +200,10 @@ class StoryBriefTests(LoopFixture):
                            for step in (Commit("work"), APPROVE)])
         out = io.StringIO()
         with no_agent_processes(), patch.object(sys, "stdout", out), \
-                patch.object(holophyte.loop, "agent", fake), \
-                patch("holophyte.freshness.critic_admits",
+                patch.object(holophyte.loop.loop, "agent", fake), \
+                patch("holophyte.review.freshness.critic_admits",
                       return_value=True):
-            holophyte.operator.main(self.project, self.board)
+            holophyte.cli.operator.main(self.project, self.board)
 
         self.assertEqual(self.read(
             "SELECT linearIdentifier, status FROM tickets WHERE id NOT IN"

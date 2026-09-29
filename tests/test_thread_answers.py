@@ -3,7 +3,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from holophyte import pr, thread_answers
+from holophyte.babysit import thread_answers
+from holophyte.pr import pr
 
 REPO = "https://github.com/OWNER/NAME"
 
@@ -11,7 +12,7 @@ REPO = "https://github.com/OWNER/NAME"
 class ThreadAnswersImportTests(unittest.TestCase):
     def test_standalone_import_in_fresh_interpreter(self):
         result = subprocess.run(
-            ["python3", "-c", "import holophyte.thread_answers"],
+            ["python3", "-c", "import holophyte.babysit.thread_answers"],
             cwd=Path(__file__).resolve().parent.parent,
             capture_output=True, text=True,
         )

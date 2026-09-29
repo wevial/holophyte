@@ -6,8 +6,8 @@ from unittest.mock import patch
 from fake_agent import APPROVE, REQUEST_CHANGES, Commit, FakeAgent
 from loop_fixture import VALID_BODY, StubProvider, a_task
 
-import holophyte.agents as agents
-import holophyte.loop as loop
+import holophyte.agents.agents as agents
+import holophyte.loop.loop as loop
 
 
 class FixSessionCases:
@@ -133,7 +133,7 @@ class FixSessionCases:
 
 class FixSessionConfigCases:
     def test_fix_session_startup_validation(self):
-        import holophyte.config as config
+        import holophyte.config.config as config
         for setting, key in (("[agents]\nimplementer_resume = 'cli resume'",
                               'implementer_resume'),
                              ("[agents]\nimplementer_resume = 4", 'implementer_resume'),

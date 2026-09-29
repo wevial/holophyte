@@ -25,22 +25,22 @@ from pathlib import Path
 from time import monotonic
 from unittest.mock import Mock, patch
 
-import holophyte.serve_host
-import holophyte.serve_watch
+import holophyte.serve.serve_host
+import holophyte.serve.serve_watch
 import store
 import store.read
 import store.schema
 import store.tickets
-from holophyte.host import Host, settings
-from holophyte.project import Project
-from holophyte.serve_host import (
+from holophyte.config.project import Project
+from holophyte.host.host import Host, settings
+from holophyte.serve.serve_host import (
     HostServer,
     host_attention,
     host_status,
     host_tokens,
     serve_host,
 )
-from holophyte.serve_watch import adopted_socket
+from holophyte.serve.serve_watch import adopted_socket
 from store.schema import SCHEMA_VERSION
 from tests.host_fixture import HostFixture, factory_checkout, git
 
@@ -405,7 +405,7 @@ class RunSweepTests(HostServeCase):
         def systemctl(verb, unit, *options):
             seen.append((verb, unit, options, ledger.read_text()))
             return True, "started"
-        with patch.object(holophyte.serve_host, "systemctl_user", systemctl):
+        with patch.object(holophyte.serve.serve_host, "systemctl_user", systemctl):
             self.assertEqual(self.request(
                 "POST", "/actions/run-sweep", body={})[0], 401)
             code, body = self.request("POST", "/actions/run-sweep",
@@ -420,7 +420,7 @@ class RunSweepTests(HostServeCase):
         # A row that cannot be written runs nothing.
         ledger.unlink()
         ledger.mkdir()
-        with patch.object(holophyte.serve_host, "systemctl_user") as called:
+        with patch.object(holophyte.serve.serve_host, "systemctl_user") as called:
             code, body = self.request("POST", "/actions/run-sweep",
                                       bearer(MACHINE), {})
         self.assertEqual((code, body["ok"]), (200, False), body)
@@ -494,7 +494,7 @@ class SocketHandoffTests(HostServeCase):
         self.addCleanup(held.close)
         held.bind(("127.0.0.1", 0))
         held.listen(1)
-        self.enterContext(patch.object(holophyte.serve_watch, "LISTEN_FD",
+        self.enterContext(patch.object(holophyte.serve.serve_watch, "LISTEN_FD",
                                        os.dup(held.fileno())))
         environ = {"LISTEN_FDS": "1", "LISTEN_PID": str(os.getpid() + 1)}
         self.assertIsNone(adopted_socket(environ))

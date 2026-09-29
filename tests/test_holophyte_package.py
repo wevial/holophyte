@@ -35,14 +35,14 @@ FACTORY = ROOT / "factory.py"
 # carry no `__module__`, so they are not listed. Edit these lists in the same
 # change that moves a name, and say why in the commit.
 DEFINED = {
-    _module("run"): ["Run", "land"],
-    _module("project"): [
+    _module("loop.run"): ["Run", "land"],
+    _module("config.project"): [
         "Project",
         "adopt_legacy_state",
         "legacy_state_layouts",
         "state_dir",
     ],
-    _module("config"): [
+    _module("config.config"): [
         "agent_command",
         "carry_directories",
         "check_agent_commands",
@@ -55,12 +55,12 @@ DEFINED = {
         "setup_commands",
         "setup_timeout",
     ],
-    # KO-397: the per-table readers, out of `holophyte.config`.
-    _module("config_tables"): [
+    # KO-397: the per-table readers, out of `holophyte.config.config`.
+    _module("config.config_tables"): [
         "LoopConfig", "ReportConfig", "SweepConfig", "loop_config",
         "report_config", "sweep_config",
     ],
-    _module("gates"): [
+    _module("loop.gates"): [
         "InfraFailure",
         "RunFailure",
         "contract_report",
@@ -77,14 +77,14 @@ DEFINED = {
         "timeout_failure_report",
         "vacuous_green_report",
     ],
-    _module("agents"): [
+    _module("agents.agents"): [
         "ProbeResult",
         "agent",
         "agent_route",
         "probe_implementer",
         "publish_review_refs",
     ],
-    _module("findings"): [
+    _module("review.findings"): [
         "_entry",
         "_gist",
         "_ms",
@@ -102,7 +102,7 @@ DEFINED = {
         "run_entry",
         "write_findings",
     ],
-    _module("report"): [
+    _module("cli.report"): [
         "format_age",
         "host_label",
         "host_name",
@@ -110,7 +110,7 @@ DEFINED = {
         "report_rows",
         "report_summary",
     ],
-    _module("review"): [
+    _module("review.review"): [
         "_trailing_verdict",
         "criteria_block",
         "criteria_brief",
@@ -126,7 +126,7 @@ DEFINED = {
         "test_references",
         "unparsed_path",
     ],
-    _module("runs"): [
+    _module("loop.runs"): [
         "heartbeat_while",
         "open_store",
         "record_round",
@@ -134,7 +134,7 @@ DEFINED = {
         "set_phase",
         "warn_on_run",
     ],
-    _module("board"): [
+    _module("board.board"): [
         "body_problem",
         "close_out_failure",
         "escalate",
@@ -154,7 +154,7 @@ DEFINED = {
     ],
     # The three namedtuples are classes made in the module, so they carry a
     # `__module__` like any `class` statement and are listed with the rest.
-    _module("supervisor"): [
+    _module("host.supervisor"): [
         "Outcome",
         "Sweep",
         "Trip",
@@ -167,8 +167,8 @@ DEFINED = {
         "sweep",
     ],
     # KO-396: the sweep's report lines and the supervisor lock, out of
-    # `holophyte.supervisor`.
-    _module("sweep_report"): [
+    # `holophyte.host.supervisor`.
+    _module("host.sweep_report"): [
         "_runs",
         "merge_lock_lines",
         "restart_lines",
@@ -177,7 +177,7 @@ DEFINED = {
         "sweep_lines",
         "sweep_report",
     ],
-    _module("supervisor_lock"): [
+    _module("host.supervisor_lock"): [
         "SupervisorHeld",
         "acquire_supervisor_lock",
         "pid_alive",
@@ -187,20 +187,20 @@ DEFINED = {
         "supervisor_lock_path",
         "supervisor_running",
     ],
-    _module("loop"): ["run_task"],
-    # KO-390: the operator commands and the entry point, out of `holophyte.loop`.
-    _module("operator"): ["main", "report", "self_hosted"],
-    # KO-389: the claim and the worktree cut, out of `holophyte.loop`.
-    _module("claim"): [
+    _module("loop.loop"): ["run_task"],
+    # KO-390: the operator commands and the entry point, out of `holophyte.loop.loop`.
+    _module("cli.operator"): ["main", "report", "self_hosted"],
+    # KO-389: the claim and the worktree cut, out of `holophyte.loop.loop`.
+    _module("loop.claim"): [
         "_Held", "_admit_ticket", "_claim_next", "_claim_run",
         "_cut_worktree", "_lease_on_board", "_park_unlisted", "_refresh_main",
         "_refuse_claim", "_resolve_merge_conflict", "_setup_worktree",
         "_skip_held", "conflict_brief", "merge_conflicts", "reuse_leftover",
         "run_worktree_setup", "skip_line", "timeout_report",
     ],
-    _module("cli"): ["cli"],
-    # KO-385: the pull-request stage, split out of `holophyte.loop`.
-    _module("pullrequest"): [
+    _module("cli.cli"): ["cli"],
+    # KO-385: the pull-request stage, split out of `holophyte.loop.loop`.
+    _module("pr.pullrequest"): [
         "_landed_pr",
         "_merge_pr",
         "_park_human",
@@ -212,8 +212,8 @@ DEFINED = {
         "_written_pr_text",
     ],
     # KO-386: the babysit pass joins the texts it drives.
-    _module("pr_head"): ["_pr_terminal"],
-    _module("babysitter"): [
+    _module("pr.pr_head"): ["_pr_terminal"],
+    _module("babysit.babysitter"): [
         "_answer_threads", "_decline_threads",
         "_babysit",
         "_fix_threads",
@@ -243,7 +243,7 @@ DEFINED = {
         "where",
     ],
     # KO-259: the one GitHub surface, `[merge] mode = "pr"`'s push and PR.
-    _module("pr"): [
+    _module("pr.pr"): [
         "check_pr_route",
         "create_pull_request",
         "origin_url",
@@ -253,8 +253,8 @@ DEFINED = {
         "repo_of",
         "token_from_env",
     ],
-    # KO-426: reading a pull request's state, out of `holophyte.pr`.
-    _module("pr_status"): [
+    # KO-426: reading a pull request's state, out of `holophyte.pr.pr`.
+    _module("pr.pr_status"): [
         "PullStatus",
         "_check_reads",
         "_check_runs_of",
@@ -269,8 +269,8 @@ DEFINED = {
         "pr_state",
         "pull_status",
     ],
-    # KO-388: the worker pool and its scheduler, out of `holophyte.loop`.
-    _module("pool"): [
+    # KO-388: the worker pool and its scheduler, out of `holophyte.loop.loop`.
+    _module("loop.pool"): [
         "_PoolState",
         "_PrefixedOut",
         "_claimable",
@@ -281,8 +281,8 @@ DEFINED = {
         "worker",
     ],
     # KO-387: the startup reconciles and the GitHub budget, split out of
-    # `holophyte.loop` (`_pr_seen` out of `holophyte.pullrequest`).
-    _module("reconcile"): [
+    # `holophyte.loop.loop` (`_pr_seen` out of `holophyte.pr.pullrequest`).
+    _module("host.reconcile"): [
         "GitHubBudget",
         "_budget_low",
         "_iso_epoch",
@@ -302,7 +302,7 @@ DEFINED = {
 
 class MediaStartupTests(unittest.TestCase):
     def test_missing_bucket_credentials_warn_once_before_probes(self):
-        from holophyte import operator
+        from holophyte.cli import operator
         from tests.test_media_store import CREDS
 
         bucket = {"endpoint": "https://objects.example.invalid", "bucket": "evidence",
@@ -337,7 +337,7 @@ class MediaStartupTests(unittest.TestCase):
 class MovedNamesTests(unittest.TestCase):
 
     def test_landing_is_owned_by_run(self):
-        self.assertFalse(hasattr(_module("loop"), "_land"))
+        self.assertFalse(hasattr(_module("loop.loop"), "_land"))
 
 
     def test_each_moved_name_is_defined_in_its_new_module(self):
@@ -361,11 +361,11 @@ class MovedNamesTests(unittest.TestCase):
             and (inspect.isfunction(value) or inspect.isclass(value))
             and value.__module__ == entry.__name__)
         self.assertEqual(own, [])
-        self.assertIs(entry.cli, _module("cli").cli)
+        self.assertIs(entry.cli, _module("cli.cli").cli)
 
 
 class ProjectTypeTests(unittest.TestCase):
-    """KO-619: the project's type is `Project` in `holophyte.project`, with
+    """KO-619: the project's type is `Project` in `holophyte.config.project`, with
     no shim left at the old module path."""
 
     # Spelled in pieces so the grep below does not find this file.

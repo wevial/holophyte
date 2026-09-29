@@ -10,8 +10,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli
-import holophyte.project
+import holophyte.cli.cli
+import holophyte.config.project
 
 
 class FakeChild:
@@ -38,7 +38,7 @@ class ConfigTestCase(unittest.TestCase):
         self.set_home(self.home)
         self.target = self.root / "repo"
         self.target.mkdir()
-        self.project = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.config.project.Project.locate(self.target)
         if config is not None:
             self.write_config(config)
         self.stub_supervisor_spawn()
@@ -52,7 +52,7 @@ class ConfigTestCase(unittest.TestCase):
         throwaway home after the test. `self.popen` records the calls, so a
         test about the spawn reads what would have been started.
         """
-        patcher = patch.object(holophyte.cli, "SPAWN", return_value=FakeChild())
+        patcher = patch.object(holophyte.cli.cli, "SPAWN", return_value=FakeChild())
         self.popen = patcher.start()
         self.addCleanup(patcher.stop)
 

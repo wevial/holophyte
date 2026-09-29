@@ -10,8 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import VALID_BODY  # noqa: E402
 from sweep_fixture import T0, SweepTestCase  # noqa: E402
 
-from holophyte.agents import ProbeResult  # noqa: E402
-from holophyte.supervisor import start_loop_for  # noqa: E402
+from holophyte.agents.agents import ProbeResult  # noqa: E402
+from holophyte.host.supervisor import start_loop_for  # noqa: E402
 from provider import FileProvider  # noqa: E402
 
 
@@ -78,9 +78,9 @@ class LaunchBackoffTests(SweepTestCase):
             ).fetchone()[0], 1)
 
     def test_healthy_first_pass_starts_without_backoff(self):
-        with patch('holophyte.agents.probe_implementer',
+        with patch('holophyte.agents.agents.probe_implementer',
                    return_value=ProbeResult(['fake-probe'], 0, 'ready', 90)), \
-                patch('holophyte.supervisor.start_loop',
+                patch('holophyte.host.supervisor.start_loop',
                       return_value=('loop', True, '')) as start:
             start_loop_for(self.project, self.conn, [(None, None)], T0, io.StringIO())
         start.assert_called_once()
@@ -96,8 +96,8 @@ class LaunchBackoffTests(SweepTestCase):
 
         launch_backoff.failure(self.conn, self.project_id, 'fake-probe: quota',
                                T0, pending=True)
-        with patch('holophyte.agents.probe_implementer') as probe, \
-                patch('holophyte.supervisor.start_loop') as start:
+        with patch('holophyte.agents.agents.probe_implementer') as probe, \
+                patch('holophyte.host.supervisor.start_loop') as start:
             start_loop_for(self.project, self.conn, [(None, None)], T0 + 1000,
                            io.StringIO())
             probe.assert_not_called()
@@ -105,9 +105,9 @@ class LaunchBackoffTests(SweepTestCase):
         reopened = store.open(str(self.db))
         self.addCleanup(reopened.close)
         now = T0 + 61_000
-        with patch('holophyte.agents.probe_implementer',
+        with patch('holophyte.agents.agents.probe_implementer',
                    return_value=ProbeResult(['fake-probe'], 1, 'quota', 90)), \
-                patch('holophyte.supervisor.start_loop') as start:
+                patch('holophyte.host.supervisor.start_loop') as start:
             for interval in (120, 240, 480, 960, 1800, 1800):
                 start_loop_for(self.project, reopened, [(None, None)], now,
                                io.StringIO())
@@ -153,15 +153,15 @@ class LaunchBackoffTests(SweepTestCase):
     def test_successful_manual_startup_clears_the_outage_without_owed_work(self):
         from types import SimpleNamespace
 
-        from holophyte import operator
-        from holophyte.serve_runs import route_down_rows
+        from holophyte.cli import operator
+        from holophyte.serve.serve_runs import route_down_rows
         from store import launch_backoff
 
         launch_backoff.failure(self.conn, self.project_id, 'quota exhausted', T0)
         with contextlib.redirect_stdout(io.StringIO()), \
-                patch('holophyte.operator.probe_implementer',
+                patch('holophyte.cli.operator.probe_implementer',
                    return_value=ProbeResult(['fake-probe'], 0, 'ready', 90)), \
-                patch('holophyte.operator._serial', return_value=0):
+                patch('holophyte.cli.operator._serial', return_value=0):
             self.assertEqual(operator.main(
                 self.project, SimpleNamespace(team='team-1')), 0)
         self.assertIsNone(launch_backoff.current(self.conn, self.project_id))
@@ -171,7 +171,7 @@ class LaunchBackoffTests(SweepTestCase):
         from types import SimpleNamespace
 
         import store
-        from holophyte.supervisor import reconcile_parked_pull_requests
+        from holophyte.host.supervisor import reconcile_parked_pull_requests
         from store import launch_backoff
 
         project_id = store.ensure_project(self.conn, 'team-2', self.target)
@@ -182,11 +182,13 @@ class LaunchBackoffTests(SweepTestCase):
             verification_commands=['echo ok'])
         provider = SimpleNamespace(team='team-2')
         failure = ProbeResult(['fake-probe'], 1, 'quota exhausted', 90)
-        with patch('holophyte.agents.probe_implementer', return_value=failure), \
-                patch('holophyte.supervisor.start_loop') as start, \
-                patch('holophyte.reconcile._reconcile_pull_requests'), \
-                patch('holophyte.supervisor.linear_budget_low', return_value=False), \
-                patch('holophyte.supervisor.board_ready', return_value=1) as board:
+        with (
+            patch('holophyte.agents.agents.probe_implementer', return_value=failure),
+            patch('holophyte.host.supervisor.start_loop') as start,
+            patch('holophyte.host.reconcile._reconcile_pull_requests'),
+            patch('holophyte.host.supervisor.linear_budget_low', return_value=False),
+            patch('holophyte.host.supervisor.board_ready', return_value=1) as board,
+        ):
             reconcile_parked_pull_requests(
                 self.project, self.conn, T0, provider, io.StringIO())
             board.assert_not_called()
@@ -204,7 +206,7 @@ class LaunchBackoffTests(SweepTestCase):
     def test_probe_credentials_are_redacted_in_output_and_store(self):
         from types import SimpleNamespace
 
-        from holophyte import operator
+        from holophyte.cli import operator
         from store import launch_backoff
 
         secret = 'fixture-credential-12345'
@@ -216,12 +218,12 @@ class LaunchBackoffTests(SweepTestCase):
                     probe = ProbeResult(['fake-probe', secret], code, output, 90)
                     out = io.StringIO()
                     with contextlib.redirect_stdout(out), \
-                            patch('holophyte.operator.probe_implementer',
+                            patch('holophyte.cli.operator.probe_implementer',
                                   return_value=probe), \
-                            patch('holophyte.agents.probe_implementer',
+                            patch('holophyte.agents.agents.probe_implementer',
                                   return_value=probe), \
-                            patch('holophyte.operator._serial', return_value=0), \
-                            patch('holophyte.supervisor.start_loop',
+                            patch('holophyte.cli.operator._serial', return_value=0), \
+                            patch('holophyte.host.supervisor.start_loop',
                                   return_value=('loop', True, '')):
                         if startup:
                             operator.main(self.project, SimpleNamespace(team='team-1'))
@@ -244,7 +246,7 @@ class StoreModeFiles(FileProvider):
 class LoopEnvironmentProbeTests(SweepTestCase):
     def fixture(self, probe_lines, serve_env, agents=""):
         """A released store-mode project whose implementer is `probe_lines`."""
-        from holophyte.host import home
+        from holophyte.host.host import home
 
         self.calls, self.starts = self.root / "probe.calls", self.root / "start.calls"
         probe = self.root / "probe"
@@ -270,7 +272,7 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         self.board = StoreModeFiles(files)
 
     def one_pass(self, at, out=None):
-        from holophyte.supervisor import reconcile_parked_pull_requests
+        from holophyte.host.supervisor import reconcile_parked_pull_requests
 
         reconcile_parked_pull_requests(
             self.project, self.conn, at, self.board, out or io.StringIO())
@@ -288,9 +290,11 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         environ = {k: v for k, v in os.environ.items()
                    if k != "HOLO_FIXTURE_CREDENTIAL"}
         environ["PATH"] = f"{self.root}:{os.environ['PATH']}"
-        with patch.dict(os.environ, environ, clear=True), \
-                patch('holophyte.reconcile._reconcile_pull_requests'), \
-                patch('holophyte.supervisor.linear_budget_low', return_value=False):
+        with (
+            patch.dict(os.environ, environ, clear=True),
+            patch('holophyte.host.reconcile._reconcile_pull_requests'),
+            patch('holophyte.host.supervisor.linear_budget_low', return_value=False),
+        ):
             yield
 
     def test_released_pass_probes_with_the_loop_units_environment_file(self):
@@ -365,7 +369,7 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         values = {"HOLO_FIXTURE_CREDENTIAL": "loop-only",
                   "SECOND": "also-loop-only", "BROKEN": "a\x00b"}
         with self.sweep_environment(), patch(
-                "holophyte.host.unit_environment", return_value=values):
+                "holophyte.host.host.unit_environment", return_value=values):
             os.environ["SECOND"] = "the sweep's own"
             with self.assertRaises(ValueError):
                 self.one_pass(T0)
@@ -375,7 +379,7 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         self.assertEqual(self.started(), [])
 
     def test_the_container_probe_gets_a_holophyte_credential_but_no_target_key(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
         from holophyte.redact import redact_values
 
         self.fixture(

@@ -22,8 +22,8 @@ from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 from test_store_claim_loop import STORE_MODE, StoreFiles  # noqa: E402
 
 import store  # noqa: E402
-from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.supervisor import (  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
+from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
@@ -85,10 +85,10 @@ class DonePushReleasesDependentTests(LoopFixture):
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         started = []
-        with patch("holophyte.reconcile._reconcile_pull_requests"), \
-                patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.reconcile._reconcile_pull_requests"), \
+                patch("holophyte.host.supervisor.linear_budget_low",
                       return_value=False), \
-                patch("holophyte.supervisor.start_loop_for",
+                patch("holophyte.host.supervisor.start_loop_for",
                       lambda target, conn, owed, *a, **k: started.append(owed)):
             reconcile_parked_pull_requests(
                 self.project, conn, now, self.board, io.StringIO(),
@@ -96,7 +96,7 @@ class DonePushReleasesDependentTests(LoopFixture):
         return started[0] if started else None
 
     def run_loop(self, implementer):
-        with patch("holophyte.freshness.critic_admits", return_value=True), \
+        with patch("holophyte.review.freshness.critic_admits", return_value=True), \
                 patch.object(sys, "stdout", io.StringIO()):
             self.loop(implementer, APPROVE, provider=self.board)
 

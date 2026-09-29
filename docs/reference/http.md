@@ -204,15 +204,15 @@ opened, so its last path segment is the PR number.
  "rounds": [
   {"round": 1, "started_ms": 1788450761675, "ended_ms": 1788450941675,
    "verdict": "changes_requested", "reviewer_model": "reviewer-model",
-   "findings": [{"path": "holophyte/serve.py", "line": 12, "severity": "p1",
+   "findings": [{"path": "holophyte/serve/serve.py", "line": 12, "severity": "p1",
                  "criterion": "AC1", "message": "the route is unmatched"},
-                {"path": "holophyte/serve.py", "line": 40, "severity": "p1",
+                {"path": "holophyte/serve/serve.py", "line": 40, "severity": "p1",
                  "criterion": null, "message": "Validate input", "kind": "thread",
                  "author": "review-bot", "author_kind": "bot",
                  "summary": "Validate input", "verdict": "ADDRESS",
                  "raw": "Please validate input",
                  "url": "https://github.com/example/repo/pull/2170#discussion_r1"}],
-   "instructions": [{"kind": "instruction", "path": "holophyte/serve.py", "line": null,
+   "instructions": [{"kind": "instruction", "path": "holophyte/serve/serve.py", "line": null,
                      "author": "operator", "severity": "nit",
                      "message": "Keep validation", "request": "Keep validation",
                      "url": "https://github.com/example/repo/pull/2170#discussion_r2",
@@ -287,7 +287,7 @@ pull request the run opened, each null when there is none.
  "files": [
   {"path": "docs/reference/http.md", "status": "M", "added": 31, "deleted": 2},
   {"path": "holophyte/files.py", "status": "A", "added": 168, "deleted": 0},
-  {"path": "holophyte/serve.py", "status": "M", "added": 62, "deleted": 14}
+  {"path": "holophyte/serve/serve.py", "status": "M", "added": 62, "deleted": 14}
  ],
  "total_added": 261, "total_deleted": 16, "truncated": false}
 ```
@@ -594,7 +594,7 @@ whose checkout moved leaves for the new code). A locked or corrupt store is 503 
 store with no row for the project's path is 503 naming `factory.py project
 add` (the other routes still answer, and a `hold` may write the row); any
 other failure is 500. Every read waits at most one second for a store's
-lock (`HOST_READ_WAIT_S` in `holophyte/serve_host.py`, through
+lock (`HOST_READ_WAIT_S` in `holophyte/serve/serve_host.py`, through
 `store.read.lock_wait()`), so a locked store answers 503 inside the
 drawer's two-second limit. The root lists each such project with its
 `error` and the others whole.
