@@ -8,7 +8,7 @@ from . import _append_event
 from .enums import ChildRole, DecisionKind, RedKind, WitnessVerdict, WitnessVerifier
 from .notes import record_note
 from .operate import record_project_intervention
-from .revisions import record_board_fields
+from .revisions import BOARD_FIELDS, record_board_fields
 from .schema import _transaction
 from .tickets import STORY_ADVANCED, _story_advanced, walk_ticket
 from .writes import set_board_state
@@ -51,21 +51,38 @@ def file_story(conn, parent_id, witnesses, children, standing_orders=(),
         conn.execute("INSERT INTO stories (ticketId, state, generation,"
                      " standingOrders) VALUES (?, 'planned', 0, ?)",
                      (parent_id, json.dumps(orders)))
-        for witness in witnesses:
-            conn.execute(
-                "INSERT INTO storyWitnesses (storyId, key, criterion, file,"
-                " command, source, sourceHash, completedBy)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (parent_id, *(witness[field] for field in WITNESS_FIELDS),
-                 hashlib.sha256(witness["source"].encode()).hexdigest(),
-                 completed_by.get(witness["key"])))
-        for ticket_id, role, child_keys in children:
-            for key in child_keys or ("",):
-                conn.execute("INSERT INTO storyChildren (ticketId, witnessKey,"
-                             " storyId, role) VALUES (?, ?, ?, ?)",
-                             (ticket_id, key, parent_id, role))
-            conn.execute("UPDATE tickets SET parentTicketId = ? WHERE id = ?",
-                         (parent_id, ticket_id))
+        _insert_plan(conn, parent_id, witnesses, children, completed_by)
+
+
+def replan_story(conn, parent_id, witnesses, children, standing_orders,
+                 now=None, body_revised=False):
+    witnesses = [dict(witness) for witness in witnesses]
+    children = [(ticket_id, role, tuple(keys))
+                for ticket_id, role, keys in children]
+    keys = _check_witnesses(witnesses)
+    completed_by = _check_children(parent_id, children, keys)
+    orders = list(standing_orders)
+    if not all(isinstance(order, str) and order.strip() for order in orders):
+        raise ValueError("a standing order is blank")
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        state = _story_state(conn, parent_id)
+        if state in ("closed", "abandoned"):
+            raise ValueError(f"story {parent_id} is {state}")
+        _check_replanned(conn, parent_id, [child[0] for child in children])
+        conn.execute("DELETE FROM storyChildren WHERE storyId = ?",
+                     (parent_id,))
+        conn.execute("DELETE FROM storyWitnesses WHERE storyId = ?",
+                     (parent_id,))
+        _insert_plan(conn, parent_id, witnesses, children, completed_by)
+        conn.execute("UPDATE stories SET standingOrders = ?, state = CASE"
+                     " WHEN state IN (?, ?) THEN 'planned' ELSE state END"
+                     " WHERE ticketId = ?",
+                     (json.dumps(orders), *OPEN_STATES, parent_id))
+        if not body_revised:
+            _record_plan_revision(conn, parent_id, now)
+        return _story_state(conn, parent_id)
 
 
 def story(conn, ticket_id):
@@ -398,6 +415,60 @@ def _check_tickets(conn, parent_id, child_ids):
             raise ValueError(f"child {ticket_id} already serves story {parent}")
         if _has_story(conn, ticket_id):
             raise ValueError(f"child {ticket_id} already owns a story")
+
+
+def _insert_plan(conn, parent_id, witnesses, children, completed_by):
+    for witness in witnesses:
+        conn.execute(
+            "INSERT INTO storyWitnesses (storyId, key, criterion, file,"
+            " command, source, sourceHash, completedBy)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (parent_id, *(witness[field] for field in WITNESS_FIELDS),
+             hashlib.sha256(witness["source"].encode()).hexdigest(),
+             completed_by.get(witness["key"])))
+    for ticket_id, role, child_keys in children:
+        for key in child_keys or ("",):
+            conn.execute("INSERT INTO storyChildren (ticketId, witnessKey,"
+                         " storyId, role) VALUES (?, ?, ?, ?)",
+                         (ticket_id, key, parent_id, role))
+        conn.execute("UPDATE tickets SET parentTicketId = ? WHERE id = ?",
+                     (parent_id, ticket_id))
+
+
+def _check_replanned(conn, parent_id, child_ids):
+    kept = {ticket_id for (ticket_id,) in conn.execute(
+        "SELECT DISTINCT ticketId FROM storyChildren WHERE storyId = ?",
+        (parent_id,))}
+    dropped = sorted(kept - set(child_ids))
+    if dropped:
+        raise ValueError(f"child {dropped[0]} of story {parent_id} is not in"
+                         " the new plan; cancel a child rather than drop it")
+    (project_id,) = conn.execute("SELECT projectId FROM tickets WHERE id = ?",
+                                 (parent_id,)).fetchone()
+    for ticket_id in child_ids:
+        row = conn.execute("SELECT projectId, parentTicketId FROM tickets"
+                           " WHERE id = ?", (ticket_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"ticket {ticket_id!r} is not in the store")
+        if row[0] != project_id:
+            raise ValueError(f"child {ticket_id} is in project {row[0]},"
+                             f" not the parent's project {project_id}")
+        if row[1] not in (None, parent_id):
+            raise ValueError(f"child {ticket_id} already serves story {row[1]}")
+        if _has_story(conn, ticket_id):
+            raise ValueError(f"child {ticket_id} already owns a story")
+
+
+def _record_plan_revision(conn, parent_id, now):
+    columns = ", ".join(BOARD_FIELDS)
+    (revision,) = conn.execute(
+        "SELECT COALESCE(MAX(revision), 0) + 1 FROM ticketRevisions"
+        " WHERE ticketId = ?", (parent_id,)).fetchone()
+    conn.execute(f"INSERT INTO ticketRevisions (ticketId, revision, at,"
+                 f" author, {columns}) SELECT id, ?, ?, 'cli', {columns}"
+                 " FROM tickets WHERE id = ?", (revision, now, parent_id))
+    conn.execute("UPDATE tickets SET revision = ? WHERE id = ?",
+                 (revision, parent_id))
 
 
 def _has_story(conn, ticket_id):

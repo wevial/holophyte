@@ -295,6 +295,7 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # A story's filing, approval, ledger,
                                  # decisions, closing and abandonment;
                                  # HOLO-60: a landed merge's generation.
+                                 # HOLO-54: `replan_story`, its plan's update.
                                  (store.stories, ["abandon_story",
                                                   "advance_story",
                                                   "answer_decision",
@@ -302,6 +303,7 @@ class StoreSurfaceTests(unittest.TestCase):
                                                   "close_story", "file_story",
                                                   "park_story",
                                                   "record_witness_result",
+                                                  "replan_story",
                                                   "story", "witness_ledger"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
