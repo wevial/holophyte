@@ -251,6 +251,20 @@ class WitnessIsolationTests(WitnessRunnerFixture, unittest.TestCase):
         self.assertEqual(rows[1].fileHash,
                          hashlib.sha256(PASSES.encode()).hexdigest())
 
+    def test_a_checkout_a_command_removed_is_an_error_row_with_evidence(self):
+        target = self.project()
+        self.approve([("W1", "tests/test_w1.py", 'rm -rf "$PWD"', PASSES),
+                      ("W2", "tests/test_w2.py", "true", PASSES)])
+
+        rows = run_witnesses(target, self.conn, self.story_id,
+                             main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual([(row.witnessKey, row.verdict) for row in rows],
+                         [("W1", "green"), ("W2", "error")])
+        self.assertIn("could not restore",
+                      Path(rows[1].evidencePath).read_text())
+        self.assertEqual(len(git(self.repo, "worktree", "list").splitlines()), 1)
+
     def test_a_witness_path_outside_the_checkout_is_refused_unrun(self):
         target = self.project()
         escape = self.root / "escape.py"

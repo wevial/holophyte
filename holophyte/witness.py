@@ -158,6 +158,8 @@ def _restore(run):
             code, output = run_capped(command, run.tree, remaining)
         except subprocess.TimeoutExpired:
             return f"[witness] {' '.join(command[:2])} timed out\n"
+        except OSError as error:
+            return f"[witness] could not restore the checkout: {error}\n"
         if code:
             return output or f"{' '.join(command[:2])} exited {code}\n"
     try:
