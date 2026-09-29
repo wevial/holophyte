@@ -519,6 +519,7 @@ MERGE_KEYS = {
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
     "missing_check_sec": 600, "retrigger_missing_checks": False,
+    "require_up_to_date": True,
     "pr_style": "", "pr_changes_log": False, "review_fixes": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
     "ui_capture_local": False,
@@ -568,6 +569,9 @@ def merge_config(project):
     values["retrigger_missing_checks"] = _merge_boolean(
         project, "retrigger_missing_checks", table.get(
             "retrigger_missing_checks", defaults.pop("retrigger_missing_checks")))
+    values["require_up_to_date"] = _merge_boolean(
+        project, "require_up_to_date", table.get(
+            "require_up_to_date", defaults.pop("require_up_to_date")))
     values["ui_capture_local"] = _merge_boolean(
         project, "ui_capture_local",
         table.get("ui_capture_local", defaults.pop("ui_capture_local")))
