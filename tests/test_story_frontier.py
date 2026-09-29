@@ -22,12 +22,13 @@ import holophyte.operator  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
-import store.read  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte import claim_store, story_claim  # noqa: E402
+from holophyte import story_claim  # noqa: E402
+from holophyte.claim_store import claim_from_store, sync_board  # noqa: E402
 from holophyte.config import check_config_keys  # noqa: E402
 from holophyte.config_tables import story_config  # noqa: E402
 from holophyte.native_board import NativeBoard  # noqa: E402
+from holophyte.pool import NOTHING_SEEN  # noqa: E402
 from holophyte.runs import open_store  # noqa: E402
 from provider import board_for  # noqa: E402
 from store.stories import (  # noqa: E402
@@ -72,15 +73,19 @@ class DropDependencyThenCommit(Commit):
         return super().play(cwd, turn)
 
 
-class ReadBackBlockers(NativeBoard):
-    """The native board whose one-issue read-back lists `blocked_by`, as a
-    Linear read-back lists a ticket's open blockers."""
+class LinearLikeBoard(NativeBoard):
+    """The native board's rows served as a Linear store-mode board serves
+    them: listed and read back with each ticket's open blockers."""
 
+    native = False
     blocked_by = {}
 
     def fetch_task(self, issue_id):
         task = super().fetch_task(issue_id)
         return task and dict(task, blocked_by=self.blocked_by.get(issue_id, []))
+
+    def listing(self):
+        return [self.fetch_task(issue_id) for issue_id in self.blocked_by]
 
 
 class FrontierFixture(LoopFixture):
@@ -119,6 +124,22 @@ class FrontierFixture(LoopFixture):
     def refusal(self, ticket_id):
         with patch.object(sys, "stdout", io.StringIO()):
             return story_claim.refusal(self.project, self.conn, ticket_id)
+
+    def issue(self, ticket_id):
+        return self.conn.execute("SELECT linearIssueId FROM tickets"
+                                 " WHERE id = ?", (ticket_id,)).fetchone()[0]
+
+    def claim(self, board, sync=False):
+        with patch.object(sys, "stdout", io.StringIO()), \
+                patch("holophyte.freshness.critic_admits", return_value=True):
+            if sync:
+                sync_board(self.project, self.conn, self.project_id, board)
+            return claim_from_store(self.project, self.conn, self.project_id,
+                                    board, "identifier", set(), NOTHING_SEEN)
+
+    def live_runs(self):
+        return self.conn.execute(
+            "SELECT ticketId FROM runs WHERE endedAt IS NULL").fetchall()
 
     def open_decisions(self):
         return self.conn.execute(
@@ -170,29 +191,43 @@ class FrontierGateTests(FrontierFixture):
         self.assertIn(f"decision {decision}", refused)
         self.assertIn("NAT-2", refused)
 
-    def test_a_read_back_dropping_an_unmerged_edge_parks_the_story_once(self):
-        a, b = self.file("ready"), self.file("ready")
+    def test_a_listing_dropping_an_unmerged_edge_parks_the_story_once(self):
+        a, b = self.file("backlog"), self.file("backlog")
         c = self.file("ready", depending_on("NAT-2", "NAT-3"))
         self.approve(a, b, c)
-        (a_issue,) = self.conn.execute(
-            "SELECT linearIssueId FROM tickets WHERE id = ?", (a,)).fetchone()
-        (c_issue,) = self.conn.execute(
-            "SELECT linearIssueId FROM tickets WHERE id = ?", (c,)).fetchone()
-        board = ReadBackBlockers(self.project, self.board.key, self.board.team)
-        board.blocked_by = {c_issue: [a_issue]}
-        row = store.read.ticket_by_id(self.conn, c)
+        board = LinearLikeBoard(self.project, self.board.key, self.board.team)
+        board.blocked_by = {self.issue(c): [self.issue(a)]}
 
-        answers = []
-        for _ in range(2):
-            with patch.object(sys, "stdout", io.StringIO()):
-                answers.append(claim_store._confirm_on_board(
-                    self.project, self.conn, self.project_id, board, row))
+        answers = [self.claim(board, sync=True) for _ in range(2)]
 
-        self.assertEqual(answers, [(None, claim_store.SKIP)] * 2)
+        self.assertEqual(answers, [(None, None, None)] * 2)
+        self.assertEqual(self.conn.execute(
+            "SELECT dependsOn FROM tickets WHERE id = ?", (c,)).fetchone(),
+            (f'["{self.issue(a)}"]',))
         self.assertEqual(self.open_decisions(), [("plan_drift", c, RESTORE)])
         self.assertEqual(self.story_state(), "parked")
-        self.assertEqual(self.conn.execute(
-            "SELECT COUNT(*) FROM runs").fetchone(), (0,))
+        self.assertEqual(self.live_runs(), [])
+
+    def test_a_read_back_naming_a_blocker_outside_the_plan_parks_the_story(
+            self):
+        a = self.file("ready")
+        store.tickets.walk_ticket(self.conn, a, "merged")
+        d = self.file("backlog")
+        c = self.file("ready", depending_on("NAT-2"))
+        self.approve(a, c)
+        board = LinearLikeBoard(self.project, self.board.key, self.board.team)
+        board.blocked_by = {self.issue(c): [self.issue(d)]}
+
+        self.assertEqual(self.claim(board), (None, None, None))
+
+        self.assertEqual(self.open_decisions(), [("plan_drift", c, RESTORE)])
+        self.assertEqual(self.live_runs(), [])
+
+    def test_a_backlog_child_is_not_on_the_frontier(self):
+        a, b = self.file("backlog"), self.file("ready")
+        self.approve(a, b)
+
+        self.assertEqual(story_frontier(self.conn, self.parent, 2), ["NAT-3"])
 
 
 class ParallelCapTests(FrontierFixture):
@@ -210,6 +245,22 @@ class ParallelCapTests(FrontierFixture):
         store.release(self.conn, run_id, "failed")
 
         self.assertEqual(story_frontier(self.conn, self.parent, 1), ["NAT-3"])
+
+    def test_a_sibling_claimed_after_the_last_gate_is_refused_at_the_lease(
+            self):
+        a, b = self.file("ready"), self.file("ready")
+        self.approve(a, b)
+
+        def another_loop_claims_b(*args):
+            if not self.live_runs():
+                store.claim(self.conn, self.project_id, b)
+            return False
+
+        with patch("holophyte.freshness.parked_since_admitted",
+                   another_loop_claims_b):
+            self.assertEqual(self.claim(self.board), (None, None, None))
+
+        self.assertEqual(self.live_runs(), [(b,)])
 
 
 class StoryConfigTests(LoopFixture):

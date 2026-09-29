@@ -930,7 +930,7 @@ def _lease_on_board(project, conn, provider, task, ticket_id, run_id):
 
 
 def _claim_run(project, conn, project_id, provider, task, ticket_id, seen,
-               expected_revision=None):
+               expected_revision=None, max_parallel=None):
     """The lease, the board's lease label and the `ready -> in_flight`
     move. Returns the claimed run id, `HELD` when another run or another
     writer took the ticket first, or None when the loop must stop rather
@@ -942,8 +942,8 @@ def _claim_run(project, conn, project_id, provider, task, ticket_id, seen,
         if freshness.parked_since_admitted(conn, ticket_id, task):
             return HELD
         try:
-            run_id = store.claim(conn, project_id, ticket_id,
-                                 expected_revision=expected_revision)
+            run_id = store.claim(conn, project_id, ticket_id, None,
+                                 expected_revision, max_parallel)
         except store.ClaimConflict as e:
             # Before any branch or worktree exists: another loop on this
             # target won the ticket, so this one moves on to the next.

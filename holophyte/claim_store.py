@@ -30,7 +30,7 @@ from holophyte.board import (
     mirror_task,
     on_pull_request,
 )
-from holophyte.config_tables import board_mode
+from holophyte.config_tables import board_mode, story_config
 from holophyte.freshness import skip_labelled_stale
 from holophyte.redact import safe_print as print
 
@@ -167,6 +167,7 @@ def claim_from_store(target, conn, project_id, provider, order, skip, seen):
         if line:
             print(line)
             return None, None, None
+        story_claim.park_drift(target, conn, project_id)
         row = next((r for r in store.read.claimable(conn, project_id, order)
                     if r.linearIdentifier not in skip), None)
         if row is None:
@@ -204,7 +205,8 @@ def _candidate(target, conn, project_id, provider, row, seen):
         return READMIT
     try:
         run_id = _claim_run(target, conn, project_id, provider, live,
-                            ticket_id, seen, expected_revision=row.revision)
+                            ticket_id, seen, expected_revision=row.revision,
+                            max_parallel=story_config(target).max_parallel)
     except store.RevisionMoved:
         return READMIT
     if run_id is HELD:

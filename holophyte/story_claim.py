@@ -49,6 +49,19 @@ def refusal(project, conn, ticket_id):
     return reason
 
 
+def park_drift(project, conn, project_id):
+    """Judge every unfinished child of the project's open story, so edges the
+    board rewrote park the story before the child is ever claimable."""
+    for (ticket_id,) in conn.execute(
+            "SELECT DISTINCT c.ticketId FROM storyChildren c JOIN stories s"
+            " ON s.ticketId = c.storyId JOIN tickets t ON t.id = c.ticketId"
+            " WHERE t.projectId = ? AND s.state IN ('approved', 'parked')"
+            " AND t.status NOT IN ('merged', 'abandoned')"
+            " AND t.activeRunId IS NULL ORDER BY c.ticketId",
+            (project_id,)).fetchall():
+        refusal(project, conn, ticket_id)
+
+
 def open_story(conn, ticket_id):
     found = story(conn, ticket_id)
     if found is None or found.ticketId != ticket_id \

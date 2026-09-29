@@ -114,15 +114,16 @@ def story(conn, ticket_id):
 
 
 def story_frontier(conn, story_id, max_parallel):
+    from .read import claimable
     found = story(conn, story_id)
     if found is None:
         return []
-    rows = conn.execute(
-        "SELECT id, linearIdentifier FROM tickets WHERE id IN (SELECT ticketId"
-        " FROM storyChildren WHERE storyId = ?) AND status = 'ready'"
-        " AND activeRunId IS NULL ORDER BY id", (found.ticketId,)).fetchall()
-    return [identifier for ticket_id, identifier in rows
-            if _frontier_refusal(conn, found, ticket_id, max_parallel) is None]
+    (project_id,) = conn.execute("SELECT projectId FROM tickets WHERE id = ?",
+                                 (found.ticketId,)).fetchone()
+    children = {child.ticketId for child in found.children}
+    return [row.linearIdentifier for row in claimable(conn, project_id)
+            if row.id in children and _frontier_refusal(
+                conn, found, row.id, max_parallel) is None]
 
 
 def _frontier_refusal(conn, found, ticket_id, max_parallel):
@@ -153,12 +154,22 @@ def _frontier_refusal(conn, found, ticket_id, max_parallel):
     if waiting:
         return "dependency", (f"it waits on {', '.join(waiting)} of story"
                               f" {story_name} to merge")
-    running = sum(1 for child_id, row in children.items()
-                  if row[3] and child_id != ticket_id)
-    if running >= max_parallel:
-        return "cap", (f"story {story_name} has {running} children in flight,"
-                       f" at its [story] max_parallel of {max_parallel}")
-    return None
+    at_cap = _cap_refusal(conn, ticket_id, max_parallel)
+    return None if at_cap is None else ("cap", at_cap)
+
+
+def _cap_refusal(conn, ticket_id, max_parallel):
+    row = conn.execute(
+        "SELECT (SELECT linearIdentifier FROM tickets WHERE id = c.storyId),"
+        " (SELECT COUNT(DISTINCT r.ticketId) FROM runs r JOIN storyChildren s"
+        " ON s.ticketId = r.ticketId WHERE s.storyId = c.storyId"
+        " AND r.endedAt IS NULL AND r.ticketId != c.ticketId)"
+        " FROM storyChildren c WHERE c.ticketId = ? LIMIT 1",
+        (ticket_id,)).fetchone()
+    if row is None or row[1] < max_parallel:
+        return None
+    return (f"story {row[0]} has {row[1]} children in flight, at its"
+            f" [story] max_parallel of {max_parallel}")
 
 
 def _drift(story_name, names, missing, extra):
@@ -185,13 +196,11 @@ def _downstream(children, edges, name):
 
 
 def _child_rows(conn, story_id):
-    return {row[0]: (row[1], row[2], json.loads(row[3]), row[4])
+    return {row[0]: (row[1], row[2], json.loads(row[3]))
             for row in conn.execute(
-                "SELECT t.id, t.linearIdentifier, t.linearIssueId, t.dependsOn,"
-                " EXISTS (SELECT 1 FROM runs r WHERE r.ticketId = t.id"
-                " AND r.endedAt IS NULL) FROM tickets t WHERE t.id IN"
-                " (SELECT ticketId FROM storyChildren WHERE storyId = ?)",
-                (story_id,))}
+                "SELECT id, linearIdentifier, linearIssueId, dependsOn"
+                " FROM tickets WHERE id IN (SELECT ticketId FROM storyChildren"
+                " WHERE storyId = ?)", (story_id,))}
 
 
 def _issue_names(conn, story_id):

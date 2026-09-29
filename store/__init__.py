@@ -82,7 +82,8 @@ def contract_drift(before, after):
     return tuple(f for f in CONTRACT_FIELDS if was.get(f) != is_now.get(f))
 
 
-def claim(conn, project_id, ticket_id, now=None, expected_revision=None):
+def claim(conn, project_id, ticket_id, now=None, expected_revision=None,
+          max_parallel=None):
     if now is None:
         now = int(time.time() * 1000)
     # IMMEDIATE takes the write lock before the lease is read, so concurrent
@@ -104,6 +105,11 @@ def claim(conn, project_id, ticket_id, now=None, expected_revision=None):
             )
         if expected_revision is not None:
             _assert_admitted(conn, ticket_id, expected_revision)
+        if max_parallel is not None:
+            from .stories import _cap_refusal
+            at_cap = _cap_refusal(conn, ticket_id, max_parallel)
+            if at_cap:
+                raise ClaimConflict(at_cap)
         (prior,) = conn.execute(
             "SELECT COUNT(*) FROM runs WHERE ticketId = ?", (ticket_id,)
         ).fetchone()
