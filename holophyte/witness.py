@@ -13,6 +13,12 @@ from holophyte.admission import held_line
 from holophyte.config_tables import merge_config, story_config
 from holophyte.gates import _verify_command, run_capped, vacuous_green_report
 from holophyte.redact import safe_print as print
+from holophyte.story_close import (
+    main_ledger,
+    rerun_owed,
+    settle_owed,
+    settle_story,
+)
 from store.notes import record_note
 from store.stories import OPEN_STATES, record_witness_result, story, witness_ledger
 
@@ -125,10 +131,12 @@ def witness_pass(target, conn, story_id, verifier):
         return []
     sha = main_tip(target)
     keys = {witness.key for witness in story(conn, story_id).witnesses}
-    at_tip = {row.witnessKey for row in witness_ledger(conn, story_id, sha)}
-    if verifier != "operator" and keys <= at_tip:
+    at_tip = {row.witnessKey for row in main_ledger(conn, story_id, sha)}
+    if (verifier != "operator" and keys <= at_tip
+            and not rerun_owed(conn, story_id, sha)):
+        settle_story(target, conn, story_id, sha)
         return []
-    before = [row for row in witness_ledger(conn, story_id)
+    before = [row for row in main_ledger(conn, story_id)
               if row.mainSha != sha]
     greens = {row.witnessKey for row in before if row.verdict == "green"}
 
@@ -138,6 +146,7 @@ def witness_pass(target, conn, story_id, verifier):
 
     rows = run_witnesses(target, conn, story_id, sha, verifier, again=again)
     _note_changes(conn, story_id, sha, before, rows)
+    settle_story(target, conn, story_id, sha)
     return rows
 
 
@@ -154,8 +163,10 @@ def pass_pending(target, conn, project_id):
     sha = main_tip(target)
     return [found.ticketId for found in stories
             if {witness.key for witness in found.witnesses}
-            - {row.witnessKey for row in witness_ledger(conn, found.ticketId,
-                                                        sha)}]
+            - {row.witnessKey for row in main_ledger(conn, found.ticketId,
+                                                     sha)}
+            or rerun_owed(conn, found.ticketId, sha)
+            or settle_owed(conn, found.ticketId, sha)]
 
 
 def witness_step(target, conn, project_id):
