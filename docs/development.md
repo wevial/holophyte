@@ -144,6 +144,10 @@ Each module, one line:
   (KO-424): `main` merged into the branch, the pre-merge verify and the
   drift check under the merge lock, the park for a human's approval, the
   approved candidate's resumed run, and the `--no-ff` merge onto main.
+- `holophyte/story_drift.py` — a story child at the local merge gate after
+  siblings merged since its claim: the `story_drift` event naming the files
+  both changed, and one covering review of the refreshed candidate when
+  there are any, parking the run for a person when it asks for changes.
 - `holophyte/reproduce.py` — a reported defect the implementer could not
   reproduce (KO-657): the `OUTCOME: NOT_REPRODUCED` declaration, the
   evidence check in place of round 1, and the `not_reproduced` park.
@@ -168,6 +172,10 @@ Each module, one line:
   `store.read.claimable()` row, admits it at its revision, reads that one
   issue back from the board and claims only at the admitted revision,
   admitting a moved ticket again at most `READMIT_LIMIT` times an ask.
+- `holophyte/story_claim.py` — a story's guards: `refusal()` keeps the
+  store-mode claim off a child whose story is not approved, `held_open()`
+  notes a board Done on a story parent instead of walking it `merged`, and
+  `walk_closed()` abandons the story of a parent the board canceled.
 - `holophyte/native_board.py` — `NativeBoard` (KO-754), the board
   `board_for()` builds for `[board] kind = "native"`: its reads answer from
   the project's store, filing, editing and the body read-back go through
