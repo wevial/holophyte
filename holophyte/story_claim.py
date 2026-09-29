@@ -85,11 +85,13 @@ def story_brief(project, conn, ticket_id):
 def _witness(witness):
     fence = "`" * max([3, *(len(run) + 1 for run in
                             re.findall(r"`+", witness.source))])
-    tail = "" if witness.source.endswith("\n") else "\n"
+    ends = witness.source.endswith("\n")
+    last = ("ends with a final newline" if ends else
+            "ends without a final newline after its last line")
     return (f"{WITNESS}\n\n{witness.key}: {witness.criterion}\n"
             f"Land this approved source at `{witness.file}` byte for byte;"
-            f" a changed witness is a review finding.\n\n"
-            f"{fence}\n{witness.source}{tail}{fence}")
+            f" a changed witness is a review finding. The file {last}.\n\n"
+            f"{fence}\n{witness.source}{'' if ends else chr(10)}{fence}")
 
 
 def _upstream(project, conn, ticket_id):
@@ -111,10 +113,10 @@ def _upstream(project, conn, ticket_id):
                 continue
             lines.append(line)
             used += len(line.encode()) + 1
-    if len(lines) == 2:
+    if len(lines) == 2 and not (files_out or deps_out):
         return ""
     if files_out or deps_out:
-        dropped = f" and {deps_out} dependency lines" if deps_out else ""
+        dropped = f" and {deps_out} dependencies" if deps_out else ""
         lines.append(f"({files_out} changed files{dropped} left out to keep"
                      f" this under {UPSTREAM_BYTES} bytes)")
     return "\n".join(lines)

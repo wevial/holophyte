@@ -77,9 +77,10 @@ class StoryBriefTests(LoopFixture):
             "SELECT id FROM tickets WHERE linearIdentifier = ?",
             (identifier,)).fetchone()[0]
 
-    def approved_story(self, children, standing_orders=ORDERS):
+    def approved_story(self, children, standing_orders=ORDERS,
+                       witnesses=WITNESSES):
         parent = self.file("The export story", column="backlog")
-        store.stories.file_story(self.conn, parent, WITNESSES, children,
+        store.stories.file_story(self.conn, parent, witnesses, children,
                                  standing_orders)
         (revision,) = self.conn.execute(
             "SELECT revision FROM tickets WHERE id = ?", (parent,)).fetchone()
@@ -157,6 +158,22 @@ class StoryBriefTests(LoopFixture):
         self.assertIn("- NAT-1 Add the exporter: merge commit not recorded",
                       self.section(brief, UPSTREAM))
 
+    def test_a_source_without_a_final_newline_reads_apart_from_one_with(self):
+        d = self.file("Write the header")
+        witnesses = [dict(WITNESSES[0], source="assert True"),
+                     dict(WITNESSES[1], source="assert True\n")]
+        self.approved_story([(d, "completes", ("W1", "W2"))],
+                            witnesses=witnesses)
+
+        brief = story_brief(self.project, self.conn, d)
+
+        bare, ended = brief.split(WITNESS)[1:]
+        self.assertIn("without a final newline", bare)
+        self.assertNotIn("without a final newline", ended)
+        self.assertIn("with a final newline", ended)
+        self.assertNotEqual(bare.replace("W1: orders export", ""),
+                            ended.replace("W2: the CSV has a header", ""))
+
     def test_a_dependency_changing_300_files_is_capped_at_2048_bytes(self):
         a = self.file("Generate the fixtures")
         c = self.file("Use the fixtures", depends_on=("NAT-1",))
@@ -205,3 +222,17 @@ class StoryBriefTests(LoopFixture):
         for turn in plain:
             for heading in (STANDING_ORDERS, UPSTREAM, WITNESS, "## Story"):
                 self.assertNotIn(heading, turn.goal)
+
+    def test_a_dependency_too_long_to_list_is_still_counted(self):
+        a = self.file("Generate " + "fixtures " * 211)
+        c = self.file("Use the fixtures", depends_on=("NAT-1",))
+        self.approved_story([(a, "advances", ("W1",)),
+                             (c, "completes", ("W1", "W2"))])
+        self.land(a, [f"fixtures/order_{n:03d}.csv" for n in range(300)])
+
+        upstream = UPSTREAM + self.section(
+            story_brief(self.project, self.conn, c), UPSTREAM)
+
+        self.assertLessEqual(len(upstream.rstrip("\n").encode()), 2048)
+        self.assertIn("(300 changed files and 1 dependencies left out",
+                      upstream)
