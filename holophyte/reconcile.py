@@ -25,7 +25,7 @@ from time import time
 import store
 import store.read
 import store.tickets
-from holophyte import deadline, pr_activity, pr_status
+from holophyte import deadline, pr_activity, pr_status, story_claim
 from holophyte.board import (
     ledger,
     mirror_push,
@@ -136,7 +136,8 @@ def _reconcile_mirror(conn, project, provider, target=None):
         return
     for ticket in tickets:
         state = closed.get(ticket.linearIdentifier)
-        if state not in RECONCILED_STATUS:
+        if state not in RECONCILED_STATUS or story_claim.held_open(
+                conn, ticket.id, ticket.linearIdentifier, state):
             continue
         to_status = RECONCILED_STATUS[state]
         line = (f"[holo2] reconciled {ticket.linearIdentifier}:"
@@ -158,7 +159,8 @@ def _reconcile_mirror(conn, project, provider, target=None):
                     source="supervisor", trigger=RECONCILE_TRIGGER[state])
             else:
                 line += "; no run to record the intervention against"
-            store.tickets.walk_ticket(conn, ticket.id, to_status)
+            story_claim.walk_closed(conn, ticket.id, ticket.linearIdentifier,
+                                    to_status)
         print(line)
         if to_status == "abandoned" and target is not None:
             _retire_abandoned(target, conn, now)
@@ -211,7 +213,7 @@ def _close_canceled(target, conn, provider, ticket_id):
                 f"Linear holds {identifier} canceled; mirror walked"
                 " blocked_on_operator -> abandoned",
                 source="supervisor", trigger="linear_cancelled")
-        store.tickets.walk_ticket(conn, ticket_id, "abandoned")
+        story_claim.walk_closed(conn, ticket_id, identifier, "abandoned")
     if parked:
         if target is not None:
             from holophyte.board import release_lease_label
