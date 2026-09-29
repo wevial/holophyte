@@ -63,9 +63,9 @@ OPTIONAL_SECTIONS = {"Reproduce", "Contract checks", "Evidence", "Story"}
 SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
 # Mechanical scope caps. Module-level so a future per-project config can
 # override them without touching validate().
-MAX_ESTIMATE_MIN = 30
-MAX_CRITERIA = 5
-MAX_IN_SCOPE = 3
+MAX_ESTIMATE_MIN = 90
+MAX_CRITERIA = 10
+MAX_IN_SCOPE = 6
 # Marks a validate() entry as guidance rather than a rejection.
 ADVISORY_PREFIX = "advisory: "
 # The advisories `--file-ticket` refuses (KO-708), by the stable text after
