@@ -30,6 +30,7 @@ than served.
 from __future__ import annotations
 
 import builtins
+import contextlib
 import os
 import re
 import tomllib
@@ -452,6 +453,18 @@ def register_values(values):
     held.update(value[1:-1] for value in tuple(held)
                 if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0])
     _environment_values = _environment_values | frozenset(v for v in held if v)
+
+
+@contextlib.contextmanager
+def values_held(values):
+    global _environment_values
+    before = _environment_values
+    register_values(values)
+    added = _environment_values - before
+    try:
+        yield
+    finally:
+        _environment_values = before | (_environment_values - added)
 
 
 def redact_values(text):
