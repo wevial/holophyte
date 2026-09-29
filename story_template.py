@@ -116,9 +116,6 @@ def _file_problems(witness, directory, repo):
         return [f"witness file is outside the repository in {witness.key}: "
                 f"{witness.file}"]
     problems = []
-    if repo is not None and tt._gitignored(repo, witness.file):
-        problems.append(f"gitignored witness file in {witness.key}: "
-                        f"{witness.file}")
     path = tree / witness.file
     if tt._outside(tree, witness.file) or not path.is_file():
         problems.append(f"witness file is missing from {tree} in "
@@ -130,6 +127,24 @@ def _file_problems(witness, directory, repo):
         problems.append(f"{tt.ADVISORY_PREFIX}witness file for {witness.key} "
                         f"calls {skip}; no witness is skipped: {witness.file}")
     return problems + _one_pass_advisories(witness, text)
+
+
+def _ignore_problems(witnesses, repo):
+    problems, unchecked = [], False
+    for witness in witnesses:
+        if tt._outside(Path(repo), witness.file):
+            continue
+        ignored = tt._gitignored(repo, witness.file)
+        if ignored:
+            problems.append(f"gitignored witness file in {witness.key}: "
+                            f"{witness.file}")
+        elif ignored is None:
+            unchecked = True
+    if unchecked:
+        problems.append(f"{tt.ADVISORY_PREFIX}could not check paths against "
+                        f"{repo}: git check-ignore failed there (not a "
+                        f"repository?)")
+    return problems
 
 
 def _one_pass_advisories(witness, file_text):
@@ -150,6 +165,8 @@ def validate_story(directory, repo=None):
         return [f"missing story body: {body}"]
     story = parse_story(body.read_text())
     problems = _body_problems(story)
+    if repo is not None:
+        problems.extend(_ignore_problems(story.witnesses, repo))
     for witness in story.witnesses:
         problems.extend(_file_problems(witness, directory, repo))
     return problems

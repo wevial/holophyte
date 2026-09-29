@@ -30,10 +30,10 @@ class StoryCliCase(unittest.TestCase):
         self.assertIn(old, text)
         body.write_text(text.replace(old, new))
 
-    def run_cli(self, directory):
+    def run_cli(self, directory, repo=None):
         return subprocess.run(
             [sys.executable, str(ROOT / "ticket_template.py"),
-             "--repo", str(self.repo), "--story", str(directory)],
+             "--repo", str(repo or self.repo), "--story", str(directory)],
             capture_output=True, text=True)
 
     def blockers(self, result):
@@ -48,8 +48,8 @@ class StoryCliCase(unittest.TestCase):
         self.assertEqual(len(problems), 1, result.stdout)
         self.assertIn(expected, problems[0])
 
-    def assert_advised(self, directory, expected):
-        result = self.run_cli(directory)
+    def assert_advised(self, directory, expected, repo=None):
+        result = self.run_cli(directory, repo)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.splitlines()[0], f"{directory}: OK")
         advisories = [line for line in result.stdout.splitlines()
@@ -141,6 +141,11 @@ class WitnessFileTests(StoryCliCase):
         (directory / "witnesses" / witness_path(2)).unlink()
         self.assert_refused(directory, f"W2: {witness_path(2)}")
         self.assertIn("missing", self.blockers(self.run_cli(directory))[0])
+
+    def test_repository_git_cannot_read_is_advised(self):
+        unreadable = Path(self.tmp.name) / "no-such-repo"
+        self.assert_advised(self.story(), f"could not check paths against "
+                            f"{unreadable}", repo=unreadable)
 
 
 class StoryAdvisoryTests(StoryCliCase):
