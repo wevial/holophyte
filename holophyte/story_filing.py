@@ -1,4 +1,4 @@
-"""Filing a validated story directory on a native board in one transaction."""
+"""Filing a validated story directory on a native or store-mode Linear board."""
 import re
 from contextlib import closing
 from pathlib import Path
@@ -9,6 +9,8 @@ import store.stories
 import store.tickets
 import story_template
 import ticket_template
+from holophyte.board import mirror_task
+from holophyte.config_tables import board_config
 
 STORY_HEADER_RE = re.compile(r"^Story:[ \t]*(\S+)")
 ESTIMATE_SECTION = "Estimate & dependencies"
@@ -27,8 +29,8 @@ def story_directory(project, slug):
 
 
 def file_story(board, project, slug, priority=None):
-    """File story `slug` on the native `board`; answer each filed ticket as
-    (identifier, title, role), the parent first, or raise `StoryRefused`."""
+    """File story `slug` on `board`; answer each filed ticket as (identifier,
+    title, role), the parent first, or raise `StoryRefused`."""
     directory = story_directory(project, slug)
     body_path = directory / story_template.BODY
     filed = _header(body_path)
@@ -45,19 +47,83 @@ def file_story(board, project, slug, priority=None):
     with closing(open_store(project)) as conn:
         project_id = store.tickets.ensure_project(conn, board.team,
                                                   project.path)
-        try:
-            with store.transaction(conn):
-                answer = _file_rows(conn, project_id, board.key, directory,
-                                    text, children, priority)
-        except StoryRefused:
-            raise
-        except ValueError as refused:
-            raise StoryRefused(getattr(refused, "problems",
-                                       [str(refused)])) from None
+        if getattr(board, "native", False):
+            answer = _in_transaction(conn, _file_rows, conn, project_id,
+                                     board.key, directory, text, children,
+                                     priority)
+        else:
+            answer = _file_on_board(board, conn, project, project_id,
+                                    directory, text, children, priority)
     body_path.write_text(f"Story: {answer[0][0]}\n{text}")
     for child, (identifier, _title, _role) in zip(children, answer[1:]):
         path = directory / story_template.CHILDREN / f"{child.name}.md"
         path.write_text(f"Ticket: {identifier}\n{path.read_text()}")
+    return answer
+
+
+def _in_transaction(conn, write, *args):
+    try:
+        with store.transaction(conn):
+            return write(*args)
+    except StoryRefused:
+        raise
+    except ValueError as refused:
+        raise StoryRefused(getattr(refused, "problems",
+                                   [str(refused)])) from None
+
+
+def _file_on_board(board, conn, project, project_id, directory, text,
+                   children, priority):
+    slugs = {child.slug for child in children}
+    for child in children:
+        _check_merged(conn, project_id, child, slugs)
+    label = board_config(project).label
+    created = []
+    try:
+        parent = _create(board, created, text, priority)
+        tasks = [(board.fetch_task(parent), None)]
+        identifiers, issue_ids = {}, {}
+        for child in children:
+            body = _resolve(_child_body(directory, child), identifiers)
+            identifier = _create(board, created, body, priority,
+                                 parent=tasks[0][0]["issue_id"])
+            if label is not None:
+                board.label_issue(identifier, label)
+            task = board.fetch_task(identifier)
+            identifiers[child.slug] = identifier
+            issue_ids[child.slug] = task["issue_id"]
+            tasks.append((task, [issue_ids[dep] for dep in child.depends_on
+                                 if dep in issue_ids]))
+    except Exception as refused:
+        raise StoryRefused([
+            f"the board refused the story: {refused}",
+            "already created, to cancel on the board: "
+            + (", ".join(created) or "none")]) from None
+    return _in_transaction(conn, _mirror_rows, conn, project_id, directory,
+                           text, children, tasks)
+
+
+def _create(board, created, body, priority, parent=None):
+    ticket = ticket_template.parse(body)
+    identifier = board.file(ticket.title, body, ticket.estimate_min,
+                            "Backlog", priority=priority,
+                            blockers=ticket.depends_on or [], parent=parent)
+    created.append(identifier)
+    return identifier
+
+
+def _mirror_rows(conn, project_id, directory, text, children, tasks):
+    (parent_task, _), *child_tasks = tasks
+    parent = mirror_task(conn, project_id, parent_task, specced=False)
+    answer = [(parent_task["id"], ticket_template.parse(text).title, "story")]
+    rows = []
+    for child, (task, depends_on) in zip(children, child_tasks):
+        ticket_id = mirror_task(conn, project_id, task, depends_on=depends_on)
+        answer.append((task["id"], child.ticket.title, child.role))
+        rows.append((ticket_id, child.role, child.witnesses))
+    story = story_template.parse_story(text)
+    store.stories.file_story(conn, parent, _witnesses(directory, story), rows,
+                             standing_orders=story.standing_orders)
     return answer
 
 
@@ -90,9 +156,7 @@ def _file_rows(conn, project_id, key, directory, text, children, priority):
     identifiers, rows = {}, []
     for child in children:
         _check_merged(conn, project_id, child, identifiers)
-        body = story_template.HEADER_RE.sub(
-            "", (directory / story_template.CHILDREN
-                 / f"{child.name}.md").read_text(), count=1)
+        body = _child_body(directory, child)
         identifier = store.board.file_ticket(
             conn, project_id, key, _resolve(body, identifiers),
             column="backlog", priority=priority)
@@ -100,15 +164,24 @@ def _file_rows(conn, project_id, key, directory, text, children, priority):
         answer.append((identifier, child.ticket.title, child.role))
         rows.append((_ticket_id(conn, project_id, identifier), child.role,
                      child.witnesses))
-    witnesses = [{"key": witness.key, "criterion": witness.outcome,
-                  "file": witness.file, "command": witness.command,
-                  "source": (directory / story_template.WITNESSES
-                             / witness.file).read_text()}
-                 for witness in story.witnesses]
     store.stories.file_story(conn, _ticket_id(conn, project_id, parent),
-                             witnesses, rows,
+                             _witnesses(directory, story), rows,
                              standing_orders=story.standing_orders)
     return answer
+
+
+def _child_body(directory, child):
+    return story_template.HEADER_RE.sub(
+        "", (directory / story_template.CHILDREN
+             / f"{child.name}.md").read_text(), count=1)
+
+
+def _witnesses(directory, story):
+    return [{"key": witness.key, "criterion": witness.outcome,
+             "file": witness.file, "command": witness.command,
+             "source": (directory / story_template.WITNESSES
+                        / witness.file).read_text()}
+            for witness in story.witnesses]
 
 
 def _check_merged(conn, project_id, child, siblings):

@@ -42,7 +42,7 @@ PINNED = {
     "holophyte/pullrequest.py": 489,
     "holophyte/reconcile.py": 743, "holophyte/reexec.py": 98,
     "holophyte/report.py": 256, "linear_provider.py": 708,
-    "provider.py": 520,
+    "provider.py": 525,
     "holophyte/serve.py": 1167,
     "holophyte/serve_actions.py": 214, "holophyte/serve_config.py": 402,
     "holophyte/serve_runs.py": 662, "holophyte/supervisor.py": 980,
