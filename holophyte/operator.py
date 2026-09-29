@@ -87,6 +87,7 @@ def _record_startup_probe(target, provider, probe):
 def _serial(target, provider, knobs):
     """Claim and dispatch serially; `worker()` runs the same phases once."""
     from holophyte.dispatch import PARKED, SWEPT, _dispatch, _startup_sweep
+    from holophyte.witness import witness_step
 
     restart_after_merge = self_hosted(target)
     stop_on_failure = knobs.stop_on_failure
@@ -111,6 +112,7 @@ def _serial(target, provider, knobs):
             if moved and not moved.readable:
                 _reexec(target, conn, project, moved.reason)
                 return
+            witness_step(target, conn, project)
             # Before the claim: a pull request a person merged since the
             # last pass ships its parked run here (KO-359). The first pass
             # asked at startup, before the mirror was repaired.
