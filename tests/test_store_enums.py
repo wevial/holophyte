@@ -38,7 +38,8 @@ class StoreEnumTests(unittest.TestCase):
         self.assertEqual(actual['interventions', 'action'],
                          previous['interventions', 'action'][:-2]
                          + ", 'hold', 'release_hold', 'register_project',"
-                         " 'disable', 'pause', 'abort', 'abort_close'))")
+                         " 'disable', 'pause', 'abort', 'abort_close',"
+                         " 'approve_story', 'decide'))")
         self.assertEqual(set(actual), set(enums.CONSTRAINED_COLUMNS))
         self.assertEqual(actual['runs', 'parkKind'],
                          "CHECK (parkKind IN ('pull_request', 'pull_request_closed', "
