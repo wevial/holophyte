@@ -13,6 +13,7 @@ from holophyte.admission import held_line
 from holophyte.config_tables import merge_config, story_config
 from holophyte.gates import _verify_command, run_capped, vacuous_green_report
 from holophyte.redact import safe_print as print
+from holophyte.story_close import settle_story
 from store.notes import record_note
 from store.stories import OPEN_STATES, record_witness_result, story, witness_ledger
 
@@ -138,6 +139,7 @@ def witness_pass(target, conn, story_id, verifier):
 
     rows = run_witnesses(target, conn, story_id, sha, verifier, again=again)
     _note_changes(conn, story_id, sha, before, rows)
+    settle_story(target, conn, story_id, sha)
     return rows
 
 

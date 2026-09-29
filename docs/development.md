@@ -272,6 +272,11 @@ Each module, one line:
   witnesses at main's tip unless the ledger already holds it or the
   project is held, reruns once a red that was green at an earlier commit,
   and notes each changed verdict on the parent.
+- `holophyte/story_close.py` — `settle_story()` ends each witness pass
+  under the merge lock: at main's tip it closes the story when every
+  witness is green with its approved file, queueing the parent's Done,
+  and otherwise parks it on one `unmet` or `regressed` decision per
+  witness.
 - `holophyte/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget

@@ -121,6 +121,7 @@ PINNED = {
     "holophyte/store_import.py": 40,
     "holophyte/story_approval.py": 4,
     "holophyte/story_claim.py": 5,
+    "holophyte/story_close.py": 1,
     "holophyte/story_drift.py": 6,
     "holophyte/story_filing.py": 7,
     "holophyte/story_views.py": 1,
