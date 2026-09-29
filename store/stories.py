@@ -177,6 +177,10 @@ def _check_children(parent_id, children, keys):
             raise ValueError(f"child {ticket_id}: scaffolding names no witness")
         if role != "scaffolding" and not child_keys:
             raise ValueError(f"child {ticket_id}: {role} names a witness")
+        repeated = sorted({key for key in child_keys
+                           if child_keys.count(key) > 1})
+        if repeated:
+            raise ValueError(f"child {ticket_id} names {repeated[0]} twice")
         for key in child_keys:
             if key not in keys:
                 raise ValueError(f"child {ticket_id}: {role} {key} names no"

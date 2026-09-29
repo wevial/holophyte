@@ -100,6 +100,8 @@ class StoryStoreTests(unittest.TestCase):
              [(spare, "advances", ("W9",))]),
             ("W1 is given twice", other, duplicate,
              [(spare, "completes", ("W1",))]),
+            ("names W1 twice", other, WITNESSES,
+             [(spare, "advances", ("W1", "W1"))]),
             ("999 is not in the store", other, WITNESSES,
              [(spare, "scaffolding", ()), (999, "completes", ("W1",))]),
         ]
