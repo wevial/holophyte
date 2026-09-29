@@ -312,6 +312,18 @@ class TestsSectionBriefTests(unittest.TestCase):
             with self.subTest(outside=outside):
                 self.assertNotIn(outside, brief)
 
+    def test_headings_inside_code_fences_neither_start_nor_end_it(self):
+        (self.root / "AGENTS.md").write_text(
+            "## Working\n~~~\n## Tests\n* fenced start\n~~~\n"
+            "## Tests\n* first rule\n```md\n## Example\n~~~\n```\n"
+            "* second rule\n## Operator\n* after\n")
+        brief = tests_brief(self.root)
+        self.assertIn("> ## Tests\n> * first rule\n> ```md\n> ## Example\n"
+                      "> ~~~\n> ```\n> * second rule\n\n", brief)
+        for outside in ("Working", "fenced start", "Operator", "after"):
+            with self.subTest(outside=outside):
+                self.assertNotIn(outside, brief)
+
     def test_no_agents_file_or_no_tests_section_gives_nothing(self):
         self.assertEqual(tests_brief(self.root), "")
         (self.root / "AGENTS.md").write_text(

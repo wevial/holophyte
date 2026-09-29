@@ -729,15 +729,32 @@ def criteria_brief(criteria):
             "the verdict line.\n\n")
 
 
+def _unfenced_heading_levels(lines):
+    fence = ""
+    for line in lines:
+        text = line.lstrip(" ")
+        mark = text[:1] if text[:1] in ("`", "~") else ""
+        run = len(text) - len(text.lstrip(mark)) if mark else 0
+        if len(line) - len(text) < 4 and run >= 3:
+            if not fence:
+                fence = text[:run]
+            elif text.startswith(fence) and not text[run:].strip():
+                fence = ""
+            yield line, 0
+            continue
+        hashes = len(line) - len(line.lstrip("#"))
+        heading = not fence and 0 < hashes and line[hashes:hashes + 1] == " "
+        yield line, hashes if heading else 0
+
+
 def tests_brief(root):
     try:
         lines = (Path(root) / "AGENTS.md").read_text().splitlines()
     except (OSError, UnicodeDecodeError):
         return ""
     section, level = [], 0
-    for line in lines:
-        hashes = len(line) - len(line.lstrip("#"))
-        heading = 0 < hashes and line[hashes:hashes + 1] == " "
+    for line, hashes in _unfenced_heading_levels(lines):
+        heading = hashes > 0
         if level and heading and hashes <= level:
             break
         if not level and heading and line[hashes:].strip() == "Tests":
