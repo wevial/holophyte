@@ -472,19 +472,24 @@ def close_ticket(target, identifier, landed, note=None, out=None, provider=None)
         conn.close()
 
 
-def gap_layer(target, identifier, layer, note, carried_by=None, out=None):
+def gap_layer(target, identifier, layer, note, carried_by=None,
+              found_by=None, out=None):
     out = sys.stdout if out is None else out
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
+        finder = {} if found_by is None else {"found_by": found_by}
         try:
-            record_gap_layer(conn, ticket_id, layer, note, getpass.getuser(),
-                             carried_by=carried_by)
+            row_id = record_gap_layer(conn, ticket_id, layer, note,
+                                      getpass.getuser(),
+                                      carried_by=carried_by, **finder)
         except ValueError as refused:
             raise SystemExit(f"[holo2] {identifier}: {refused}") from None
+        (found,) = conn.execute("SELECT foundBy FROM gapLayers WHERE id = ?",
+                                (row_id,)).fetchone()
         carried = f", carried by {carried_by}" if carried_by else ""
-        print(f"[holo2] {identifier} gap layer recorded: {layer}{carried}",
-              file=out)
+        print(f"[holo2] {identifier} gap layer recorded: {layer}{carried},"
+              f" found by {found}", file=out)
     finally:
         conn.close()
 
