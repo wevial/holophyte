@@ -374,20 +374,30 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         self.assertFalse(self.calls.exists())
         self.assertEqual(self.started(), [])
 
-    def test_the_files_holophyte_settings_and_values_stay_out_of_the_sweep(self):
+    def test_the_files_holophyte_values_reach_the_probe_and_not_the_sweep(self):
+        from holophyte import agents
         from holophyte.redact import redact_values
 
         self.fixture(
-            "home = os.environ.get('HOLOPHYTE_HOME')\n"
-            "ok = os.environ.get('HOLO_FIXTURE_CREDENTIAL') and home != '/unit/home'\n"
-            "print('ready' if ok else 'unit home seen')\n"
+            "ok = (os.environ.get('HOLOPHYTE_FIXTURE_CREDENTIAL') == 'loop-only'\n"
+            "      and os.environ.get('HOLOPHYTE_HOME') == '/unit/home')\n"
+            "print('ready' if ok else 'unit values missing')\n"
             "raise SystemExit(0 if ok else 1)\n",
-            "HOLOPHYTE_HOME=/unit/home\nHOLO_FIXTURE_CREDENTIAL=loop-only\n"
+            "HOLOPHYTE_HOME=/unit/home\nHOLOPHYTE_FIXTURE_CREDENTIAL=loop-only\n"
             "UNIT_SETTING=plain-unit-setting\n")
-        with self.sweep_environment():
+        seen, run_capped = [], agents.run_capped
+
+        def sweep_side(*args, **kwargs):
+            seen.append((os.environ.get("HOLOPHYTE_HOME"),
+                         os.environ.get("HOLOPHYTE_FIXTURE_CREDENTIAL")))
+            return run_capped(*args, **kwargs)
+
+        with self.sweep_environment(), \
+                patch("holophyte.agents.run_capped", side_effect=sweep_side):
             home = os.environ["HOLOPHYTE_HOME"]
             self.one_pass(T0)
             self.assertEqual(os.environ["HOLOPHYTE_HOME"], home)
+        self.assertEqual(seen, [(home, None)])
         self.assertEqual(self.count("launch_backoff"), 0)
         self.assertEqual(self.started(), ["--user start holophyte-loop@repo"])
         self.assertEqual(redact_values("plain-unit-setting"), "plain-unit-setting")

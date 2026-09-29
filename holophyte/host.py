@@ -77,8 +77,7 @@ def unit_environment(text):
     for line in text.splitlines():
         name, separator, value = line.strip().partition("=")
         name, value = name.strip(), process_value(value.strip())
-        if (separator and ENV_NAME.fullmatch(name) and "\0" not in value
-                and not name.startswith("HOLOPHYTE_")):
+        if separator and ENV_NAME.fullmatch(name) and "\0" not in value:
             values[name] = value
     return values
 
@@ -90,13 +89,16 @@ def loop_unit_environment(target):
         values = unit_environment(path.read_text())
     except FileNotFoundError:
         values = {}
+    child_only = {name: value for name, value in values.items()
+                  if name.startswith("HOLOPHYTE_")}
     saved = {}
     with values_held(values.values()):
         try:
             for name, value in values.items():
-                saved[name] = os.environ.get(name)
-                os.environ[name] = value
-            yield
+                if name not in child_only:
+                    saved[name] = os.environ.get(name)
+                    os.environ[name] = value
+            yield dict(os.environ, **child_only)
         finally:
             for name, value in saved.items():
                 if value is None:

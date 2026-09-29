@@ -779,11 +779,11 @@ def launch_route_ready(target, conn, project, run_id, now, out):
     if state and state["interval"] == 0:
         reason = state["reason"]
     else:
-        with loop_unit_environment(target):
-            probe = probe_implementer(target)
+        with loop_unit_environment(target) as env:
+            probe = probe_implementer(target, env=env)
             if (probe is not None and not probe.ok and (
                     target.config().get("agents") or {}).get("implementer_fallback")):
-                probe = probe_seat(target, "implement", fallback=True)
+                probe = probe_seat(target, "implement", fallback=True, env=env)
             if probe is None or probe.ok:
                 launch_backoff.clear(conn, project)
                 return True
