@@ -45,7 +45,7 @@ absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
 Tables this version does not know are left alone. Inside a table it does read
-(`[agents]`, `[verify]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`, `[console]`, `[serve]`), a key it does
+(`[agents]`, `[verify]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`, `[console]`, `[serve]`, `[story]`), a key it does
 not read is
 a startup
 error naming the file, the table, the key and the keys the table accepts:
@@ -1340,3 +1340,18 @@ and `fix:` markers bypass triage.
 Run `python3 scripts/eval_triage.py --config PATH --min-accuracy 0.8` to replay
 the labelled fixture against the real service. It prints counts, accuracy and
 misses, and exits nonzero below the floor. Unit tests replace the service.
+
+## `[story]`
+
+A story's witness runs.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `witness_sec` | Default: `600` seconds | Positive integer; the most one witness run at a commit of `main` may take, all of the story's witness commands together. A witness still waiting when it is spent is recorded `error`. |
+
+```toml
+[story]
+witness_sec = 600
+```
+
+A value that is not a positive integer is a startup error naming the key.

@@ -130,6 +130,7 @@ PINNED = {
     "holophyte/thread_mentions.py": 9,
     "holophyte/transcript_config.py": 2,
     "holophyte/transcripts.py": 23,
+    "holophyte/witness.py": 1,
     "linear_provider.py": 21,
     "provider.py": 175,
     "review_runner.py": 116,

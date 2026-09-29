@@ -30,12 +30,14 @@ from holophyte.config_tables import (
     LOOP_KEYS,
     MERGE_KEYS,
     REPORT_KEYS,
+    STORY_KEYS,
     SUPERVISOR_KEYS,
     board_config,
     loop_config,
     merge_config,
     report_config,
     split_address,
+    story_config,
     sweep_config,
     verify_config,
 )
@@ -132,6 +134,7 @@ KNOWN_KEYS["board"] = (frozenset(BOARD_KEYS) | frozenset(BOARD_MODE_KEYS)
 KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS) | frozenset(
     {"capture_env_source", "capture_env_allow"})
 KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
+KNOWN_KEYS["story"] = frozenset(STORY_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
 KNOWN_KEYS["questions"] = frozenset(("url", "key_env", "min_confidence"))
 # `[harnesses]` maps a registered harness to an absolute binary path.
@@ -189,6 +192,7 @@ def check_config(project):
     sweep_config(project)
     loop_config(project)
     report_config(project)
+    story_config(project)
     console_config(project)
     serve_config(project)
 
