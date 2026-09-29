@@ -354,14 +354,14 @@ def supervisor_view(project, beat, now, knobs, stale_ms=None):
 
 def parked_item(ticket):
     """One `blocked_on_operator` ticket as an `/attention` item. A ticket a pause
-    parked is `paused` (`paused_item()`, KO-609). One whose run has a `prUrl` and
-    parks as `pull_request` or `ci` is `pr_open`: it waits on a review, checks or a
+    parked is `paused` (`paused_item()`). One whose run has a `prUrl` and parks
+    as `pull_request` or `ci` is `pr_open`: it waits on a review, checks or a
     merge, not an answer, so the item carries the URL, the `reason` (the question
     less its first line) and `pr`: the `number` from the URL (null when not GitHub's
     shape) and the `checks`, `review`, `threads` and `title` the reconcile last saw
-    (`runs.prSeen*`; KO-368, KO-622), each null for a run never polled; the item's
-    own `title` is the ticket's, for the console to fall back on. Any other is
-    `blocked` with its `question`."""
+    (`runs.prSeen*`), each null for a run never polled; the item's own `title` is
+    the ticket's, for the console to fall back on. Any other is `blocked` with
+    its `question`."""
     if ticket.outcome == "paused":
         return paused_item(ticket)
     question = ticket.blockedQuestion or ""

@@ -31,9 +31,11 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.maintainer_notes  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
+import store  # noqa: E402 - after the sys.path insert above
 
 
 class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
@@ -67,6 +69,30 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
                          [("2000-01-01T00:00:00Z", "pending")])
         self.assertIn("pending checks", self.question())
         self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+
+    def test_a_pause_during_the_pending_read_pauses_instead_of_parking_ci(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        pending = self.pr_state(checks="PENDING")
+        self.fake_route(states=[pending, self.pr_state()])
+        self.seen_as(pending)
+        real = holophyte.maintainer_notes.pending_state
+        def paused_mid_read(conn, run_id, state, url):
+            state = real(conn, run_id, state, url)
+            conn = store.open(self.db)
+            try:
+                store.pause(conn, conn.execute(
+                    "SELECT id FROM runs WHERE endedAt IS NULL").fetchone()[0],
+                    "reboot writer")
+            finally:
+                conn.close()
+            return state
+        with patch.object(holophyte.maintainer_notes, "pending_state",
+                             paused_mid_read), \
+                patch.object(holophyte.pr, "SLEEP", self.fail):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertEqual(self.read("SELECT outcome, resumePhase, parkKind FROM runs"),
+                         [("paused", "merge_gate", None)])
 
     def test_a_green_pr_in_its_quiet_period_parks_as_ci(self):
         self.configure('[merge]\nmode = "pr"\n')

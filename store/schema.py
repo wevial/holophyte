@@ -925,8 +925,7 @@ def init(conn):
                          " WHERE t.lastRunId = runs.id"
                          " AND t.status = 'blocked_on_operator')"
                          " WHERE parkKind IS NULL")
-        # Every CHECK is generated from store.enums: rebuilt at 32 for `paused`,
-        # at 36 for the `not_reproduced` park (KO-657) and at 40 for `ci`.
+        # Every CHECK is generated from store.enums, so an added value rebuilds.
         if version < 40:
             _rebuild_enum_tables(conn)
         # Each ticket's current fields become its revision 1 (KO-733);

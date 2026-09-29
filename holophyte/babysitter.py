@@ -764,6 +764,7 @@ def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
         return _settled_state(project, conn, run_id, beat_s, pull, state,
                               refresh, retrigger, deadline, park_ci)
     except WaitsOnCI as waiting:
+        stop_if_requested(conn, run_id, "merge_gate")
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
                     pull, str(waiting), (), reviewed=reviewed, park_kind="ci")
     except WaitExpired as expired:
