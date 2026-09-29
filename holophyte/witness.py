@@ -8,7 +8,7 @@ from pathlib import Path
 
 from holophyte import pr
 from holophyte.config_tables import merge_config, story_config
-from holophyte.gates import _verify_command
+from holophyte.gates import _verify_command, run_capped
 from store.stories import record_witness_result, story, witness_ledger
 
 UNITTEST_SUMMARY = re.compile(r"^FAILED \(([^)]*)\)\s*$", re.MULTILINE)
@@ -48,14 +48,12 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False):
     ids = []
     with tempfile.TemporaryDirectory(prefix="witness-") as scratch:
         tree = Path(scratch) / "tree"
-        added = subprocess.run(
-            ["git", "worktree", "add", "--detach", str(tree), sha],
-            cwd=target.path, capture_output=True, text=True)
         try:
+            failed = _add_worktree(target, tree, sha, deadline)
             for witness in witnesses:
                 log = logs / f"{witness.key}.log"
-                if added.returncode:
-                    log.write_text(added.stdout + added.stderr)
+                if failed is not None:
+                    log.write_text(failed)
                     verdict = ("error", None, None, 0.0)
                 else:
                     verdict = _run_one(target, tree, witness, copy_files,
@@ -67,12 +65,26 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False):
                     evidence_path=str(log) if log.exists() else None,
                     seconds=seconds))
         finally:
-            if not added.returncode:
-                subprocess.run(["git", "worktree", "remove", "--force",
-                                str(tree)], cwd=target.path,
-                               capture_output=True)
+            subprocess.run(["git", "worktree", "remove", "--force", "--force",
+                            str(tree)], cwd=target.path, capture_output=True)
     return [row for row in witness_ledger(conn, story_id) if row.id in ids]
 
+
+
+def _add_worktree(target, tree, sha, deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return "[witness] not run: the witness budget is spent\n"
+    try:
+        code, output = run_capped(
+            ["git", "worktree", "add", "--detach", str(tree), sha],
+            target.path, remaining)
+    except subprocess.TimeoutExpired as expired:
+        return (f"{expired.output or ''}\n[witness] worktree add timed out"
+                f" after {remaining:.0f}s\n")
+    if code:
+        return output or f"git worktree add exited {code}\n"
+    return None
 
 def _run_one(target, tree, witness, copy_files, deadline, log):
     path = tree / witness.file

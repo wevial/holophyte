@@ -194,6 +194,39 @@ class WitnessRunTests(WitnessRunnerFixture, unittest.TestCase):
                          [("error", None)])
 
 
+class WitnessWorktreeTests(WitnessRunnerFixture, unittest.TestCase):
+    def post_checkout(self, body):
+        hook = self.repo / ".git" / "hooks" / "post-checkout"
+        hook.write_text(f"#!/bin/sh\n{body}\n")
+        hook.chmod(0o755)
+
+    def test_a_worktree_add_past_the_budget_is_an_error_and_is_stopped(self):
+        target = self.project("[story]\nwitness_sec = 1\n")
+        self.approve([("W1", "tests/test_w1.py", "true", PASSES)])
+        tip = main_tip(target)
+        self.post_checkout("sleep 5")
+
+        started = time.monotonic()
+        rows = run_witnesses(target, self.conn, self.story_id, tip, "loop",
+                             copy_files=True)
+
+        self.assertLess(time.monotonic() - started, 4)
+        self.assertEqual([row.verdict for row in rows], ["error"])
+        self.assertEqual(len(git(self.repo, "worktree", "list").splitlines()), 1)
+
+    def test_a_failed_worktree_add_is_an_error_and_leaves_no_worktree(self):
+        target = self.project()
+        self.approve([("W1", "tests/test_w1.py", "true", PASSES)])
+        tip = main_tip(target)
+        self.post_checkout("exit 1")
+
+        rows = run_witnesses(target, self.conn, self.story_id, tip, "loop",
+                             copy_files=True)
+
+        self.assertEqual([row.verdict for row in rows], ["error"])
+        self.assertEqual(len(git(self.repo, "worktree", "list").splitlines()), 1)
+
+
 class WitnessBudgetConfigTests(WitnessRunnerFixture, unittest.TestCase):
     def test_the_budget_defaults_to_ten_minutes(self):
         self.assertEqual(
