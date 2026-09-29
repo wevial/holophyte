@@ -10,6 +10,10 @@ Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
 - `holophyte/cli_project.py` — project registration, listing and admission commands.
+- `holophyte/cli_story.py` — the `--file-story SLUG` option and its dispatch.
+- `holophyte/story_filing.py` — files a validated story directory on a native
+  board: its parent, its children in dependency order and its story rows in
+  one store transaction, then the header lines in its files.
 - `holophyte/host.py` — the host registry, `HOLOPHYTE_HOME/host.toml`: the
   projects a host serves and sweeps, by path, reloaded when the file changes;
   its one writer path is an exclusive temporary file and a rename.
