@@ -7,10 +7,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from loop_fixture import VALID_BODY  # noqa: E402
 from sweep_fixture import T0, SweepTestCase  # noqa: E402
 
 from holophyte.agents import ProbeResult  # noqa: E402
 from holophyte.supervisor import start_loop_for  # noqa: E402
+from provider import FileProvider  # noqa: E402
 
 
 class LaunchBackoffTests(SweepTestCase):
@@ -233,3 +235,67 @@ class LaunchBackoffTests(SweepTestCase):
                     if code:
                         self.assertIn('quota exhausted', evidence)
                         self.assertIn('[redacted]', evidence)
+
+
+class StoreModeFiles(FileProvider):
+    store_mode = True
+
+
+class LoopEnvironmentProbeTests(SweepTestCase):
+    def test_released_pass_probes_with_the_loop_units_environment_file(self):
+        import store
+        from holophyte.host import home
+        from holophyte.supervisor import reconcile_parked_pull_requests
+
+        calls, starts = self.root / "probe.calls", self.root / "start.calls"
+        probe = self.root / "probe"
+        probe.write_text(
+            f"#!{sys.executable}\n"
+            "import os\nfrom pathlib import Path\n"
+            f"calls = Path({str(calls)!r})\n"
+            "calls.write_text((calls.read_text() if calls.exists() else '')"
+            " + 'probe\\n')\n"
+            "ok = bool(os.environ.get('HOLO_FIXTURE_CREDENTIAL'))\n"
+            "print('ready' if ok else 'credential missing')\n"
+            "raise SystemExit(0 if ok else 1)\n")
+        probe.chmod(0o755)
+        systemctl = self.root / "systemctl"
+        systemctl.write_text(f'#!/bin/sh\necho "$@" >> "{starts}"\n')
+        systemctl.chmod(0o755)
+        self.configure(
+            '[board]\nproject_id = "project-1"\nteam = "team-1"\n'
+            f'mode = "store"\n[agents]\nimplementer = "{probe}"\n')
+        unit_dir = home() / "repo"
+        unit_dir.mkdir(parents=True, exist_ok=True)
+        (unit_dir / "serve.env").write_text("HOLO_FIXTURE_CREDENTIAL=loop-only\n")
+        files = self.root / "team-1"
+        files.mkdir()
+        (files / "KO-1.md").write_text(VALID_BODY)
+        board = StoreModeFiles(files)
+
+        def one_pass(at):
+            reconcile_parked_pull_requests(
+                self.project, self.conn, at, board, io.StringIO())
+
+        def count(action):
+            return self.conn.execute(
+                "SELECT COUNT(*) FROM interventions WHERE action = ?",
+                (action,)).fetchone()[0]
+
+        environ = {k: v for k, v in os.environ.items()
+                   if k != "HOLO_FIXTURE_CREDENTIAL"}
+        environ["PATH"] = f"{self.root}:{os.environ['PATH']}"
+        with patch.dict(os.environ, environ, clear=True), \
+                patch('holophyte.reconcile._reconcile_pull_requests'), \
+                patch('holophyte.supervisor.linear_budget_low', return_value=False):
+            store.hold(self.conn, self.project_id, "draining for a route change")
+            one_pass(T0)
+            self.assertFalse(starts.exists())
+            self.assertFalse(calls.exists())
+            store.release_hold(self.conn, self.project_id, "route changed")
+            one_pass(T0 + 60_000)
+            self.assertNotIn("HOLO_FIXTURE_CREDENTIAL", os.environ)
+        self.assertEqual(count("launch_backoff"), 0)
+        self.assertEqual(starts.read_text().splitlines() if starts.exists() else [],
+                         ["--user start holophyte-loop@repo"])
+        self.assertEqual(count("launch_loop"), 1)
