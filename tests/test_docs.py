@@ -268,6 +268,32 @@ class PullRequestTemplateTests(unittest.TestCase):
         self.assertEqual(text.rstrip().splitlines()[-1], "Linear:")
 
 
+class StoryTemplateTests(unittest.TestCase):
+    TEMPLATE = ROOT / "storyTemplate.md"
+
+    def section(self, text, title):
+        return text.split(f"## {title}\n", 1)[1].split("\n## ", 1)[0]
+
+    def test_the_template_has_the_story_sections_in_order(self):
+        self.assertEqual(headings(self.TEMPLATE.read_text(), 2),
+                         ["Summary", "Goal", "Witnesses", "Witness commands",
+                          "Standing orders", "Out of scope", "Open questions"])
+
+    def test_witnesses_hold_one_criterion_line(self):
+        body = self.section(self.TEMPLATE.read_text(), "Witnesses")
+        lines = [ln for ln in body.splitlines() if ln.startswith("- ")]
+        self.assertEqual(len(lines), 1, lines)
+        self.assertRegex(lines[0],
+                         r"^- \[ \] W1: .+ \(a test in .+ witnesses .+\)$")
+
+    def test_witness_commands_hold_one_fenced_block(self):
+        body = self.section(self.TEMPLATE.read_text(), "Witness commands")
+        fences = [ln for ln in body.splitlines() if ln.startswith("```")]
+        self.assertEqual(len(fences), 2, fences)
+        block = body.split("```", 2)[1]
+        self.assertRegex(block.strip(), r"^W1: \S")
+
+
 class BabysitterTests(unittest.TestCase):
     """KO-373: the pass over an open pull request is the babysitter wherever
     the operator reads it; KO-374 renamed the store's action value and
