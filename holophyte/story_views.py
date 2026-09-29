@@ -1,4 +1,4 @@
-"""`--status`'s story lines: each open story's children, witnesses and age."""
+"""`--status`'s open story lines and `--report`'s Stories section."""
 import collections
 
 from holophyte.config_tables import story_config
@@ -87,3 +87,52 @@ def story_lines(stories):
             f"  errors {fact['errors']}  decisions {fact['decisions']}"
             f"  age {_age(fact['age_s'])}")
     return lines
+
+
+def story_report_lines(conn):
+    ids = [row[0] for row in conn.execute(
+        "SELECT ticketId FROM stories ORDER BY ticketId")]
+    if not ids:
+        return []
+    return ["Stories:"] + [line for story_id in ids
+                           for line in _report(conn, story_id)]
+
+
+def _report(conn, story_id):
+    identifier, filed_at, state, approved_at, closed_at = conn.execute(
+        "SELECT t.linearIdentifier, t.filedAt, s.state, s.approvedAt,"
+        " s.closedAt FROM stories s JOIN tickets t ON t.id = s.ticketId"
+        " WHERE s.ticketId = ?", (story_id,)).fetchone()
+    merged, abandoned = conn.execute(
+        "SELECT COALESCE(SUM(status = 'merged'), 0),"
+        " COALESCE(SUM(status = 'abandoned'), 0) FROM tickets WHERE id IN"
+        " (SELECT ticketId FROM storyChildren WHERE storyId = ?)",
+        (story_id,)).fetchone()
+    (interventions,) = conn.execute(
+        "SELECT COUNT(*) FROM interventions WHERE runId IN (SELECT id"
+        " FROM runs WHERE ticketId IN (SELECT ticketId FROM storyChildren"
+        " WHERE storyId = ?))", (story_id,)).fetchone()
+    per_merge = (f"{interventions / merged:.1f}" if merged
+                 else "not applicable")
+    greens = conn.execute(
+        "SELECT w.key, (SELECT r.mainSha FROM witnessResults r"
+        " WHERE r.storyId = w.storyId AND r.witnessKey = w.key"
+        " AND r.verdict = 'green' ORDER BY r.id LIMIT 1)"
+        " FROM storyWitnesses w WHERE w.storyId = ? ORDER BY w.key",
+        (story_id,)).fetchall()
+    witnesses = "  ".join(f"{key} first green {(sha or 'never')[:7]}"
+                          for key, sha in greens) or "no witnesses"
+    return [f"{identifier} {state}  {_span(filed_at, approved_at)} to"
+            f" approval, {_span(approved_at, closed_at)} to close"
+            f"  children {merged} merged, {abandoned} abandoned"
+            f"  interventions per child merge {per_merge}",
+            f"  {witnesses}"]
+
+
+def _span(start, end):
+    if start is None or end is None:
+        return "-"
+    hours = max(0, end - start) // 3_600_000
+    if hours < 48:
+        return f"{hours}h"
+    return f"{hours // 24}d {hours % 24}h"
