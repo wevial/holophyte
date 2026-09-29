@@ -130,13 +130,13 @@ def linked_carry(worktree, entry):
                       cwd=worktree, env=git_environment(),
                       capture_output=True).returncode == 0:
         raise InfraFailure(f"[worktree] carry: {entry!r} is tracked in git")
-    target = (worktree / entry).resolve()
-    if not target.is_dir():
+    resolved = (worktree / entry).resolve()
+    if not resolved.is_dir():
         raise InfraFailure(f"[worktree] carry: {entry!r} is a link to no directory")
     listing = git(worktree, "worktree", "list", "--porcelain").splitlines()
     for line in listing:
         other = line.startswith("worktree ") and Path(line[9:]).resolve()
-        if other and other != worktree and target == other / entry:
+        if other and other != worktree and resolved == other / entry:
             review_runner.check_carry(other, entry)
             return
     raise InfraFailure(
