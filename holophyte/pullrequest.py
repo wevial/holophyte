@@ -360,12 +360,14 @@ def _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
 
 def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
               pull, reviewed=None, retry_conflicts=False):
-    """Merge the pinned candidate holding main's tip; return its merge sha. Park
-    on refusal; a retrying babysitter gets a 405 conflict or behind-main raised."""
+    """Merge the pinned candidate (main's tip in it if `require_up_to_date`); return
+    its merge sha. Park on refusal; a retrying babysit gets 405 or behind raised."""
     set_phase(conn, run_id, "merging", f"merging {pull.url} through the"
               " pull request API")
-    with heartbeat_while(conn, run_id, beat_s):
-        behind = _behind_main(wt, sha)
+    behind = None
+    if merge_config(project).require_up_to_date:
+        with heartbeat_while(conn, run_id, beat_s):
+            behind = _behind_main(wt, sha)
     if behind and retry_conflicts:
         raise pr.MergeRefused(behind)
     if behind:

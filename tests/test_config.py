@@ -36,3 +36,11 @@ class FallbackConfigTests(ConfigTestCase):
                                             r'review_model beside \[agents\] '
                                             r'reviewer:'):
                     check_config(self.project)
+
+
+class MergeConfigTests(ConfigTestCase):
+    def test_require_up_to_date_must_be_a_boolean(self):
+        self.locate('[merge]\nrequire_up_to_date = "no"\n')
+        with self.assertRaisesRegex(
+                SystemExit, r'\[merge\] require_up_to_date must be a boolean'):
+            check_config(self.project)
