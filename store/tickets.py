@@ -246,6 +246,11 @@ def transition(conn, ticket_id, to_status):
         if from_status == "blocked_on_operator":
             conn.execute("UPDATE runs SET parkKind = NULL WHERE ticketId = ?",
                          (ticket_id,))
+        if to_status == "merged":
+            conn.execute(
+                "UPDATE stories SET generation = generation + 1"
+                " WHERE ticketId IN (SELECT DISTINCT storyId FROM storyChildren"
+                " WHERE ticketId = ?)", (ticket_id,))
     return from_status
 
 
@@ -416,6 +421,9 @@ def mirror_ticket(
             ).lastrowid
         else:
             ticket_id, status, _ = row
+            if conn.execute("SELECT 1 FROM stories WHERE ticketId = ?",
+                            (ticket_id,)).fetchone():
+                criteria, commands, derived = "[]", "[]", "needs_spec"
             if status in ("needs_spec", "ready"):
                 status = derived
             record_board_fields(conn, ticket_id, "unrecorded", now)
