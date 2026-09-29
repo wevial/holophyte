@@ -54,7 +54,6 @@ class CoveringPromptTests(unittest.TestCase):
         self.assertIn("approval citation for any of them is void", instructions)
         self.assertIn("witnessed afresh", instructions)
         self.assertNotIn("holophyte/incoming.py", instructions)
-        self.assertNotIn("holophyte/fix.py", instructions)
 
     def test_citation_form_on_reviewing_page_matches_prompt(self):
         page = (Path(__file__).resolve().parents[1] / "docs/reviewing.md")
@@ -63,6 +62,14 @@ class CoveringPromptTests(unittest.TestCase):
         prompt = review.covering_scope(
             self.root, self.approved, self.candidate("holophyte/fix.py"), "pr")
         self.assertIn(template.replace("SHA", self.approved, 1), prompt)
+
+    def test_range_without_main_merge_keeps_whole_range_instruction(self):
+        self.git("checkout", "-qb", "fix")
+        head = self.candidate("holophyte/fix.py")
+        self.assertIn(
+            f"Review this range: {self.approved}..{head}, those commits and "
+            f"whatever they touch; the rest was approved at {self.approved}. ",
+            self.instructions(head))
 
     def test_no_changed_tests_keeps_approval_citations(self):
         instructions = self.instructions(self.candidate("holophyte/fix.py"))
@@ -259,6 +266,16 @@ class CoveringAfterMainMergeTests(unittest.TestCase):
         scope = review.scope_files(self.root, "Fix `holophyte/fix.py`.",
                                    self.approved, self.head, candidate_only=True)
         self.assertEqual(scope, ["shared.py"])
+
+    def test_range_instruction_limits_diff_to_candidate_files(self):
+        prompt = review.covering_scope(self.root, self.approved, self.head, "pr")
+        instructions = prompt.split("BEGIN UNTRUSTED METADATA", 1)[0]
+        self.assertIn(
+            f"Review this range as `git diff {self.approved}..{self.head} -- "
+            "shared.py`", instructions)
+        self.assertNotIn("other.py", instructions)
+        self.assertNotIn("those commits and whatever they touch", instructions)
+        self.assertIn("any other file came from a merge of `main`", instructions)
 
 
 class CoveringAgainstLaggingMainTests(CoveringAfterMainMergeTests):

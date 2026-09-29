@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 from pathlib import Path, PurePosixPath
 
@@ -544,8 +545,8 @@ def covering_scope(root, reviewed, sha, url):
     span = f"{reviewed}..{sha}"
     # A test file a merged `main` changed still voids a citation of it:
     # `_approval_witnesses()` judges the whole range.
-    changed_tests = sorted(path for path in _changed_files(root, reviewed, sha)
-                           if path.startswith("tests/"))
+    changed = _changed_files(root, reviewed, sha)
+    changed_tests = sorted(path for path in changed if path.startswith("tests/"))
     citation_rule = (
         f"Test files changed in this range: {json.dumps(changed_tests)}; "
         "an approval citation for any of them is void and the criterion must be "
@@ -558,10 +559,19 @@ def covering_scope(root, reviewed, sha, url):
     subjects = sh(["git", "log", "--format=%s", span, f"^{main_ref(root)}"],
                   cwd=root)
     metadata = json.dumps({"diff_stat": stat, "commit_subjects": subjects})
+    review_range = f"Review this range: {span}, those commits and whatever they touch; "
+    if set(files) != changed:
+        review_range = (
+            f"Review this range as `git diff {span} -- {shlex.join(files)}`, "
+            "the candidate's own files; " if files else
+            f"This range, {span}, changes none of the candidate's own files; ")
+        review_range += ("its changes to any other file came from a merge of "
+                         "`main`, were reviewed on their own pull requests, and "
+                         "are not blockers here; ")
     return (f"candidate was approved at {reviewed} and has since been moved "
             f"by fix commits answering review threads on {url}. "
-            f"Review this range: {span}, those commits and whatever they touch; "
-            f"the rest was approved at {reviewed}. Account for every criterion; "
+            f"{review_range}the rest was approved at {reviewed}. "
+            "Account for every criterion; "
             "for one this range does not touch, you may cite "
             f"`approval at {reviewed}; tests/file.py::TestClass::test_name` "
             "(or `path::\"test name\"` / `path::TestName` for a test file "
