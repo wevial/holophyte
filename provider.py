@@ -167,10 +167,10 @@ class Board(Protocol):
         ...
 
     def file(self, title, body, estimate, state, priority=None,
-             blockers=()) -> str:
-        """Create the ticket in the workflow state named `state`, record each
-        of `blockers` (identifiers) as blocking it, and answer the new
-        identifier. `priority` is the board's integer, or None for none."""
+             blockers=(), parent=None) -> str:
+        """Create the ticket in state `state`, a sub-issue of issue `parent`
+        if given, record each of `blockers` (identifiers) as blocking it, and
+        answer its identifier. `priority` is the board's integer, or None."""
         ...
 
     def update(self, identifier, title, body, estimate, blockers=(), *,
@@ -271,12 +271,17 @@ class LinearBoard:
     def unlabel_issue(self, issue_id, name):
         self._linear().unlabel_issue(issue_id, name)
 
-    def file(self, title, body, estimate, state, priority=None, blockers=()):
+    def file(self, title, body, estimate, state, priority=None, blockers=(),
+             parent=None):
         linear = self._linear()
         issue = linear.create_issue(self.project_id, self._team, title, body,
-                                    estimate, state, priority=priority)
-        for blocker in blockers:
-            linear.add_blocker(issue["id"], blocker)
+                                    estimate, state, priority=priority,
+                                    parent=parent)
+        try:
+            for blocker in blockers:
+                linear.add_blocker(issue["id"], blocker)
+        except Exception as refused:
+            raise FiledWithoutBlockers(issue["identifier"], refused) from refused
         return issue["identifier"]
 
     def update(self, identifier, title, body, estimate, blockers=(), *,
@@ -304,6 +309,19 @@ def _refuse_native_update(identifier, revision, priority, labels):
     if given:
         raise RuntimeError(f"refused to update {identifier} with "
                            f"{', '.join(given)}: only a native board takes them")
+
+
+class FiledWithoutBlockers(RuntimeError):
+    def __init__(self, identifier, refused):
+        super().__init__(f"filed {identifier} without all its blockers: "
+                         f"{refused}")
+        self.identifier = identifier
+
+
+def refuse_parent(title, parent):
+    if parent is not None:
+        raise RuntimeError(f"refused to file {title!r} under {parent}: only "
+                           "a Linear board has sub-issues")
 
 
 def board_for(target):
@@ -447,9 +465,11 @@ class FileProvider:
                 f"refused to {what} blocked by {', '.join(blockers)}: the "
                 f"file board at {self.root} has no blocking relations")
 
-    def file(self, title, body, estimate, state, priority=None, blockers=()):
+    def file(self, title, body, estimate, state, priority=None, blockers=(),
+             parent=None):
         # Title and estimate live in the body; a file has no priority.
         self._refuse_blockers(f"file {title!r}", blockers)
+        refuse_parent(title, parent)
         prefix = f"{self.team}-"
         numbers = [int(i[len(prefix):]) for i in self._identifiers()
                    if i.startswith(prefix) and i[len(prefix):].isdigit()]

@@ -585,12 +585,14 @@ def _issue_id(identifier):
 
 
 def create_issue(project_id, team, title, body, estimate, state_name,
-                 priority=None):
+                 priority=None, parent=None):
     fields = {"teamId": _team_id(team), "projectId": project_id,
               "title": title, "description": body, "estimate": estimate,
               "stateId": _state_id(state_name, team)}
     if priority is not None:
         fields["priority"] = priority
+    if parent is not None:
+        fields["parentId"] = parent
     data = _gql(
         'mutation($input: IssueCreateInput!) { issueCreate(input: $input) '
         '{ success issue { id identifier } } }',
