@@ -1,9 +1,13 @@
-"""`--file-story SLUG` and `--approve-story KEY-n`: options and dispatch."""
+"""`--file-story`, `--approve-story` and `--witness-pass`: options and dispatch."""
 import sys
+from contextlib import closing
 
+from holophyte.admission import project_of
 from holophyte.board import FILE_TICKET_PRIORITIES
+from holophyte.runs import open_store
 from holophyte.story_approval import ApprovalRefused, approve
 from holophyte.story_filing import StoryRefused, file_story, update_story
+from holophyte.witness import pass_refusal, witness_pass
 
 RED_KINDS = ("exception",)
 
@@ -36,6 +40,13 @@ def add_story_arguments(parser, modes):
              "the plan and release every child to Ready (on Linear, a "
              "queued Todo push). Refused while another story of the project "
              "is approved or parked")
+    modes.add_argument(
+        "--witness-pass", metavar="KEY-n",
+        help="run every witness of the approved or parked story KEY-n at "
+             "main's tip, as it stands on main, and append each verdict to "
+             "the ledger as verifier operator, even at a tip the ledger "
+             "already holds; print each verdict. Exits 1 for a story not "
+             "approved or parked, or a held project")
     parser.add_argument(
         "--baseline-green", metavar="W", action="append", default=[],
         help="with --approve-story: approve although witness W is green at "
@@ -94,8 +105,29 @@ def _approve_story(args, target, board, out):
     return True
 
 
+def _witness_pass(args, target, out):
+    identifier = args.witness_pass
+    with closing(open_store(target)) as conn:
+        row = conn.execute("SELECT id FROM tickets WHERE projectId = ? AND"
+                           " linearIdentifier = ?",
+                           (project_of(conn, target), identifier)).fetchone()
+        refusal = (pass_refusal(conn, row[0]) if row
+                   else "no such ticket in this project")
+        if refusal is not None:
+            print(f"[holo2] {identifier}: {refusal}", file=out)
+            raise SystemExit(1)
+        rows = witness_pass(target, conn, row[0], "operator")
+    print(f"[holo2] witness pass at {rows[0].mainSha}: " + ", ".join(
+        f"{row.witnessKey} {row.verdict}"
+        + (f" ({row.redKind})" if row.redKind else "") for row in rows),
+        file=out)
+    return True
+
+
 def story_verb(args, target, board, out=None):
     out = sys.stdout if out is None else out
+    if args.witness_pass is not None:
+        return _witness_pass(args, target, out)
     if args.approve_story is not None:
         return _approve_story(args, target, board, out)
     if args.file_story is None:

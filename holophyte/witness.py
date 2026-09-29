@@ -9,9 +9,11 @@ import time
 from pathlib import Path
 
 from holophyte import pr, redact
+from holophyte.admission import held_line
 from holophyte.config_tables import merge_config, story_config
 from holophyte.gates import _verify_command, run_capped, vacuous_green_report
-from store.stories import record_witness_result, story, witness_ledger
+from store.notes import record_note
+from store.stories import OPEN_STATES, record_witness_result, story, witness_ledger
 
 UNITTEST_SUMMARY = re.compile(r"^FAILED \(([^)]*)\)\s*$", re.MULTILINE)
 PYTEST_SUMMARY = re.compile(r"^(FAILED|ERROR) ([^(\s].*)$", re.MULTILINE)
@@ -56,7 +58,8 @@ def _pytest_message(rest):
     return (node and node.group(1)) or ""
 
 
-def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False):
+def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
+                  again=None):
     witnesses = story(conn, story_id).witnesses
     (identifier,) = conn.execute(
         "SELECT linearIdentifier FROM tickets WHERE id = ?",
@@ -65,7 +68,6 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False):
     stamp = f"{verifier}-{time.time_ns()}"
     deadline = time.monotonic() + story_config(target).witness_sec
     secrets = redact.known_secrets(target.config())
-    ids = []
     with tempfile.TemporaryDirectory(prefix="witness-") as scratch:
         tree = Path(scratch) / "tree"
         try:
@@ -74,29 +76,92 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False):
                 ([], {}, failed) if failed
                 else _checkout(tree, witnesses, copy_files))
             run = Scratch(target, tree, sha, copied, deadline, secrets)
-            ran = False
-            for witness in witnesses:
-                log = logs / witness.key / f"{stamp}.log"
-                log.parent.mkdir(parents=True, exist_ok=True)
-                state = found.get(witness.key)
-                if state == ABSENT:
-                    verdict = ("absent", None, None, None)
-                elif failed or state == REFUSED:
-                    _write_log(log, failed or _refusal(witness), secrets)
-                    verdict = ("error", None, None, 0.0)
-                else:
-                    verdict = _judge(run, witness, state, log, ran)
-                    ran = True
-                verdict_name, kind, file_hash, seconds = verdict
-                ids.append(record_witness_result(
-                    conn, story_id, witness.key, sha, verdict_name, verifier,
-                    red_kind=kind, file_hash=file_hash,
-                    evidence_path=str(log) if log.exists() else None,
-                    seconds=seconds))
+            judge = _Judge(run, conn, story_id, verifier, found, failed)
+            ids = [judge.record(witness, logs / witness.key / f"{stamp}.log")
+                   for witness in witnesses]
+            rerun = again(_rows(conn, story_id, ids)) if again else ()
+            ids += [judge.record(witness,
+                                 logs / witness.key / f"{stamp}-again.log")
+                    for witness in witnesses
+                    if witness.key in rerun and time.monotonic() < deadline]
         finally:
             subprocess.run(["git", "worktree", "remove", "--force", "--force",
                             str(tree)], cwd=target.path, capture_output=True)
+    return _rows(conn, story_id, ids)
+
+
+def _rows(conn, story_id, ids):
     return [row for row in witness_ledger(conn, story_id) if row.id in ids]
+
+
+class _Judge:
+    def __init__(self, run, conn, story_id, verifier, found, failed):
+        self.run, self.conn, self.story_id = run, conn, story_id
+        self.verifier, self.found, self.failed = verifier, found, failed
+        self.ran = False
+
+    def record(self, witness, log):
+        log.parent.mkdir(parents=True, exist_ok=True)
+        state = self.found.get(witness.key)
+        if state == ABSENT:
+            verdict = ("absent", None, None, None)
+        elif self.failed or state == REFUSED:
+            _write_log(log, self.failed or _refusal(witness), self.run.secrets)
+            verdict = ("error", None, None, 0.0)
+        else:
+            verdict = _judge(self.run, witness, state, log, self.ran)
+            self.ran = True
+        verdict_name, kind, file_hash, seconds = verdict
+        return record_witness_result(
+            self.conn, self.story_id, witness.key, self.run.sha, verdict_name,
+            self.verifier, red_kind=kind, file_hash=file_hash,
+            evidence_path=str(log) if log.exists() else None, seconds=seconds)
+
+
+def witness_pass(target, conn, story_id, verifier):
+    if pass_refusal(conn, story_id) is not None:
+        return []
+    sha = main_tip(target)
+    keys = {witness.key for witness in story(conn, story_id).witnesses}
+    at_tip = {row.witnessKey for row in witness_ledger(conn, story_id, sha)}
+    if verifier != "operator" and keys <= at_tip:
+        return []
+    before = [row for row in witness_ledger(conn, story_id)
+              if row.mainSha != sha]
+    greens = {row.witnessKey for row in before if row.verdict == "green"}
+
+    def again(rows):
+        return {row.witnessKey for row in rows
+                if row.verdict == "red" and row.witnessKey in greens}
+
+    rows = run_witnesses(target, conn, story_id, sha, verifier, again=again)
+    _note_changes(conn, story_id, sha, before, rows)
+    return rows
+
+
+def pass_refusal(conn, story_id):
+    found = story(conn, story_id)
+    if found is None or found.ticketId != story_id:
+        return "not a story's parent"
+    if found.state not in OPEN_STATES:
+        return f"the story is {found.state}, not approved or parked"
+    (project_id,) = conn.execute("SELECT projectId FROM tickets WHERE id = ?",
+                                 (story_id,)).fetchone()
+    line = held_line(conn, project_id)
+    return line and line.removeprefix("[holo2] ")
+
+
+def _note_changes(conn, story_id, sha, before, rows):
+    previous = {row.witnessKey: row for row in before}
+    now = {row.witnessKey: row for row in rows}
+    for key, row in sorted(now.items()):
+        was = previous.get(key)
+        if was is None or was.verdict == row.verdict:
+            continue
+        record_note(conn, story_id, "verdict",
+                    f"Witness {key} is {row.verdict} at {sha}, was"
+                    f" {was.verdict} at {was.mainSha}.",
+                    f"witness:{story_id}:{key}:{sha}")
 
 
 def _add_worktree(target, tree, sha, deadline):
