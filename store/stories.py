@@ -437,6 +437,9 @@ def _check_replanned(conn, parent_id, child_ids):
 
 
 def _record_plan_revision(conn, parent_id, now):
+    if conn.execute("SELECT 1 FROM ticketRevisions WHERE ticketId = ?"
+                    " AND at = ?", (parent_id, now)).fetchone():
+        return
     columns = ", ".join(BOARD_FIELDS)
     (revision,) = conn.execute(
         "SELECT COALESCE(MAX(revision), 0) + 1 FROM ticketRevisions"

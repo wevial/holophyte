@@ -1,6 +1,7 @@
 """Filing a validated story directory on a native board in one transaction."""
 import json
 import re
+import time
 from contextlib import closing
 from pathlib import Path
 
@@ -159,10 +160,10 @@ def _update_rows(conn, project_id, key, directory, parent_id, identifier,
                  revision, text, children, headers, priority):
     before = _plan_state(conn, parent_id)
     lines, filed, rows = [], [], []
+    now = int(time.time() * 1000)
     if before[0] != text:
-        new = store.board.edit_ticket(conn, project_id, identifier, text,
-                                      revision)
-        lines.append(f"updated {identifier} (revision {new})")
+        store.board.edit_ticket(conn, project_id, identifier, text, revision,
+                                now=now)
     identifiers = {child.slug: headers[child.name] for child in children
                    if headers[child.name]}
     known = {child.slug for child in children} | set(identifiers.values())
@@ -196,8 +197,10 @@ def _update_rows(conn, project_id, key, directory, parent_id, identifier,
     state = store.stories.story(conn, parent_id).state
     if after != before:
         state = store.stories.replan_story(conn, parent_id, witnesses, rows,
-                                           story.standing_orders)
-    lines.append(f"story {identifier} is {state}")
+                                           story.standing_orders, now=now)
+    (current,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                              (parent_id,)).fetchone()
+    lines.append(f"story {identifier} is {state} at revision {current}")
     return lines, filed
 
 

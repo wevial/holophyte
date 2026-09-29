@@ -117,6 +117,23 @@ class StoryUpdateCliTests(ConfigTestCase):
         with contextlib.closing(open_store(self.project)) as conn:
             self.assertFalse(store.pickable(conn, parent_id))
 
+    def test_a_parent_body_change_records_one_revision_and_reports_it(self):
+        revision = self.approve()
+        path = self.directory / "story.md"
+        path.write_text(path.read_text().replace(
+            "Orders can be exported as CSV.",
+            "Every order can be exported as CSV."))
+
+        status, lines = self.update(revision)
+
+        self.assertEqual(status, 0, lines)
+        _, _, parent_revision, _, text = self.ticket("NAT-1")
+        self.assertIn("Every order can be exported as CSV.", text)
+        self.assertEqual(parent_revision, revision + 1)
+        self.assertIn(f"revision {revision + 1}", lines[-1])
+        self.assertEqual(self.story_state(), "planned")
+        self.assertEqual(self.update(parent_revision)[0], 0)
+
     def test_a_new_child_file_is_filed_with_its_header(self):
         revision = self.approve()
         path = self.child("05-e")
