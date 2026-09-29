@@ -770,6 +770,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
 def launch_route_ready(target, conn, project, run_id, now, out):
     """Wait out backoff, then probe a usable primary or fallback before launch."""
     from holophyte.agents import probe_diagnostic, probe_implementer, probe_seat
+    from holophyte.host import loop_unit_environment
     from store import launch_backoff
 
     state = launch_backoff.current(conn, project)
@@ -778,14 +779,15 @@ def launch_route_ready(target, conn, project, run_id, now, out):
     if state and state["interval"] == 0:
         reason = state["reason"]
     else:
-        probe = probe_implementer(target)
-        if (probe is not None and not probe.ok and
-                (target.config().get("agents") or {}).get("implementer_fallback")):
-            probe = probe_seat(target, "implement", fallback=True)
-        if probe is None or probe.ok:
-            launch_backoff.clear(conn, project)
-            return True
-        reason = probe_diagnostic(target, probe)
+        with loop_unit_environment(target):
+            probe = probe_implementer(target)
+            if (probe is not None and not probe.ok and (
+                    target.config().get("agents") or {}).get("implementer_fallback")):
+                probe = probe_seat(target, "implement", fallback=True)
+            if probe is None or probe.ok:
+                launch_backoff.clear(conn, project)
+                return True
+            reason = probe_diagnostic(target, probe)
     note = launch_backoff.failure(conn, project, reason, now, run_id=run_id)
     print("[holo2] " + " ".join(note.splitlines()), file=out)
     return False
