@@ -277,7 +277,9 @@ Each module, one line:
   witness is green with its approved file, queueing the parent's Done,
   and otherwise parks it on one `unmet` or `regressed` decision per
   witness; `settle_owed()` keeps a story the lock kept from settling
-  pending for the next pass at the same tip.
+  pending for the next pass at the same tip, and `rerun_owed()` keeps a
+  red whose rerun did not run from parking `regressed` until the next
+  pass runs it again.
 - `holophyte/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget

@@ -1,4 +1,6 @@
 """A story settles after each witness pass: closed at main's tip, or parked."""
+import collections
+
 from holophyte.board import mirror_push
 from holophyte.gates import MergeLockHeld, merge_lock
 from holophyte.redact import safe_print as print
@@ -33,6 +35,17 @@ def settle_owed(conn, story_id, sha):
     return bool(_plan(conn, story(conn, story_id), sha))
 
 
+def rerun_owed(conn, story_id, sha):
+    rows = witness_ledger(conn, story_id)
+    greens = {row.witnessKey for row in rows
+              if row.mainSha != sha and row.verdict == "green"}
+    runs = collections.Counter(row.witnessKey for row in rows
+                               if row.mainSha == sha)
+    latest = {row.witnessKey: row for row in rows if row.mainSha == sha}
+    return {key for key, row in latest.items()
+            if row.verdict == "red" and key in greens and runs[key] < 2}
+
+
 def _settle(target, conn, story_id, sha):
     found = story(conn, story_id)
     plan = _plan(conn, found, sha)
@@ -56,10 +69,13 @@ def _plan(conn, found, sha):
         return "close"
     greens = {row.witnessKey for row in witness_ledger(conn, found.ticketId)
               if row.mainSha != sha and row.verdict == "green"}
+    owed = rerun_owed(conn, found.ticketId, sha)
     idle = not _open_children(conn, found.ticketId)
     decisions = []
     for witness in found.witnesses:
         row = latest.get(witness.key)
+        if witness.key in owed:
+            continue
         if row is not None and row.verdict == "red" and witness.key in greens:
             decisions.append((
                 witness, "regressed",

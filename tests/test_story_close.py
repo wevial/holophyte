@@ -229,6 +229,32 @@ class StoryCloseTests(StoryCloseFixture):
              for kind, key, options, default in self.decisions(parent)],
             [("regressed", "W1", "file a fix child", "file a fix child")])
 
+    def test_a_red_whose_rerun_the_budget_skipped_waits_for_the_next_pass(self):
+        self.configure(NATIVE + "[story]\nwitness_sec = 2\n")
+        parent, child = self.tickets()
+        self.approve(parent, child, [witness("W1", W1_FILE),
+                                     dict(witness("W2", W2_FILE),
+                                          command="sleep 5")])
+        self.commit(W1_FILE, PASSES, "w1 lands")
+        self.step()
+        self.commit(W2_FILE, PASSES, "w2 lands")
+        red_at = self.commit(W1_FILE, FAILS_AN_ASSERTION, "w1 breaks")
+        runs_of_w1 = ("SELECT verdict FROM witnessResults"
+                      f" WHERE mainSha = '{red_at}' AND witnessKey = 'W1'")
+
+        self.step()
+
+        self.assertEqual(self.read(runs_of_w1), [("red",)])
+        self.assertEqual(
+            (story(self.conn, parent).state, self.decisions(parent)),
+            ("approved", []))
+
+        self.step()
+
+        self.assertEqual(self.read(runs_of_w1), [("red",)] * 2)
+        self.assertEqual([(kind, key) for kind, key, *_ in
+                          self.decisions(parent)], [("regressed", "W1")])
+
 
 class LinearStub:
     """The Linear module a store-mode `LinearBoard` calls: it answers each
