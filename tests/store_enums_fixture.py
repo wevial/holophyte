@@ -100,5 +100,8 @@ BASELINE['INTERVENTION_ACTIONS'] += ('abort',)
 # KO-611: an abort that also closes the run's pull request.
 BASELINE['INTERVENTION_ACTIONS'] += ('abort_close',)
 
+# A story's plan approved, and an operator's answer to a story decision.
+BASELINE['INTERVENTION_ACTIONS'] += ('approve_story', 'decide')
+
 # KO-653: a pull request a person merges while the run watches it in the gate.
 BASELINE['RUN_PHASE_TRANSITIONS']['merge_gate'] |= {'done'}

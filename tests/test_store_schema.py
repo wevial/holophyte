@@ -1314,6 +1314,9 @@ class AdmissionMigrationTests(unittest.TestCase):
                 conn.close()
 
 
+STORY_TABLES = ('stories', 'storyChildren', 'witnessResults', 'storyDecisions')
+
+
 class Version26EnumMigrationTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -1353,7 +1356,8 @@ class Version26EnumMigrationTests(unittest.TestCase):
         return {table: conn.execute(f'SELECT * FROM "{table}" ORDER BY id').fetchall()
                 for table in dict.fromkeys(t for t, _ in store.enums.CONSTRAINED_COLUMNS
                                            if t not in ('ticketRevisions',
-                                                        'gapLayers'))}
+                                                        'gapLayers',
+                                                        *STORY_TABLES))}
 
     def test_rows_survive_and_each_enum_still_rejects_invalid_inserts(self):
         conn = store.open(self.path)
@@ -1363,10 +1367,10 @@ class Version26EnumMigrationTests(unittest.TestCase):
         after['interventions'] = after['interventions'][:1]
         # Admission and board columns are new; pre-existing values survive.
         after['projects'] = [row[:7] + row[9:-1] for row in after['projects']]
-        after['tickets'] = [row[:-10] for row in after['tickets']]
+        after['tickets'] = [row[:-11] for row in after['tickets']]
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
         added = {'parkKind', 'failureKind', 'stopRequested', 'workerPid', 'revision',
-                 'prSeenTitle', 'verifyMs', 'verifyStartedAt'}
+                 'prSeenTitle', 'verifyMs', 'verifyStartedAt', 'storyGeneration'}
         after['runs'] = [tuple(value for column, value in zip(columns, row)
                                if column not in added) for row in after['runs']]
         self.assertEqual(after, self.before)
@@ -1388,6 +1392,8 @@ class Version26EnumMigrationTests(unittest.TestCase):
                         'linearIssueId': "'new-issue'", 'attempt': '999',
                         'round': '999', 'seq': '999', 'revision': '999'}
         for table, column in store.enums.CONSTRAINED_COLUMNS:
+            if table in STORY_TABLES:
+                continue  # empty; test_store_stories_schema inserts into them
             columns = [r[1] for r in conn.execute(f'PRAGMA table_info("{table}")')]
             expressions = ["?" if c == column else replacements.get(c, f'"{c}"')
                            for c in columns]

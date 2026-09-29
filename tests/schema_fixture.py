@@ -30,6 +30,7 @@ DOCUMENTED_COLUMNS = {
         # Board-owned fields, the current revision and a pending push (KO-733).
         "boardColumn", "priority", "labels", "filedAt", "boardUpdatedAt",
         "revision", "pushState", "pushFrom", "pushAt", "goneSince",
+        "parentTicketId",
     },
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
@@ -73,7 +74,7 @@ DOCUMENTED_COLUMNS = {
         # another machine can say where each live run is executing.
         "host",
         # Store-owned: the ticket revision the run was claimed at (KO-733).
-        "revision",
+        "revision", "storyGeneration",
     },
     "ledger": {
         "id", "runId", "ticketId", "at", "kind", "text", "source",
@@ -109,7 +110,19 @@ DOCUMENTED_COLUMNS = {
                     "dedupKey", "text", "postedAt", "postError"},
     # Where each gap's lesson landed on the correction ladder, append-only.
     "gapLayers": {"id", "ticketId", "layer", "note", "carriedBy", "author",
-                  "at"},
+                  "at", "foundBy"},
+    "stories": {"ticketId", "state", "generation", "standingOrders",
+                "approvedRevision", "approvedPlan", "approvedBy", "approvedAt",
+                "closedSha", "closedAt"},
+    "storyWitnesses": {"storyId", "key", "criterion", "file", "command",
+                       "source", "sourceHash", "completedBy"},
+    "storyChildren": {"ticketId", "witnessKey", "storyId", "role"},
+    "witnessResults": {"id", "storyId", "witnessKey", "mainSha", "verdict",
+                       "redKind", "verifier", "fileHash", "evidencePath",
+                       "seconds", "at"},
+    "storyDecisions": {"id", "storyId", "ticketId", "kind", "question",
+                       "options", "defaultOption", "answer", "answeredBy",
+                       "answeredAt", "at"},
 }
 
 

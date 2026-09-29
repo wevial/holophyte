@@ -5,7 +5,7 @@ and the drawer are views of it; the loop, the supervisor and the serve
 daemon's action endpoints write it, all through the store API. It is one
 SQLite file per project in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 38) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 39) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -46,6 +46,11 @@ A new table or column follows the ones already there:
 | `linearDeliveries` | push to Linear | loop | what was projected, when |
 | `interventions` | operator or supervisor decision on a run | operator commands, supervisor | action ∈ `redirect, kill, extend_time_box, resume, close_out, requeue, approve, repoint` plus the babysit action `store.babysit()` writes (a fixed set, currently 9 values); the record-before-acting rule lives here |
 | `ledger` | entry in a run's narrative | loop, operator commands | `kind` ∈ `merge, failure, round, adjudication, intervention, note`, `source` ∈ `loop, operator`; written before the Linear comment that projects it; served at `/ledger` and `/runs/N/ledger` |
+
+A story is a parent ticket whose children serve one outcome; the five tables
+`stories`, `storyWitnesses`, `storyChildren`, `witnessResults` and
+`storyDecisions` hold its plan, its witnesses, its children's roles, each
+witness run on main and the questions it put to the operator.
 
 ## The two state machines
 
