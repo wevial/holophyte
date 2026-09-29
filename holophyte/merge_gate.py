@@ -43,7 +43,7 @@ from holophyte.redact import safe_print as print
 from holophyte.reproduce import tests_only_line
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 from holophyte.stop import end_aborted, stop_if_requested
-from holophyte.story_drift import review_refresh, shared_files
+from holophyte.story_drift import advance_generation, review_refresh, shared_files
 
 
 class DriftRequeued(store.RunEnded):
@@ -530,6 +530,7 @@ def _merge(project, conn, run_id, provider, task_id, task, branch, wt, sha):
     # are not preserved work — and a cleanup refusal must not re-classify
     # merged work as a failed run.
     merge_sha = sh(["git", "rev-parse", "HEAD"], project.path)
+    advance_generation(conn, run_id)
     try:
         sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
         sh(["git", "branch", "-d", branch], project.path)

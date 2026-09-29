@@ -5,12 +5,11 @@ from time import time
 import store
 from holophyte.agents import review_refs
 from holophyte.board import ledger
-from holophyte.gates import RunFailure, sh
+from holophyte.gates import InfraFailure, RunFailure, sh
 from holophyte.redact import safe_print as print
 from holophyte.review import (
     _changed_files,
     _review_reply,
-    covering_scope,
     criteria_brief,
     criteria_findings,
     main_merge_base,
@@ -19,7 +18,7 @@ from holophyte.review import (
 )
 from holophyte.runs import heartbeat_while, record_round
 from holophyte.stop import stop_if_requested
-from store.stories import story
+from store.stories import advance_story, story
 
 STORY_DRIFT_QUESTION = "story siblings merged since the claim and changed: "
 
@@ -46,6 +45,27 @@ def shared_files(conn, run_id, wt, sha):
     return shared
 
 
+def advance_generation(conn, run_id):
+    """Count a landed merge in its story before the merge lock is let go."""
+    if conn is not None and run_id is not None:
+        advance_story(conn, run_id)
+
+
+def refresh_scope(wt, reviewed, sha, files):
+    """The covering review's scope: the sibling merge into the candidate."""
+    tests = sorted(path for path in _changed_files(wt, reviewed, sha)
+                   if path.startswith("tests/"))
+    return ("Sibling tickets of the same story merged into main after this "
+            f"candidate was approved at {reviewed}, changing files it changes"
+            f" too ({files}); main was merged into it at {sha}. Review the "
+            f"range {reviewed}..{sha}: whether the candidate's changes and the"
+            " siblings' still fit together in those files and every criterion"
+            " still holds. For a criterion this range leaves alone you may "
+            f"cite `approval at {reviewed}; tests/file.py::TestClass::"
+            "test_name`, unless its test file is among those changed in this"
+            f" range: {json.dumps(tests)}.\n\n")
+
+
 def review_refresh(project, conn, run_id, provider, task_id, branch, wt,
                    reviewed, sha, beat_s, ticket, verify_cmd, out, shared):
     """One covering review of `reviewed` refreshed to `sha`; else a park."""
@@ -65,11 +85,8 @@ def review_refresh(project, conn, run_id, provider, task_id, branch, wt,
         verdict, decision, first_reply = _review_reply(project,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             f"{base_ref} as the frozen base and {candidate_ref} as the "
-            "candidate in this repo against the ticket below. Sibling "
-            "tickets of the same story merged into main after this candidate"
-            f" was reviewed at {reviewed}, changing files it changes too"
-            f" ({files}), and main was merged into it at {sha}. The "
-            + covering_scope(wt, reviewed, sha, branch)
+            "candidate in this repo against the ticket below. "
+            + refresh_scope(wt, reviewed, sha, files)
             + "The ticket is the contract, acceptance criteria included: a "
             "candidate that leaves a criterion unmet or unwitnessed is not "
             f"approvable.\n\n{ticket}\n\n"
@@ -80,11 +97,16 @@ def review_refresh(project, conn, run_id, provider, task_id, branch, wt,
             "line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
             "If REQUEST_CHANGES, list only concrete blockers.", wt,
-            base_sha, sha, conn, run_id, run_agent=agent)
+            base_sha, sha, conn, run_id, run_agent=agent, review_round=rnd)
     record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
                  True, out, started_at=round_started, criteria=criteria,
                  root=wt, prior_reply=first_reply,
                  approved_range=(reviewed, sha), scope=scope)
+    if decision == "MALFORMED":
+        reason = "reviewer returned no verdict line twice"
+        print(f"[holo2] round {rnd}: {reason}")
+        raise InfraFailure(f"{reason}; candidate preserved at {sha}",
+                           "review_route")
     stop_if_requested(conn, run_id, "merge_gate")
     unwitnessed = criteria_findings(verdict, criteria, wt,
                                     approved_range=(reviewed, sha), scope=scope)

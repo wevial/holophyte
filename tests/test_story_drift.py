@@ -13,6 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import (  # noqa: E402
     APPROVE,
+    MALFORMED,
     REQUEST_CHANGES,
     Commit,
     FakeAgent,
@@ -21,8 +22,10 @@ from fake_agent import (  # noqa: E402
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 
 import holophyte.loop  # noqa: E402
+import holophyte.merge_gate  # noqa: E402
 import holophyte.operator  # noqa: E402
 import linear_provider  # noqa: E402
+import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.runs import open_store  # noqa: E402
@@ -58,6 +61,29 @@ class SiblingThenCommit(Commit):
         return super().play(cwd, turn)
 
 
+class SiblingMergesThenCommit(Commit):
+    """B's implementer turn: sibling A's run lands its change on main through
+    the local merge, and its ticket close-out has not run yet."""
+
+    def __init__(self, test, **kwargs):
+        super().__init__("the child's work", **kwargs)
+        self.test = test
+
+    def play(self, cwd, turn):
+        test = self.test
+        a_run = store.claim(test.conn, test.project_id, test.a_id)
+        store.set_phase(test.conn, a_run, "merge_gate", "the sibling's gate")
+        wt = test.target.parent / "sibling-wt"
+        test.git("worktree", "add", "-q", "-b", "sibling", str(wt), "main")
+        (wt / "shared.txt").write_text(SHARED.replace("one", "ONE"))
+        test.git("commit", "-q", "-am", "the sibling's work", cwd=wt)
+        sha = test.git("rev-parse", "HEAD", cwd=wt).strip()
+        holophyte.merge_gate._merge(test.project, test.conn, a_run, test.board,
+                                    "NAT-3", "the sibling's work", "sibling",
+                                    wt, sha)
+        return super().play(cwd, turn)
+
+
 class StoryDriftTests(LoopFixture):
     def setUp(self):
         super().setUp()
@@ -73,9 +99,9 @@ class StoryDriftTests(LoopFixture):
         self.board = board_for(self.project)
         self.conn = open_store(self.project)
         self.addCleanup(self.conn.close)
-        project_id = store.tickets.ensure_project(
+        self.project_id = project_id = store.tickets.ensure_project(
             self.conn, self.board.team, self.project.path)
-        parent = self.file(project_id, "backlog")
+        self.parent = parent = self.file(project_id, "backlog")
         self.b_id, self.a_id = (self.file(project_id, "ready")
                                 for _ in range(2))
         file_story(self.conn, parent, [WITNESS],
@@ -93,9 +119,15 @@ class StoryDriftTests(LoopFixture):
 
     def run_loop(self, *script):
         fake = FakeAgent(*script)
+        self.review_rounds = []
+
+        def agent(*args, review_round=None, **kwargs):
+            self.review_rounds.append(review_round)
+            return fake(*args, review_round=review_round, **kwargs)
+
         out = io.StringIO()
         with no_agent_processes(), patch.object(sys, "stdout", out), \
-                patch.object(holophyte.loop, "agent", fake), \
+                patch.object(holophyte.loop, "agent", agent), \
                 patch("holophyte.freshness.critic_admits",
                       return_value=True):
             holophyte.operator.main(self.project, self.board)
@@ -147,9 +179,13 @@ class StoryDriftTests(LoopFixture):
         (event,) = self.drift_events()
         self.assertIn("shared files: shared.txt", event)
         self.assertEqual(fake.roles, ["implement", "review", "review"])
+        self.assertEqual(self.review_rounds, [None, 1, 2])
         goal = fake.turns[-1].goal
         self.assertIn(reviewed, goal)
         self.assertIn(refreshed, goal)
+        self.assertIn("Sibling tickets of the same story merged into main", goal)
+        self.assertIn("(shared.txt)", goal)
+        self.assertNotIn("review threads", goal)
         self.assertLess(out.index("verify ok before merge"),
                         out.index("refreshed candidate"))
         self.assertEqual((self.target / "shared.txt").read_text(),
@@ -168,3 +204,32 @@ class StoryDriftTests(LoopFixture):
         self.assertEqual(self.rounds(), [(1, "pass"), (2, "changes_requested")])
         self.assertNotIn("the child's work", self.subjects())
         self.assertNotIn("FIVE", self.git("show", "main:shared.txt"))
+
+    def test_a_sibling_merged_just_before_b_gets_b_the_covering_review(self):
+        fake, out = self.run_loop(
+            SiblingMergesThenCommit(self, path="shared.txt",
+                                    body=SHARED.replace("five", "FIVE")),
+            APPROVE, APPROVE)
+
+        (event,) = self.drift_events()
+        self.assertIn("shared files: shared.txt", event, out)
+        self.assertEqual(fake.roles, ["implement", "review", "review"])
+        self.assertIn("Merge sibling: the sibling's work", self.subjects())
+        self.assertEqual(self.status(self.b_id)[0], "merged", out)
+        store.tickets.walk_ticket(self.conn, self.a_id, "merged")
+        self.assertEqual(self.read("SELECT generation FROM stories WHERE"
+                                   f" ticketId = {self.parent}"), [(2,)])
+
+    def test_a_covering_review_with_no_verdict_is_a_reviewer_route_failure(self):
+        _, out = self.run_loop(
+            SiblingThenCommit(self, "shared.txt", SHARED.replace("one", "ONE"),
+                              path="shared.txt",
+                              body=SHARED.replace("five", "FIVE")),
+            APPROVE, MALFORMED, MALFORMED)
+
+        self.assertEqual(
+            self.read("SELECT failureKind, outcomeClass FROM runs"
+                      f" WHERE id = {self.b_run()}"),
+            [("review_route", "infra")], out)
+        self.assertNotEqual(self.status(self.b_id)[0], "blocked_on_operator")
+        self.assertNotIn("the child's work", self.subjects())

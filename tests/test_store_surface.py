@@ -293,8 +293,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                  (store.gap_layers, ["gap_layer_counts",
                                                      "record_gap_layer"]),
                                  # A story's filing, approval, ledger,
-                                 # decisions, closing and abandonment.
+                                 # decisions, closing and abandonment;
+                                 # HOLO-60: a landed merge's generation.
                                  (store.stories, ["abandon_story",
+                                                  "advance_story",
                                                   "answer_decision",
                                                   "approve_story",
                                                   "close_story", "file_story",
