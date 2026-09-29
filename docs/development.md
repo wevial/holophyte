@@ -10,8 +10,8 @@ Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
 - `holophyte/cli_project.py` — project registration, listing and admission commands.
-- `holophyte/cli_story.py` — the `--file-story SLUG` and `--approve-story KEY-n`
-  options and their dispatch.
+- `holophyte/cli_story.py` — the `--file-story SLUG`, `--approve-story KEY-n`
+  and `--witness-pass KEY-n` options and their dispatch.
 - `holophyte/story_approval.py` — `approve()` approves a planned story:
   the one-open-story and revision checks, the baseline witness run at
   main's tip, then the frozen plan and its children released to Ready in
@@ -260,7 +260,10 @@ Each module, one line:
   commands at one commit of main in a scratch worktree, within
   `[story] witness_sec`, and appends each verdict to the ledger;
   `main_tip()` reads the commit a pass runs at and `red_kind()` reads a
-  red's kind from its output.
+  red's kind from its output; `witness_pass()` runs an open story's
+  witnesses at main's tip unless the ledger already holds it or the
+  project is held, reruns once a red that was green at an earlier commit,
+  and notes each changed verdict on the parent.
 - `holophyte/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget
