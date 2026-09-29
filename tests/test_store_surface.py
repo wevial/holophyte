@@ -292,11 +292,15 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # The gap layer record's writer and count.
                                  (store.gap_layers, ["gap_layer_counts",
                                                      "record_gap_layer"]),
-                                 # A story's filing, approval, abandonment
-                                 # and its one read.
+                                 # A story's filing, approval, ledger,
+                                 # decisions, closing and abandonment.
                                  (store.stories, ["abandon_story",
+                                                  "answer_decision",
                                                   "approve_story",
-                                                  "file_story", "story"])):
+                                                  "close_story", "file_story",
+                                                  "park_story",
+                                                  "record_witness_result",
+                                                  "story", "witness_ledger"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
             missing = sorted(set(expected) - set(actual))
