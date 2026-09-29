@@ -51,6 +51,7 @@ python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # repla
 python3 factory.py --file-ticket TICKET.md --update KEY-n --revision N [--priority urgent|high|medium|low] [--labels a,b] /path/to/repo # a native board's edit
 python3 factory.py --file-story SLUG [--priority urgent|high|medium|low] /path/to/repo # a native or store-mode Linear board's story, filed from stories/SLUG
 python3 factory.py --file-story SLUG --update KEY-n --revision N [--priority urgent|high|medium|low] /path/to/repo # apply a redrafted stories/SLUG to a filed story
+python3 factory.py --approve-story KEY-n --revision N --note TEXT [--baseline-green W] [--baseline-red-kind exception W] /path/to/repo # approve a planned story on its red baseline and release its children
 python3 factory.py --move KEY-n ready|backlog --revision N [--note TEXT] /path/to/repo # a native ticket to Ready or Backlog
 python3 factory.py --cancel KEY-n --revision N --note TEXT /path/to/repo # cancel a native ticket; a live run ends abandoned
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns

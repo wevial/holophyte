@@ -10,7 +10,12 @@ Each module, one line:
 
 - `holophyte/__init__.py` — the package docstring: which module owns what.
 - `holophyte/cli_project.py` — project registration, listing and admission commands.
-- `holophyte/cli_story.py` — the `--file-story SLUG` option and its dispatch.
+- `holophyte/cli_story.py` — the `--file-story SLUG` and `--approve-story KEY-n`
+  options and their dispatch.
+- `holophyte/story_approval.py` — `approve()` approves a planned story:
+  the one-open-story and revision checks, the baseline witness run at
+  main's tip, then the frozen plan and its children released to Ready in
+  one store transaction.
 - `holophyte/story_filing.py` — files a validated story directory on a native
   board: its parent, its children in dependency order and its story rows in
   one store transaction, then the header lines in its files.
