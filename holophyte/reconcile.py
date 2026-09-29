@@ -213,7 +213,7 @@ def _close_canceled(target, conn, provider, ticket_id):
                 f"Linear holds {identifier} canceled; mirror walked"
                 " blocked_on_operator -> abandoned",
                 source="supervisor", trigger="linear_cancelled")
-        store.tickets.walk_ticket(conn, ticket_id, "abandoned")
+        story_claim.walk_closed(conn, ticket_id, identifier, "abandoned")
     if parked:
         if target is not None:
             from holophyte.board import release_lease_label

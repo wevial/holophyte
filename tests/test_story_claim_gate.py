@@ -26,6 +26,7 @@ import store  # noqa: E402
 import store.board  # noqa: E402
 import store.stories  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte import pr_status  # noqa: E402
 from holophyte.native_board import NativeBoard  # noqa: E402
 from holophyte.reconcile import _reconcile_mirror  # noqa: E402
 from holophyte.runs import open_store  # noqa: E402
@@ -36,6 +37,7 @@ WITNESSES = [
     {"key": key, "criterion": f"outcome {key}", "file": f"tests/test_{key}.py",
      "command": f"python3 -m unittest tests.test_{key}",
      "source": f"assert '{key}'\n"} for key in ("W1", "W2")]
+PR_URL = "https://github.com/example/repo/pull/7"
 
 
 def no_linear(*args, **kwargs):
@@ -112,11 +114,13 @@ class StoryClaimLoopTests(LoopFixture):
 class ClosedBoard:
     """A board that holds each named ticket closed in the state given."""
 
-    def __init__(self, closed):
+    def __init__(self, closed, states=None):
         self.closed = closed
+        self.states = states or {}
 
     def fetch_task(self, identifier):
-        return None
+        state = self.states.get(identifier)
+        return {"board_state": state} if state else None
 
     def closed_identifiers(self, identifiers):
         return {i: self.closed[i] for i in identifiers if i in self.closed}
@@ -128,8 +132,8 @@ class StoryReconcileTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.conn = store.open(Path(tmp.name) / "store.db")
         self.addCleanup(self.conn.close)
-        self.project = store.tickets.ensure_project(self.conn, "team-1",
-                                                    "/repo")
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1",
+                                                       "/repo")
         self.parent = self.mirror(1, contract=False)
         self.ready = self.mirror(3)
         self.running = self.mirror(4)
@@ -138,11 +142,11 @@ class StoryReconcileTests(unittest.TestCase):
             [(self.ready, "advances", ("W1", "W2")),
              (self.running, "completes", ("W1", "W2"))])
         store.tickets.transition(self.conn, self.running, "in_flight")
-        self.run_id = store.claim(self.conn, self.project, self.running)
+        self.run_id = store.claim(self.conn, self.project_id, self.running)
 
     def mirror(self, n, contract=True):
         return store.tickets.mirror_ticket(
-            self.conn, self.project, linear_issue_id=f"issue-{n}",
+            self.conn, self.project_id, linear_issue_id=f"issue-{n}",
             linear_identifier=f"NAT-{n}", title=f"ticket {n}",
             acceptance_criteria=["Given it, then it holds"] if contract else (),
             verification_commands=["echo ok"] if contract else (),
@@ -151,7 +155,7 @@ class StoryReconcileTests(unittest.TestCase):
     def reconcile(self, state):
         out = io.StringIO()
         with redirect_stdout(out):
-            _reconcile_mirror(self.conn, self.project,
+            _reconcile_mirror(self.conn, self.project_id,
                               ClosedBoard({"NAT-1": state}))
         return out.getvalue()
 
@@ -209,6 +213,42 @@ class StoryReconcileTests(unittest.TestCase):
             "SELECT boardColumn FROM tickets WHERE id = ?", self.running),
             "ready")
 
+    def cancel_parent_held_on(self, pull):
+        for status in ("ready", "in_flight"):
+            store.tickets.transition(self.conn, self.parent, status)
+        run_id = store.claim(self.conn, self.project_id, self.parent)
+        store.park(self.conn, run_id, "awaiting_merge_approval", pr_url=PR_URL)
+        store.tickets.transition(self.conn, self.parent, "blocked_on_operator")
+        board = ClosedBoard({}, {"NAT-1": "Canceled"})
+        with redirect_stdout(io.StringIO()), \
+                patch.object(pr_status, "pull_status", return_value=pull), \
+                patch("holophyte.board.release_lease_label"):
+            _reconcile_mirror(self.conn, self.project_id, board, object())
+        return self.value("SELECT outcome FROM runs WHERE id = ?", run_id)
+
+    def assert_story_abandoned(self):
+        self.assertEqual(self.value("SELECT state FROM stories"), "abandoned")
+        self.assertEqual(self.value("SELECT status FROM tickets WHERE id = ?",
+                                    self.parent), "abandoned")
+        self.assertEqual(self.value(
+            "SELECT boardColumn FROM tickets WHERE id = ?", self.ready),
+            "backlog")
+        self.assertEqual([kind for kind, _ in self.notes(self.ready)], ["move"])
+
+    def test_a_canceled_parent_parked_on_an_open_pull_request_abandons_it(self):
+        outcome = self.cancel_parent_held_on(
+            pr_status.PullStatus(merged=False, closed=False))
+
+        self.assertEqual(outcome, "abandoned")
+        self.assert_story_abandoned()
+
+    def test_a_canceled_parent_whose_pull_request_closed_abandons_it(self):
+        outcome = self.cancel_parent_held_on(
+            pr_status.PullStatus(merged=False, closed=True, closed_by="person"))
+
+        self.assertEqual(outcome, "rejected")
+        self.assert_story_abandoned()
+
 
 class NativeCancelTests(unittest.TestCase):
     def setUp(self):
@@ -219,15 +259,15 @@ class NativeCancelTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q", str(repo)], check=True)
         self.conn = store.open(Path(tmp.name) / "store.db")
         self.addCleanup(self.conn.close)
-        self.project = store.tickets.ensure_project(self.conn, "team-1",
-                                                    str(repo))
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1",
+                                                       str(repo))
         self.parent = self.file("backlog")
         self.child = self.file("ready")
         store.stories.file_story(self.conn, self.parent, WITNESSES,
                                  [(self.child, "completes", ("W1", "W2"))])
 
     def file(self, column):
-        identifier = store.board.file_ticket(self.conn, self.project, "NAT",
+        identifier = store.board.file_ticket(self.conn, self.project_id, "NAT",
                                              VALID_BODY, column=column)
         return self.conn.execute(
             "SELECT id FROM tickets WHERE linearIdentifier = ?",
@@ -243,7 +283,7 @@ class NativeCancelTests(unittest.TestCase):
         (revision,) = self.conn.execute(
             "SELECT revision FROM tickets WHERE id = ?",
             (self.parent,)).fetchone()
-        store.board.cancel_ticket(self.conn, self.project, "NAT-1", revision,
+        store.board.cancel_ticket(self.conn, self.project_id, "NAT-1", revision,
                                   "The export is no longer wanted.")
 
     def test_canceling_the_parent_abandons_its_story(self):
