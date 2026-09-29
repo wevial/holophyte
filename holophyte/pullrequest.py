@@ -405,16 +405,20 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
 
 def _behind_main(wt, sha):
     """Why `sha` may not land yet: the fetched main's tip is not in it."""
-    fetched = subprocess.run(["git", "fetch", pr.REMOTE], cwd=wt,
-                             capture_output=True, text=True)
-    if fetched.returncode != 0:
-        raise InfraFailure(f"git fetch {pr.REMOTE} failed before the merge:"
-                           f" {(fetched.stderr or fetched.stdout).strip()}")
     ref = f"{pr.REMOTE}/{pr.BASE}"
+    fetched = subprocess.run(
+        ["git", "fetch", pr.REMOTE, f"+refs/heads/{pr.BASE}:refs/remotes/{ref}"],
+        cwd=wt, capture_output=True, text=True)
+    if fetched.returncode != 0:
+        raise InfraFailure(f"git fetch {pr.REMOTE} {pr.BASE} failed before the"
+                           f" merge: {(fetched.stderr or fetched.stdout).strip()}")
     tip = subprocess.run(["git", "rev-parse", "--verify", "-q", ref], cwd=wt,
                          capture_output=True, text=True).stdout.strip()
-    if not tip or subprocess.run(["git", "merge-base", "--is-ancestor", tip, sha],
-                                 cwd=wt, capture_output=True).returncode == 0:
+    if not tip:
+        raise InfraFailure(f"{ref} did not resolve after its fetch; the merge"
+                           f" of {sha[:12]} waits")
+    if subprocess.run(["git", "merge-base", "--is-ancestor", tip, sha],
+                      cwd=wt, capture_output=True).returncode == 0:
         return None
     return (f"the candidate at {sha[:12]} is behind main: {ref} at"
             f" {tip[:12]} is not in it")

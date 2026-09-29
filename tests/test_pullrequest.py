@@ -55,6 +55,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.merge_queue  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
@@ -1554,9 +1555,36 @@ class MergeAgainstMainTipTests(unittest.TestCase):
 
     def test_a_candidate_behind_origin_main_is_refused_before_github(self):
         self.advance_origin_main()
+        self.assert_refused_behind_main()
+
+    def fetch_only_other(self):
+        self.git("push", "-q", "origin", "HEAD:refs/heads/other")
+        self.git("config", "remote.origin.fetch",
+                 "+refs/heads/other:refs/remotes/origin/other")
+
+    def assert_refused_behind_main(self):
         with self.assertRaises(holophyte.pr.MergeRefused) as refused:
             self.merge()
         self.assertIn("behind main", str(refused.exception))
+        self.assertEqual(self.merged, [])
+
+    def test_a_fetch_refspec_without_main_still_refuses_a_stale_tip(self):
+        self.fetch_only_other()
+        self.advance_origin_main()
+        self.git("update-ref", "refs/remotes/origin/main", "main~1")
+        self.assert_refused_behind_main()
+
+    def test_a_fetch_refspec_without_main_still_refuses_a_missing_tip(self):
+        self.fetch_only_other()
+        self.advance_origin_main()
+        self.git("update-ref", "-d", "refs/remotes/origin/main")
+        self.assert_refused_behind_main()
+
+    def test_an_origin_without_main_fails_before_github(self):
+        self.git("update-ref", "-d", "refs/heads/main", cwd=self.origin)
+        self.git("update-ref", "-d", "refs/remotes/origin/main")
+        with self.assertRaises(holophyte.gates.InfraFailure):
+            self.merge()
         self.assertEqual(self.merged, [])
 
     def test_a_candidate_holding_origin_main_merges_through_github(self):
