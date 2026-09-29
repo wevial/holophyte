@@ -118,7 +118,7 @@ PINNED = {
     "holophyte/status.py": 75,
     "holophyte/stop.py": 49,
     "holophyte/store_import.py": 40,
-    "holophyte/story_claim.py": 2,
+    "holophyte/story_claim.py": 3,
     "holophyte/story_filing.py": 7,
     "holophyte/supervisor.py": 430,
     "holophyte/supervisor_lock.py": 108,

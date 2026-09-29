@@ -35,7 +35,7 @@ PINNED = {
     "holophyte/claim.py": 1001, "holophyte/cli.py": 858,
     "holophyte/config.py": 939, "holophyte/dispatch.py": 327,
     "holophyte/config_tables.py": 766, "holophyte/findings.py": 391,
-    "holophyte/gates.py": 926, "holophyte/loop.py": 919,
+    "holophyte/gates.py": 926, "holophyte/loop.py": 923,
     "holophyte/merge_gate.py": 584,
     "holophyte/operator.py": 539, "holophyte/pool.py": 438,
     "holophyte/pr.py": 768, "holophyte/pr_status.py": 553,
