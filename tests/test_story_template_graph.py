@@ -51,6 +51,13 @@ class ChildTests(StoryGraphCase):
         self.assert_refused(self.planned(plan() + extra),
                             "the story has 11 children; the cap is 10")
 
+    def test_two_children_sharing_a_slug_are_refused(self):
+        children = plan()
+        children[0][2] = ["c"]
+        directory = self.planned(children + [["a", "scaffolding", [], []]])
+        self.assert_refused(directory, "children 01-a and 05-a share the "
+                            "slug a")
+
 
 class RoleTests(StoryGraphCase):
     def test_witness_completed_by_two_children_is_refused(self):

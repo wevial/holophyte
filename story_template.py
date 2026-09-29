@@ -342,7 +342,15 @@ def _children_problems(children, story, repo):
                         f"{MAX_CHILDREN} — split the story")
     problems.extend(_child_problems(children, repo))
     problems.extend(_role_problems(children, story.witnesses))
-    slugs = {child.slug for child in children}
+    first = {}
+    for child in children:
+        other = first.setdefault(child.slug, child)
+        if other is not child:
+            problems.append(f"children {other.name} and {child.name} share "
+                            f"the slug {child.slug}")
+    if len(first) < len(children):
+        return problems
+    slugs = set(first)
     edges = {child.slug: [dep for dep in child.depends_on if dep in slugs]
              for child in children}
     ancestors = {slug: _ancestors(slug, edges) for slug in edges}
