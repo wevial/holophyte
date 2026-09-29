@@ -9,7 +9,7 @@ from pathlib import Path
 import store
 import store.board
 import store.tickets
-from provider import GONE, parse_body
+from provider import GONE, parse_body, refuse_parent
 from store.read import claimable, open_readonly
 
 STATE_COLUMNS = {"Todo": "ready", "Backlog": "backlog"}
@@ -125,8 +125,10 @@ class NativeBoard:
         with closing(conn):
             store.record_note(conn, row[0], "comment", body, f"comment:{digest}")
 
-    def file(self, title, body, estimate, state, priority=None, blockers=()):
+    def file(self, title, body, estimate, state, priority=None, blockers=(),
+             parent=None):
         # The store reads the title, estimate and blockers from the body itself.
+        refuse_parent(title, parent)
         if state not in STATE_COLUMNS:
             raise RuntimeError(f"a native board files into Todo or Backlog,"
                                f" not {state!r}")
