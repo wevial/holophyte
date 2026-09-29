@@ -500,7 +500,7 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 35 admits the `abort_close` intervention action (KO-611).
 # Version 36 admits the `not_reproduced` run park kind (KO-657).
 # Version 37 adds ticket revisions, ticket notes and board columns (KO-733).
-SCHEMA_VERSION = 39
+SCHEMA_VERSION = 40
 
 # The oldest SCHEMA_VERSION whose builds can still read and write a store at
 # SCHEMA_VERSION (KO-661). Each migration records it in its `migrate` note,
@@ -525,7 +525,7 @@ SCHEMA_VERSION = 39
 #
 # A literal, never an expression: `fetched_schema()` in
 # holophyte/pool_handoff.py reads it with `ast.literal_eval`.
-READABLE_FROM = 36
+READABLE_FROM = 40
 
 # How long a connection waits for another writer's lock before raising
 # `database is locked`. WAL admits one writer at a time, and the loop's
@@ -925,9 +925,9 @@ def init(conn):
                          " WHERE t.lastRunId = runs.id"
                          " AND t.status = 'blocked_on_operator')"
                          " WHERE parkKind IS NULL")
-        # Every CHECK is generated from store.enums: rebuilt at 32 for the
-        # `paused` phase, and at 36 for the `not_reproduced` park (KO-657).
-        if version < 36:
+        # Every CHECK is generated from store.enums: rebuilt at 32 for `paused`,
+        # at 36 for the `not_reproduced` park (KO-657) and at 40 for `ci`.
+        if version < 40:
             _rebuild_enum_tables(conn)
         # Each ticket's current fields become its revision 1 (KO-733);
         # `revision = 0` also keeps a second pass from writing another.

@@ -105,7 +105,7 @@ PINNED = {
     "holophyte/review_session.py": 6,
     "holophyte/run.py": 35,
     "holophyte/runs.py": 201,
-    "holophyte/serve.py": 411,
+    "holophyte/serve.py": 410,
     "holophyte/serve_actions.py": 69,
     "holophyte/serve_board.py": 54,
     "holophyte/serve_config.py": 105,

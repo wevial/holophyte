@@ -460,7 +460,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
         state = _settled_or_park(
             project, conn, run_id, beat_s, pull, pushed_state, provider,
-            task_id, branch, sha, reviewed, refresh, retrigger)
+            task_id, branch, sha, reviewed, refresh, retrigger,
+            park_ci=sha == run.sha and not check_fix.reran)
         sha, reviewed = retrigger.sha, retrigger.reviewed
         pushed_state = None
         stop_if_requested(conn, run_id, "merge_gate")
@@ -755,13 +756,16 @@ def _quiet_left(state, quiet_ms, refresh=None):
 
 def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
                      task_id, branch, sha, reviewed, refresh=None,
-                     retrigger=None, deadline=None):
+                     retrigger=None, deadline=None, park_ci=False):
     from holophyte.pullrequest import _park_on_pr
     try:
         state = state or pr_status.pr_state(project, pull)
         state = maintainer_notes.pending_state(conn, run_id, state, pull.url)
         return _settled_state(project, conn, run_id, beat_s, pull, state,
-                              refresh, retrigger, deadline)
+                              refresh, retrigger, deadline, park_ci)
+    except WaitsOnCI as waiting:
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
+                    pull, str(waiting), (), reviewed=reviewed, park_kind="ci")
     except WaitExpired as expired:
         if retrigger is not None:  # Park the head the retrigger pushed.
             sha, reviewed = retrigger.sha, retrigger.reviewed
@@ -773,8 +777,12 @@ class WaitExpired(Exception):
     """A continuous PR wait reached its independent liveness deadline."""
 
 
+class WaitsOnCI(Exception):
+    pass
+
+
 def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None,
-                   retrigger=None, deadline=None):
+                   retrigger=None, deadline=None, park_ci=False):
     """Bound pending/quiet waiting with one deadline; return threads promptly.
     A required check with no report for `missing_check_sec` is retriggered
     once (`Retrigger`) or ends the wait naming it."""
@@ -796,6 +804,7 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
                         raise WaitExpired(
                             "required checks never reported on the head"
                             f" commit: {', '.join(late)}")
+                    park_ci = False
                     state = route_bot_threads(project, conn, run_id, beat_s,
                                               pull, state, merge)
                     continue
@@ -803,6 +812,8 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
                 reason = "pending checks"
                 if state.pending_contexts:
                     reason += f" ({', '.join(state.pending_contexts)})"
+                if park_ci and not state.missing_checks:
+                    raise WaitsOnCI(reason)
                 nap = pr.CHECK_POLL_S
                 print(f"[holo2] checks pending on {pull.url}; waiting"
                       f" {nap}s")
@@ -810,6 +821,8 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
                     and (left := _quiet_left(state, quiet_ms, refresh)):
                 record_step(conn, run_id, "quiet")
                 reason = "quiet wait"
+                if park_ci:
+                    raise WaitsOnCI(reason)
                 nap = min(merge.pr_poll_sec, left / 1000)
                 print(f"[holo2] {pull.url} is green and quiet for"
                       f" {(quiet_ms - left) // 1000}s of the"

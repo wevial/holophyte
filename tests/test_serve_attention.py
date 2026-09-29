@@ -399,3 +399,24 @@ class PullRequestTitleTests(ServeTestCase):
         item = self.pr_open()
         self.assertEqual((item["pr"]["title"], item["title"]),
                          (None, "ticket 7"))
+
+
+class CiParkAttentionTests(ServeTestCase):
+    URL = "https://github.com/example/repo/pull/31"
+
+    def test_a_run_parked_on_its_checks_is_a_pull_request_in_progress(self):
+        self.seed()
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        ticket = store.read.ticket_by_identifier(conn, "KO-7")
+        store.tickets.transition(conn, ticket.id, "blocked_on_operator")
+        store.set_question(conn, ticket.id, f"PR open: {self.URL}\npending checks")
+        park_run(conn, self.run, "awaiting_merge_approval", "pending checks",
+                 candidate_sha="a" * 40, pr_url=self.URL, park_kind="ci",
+                 pr_seen=("2026-09-29T10:00:00Z", 0, "pending", None, None),
+                 now=self.now)
+        (blocked,) = store.read.blocked_tickets(conn)
+        item = holophyte.serve.parked_item(blocked)
+        self.assertEqual((item["kind"], item["pr_url"], item["reason"]),
+                         ("pr_open", self.URL, "pending checks"))
+        self.assertEqual((item["pr"]["number"], item["pr"]["checks"]), (31, "pending"))
