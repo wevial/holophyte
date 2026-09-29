@@ -42,7 +42,8 @@ def _facts(conn, story_id, max_parallel, now):
             "errors": sum(witness["verdict"] == "error"
                           for witness in witnesses),
             "decisions": len(found.decisions),
-            "age_s": None if filed_at is None else (now - filed_at) // 1000}
+            "age_s": None if filed_at is None
+            else max(0, (now - filed_at) // 1000)}
 
 
 def _children(conn, story_id, max_parallel):
@@ -66,7 +67,7 @@ def _children(conn, story_id, max_parallel):
 def _age(seconds):
     if seconds is None:
         return "unknown"
-    days, hours = divmod(max(seconds, 0) // 3600, 24)
+    days, hours = divmod(seconds // 3600, 24)
     return f"{days}d {hours}h"
 
 

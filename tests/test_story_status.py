@@ -122,3 +122,12 @@ class StoryStatusTests(SweepTestCase):
         [second] = [line for line in lines if "witnesses" in line]
         self.assertIn("W1 error  W2 green @c0ffee  errors 1  decisions 1",
                       second)
+
+    def test_a_story_filed_after_now_is_age_zero_in_text_and_json(self):
+        self.guest_checkout()
+        before_filing = T0 - 3 * HOUR
+        [fact] = json.loads(self.status("--json", at=before_filing))["stories"]
+        self.assertEqual(fact["age_s"], 0)
+        [second] = [line for line in self.status(at=before_filing).splitlines()
+                    if "witnesses" in line]
+        self.assertTrue(second.endswith("age 0d 0h"), second)
