@@ -1,6 +1,7 @@
 """A story's witness commands run at one commit of main, one verdict each."""
 import collections
 import hashlib
+import os
 import re
 import subprocess
 import tempfile
@@ -25,8 +26,14 @@ SPENT = "[witness] not run: the witness budget is spent\n"
 def main_tip(target):
     ref = pr.BASE
     if merge_config(target).mode == "pr":
-        subprocess.run(["git", "fetch", pr.REMOTE, pr.BASE], cwd=target.path,
-                       capture_output=True, text=True, check=True)
+        try:
+            subprocess.run(["git", "fetch", pr.REMOTE, pr.BASE],
+                           cwd=target.path, capture_output=True, text=True,
+                           check=True, timeout=pr.PR_TIMEOUT,
+                           env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"git fetch {pr.REMOTE} {pr.BASE} did not answer"
+                               f" in {pr.PR_TIMEOUT}s") from None
         ref = f"{pr.REMOTE}/{pr.BASE}"
     return _git(target.path, "rev-parse", "--verify", f"{ref}^{{commit}}")
 

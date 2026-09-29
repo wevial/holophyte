@@ -424,6 +424,21 @@ class MainTipTests(WitnessRunnerFixture, unittest.TestCase):
         self.assertEqual(tip, remote)
         self.assertNotEqual(git(self.repo, "rev-parse", "main"), remote)
 
+    def test_a_fetch_that_does_not_answer_is_stopped_and_reported(self):
+        bare = self.root / "origin.git"
+        git(self.root, "clone", "-q", "--bare", str(self.repo), str(bare))
+        git(self.repo, "remote", "add", "origin", str(bare))
+        git(self.repo, "config", "remote.origin.uploadpack",
+            "sleep 5; git-upload-pack")
+        target = self.project('[merge]\nmode = "pr"\n')
+
+        started = time.monotonic()
+        with patch("holophyte.pr.PR_TIMEOUT", 1), \
+                self.assertRaisesRegex(RuntimeError, "did not answer in 1s"):
+            main_tip(target)
+
+        self.assertLess(time.monotonic() - started, 4)
+
 
 if __name__ == "__main__":
     unittest.main()
