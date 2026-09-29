@@ -701,6 +701,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
     """
     # In the function, not at the top: `holophyte.loop` imports this module.
     from holophyte.reconcile import _reconcile_pull_requests
+    from holophyte.witness import TIP_FAILURES, pass_pending
 
     out = out or sys.stdout
     knobs = sweep_config(target) if knobs is None else knobs
@@ -740,6 +741,12 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
         # the store's queue, synced here while no loop is live.
         owed.extend(tickets_owed(target, conn, project, provider, now, out,
                                  knobs))
+        try:
+            owed.extend((story_id, None) for story_id
+                        in pass_pending(target, conn, project))
+        except TIP_FAILURES as e:
+            print(f"[holo2] main's tip could not be read for a witness pass"
+                  f" ({e}); the next pass asks again", file=out)
     # The mirror is a cache of the board, and a ticket that became ready
     # while no loop ran has no row in it: an empty mirror falls through
     # to the board itself (KO-411). A live loop asks the board on its own

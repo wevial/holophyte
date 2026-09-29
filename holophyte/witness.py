@@ -8,10 +8,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from holophyte import pr, redact
+from holophyte import deadline, pr, redact
 from holophyte.admission import held_line
 from holophyte.config_tables import merge_config, story_config
 from holophyte.gates import _verify_command, run_capped, vacuous_green_report
+from holophyte.redact import safe_print as print
 from store.notes import record_note
 from store.stories import OPEN_STATES, record_witness_result, story, witness_ledger
 
@@ -25,6 +26,7 @@ ABSENT, REFUSED = "absent", "refused"
 Scratch = collections.namedtuple(
     "Scratch", ("target", "tree", "sha", "copied", "deadline", "secrets"))
 SPENT = "[witness] not run: the witness budget is spent\n"
+TIP_FAILURES = (OSError, RuntimeError, subprocess.SubprocessError)
 
 
 def main_tip(target):
@@ -137,6 +139,36 @@ def witness_pass(target, conn, story_id, verifier):
     rows = run_witnesses(target, conn, story_id, sha, verifier, again=again)
     _note_changes(conn, story_id, sha, before, rows)
     return rows
+
+
+def pass_pending(target, conn, project_id):
+    if held_line(conn, project_id):
+        return []
+    stories = [story(conn, story_id) for (story_id,) in conn.execute(
+        "SELECT s.ticketId FROM stories s JOIN tickets t ON t.id = s.ticketId"
+        " WHERE t.projectId = ? AND s.state IN (?, ?) ORDER BY s.ticketId",
+        (project_id, *OPEN_STATES)).fetchall()]
+    if not stories:
+        return []
+    deadline.check("main's tip for a witness pass")
+    sha = main_tip(target)
+    return [found.ticketId for found in stories
+            if {witness.key for witness in found.witnesses}
+            - {row.witnessKey for row in witness_ledger(conn, found.ticketId,
+                                                        sha)}]
+
+
+def witness_step(target, conn, project_id):
+    try:
+        for story_id in pass_pending(target, conn, project_id):
+            rows = witness_pass(target, conn, story_id, "loop")
+            if rows:
+                print(f"[holo2] witness pass at {rows[0].mainSha}: "
+                      + ", ".join(f"{row.witnessKey} {row.verdict}"
+                                  for row in rows))
+    except TIP_FAILURES as error:
+        print(f"[holo2] the witness pass could not run ({error}); the next"
+              " pass tries again")
 
 
 def pass_refusal(conn, story_id):

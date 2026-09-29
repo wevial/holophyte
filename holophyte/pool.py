@@ -232,6 +232,7 @@ def scheduler(target, provider, knobs):
     from holophyte.claim_store import announce, store_mode
     from holophyte.dispatch import _startup_sweep
     from holophyte.operator import _reexec, self_hosted
+    from holophyte.witness import witness_step
 
     conn = open_store(target)
     pool = pool_handoff.restore(target)
@@ -260,6 +261,7 @@ def scheduler(target, provider, knobs):
             held = admission.held_line(conn, project)
             if admission.held_idle(held, pool, conn, project):
                 return 1 if state.broken else 0
+            witness_step(target, conn, project)
             listing = None
             if state.spawning and not held:
                 listing = pool_handoff.listing(target, conn, project, provider)
