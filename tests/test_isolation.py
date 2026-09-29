@@ -1073,6 +1073,20 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("--env=TMPDIR", command)
         self.assertEqual(host_env["TMPDIR"], "/tmp")
 
+    def test_container_tmp_allows_running_programs(self):
+        from holophyte import isolation
+
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        command, _ = isolation.container_command(
+            isolation.Route("container"), scratch, {}, ["true"], "n"
+        )
+        mount = next(flag for flag in command if flag.startswith("/tmp:"))
+        options = mount.split(":", 1)[1].split(",")
+        for option in ("exec", "nosuid", "nodev", "size=1g"):
+            self.assertIn(option, options)
+        self.assertNotIn("noexec", options)
+
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
@@ -1100,6 +1114,43 @@ class IsolationTests(unittest.TestCase):
             isolation.review_runner._remove_container(name, env={"PATH": os.defpath})
         self.assertEqual(code, 0, output)
         self.assertEqual((scratch / "probe.txt").read_text(), "ok\n")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_launch_runs_a_script_from_tmpdir(self):
+        import shutil
+        import uuid
+
+        from holophyte import isolation
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        route = isolation.Route("container")
+        isolation.image_ready(route)
+        name = "holophyte-test-" + uuid.uuid4().hex
+        script = (
+            'probe="$TMPDIR/probe.sh"; '
+            "printf '#!/bin/sh\\necho ran-from-tmpdir\\n' > \"$probe\"; "
+            'chmod +x "$probe" && "$probe" && grep " /tmp " /proc/mounts'
+        )
+        command, host_env = isolation.container_command(
+            route, scratch, {}, ["sh", "-c", script], name,
+        )
+        try:
+            code, output = isolation.run_capped(command, scratch, 120, env=host_env)
+        finally:
+            isolation.review_runner._remove_container(name, env={"PATH": os.defpath})
+        self.assertEqual(code, 0, output)
+        self.assertIn("ran-from-tmpdir", output)
+        entry = next(line for line in output.splitlines() if " /tmp " in line)
+        options = entry.split()[3].split(",")
+        self.assertIn("nosuid", options)
+        self.assertIn("nodev", options)
+        self.assertNotIn("noexec", options)
 
     def test_relative_state_home_mounts_an_absolute_session_directory(self):
         from holophyte import isolation
