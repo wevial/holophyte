@@ -15,10 +15,13 @@ import io
 import json
 import shlex
 import sqlite3
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from time import monotonic
+from types import SimpleNamespace
 from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
@@ -52,7 +55,9 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.merge_queue  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
@@ -1493,6 +1498,118 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertNotIn(BRANCH, self.branches())
         self.assertEqual(self.read("SELECT outcome, prUrl FROM runs"),
                          [("merged", None)])
+
+
+class MergeAgainstMainTipTests(unittest.TestCase):
+    """`_merge_pr()` against a real `origin` whose `main` may be ahead."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.origin = Path(tmp.name) / "origin.git"
+        self.wt = Path(tmp.name) / "wt"
+        self.git("init", "-q", "--bare", "-b", "main", str(self.origin),
+                 cwd=tmp.name)
+        self.git("clone", "-q", str(self.origin), str(self.wt), cwd=tmp.name)
+        self.git("config", "user.email", "t@example.invalid")
+        self.git("config", "user.name", "T")
+        self.git("checkout", "-qb", "main")
+        self.commit("BASE.md")
+        self.git("push", "-q", "origin", "main")
+        self.git("checkout", "-qb", BRANCH)
+        self.commit("CANDIDATE.md")
+        self.merged = []
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(["git", *args], cwd=cwd or self.wt, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def commit(self, path):
+        (self.wt / path).write_text(f"{path}\n")
+        self.git("add", path)
+        self.git("commit", "-qm", path)
+        return self.git("rev-parse", "HEAD")
+
+    def advance_origin_main(self):
+        self.git("checkout", "-q", "main")
+        self.commit("MOVED.md")
+        self.git("push", "-q", "origin", "main")
+        self.git("checkout", "-q", BRANCH)
+
+    def merge(self, sha=None):
+        sha = sha or self.git("rev-parse", "HEAD")
+        pull = holophyte.pr_status.parse_pr_url(MergeModeFixture.URL)
+
+        def merge_pull_request(project, pull, pinned):
+            self.merged.append(pinned)
+            return MergeModeFixture.MERGE_SHA
+
+        with patch.object(holophyte.merge_queue, "merge_queue_required",
+                          return_value=False), \
+                patch.object(holophyte.pr, "merge_pull_request",
+                             merge_pull_request), \
+                patch("sys.stdout", io.StringIO()):
+            return sha, holophyte.pullrequest._merge_pr(
+                SimpleNamespace(path=self.wt), None, None, None, "KO-1",
+                BRANCH, self.wt, sha, 1, pull, retry_conflicts=True)
+
+    def test_a_candidate_behind_origin_main_is_refused_before_github(self):
+        self.advance_origin_main()
+        self.assert_refused_behind_main()
+
+    def fetch_only_other(self):
+        self.git("push", "-q", "origin", "HEAD:refs/heads/other")
+        self.git("config", "remote.origin.fetch",
+                 "+refs/heads/other:refs/remotes/origin/other")
+
+    def assert_refused_behind_main(self):
+        with self.assertRaises(holophyte.pr.MergeRefused) as refused:
+            self.merge()
+        self.assertIn("behind main", str(refused.exception))
+        self.assertEqual(self.merged, [])
+
+    def test_a_fetch_refspec_without_main_still_refuses_a_stale_tip(self):
+        self.fetch_only_other()
+        self.advance_origin_main()
+        self.git("update-ref", "refs/remotes/origin/main", "main~1")
+        self.assert_refused_behind_main()
+
+    def test_a_fetch_refspec_without_main_still_refuses_a_missing_tip(self):
+        self.fetch_only_other()
+        self.advance_origin_main()
+        self.git("update-ref", "-d", "refs/remotes/origin/main")
+        self.assert_refused_behind_main()
+
+    def test_an_origin_without_main_fails_before_github(self):
+        self.git("update-ref", "-d", "refs/heads/main", cwd=self.origin)
+        self.git("update-ref", "-d", "refs/remotes/origin/main")
+        with self.assertRaises(holophyte.gates.InfraFailure):
+            self.merge()
+        self.assertEqual(self.merged, [])
+
+    def test_a_stalled_main_fetch_fails_within_the_remote_deadline(self):
+        self.git("config", "protocol.ext.allow", "always")
+        self.git("remote", "set-url", "origin", "ext::sleep 5")
+        started = monotonic()
+        with patch.object(holophyte.pr, "PR_TIMEOUT", 0.5), \
+                self.assertRaises(holophyte.gates.InfraFailure) as failed:
+            self.merge()
+        self.assertLess(monotonic() - started, 4)
+        self.assertIn("did not answer", str(failed.exception))
+        self.assertEqual(self.merged, [])
+
+    def test_a_candidate_git_cannot_resolve_fails_rather_than_looks_behind(self):
+        with self.assertRaises(holophyte.gates.InfraFailure) as failed:
+            self.merge(sha="0" * 40)
+        self.assertNotIn("behind main", str(failed.exception))
+        self.assertEqual(self.merged, [])
+
+    def test_a_candidate_holding_origin_main_merges_through_github(self):
+        self.advance_origin_main()
+        self.git("merge", "-q", "--no-edit", "main")
+        sha, merge_sha = self.merge()
+        self.assertEqual(self.merged, [sha])
+        self.assertEqual(merge_sha, MergeModeFixture.MERGE_SHA)
 
 
 if __name__ == "__main__":

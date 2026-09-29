@@ -34,6 +34,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pool  # noqa: E402 - after the sys.path insert above
@@ -126,6 +127,38 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         covering = events.index(("babysit_step", "covering_review"))
         self.assertEqual(events[covering - 1][0], "phase_change")
         self.assertIn("-> reviewing: review of the fix at", events[covering - 1][1])
+
+    def test_a_candidate_behind_main_merges_main_and_verifies_before_merging(self):
+        import test_babysitter
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        fixture, moved, events = self, [], []
+        verify, merge = holophyte.gates._run_verify, holophyte.pr.merge_pull_request
+
+        class MoveMain:
+            role = APPROVE.role
+            def play(self, cwd, turn):
+                moved.append(test_babysitter.ConflictingPullRequestTests.remote_main(
+                    fixture, "MOVED.md", "main moved on\n"))
+                return APPROVE.play(cwd, turn)
+
+        def verified(cmd, cwd, *args, **kwargs):
+            events.append(("verify", self.git("rev-parse", "HEAD", cwd=cwd).strip()))
+            return verify(cmd, cwd, *args, **kwargs)
+
+        def merged(project, pull, sha):
+            events.append(("merge", sha))
+            return merge(project, pull, sha)
+
+        with patch.object(holophyte.gates, "_run_verify", verified), \
+                patch.object(holophyte.pr, "merge_pull_request", merged):
+            self.loop(Commit("the scripted work"), MoveMain(), Idle(""), APPROVE,
+                      Idle(""), provider=self.provider())
+        head = self.pushed()[-1][1]
+        self.assertEqual(self.git("rev-parse", f"{head}^2").strip(), moved[0])
+        self.assertEqual([sha for kind, sha in events if kind == "merge"], [head])
+        self.assertLess(events.index(("verify", head)), events.index(("merge", head)))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_approved_fix_review_carries_unchanged_witness(self):
         self.covering_approval(False)

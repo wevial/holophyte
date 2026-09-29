@@ -506,7 +506,8 @@ class MergeModeFixture(LoopFixture):
         403 GitHub gives a plan that cannot have them (HOLO-11).
         An unqualified `git fetch origin` is swallowed, or with `fetch_from`
         runs the real fetch of that repository's branches into origin's
-        remote-tracking refs.
+        remote-tracking refs; the merge's fetch of `main` alone leaves an
+        `origin/main` a test set, and otherwise points it at the target's.
         `push_exit` and `push_sh` control push failure and an optional
         delay; a pull request's REST close (`PATCH`, KO-611) answers
         closed, or fails with `close_exit`. A push
@@ -555,12 +556,20 @@ class MergeModeFixture(LoopFixture):
         fetch = ("exit 0" if fetch_from is None else
                  f'exec "{real_git}" fetch -q "{fetch_from}"'
                  " '+refs/heads/*:refs/remotes/origin/*'")
+        main_fetch = (
+            f'"{real_git}" rev-parse -q --verify refs/remotes/origin/main'
+            f' >/dev/null || "{real_git}" update-ref refs/remotes/origin/main'
+            " refs/heads/main; exit 0" if fetch_from is None else
+            f'exec "{real_git}" fetch -q "{fetch_from}" "$3"')
         # Pushes are witnessed in push_log, and ls-remote reads that remote
         # head independently of the API; ancestry and worktrees use real git.
         (bindir / "git").write_text(
             "#!/bin/sh\n"
             'if [ "$1" = fetch ] && [ "$#" = 2 ] && [ "$2" = origin ];'
             f" then {fetch}; fi\n"
+            'if [ "$1" = fetch ] && [ "$#" = 3 ] && [ "$2" = origin ] &&'
+            ' [ "$3" = +refs/heads/main:refs/remotes/origin/main ];'
+            f" then {main_fetch}; fi\n"
             'if [ "$1" = ls-remote ] && [ "$2" = origin ]; then\n'
             f'  tail -1 "{self.push_log}" | awk \'{{print $2}}\'\n'
             '  exit 0\n'
