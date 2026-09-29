@@ -121,10 +121,12 @@ def claim(conn, project_id, ticket_id, now=None, expected_revision=None):
             "INSERT INTO runs"
             " (ticketId, projectId, attempt, phase, startedAt, lastHeartbeat,"
             "  timeBoxMs, ticketSnapshot, host, workerPid, workingMs, verifyMs,"
-            "  revision)"
-            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?, 0, 0, ?)",
+            "  revision, storyGeneration)"
+            " VALUES (?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?, 0, 0, ?,"
+            " (SELECT generation FROM stories WHERE ticketId IN"
+            "  (SELECT storyId FROM storyChildren WHERE ticketId = ?)))",
             (ticket_id, project_id, prior + 1, now, now, estimate, snapshot,
-             socket.gethostname(), os.getpid(), revision),
+             socket.gethostname(), os.getpid(), revision, ticket_id),
         ).lastrowid
         updated = conn.execute(
             "UPDATE tickets SET activeRunId = ? WHERE id = ? AND projectId = ?",
