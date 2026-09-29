@@ -218,3 +218,18 @@ class FileStoryCliTests(ConfigTestCase):
                             " WHERE linearIdentifier = 'NAT-4'")
         self.assertEqual(json.loads(row[0]), ["NAT-2", "NAT-3"])
         self.assertIn(example, row[1])
+
+    def test_a_linked_estimate_heading_still_resolves_siblings(self):
+        directory = self.story()
+        child = directory / "children" / "01-c.md"
+        child.write_text(child.read_text().replace(
+            "## Estimate & dependencies",
+            "## [Estimate & dependencies](https://example.com/estimate)"))
+
+        status, lines = self.cli("--file-story", SLUG)
+
+        self.assertEqual(status, 0, lines)
+        (row,) = self.store("SELECT dependsOn, body FROM tickets"
+                            " WHERE linearIdentifier = 'NAT-4'")
+        self.assertEqual(json.loads(row[0]), ["NAT-2", "NAT-3"])
+        self.assertIn("Depends on: NAT-2, NAT-3", row[1])

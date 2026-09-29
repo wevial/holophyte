@@ -18,8 +18,6 @@ def add_story_arguments(parser, modes):
 
 
 def story_verb(args, target, board, out=None):
-    """Run the story verb the command line names and answer True, or answer
-    False when it names none; a refusal prints its lines and exits 1."""
     if args.file_story is None:
         return False
     out = sys.stdout if out is None else out

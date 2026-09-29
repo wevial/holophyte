@@ -52,7 +52,7 @@ PINNED = {
     "holophyte/claim_store.py": 90,
     "holophyte/cli.py": 232,
     "holophyte/cli_project.py": 25,
-    "holophyte/cli_story.py": 3,
+    "holophyte/cli_story.py": 1,
     "holophyte/commit_hygiene.py": 11,
     "holophyte/config.py": 318,
     "holophyte/config_tables.py": 294,

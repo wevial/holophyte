@@ -127,13 +127,14 @@ def _check_merged(conn, project_id, child, siblings):
 def _resolve(body, identifiers):
     """`body` with its `Depends on:` sibling slugs made their identifiers."""
     lines = body.split("\n")
-    index = _estimate_line(lines)
+    plain = ticket_template.MD_LINK_RE.sub(r"\1", body).split("\n")
+    index = _estimate_line(plain)
     if index is None:
         return body
-    line = lines[index]
+    line = plain[index]
     match = ticket_template.ESTIMATE_RE.match(line.strip())
-    deps = [identifiers.get(dep, dep) for dep in ticket_template._deps(
-        ticket_template.MD_LINK_RE.sub(r"\1", match.group(2)))]
+    deps = [identifiers.get(dep, dep)
+            for dep in ticket_template._deps(match.group(2))]
     if deps:
         start = line.index(match.group(0))
         lines[index] = (line[:start] + match.group(0)[:match.start(2)]
