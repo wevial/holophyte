@@ -6,6 +6,7 @@ from contextlib import closing
 from holophyte.admission import project_of
 from holophyte.board.board import FILE_TICKET_PRIORITIES
 from holophyte.loop.runs import open_store
+from holophyte.redact import safe_print as print
 from holophyte.story.story_approval import ApprovalRefused, approve
 from holophyte.story.story_close import DecisionRefused, decide
 from holophyte.story.story_filing import StoryRefused, file_story, update_story
@@ -112,21 +113,29 @@ def _approve_story(args, target, board, out):
               "Linear board in store mode ([board] mode = \"store\")",
               file=out)
         raise SystemExit(1)
-    try:
-        lines = approve(board, target, args.approve_story, args.revision,
-                        args.note, green=args.baseline_green,
-                        exception=[key for _kind, key
-                                   in args.baseline_red_kind])
-    except ApprovalRefused as refused:
-        for line in refused.lines:
+    from holophyte.host.host import loop_unit_environment
+    with loop_unit_environment(target):
+        try:
+            lines = approve(board, target, args.approve_story, args.revision,
+                            args.note, green=args.baseline_green,
+                            exception=[key for _kind, key
+                                       in args.baseline_red_kind])
+        except ApprovalRefused as refused:
+            for line in refused.lines:
+                print(f"[holo2] {line}", file=out)
+            raise SystemExit(1) from None
+        for line in lines:
             print(f"[holo2] {line}", file=out)
-        raise SystemExit(1) from None
-    for line in lines:
-        print(f"[holo2] {line}", file=out)
     return True
 
 
 def _witness_pass(args, target, out):
+    from holophyte.host.host import loop_unit_environment
+    with loop_unit_environment(target):
+        return _witness_pass_in_unit_environment(args, target, out)
+
+
+def _witness_pass_in_unit_environment(args, target, out):
     identifier = args.witness_pass
     with closing(open_store(target)) as conn:
         row = conn.execute("SELECT id FROM tickets WHERE projectId = ? AND"

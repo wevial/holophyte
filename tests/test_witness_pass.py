@@ -5,6 +5,7 @@ a held project.
 
 Run: python3 -m unittest discover -s tests -p 'test_witness_pass.py' -v
 """
+import os
 import shlex
 import sys
 import unittest
@@ -21,6 +22,8 @@ from store.stories import witness_ledger  # noqa: E402
 from tests.test_cli_approve_story import (  # noqa: E402
     FAILS_AN_ASSERTION,
     LEDGER,
+    UNIT_VALUE,
+    UNIT_VARIABLE,
     ApproveStoryFixture,
 )
 from tests.test_cli_native_update import NATIVE, no_linear  # noqa: E402
@@ -70,6 +73,23 @@ class WitnessPassCliTests(ApproveStoryFixture):
         self.assertEqual(self.store(LEDGER)[-2:], [
             ("W1", tip, "green", None, "operator"),
             ("W2", tip, "absent", None, "operator")])
+
+    def test_a_pass_launches_witnesses_with_the_loop_units_environment(self):
+        self.serve_env(f"{UNIT_VARIABLE}={UNIT_VALUE}\n")
+        status, lines = self.cli("--approve-story", "NAT-1", "--revision",
+                                 str(self.revision("NAT-1")), "--note", "ok")
+        self.assertEqual(status, 0, lines)
+        for n in (1, 2):
+            commit_file(self.target, witness_path(n),
+                        FAILS_AN_ASSERTION.format(n=n), f"w{n} lands")
+        self.assertNotIn(UNIT_VARIABLE, os.environ)
+
+        with self.recording_launcher() as seen:
+            status, lines = self.cli("--witness-pass", "NAT-1")
+
+        self.assertEqual(status, 0, lines)
+        self.assertEqual(seen, [UNIT_VALUE, UNIT_VALUE])
+        self.assertNotIn(UNIT_VARIABLE, os.environ)
 
     def test_a_planned_story_exits_1_and_runs_nothing(self):
         status, lines = self.cli("--witness-pass", "NAT-1")
