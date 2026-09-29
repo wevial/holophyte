@@ -18,6 +18,8 @@ REGRESSED_OPTIONS = ("file a fix child", "rerun", "drop {key} (re-plan)")
 
 def settle_story(target, conn, story_id, sha):
     from holophyte.witness import main_tip
+    if not settle_owed(conn, story_id, sha):
+        return None
     try:
         with merge_lock(target, None):
             if main_tip(target) != sha:
@@ -27,34 +29,56 @@ def settle_story(target, conn, story_id, sha):
         return None
 
 
+def settle_owed(conn, story_id, sha):
+    return bool(_plan(conn, story(conn, story_id), sha))
+
+
 def _settle(target, conn, story_id, sha):
     found = story(conn, story_id)
-    latest = {row.witnessKey: row for row in witness_ledger(conn, story_id, sha)}
+    plan = _plan(conn, found, sha)
+    if plan == "close":
+        return _close(target, conn, found, sha)
+    for witness, kind, question, options in plan:
+        park_story(conn, story_id, kind, question, options, options[0],
+                   ticket_id=witness.completedBy)
+        print(f"[holo2] story {_identifier(conn, story_id)} parked {kind}:"
+              f" {question}")
+    return story(conn, story_id).state
+
+
+def _plan(conn, found, sha):
+    latest = {row.witnessKey: row
+              for row in witness_ledger(conn, found.ticketId, sha)}
     met = {witness.key for witness in found.witnesses
            if witness.key in latest and latest[witness.key].verdict == "green"
            and latest[witness.key].fileHash == witness.sourceHash}
     if met == {witness.key for witness in found.witnesses}:
-        return _close(target, conn, found, sha, latest)
-    greens = {row.witnessKey for row in witness_ledger(conn, story_id)
+        return "close"
+    greens = {row.witnessKey for row in witness_ledger(conn, found.ticketId)
               if row.mainSha != sha and row.verdict == "green"}
-    idle = not _open_children(conn, story_id)
+    idle = not _open_children(conn, found.ticketId)
+    decisions = []
     for witness in found.witnesses:
         row = latest.get(witness.key)
         if row is not None and row.verdict == "red" and witness.key in greens:
-            _park(conn, found, witness, "regressed",
-                  f"Witness {witness.key} was green at an earlier commit and"
-                  f" is red at {sha} after its rerun.",
-                  [option.format(key=witness.key)
-                   for option in REGRESSED_OPTIONS])
+            decisions.append((
+                witness, "regressed",
+                f"Witness {witness.key} was green at an earlier commit and"
+                f" is red at {sha} after its rerun.",
+                [option.format(key=witness.key)
+                 for option in REGRESSED_OPTIONS]))
         elif witness.key not in met and idle:
-            _park(conn, found, witness, "unmet",
-                  f"Witness {witness.key} is {_unmet(row)} at {sha} and no"
-                  " child of the story is open or claimable.", UNMET_OPTIONS)
-    return story(conn, story_id).state
+            decisions.append((
+                witness, "unmet",
+                f"Witness {witness.key} is {_unmet(row)} at {sha} and no"
+                " child of the story is open or claimable.", UNMET_OPTIONS))
+    return [decision for decision in decisions
+            if not _already_open(found, *decision[:2])]
 
 
-def _close(target, conn, found, sha, latest):
-    verdicts = ", ".join(f"{key} {latest[key].verdict}" for key in sorted(latest))
+def _close(target, conn, found, sha):
+    latest = witness_ledger(conn, found.ticketId, sha)
+    verdicts = ", ".join(f"{row.witnessKey} {row.verdict}" for row in latest)
     close_story(conn, found.ticketId, sha,
                 f"Story closed on its witnesses at {sha}: {verdicts}.")
     board = board_for(target)
@@ -65,15 +89,10 @@ def _close(target, conn, found, sha, latest):
     return "closed"
 
 
-def _park(conn, found, witness, kind, question, options):
-    if any(decision.kind == kind
-           and decision.question.startswith(f"Witness {witness.key} ")
-           for decision in found.decisions):
-        return
-    park_story(conn, found.ticketId, kind, question, options, options[0],
-               ticket_id=witness.completedBy)
-    print(f"[holo2] story {_identifier(conn, found.ticketId)} parked {kind}:"
-          f" {question}")
+def _already_open(found, witness, kind):
+    return any(decision.kind == kind
+               and decision.question.startswith(f"Witness {witness.key} ")
+               for decision in found.decisions)
 
 
 def _unmet(row):

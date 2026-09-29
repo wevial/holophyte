@@ -17,8 +17,9 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
-from test_store_claim_loop import STORE_MODE, StoreFiles  # noqa: E402
+from test_store_claim_loop import STORE_MODE  # noqa: E402
 
+import holophyte.gates  # noqa: E402
 import holophyte.loop  # noqa: E402
 import holophyte.operator  # noqa: E402
 import holophyte.story_close  # noqa: E402
@@ -26,6 +27,7 @@ import linear_provider  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.config_tables import sweep_config  # noqa: E402
+from holophyte.gates import merge_lock  # noqa: E402
 from holophyte.runs import open_store  # noqa: E402
 from holophyte.supervisor import (  # noqa: E402
     fresh_memory,
@@ -162,6 +164,23 @@ class StoryCloseTests(StoryCloseFixture):
         found = story(self.conn, parent)
         self.assertEqual((found.state, found.closedSha), ("closed", landed[0]))
 
+    def test_a_lock_held_through_the_pass_closes_on_a_later_step(self):
+        parent, child = self.tickets()
+        self.approve(parent, child, [witness("W1", W1_FILE)])
+        tip = self.commit(W1_FILE, PASSES, "w1 lands")
+
+        with merge_lock(self.project, None), \
+                patch.object(holophyte.gates, "MERGE_LOCK_WAIT_SEC", 0):
+            self.step()
+        self.assertEqual(story(self.conn, parent).state, "approved")
+
+        self.step()
+
+        found = story(self.conn, parent)
+        self.assertEqual((found.state, found.closedSha), ("closed", tip))
+        self.assertEqual(self.read(
+            "SELECT mainSha, verdict FROM witnessResults"), [(tip, "green")])
+
     def test_a_red_witness_with_every_child_merged_parks_unmet_once(self):
         parent, child = self.tickets()
         self.approve(parent, child, [witness("W1", W1_FILE)])
@@ -211,22 +230,47 @@ class StoryCloseTests(StoryCloseFixture):
             [("regressed", "W1", "file a fix child", "file a fix child")])
 
 
+class LinearStub:
+    """The Linear module a store-mode `LinearBoard` calls: it answers each
+    issue's state and records each state it is sent."""
+
+    def __init__(self):
+        self.names = {"KO-1": "Todo", "KO-2": "Todo"}
+        self.sent = []
+
+    def states(self, identifiers, label=None):
+        return {identifier: {"state": "completed", "name": "Done",
+                             "column": None}
+                if self.names[identifier] == "Done" else
+                {"state": "open", "name": self.names[identifier],
+                 "column": "ready"} for identifier in identifiers}
+
+    def set_state(self, issue_id, state, team):
+        self.sent.append((issue_id, state))
+        self.names[issue_id.replace("issue-", "KO-")] = state
+
+    def comment(self, task_id, body):
+        pass
+
+    def closed_identifiers(self, identifiers):
+        return {}
+
+
 class StoreModeCloseTests(StoryCloseFixture):
     config = STORE_MODE
 
     def setUp(self):
         super().setUp()
-        files = self.target.parent / "team-1"
-        files.mkdir()
-        for identifier in ("KO-1", "KO-2"):
-            (files / f"{identifier}.md").write_text(VALID_BODY)
-        self.board = StoreFiles(files)
+        self.linear = LinearStub()
+        patcher = patch.dict(sys.modules, {"linear_provider": self.linear})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.board = board_for(self.project)
 
     def tickets(self):
         return [store.tickets.mirror_ticket(
-            self.conn, self.project_id, identifier, identifier, identifier,
-            board_state="Todo", board_column="ready")
-            for identifier in ("KO-1", "KO-2")]
+            self.conn, self.project_id, f"issue-{n}", f"KO-{n}", f"KO-{n}",
+            board_state="Todo", board_column="ready") for n in (1, 2)]
 
     def sweep(self, now):
         with patch("holophyte.reconcile._reconcile_pull_requests"), \
@@ -251,8 +295,7 @@ class StoreModeCloseTests(StoryCloseFixture):
         now = int(time.time() * 1000)
         self.sweep(now)
         self.sweep(now + self.knobs.board_ask_ms)
-        self.assertEqual(self.board.states(["KO-1"])["KO-1"]["name"], "Done")
-
+        self.assertEqual(self.linear.sent, [("issue-1", "Done")])
 
 if __name__ == "__main__":
     import unittest

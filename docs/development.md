@@ -276,7 +276,8 @@ Each module, one line:
   under the merge lock: at main's tip it closes the story when every
   witness is green with its approved file, queueing the parent's Done,
   and otherwise parks it on one `unmet` or `regressed` decision per
-  witness.
+  witness; `settle_owed()` keeps a story the lock kept from settling
+  pending for the next pass at the same tip.
 - `holophyte/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget

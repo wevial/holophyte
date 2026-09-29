@@ -13,7 +13,7 @@ from holophyte.admission import held_line
 from holophyte.config_tables import merge_config, story_config
 from holophyte.gates import _verify_command, run_capped, vacuous_green_report
 from holophyte.redact import safe_print as print
-from holophyte.story_close import settle_story
+from holophyte.story_close import settle_owed, settle_story
 from store.notes import record_note
 from store.stories import OPEN_STATES, record_witness_result, story, witness_ledger
 
@@ -128,6 +128,7 @@ def witness_pass(target, conn, story_id, verifier):
     keys = {witness.key for witness in story(conn, story_id).witnesses}
     at_tip = {row.witnessKey for row in witness_ledger(conn, story_id, sha)}
     if verifier != "operator" and keys <= at_tip:
+        settle_story(target, conn, story_id, sha)
         return []
     before = [row for row in witness_ledger(conn, story_id)
               if row.mainSha != sha]
@@ -157,7 +158,8 @@ def pass_pending(target, conn, project_id):
     return [found.ticketId for found in stories
             if {witness.key for witness in found.witnesses}
             - {row.witnessKey for row in witness_ledger(conn, found.ticketId,
-                                                        sha)}]
+                                                        sha)}
+            or settle_owed(conn, found.ticketId, sha)]
 
 
 def witness_step(target, conn, project_id):
