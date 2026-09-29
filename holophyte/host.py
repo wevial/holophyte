@@ -18,15 +18,17 @@ host sweep's to watch. `settings()` is the file's own keys, typed:
 read-only: a native board's `KEY` is its own on the host (KO-752).
 """
 import collections
+import contextlib
 import dataclasses
 import os
 import time
 import tomllib
 from pathlib import Path
 
-from holophyte.config import serve_config
+from holophyte.config import ENV_NAME, process_value, serve_config
 from holophyte.config_tables import board_config, board_mode, split_address
 from holophyte.project import DEFAULT_HOLOPHYTE_HOME, Project
+from holophyte.redact import values_held
 
 HOST_FILE = "host.toml"
 # The known shape of the file: a key outside it is refused, as the project
@@ -43,6 +45,8 @@ HostSettings = collections.namedtuple(
 # it gives up naming the file: a crash mid-write is the one way it stays.
 WRITE_WAIT_SEC = 10
 WRITE_POLL_SEC = 0.05
+UNIT_TARGET_KEYS = frozenset(("HOLOPHYTE_TARGET", "HOLOPHYTE_SERVE_ADDRESS",
+                              "HOLOPHYTE_SERVE_PORT"))
 TOMLKIT_MISSING = ("[holo2] project add and remove need the tomlkit module to"
                    " rewrite host.toml; install it with"
                    " python3 -m pip install --user -r requirements.txt")
@@ -68,6 +72,42 @@ class HostProject:
     path: Path
     target: Project
     error: str | None = None
+
+
+def unit_environment(text):
+    values = {}
+    for line in text.splitlines():
+        name, separator, value = line.strip().partition("=")
+        name, value = name.strip(), process_value(value.strip())
+        if separator and ENV_NAME.fullmatch(name) and "\0" not in value:
+            values[name] = value
+    return values
+
+
+@contextlib.contextmanager
+def loop_unit_environment(target):
+    path = home() / serve_config(target).name / "serve.env"
+    try:
+        values = unit_environment(path.read_text())
+    except FileNotFoundError:
+        values = {}
+    credential = (target.config().get("agents") or {}).get(
+        "implementer_credential")
+    kept = {credential.get("env")} if isinstance(credential, dict) else set()
+    saved = {}
+    with values_held(values.values()):
+        try:
+            for name, value in values.items():
+                if name not in UNIT_TARGET_KEYS or name in kept:
+                    saved[name] = os.environ.get(name)
+                    os.environ[name] = value
+            yield
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
 
 
 def _stamp(path):

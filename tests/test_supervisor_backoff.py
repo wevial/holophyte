@@ -7,10 +7,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from loop_fixture import VALID_BODY  # noqa: E402
 from sweep_fixture import T0, SweepTestCase  # noqa: E402
 
 from holophyte.agents import ProbeResult  # noqa: E402
 from holophyte.supervisor import start_loop_for  # noqa: E402
+from provider import FileProvider  # noqa: E402
 
 
 class LaunchBackoffTests(SweepTestCase):
@@ -233,3 +235,175 @@ class LaunchBackoffTests(SweepTestCase):
                     if code:
                         self.assertIn('quota exhausted', evidence)
                         self.assertIn('[redacted]', evidence)
+
+
+class StoreModeFiles(FileProvider):
+    store_mode = True
+
+
+class LoopEnvironmentProbeTests(SweepTestCase):
+    def fixture(self, probe_lines, serve_env, agents=""):
+        """A released store-mode project whose implementer is `probe_lines`."""
+        from holophyte.host import home
+
+        self.calls, self.starts = self.root / "probe.calls", self.root / "start.calls"
+        probe = self.root / "probe"
+        probe.write_text(
+            f"#!{sys.executable}\n"
+            "import os\nfrom pathlib import Path\n"
+            f"calls = Path({str(self.calls)!r})\n"
+            "calls.write_text((calls.read_text() if calls.exists() else '')"
+            " + 'probe\\n')\n" + probe_lines)
+        probe.chmod(0o755)
+        systemctl = self.root / "systemctl"
+        systemctl.write_text(f'#!/bin/sh\necho "$@" >> "{self.starts}"\n')
+        systemctl.chmod(0o755)
+        self.configure(
+            '[board]\nproject_id = "project-1"\nteam = "team-1"\n'
+            f'mode = "store"\n[agents]\nimplementer = "{probe}"\n{agents}')
+        unit_dir = home() / "repo"
+        unit_dir.mkdir(parents=True, exist_ok=True)
+        (unit_dir / "serve.env").write_text(serve_env)
+        files = self.root / "team-1"
+        files.mkdir()
+        (files / "KO-1.md").write_text(VALID_BODY)
+        self.board = StoreModeFiles(files)
+
+    def one_pass(self, at, out=None):
+        from holophyte.supervisor import reconcile_parked_pull_requests
+
+        reconcile_parked_pull_requests(
+            self.project, self.conn, at, self.board, out or io.StringIO())
+
+    def count(self, action):
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM interventions WHERE action = ?",
+            (action,)).fetchone()[0]
+
+    def started(self):
+        return self.starts.read_text().splitlines() if self.starts.exists() else []
+
+    @contextlib.contextmanager
+    def sweep_environment(self):
+        environ = {k: v for k, v in os.environ.items()
+                   if k != "HOLO_FIXTURE_CREDENTIAL"}
+        environ["PATH"] = f"{self.root}:{os.environ['PATH']}"
+        with patch.dict(os.environ, environ, clear=True), \
+                patch('holophyte.reconcile._reconcile_pull_requests'), \
+                patch('holophyte.supervisor.linear_budget_low', return_value=False):
+            yield
+
+    def test_released_pass_probes_with_the_loop_units_environment_file(self):
+        import store
+
+        self.fixture(
+            "ok = bool(os.environ.get('HOLO_FIXTURE_CREDENTIAL'))\n"
+            "print('ready' if ok else 'credential missing')\n"
+            "raise SystemExit(0 if ok else 1)\n",
+            "HOLO_FIXTURE_CREDENTIAL=loop-only\n")
+        with self.sweep_environment():
+            store.hold(self.conn, self.project_id, "draining for a route change")
+            self.one_pass(T0)
+            self.assertFalse(self.starts.exists())
+            self.assertFalse(self.calls.exists())
+            store.release_hold(self.conn, self.project_id, "route changed")
+            self.one_pass(T0 + 60_000)
+            self.assertNotIn("HOLO_FIXTURE_CREDENTIAL", os.environ)
+        self.assertEqual(self.count("launch_backoff"), 0)
+        self.assertEqual(self.started(), ["--user start holophyte-loop@repo"])
+        self.assertEqual(self.count("launch_loop"), 1)
+
+    def test_a_credential_in_neither_environment_still_backs_off(self):
+        self.fixture(
+            "ok = bool(os.environ.get('HOLO_FIXTURE_CREDENTIAL'))\n"
+            "print('ready' if ok else 'credential missing')\n"
+            "raise SystemExit(0 if ok else 1)\n",
+            "UNRELATED_SETTING=1\n")
+        with self.sweep_environment():
+            self.one_pass(T0)
+        self.assertEqual(self.count("launch_backoff"), 1)
+        self.assertEqual(self.count("launch_loop"), 0)
+        self.assertEqual(self.started(), [])
+        reason = self.conn.execute(
+            "SELECT launchBackoffReason FROM projects").fetchone()[0]
+        self.assertIn("credential missing", reason)
+
+    def test_a_route_echoing_the_files_value_is_redacted(self):
+        secret = "loop-file-secret-7c41e9"
+        self.fixture(
+            "print('denied for', os.environ.get('HOLO_FIXTURE_CREDENTIAL'))\n"
+            "raise SystemExit(1)\n",
+            f'HOLO_FIXTURE_CREDENTIAL="{secret}"\n')
+        out = io.StringIO()
+        with self.sweep_environment():
+            self.one_pass(T0, out)
+        events = " ".join(row[0] for row in self.conn.execute(
+            "SELECT summary FROM runEvents"))
+        reason = self.conn.execute(
+            "SELECT launchBackoffReason FROM projects").fetchone()[0]
+        self.assertNotIn(secret, out.getvalue())
+        self.assertNotIn(secret, events)
+        self.assertIn("[redacted]", events)
+        self.assertIn("denied for [redacted]", reason)
+        self.assertEqual(self.started(), [])
+
+    def test_a_file_systemd_would_read_is_read_past_its_bad_lines(self):
+        self.fixture(
+            "ok = os.environ.get('HOLO_FIXTURE_CREDENTIAL') == 'loop-only'\n"
+            "print('ready' if ok else 'credential missing')\n"
+            "raise SystemExit(0 if ok else 1)\n",
+            "# a comment = with an equals sign\n; another = one\n"
+            "a line with no assignment\nBROKEN=a\x00b\n"
+            "  HOLO_FIXTURE_CREDENTIAL = loop-only  \n")
+        with self.sweep_environment():
+            self.one_pass(T0)
+        self.assertEqual(self.count("launch_backoff"), 0)
+        self.assertEqual(self.started(), ["--user start holophyte-loop@repo"])
+
+    def test_an_overlay_refused_part_way_leaves_no_file_value_behind(self):
+        self.fixture("print('ready')\n", "HOLO_FIXTURE_CREDENTIAL=loop-only\n")
+        values = {"HOLO_FIXTURE_CREDENTIAL": "loop-only",
+                  "SECOND": "also-loop-only", "BROKEN": "a\x00b"}
+        with self.sweep_environment(), patch(
+                "holophyte.host.unit_environment", return_value=values):
+            os.environ["SECOND"] = "the sweep's own"
+            with self.assertRaises(ValueError):
+                self.one_pass(T0)
+            self.assertNotIn("HOLO_FIXTURE_CREDENTIAL", os.environ)
+            self.assertEqual(os.environ["SECOND"], "the sweep's own")
+        self.assertFalse(self.calls.exists())
+        self.assertEqual(self.started(), [])
+
+    def test_the_container_probe_gets_a_holophyte_credential_but_no_target_key(self):
+        from holophyte import isolation
+        from holophyte.redact import redact_values
+
+        self.fixture(
+            "print('ready')\n",
+            "HOLOPHYTE_TARGET=/another/project\nHOLOPHYTE_SERVE_PORT=9999\n"
+            "HOLOPHYTE_FIXTURE_CREDENTIAL=loop-only\n"
+            "UNIT_SETTING=plain-unit-setting\n",
+            'implementer_isolation = "container"\n'
+            'implementer_credential = { env = "HOLOPHYTE_FIXTURE_CREDENTIAL" }\n')
+        seen = []
+
+        def container(argv, cwd, timeout, env, **kwargs):
+            seen.append((env.get("HOLOPHYTE_FIXTURE_CREDENTIAL"),
+                         os.environ.get("HOLOPHYTE_TARGET"),
+                         os.environ.get("HOLOPHYTE_SERVE_PORT")))
+            ok = env.get("HOLOPHYTE_FIXTURE_CREDENTIAL") == "loop-only"
+            return (0, "ready") if ok else (1, "credential missing")
+
+        with self.sweep_environment(), \
+                patch.dict(os.environ, HOLOPHYTE_SERVE_PORT="4242"), \
+                patch.object(isolation, "image_ready"), \
+                patch.object(isolation.review_runner, "_remove_container"), \
+                patch.object(isolation, "run_capped", side_effect=container):
+            os.environ.pop("HOLOPHYTE_TARGET", None)
+            self.one_pass(T0)
+            self.assertNotIn("HOLOPHYTE_FIXTURE_CREDENTIAL", os.environ)
+            self.assertEqual(os.environ["HOLOPHYTE_SERVE_PORT"], "4242")
+        self.assertEqual(seen, [("loop-only", None, "4242")])
+        self.assertEqual(self.count("launch_backoff"), 0)
+        self.assertEqual(self.started(), ["--user start holophyte-loop@repo"])
+        self.assertEqual(redact_values("plain-unit-setting"), "plain-unit-setting")
