@@ -29,6 +29,20 @@ for the operator.
 * **No tautological tests.** A test is invalid if it restates the
   implementation, mirrors its branches, asserts a value it built itself with
   no independent oracle, or passes with the behavior absent.
+* **The test-value gate.** Before adding a test, answer four questions: what
+  behavior, invariant or contract does it protect? What credible regression
+  makes it fail? Why does existing coverage not already catch that? Does it
+  need a production seam no production caller needs? A missing answer means
+  the test does not land.
+* These fail review unless the test names the contract it guards: expected
+  values produced by the code under test; mocks or fakes that implement the
+  behavior being asserted; fixtures that supply the result, ordering or
+  record the real path should produce; duplicate tests of one contract at
+  several layers; exact source or string greps where an executable check
+  exists; tests that exist only to keep a test-only export, flag or wrapper
+  alive; production code whose only callers are tests; negative controls
+  that pass for an unrelated reason; test names that promise more than the
+  test exercises.
 * One to three focused tests per behavior; a bug fix shows a meaningful RED
   before the smallest GREEN. Docs and config get proportional smoke checks.
 * A change that crosses into git, containers, file permissions or another

@@ -87,6 +87,7 @@ from holophyte.review import (
     evidence_brief,
     scope_brief,
     scope_files,
+    tests_brief,
 )
 from holophyte.runs import (
     RunSwept,
@@ -756,6 +757,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f"{ticket}\n\n"
                     + _verify_brief(verify_cmd, ok, out)
                     + criteria_brief(criteria)
+                    + tests_brief(wt)
                     + scope_brief(wt, ticket, base_sha, sha)
                     + evidence_brief(project, wt, task_id,
                                      ticket_template.parse(ticket).evidence_states)
@@ -879,6 +881,7 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                 f"{ticket}\n\n"
                 + _verify_brief(verify_cmd, ok, out)
                 + criteria_brief(criteria)
+                + tests_brief(wt)
                 + "This candidate has already had its review rounds and their "
                 "fixes; no further fix round exists. Your job is a verdict on "
                 "the state as it stands, not a review.\n"

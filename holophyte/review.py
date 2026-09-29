@@ -729,6 +729,30 @@ def criteria_brief(criteria):
             "the verdict line.\n\n")
 
 
+def tests_brief(root):
+    try:
+        lines = (Path(root) / "AGENTS.md").read_text().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return ""
+    section, level = [], 0
+    for line in lines:
+        hashes = len(line) - len(line.lstrip("#"))
+        heading = 0 < hashes and line[hashes:hashes + 1] == " "
+        if level and heading and hashes <= level:
+            break
+        if not level and heading and line[hashes:].strip() == "Tests":
+            level = hashes
+        if level:
+            section.append(line)
+    while section and not section[-1].strip():
+        section.pop()
+    if not section:
+        return ""
+    quoted = "\n".join(f"> {line}".rstrip() for line in section)
+    return ("The project's rules for tests, quoted from its AGENTS.md; hold "
+            f"the candidate's tests to them:\n{quoted}\n\n")
+
+
 def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
                   run_agent=None, review_round=None):
     """Re-ask a malformed review once; keep its evidence out of the verdict."""
