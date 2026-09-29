@@ -310,6 +310,9 @@ At the root:
 - `ticket_template.py` — parser/validator for the ticket shape;
   `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
   pickable-ready.
+- `story_template.py` — validator for a story directory's body and
+  witness files; `python3 ticket_template.py --repo PATH --story DIR` exits
+  0 iff the story is valid.
 - `ticketTemplate.md` — the ticket shape. Verify commands go in the
   "Verify command(s)" section (exit 0 = pass, relative paths only);
   estimate is the budget in minutes. The optional "Contract checks" section

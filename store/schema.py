@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS tickets (
     pushState            TEXT,
     pushFrom             TEXT,
     pushAt               INTEGER,
-    goneSince            INTEGER
+    goneSince            INTEGER,
+    parentTicketId       INTEGER REFERENCES tickets (id)  -- the story it serves
 );
 
 -- runs: one attempt at one ticket (state-model §2). Phase enum is §4.
@@ -146,6 +147,7 @@ CREATE TABLE IF NOT EXISTS runs (
     -- The `ticketRevisions` number the run was claimed at (KO-733), NULL
     -- on a run claimed before anything recorded one.
     revision          INTEGER,
+    storyGeneration   INTEGER,
     outcome           TEXT
         {_enums.check_clause('outcome', _enums.RunOutcome)},
     outcomeReason     TEXT,
@@ -381,7 +383,81 @@ CREATE TABLE IF NOT EXISTS gapLayers (
     note      TEXT    NOT NULL,
     carriedBy TEXT,
     author    TEXT    NOT NULL,
-    at        INTEGER NOT NULL
+    at        INTEGER NOT NULL,
+    foundBy   TEXT    NOT NULL DEFAULT 'operator'
+        {_enums.check_clause('foundBy', _enums.GapFinder)}
+);
+
+-- stories: a parent ticket whose children serve one outcome, closed when its
+-- witnesses pass on main's tip.
+CREATE TABLE IF NOT EXISTS stories (
+    ticketId         INTEGER PRIMARY KEY REFERENCES tickets (id),
+    state            TEXT    NOT NULL
+        {_enums.check_clause('state', _enums.StoryState)},
+    generation       INTEGER NOT NULL DEFAULT 0,
+    standingOrders   TEXT    NOT NULL DEFAULT '[]',  -- JSON string[]
+    approvedRevision INTEGER,
+    approvedPlan     TEXT,
+    approvedBy       TEXT,
+    approvedAt       INTEGER,
+    closedSha        TEXT,
+    closedAt         INTEGER
+);
+
+-- storyWitnesses: a story's acceptance witnesses, one per criterion key.
+CREATE TABLE IF NOT EXISTS storyWitnesses (
+    storyId     INTEGER NOT NULL REFERENCES stories (ticketId),
+    key         TEXT    NOT NULL,
+    criterion   TEXT    NOT NULL,
+    file        TEXT    NOT NULL,
+    command     TEXT    NOT NULL,
+    source      TEXT    NOT NULL,
+    sourceHash  TEXT    NOT NULL,
+    completedBy INTEGER REFERENCES tickets (id),
+    PRIMARY KEY (storyId, key)
+);
+
+-- storyChildren: a child ticket's role toward a story's witness.
+CREATE TABLE IF NOT EXISTS storyChildren (
+    ticketId   INTEGER NOT NULL REFERENCES tickets (id),
+    witnessKey TEXT    NOT NULL DEFAULT '',
+    storyId    INTEGER NOT NULL REFERENCES stories (ticketId),
+    role       TEXT    NOT NULL
+        {_enums.check_clause('role', _enums.ChildRole)},
+    PRIMARY KEY (ticketId, witnessKey)
+);
+
+-- witnessResults: each run of a story's witness against a main sha.
+CREATE TABLE IF NOT EXISTS witnessResults (
+    id           INTEGER PRIMARY KEY,
+    storyId      INTEGER NOT NULL REFERENCES stories (ticketId),
+    witnessKey   TEXT    NOT NULL,
+    mainSha      TEXT    NOT NULL,
+    verdict      TEXT    NOT NULL
+        {_enums.check_clause('verdict', _enums.WitnessVerdict)},
+    redKind      TEXT {_enums.check_clause('redKind', _enums.RedKind)},
+    verifier     TEXT    NOT NULL
+        {_enums.check_clause('verifier', _enums.WitnessVerifier)},
+    fileHash     TEXT,
+    evidencePath TEXT,
+    seconds      REAL,
+    at           INTEGER NOT NULL
+);
+
+-- storyDecisions: a question a story put to the operator and its answer.
+CREATE TABLE IF NOT EXISTS storyDecisions (
+    id            INTEGER PRIMARY KEY,
+    storyId       INTEGER NOT NULL REFERENCES stories (ticketId),
+    ticketId      INTEGER REFERENCES tickets (id),
+    kind          TEXT    NOT NULL
+        {_enums.check_clause('kind', _enums.DecisionKind)},
+    question      TEXT    NOT NULL,
+    options       TEXT    NOT NULL,  -- JSON
+    defaultOption TEXT    NOT NULL,
+    answer        TEXT,
+    answeredBy    TEXT,
+    answeredAt    INTEGER,
+    at            INTEGER NOT NULL
 );
 """
 
@@ -424,7 +500,7 @@ CREATE TABLE IF NOT EXISTS interventions (
 # Version 35 admits the `abort_close` intervention action (KO-611).
 # Version 36 admits the `not_reproduced` run park kind (KO-657).
 # Version 37 adds ticket revisions, ticket notes and board columns (KO-733).
-SCHEMA_VERSION = 38
+SCHEMA_VERSION = 39
 
 # The oldest SCHEMA_VERSION whose builds can still read and write a store at
 # SCHEMA_VERSION (KO-661). Each migration records it in its `migrate` note,
@@ -468,6 +544,7 @@ CREATE INDEX IF NOT EXISTS runs_ticketId ON runs (ticketId);
 CREATE INDEX IF NOT EXISTS reviewRounds_runId ON reviewRounds (runId);
 CREATE INDEX IF NOT EXISTS runEvents_runId ON runEvents (runId);
 CREATE INDEX IF NOT EXISTS ledger_runId ON ledger (runId);
+CREATE INDEX IF NOT EXISTS tickets_parentTicketId ON tickets (parentTicketId);
 """
 
 
@@ -764,6 +841,11 @@ ADDED_COLUMNS = (
     ("tickets", "pushAt", "pushAt INTEGER"),
     ("tickets", "goneSince", "goneSince INTEGER"),
     ("runs", "revision", "revision INTEGER"),
+    ("tickets", "parentTicketId",
+     "parentTicketId INTEGER REFERENCES tickets (id)"),
+    ("runs", "storyGeneration", "storyGeneration INTEGER"),
+    ("gapLayers", "foundBy", "foundBy TEXT NOT NULL DEFAULT 'operator' "
+     + _enums.check_clause("foundBy", _enums.GapFinder)),
 )
 
 
@@ -960,7 +1042,8 @@ def _widen_interventions_action(conn):
                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
                          "'migrate'", "'hold'", "'release_hold'",
                          "'register_project'", "'disable'", "'pause'",
-                         "'abort'", "'abort_close'")):
+                         "'abort'", "'abort_close'", "'approve_story'",
+                         "'decide'")):
         return
     # The copy runs with foreign keys enforced, so an orphaned row — a
     # `runId` no run has, the kind a raw-SQL session with FKs off leaves —

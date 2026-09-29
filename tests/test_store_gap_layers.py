@@ -42,8 +42,10 @@ class PreviousStoreMigrationTests(unittest.TestCase):
                      " VALUES (1, 1, 1, 'done', 1, 2, 2, 'merged')")
         conn.execute(f"PRAGMA user_version = {frozen_version():d}")
         conn.commit()
+        self.ticket_columns = ", ".join(
+            row[1] for row in conn.execute("PRAGMA table_info(tickets)"))
         self.tickets = conn.execute(
-            "SELECT * FROM tickets ORDER BY id").fetchall()
+            f"SELECT {self.ticket_columns} FROM tickets ORDER BY id").fetchall()
         conn.close()
 
     def test_migration_adds_an_empty_table_and_keeps_the_tickets(self):
@@ -54,7 +56,8 @@ class PreviousStoreMigrationTests(unittest.TestCase):
         self.assertEqual(
             conn.execute("SELECT COUNT(*) FROM gapLayers").fetchone(), (0,))
         self.assertEqual(
-            conn.execute("SELECT * FROM tickets ORDER BY id").fetchall(),
+            conn.execute(f"SELECT {self.ticket_columns} FROM tickets"
+                         " ORDER BY id").fetchall(),
             self.tickets)
         note = json.loads(store.schema.latest_migration_note(conn))
         self.assertEqual(note["readableFrom"], store.schema.READABLE_FROM)

@@ -160,6 +160,8 @@ class InterventionAction(str, Enum):
     PAUSE = 'pause'
     ABORT = 'abort'
     ABORT_CLOSE = 'abort_close'
+    APPROVE_STORY = 'approve_story'
+    DECIDE = 'decide'
 
 
 class GapLayer(str, Enum):
@@ -169,6 +171,49 @@ class GapLayer(str, Enum):
     GUIDANCE = 'guidance'
     REVIEW = 'review'
     NONE = 'none'
+
+
+class StoryState(str, Enum):
+    PLANNED = 'planned'
+    APPROVED = 'approved'
+    PARKED = 'parked'
+    CLOSED = 'closed'
+    ABANDONED = 'abandoned'
+
+
+class ChildRole(str, Enum):
+    COMPLETES = 'completes'
+    ADVANCES = 'advances'
+    SCAFFOLDING = 'scaffolding'
+
+
+class DecisionKind(str, Enum):
+    UNMET = 'unmet'
+    REGRESSED = 'regressed'
+    PLAN_DRIFT = 'plan_drift'
+
+
+class WitnessVerdict(str, Enum):
+    ABSENT = 'absent'
+    RED = 'red'
+    GREEN = 'green'
+    ERROR = 'error'
+
+
+class RedKind(str, Enum):
+    ASSERT = 'assert'
+    EXCEPTION = 'exception'
+
+
+class WitnessVerifier(str, Enum):
+    BASELINE = 'baseline'
+    LOOP = 'loop'
+    OPERATOR = 'operator'
+
+
+class GapFinder(str, Enum):
+    OPERATOR = 'operator'
+    WITNESS = 'witness'
 
 
 # Line breaks are part of the existing sqlite_master SQL contract.
@@ -202,6 +247,13 @@ CONSTRAINED_COLUMNS = {
     ('interventions', 'trigger'): InterventionTrigger,
     ('interventions', 'action'): InterventionAction,
     ('gapLayers', 'layer'): GapLayer,
+    ('gapLayers', 'foundBy'): GapFinder,
+    ('stories', 'state'): StoryState,
+    ('storyChildren', 'role'): ChildRole,
+    ('witnessResults', 'verdict'): WitnessVerdict,
+    ('witnessResults', 'redKind'): RedKind,
+    ('witnessResults', 'verifier'): WitnessVerifier,
+    ('storyDecisions', 'kind'): DecisionKind,
 }
 
 
