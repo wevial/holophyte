@@ -44,7 +44,7 @@ class StoreEnumTests(unittest.TestCase):
         self.assertEqual(actual['runs', 'parkKind'],
                          "CHECK (parkKind IN ('pull_request', 'pull_request_closed', "
                          "'thread', 'fix_declined', 'merge_lock', 'question', "
-                         "'not_reproduced'))")
+                         "'not_reproduced', 'ci'))")
         for key, enum in enums.CONSTRAINED_COLUMNS.items():
             self.assertEqual(actual[key], enums.check_clause(key[1], enum), key)
 
@@ -123,6 +123,49 @@ class StoreEnumTests(unittest.TestCase):
                         conn.execute("PRAGMA foreign_key_check").fetchall(), [])
                 finally:
                     conn.close()
+
+    def test_a_store_one_version_back_admits_the_ci_park(self):
+        previous = store.schema.SCHEMA_VERSION - 1
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "store.db"
+        conn = store.open(path)
+        project = store.tickets.ensure_project(conn, "team-1", "/r")
+        ticket = store.tickets.mirror_ticket(
+            conn, project, linear_issue_id="issue-1",
+            linear_identifier="KO-1", title="ticket 1")
+        run = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        for phase in ("working", "verifying", "reviewing", "merge_gate"):
+            store.set_phase(conn, run, phase)
+        store.park(conn, run, "awaiting_merge_approval", "PR open",
+                   candidate_sha="a" * 40, park_kind="pull_request",
+                   pr_url="https://github.com/example/repo/pull/7")
+        before = conn.execute("SELECT * FROM runs").fetchall()
+        (ddl,) = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'runs'").fetchone()
+        conn.close()
+        narrowed = ddl.replace(", 'ci'", "")
+        self.assertNotIn("'ci'", narrowed)
+        old = sqlite3.connect(path)
+        old.executescript(
+            narrowed.replace('CREATE TABLE "runs" (',
+                             "CREATE TABLE runs_old (", 1)
+            + ";\nINSERT INTO runs_old SELECT * FROM runs;\n"
+            "DROP TABLE runs;\nALTER TABLE runs_old RENAME TO runs;\n"
+            f"PRAGMA user_version = {previous:d};\n")
+        with self.assertRaises(sqlite3.IntegrityError):
+            old.execute("UPDATE runs SET parkKind = 'ci'")
+        old.close()
+
+        conn = store.open(path)
+        self.addCleanup(conn.close)
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                         (store.schema.SCHEMA_VERSION,))
+        self.assertEqual(conn.execute("SELECT * FROM runs").fetchall(), before)
+        conn.execute("UPDATE runs SET parkKind = 'ci'")
+        self.assertEqual(conn.execute("SELECT parkKind FROM runs").fetchone(),
+                         ("ci",))
+        self.assertEqual(store.schema.READABLE_FROM, store.schema.SCHEMA_VERSION)
 
     def test_public_vocabulary_and_graph_membership(self):
         self.assertEqual(store.PHASES, tuple(e.value for e in enums.RunPhase))

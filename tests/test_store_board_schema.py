@@ -124,7 +124,7 @@ class FreshStoreBoardSchemaTests(unittest.TestCase):
                           " affinity) VALUES (1, 'i', 'KO-1', 't', 1,"
                           " 'ready', 'any')")
 
-    def test_readable_from_reads_as_an_integer_below_the_version(self):
+    def test_readable_from_reads_as_an_integer_at_most_the_version(self):
         source = Path(store.schema.__file__).read_text()
         found = {}
         for node in ast.parse(source).body:
@@ -133,7 +133,7 @@ class FreshStoreBoardSchemaTests(unittest.TestCase):
                         "SCHEMA_VERSION", "READABLE_FROM"):
                     found[name.id] = _literal(node.value, found)
         self.assertIsInstance(found["READABLE_FROM"], int)
-        self.assertLess(found["READABLE_FROM"], found["SCHEMA_VERSION"])
+        self.assertLessEqual(found["READABLE_FROM"], found["SCHEMA_VERSION"])
 
     def test_board_column_admits_ready_and_refuses_doing_on_both_tables(self):
         writes = (
