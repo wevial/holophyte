@@ -467,7 +467,7 @@ class IsolationTests(unittest.TestCase):
         self.table["worktree"] = {"carry": carry}
         return worktree
 
-    def recorded_volumes(self, launch):
+    def recorded_volumes(self, launch, turn=lambda clone: None):
         from holophyte import isolation
 
         volumes = []
@@ -475,6 +475,7 @@ class IsolationTests(unittest.TestCase):
         def run(argv, cwd, timeout, *, env):
             volumes.extend(argv[i + 1] for i, flag in enumerate(argv)
                            if flag == "--volume")
+            turn(Path(cwd))
             return 0, "done"
 
         with patch.object(isolation, "image_ready"), \
@@ -489,20 +490,14 @@ class IsolationTests(unittest.TestCase):
         installed = worktree / "tracked" / "node_modules" / "dep"
         installed.mkdir(parents=True)
         (installed / "index.js").write_text("installed\n")
-        volumes = []
 
-        def run(argv, cwd, timeout, *, env):
-            volumes.extend(argv[i + 1] for i, flag in enumerate(argv)
-                           if flag == "--volume")
-            self.assertEqual(list((Path(cwd) / "tracked/node_modules").iterdir()), [])
-            (Path(cwd) / "tracked" / "file").write_text("edited\n")
-            return 0, "done"
+        def turn(clone):
+            self.assertEqual(list((clone / "tracked/node_modules").iterdir()), [])
+            (clone / "tracked" / "file").write_text("edited\n")
 
-        with patch.object(isolation, "image_ready"), \
-             patch.object(isolation.review_runner, "_remove_container"), \
-             patch.object(isolation, "run_capped", side_effect=run):
-            isolation.launch(isolation.Route("container"), worktree, {}, ["agent"],
-                             project=self.target)
+        _, volumes = self.recorded_volumes(lambda: isolation.launch(
+            isolation.Route("container"), worktree, {}, ["agent"],
+            project=self.target), turn)
         source = worktree.resolve() / "tracked" / "node_modules"
         self.assertIn(f"{source}:/workspace/tracked/node_modules:rw", volumes)
         self.assertEqual((installed / "index.js").read_text(), "installed\n")
@@ -753,6 +748,8 @@ class IsolationTests(unittest.TestCase):
         destination.mkdir()
         (source / "file").write_text("replacement")
         (destination / "file").write_text("valuable original")
+        (destination / "deps").mkdir()
+        (destination / "deps" / "installed").write_text("package")
         rename = Path.rename
 
         def fail(path, target):
@@ -764,11 +761,15 @@ class IsolationTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 InfraFailure, "originals retained at"
             ) as raised:
-                copy_files(source, destination, protect=False)
+                copy_files(source, destination, protect=False, carry=["deps"])
         backups = list(destination.glob(".backup-*"))
         self.assertEqual(len(backups), 1)
         self.assertIn(str(backups[0]), str(raised.exception))
         self.assertEqual((backups[0] / "file").read_text(), "valuable original")
+        kept = list(destination.glob(".copy-*"))
+        self.assertEqual(len(kept), 1)
+        self.assertIn(str(kept[0]), str(raised.exception))
+        self.assertEqual((kept[0] / "deps" / "installed").read_text(), "package")
 
     def test_clone_rewritten_history_is_infrastructure_failure(self):
         from holophyte import isolation

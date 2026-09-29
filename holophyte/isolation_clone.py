@@ -86,19 +86,23 @@ def keeping(destination, staged, carry):
             kept.rename(staged / entry)
             moved.append(entry)
         yield
-    except BaseException:
-        for entry in reversed(moved):
-            (staged / entry).rename(destination / entry)
+    except BaseException as failure:
+        try:
+            for entry in reversed(moved):
+                (staged / entry).rename(destination / entry)
+        except OSError as error:
+            raise InfraFailure(f"{failure}; [worktree] carry directories kept at "
+                               f"{staged}: {error}") from error
         raise
 
 
 def copy_files(source, destination, protect, finish=lambda: None, carry=()):
     """Stage the complete copy and roll back failed destination mutations."""
     excluded = {".git", ".env"} if protect else {".git"}
-    with tempfile.TemporaryDirectory(
-        prefix=".copy-", dir=destination
-    ) as directory:
-        staged = Path(directory)
+    directory = tempfile.TemporaryDirectory(prefix=".copy-", dir=destination,
+                                            delete=False)
+    staged = Path(directory.name)
+    try:
         try:
             stage_files(source, staged, excluded,
                         {source / entry for entry in carry})
@@ -109,6 +113,11 @@ def copy_files(source, destination, protect, finish=lambda: None, carry=()):
                 replace_files(staged, destination, excluded, finish)
         except (OSError, shutil.Error) as error:
             raise InfraFailure(f"cannot replace working files: {error}") from error
+    finally:
+        held = [entry for entry in carry
+                if (staged / entry).is_symlink() or (staged / entry).exists()]
+        if not held:
+            directory.cleanup()
 
 
 def linked_carry(worktree, entry):
