@@ -324,6 +324,16 @@ class TestsSectionBriefTests(unittest.TestCase):
             with self.subTest(outside=outside):
                 self.assertNotIn(outside, brief)
 
+    def test_inline_triple_backticks_do_not_open_a_fence(self):
+        (self.root / "AGENTS.md").write_text(
+            "## Tests\n* quote `` ```py `` mid-line\n"
+            "```py x``` is inline code\n* rule\n## Operator\n* after\n")
+        brief = tests_brief(self.root)
+        self.assertIn("> ```py x``` is inline code\n> * rule\n\n", brief)
+        for outside in ("Operator", "after"):
+            with self.subTest(outside=outside):
+                self.assertNotIn(outside, brief)
+
     def test_no_agents_file_or_no_tests_section_gives_nothing(self):
         self.assertEqual(tests_brief(self.root), "")
         (self.root / "AGENTS.md").write_text(

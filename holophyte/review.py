@@ -729,22 +729,23 @@ def criteria_brief(criteria):
             "the verdict line.\n\n")
 
 
+_FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
+
+
 def _unfenced_heading_levels(lines):
     fence = ""
     for line in lines:
-        text = line.lstrip(" ")
-        mark = text[:1] if text[:1] in ("`", "~") else ""
-        run = len(text) - len(text.lstrip(mark)) if mark else 0
-        if len(line) - len(text) < 4 and run >= 3:
-            if not fence:
-                fence = text[:run]
-            elif text.startswith(fence) and not text[run:].strip():
-                fence = ""
-            yield line, 0
+        match = _FENCE.match(line)
+        run, rest = match.groups() if match else ("", "")
+        if not fence and run and not (run[0] == "`" and "`" in rest):
+            fence = run
+        elif fence and run.startswith(fence) and not rest.strip():
+            fence = ""
+        elif not fence:
+            hashes = len(line) - len(line.lstrip("#"))
+            yield line, hashes if line[hashes:hashes + 1] == " " else 0
             continue
-        hashes = len(line) - len(line.lstrip("#"))
-        heading = not fence and 0 < hashes and line[hashes:hashes + 1] == " "
-        yield line, hashes if heading else 0
+        yield line, 0
 
 
 def tests_brief(root):
