@@ -29,6 +29,7 @@ import store.read
 from holophyte.claim_store import store_mode
 from holophyte.gates import merge_lock_path, read_merge_lock
 from holophyte.serve_runs import json_host
+from holophyte.story_views import story_facts, story_lines
 from holophyte.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.supervisor_lock import (
     pid_alive,
@@ -62,6 +63,7 @@ def snapshot(target, conn, now=None):
         "parked": [{"run": ticket.runId, "ticket": ticket.linearIdentifier,
                     "question": ticket.blockedQuestion}
                    for ticket in store.read.blocked_tickets(conn)],
+        "stories": story_facts(target, conn, now),
         "stranded": [{"run": run.id, "ticket": run.linearIdentifier,
                       "reason": run.outcomeReason, "ended_ms": run.endedAt}
                      for run in store.read.stranded_runs(conn)],
@@ -134,6 +136,7 @@ def render(snap):
     for parked in snap["parked"]:
         lines.append(f"parked {parked['ticket']} run {parked['run']}:"
                      f" {parked['question'] or '(no question)'}")
+    lines.extend(story_lines(snap["stories"]))
     for stranded in snap["stranded"]:
         # A reason is free text; its line breaks are escaped so one ticket
         # stays one line. The JSON keeps the reason as stored.
