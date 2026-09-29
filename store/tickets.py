@@ -246,12 +246,22 @@ def transition(conn, ticket_id, to_status):
         if from_status == "blocked_on_operator":
             conn.execute("UPDATE runs SET parkKind = NULL WHERE ticketId = ?",
                          (ticket_id,))
-        if to_status == "merged":
+        if to_status == "merged" and not _story_advanced(conn, ticket_id):
             conn.execute(
                 "UPDATE stories SET generation = generation + 1"
                 " WHERE ticketId IN (SELECT DISTINCT storyId FROM storyChildren"
                 " WHERE ticketId = ?)", (ticket_id,))
     return from_status
+
+
+STORY_ADVANCED = "story_advanced"
+
+
+def _story_advanced(conn, ticket_id):
+    return conn.execute(
+        "SELECT 1 FROM runEvents e JOIN runs r ON r.id = e.runId"
+        " WHERE r.ticketId = ? AND e.kind = ?",
+        (ticket_id, STORY_ADVANCED)).fetchone() is not None
 
 
 def _status_path(from_status, to_status):

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 import store
-from store.stories import approve_story, file_story
+from store.stories import advance_story, approve_story, file_story
 from store.tickets import transition, walk_ticket
 
 WITNESSES = [
@@ -82,6 +82,16 @@ class StoryGenerationTests(unittest.TestCase):
                 raise RuntimeError("after the walk")
         self.assertEqual(self.status(self.second), "ready")
         self.assertEqual(self.generation(), 1)
+
+    def test_a_merge_advanced_before_its_close_out_is_counted_once(self):
+        child_run = store.claim(self.conn, self.project, self.first)
+        lone_run = store.claim(self.conn, self.project, self.lone)
+        self.assertEqual(advance_story(self.conn, child_run), 1)
+        self.assertIsNone(advance_story(self.conn, lone_run))
+        walk_ticket(self.conn, self.first, "merged")
+        self.assertEqual(self.generation(), 1)
+        walk_ticket(self.conn, self.second, "merged")
+        self.assertEqual(self.generation(), 2)
 
     def test_a_claim_stamps_its_storys_generation_on_the_run(self):
         self.conn.execute("UPDATE stories SET generation = 3")
