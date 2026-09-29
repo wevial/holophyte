@@ -269,6 +269,35 @@ class ScopeQuestionTests(unittest.TestCase):
         self.assertLess(criteria_at, quote_at)
         self.assertIn("> ## Tests\n", prompt)
 
+    def test_covering_review_quotes_the_tests_section_after_the_criteria(self):
+        from holophyte import loop, story_drift
+
+        class Captured(Exception):
+            pass
+
+        prompts = []
+
+        def capture(target, role, goal, *args, **kwargs):
+            prompts.append(goal)
+            raise Captured
+
+        (self.root / "AGENTS.md").write_text(
+            "# Guide\n## Tests\n* Never assert a value the code built.\n")
+        sha = self.candidate("holophyte/review.py")
+        contract = json.dumps({"acceptanceCriteria": ["the behavior works"]})
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(patch.object(loop, "agent", side_effect=capture))
+            stack.enter_context(patch.object(
+                story_drift.store, "run_contract", return_value=contract))
+            with self.assertRaises(Captured):
+                story_drift.review_refresh(
+                    Mock(), None, 602, None, 1, "task", self.root, self.base,
+                    sha, 1, self.TICKET, "true", "ok", ["holophyte/review.py"])
+        criteria_at = prompts[0].index("1. the behavior works")
+        quote_at = prompts[0].index("> * Never assert a value the code built.")
+        self.assertLess(criteria_at, quote_at)
+        self.assertIn("> ## Tests\n", prompts[0])
+
     def test_tangent_blocks_and_needed_clears(self):
         tangent = "SCOPE other/file.ts: tangent \u2014 reformatted while there"
         (finding,) = criteria_findings(tangent, (), scope=["other/file.ts"])
