@@ -193,18 +193,30 @@ def _check_children(parent_id, children, keys):
 
 
 def _check_tickets(conn, parent_id, child_ids):
+    rows = {}
     for ticket_id in (parent_id, *child_ids):
-        if conn.execute("SELECT 1 FROM tickets WHERE id = ?",
-                        (ticket_id,)).fetchone() is None:
+        rows[ticket_id] = conn.execute(
+            "SELECT projectId, parentTicketId FROM tickets WHERE id = ?",
+            (ticket_id,)).fetchone()
+        if rows[ticket_id] is None:
             raise ValueError(f"ticket {ticket_id!r} is not in the store")
-    if conn.execute("SELECT 1 FROM stories WHERE ticketId = ?",
-                    (parent_id,)).fetchone() is not None:
+    if _has_story(conn, parent_id):
         raise ValueError(f"ticket {parent_id} already has a story")
+    project_id = rows[parent_id][0]
     for ticket_id in child_ids:
-        (parent,) = conn.execute("SELECT parentTicketId FROM tickets"
-                                 " WHERE id = ?", (ticket_id,)).fetchone()
+        child_project, parent = rows[ticket_id]
+        if child_project != project_id:
+            raise ValueError(f"child {ticket_id} is in project {child_project},"
+                             f" not the parent's project {project_id}")
         if parent is not None:
             raise ValueError(f"child {ticket_id} already serves story {parent}")
+        if _has_story(conn, ticket_id):
+            raise ValueError(f"child {ticket_id} already owns a story")
+
+
+def _has_story(conn, ticket_id):
+    return conn.execute("SELECT 1 FROM stories WHERE ticketId = ?",
+                        (ticket_id,)).fetchone() is not None
 
 
 def _story_state(conn, parent_id):

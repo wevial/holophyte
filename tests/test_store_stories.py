@@ -88,6 +88,10 @@ class StoryStoreTests(unittest.TestCase):
         self.file()
         other = self.ticket("KO-5")
         spare = self.ticket("KO-6")
+        self.conn.execute("INSERT INTO projects (linearTeamId, repoPath,"
+                          " defaultBranch, autonomyProfile)"
+                          " VALUES ('u', '/other', 'main', 'personal')")
+        foreign = self.ticket("KO-7", project_id=2)
         self.conn.commit()
         before = self.snapshot()
         duplicate = [WITNESSES[0], dict(WITNESSES[1], key="W1")]
@@ -104,6 +108,10 @@ class StoryStoreTests(unittest.TestCase):
              [(spare, "advances", ("W1", "W1"))]),
             ("999 is not in the store", other, WITNESSES,
              [(spare, "scaffolding", ()), (999, "completes", ("W1",))]),
+            ("in project 2, not the parent's project 1", other, WITNESSES,
+             [(foreign, "scaffolding", ())]),
+            (f"child {self.parent} already owns a story", other, WITNESSES,
+             [(self.parent, "scaffolding", ())]),
         ]
         for problem, parent, witnesses, children in cases:
             with self.subTest(problem=problem):
