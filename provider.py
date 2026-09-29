@@ -277,8 +277,11 @@ class LinearBoard:
         issue = linear.create_issue(self.project_id, self._team, title, body,
                                     estimate, state, priority=priority,
                                     parent=parent)
-        for blocker in blockers:
-            linear.add_blocker(issue["id"], blocker)
+        try:
+            for blocker in blockers:
+                linear.add_blocker(issue["id"], blocker)
+        except Exception as refused:
+            raise FiledWithoutBlockers(issue["identifier"], refused) from refused
         return issue["identifier"]
 
     def update(self, identifier, title, body, estimate, blockers=(), *,
@@ -306,6 +309,13 @@ def _refuse_native_update(identifier, revision, priority, labels):
     if given:
         raise RuntimeError(f"refused to update {identifier} with "
                            f"{', '.join(given)}: only a native board takes them")
+
+
+class FiledWithoutBlockers(RuntimeError):
+    def __init__(self, identifier, refused):
+        super().__init__(f"filed {identifier} without all its blockers: "
+                         f"{refused}")
+        self.identifier = identifier
 
 
 def refuse_parent(title, parent):

@@ -31,32 +31,53 @@ TICKETS = ("SELECT linearIdentifier, linearIssueId, status, boardColumn,"
            " dependsOn, parentTicketId FROM tickets ORDER BY id")
 
 
-class RecordingBoard(provider.LinearBoard):
-    """A Linear board whose writes are recorded and whose issues are served
-    back through the real `fetch_task()` from what was filed."""
+class FakeLinear:
+    """Linear's writes, kept in the board's `issues`; a read goes through
+    the real `fetch_task()`."""
+    fetch_task = staticmethod(linear_provider.fetch_task)
 
-    def __init__(self, *args, fail_at=None, **kwargs):
+    def __init__(self, board):
+        self.board = board
+
+    def create_issue(self, project_id, team, title, body, estimate, state,
+                     priority=None, parent=None):
+        number = len(self.board.issues) + 1
+        self.board.issues[f"REL-{number}"] = {
+            "identifier": f"REL-{number}", "id": f"issue-{number}",
+            "url": None, "title": title, "description": body,
+            "estimate": estimate, "priority": priority, "createdAt": None,
+            "updatedAt": None, "archivedAt": None,
+            "state": {"name": state, "type": state.lower()},
+            "labels": {"nodes": []}, "inverseRelations": {"nodes": []}}
+        return {"id": f"issue-{number}", "identifier": f"REL-{number}"}
+
+    def add_blocker(self, issue_id, blocker):
+        if self.board.relation_fails:
+            raise RuntimeError("Linear refused the relation")
+        issue = next(issue for issue in self.board.issues.values()
+                     if issue["id"] == issue_id)
+        issue["inverseRelations"]["nodes"].append({"type": "blocks", "issue": {
+            "id": self.board.issues[blocker]["id"],
+            "state": {"type": "backlog"}}})
+
+
+class RecordingBoard(provider.LinearBoard):
+    """A Linear board whose `file()` and `label_issue()` calls are recorded,
+    over a fake Linear."""
+
+    def __init__(self, *args, fail_at=None, relation_fails=False, **kwargs):
         super().__init__(*args, **kwargs)
-        self.calls, self.issues, self.fail_at = [], {}, fail_at
+        self._module = FakeLinear(self)
+        self.calls, self.issues = [], {}
+        self.fail_at, self.relation_fails = fail_at, relation_fails
 
     def file(self, title, body, estimate, state, priority=None, blockers=(),
              parent=None):
         self.calls.append(("file", title, state, parent, list(blockers)))
         if len(self.issues) + 1 == self.fail_at:
             raise RuntimeError("Linear is unreachable")
-        number = len(self.issues) + 1
-        blocking = [{"type": "blocks", "issue": {
-            "id": self.issues[b]["id"], "state": {"type": "backlog"}}}
-            for b in blockers]
-        self.issues[f"REL-{number}"] = {
-            "identifier": f"REL-{number}", "id": f"issue-{number}",
-            "url": None, "title": title, "description": body,
-            "estimate": estimate, "priority": priority, "createdAt": None,
-            "updatedAt": None, "archivedAt": None,
-            "state": {"name": state, "type": state.lower()},
-            "labels": {"nodes": []},
-            "inverseRelations": {"nodes": blocking}}
-        return f"REL-{number}"
+        return super().file(title, body, estimate, state, priority=priority,
+                            blockers=blockers, parent=parent)
 
     def label_issue(self, issue_id, name):
         self.calls.append(("label", issue_id, name))
@@ -75,7 +96,7 @@ class LinearFileStoryTests(ConfigTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def run_story(self, config=STORE_LINEAR, fail_at=None):
+    def run_story(self, config=STORE_LINEAR, **failure):
         """File SLUG's children a, b and c (c depending on a and b) on a
         recording board; the exit status, printed lines and the board."""
         self.locate(config)
@@ -91,7 +112,7 @@ class LinearFileStoryTests(ConfigTestCase):
         boards = []
 
         def build(*args, **kwargs):
-            boards.append(RecordingBoard(*args, fail_at=fail_at, **kwargs))
+            boards.append(RecordingBoard(*args, **failure, **kwargs))
             return boards[-1]
 
         out = io.StringIO()
@@ -160,6 +181,16 @@ class LinearFileStoryTests(ConfigTestCase):
         self.assertEqual(self.store("SELECT * FROM tickets"), [])
         for table in ("stories", "storyWitnesses", "storyChildren"):
             self.assertEqual(self.store(f"SELECT * FROM {table}"), [], table)
+        self.assertEqual(self.files(), self.before)
+
+    def test_a_refused_blocker_still_names_the_issue_it_was_filed_on(self):
+        status, lines, board = self.run_story(relation_fails=True)
+
+        self.assertEqual(status, 1)
+        self.assertEqual(list(board.issues), [f"REL-{n}" for n in (1, 2, 3, 4)])
+        self.assertIn("Linear refused the relation", lines[0])
+        self.assertIn("REL-1, REL-2, REL-3, REL-4", lines[-1])
+        self.assertEqual(self.store("SELECT * FROM tickets"), [])
         self.assertEqual(self.files(), self.before)
 
     def test_a_linear_board_in_mirror_mode_is_refused_naming_store_mode(self):

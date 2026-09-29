@@ -11,6 +11,7 @@ import story_template
 import ticket_template
 from holophyte.board import mirror_task
 from holophyte.config_tables import board_config
+from provider import FiledWithoutBlockers
 
 STORY_HEADER_RE = re.compile(r"^Story:[ \t]*(\S+)")
 ESTIMATE_SECTION = "Estimate & dependencies"
@@ -105,9 +106,14 @@ def _file_on_board(board, conn, project, project_id, directory, text,
 
 def _create(board, created, body, priority, parent=None):
     ticket = ticket_template.parse(body)
-    identifier = board.file(ticket.title, body, ticket.estimate_min,
-                            "Backlog", priority=priority,
-                            blockers=ticket.depends_on or [], parent=parent)
+    try:
+        identifier = board.file(ticket.title, body, ticket.estimate_min,
+                                "Backlog", priority=priority,
+                                blockers=ticket.depends_on or [],
+                                parent=parent)
+    except FiledWithoutBlockers as refused:
+        created.append(refused.identifier)
+        raise
     created.append(identifier)
     return identifier
 
