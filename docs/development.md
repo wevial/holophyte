@@ -96,6 +96,10 @@ Each module, one line:
 - `holophyte/status.py` — `--status [--json]` (KO-596): what the project is
   doing now — projects and admission, live and parked runs, the ready
   count, the schema version and the lock holders — read only, no network.
+- `holophyte/story_views.py` — `--status`'s story lines: `story_facts()`
+  reads each planned, approved or parked story's state, generation, child
+  counts, latest witness verdicts at its last ledgered commit, errors,
+  open decisions and age; `story_lines()` renders them as two lines each.
 - `holophyte/store_import.py` — `--import-store PATH --dry-run` (KO-595):
   `plan()` reads another store and the project's own, both read-only, and
   says per table what an import would move — rows, id range, the remap

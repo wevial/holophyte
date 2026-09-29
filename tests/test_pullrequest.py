@@ -321,10 +321,9 @@ class MergeModePullRequestTests(MergeModeFixture):
             "SELECT summary FROM runEvents WHERE summary LIKE"
             " 'pull request head settled%'"),
             [(f"pull request head settled to {sha} after 2 reads",)])
-        self.assertEqual(observed, [
-            (5, [("merge_gate",)]),
-            (holophyte.pr.CHECK_POLL_S, [("merge_gate",)])])
-        self.assertIn("ready to merge", self.question())
+        self.assertEqual(observed, [(5, [("merge_gate",)])])
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])
+        self.assertIn("pending checks", self.question())
 
     def test_adopted_stale_head_continues_after_bounded_reads(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
