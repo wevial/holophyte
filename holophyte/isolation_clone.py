@@ -1,23 +1,31 @@
 """Disposable turn checkout and a config-free, fast-forward-only return path."""
 
 import contextlib
+import os
 import shutil
 import stat
 import subprocess
 import tempfile
 from pathlib import Path
 
+import review_runner
 from holophyte.environment_git import protected, refuse_environment_history
 from holophyte.gates import InfraFailure
-from holophyte.isolation_git import copy_merge_state, git, head, import_objects
+from holophyte.isolation_git import (
+    copy_merge_state,
+    git,
+    git_environment,
+    head,
+    import_objects,
+)
 from holophyte.isolation_return import locked_return
 from holophyte.project import state_dir
 
 
-def stage_files(source, destination, excluded):
+def stage_files(source, destination, excluded, skip=frozenset()):
     """Copy only ordinary files, directories and links; never follow links."""
     for path in source.iterdir():
-        if path.name in excluded:
+        if path.name in excluded or path in skip:
             continue
         if path.name == ".git":
             raise InfraFailure("refusing working files containing nested .git")
@@ -27,7 +35,7 @@ def stage_files(source, destination, excluded):
             dest.symlink_to(path.readlink())
         elif stat.S_ISDIR(mode):
             dest.mkdir()
-            stage_files(path, dest, set())
+            stage_files(path, dest, set(), skip)
             shutil.copystat(path, dest)
         elif stat.S_ISREG(mode):
             shutil.copy2(path, dest)
@@ -63,24 +71,102 @@ def replace_files(staged, destination, excluded, finish):
     shutil.rmtree(backup)
 
 
-def copy_files(source, destination, protect, finish=lambda: None):
+@contextlib.contextmanager
+def keeping(destination, staged, carry):
+    moved = []
+    try:
+        for entry in carry:
+            kept = destination / entry
+            if not (kept.is_dir() or kept.is_symlink()):
+                continue
+            parent = (staged / entry).parent
+            if parent.resolve() != staged.resolve() / Path(entry).parent:
+                raise InfraFailure(f"[worktree] carry: {entry!r} has a linked parent "
+                                   "in the working files")
+            parent.mkdir(parents=True, exist_ok=True)
+            kept.rename(staged / entry)
+            moved.append(entry)
+        yield
+    except BaseException as failure:
+        try:
+            for entry in reversed(moved):
+                (staged / entry).rename(destination / entry)
+        except OSError as error:
+            raise InfraFailure(f"{failure}; [worktree] carry directories kept at "
+                               f"{staged}: {error}") from error
+        raise
+
+
+def remove_staging(staged):
+    for directory, _, _ in os.walk(staged):
+        os.chmod(directory, stat.S_IRWXU)
+    shutil.rmtree(staged)
+
+
+def copy_files(source, destination, protect, finish=lambda: None, carry=()):
     """Stage the complete copy and roll back failed destination mutations."""
     excluded = {".git", ".env"} if protect else {".git"}
-    with tempfile.TemporaryDirectory(
-        prefix=".copy-", dir=destination
-    ) as directory:
-        staged = Path(directory)
+    staged = Path(tempfile.mkdtemp(prefix=".copy-", dir=destination))
+    try:
         try:
-            stage_files(source, staged, excluded)
+            stage_files(source, staged, excluded,
+                        {source / entry for entry in carry})
         except (OSError, shutil.Error) as error:
             raise InfraFailure(f"cannot prepare working files: {error}") from error
         try:
-            replace_files(staged, destination, excluded, finish)
+            with keeping(destination, staged, carry):
+                replace_files(staged, destination, excluded, finish)
         except (OSError, shutil.Error) as error:
             raise InfraFailure(f"cannot replace working files: {error}") from error
+    finally:
+        held = [entry for entry in carry
+                if (staged / entry).is_symlink() or (staged / entry).exists()]
+        if not held:
+            remove_staging(staged)
 
 
-def return_turn(worktree, clone, root, old, project, merge_state):
+def linked_carry(worktree, entry):
+    if subprocess.run(["git", "ls-files", "--error-unmatch", "--", entry],
+                      cwd=worktree, env=git_environment(),
+                      capture_output=True).returncode == 0:
+        raise InfraFailure(f"[worktree] carry: {entry!r} is tracked in git")
+    resolved = (worktree / entry).resolve()
+    if not resolved.is_dir():
+        raise InfraFailure(f"[worktree] carry: {entry!r} is a link to no directory")
+    listing = git(worktree, "worktree", "list", "--porcelain").splitlines()
+    for line in listing:
+        other = line.startswith("worktree ") and Path(line[9:]).resolve()
+        if other and other != worktree and resolved == other / entry:
+            review_runner.check_carry(other, entry)
+            return
+    raise InfraFailure(
+        f"[worktree] carry: {entry!r} is a link that leaves the repository")
+
+
+def carry_mounts(worktree, carry):
+    mounted = []
+    for entry in carry:
+        path = worktree / entry
+        if path.parent.resolve() != path.parent:
+            raise InfraFailure(f"[worktree] carry: {entry!r} escapes the repository")
+        try:
+            if path.is_symlink():
+                linked_carry(worktree, entry)
+                mounted.append(entry)
+                continue
+            review_runner.check_carry(worktree, entry)
+        except review_runner.ReviewBoundaryError as error:
+            raise InfraFailure(str(error)) from error
+        if path.exists() and not path.is_dir():
+            raise InfraFailure(
+                f"[worktree] carry: {entry!r} is not a directory in the worktree "
+                f"{worktree}")
+        path.mkdir(parents=True, exist_ok=True)
+        mounted.append(entry)
+    return mounted
+
+
+def return_turn(worktree, clone, root, old, project, merge_state, carry):
     # Never run Git against the untrusted clone: upload-pack also reads config.
     # Build a bare transport containing only validated objects and its HEAD.
     transport = root / "return.git"
@@ -116,14 +202,15 @@ def return_turn(worktree, clone, root, old, project, merge_state):
             "task branch changed during container turn; refusing fast-forward"
         )
     with locked_return(worktree, root, old, sha) as finish:
-        copy_files(clone, worktree, project is not None and protected(project), finish)
+        copy_files(clone, worktree, project is not None and protected(project),
+                   finish, carry)
         if sha != old:
             for path in merge_state:
                 path.unlink(missing_ok=True)
 
 
 @contextlib.contextmanager
-def turn_clone(worktree, project=None):
+def turn_clone(worktree, project=None, carry=()):
     worktree = Path(worktree).resolve()
     common = Path(
         git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -163,12 +250,15 @@ def turn_clone(worktree, project=None):
         if index.exists():
             shutil.copyfile(index, clone / ".git/index")
         merge_state = copy_merge_state(worktree, clone)
-        copy_files(worktree, clone, project is not None and protected(project))
+        copy_files(worktree, clone, project is not None and protected(project),
+                   carry=carry)
+        for entry in carry:
+            (clone / entry).mkdir(parents=True, exist_ok=True)
         try:
             yield clone, env
         except subprocess.TimeoutExpired:
             # The runner has stopped: preserve its work for the loop's WIP path.
-            return_turn(worktree, clone, root, old, project, merge_state)
+            return_turn(worktree, clone, root, old, project, merge_state, carry)
             raise
         else:
-            return_turn(worktree, clone, root, old, project, merge_state)
+            return_turn(worktree, clone, root, old, project, merge_state, carry)

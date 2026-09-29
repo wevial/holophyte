@@ -19,7 +19,7 @@ from urllib.parse import quote
 import review_runner
 import ticket_template
 from holophyte import isolation, media_store, pr, redact
-from holophyte.config import capture_environment
+from holophyte.config import capture_environment, carry_directories
 from holophyte.config_tables import merge_config
 from holophyte.gates import InfraFailure, sh
 
@@ -162,10 +162,11 @@ def _capture(command, wt, output, task_id, states, *, project=None):
         destination = Path('/workspace') / output.relative_to(Path(wt).resolve())
         argv = ['/bin/sh', '-c', shlex.join(shlex.split(command) + [str(destination)])]
         runner = review_runner.ROOT / 'holophyte' / 'capture_playwright.py'
+        carry = carry_directories(project) if project is not None else None
         try:
             code, printed = isolation.launch(route, wt, env, argv,
                                              timeout=CAPTURE_TIMEOUT,
-                                             mounts=[runner])
+                                             mounts=[runner], carry=carry)
         except subprocess.TimeoutExpired as expired:
             return _failed(command, None, expired.output, project)
         return _failed(command, code, printed, project) if code else ''

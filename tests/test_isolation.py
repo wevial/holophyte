@@ -7,7 +7,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from holophyte import agents
 
@@ -454,6 +454,134 @@ class IsolationTests(unittest.TestCase):
                     self.assertEqual(git(worktree, "rev-parse", "HEAD"), before)
                     self.assertFalse((worktree / "nested").exists())
 
+    def carry_worktree(self, carry):
+        from holophyte.isolation_git import git
+
+        main, worktree = self.make_worktree()
+        (worktree / ".gitignore").write_text("deps/\nnode_modules/\nmissing/\n")
+        (worktree / "tracked").mkdir()
+        (worktree / "tracked" / "file").write_text("tracked\n")
+        git(worktree, "add", ".")
+        git(worktree, "commit", "-qm", "ignore installs")
+        self.target.path = main
+        self.table["worktree"] = {"carry": carry}
+        return worktree
+
+    def recorded_volumes(self, launch, turn=lambda clone: None):
+        from holophyte import isolation
+
+        volumes = []
+
+        def run(argv, cwd, timeout, *, env):
+            volumes.extend(argv[i + 1] for i, flag in enumerate(argv)
+                           if flag == "--volume")
+            turn(Path(cwd))
+            return 0, "done"
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container"), \
+             patch.object(isolation, "run_capped", side_effect=run):
+            return launch(), volumes
+
+    def test_nested_carry_is_mounted_and_survives_the_copy_back(self):
+        from holophyte import isolation
+
+        worktree = self.carry_worktree(["tracked/node_modules"])
+        installed = worktree / "tracked" / "node_modules" / "dep"
+        installed.mkdir(parents=True)
+        (installed / "index.js").write_text("installed\n")
+
+        def turn(clone):
+            self.assertEqual(list((clone / "tracked/node_modules").iterdir()), [])
+            (clone / "tracked" / "file").write_text("edited\n")
+
+        _, volumes = self.recorded_volumes(lambda: isolation.launch(
+            isolation.Route("container"), worktree, {}, ["agent"],
+            project=self.target), turn)
+        source = worktree.resolve() / "tracked" / "node_modules"
+        self.assertIn(f"{source}:/workspace/tracked/node_modules:rw", volumes)
+        self.assertEqual((installed / "index.js").read_text(), "installed\n")
+        self.assertEqual((worktree / "tracked" / "file").read_text(), "edited\n")
+
+    def test_tracked_or_escaping_carry_fails_the_launch_naming_it(self):
+        from holophyte import isolation
+        from holophyte.gates import InfraFailure
+        from holophyte.isolation_git import git
+
+        worktree = self.carry_worktree([])
+        outside = self.root / "outside"
+        outside.mkdir()
+        (worktree / "link").symlink_to(outside)
+        (worktree / "tracked-link").symlink_to(worktree / "tracked")
+        git(worktree, "add", "tracked-link")
+        git(worktree, "commit", "-qm", "tracked link")
+        (worktree / "deps").symlink_to(outside)
+        for entry, reason in (("tracked", "tracked"), ("../outside/deps", "escapes"),
+                              ("link/deps", "escapes"), ("tracked-link", "tracked"),
+                              ("deps", "leaves the repository")):
+            with self.subTest(entry=entry):
+                run = Mock(return_value=(0, "done"))
+                with patch.object(isolation, "image_ready"), \
+                     patch.object(isolation.review_runner, "_remove_container"), \
+                     patch.object(isolation, "run_capped", run):
+                    with self.assertRaisesRegex(InfraFailure, reason) as raised:
+                        isolation.launch(isolation.Route("container"), worktree, {},
+                                         ["agent"], carry=[entry])
+                self.assertIn(repr(entry), str(raised.exception))
+                run.assert_not_called()
+                self.assertEqual(list(outside.iterdir()), [])
+
+    def test_copy_back_refuses_a_linked_carry_parent_and_keeps_the_install(self):
+        import shutil
+
+        from holophyte import isolation
+        from holophyte.gates import InfraFailure
+
+        worktree = self.carry_worktree(["tracked/node_modules"])
+        installed = worktree / "tracked" / "node_modules" / "dep"
+        installed.mkdir(parents=True)
+        outside = self.root / "outside"
+        outside.mkdir()
+
+        def run(argv, cwd, timeout, *, env):
+            shutil.rmtree(Path(cwd) / "tracked")
+            (Path(cwd) / "tracked").symlink_to(outside)
+            return 0, "done"
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container"), \
+             patch.object(isolation, "run_capped", side_effect=run):
+            with self.assertRaisesRegex(InfraFailure, "'tracked/node_modules'"):
+                isolation.launch(isolation.Route("container"), worktree, {}, ["agent"],
+                                 project=self.target)
+        self.assertTrue(installed.is_dir())
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_carry_linked_to_another_worktree_mounts_that_worktrees_directory(self):
+        from holophyte import isolation
+
+        worktree = self.carry_worktree(["deps"])
+        (worktree / "deps").mkdir()
+        main = self.target.path
+        (main / "deps").symlink_to(worktree / "deps")
+        _, volumes = self.recorded_volumes(lambda: isolation.launch(
+            isolation.Route("container"), main, {}, ["agent"], carry=["deps"]))
+        self.assertIn(f"{(worktree / 'deps').resolve()}:/workspace/deps:rw", volumes)
+        self.assertTrue((main / "deps").is_symlink())
+
+    def test_capture_launch_mounts_the_carry_instead_of_copying_it(self):
+        from holophyte import pr_media
+
+        worktree = self.carry_worktree(["deps"])
+        self.table["agents"]["implementer_isolation"] = "container"
+        (worktree / "deps").mkdir()
+        os.mkfifo(worktree / "deps" / "pipe")
+        failure, volumes = self.recorded_volumes(lambda: pr_media._capture(
+            "capture", worktree, worktree.resolve() / "shot.png", "HOLO-1", [],
+            project=self.target))
+        self.assertEqual(failure, "")
+        self.assertIn(f"{worktree.resolve() / 'deps'}:/workspace/deps:rw", volumes)
+
     def test_clone_turn_returns_commit_and_dirty_file_safely(self):
         from holophyte import isolation
         from holophyte.isolation_git import git
@@ -620,6 +748,8 @@ class IsolationTests(unittest.TestCase):
         destination.mkdir()
         (source / "file").write_text("replacement")
         (destination / "file").write_text("valuable original")
+        (destination / "deps").mkdir()
+        (destination / "deps" / "installed").write_text("package")
         rename = Path.rename
 
         def fail(path, target):
@@ -631,11 +761,15 @@ class IsolationTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 InfraFailure, "originals retained at"
             ) as raised:
-                copy_files(source, destination, protect=False)
+                copy_files(source, destination, protect=False, carry=["deps"])
         backups = list(destination.glob(".backup-*"))
         self.assertEqual(len(backups), 1)
         self.assertIn(str(backups[0]), str(raised.exception))
         self.assertEqual((backups[0] / "file").read_text(), "valuable original")
+        kept = list(destination.glob(".copy-*"))
+        self.assertEqual(len(kept), 1)
+        self.assertIn(str(kept[0]), str(raised.exception))
+        self.assertEqual((kept[0] / "deps" / "installed").read_text(), "package")
 
     def test_clone_rewritten_history_is_infrastructure_failure(self):
         from holophyte import isolation
@@ -1236,6 +1370,34 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual((code, output.split()), (0, ["earlier", "host-token"]), output)
         self.assertEqual((saved / "next.json").read_text(), "new\n")
         self.assertEqual(credential.read_text(), "host-token")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_launch_writes_carry_directories_in_the_worktree(self):
+        import shutil
+
+        from holophyte import isolation
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        worktree = self.carry_worktree(["deps", "missing"])
+        (worktree / "deps").mkdir()
+        (worktree / "deps" / "installed").write_text("package\n")
+        os.mkfifo(worktree / "deps" / "pipe")
+        script = ('test "$(cat deps/installed)" = package; echo built > deps/built;'
+                  " echo new > missing/created")
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")}):
+            code, output = isolation.launch(
+                isolation.Route("container"), worktree, {},
+                ["/bin/sh", "-ec", script], project=self.target)
+        self.assertEqual(code, 0, output)
+        self.assertEqual((worktree / "deps" / "built").read_text(), "built\n")
+        created = worktree / "missing" / "created"
+        self.assertEqual(created.read_text(), "new\n")
+        for path in (created, created.parent):
+            self.assertEqual(path.stat().st_uid, os.getuid(), path)
 
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",

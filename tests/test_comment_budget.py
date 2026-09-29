@@ -128,7 +128,7 @@ PINNED = {
     "holophyte/transcripts.py": 23,
     "linear_provider.py": 21,
     "provider.py": 175,
-    "review_runner.py": 117,
+    "review_runner.py": 116,
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,
     "store/board.py": 87,

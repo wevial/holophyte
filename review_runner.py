@@ -145,6 +145,25 @@ def _check_clean(stage: Path) -> None:
         raise ReviewBoundaryError("staged candidate is not clean and zero-remote")
 
 
+def check_carry(source: Path, entry: str) -> Path:
+    """Refuse, naming it, a carry entry that escapes, is tracked or is not ignored."""
+    relative = Path(entry)
+    if (relative.is_absolute() or not entry
+            or any(part in ("..", "") for part in relative.parts)):
+        raise ReviewBoundaryError(
+            f"[worktree] carry: {entry!r} escapes the repository")
+    if _run(["git", "ls-files", "--error-unmatch", "--", entry],
+            cwd=source, check=False).returncode == 0:
+        raise ReviewBoundaryError(
+            f"[worktree] carry: {entry!r} is tracked in git; only an ignored "
+            "install directory can be carried")
+    if _run(["git", "check-ignore", "-q", "--", f"{relative}/"],
+            cwd=source, check=False).returncode:
+        raise ReviewBoundaryError(
+            f"[worktree] carry: {entry!r} is not ignored by git in the worktree")
+    return source / relative
+
+
 def _carry_into(source: Path, stage: Path, carry: Sequence[str]) -> None:
     """Copy each `[worktree] carry` directory from the worktree into the stage.
 
@@ -153,32 +172,17 @@ def _carry_into(source: Path, stage: Path, carry: Sequence[str]) -> None:
     reviewer can run the ticket's verify commands against the packages the
     candidate was verified with. The copy lands at the same path with every
     write bit cleared, so the reviewer reads it the way it reads the tree.
-    An entry that escapes the repository, is absent from the worktree, or
-    is tracked (in which case the checkout already holds it, and a copy
-    would be a second source of truth) fails the stage naming the entry:
-    a carry the stage silently skipped would fail the round later, as an
-    unverified gate, far from the config that asked for it.
+    A tracked entry is already in the checkout; one `check_carry()` refuses,
+    or one absent from the worktree, fails the stage naming the entry rather
+    than failing the round later as an unverified gate.
     """
     for entry in carry:
+        origin = check_carry(source, entry)
         relative = Path(entry)
-        if (relative.is_absolute() or not entry
-                or any(part in ("..", "") for part in relative.parts)):
-            raise ReviewBoundaryError(
-                f"[worktree] carry: {entry!r} escapes the repository")
-        origin = source / relative
         if not origin.is_dir() or origin.is_symlink():
             raise ReviewBoundaryError(
                 f"[worktree] carry: {entry!r} is not a directory in the worktree "
                 f"{source}")
-        if _run(["git", "ls-files", "--error-unmatch", "--", entry],
-                cwd=source, check=False).returncode == 0:
-            raise ReviewBoundaryError(
-                f"[worktree] carry: {entry!r} is tracked in git; only an ignored "
-                "install directory can be carried")
-        if _run(["git", "check-ignore", "-q", "--", entry],
-                cwd=source, check=False).returncode:
-            raise ReviewBoundaryError(
-                f"[worktree] carry: {entry!r} is not ignored by git in the worktree")
         shutil.copytree(origin, stage / relative, symlinks=True)
         for root, dirs, files in os.walk(stage / relative, topdown=False):
             for name in files + dirs:
