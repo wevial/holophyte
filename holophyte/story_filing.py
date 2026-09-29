@@ -1,6 +1,8 @@
 """Filing a validated story directory on a native board in one transaction."""
 import json
 import re
+import shutil
+import tempfile
 import time
 from contextlib import closing
 from pathlib import Path
@@ -125,13 +127,8 @@ def update_story(board, project, slug, identifier, revision, priority=None):
                                                   project.path)
         _check_filed(conn, project_id, identifier, revision, directory,
                      headers)
-        problems = ticket_template.blocking(
-            story_template.validate_story(directory, repo=str(project.path)))
-        if problems:
-            raise StoryRefused(f"{directory}: {problem}"
-                               for problem in problems)
+        children = _validated_children(project, directory, headers)
         text = body_path.read_text().partition("\n")[2]
-        children = _in_order(story_template.parse_children(directory))
         try:
             with store.transaction(conn):
                 parent_id = _check_filed(conn, project_id, identifier,
@@ -150,6 +147,24 @@ def update_story(board, project, slug, identifier, revision, priority=None):
     return lines
 
 
+def _validated_children(project, directory, headers):
+    slugs = {headers[child.name]: child.slug
+             for child in story_template.parse_children(directory)
+             if headers[child.name]}
+    with tempfile.TemporaryDirectory() as scratch:
+        plan = Path(scratch) / directory.name
+        shutil.copytree(directory, plan)
+        for path in (plan / story_template.CHILDREN).glob("*.md"):
+            path.write_text(_resolve(path.read_text(), slugs))
+        problems = ticket_template.blocking(
+            story_template.validate_story(plan, repo=str(project.path)))
+        if problems:
+            raise StoryRefused(
+                f"{directory}: {problem.replace(str(plan), str(directory))}"
+                for problem in problems)
+        return _in_order(story_template.parse_children(plan))
+
+
 def _child_header(directory, child):
     match = TICKET_HEADER_RE.match(
         (directory / story_template.CHILDREN / f"{child.name}.md").read_text())
@@ -166,9 +181,9 @@ def _update_rows(conn, project_id, key, directory, parent_id, identifier,
                                 now=now)
     identifiers = {child.slug: headers[child.name] for child in children
                    if headers[child.name]}
-    known = {child.slug for child in children} | set(identifiers.values())
+    slugs = {child.slug for child in children}
     for child in children:
-        _check_merged(conn, project_id, child, known)
+        _check_merged(conn, project_id, child, slugs)
         body = _resolve(story_template.HEADER_RE.sub(
             "", (directory / story_template.CHILDREN
                  / f"{child.name}.md").read_text(), count=1), identifiers)

@@ -202,3 +202,26 @@ class StoryUpdateCliTests(ConfigTestCase):
         self.assertIn("NAT-5", lines[0])
         self.assertIn("--cancel", lines[0])
         self.assertEqual(self.snapshot(), before)
+
+    def test_a_cycle_through_a_sibling_ticket_id_is_refused(self):
+        revision = self.approve()
+        path = self.child("03-a")
+        path.write_text(path.read_text().replace("Depends on: none",
+                                                 "Depends on: NAT-4"))
+        before = self.snapshot()
+
+        status, lines = self.update(revision)
+
+        self.assertEqual(status, 1, lines)
+        self.assertIn("cycle", " ".join(lines))
+        self.assertEqual(self.snapshot(), before)
+
+    def test_a_refused_witness_file_is_named_in_the_story_directory(self):
+        revision = self.approve()
+        (self.directory / "witnesses" / "tests" / "test_story_w2.py").unlink()
+
+        status, lines = self.update(revision)
+
+        self.assertEqual(status, 1, lines)
+        self.assertIn(f"missing from {self.directory / 'witnesses'} in W2",
+                      " ".join(lines))
