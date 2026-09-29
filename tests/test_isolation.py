@@ -974,6 +974,20 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual({p.name for p in worktree.iterdir()}, {".git", "keep"})
         git(worktree, "commit", "-qm", "locks released")
 
+    def test_turn_clone_keeps_identity_in_clone_config_not_environment(self):
+        from holophyte import isolation_clone
+
+        _, worktree = self.make_worktree()
+        with isolation_clone.turn_clone(worktree) as (clone, env):
+            self.assertEqual(env, {"GIT_CONFIG_COUNT": "1",
+                                   "GIT_CONFIG_KEY_0": "safe.directory",
+                                   "GIT_CONFIG_VALUE_0": "/workspace"})
+            local = subprocess.run(
+                ["git", "config", "--local", "--get-regexp", "^user\\."],
+                cwd=clone, capture_output=True, text=True, check=True).stdout
+        self.assertEqual(local.splitlines(), ["user.name Configured Author",
+                                              "user.email author@example.test"])
+
     def test_host_git_ignores_inherited_repository_locations(self):
         from holophyte.isolation_git import git
 
@@ -1523,6 +1537,34 @@ class IsolationTests(unittest.TestCase):
         )
         self.assertEqual((worktree / "created").read_text(), "content\n")
         self.assertEqual(git(main, "log", "-1", "--format=%s"), "base")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_launch_leaves_other_repositories_their_own_identity(self):
+        import shutil
+
+        from holophyte import isolation
+        from holophyte.isolation_git import git
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        _, worktree = self.make_worktree()
+        script = (
+            'fixture=$(mktemp -d "$TMPDIR/fixture.XXXXXX"); cd "$fixture";'
+            " git init -q; git config user.name 'Fixture Author';"
+            " git config user.email fixture@example.test;"
+            " git commit --allow-empty -qm fixture;"
+            " git log -1 --format=%an/%ae; cd /workspace;"
+            " git commit --allow-empty -qm workspace"
+        )
+        code, output = isolation.launch(
+            isolation.Route("container"), worktree, {}, ["/bin/sh", "-ec", script])
+        self.assertEqual(code, 0, output)
+        self.assertIn("Fixture Author/fixture@example.test", output)
+        self.assertEqual(git(worktree, "log", "-1", "--format=%s|%an|%ae"),
+                         "workspace|Configured Author|author@example.test")
 
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
