@@ -29,7 +29,10 @@ read from each `serve.env`. `holophyte-sweep.service` carries the lines
 commented out: a `PATH` naming where those CLIs live, and an optional
 `~/.holophyte/host.env` (mode 600, the shared keys only). Uncomment and
 adjust them before enabling. Without the `PATH`, the reconcile and the
-route probe fail on a missing executable.
+route probe fail on a missing executable. Before it starts a loop, the
+sweep probes the implementer route with that loop's
+`~/.holophyte/NAME/serve.env` laid over its own environment, so a
+credential only the loop unit reads need not be copied into `host.env`.
 
 - `deploy/holophyte.target` — `Wants=` the socket and the timer, and is the
   only host unit with an `[Install]` section. `systemctl --user enable --now

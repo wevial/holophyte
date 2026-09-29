@@ -18,15 +18,17 @@ host sweep's to watch. `settings()` is the file's own keys, typed:
 read-only: a native board's `KEY` is its own on the host (KO-752).
 """
 import collections
+import contextlib
 import dataclasses
 import os
 import time
 import tomllib
 from pathlib import Path
 
-from holophyte.config import serve_config
+from holophyte.config import parse_environment, process_value, serve_config
 from holophyte.config_tables import board_config, board_mode, split_address
 from holophyte.project import DEFAULT_HOLOPHYTE_HOME, Project
+from holophyte.redact import register_values
 
 HOST_FILE = "host.toml"
 # The known shape of the file: a key outside it is refused, as the project
@@ -68,6 +70,28 @@ class HostProject:
     path: Path
     target: Project
     error: str | None = None
+
+
+@contextlib.contextmanager
+def loop_unit_environment(target):
+    path = home() / serve_config(target).name / "serve.env"
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        yield
+        return
+    values = parse_environment(text, str(path))
+    register_values(values.values())
+    saved = {name: os.environ.get(name) for name in values}
+    os.environ.update({name: process_value(v) for name, v in values.items()})
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def _stamp(path):
