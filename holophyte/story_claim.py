@@ -6,6 +6,7 @@ import subprocess
 from holophyte.config_tables import story_config
 from holophyte.redact import safe_print as print
 from store.notes import record_note
+from store.schema import transaction
 from store.stories import (
     _frontier_refusal,
     abandon_story,
@@ -34,19 +35,24 @@ def refusal(project, conn, ticket_id):
     if found.ticketId == ticket_id:
         return None if found.state == "approved" else (
             f"its story {_identifier(conn, ticket_id)} is {found.state}")
-    refused = _frontier_refusal(conn, found, ticket_id,
-                                story_config(project).max_parallel)
-    if refused is None:
-        return None
-    kind, reason = refused
-    if kind == "drift":
-        name = _identifier(conn, ticket_id)
-        park_story(conn, found.ticketId, "plan_drift",
-                   f"{name}: {reason}", DRIFT_OPTIONS, DRIFT_OPTIONS[0],
-                   ticket_id=ticket_id)
-        print(f"[holo2] story {_identifier(conn, found.ticketId)} parked on"
-              f" plan drift at {name}: {reason}")
-    return reason
+    max_parallel = story_config(project).max_parallel
+    refused = _frontier_refusal(conn, found, ticket_id, max_parallel)
+    if refused is None or refused[0] != "drift":
+        return refused and refused[1]
+    with transaction(conn):
+        found = story(conn, ticket_id)
+        refused = _frontier_refusal(conn, found, ticket_id, max_parallel)
+        if refused is not None and refused[0] == "drift":
+            _park_on_drift(conn, found.ticketId, ticket_id, refused[1])
+    return refused and refused[1]
+
+
+def _park_on_drift(conn, story_id, ticket_id, reason):
+    name = _identifier(conn, ticket_id)
+    park_story(conn, story_id, "plan_drift", f"{name}: {reason}",
+               DRIFT_OPTIONS, DRIFT_OPTIONS[0], ticket_id=ticket_id)
+    print(f"[holo2] story {_identifier(conn, story_id)} parked on plan drift"
+          f" at {name}: {reason}")
 
 
 def waiting_children(conn, project_id):

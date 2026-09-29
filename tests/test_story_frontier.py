@@ -232,6 +232,30 @@ class FrontierGateTests(FrontierFixture):
         self.assertEqual(self.open_decisions(), [
             ("unmet", a, "retry"), ("plan_drift", c, RESTORE)])
 
+    def test_two_workers_seeing_one_drift_open_one_decision(self):
+        a, b = self.file("ready"), self.file("ready")
+        c = self.file("ready", depending_on("NAT-2", "NAT-3"))
+        self.approve(a, b, c)
+        store.board.edit_ticket(self.conn, self.project_id, "NAT-4",
+                                depending_on("NAT-2"), 1)
+        other = open_store(self.project)
+        self.addCleanup(other.close)
+        read_story, raced = story_claim.story, []
+
+        def the_other_worker_parks_in_between(conn, ticket_id):
+            found = read_story(conn, ticket_id)
+            if not raced:
+                raced.append(None)
+                raced[0] = story_claim.refusal(self.project, other, c)
+            return found
+
+        with patch.object(story_claim, "story",
+                          the_other_worker_parks_in_between):
+            self.assertIn("(plan_drift) about NAT-4", self.refusal(c))
+
+        self.assertIn("no longer match", raced[0])
+        self.assertEqual(self.open_decisions(), [("plan_drift", c, RESTORE)])
+
     def test_a_backlog_child_is_not_on_the_frontier(self):
         a, b = self.file("backlog"), self.file("ready")
         self.approve(a, b)
