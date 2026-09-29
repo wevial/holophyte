@@ -175,3 +175,31 @@ class FileStoryCliTests(ConfigTestCase):
         self.assertIn("--update", lines[0])
         self.assertEqual(self.files(directory), before)
         self.assertEqual(self.state(), state)
+
+    def test_a_sibling_slug_shaped_like_a_ticket_id_is_a_sibling(self):
+        directory = write_story(self.project.holo_dir / "stories", name=SLUG)
+        write_children(directory, [
+            ("step-1", "scaffolding", [], []),
+            ("all", "completes W1, W2", ["step-1"], []),
+        ])
+
+        status, lines = self.cli("--file-story", SLUG)
+
+        self.assertEqual(status, 0, lines)
+        self.assertEqual(self.store("SELECT linearIdentifier, dependsOn"
+                                    " FROM tickets ORDER BY id")[1:],
+                         [("NAT-2", "[]"), ("NAT-3", '["NAT-2"]')])
+
+    def test_a_linked_sibling_dependency_is_resolved(self):
+        directory = self.story()
+        child = directory / "children" / "01-c.md"
+        child.write_text(child.read_text().replace(
+            "Depends on: a, b", "Depends on: [a](03-a.md), b"))
+
+        status, lines = self.cli("--file-story", SLUG)
+
+        self.assertEqual(status, 0, lines)
+        (row,) = self.store("SELECT dependsOn, body FROM tickets"
+                            " WHERE linearIdentifier = 'NAT-4'")
+        self.assertEqual(json.loads(row[0]), ["NAT-2", "NAT-3"])
+        self.assertIn("Depends on: NAT-2, NAT-3", row[1])

@@ -88,7 +88,7 @@ def _file_rows(conn, project_id, key, directory, text, children, priority):
     answer = [(parent, ticket_template.parse(text).title, "story")]
     identifiers, rows = {}, []
     for child in children:
-        _check_merged(conn, project_id, child)
+        _check_merged(conn, project_id, child, identifiers)
         body = story_template.HEADER_RE.sub(
             "", (directory / story_template.CHILDREN
                  / f"{child.name}.md").read_text(), count=1)
@@ -110,9 +110,9 @@ def _file_rows(conn, project_id, key, directory, text, children, priority):
     return answer
 
 
-def _check_merged(conn, project_id, child):
+def _check_merged(conn, project_id, child, siblings):
     for dep in child.depends_on:
-        if not ticket_template.LINEAR_ID_RE.match(dep):
+        if dep in siblings or not ticket_template.LINEAR_ID_RE.match(dep):
             continue
         row = conn.execute("SELECT status FROM tickets WHERE projectId = ?"
                            " AND linearIdentifier = ?",
@@ -130,8 +130,8 @@ def _resolve(body, identifiers):
         match = ticket_template.ESTIMATE_RE.match(line.strip())
         if match is None:
             continue
-        deps = [identifiers.get(dep, dep)
-                for dep in ticket_template._deps(match.group(2))]
+        deps = [identifiers.get(dep, dep) for dep in ticket_template._deps(
+            ticket_template.MD_LINK_RE.sub(r"\1", match.group(2)))]
         if deps:
             start = line.index(match.group(0))
             lines[index] = (line[:start] + match.group(0)[:match.start(2)]
