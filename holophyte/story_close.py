@@ -160,10 +160,13 @@ def _identifier(conn, ticket_id):
 
 
 def decide(target, conn, identifier, decision_id, option, note):
-    from holophyte.witness import witness_pass
+    from holophyte.witness import pass_refusal, witness_pass
     story_id = _parent(conn, target, identifier)
     decision = _decision(conn, story_id, identifier, decision_id)
     answer = _chosen(decision, decision_id, option)
+    refusal = pass_refusal(conn, story_id) if answer == RERUN else None
+    if refusal is not None:
+        raise DecisionRefused(f"no witness pass can rerun now: {refusal}")
     source = (_tip_source(target, conn, story_id, decision)
               if answer == ACCEPT else None)
     try:

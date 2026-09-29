@@ -1,4 +1,5 @@
 """`--file-story`, `--approve-story`, `--witness-pass` and `--decide`."""
+import re
 import sys
 from contextlib import closing
 
@@ -11,6 +12,7 @@ from holophyte.story_filing import StoryRefused, file_story, update_story
 from holophyte.witness import pass_refusal, witness_pass
 
 RED_KINDS = ("exception",)
+INTEGER = re.compile(r"-?[0-9]+")
 
 
 def add_story_arguments(parser, modes):
@@ -74,9 +76,9 @@ def add_story_arguments(parser, modes):
 def check_story_arguments(parser, args):
     _check_approval_arguments(parser, args)
     if args.decide is not None and not (
-            len(args.decide) in (2, 3) and args.decide[1].isdigit()
+            len(args.decide) in (2, 3) and INTEGER.fullmatch(args.decide[1])
             and (args.decide[2:] in ([], ["default"])
-                 or args.decide[2].isdigit())):
+                 or INTEGER.fullmatch(args.decide[2]))):
         parser.error("--decide takes KEY-n, the decision's ID and optionally "
                      "the option's number or 'default'")
     if args.file_story is None:

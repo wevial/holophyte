@@ -159,6 +159,7 @@ class DecideTests(DecideFixture):
 
         for args, problem in (
                 ((str(decision), "9"), f"decision {decision} has 4 options"),
+                ((str(decision), "-1"), f"decision {decision} has 4 options"),
                 ((str(decision + 1),), f"holds no decision {decision + 1}")):
             status, out = self.cli("--decide", "NAT-1", *args, "--note", "x")
             self.assertEqual(status, 1, out)
@@ -176,6 +177,30 @@ class DecideTests(DecideFixture):
         self.assertEqual((self.read(ANSWERS), self.read(DECIDES)),
                          ([("file a follow-up child",)], [("first",)]))
         self.assertEqual(story(self.conn, parent).state, "approved")
+
+    def test_rerun_on_a_held_project_exits_1_and_keeps_the_decision(self):
+        parent, child = self.tickets()
+        self.approve(parent, child, [witness("W1", W1_FILE),
+                                     witness("W2", "tests/test_w2.py")])
+        self.commit(W1_FILE, PASSES, "w1 lands")
+        self.step()
+        self.commit(W1_FILE, FAILS_AN_ASSERTION, "w1 breaks")
+        self.step()
+        (decision,) = story(self.conn, parent).decisions
+        self.assertEqual(decision.options[1], "rerun")
+        self.assertEqual(self.cli("--hold", "--note", "maintenance")[0], 0)
+        ledger = self.read("SELECT COUNT(*) FROM witnessResults")
+
+        status, out = self.cli("--decide", "NAT-1", str(decision.id), "2",
+                               "--note", "flaky")
+
+        self.assertEqual(status, 1, out)
+        self.assertIn("no witness pass can rerun now", out)
+        self.assertEqual((self.read(ANSWERS), self.read(DECIDES)),
+                         ([(None,)], []))
+        self.assertEqual(self.read("SELECT COUNT(*) FROM witnessResults"),
+                         ledger)
+        self.assertEqual(story(self.conn, parent).state, "parked")
 
 
 if __name__ == "__main__":
