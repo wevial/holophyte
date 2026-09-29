@@ -1,4 +1,5 @@
 import re
+import subprocess
 from dataclasses import replace
 from time import monotonic
 
@@ -9,7 +10,7 @@ from holophyte import babysitter, merge_queue, pr, pr_activity, pr_media, pr_sta
 from holophyte import run as run_state
 from holophyte.board import block_ticket, ledger
 from holophyte.config_tables import merge_config, sweep_config
-from holophyte.gates import MergeParked, RunFailure, sh
+from holophyte.gates import InfraFailure, MergeParked, RunFailure, sh
 from holophyte.reconcile import _pr_seen
 from holophyte.redact import safe_print as print
 from holophyte.runs import heartbeat_while, set_phase
@@ -359,11 +360,17 @@ def _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
 
 def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
               pull, reviewed=None, retry_conflicts=False):
-    """Merge the pinned candidate, clean up, and return its merge sha.
-    Park on refusal unless the babysitter opts into raising 405 conflicts;
-    operator approval retains the default park on every refusal."""
+    """Merge the pinned candidate holding main's tip; return its merge sha. Park
+    on refusal; a retrying babysitter gets a 405 conflict or behind-main raised."""
     set_phase(conn, run_id, "merging", f"merging {pull.url} through the"
               " pull request API")
+    with heartbeat_while(conn, run_id, beat_s):
+        behind = _behind_main(wt, sha)
+    if behind and retry_conflicts:
+        raise pr.MergeRefused(behind)
+    if behind:
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
+                    behind, (), reviewed=reviewed)
     try:
         with heartbeat_while(conn, run_id, beat_s):
             # A queue on main lands the PR itself, main and PR tested together.
@@ -394,6 +401,23 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
     except RuntimeError as e:
         print(f"[holo2] post-merge cleanup left debris: {e}")
     return merge_sha
+
+
+def _behind_main(wt, sha):
+    """Why `sha` may not land yet: the fetched main's tip is not in it."""
+    fetched = subprocess.run(["git", "fetch", pr.REMOTE], cwd=wt,
+                             capture_output=True, text=True)
+    if fetched.returncode != 0:
+        raise InfraFailure(f"git fetch {pr.REMOTE} failed before the merge:"
+                           f" {(fetched.stderr or fetched.stdout).strip()}")
+    ref = f"{pr.REMOTE}/{pr.BASE}"
+    tip = subprocess.run(["git", "rev-parse", "--verify", "-q", ref], cwd=wt,
+                         capture_output=True, text=True).stdout.strip()
+    if not tip or subprocess.run(["git", "merge-base", "--is-ancestor", tip, sha],
+                                 cwd=wt, capture_output=True).returncode == 0:
+        return None
+    return (f"the candidate at {sha[:12]} is behind main: {ref} at"
+            f" {tip[:12]} is not in it")
 
 
 def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,

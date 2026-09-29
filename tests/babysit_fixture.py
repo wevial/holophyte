@@ -228,9 +228,12 @@ class BabysitHelpers:
         answer = f"    echo '{{\"sha\":\"{self.MERGE_SHA}\",\"merged\":true}}'"
         self.refusal = "gh: Pull Request has merge conflicts (HTTP 405)"
         marker = self.calls.parent / "refused"
+        tip = self.calls.parent / "moved"
         gh.write_text(text.replace(answer,
             f'    if [ ! -f "{marker}" ]; then\n'
-            f'      touch "{marker}"; echo "{self.refusal}" >&2; exit 1\n'
+            f'      touch "{marker}"; [ ! -f "{tip}" ] || git -C "{self.target}"'
+            f' update-ref refs/remotes/origin/main "$(cat "{tip}")"\n'
+            f'      echo "{self.refusal}" >&2; exit 1\n'
             f'    fi\n{answer}'))
         path = "tests/test_file_sizes.py" if conflict else "MOVED.md"
         # Move the remote only after the initial candidate was reviewed.
@@ -245,6 +248,10 @@ class BabysitHelpers:
                         for head in heads])
                 fixture.moved = test_babysitter.ConflictingPullRequestTests.remote_main(
                     fixture, path, "main's line\n")
+                if not marker.exists():
+                    # Main moves past the factory's own fetch as GitHub refuses.
+                    tip.write_text(fixture.moved)
+                    fixture.git("update-ref", "-d", "refs/remotes/origin/main")
                 return APPROVE.play(cwd, turn)
         return MoveMain()
 
