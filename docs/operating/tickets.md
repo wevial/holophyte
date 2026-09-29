@@ -12,13 +12,13 @@ validates it. Sections, in order: an H1 title; Summary; What / Why / How
 (the bold keys `**What:**`, `**Why:**`, `**How:**`, plain `What:` also
 accepted); optional Reproduce (a bug's steps and where it was seen;
 its presence makes the first turn a reproduce turn that commits a failing
-test before any fix); In scope (at most three entries); Out of scope; Acceptance
-criteria (at most five, each `Given … when … then …`); Verify command(s)
+test before any fix); In scope (at most six entries); Out of scope; Acceptance
+criteria (at most ten, each `Given … when … then …`); Verify command(s)
 (a fenced block of relative-path, non-interactive commands; exit 0 is
 pass); optional Contract checks (`relative/path: exact literal`); optional
 Evidence (at most six states to capture, one per line);
 Implementation notes; Estimate & dependencies (`Estimate: N min · Depends
-on: KO-n` or `none`, 30 minutes at most); Open questions (exactly
+on: KO-n` or `none`, 90 minutes at most); Open questions (exactly
 `- None` to be claimable).
 
 Validate before filing, against the project repository:
@@ -35,7 +35,7 @@ Advisories print and let it through.
 | Refusal | Why it exists |
 | --- | --- |
 | Unfilled placeholder: any `<…>` or `{{…}}` outside a markdown link | KO-165 was claimed with template placeholders in its title and criteria and merged anyway. HTML tags count; write "the `main` element", not `<main>`. HTML comments in a draft's "Open questions" section are stripped before validation, so the template's guidance comment there is not a placeholder; a comment in any other section is refused like any other tag. |
-| More than three in-scope items, five criteria, or 30 minutes | KO-110 was a 180-minute blob. Small tickets converge; big ones burn rounds. |
+| More than six in-scope items, ten criteria, or 90 minutes | KO-110 was a 180-minute blob. Small tickets converge; big ones burn rounds. The caps were raised from three, five and 30 after the 2026-09-29 measurement: across 74 merged tickets, implementation was about a tenth of claim-to-merge time, and the rest is a fixed cost paid once per ticket. Small tickets remain the norm for fixes. |
 | A non-relative path in a verify command | KO-111 `cd`'d to an absolute path and verified the wrong tree. |
 | A path a criterion names that the project repository gitignores | KO-166 named a rendered file under a gitignored `artifacts/`; the reviewer's export cannot contain it and the implementer force-tracked it. |
 | A `Depends on` that is not a ticket id or `none` | dependencies are machine-checked through Linear `blocks` relations |

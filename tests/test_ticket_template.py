@@ -702,9 +702,9 @@ def with_criteria(unchecked, checked=0):
 
 
 def with_extra_criteria(*entries):
-    """FILLED at the criteria cap (5 checkboxes) plus `entries` verbatim."""
-    at_cap = with_criteria(5)
-    last = "- [ ] Given case 5, when run, then result 5."
+    """FILLED at the criteria cap (10 checkboxes) plus `entries` verbatim."""
+    at_cap = with_criteria(10)
+    last = "- [ ] Given case 10, when run, then result 10."
     assert last in at_cap
     return at_cap.replace(last, "\n".join((last,) + entries))
 
@@ -721,9 +721,9 @@ def with_in_scope(n, marker="-"):
 
 
 def with_extra_in_scope(*entries):
-    """FILLED at the In-scope cap (3 bullets) plus `entries` verbatim."""
-    at_cap = with_in_scope(3)
-    last = "- Scope item 3"
+    """FILLED at the In-scope cap (6 bullets) plus `entries` verbatim."""
+    at_cap = with_in_scope(6)
+    last = "- Scope item 6"
     assert last in at_cap
     return at_cap.replace(last, "\n".join((last,) + entries))
 
@@ -736,40 +736,44 @@ class ScopeCapTests(unittest.TestCase):
         self.assertTrue(any(fragment in p for p in problems),
                         f"{fragment!r} not in {problems}")
 
-    def test_estimate_at_cap_is_valid(self):
-        self.assertIn("Estimate: 30 min", FILLED)  # fixture sits at the cap
-        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+    def test_ticket_at_every_cap_is_valid(self):
+        at_caps = with_criteria(10).replace(
+            "- CSV serialization of the orders list",
+            "\n".join(f"- Scope item {i}" for i in range(1, 7))).replace(
+            "Estimate: 30 min", "Estimate: 90 min")
+        ticket = tt.parse(at_caps)
+        self.assertEqual((ticket.estimate_min, len(ticket.in_scope),
+                          len(ticket.acceptance)), (90, 6, 10))
+        self.assertEqual(tt.validate(ticket), [])
 
     def test_estimate_over_cap_is_invalid(self):
         self.assert_problems_contain(
-            FILLED.replace("Estimate: 30 min", "Estimate: 31 min"),
-            "estimate is 31 min; the cap is 30 min")
-
-    def test_criteria_at_cap_are_valid(self):
-        self.assertEqual(tt.validate(tt.parse(with_criteria(5))), [])
+            FILLED.replace("Estimate: 30 min", "Estimate: 91 min"),
+            "estimate is 91 min; the cap is 90 min")
 
     def test_criteria_over_cap_are_invalid(self):
         self.assert_problems_contain(
-            with_criteria(6), "'Acceptance criteria' has 6 items; the cap is 5")
+            with_criteria(11),
+            "'Acceptance criteria' has 11 items; the cap is 10")
 
     def test_criteria_already_checked_off_still_count_toward_the_cap(self):
         self.assert_problems_contain(
-            with_criteria(3, checked=3),
-            "'Acceptance criteria' has 6 items; the cap is 5")
+            with_criteria(6, checked=5),
+            "'Acceptance criteria' has 11 items; the cap is 10")
 
     def test_plain_bullet_criteria_count_toward_the_cap(self):
         """The cap counts criteria, not checkbox syntax. A plain bullet is
         still a criterion the implementer must satisfy, so it cannot be the
-        sixth one that slips past."""
+        one over the cap that slips past."""
         self.assert_problems_contain(
-            with_extra_criteria("- Given case 6, when run, then result 6."),
-            "'Acceptance criteria' has 6 items; the cap is 5")
+            with_extra_criteria("- Given case 11, when run, then result 11."),
+            "'Acceptance criteria' has 11 items; the cap is 10")
 
     def test_numbered_criteria_count_toward_the_cap(self):
         self.assert_problems_contain(
-            with_extra_criteria("6. Given case 6, when run, then result 6.",
-                                "7) Given case 7, when run, then result 7."),
-            "'Acceptance criteria' has 7 items; the cap is 5")
+            with_extra_criteria("11. Given case 11, when run, then result 11.",
+                                "12) Given case 12, when run, then result 12."),
+            "'Acceptance criteria' has 12 items; the cap is 10")
 
     def test_non_checkbox_criterion_is_rejected_on_its_own(self):
         """Even under the cap, an entry the template does not define is a
@@ -784,12 +788,9 @@ class ScopeCapTests(unittest.TestCase):
                   "Given no orders")
         self.assertTrue(tt.blocking(tt.validate(tt.parse(text))))
 
-    def test_in_scope_at_cap_is_valid(self):
-        self.assertEqual(tt.validate(tt.parse(with_in_scope(3))), [])
-
     def test_in_scope_over_cap_is_invalid(self):
         self.assert_problems_contain(
-            with_in_scope(4), "'In scope' has 4 entries; the cap is 3")
+            with_in_scope(7), "'In scope' has 7 entries; the cap is 6")
 
     def test_in_scope_counts_every_list_marker(self):
         """"+" and "1." render as list items just like "-", so a cap that
@@ -797,28 +798,29 @@ class ScopeCapTests(unittest.TestCase):
         for marker in ("*", "+"):
             with self.subTest(marker=marker):
                 self.assert_problems_contain(
-                    with_in_scope(4, marker),
-                    "'In scope' has 4 entries; the cap is 3")
+                    with_in_scope(7, marker),
+                    "'In scope' has 7 entries; the cap is 6")
         self.assert_problems_contain(
-            with_in_scope(4, "1."), "'In scope' has 4 entries; the cap is 3")
+            with_in_scope(7, "1."), "'In scope' has 7 entries; the cap is 6")
 
     def test_mixed_marker_in_scope_entries_count_toward_the_cap(self):
-        for extra in ("+ Scope item 4", "4. Scope item 4", "4) Scope item 4",
-                      "* Scope item 4"):
+        for extra in ("+ Scope item 7", "7. Scope item 7", "7) Scope item 7",
+                      "* Scope item 7"):
             with self.subTest(extra=extra):
                 self.assert_problems_contain(
                     with_extra_in_scope(extra),
-                    "'In scope' has 4 entries; the cap is 3")
+                    "'In scope' has 7 entries; the cap is 6")
 
     def test_plus_criteria_count_toward_the_cap(self):
         self.assert_problems_contain(
-            with_extra_criteria("+ [ ] Given case 6, when run, then result 6."),
-            "'Acceptance criteria' has 6 items; the cap is 5")
+            with_extra_criteria(
+                "+ [ ] Given case 11, when run, then result 11."),
+            "'Acceptance criteria' has 11 items; the cap is 10")
 
     def test_plus_non_checkbox_criterion_counts_toward_the_cap(self):
         self.assert_problems_contain(
-            with_extra_criteria("+ Given case 6, when run, then result 6."),
-            "'Acceptance criteria' has 6 items; the cap is 5")
+            with_extra_criteria("+ Given case 11, when run, then result 11."),
+            "'Acceptance criteria' has 11 items; the cap is 10")
 
 
 class ScopeAdvisoryTests(unittest.TestCase):
