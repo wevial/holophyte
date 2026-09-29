@@ -33,7 +33,11 @@ from holophyte.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
-from holophyte.witness import witness_pass, witness_step  # noqa: E402
+from holophyte.witness import (  # noqa: E402
+    run_witnesses,
+    witness_pass,
+    witness_step,
+)
 from provider import board_for  # noqa: E402
 from store.stories import approve_story, file_story, story  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
@@ -180,6 +184,19 @@ class StoryCloseTests(StoryCloseFixture):
         self.assertEqual((found.state, found.closedSha), ("closed", tip))
         self.assertEqual(self.read(
             "SELECT mainSha, verdict FROM witnessResults"), [(tip, "green")])
+
+    def test_a_baseline_green_at_the_tip_is_no_pass_and_closes_nothing(self):
+        parent, child = self.tickets()
+        self.approve(parent, child, [witness("W1", W1_FILE)])
+        run_witnesses(self.project, self.conn, parent, self.tip(), "baseline",
+                      copy_files=True)
+
+        self.step()
+
+        self.assertEqual(story(self.conn, parent).state, "approved")
+        self.assertEqual(self.read(
+            "SELECT verdict, verifier FROM witnessResults ORDER BY id"),
+            [("green", "baseline"), ("absent", "loop")])
 
     def test_a_red_witness_with_every_child_merged_parks_unmet_once(self):
         parent, child = self.tickets()

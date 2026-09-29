@@ -35,8 +35,17 @@ def settle_owed(conn, story_id, sha):
     return bool(_plan(conn, story(conn, story_id), sha))
 
 
+def main_ledger(conn, story_id, sha=None):
+    rows = [row for row in witness_ledger(conn, story_id)
+            if row.verifier != "baseline"]
+    if sha is None:
+        return rows
+    latest = {row.witnessKey: row for row in rows if row.mainSha == sha}
+    return [latest[key] for key in sorted(latest)]
+
+
 def rerun_owed(conn, story_id, sha):
-    rows = witness_ledger(conn, story_id)
+    rows = main_ledger(conn, story_id)
     greens = {row.witnessKey for row in rows
               if row.mainSha != sha and row.verdict == "green"}
     runs = collections.Counter(row.witnessKey for row in rows
@@ -61,13 +70,13 @@ def _settle(target, conn, story_id, sha):
 
 def _plan(conn, found, sha):
     latest = {row.witnessKey: row
-              for row in witness_ledger(conn, found.ticketId, sha)}
+              for row in main_ledger(conn, found.ticketId, sha)}
     met = {witness.key for witness in found.witnesses
            if witness.key in latest and latest[witness.key].verdict == "green"
            and latest[witness.key].fileHash == witness.sourceHash}
     if met == {witness.key for witness in found.witnesses}:
         return "close"
-    greens = {row.witnessKey for row in witness_ledger(conn, found.ticketId)
+    greens = {row.witnessKey for row in main_ledger(conn, found.ticketId)
               if row.mainSha != sha and row.verdict == "green"}
     owed = rerun_owed(conn, found.ticketId, sha)
     idle = not _open_children(conn, found.ticketId)
@@ -93,7 +102,7 @@ def _plan(conn, found, sha):
 
 
 def _close(target, conn, found, sha):
-    latest = witness_ledger(conn, found.ticketId, sha)
+    latest = main_ledger(conn, found.ticketId, sha)
     verdicts = ", ".join(f"{row.witnessKey} {row.verdict}" for row in latest)
     close_story(conn, found.ticketId, sha,
                 f"Story closed on its witnesses at {sha}: {verdicts}.")
