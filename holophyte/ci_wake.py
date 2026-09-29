@@ -15,7 +15,7 @@ def wake_reason(target, conn, ticket, pull, status, latest_s):
     merge = merge_config(target)
     now = time()
     checks = status.checks
-    if ticket.prSeenChecks == "pending" and checks in FINISHED:
+    if ticket.prSeenChecks in ("pending", None) and checks in FINISHED:
         return f"checks on {pull.url} finished {checks}"
     if checks == "success" and latest_s is not None \
             and now - latest_s >= merge.pr_quiet_sec:

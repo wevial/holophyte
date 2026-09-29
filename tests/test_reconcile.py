@@ -883,11 +883,11 @@ class CanceledParkedPullRequestTests(MergeModeFixture):
 class CiParkTests(MergeModeFixture):
     OLD = "2000-01-01T00:00:00Z"
 
-    def ci_parked(self, checks, updated_at=OLD):
+    def ci_parked(self, checks, updated_at=OLD, park_read=None):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state(checks=checks,
                                               updated_at=updated_at)])
-        self.github(self.pull(updated_at, checks))
+        self.github(park_read or self.pull(updated_at, checks))
         with patch("holophyte.pr.SLEEP", self.fail), \
                 patch.object(sys, "stdout", io.StringIO()):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
@@ -934,6 +934,15 @@ class CiParkTests(MergeModeFixture):
         self.assertEqual(self.wakes(), [])
 
         self.reconcile(green, later_s=300)
+        self.assertEqual(self.wakes(), [("supervisor",)])
+
+    def test_red_checks_wake_a_park_whose_own_read_failed(self):
+        self.ci_parked("PENDING", park_read=RuntimeError("GitHub down"))
+        self.assertEqual(self.read("SELECT prSeenChecks FROM runs"), [(None,)])
+        self.age()
+
+        self.reconcile(self.pull(self.OLD, "FAILURE"))
+
         self.assertEqual(self.wakes(), [("supervisor",)])
 
     def test_pending_checks_past_check_wait_sec_park_for_a_human_unwoken(self):
