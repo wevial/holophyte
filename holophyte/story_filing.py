@@ -11,6 +11,7 @@ import story_template
 import ticket_template
 
 STORY_HEADER_RE = re.compile(r"^Story:[ \t]*(\S+)")
+ESTIMATE_SECTION = "Estimate & dependencies"
 
 
 class StoryRefused(ValueError):
@@ -126,18 +127,35 @@ def _check_merged(conn, project_id, child, siblings):
 def _resolve(body, identifiers):
     """`body` with its `Depends on:` sibling slugs made their identifiers."""
     lines = body.split("\n")
-    for index, line in enumerate(lines):
-        match = ticket_template.ESTIMATE_RE.match(line.strip())
-        if match is None:
-            continue
-        deps = [identifiers.get(dep, dep) for dep in ticket_template._deps(
-            ticket_template.MD_LINK_RE.sub(r"\1", match.group(2)))]
-        if deps:
-            start = line.index(match.group(0))
-            lines[index] = (line[:start] + match.group(0)[:match.start(2)]
-                            + ", ".join(deps))
-        break
+    index = _estimate_line(lines)
+    if index is None:
+        return body
+    line = lines[index]
+    match = ticket_template.ESTIMATE_RE.match(line.strip())
+    deps = [identifiers.get(dep, dep) for dep in ticket_template._deps(
+        ticket_template.MD_LINK_RE.sub(r"\1", match.group(2)))]
+    if deps:
+        start = line.index(match.group(0))
+        lines[index] = (line[:start] + match.group(0)[:match.start(2)]
+                        + ", ".join(deps))
     return "\n".join(lines)
+
+
+def _estimate_line(lines):
+    """The index of the estimate line `ticket_template.parse()` reads."""
+    titled, section = False, None
+    for index, line in enumerate(lines):
+        heading = ticket_template.H2_RE.match(line)
+        if not titled:
+            titled = bool(ticket_template.H1_RE.match(line))
+        elif heading and section == ESTIMATE_SECTION:
+            return None
+        elif heading:
+            section = heading.group(1).strip()
+        elif (section == ESTIMATE_SECTION
+              and ticket_template.ESTIMATE_RE.match(line.strip())):
+            return index
+    return None
 
 
 def _ticket_id(conn, project_id, identifier):

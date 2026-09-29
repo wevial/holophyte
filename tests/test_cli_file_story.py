@@ -203,3 +203,18 @@ class FileStoryCliTests(ConfigTestCase):
                             " WHERE linearIdentifier = 'NAT-4'")
         self.assertEqual(json.loads(row[0]), ["NAT-2", "NAT-3"])
         self.assertIn("Depends on: NAT-2, NAT-3", row[1])
+
+    def test_an_estimate_line_outside_its_section_is_left_alone(self):
+        directory = self.story()
+        child = directory / "children" / "01-c.md"
+        example = "```\nEstimate: 20 min · Depends on: none\n```"
+        child.write_text(child.read_text().replace(
+            "- Keep the CSV header.", f"- Keep the CSV header.\n\n{example}"))
+
+        status, lines = self.cli("--file-story", SLUG)
+
+        self.assertEqual(status, 0, lines)
+        (row,) = self.store("SELECT dependsOn, body FROM tickets"
+                            " WHERE linearIdentifier = 'NAT-4'")
+        self.assertEqual(json.loads(row[0]), ["NAT-2", "NAT-3"])
+        self.assertIn(example, row[1])
