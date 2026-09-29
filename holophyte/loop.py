@@ -97,6 +97,7 @@ from holophyte.runs import (
     set_phase,
 )
 from holophyte.stop import Aborted, boundary, continuation, stop_if_requested
+from holophyte.story_claim import story_brief
 from store.working import agent_work
 
 # The paths a run works against, plus the config they carry, are a `Project`
@@ -237,6 +238,9 @@ def _run_stages(run, task):
     # turns are held to one contract. A ticket with no body
     # (a file-backed task line, a stub provider) degrades to the title alone.
     ticket = f"{task}\n\n{body}" if body else task
+    if conn is not None:
+        ticket += story_brief(project, conn, store.read.run_snapshot(
+            conn, run_id).ticketId)
     # A reuse that left main's merge mid-way (conflicts) hands the paths to
     # the implementer as the opening of its brief; empty on every other cut.
     conflicts = merge_conflicts(wt)
