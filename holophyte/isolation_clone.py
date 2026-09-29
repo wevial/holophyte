@@ -1,6 +1,7 @@
 """Disposable turn checkout and a config-free, fast-forward-only return path."""
 
 import contextlib
+import os
 import shutil
 import stat
 import subprocess
@@ -96,12 +97,16 @@ def keeping(destination, staged, carry):
         raise
 
 
+def remove_staging(staged):
+    for directory, _, _ in os.walk(staged):
+        os.chmod(directory, stat.S_IRWXU)
+    shutil.rmtree(staged)
+
+
 def copy_files(source, destination, protect, finish=lambda: None, carry=()):
     """Stage the complete copy and roll back failed destination mutations."""
     excluded = {".git", ".env"} if protect else {".git"}
-    directory = tempfile.TemporaryDirectory(prefix=".copy-", dir=destination,
-                                            delete=False)
-    staged = Path(directory.name)
+    staged = Path(tempfile.mkdtemp(prefix=".copy-", dir=destination))
     try:
         try:
             stage_files(source, staged, excluded,
@@ -117,7 +122,7 @@ def copy_files(source, destination, protect, finish=lambda: None, carry=()):
         held = [entry for entry in carry
                 if (staged / entry).is_symlink() or (staged / entry).exists()]
         if not held:
-            directory.cleanup()
+            remove_staging(staged)
 
 
 def linked_carry(worktree, entry):
