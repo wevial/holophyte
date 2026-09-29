@@ -16,6 +16,8 @@ from store.stories import record_witness_result, story, witness_ledger
 UNITTEST_SUMMARY = re.compile(r"^FAILED \(([^)]*)\)\s*$", re.MULTILINE)
 PYTEST_SUMMARY = re.compile(r"^(FAILED|ERROR) ([^(\s].*)$", re.MULTILINE)
 PYTEST_NODE = re.compile(r"[^\s\[]+(?:\[.*?\])?(?: - (.*))?")
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+NO_COLOR = "export NO_COLOR=1 PYTHON_COLORS=0\n"
 LOG_TAIL_BYTES = 64 * 1024
 ABSENT, REFUSED = "absent", "refused"
 Scratch = collections.namedtuple(
@@ -39,16 +41,14 @@ def main_tip(target):
 
 
 def red_kind(output):
-    summaries = UNITTEST_SUMMARY.findall(output)
-    if summaries:
-        counts = summaries[-1]
-        return ("assert" if "failures=" in counts and "errors=" not in counts
-                else "exception")
-    lines = PYTEST_SUMMARY.findall(output)
-    if lines and all(status == "FAILED" and _pytest_message(rest).startswith(
-            ("AssertionError", "assert ")) for status, rest in lines):
-        return "assert"
-    return "exception"
+    output = ANSI_ESCAPE.sub("", output)
+    asserts = [
+        "failures=" in counts and "errors=" not in counts
+        for counts in UNITTEST_SUMMARY.findall(output)] + [
+        status == "FAILED" and _pytest_message(rest).startswith(
+            ("AssertionError", "assert "))
+        for status, rest in PYTEST_SUMMARY.findall(output)]
+    return "assert" if asserts and all(asserts) else "exception"
 
 
 def _pytest_message(rest):
@@ -70,10 +70,10 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False):
         tree = Path(scratch) / "tree"
         try:
             failed = _add_worktree(target, tree, sha, deadline)
-            copied = [witness for witness in witnesses if copy_files
-                      and not failed and _inside(tree, witness.file)]
+            copied, found, failed = (
+                ([], {}, failed) if failed
+                else _checkout(tree, witnesses, copy_files))
             run = Scratch(target, tree, sha, copied, deadline, secrets)
-            found = {} if failed else _checkout(run, witnesses)
             ran = False
             for witness in witnesses:
                 log = logs / witness.key / f"{stamp}.log"
@@ -122,16 +122,23 @@ def _inside(tree, file):
     return path if path.is_relative_to(tree.resolve()) else None
 
 
-def _checkout(run, witnesses):
-    _copy_sources(run.tree, run.copied)
-    found = {}
-    for witness in witnesses:
-        path = _inside(run.tree, witness.file)
-        found[witness.key] = (
-            REFUSED if path is None else
-            hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file()
-            else ABSENT)
-    return found
+def _checkout(tree, witnesses, copy_files):
+    try:
+        copied = [witness for witness in witnesses
+                  if copy_files and _inside(tree, witness.file)]
+        _copy_sources(tree, copied)
+        found = {witness.key: _presence(tree, witness.file)
+                 for witness in witnesses}
+    except (OSError, RuntimeError) as error:
+        return [], {}, f"[witness] could not check the witness files out: {error}\n"
+    return copied, found, None
+
+
+def _presence(tree, file):
+    path = _inside(tree, file)
+    if path is None:
+        return REFUSED
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ABSENT
 
 
 def _copy_sources(tree, witnesses):
@@ -153,7 +160,10 @@ def _restore(run):
             return f"[witness] {' '.join(command[:2])} timed out\n"
         if code:
             return output or f"{' '.join(command[:2])} exited {code}\n"
-    _copy_sources(run.tree, run.copied)
+    try:
+        _copy_sources(run.tree, run.copied)
+    except OSError as error:
+        return f"[witness] could not copy the witness files back: {error}\n"
     return None
 
 
@@ -186,7 +196,7 @@ def _run_one(run, witness, file_hash, log):
         _write_log(log, SPENT, secrets)
         return "error", None, file_hash, 0.0
     try:
-        code, output = _verify_command(run.target, witness.command,
+        code, output = _verify_command(run.target, NO_COLOR + witness.command,
                                        run.tree, remaining)
     except subprocess.TimeoutExpired as expired:
         _write_log(log, f"{expired.output or ''}\n[witness] timed out after"

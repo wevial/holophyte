@@ -80,7 +80,8 @@ def commit_file(repo, path, text, message):
 def unittest_output(tmp, source):
     (Path(tmp) / "test_case.py").write_text(source)
     run = subprocess.run([sys.executable, "-m", "unittest", "test_case"],
-                         cwd=tmp, capture_output=True, text=True)
+                         cwd=tmp, capture_output=True, text=True,
+                         env=dict(os.environ, NO_COLOR="1", PYTHON_COLORS="0"))
     return run.stdout + run.stderr
 
 
@@ -298,6 +299,20 @@ class WitnessOutputTests(WitnessRunnerFixture, unittest.TestCase):
         self.assertLessEqual(len(stored), LOG_TAIL_BYTES + 100)
         self.assertTrue(stored.endswith(b"x\nthe end\n"))
 
+    def test_a_command_runs_uncolored_when_color_is_forced(self):
+        forced = patch.dict(os.environ, {"FORCE_COLOR": "1"})
+        forced.start()
+        self.addCleanup(forced.stop)
+        target = self.project()
+        self.approve([("W1", "tests/test_w1.py",
+                       "true && printenv NO_COLOR PYTHON_COLORS", PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual(row.verdict, "green")
+        self.assertEqual(Path(row.evidencePath).read_text(), "1\n0\n")
+
     def test_a_known_secret_is_redacted_from_the_stored_log(self):
         secret = "ghp_witnessLogSecret0123456789"
         token = patch.dict(os.environ, {"GH_TOKEN": secret})
@@ -345,6 +360,24 @@ class WitnessWorktreeTests(WitnessRunnerFixture, unittest.TestCase):
                              copy_files=True)
 
         self.assertEqual([row.verdict for row in rows], ["error"])
+        self.assertEqual(len(git(self.repo, "worktree", "list").splitlines()), 1)
+
+    def test_a_failed_copy_is_an_error_row_with_evidence_for_each_witness(self):
+        target = self.project()
+        touch = f"touch {shlex.quote(str(self.marker))}"
+        self.approve([("W1", "README.md/test_w1.py", touch, PASSES),
+                      ("W2", "tests/test_w2.py", touch, PASSES)])
+
+        rows = run_witnesses(target, self.conn, self.story_id,
+                             main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual([(row.witnessKey, row.verdict) for row in rows],
+                         [("W1", "error"), ("W2", "error")])
+        for row in rows:
+            with self.subTest(witness=row.witnessKey):
+                self.assertIn("README.md",
+                              Path(row.evidencePath).read_text())
+        self.assertFalse(self.marker.exists())
         self.assertEqual(len(git(self.repo, "worktree", "list").splitlines()), 1)
 
 
@@ -412,6 +445,31 @@ class RedKindTests(unittest.TestCase):
         for output, kind in cases:
             with self.subTest(kind=kind, output=output[-60:]):
                 self.assertEqual(red_kind(output), kind)
+
+    def test_an_exception_in_any_summary_outranks_an_assertion(self):
+        cases = {
+            "an error before a failure":
+                "FAILED (errors=1)\n...\nFAILED (failures=1)\n",
+            "a unittest failure beside a pytest error":
+                "FAILED (failures=1)\n"
+                "ERROR tests/test_w2.py - ModuleNotFoundError: No module"
+                " named 'orders'\n",
+        }
+        for name, output in cases.items():
+            with self.subTest(name):
+                self.assertEqual(red_kind(output), "exception")
+        self.assertEqual(
+            red_kind("FAILED (failures=1)\n...\nFAILED (failures=2)\n"),
+            "assert")
+
+    def test_a_colored_summary_is_read_as_plain_text(self):
+        red, reset = "\x1b[1;31m", "\x1b[0m"
+        self.assertEqual(
+            red_kind(f"{red}FAILED{reset} ({red}failures=2{reset})\n"),
+            "assert")
+        self.assertEqual(
+            red_kind(f"{red}FAILED{reset} ({red}failures=1{reset},"
+                     f" {red}errors=1{reset})\n"), "exception")
 
 
 class MainTipTests(WitnessRunnerFixture, unittest.TestCase):
