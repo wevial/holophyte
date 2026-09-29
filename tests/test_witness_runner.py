@@ -395,10 +395,19 @@ class RedKindTests(unittest.TestCase):
             "FAILED tests/test_w1.py::test_value - assert 1 == 2\n"
             "ERROR tests/test_w2.py - ModuleNotFoundError: No module named"
             " 'orders'\n")
+        spaced_assert = (
+            "FAILED tests/test_values.py::test_value[hello world] -"
+            " AssertionError: assert 'hello' == 'world'\n")
+        spaced_error_and_assert = (
+            "FAILED tests/test_values.py::test_value - assert 1 == 2\n"
+            "ERROR tests/test_values.py::test_value[hello world] -"
+            " RuntimeError: setup failed\n")
         cases = [(two_failures, "assert"), (failure_and_error, "exception"),
                  (pytest_asserts, "assert"), (pytest_attribute, "exception"),
                  (pytest_plain_assert, "assert"),
                  (pytest_assert_and_error, "exception"),
+                 (spaced_assert, "assert"),
+                 (spaced_error_and_assert, "exception"),
                  ("Segmentation fault (core dumped)\n", "exception")]
         for output, kind in cases:
             with self.subTest(kind=kind, output=output[-60:]):

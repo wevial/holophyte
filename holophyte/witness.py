@@ -14,8 +14,8 @@ from holophyte.gates import _verify_command, run_capped, vacuous_green_report
 from store.stories import record_witness_result, story, witness_ledger
 
 UNITTEST_SUMMARY = re.compile(r"^FAILED \(([^)]*)\)\s*$", re.MULTILINE)
-PYTEST_SUMMARY = re.compile(r"^(FAILED|ERROR) [^(\s]\S*(?: - (.*))?$",
-                            re.MULTILINE)
+PYTEST_SUMMARY = re.compile(r"^(FAILED|ERROR) ([^(\s].*)$", re.MULTILINE)
+PYTEST_NODE = re.compile(r"[^\s\[]+(?:\[.*?\])?(?: - (.*))?")
 LOG_TAIL_BYTES = 64 * 1024
 ABSENT, REFUSED = "absent", "refused"
 Scratch = collections.namedtuple(
@@ -45,11 +45,15 @@ def red_kind(output):
         return ("assert" if "failures=" in counts and "errors=" not in counts
                 else "exception")
     lines = PYTEST_SUMMARY.findall(output)
-    if lines and all(status == "FAILED"
-                     and message.startswith(("AssertionError", "assert "))
-                     for status, message in lines):
+    if lines and all(status == "FAILED" and _pytest_message(rest).startswith(
+            ("AssertionError", "assert ")) for status, rest in lines):
         return "assert"
     return "exception"
+
+
+def _pytest_message(rest):
+    node = PYTEST_NODE.fullmatch(rest)
+    return (node and node.group(1)) or ""
 
 
 def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False):
