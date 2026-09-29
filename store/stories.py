@@ -113,6 +113,99 @@ def story(conn, ticket_id):
                  decisions=decisions)
 
 
+def story_frontier(conn, story_id, max_parallel):
+    found = story(conn, story_id)
+    if found is None:
+        return []
+    rows = conn.execute(
+        "SELECT id, linearIdentifier FROM tickets WHERE id IN (SELECT ticketId"
+        " FROM storyChildren WHERE storyId = ?) AND status = 'ready'"
+        " AND activeRunId IS NULL ORDER BY id", (found.ticketId,)).fetchall()
+    return [identifier for ticket_id, identifier in rows
+            if _frontier_refusal(conn, found, ticket_id, max_parallel) is None]
+
+
+def _frontier_refusal(conn, found, ticket_id, max_parallel):
+    names = _issue_names(conn, found.ticketId)
+    story_name = _ticket_name(conn, found.ticketId)
+    if found.state not in OPEN_STATES:
+        return "state", f"its story {story_name} is {found.state}"
+    children = _child_rows(conn, found.ticketId)
+    edges = found.approvedPlan["edges"]
+    name = children[ticket_id][0]
+    for decision in found.decisions:
+        about = children.get(decision.ticketId, ("the whole story",))[0]
+        if decision.ticketId is None or name in _downstream(children, edges,
+                                                             about):
+            return "decision", (f"its story {story_name} is parked on"
+                                f" decision {decision.id} ({decision.kind})"
+                                f" about {about}")
+    approved, depends = edges.get(name, []), children[ticket_id][2]
+    merged = {issue for issue, (_, status) in names.items()
+              if status == "merged"}
+    missing = [dep for dep in approved
+               if dep not in merged and dep not in depends]
+    extra = [dep for dep in depends if dep not in approved]
+    if missing or extra:
+        return "drift", _drift(story_name, names, missing, extra)
+    waiting = [names.get(dep, (dep,))[0] for dep in approved
+               if dep not in merged]
+    if waiting:
+        return "dependency", (f"it waits on {', '.join(waiting)} of story"
+                              f" {story_name} to merge")
+    running = sum(1 for child_id, row in children.items()
+                  if row[3] and child_id != ticket_id)
+    if running >= max_parallel:
+        return "cap", (f"story {story_name} has {running} children in flight,"
+                       f" at its [story] max_parallel of {max_parallel}")
+    return None
+
+
+def _drift(story_name, names, missing, extra):
+    parts = [f"drops {', '.join(names.get(dep, (dep,))[0] for dep in missing)}"
+             ] if missing else []
+    if extra:
+        parts.append("adds " + ", ".join(names.get(dep, (dep,))[0]
+                                         for dep in extra))
+    return (f"its dependencies no longer match story {story_name}'s approved"
+            f" edges: it {' and '.join(parts)}")
+
+
+def _downstream(children, edges, name):
+    issues = {row[1]: row[0] for row in children.values()}
+    reached, grew = {name}, True
+    while grew:
+        grew = False
+        for child, deps in edges.items():
+            if child not in reached and any(issues.get(dep) in reached
+                                            for dep in deps):
+                reached.add(child)
+                grew = True
+    return reached
+
+
+def _child_rows(conn, story_id):
+    return {row[0]: (row[1], row[2], json.loads(row[3]), row[4])
+            for row in conn.execute(
+                "SELECT t.id, t.linearIdentifier, t.linearIssueId, t.dependsOn,"
+                " EXISTS (SELECT 1 FROM runs r WHERE r.ticketId = t.id"
+                " AND r.endedAt IS NULL) FROM tickets t WHERE t.id IN"
+                " (SELECT ticketId FROM storyChildren WHERE storyId = ?)",
+                (story_id,))}
+
+
+def _issue_names(conn, story_id):
+    return {issue: (identifier, status) for issue, identifier, status in
+            conn.execute("SELECT linearIssueId, linearIdentifier, status"
+                         " FROM tickets WHERE projectId = (SELECT projectId"
+                         " FROM tickets WHERE id = ?)", (story_id,))}
+
+
+def _ticket_name(conn, ticket_id):
+    return conn.execute("SELECT linearIdentifier FROM tickets WHERE id = ?",
+                        (ticket_id,)).fetchone()[0]
+
+
 def advance_story(conn, run_id, now=None):
     if now is None:
         now = int(time.time() * 1000)

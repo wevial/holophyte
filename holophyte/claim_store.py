@@ -171,7 +171,7 @@ def claim_from_store(target, conn, project_id, provider, order, skip, seen):
                     if r.linearIdentifier not in skip), None)
         if row is None:
             return None, None, None
-        refused = story_claim.refusal(conn, row.id)
+        refused = story_claim.refusal(target, conn, row.id)
         if refused:
             print(f"[holo2] {row.linearIdentifier} skipped: {refused}")
             skip.add(row.linearIdentifier)
@@ -227,10 +227,10 @@ def _confirm_on_board(target, conn, project_id, provider, row):
     leased by another writer, which only the live labels show (the stored
     labels are the board-owned ones). Any other answer is mirrored with its
     column (the stale skip's mirror too), which writes the next revision
-    when a board-owned field moved. A read-back naming open blockers
-    (`blocked_by`, KO-748) mirrors them as `dependsOn`, walks the row to
-    `blocked_on_deps` and is skipped, as the next sync would have; one
-    without the key (the file board) leaves `dependsOn` as it is.
+    when a board-owned field moved; the story gate then judges that row. A
+    read-back naming open blockers (`blocked_by`, KO-748) mirrors them as
+    `dependsOn`, and past the gate walks the row to `blocked_on_deps` and is
+    skipped; one without the key (the file board) leaves `dependsOn` alone.
     """
     identifier = row.linearIdentifier
     try:
@@ -260,6 +260,10 @@ def _confirm_on_board(target, conn, project_id, provider, row):
                             depends_on=blocked_by)
     if problem:
         print(f"[holo2] {identifier} skipped: {problem}")
+        return None, SKIP
+    refused = story_claim.refusal(target, conn, ticket_id)
+    if refused:
+        print(f"[holo2] {identifier} skipped at the read-back: {refused}")
         return None, SKIP
     if blocked_by:
         from holophyte.dispatch import _wait_on_blockers

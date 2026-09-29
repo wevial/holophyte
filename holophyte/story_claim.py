@@ -1,11 +1,18 @@
-"""A story's guards: no child runs before approval, no board Done closes it."""
+"""A story's guards: a child runs from its frontier, no board Done closes it."""
 import json
 import re
 import subprocess
 
+from holophyte.config_tables import story_config
 from holophyte.redact import safe_print as print
 from store.notes import record_note
-from store.stories import abandon_story, story, witness_ledger
+from store.stories import (
+    _frontier_refusal,
+    abandon_story,
+    park_story,
+    story,
+    witness_ledger,
+)
 from store.tickets import walk_ticket
 
 CLOSED_STATES = ("closed", "abandoned")
@@ -15,14 +22,31 @@ WITNESS = "## Story witness this ticket completes"
 UPSTREAM_BYTES = 2048
 NOTE_ROOM = 96
 GIT_TIMEOUT = 30
+DRIFT_OPTIONS = ("restore the approved edges",
+                 "re-approve the plan as it stands")
 
 
-def refusal(conn, ticket_id):
+def refusal(project, conn, ticket_id):
     """Why the claim must not take `ticket_id` now; None lets it go."""
     found = story(conn, ticket_id)
-    if found is None or found.state == "approved":
+    if found is None:
         return None
-    return f"its story {_identifier(conn, found.ticketId)} is {found.state}"
+    if found.ticketId == ticket_id:
+        return None if found.state == "approved" else (
+            f"its story {_identifier(conn, ticket_id)} is {found.state}")
+    refused = _frontier_refusal(conn, found, ticket_id,
+                                story_config(project).max_parallel)
+    if refused is None:
+        return None
+    kind, reason = refused
+    if kind == "drift":
+        name = _identifier(conn, ticket_id)
+        park_story(conn, found.ticketId, "plan_drift",
+                   f"{name}: {reason}", DRIFT_OPTIONS, DRIFT_OPTIONS[0],
+                   ticket_id=ticket_id)
+        print(f"[holo2] story {_identifier(conn, found.ticketId)} parked on"
+              f" plan drift at {name}: {reason}")
+    return reason
 
 
 def open_story(conn, ticket_id):
