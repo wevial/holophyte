@@ -1,6 +1,7 @@
 """PR evidence against a real local bare remote."""
 
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -25,13 +26,27 @@ PNG = base64.b64decode(
 )
 
 
-def running(pid):
-    """Whether `pid` is alive: a zombie awaiting its reaper is not."""
+def stat_fields(pid):
+    """Fields 3 onward of `pid`'s stat file, or None once it is gone."""
     try:
         stat = Path(f"/proc/{pid}/stat").read_text()
     except (FileNotFoundError, ProcessLookupError):
+        return None
+    return stat.rpartition(")")[2].split()
+
+
+def start_time(pid):
+    fields = stat_fields(pid)
+    return fields[19] if fields else ""
+
+
+def running(pid, start=None):
+    """Whether `pid` is alive: a zombie, a task being reaped (X) or a pid
+    reused since `start` is not."""
+    fields = stat_fields(pid)
+    if fields is None or fields[0] in ("Z", "X", "x"):
         return False
-    return stat.rpartition(")")[2].split()[0] != "Z"
+    return start is None or fields[19] == start
 
 
 class MediaTests(unittest.TestCase):
@@ -721,17 +736,23 @@ class MediaTests(unittest.TestCase):
 
     def child_pid(self, pidfile):
         pid = int(pidfile.read_text())
-        self.addCleanup(lambda: running(pid) and os.killpg(os.getpgid(pid), 9))
-        return pid
+        start = start_time(pid)
+        self.addCleanup(self.kill_child, pid, start)
+        return pid, start
+
+    def kill_child(self, pid, start):
+        with contextlib.suppress(ProcessLookupError):
+            if running(pid, start):
+                os.killpg(os.getpgid(pid), 9)
 
     def test_exited_capture_stops_its_child_through_its_term_handler(self):
         marker = self.root / "released"
         pidfile = self.leave_child(f"trap 'touch {marker}; exit 0' TERM")
         error = pr_media._capture("sh capture.sh", self.repo, self.root,
                                   "KO-16", [])
-        pid = self.child_pid(pidfile)
+        pid, start = self.child_pid(pidfile)
         self.assertEqual(error, "")
-        self.assertFalse(running(pid))
+        self.assertFalse(running(pid, start))
         self.assertTrue(marker.exists())
 
     def test_exited_capture_kills_a_child_ignoring_term_after_the_grace(self):
@@ -740,12 +761,18 @@ class MediaTests(unittest.TestCase):
         with patch("holophyte.pr_media.CAPTURE_GRACE", 0.5):
             error = pr_media._capture("sh capture.sh", self.repo, self.root,
                                       "KO-16", [])
-        pid = self.child_pid(pidfile)
-        while running(pid) and monotonic() - started < 5:
+        pid, start = self.child_pid(pidfile)
+        while (alive := running(pid, start)) and monotonic() - started < 5:
             time.sleep(0.02)
         self.assertLess(monotonic() - started, 0.5 + 1)
         self.assertEqual(error, "")
-        self.assertFalse(running(pid))
+        self.assertFalse(alive)
+
+    def test_running_answers_false_for_a_pid_whose_start_time_changed(self):
+        pid = os.getpid()
+        start = Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()[19]
+        self.assertTrue(running(pid, start))
+        self.assertFalse(running(pid, str(int(start) + 1)))
 
     def test_capture_leaving_no_child_returns_nothing(self):
         (self.repo / "capture.sh").write_text("exit 0\n")
