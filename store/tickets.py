@@ -416,6 +416,9 @@ def mirror_ticket(
             ).lastrowid
         else:
             ticket_id, status, _ = row
+            if conn.execute("SELECT 1 FROM stories WHERE ticketId = ?",
+                            (ticket_id,)).fetchone():
+                criteria, commands, derived = "[]", "[]", "needs_spec"
             if status in ("needs_spec", "ready"):
                 status = derived
             record_board_fields(conn, ticket_id, "unrecorded", now)
