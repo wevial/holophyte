@@ -148,7 +148,7 @@ PINNED = {
     "store/tickets.py": 249,
     "store/working.py": 3,
     "store/writes.py": 2,
-    "story_template.py": 9,
+    "story_template.py": 11,
     "ticket_template.py": 197,
 }
 

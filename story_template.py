@@ -6,6 +6,8 @@ with each witness file at its repository path, and a children directory.
 
 CLI: python3 ticket_template.py [--repo PATH] --story DIR  ->  exit 0 iff valid.
 """
+import copy
+import itertools
 import posixpath
 import re
 import sys
@@ -20,12 +22,21 @@ STORY_ORDER = [
 ]
 BODY = "story.md"
 WITNESSES = "witnesses"
+CHILDREN = "children"
+MAX_CHILDREN = 10
 MAX_WITNESSES = 10
 ADVISED_WITNESSES = 5
 MAX_STANDING_ORDERS = 5
 WITNESS_RE = re.compile(
     r"^\[[ xX]\]\s*(W\d+):\s*(.+?)\s*\(a test in (\S+) witnesses [^()]+\)$")
 COMMAND_RE = re.compile(r"^(W\d+):\s*(\S.*)$")
+KEY_RE = re.compile(r"^\[[ xX]\]\s*(W\d+):")
+CHILD_NAME_RE = re.compile(r"^\d{2}-(.+)\.md$")
+HEADER_RE = re.compile(r"^Ticket:[ \t]*\S+[ \t]*\n")
+ROLE_RE = re.compile(r"^Role:\s*(?:(scaffolding)|(completes|advances)\s+"
+                     r"(W\d+(?:\s*,\s*W\d+)*))$")
+ROLE_FORMS = ("'Role: completes Wn', 'Role: advances Wn, ...' or "
+              "'Role: scaffolding'")
 SKIP_CALLS = ("skipTest(", "unittest.skip", "pytest.skip", "pytest.mark.skip")
 ONE_PASS_WORDS = ("one pass", "first pass", "immediately")
 USAGE = "usage: python3 ticket_template.py [--repo PATH] --story DIR"
@@ -37,6 +48,15 @@ class Witness(NamedTuple):
     file: str
     command: str | None
     line: str
+
+
+class Child(NamedTuple):
+    name: str
+    slug: str
+    ticket: tt.Ticket
+    role: str | None
+    witnesses: tuple
+    depends_on: list
 
 
 class Story(NamedTuple):
@@ -157,9 +177,193 @@ def _one_pass_advisories(witness, file_text):
     return []
 
 
+def _role(ticket):
+    story = tt.COMMENT_RE.sub("", ticket.sections.get("Story", ""))
+    for line in story.splitlines():
+        match = ROLE_RE.match(line.strip())
+        if match and match.group(1):
+            return match.group(1), ()
+        if match:
+            return match.group(2), tuple(
+                key.strip() for key in match.group(3).split(","))
+    return None, ()
+
+
+def parse_children(directory):
+    """Each child ticket in the story's children directory, in name order."""
+    folder = Path(directory) / CHILDREN
+    children = []
+    for path in sorted(folder.glob("*.md")) if folder.is_dir() else ():
+        match = CHILD_NAME_RE.match(path.name)
+        ticket = tt.parse(HEADER_RE.sub("", path.read_text(), count=1))
+        role, keys = _role(ticket)
+        children.append(Child(path.stem, match.group(1) if match else path.stem,
+                              ticket, role, keys, ticket.depends_on or []))
+    return children
+
+
+def _child_problems(children, repo):
+    placeholders = {child.slug: f"STORY-{index}"
+                    for index, child in enumerate(children, 1)}
+    problems = []
+    for child in children:
+        ticket = copy.copy(child.ticket)
+        if ticket.depends_on is not None:
+            ticket.depends_on = [placeholders.get(dep, dep)
+                                 for dep in ticket.depends_on
+                                 if dep in placeholders
+                                 or tt.LINEAR_ID_RE.match(dep)]
+        found = tt.validate(ticket, repo)
+        blockers = tt.blocking(found)
+        if blockers:
+            problems.append(f"child {child.name} is not a valid ticket: "
+                            + "; ".join(blockers))
+        problems.extend(f"{tt.ADVISORY_PREFIX}child {child.name}: "
+                        f"{problem.removeprefix(tt.ADVISORY_PREFIX)}"
+                        for problem in found if problem not in blockers)
+        if "Story" not in child.ticket.order:
+            problems.append(f"child {child.name} has no '## Story' section "
+                            "naming its role")
+        elif child.role is None:
+            problems.append(f"child {child.name}'s '## Story' has no "
+                            f"{ROLE_FORMS} line")
+    return problems
+
+
+def _declares_new(ticket, file):
+    files, directories = tt._new_paths(ticket)
+    normalized = str(Path(file))
+    return normalized in files or any(
+        normalized.startswith(directory + "/") for directory in directories)
+
+
+def _role_problems(children, story):
+    keys = {match.group(1) for match in map(KEY_RE.match, story.witness_lines)
+            if match}
+    problems = [f"child {child.name}'s role names {key}, which is no "
+                "witness of the story"
+                for child in children for key in child.witnesses
+                if key not in keys]
+    for witness in story.witnesses:
+        completing = [child for child in children if child.role == "completes"
+                      and witness.key in child.witnesses]
+        if not completing:
+            problems.append(f"witness {witness.key} has no completing child")
+        elif len(completing) > 1:
+            problems.append(f"witness {witness.key} is completed by "
+                            f"{len(completing)} children: "
+                            + ", ".join(child.name for child in completing))
+        elif not _declares_new(completing[0].ticket, witness.file):
+            problems.append(f"child {completing[0].name} completes "
+                            f"{witness.key} but does not call its witness "
+                            f"file new: {witness.file}")
+    return problems
+
+
+def _cycle(edges):
+    state = {}
+
+    def visit(path):
+        state[path[-1]] = "open"
+        for dep in edges[path[-1]]:
+            if state.get(dep) == "open":
+                return path[path.index(dep):] + [dep]
+            found = None if dep in state else visit(path + [dep])
+            if found:
+                return found
+        state[path[-1]] = "done"
+        return None
+
+    return next(filter(None, (visit([slug]) for slug in edges
+                              if slug not in state)), None)
+
+
+def _ancestors(slug, edges):
+    seen, stack = set(), list(edges[slug])
+    while stack:
+        dep = stack.pop()
+        if dep not in seen:
+            seen.add(dep)
+            stack.extend(edges[dep])
+    return seen
+
+
+def _graph_problems(children, ancestors, edges):
+    by_slug = {child.slug: child for child in children}
+    problems = [f"child {child.name} depends on {dep}, which is no sibling "
+                "slug or ticket id"
+                for child in children for dep in child.depends_on
+                if dep not in by_slug and not tt.LINEAR_ID_RE.match(dep)]
+    cycle = _cycle(edges)
+    if cycle:
+        names = [by_slug[slug].name for slug in cycle]
+        problems.append(f"children {', '.join(sorted(set(names)))} depend on "
+                        f"each other in a cycle: {' -> '.join(names)}")
+    for child in children:
+        if child.role != "completes":
+            continue
+        for key in child.witnesses:
+            for other in children:
+                if (other.role == "advances" and key in other.witnesses
+                        and other.slug not in ancestors[child.slug]):
+                    problems.append(f"child {child.name} completes {key} but "
+                                    f"does not depend on {other.name}, "
+                                    "which advances it")
+    return problems
+
+
+def _named_files(ticket):
+    return {str(Path(path))
+            for section in ("In scope", "Implementation notes")
+            for _, path in tt._prose_paths(
+                tt.COMMENT_RE.sub("", ticket.sections.get(section, "")))}
+
+
+def _plan_advisories(children, ancestors):
+    completing = [child for child in children if child.role == "completes"]
+    advisories = [f"{tt.ADVISORY_PREFIX}scaffolding child {child.name} "
+                  "precedes no completing child: none depends on it"
+                  for child in children if child.role == "scaffolding"
+                  and not any(child.slug in ancestors[other.slug]
+                              for other in completing)]
+    named = {child.slug: _named_files(child.ticket) for child in children}
+    for one, two in itertools.combinations(children, 2):
+        if one.slug in ancestors[two.slug] or two.slug in ancestors[one.slug]:
+            continue
+        advisories.extend(f"{tt.ADVISORY_PREFIX}children {one.name} and "
+                          f"{two.name} both name {path} with no dependency "
+                          "path between them"
+                          for path in sorted(named[one.slug] & named[two.slug]))
+    return advisories
+
+
+def _children_problems(children, story, repo):
+    problems = []
+    if len(children) > MAX_CHILDREN:
+        problems.append(f"the story has {len(children)} children; the cap is "
+                        f"{MAX_CHILDREN} — split the story")
+    problems.extend(_child_problems(children, repo))
+    problems.extend(_role_problems(children, story))
+    first = {}
+    for child in children:
+        other = first.setdefault(child.slug, child)
+        if other is not child:
+            problems.append(f"children {other.name} and {child.name} share "
+                            f"the slug {child.slug}")
+    if len(first) < len(children):
+        return problems
+    slugs = set(first)
+    edges = {child.slug: [dep for dep in child.depends_on if dep in slugs]
+             for child in children}
+    ancestors = {slug: _ancestors(slug, edges) for slug in edges}
+    problems.extend(_graph_problems(children, ancestors, edges))
+    return problems + _plan_advisories(children, ancestors)
+
+
 def validate_story(directory, repo=None):
     """Problem lines for the story in `directory`, advisories prefixed with
-    ADVISORY_PREFIX; `repo`, when given, is checked for each witness file."""
+    ADVISORY_PREFIX; `repo`, when given, is checked for each witness file
+    and each child."""
     body = Path(directory) / BODY
     if not body.is_file():
         return [f"missing story body: {body}"]
@@ -169,6 +373,7 @@ def validate_story(directory, repo=None):
         problems.extend(_ignore_problems(story.witnesses, repo))
     for witness in story.witnesses:
         problems.extend(_file_problems(witness, directory, repo))
+    problems.extend(_children_problems(parse_children(directory), story, repo))
     return problems
 
 
