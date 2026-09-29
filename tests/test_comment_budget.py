@@ -122,6 +122,7 @@ PINNED = {
     "holophyte/story_claim.py": 5,
     "holophyte/story_drift.py": 6,
     "holophyte/story_filing.py": 7,
+    "holophyte/story_views.py": 1,
     "holophyte/supervisor.py": 430,
     "holophyte/supervisor_lock.py": 108,
     "holophyte/sweep_host.py": 131,
