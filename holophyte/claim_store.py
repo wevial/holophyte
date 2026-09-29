@@ -162,12 +162,14 @@ def claim_from_store(target, conn, project_id, provider, order, skip, seen):
     """
     from holophyte.admission import held_line
     readmitted = {}
+    if not held_line(conn, project_id) and _read_back_waiting(
+            target, conn, project_id, provider) == STOP:
+        return BOARD_DOWN, None, None
     while True:
         line = held_line(conn, project_id)
         if line:
             print(line)
             return None, None, None
-        story_claim.park_drift(target, conn, project_id)
         row = next((r for r in store.read.claimable(conn, project_id, order)
                     if r.linearIdentifier not in skip), None)
         if row is None:
@@ -231,7 +233,7 @@ def _confirm_on_board(target, conn, project_id, provider, row):
     column (the stale skip's mirror too), which writes the next revision
     when a board-owned field moved; the story gate then judges that row. A
     read-back naming open blockers (`blocked_by`, KO-748) mirrors them as
-    `dependsOn`, and past the gate walks the row to `blocked_on_deps` and is
+    `dependsOn`, walks the row to `blocked_on_deps` and, past the gate, is
     skipped; one without the key (the file board) leaves `dependsOn` alone.
     """
     identifier = row.linearIdentifier
@@ -263,17 +265,26 @@ def _confirm_on_board(target, conn, project_id, provider, row):
     if problem:
         print(f"[holo2] {identifier} skipped: {problem}")
         return None, SKIP
+    if blocked_by:
+        from holophyte.dispatch import _wait_on_blockers
+        _wait_on_blockers(conn, ticket_id)
     refused = story_claim.refusal(target, conn, ticket_id)
     if refused:
         print(f"[holo2] {identifier} skipped at the read-back: {refused}")
         return None, SKIP
     if blocked_by:
-        from holophyte.dispatch import _wait_on_blockers
-        _wait_on_blockers(conn, ticket_id)
         print(f"[holo2] {identifier} gained a blocker on the board since the"
               " last sync; waiting on it")
         return None, SKIP
     return live, None
+
+
+def _read_back_waiting(target, conn, project_id, provider):
+    for row in story_claim.waiting_children(conn, project_id):
+        if _confirm_on_board(target, conn, project_id, provider,
+                             row)[1] == STOP:
+            return STOP
+    return None
 
 
 def _revision(conn, ticket_id):

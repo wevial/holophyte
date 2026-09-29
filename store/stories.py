@@ -134,6 +134,16 @@ def _frontier_refusal(conn, found, ticket_id, max_parallel):
     children = _child_rows(conn, found.ticketId)
     edges = found.approvedPlan["edges"]
     name = children[ticket_id][0]
+    approved, depends = edges.get(name, []), children[ticket_id][2]
+    merged = {issue for issue, (_, status) in names.items()
+              if status == "merged"}
+    missing = [dep for dep in approved
+               if dep not in merged and dep not in depends]
+    extra = [dep for dep in depends if dep not in approved]
+    if (missing or extra) and not any(
+            decision.kind == "plan_drift" and decision.ticketId == ticket_id
+            for decision in found.decisions):
+        return "drift", _drift(story_name, names, missing, extra)
     for decision in found.decisions:
         about = children.get(decision.ticketId, ("the whole story",))[0]
         if decision.ticketId is None or name in _downstream(children, edges,
@@ -141,14 +151,6 @@ def _frontier_refusal(conn, found, ticket_id, max_parallel):
             return "decision", (f"its story {story_name} is parked on"
                                 f" decision {decision.id} ({decision.kind})"
                                 f" about {about}")
-    approved, depends = edges.get(name, []), children[ticket_id][2]
-    merged = {issue for issue, (_, status) in names.items()
-              if status == "merged"}
-    missing = [dep for dep in approved
-               if dep not in merged and dep not in depends]
-    extra = [dep for dep in depends if dep not in approved]
-    if missing or extra:
-        return "drift", _drift(story_name, names, missing, extra)
     waiting = [names.get(dep, (dep,))[0] for dep in approved
                if dep not in merged]
     if waiting:

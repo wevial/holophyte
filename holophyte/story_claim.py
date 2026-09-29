@@ -49,17 +49,20 @@ def refusal(project, conn, ticket_id):
     return reason
 
 
-def park_drift(project, conn, project_id):
-    """Judge every unfinished child of the project's open story, so edges the
-    board rewrote park the story before the child is ever claimable."""
-    for (ticket_id,) in conn.execute(
-            "SELECT DISTINCT c.ticketId FROM storyChildren c JOIN stories s"
-            " ON s.ticketId = c.storyId JOIN tickets t ON t.id = c.ticketId"
-            " WHERE t.projectId = ? AND s.state IN ('approved', 'parked')"
-            " AND t.status NOT IN ('merged', 'abandoned')"
-            " AND t.activeRunId IS NULL ORDER BY c.ticketId",
-            (project_id,)).fetchall():
-        refusal(project, conn, ticket_id)
+def waiting_children(conn, project_id):
+    """The open story's children the queue holds back, for the claim to read
+    back from the board: an edge dropped there parks the story now."""
+    import store.read
+    queued = {row.id for row in store.read.claimable(conn, project_id)}
+    return [store.read.ticket_by_id(conn, ticket_id) for (ticket_id,) in
+            conn.execute(
+                "SELECT DISTINCT c.ticketId FROM storyChildren c JOIN stories s"
+                " ON s.ticketId = c.storyId JOIN tickets t ON t.id = c.ticketId"
+                " WHERE t.projectId = ? AND s.state IN ('approved', 'parked')"
+                " AND t.status IN ('ready', 'blocked_on_deps')"
+                " AND t.activeRunId IS NULL AND t.boardColumn = 'ready'"
+                " AND t.goneSince IS NULL ORDER BY c.ticketId", (project_id,))
+            if ticket_id not in queued]
 
 
 def open_story(conn, ticket_id):

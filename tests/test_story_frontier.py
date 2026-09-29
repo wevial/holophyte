@@ -24,7 +24,7 @@ import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte import story_claim  # noqa: E402
-from holophyte.claim_store import claim_from_store, sync_board  # noqa: E402
+from holophyte.claim_store import claim_from_store  # noqa: E402
 from holophyte.config import check_config_keys  # noqa: E402
 from holophyte.config_tables import story_config  # noqa: E402
 from holophyte.native_board import NativeBoard  # noqa: E402
@@ -73,19 +73,15 @@ class DropDependencyThenCommit(Commit):
         return super().play(cwd, turn)
 
 
-class LinearLikeBoard(NativeBoard):
-    """The native board's rows served as a Linear store-mode board serves
-    them: listed and read back with each ticket's open blockers."""
+class ReadBackBlockers(NativeBoard):
+    """The native board whose one-issue read-back lists `blocked_by`, as a
+    Linear read-back lists a ticket's open blockers."""
 
-    native = False
     blocked_by = {}
 
     def fetch_task(self, issue_id):
         task = super().fetch_task(issue_id)
         return task and dict(task, blocked_by=self.blocked_by.get(issue_id, []))
-
-    def listing(self):
-        return [self.fetch_task(issue_id) for issue_id in self.blocked_by]
 
 
 class FrontierFixture(LoopFixture):
@@ -129,11 +125,9 @@ class FrontierFixture(LoopFixture):
         return self.conn.execute("SELECT linearIssueId FROM tickets"
                                  " WHERE id = ?", (ticket_id,)).fetchone()[0]
 
-    def claim(self, board, sync=False):
+    def claim(self, board):
         with patch.object(sys, "stdout", io.StringIO()), \
                 patch("holophyte.freshness.critic_admits", return_value=True):
-            if sync:
-                sync_board(self.project, self.conn, self.project_id, board)
             return claim_from_store(self.project, self.conn, self.project_id,
                                     board, "identifier", set(), NOTHING_SEEN)
 
@@ -191,14 +185,14 @@ class FrontierGateTests(FrontierFixture):
         self.assertIn(f"decision {decision}", refused)
         self.assertIn("NAT-2", refused)
 
-    def test_a_listing_dropping_an_unmerged_edge_parks_the_story_once(self):
+    def test_a_read_back_dropping_an_unmerged_edge_parks_the_story_once(self):
         a, b = self.file("backlog"), self.file("backlog")
         c = self.file("ready", depending_on("NAT-2", "NAT-3"))
         self.approve(a, b, c)
-        board = LinearLikeBoard(self.project, self.board.key, self.board.team)
+        board = ReadBackBlockers(self.project, self.board.key, self.board.team)
         board.blocked_by = {self.issue(c): [self.issue(a)]}
 
-        answers = [self.claim(board, sync=True) for _ in range(2)]
+        answers = [self.claim(board) for _ in range(2)]
 
         self.assertEqual(answers, [(None, None, None)] * 2)
         self.assertEqual(self.conn.execute(
@@ -215,13 +209,28 @@ class FrontierGateTests(FrontierFixture):
         d = self.file("backlog")
         c = self.file("ready", depending_on("NAT-2"))
         self.approve(a, c)
-        board = LinearLikeBoard(self.project, self.board.key, self.board.team)
+        board = ReadBackBlockers(self.project, self.board.key, self.board.team)
         board.blocked_by = {self.issue(c): [self.issue(d)]}
 
         self.assertEqual(self.claim(board), (None, None, None))
 
         self.assertEqual(self.open_decisions(), [("plan_drift", c, RESTORE)])
         self.assertEqual(self.live_runs(), [])
+
+    def test_a_decision_upstream_of_c_does_not_hide_its_drift(self):
+        a, b = self.file("ready"), self.file("ready")
+        c = self.file("ready", depending_on("NAT-2", "NAT-3"))
+        self.approve(a, b, c)
+        park_story(self.conn, self.parent, "unmet", "W1 is not met",
+                   ["retry", "abandon"], "retry", ticket_id=a)
+        store.board.edit_ticket(self.conn, self.project_id, "NAT-4",
+                                depending_on("NAT-2"), 1)
+
+        self.assertIn("no longer match", self.refusal(c))
+        self.refusal(c)
+
+        self.assertEqual(self.open_decisions(), [
+            ("unmet", a, "retry"), ("plan_drift", c, RESTORE)])
 
     def test_a_backlog_child_is_not_on_the_frontier(self):
         a, b = self.file("backlog"), self.file("ready")
