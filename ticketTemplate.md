@@ -104,6 +104,14 @@ Rules:
 
 - <Known constraints, dependencies, risks, rollout concerns, or useful code landmarks.>
 
+## Story
+
+<!-- OPTIONAL: keep only for a story's child ticket. It holds one line
+     naming the child's role: `Role: completes W2`, `Role: advances W1, W3`
+     or `Role: scaffolding`. Delete the whole section otherwise. -->
+
+<Role: completes W2>
+
 ## Estimate & dependencies
 
 Estimate: N min · Depends on: <ticket IDs or "none">

@@ -974,6 +974,20 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual({p.name for p in worktree.iterdir()}, {".git", "keep"})
         git(worktree, "commit", "-qm", "locks released")
 
+    def test_turn_clone_keeps_identity_in_clone_config_not_environment(self):
+        from holophyte import isolation_clone
+
+        _, worktree = self.make_worktree()
+        with isolation_clone.turn_clone(worktree) as (clone, env):
+            self.assertEqual(env, {"GIT_CONFIG_COUNT": "1",
+                                   "GIT_CONFIG_KEY_0": "safe.directory",
+                                   "GIT_CONFIG_VALUE_0": "/workspace"})
+            local = subprocess.run(
+                ["git", "config", "--local", "--get-regexp", "^user\\."],
+                cwd=clone, capture_output=True, text=True, check=True).stdout
+        self.assertEqual(local.splitlines(), ["user.name Configured Author",
+                                              "user.email author@example.test"])
+
     def test_host_git_ignores_inherited_repository_locations(self):
         from holophyte.isolation_git import git
 
@@ -1073,6 +1087,20 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("--env=TMPDIR", command)
         self.assertEqual(host_env["TMPDIR"], "/tmp")
 
+    def test_container_tmp_allows_running_programs(self):
+        from holophyte import isolation
+
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        command, _ = isolation.container_command(
+            isolation.Route("container"), scratch, {}, ["true"], "n"
+        )
+        mount = next(flag for flag in command if flag.startswith("/tmp:"))
+        options = mount.split(":", 1)[1].split(",")
+        for option in ("exec", "nosuid", "nodev", "size=1g"):
+            self.assertIn(option, options)
+        self.assertNotIn("noexec", options)
+
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
@@ -1100,6 +1128,43 @@ class IsolationTests(unittest.TestCase):
             isolation.review_runner._remove_container(name, env={"PATH": os.defpath})
         self.assertEqual(code, 0, output)
         self.assertEqual((scratch / "probe.txt").read_text(), "ok\n")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_launch_runs_a_script_from_tmpdir(self):
+        import shutil
+        import uuid
+
+        from holophyte import isolation
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        route = isolation.Route("container")
+        isolation.image_ready(route)
+        name = "holophyte-test-" + uuid.uuid4().hex
+        script = (
+            'probe="$TMPDIR/probe.sh"; '
+            "printf '#!/bin/sh\\necho ran-from-tmpdir\\n' > \"$probe\"; "
+            'chmod +x "$probe" && "$probe" && grep " /tmp " /proc/mounts'
+        )
+        command, host_env = isolation.container_command(
+            route, scratch, {}, ["sh", "-c", script], name,
+        )
+        try:
+            code, output = isolation.run_capped(command, scratch, 120, env=host_env)
+        finally:
+            isolation.review_runner._remove_container(name, env={"PATH": os.defpath})
+        self.assertEqual(code, 0, output)
+        self.assertIn("ran-from-tmpdir", output)
+        entry = next(line for line in output.splitlines() if " /tmp " in line)
+        options = entry.split()[3].split(",")
+        self.assertIn("nosuid", options)
+        self.assertIn("nodev", options)
+        self.assertNotIn("noexec", options)
 
     def test_relative_state_home_mounts_an_absolute_session_directory(self):
         from holophyte import isolation
@@ -1472,6 +1537,34 @@ class IsolationTests(unittest.TestCase):
         )
         self.assertEqual((worktree / "created").read_text(), "content\n")
         self.assertEqual(git(main, "log", "-1", "--format=%s"), "base")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_launch_leaves_other_repositories_their_own_identity(self):
+        import shutil
+
+        from holophyte import isolation
+        from holophyte.isolation_git import git
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        _, worktree = self.make_worktree()
+        script = (
+            'fixture=$(mktemp -d "$TMPDIR/fixture.XXXXXX"); cd "$fixture";'
+            " git init -q; git config user.name 'Fixture Author';"
+            " git config user.email fixture@example.test;"
+            " git commit --allow-empty -qm fixture;"
+            " git log -1 --format=%an/%ae; cd /workspace;"
+            " git commit --allow-empty -qm workspace"
+        )
+        code, output = isolation.launch(
+            isolation.Route("container"), worktree, {}, ["/bin/sh", "-ec", script])
+        self.assertEqual(code, 0, output)
+        self.assertIn("Fixture Author/fixture@example.test", output)
+        self.assertEqual(git(worktree, "log", "-1", "--format=%s|%an|%ae"),
+                         "workspace|Configured Author|author@example.test")
 
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",

@@ -949,6 +949,31 @@ class SchemaVersionAdvisoryTests(unittest.TestCase):
         self.assertIsNone(holophyte.board.body_problem({"body": body}))
 
 
+class StorySectionTests(unittest.TestCase):
+    STORY = "## Story\n\nRole: completes W2\n\n"
+
+    def test_story_after_implementation_notes_validates(self):
+        body = FILLED.replace("## Estimate & dependencies",
+                              self.STORY + "## Estimate & dependencies")
+        self.assertEqual(tt.validate(tt.parse(body)), [])
+
+    def test_misplaced_or_duplicate_story_is_refused(self):
+        early = FILLED.replace("## Acceptance criteria",
+                               self.STORY + "## Acceptance criteria")
+        problems = tt.validate(tt.parse(early))
+        self.assertEqual(problems, [
+            "sections out of template order: '## Implementation notes' "
+            "must come before '## Story'"])
+        twice = FILLED.replace("## Estimate & dependencies",
+                               self.STORY * 2 + "## Estimate & dependencies")
+        self.assertIn("duplicate section '## Story' (2x)",
+                      tt.validate(tt.parse(twice)))
+
+    def test_ticket_without_story_still_validates(self):
+        self.assertNotIn("Story", tt.parse(FILLED).order)
+        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+
+
 class EvidenceTests(unittest.TestCase):
     def body(self, states):
         return FILLED.replace("## Implementation notes",
