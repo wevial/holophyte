@@ -43,21 +43,23 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False):
         "SELECT linearIdentifier FROM tickets WHERE id = ?",
         (story_id,)).fetchone()
     logs = Path(target.holo_dir) / "witness" / identifier / sha
-    logs.mkdir(parents=True, exist_ok=True)
+    stamp = f"{verifier}-{time.time_ns()}"
     deadline = time.monotonic() + story_config(target).witness_sec
     ids = []
     with tempfile.TemporaryDirectory(prefix="witness-") as scratch:
         tree = Path(scratch) / "tree"
         try:
             failed = _add_worktree(target, tree, sha, deadline)
+            if failed is None and copy_files:
+                _copy_sources(tree, witnesses)
             for witness in witnesses:
-                log = logs / f"{witness.key}.log"
+                log = logs / witness.key / f"{stamp}.log"
+                log.parent.mkdir(parents=True, exist_ok=True)
                 if failed is not None:
                     log.write_text(failed)
                     verdict = ("error", None, None, 0.0)
                 else:
-                    verdict = _run_one(target, tree, witness, copy_files,
-                                       deadline, log)
+                    verdict = _run_one(target, tree, witness, deadline, log)
                 verdict_name, kind, file_hash, seconds = verdict
                 ids.append(record_witness_result(
                     conn, story_id, witness.key, sha, verdict_name, verifier,
@@ -86,11 +88,16 @@ def _add_worktree(target, tree, sha, deadline):
         return output or f"git worktree add exited {code}\n"
     return None
 
-def _run_one(target, tree, witness, copy_files, deadline, log):
-    path = tree / witness.file
-    if copy_files:
+
+def _copy_sources(tree, witnesses):
+    for witness in witnesses:
+        path = tree / witness.file
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(witness.source)
+
+
+def _run_one(target, tree, witness, deadline, log):
+    path = tree / witness.file
     if not path.is_file():
         return "absent", None, None, None
     file_hash = hashlib.sha256(path.read_bytes()).hexdigest()

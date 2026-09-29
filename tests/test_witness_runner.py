@@ -194,6 +194,42 @@ class WitnessRunTests(WitnessRunnerFixture, unittest.TestCase):
                          [("error", None)])
 
 
+class WitnessEvidenceTests(WitnessRunnerFixture, unittest.TestCase):
+    def test_a_later_run_at_the_same_commit_keeps_the_earlier_evidence(self):
+        target = self.project()
+        flag = self.root / "flag"
+        self.approve([("W1", "tests/test_w1.py",
+                       f"cat {shlex.quote(str(flag))}", PASSES)])
+        tip = main_tip(target)
+
+        (red,) = run_witnesses(target, self.conn, self.story_id, tip,
+                               "baseline", copy_files=True)
+        red_evidence = Path(red.evidencePath).read_text()
+        flag.write_text("the flag is up\n")
+        (green,) = run_witnesses(target, self.conn, self.story_id, tip,
+                                 "baseline", copy_files=True)
+
+        self.assertEqual((red.verdict, green.verdict), ("red", "green"))
+        self.assertNotEqual(red.evidencePath, green.evidencePath)
+        self.assertEqual(Path(red.evidencePath).read_text(), red_evidence)
+        self.assertEqual(Path(green.evidencePath).read_text(),
+                         "the flag is up\n")
+
+    def test_every_approved_file_is_copied_before_the_first_command(self):
+        target = self.project()
+        self.approve([
+            ("W1", "tests/test_w1.py", f"{PYTHON} -m unittest tests.test_w1",
+             "import unittest\n\nfrom tests.test_w2 import W3Tests  # noqa\n"),
+            ("W2", "tests/test_w2.py", f"{PYTHON} -m unittest tests.test_w2",
+             PASSES)])
+
+        rows = run_witnesses(target, self.conn, self.story_id,
+                             main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual([(row.witnessKey, row.verdict) for row in rows],
+                         [("W1", "green"), ("W2", "green")])
+
+
 class WitnessWorktreeTests(WitnessRunnerFixture, unittest.TestCase):
     def post_checkout(self, body):
         hook = self.repo / ".git" / "hooks" / "post-checkout"
