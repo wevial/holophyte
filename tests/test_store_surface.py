@@ -21,6 +21,7 @@ import store.gap_layers
 import store.operate
 import store.read
 import store.schema
+import store.stories
 import store.tickets
 import store.working
 
@@ -290,7 +291,12 @@ class StoreSurfaceTests(unittest.TestCase):
                                                   "working"]),
                                  # The gap layer record's writer and count.
                                  (store.gap_layers, ["gap_layer_counts",
-                                                     "record_gap_layer"])):
+                                                     "record_gap_layer"]),
+                                 # A story's filing, approval, abandonment
+                                 # and its one read.
+                                 (store.stories, ["abandon_story",
+                                                  "approve_story",
+                                                  "file_story", "story"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
             missing = sorted(set(expected) - set(actual))

@@ -287,6 +287,10 @@ The store is its own package:
 - `store/gap_layers.py` — `record_gap_layer()` appends the correction layer
   a gap's lesson landed in, and `gap_layer_counts()` counts each gap's latest
   layer in ladder order.
+- `store/stories.py` — `file_story()` writes a story's rows for a parent
+  and its children, `story()` reads one back from either, `approve_story()`
+  freezes its plan with one open story per project, and `abandon_story()`
+  gives it up and moves its unclaimed children to Backlog.
 - `store/instructions.py` — persist replies on recorded thread instructions.
 - `store/agent_routes.py` — atomic fallback intervention and event records.
 - `store/launch_backoff.py` — persistent route outages, retry deadlines and

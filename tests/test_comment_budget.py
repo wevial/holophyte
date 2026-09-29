@@ -145,6 +145,7 @@ PINNED = {
     "store/repair.py": 3,
     "store/revisions.py": 1,
     "store/schema.py": 214,
+    "store/stories.py": 2,
     "store/tickets.py": 249,
     "store/working.py": 3,
     "store/writes.py": 2,
