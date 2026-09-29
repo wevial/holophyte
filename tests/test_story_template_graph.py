@@ -66,6 +66,13 @@ class RoleTests(StoryGraphCase):
         self.assert_refused(directory, "witness W1 is completed by 2 "
                             "children: 03-c, 05-e")
 
+    def test_story_with_no_children_is_refused(self):
+        result = self.run_cli(self.planned([]))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.blockers(result), [
+            "  - witness W1 has no completing child",
+            "  - witness W2 has no completing child"])
+
     def test_witness_no_child_completes_is_refused(self):
         self.assert_refused(self.with_change(3, 1, "advances W2"),
                             "witness W2 has no completing child")
@@ -78,8 +85,8 @@ class RoleTests(StoryGraphCase):
         directory = self.planned(plan())
         child = directory / "children" / "04-d.md"
         text = child.read_text()
-        self.assertIn(f"The new `{witness_path(2)}`", text)
-        child.write_text(text.replace("The new `", "The `"))
+        self.assertIn(f"the new `{witness_path(2)}`", text)
+        child.write_text(text.replace("the new `", "the `"))
         self.assert_refused(directory, "child 04-d completes W2 but does not "
                             f"call its witness file new: {witness_path(2)}")
 

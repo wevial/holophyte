@@ -30,6 +30,7 @@ MAX_STANDING_ORDERS = 5
 WITNESS_RE = re.compile(
     r"^\[[ xX]\]\s*(W\d+):\s*(.+?)\s*\(a test in (\S+) witnesses [^()]+\)$")
 COMMAND_RE = re.compile(r"^(W\d+):\s*(\S.*)$")
+KEY_RE = re.compile(r"^\[[ xX]\]\s*(W\d+):")
 CHILD_NAME_RE = re.compile(r"^\d{2}-(.+)\.md$")
 HEADER_RE = re.compile(r"^Ticket:[ \t]*\S+[ \t]*\n")
 ROLE_RE = re.compile(r"^Role:\s*(?:(scaffolding)|(completes|advances)\s+"
@@ -236,13 +237,14 @@ def _declares_new(ticket, file):
         normalized.startswith(directory + "/") for directory in directories)
 
 
-def _role_problems(children, witnesses):
-    keys = {witness.key for witness in witnesses}
+def _role_problems(children, story):
+    keys = {match.group(1) for match in map(KEY_RE.match, story.witness_lines)
+            if match}
     problems = [f"child {child.name}'s role names {key}, which is no "
                 "witness of the story"
                 for child in children for key in child.witnesses
                 if key not in keys]
-    for witness in witnesses:
+    for witness in story.witnesses:
         completing = [child for child in children if child.role == "completes"
                       and witness.key in child.witnesses]
         if not completing:
@@ -341,7 +343,7 @@ def _children_problems(children, story, repo):
         problems.append(f"the story has {len(children)} children; the cap is "
                         f"{MAX_CHILDREN} — split the story")
     problems.extend(_child_problems(children, repo))
-    problems.extend(_role_problems(children, story.witnesses))
+    problems.extend(_role_problems(children, story))
     first = {}
     for child in children:
         other = first.setdefault(child.slug, child)
@@ -371,9 +373,7 @@ def validate_story(directory, repo=None):
         problems.extend(_ignore_problems(story.witnesses, repo))
     for witness in story.witnesses:
         problems.extend(_file_problems(witness, directory, repo))
-    children = parse_children(directory)
-    if children:
-        problems.extend(_children_problems(children, story, repo))
+    problems.extend(_children_problems(parse_children(directory), story, repo))
     return problems
 
 

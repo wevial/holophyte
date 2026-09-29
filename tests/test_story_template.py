@@ -30,6 +30,11 @@ class StoryCliCase(unittest.TestCase):
         self.assertIn(old, text)
         body.write_text(text.replace(old, new))
 
+    def retarget(self, directory, old, new):
+        self.edit(directory, old, new)
+        for child in (directory / "children").glob("*.md"):
+            child.write_text(child.read_text().replace(old, new))
+
     def run_cli(self, directory, repo=None):
         return subprocess.run(
             [sys.executable, str(ROOT / "ticket_template.py"),
@@ -118,7 +123,7 @@ class StoryBodyTests(StoryCliCase):
 
 class WitnessFileTests(StoryCliCase):
     def move_witness(self, directory, path):
-        self.edit(directory, witness_path(2), path)
+        self.retarget(directory, witness_path(2), path)
         source = directory / "witnesses" / witness_path(2)
         target = directory / "witnesses" / path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -132,7 +137,8 @@ class WitnessFileTests(StoryCliCase):
 
     def test_witness_file_outside_the_repository_is_refused(self):
         directory = self.story()
-        self.edit(directory, witness_path(2), "../outside/test_story_w2.py")
+        self.retarget(directory, witness_path(2),
+                      "../outside/test_story_w2.py")
         self.assert_refused(directory, "outside the repository in W2: "
                             "../outside/test_story_w2.py")
 
