@@ -113,6 +113,110 @@ def story(conn, ticket_id):
                  decisions=decisions)
 
 
+def story_frontier(conn, story_id, max_parallel):
+    from .read import claimable
+    found = story(conn, story_id)
+    if found is None:
+        return []
+    (project_id,) = conn.execute("SELECT projectId FROM tickets WHERE id = ?",
+                                 (found.ticketId,)).fetchone()
+    children = {child.ticketId for child in found.children}
+    return [row.linearIdentifier for row in claimable(conn, project_id)
+            if row.id in children and _frontier_refusal(
+                conn, found, row.id, max_parallel) is None]
+
+
+def _frontier_refusal(conn, found, ticket_id, max_parallel):
+    names = _issue_names(conn, found.ticketId)
+    story_name = _ticket_name(conn, found.ticketId)
+    if found.state not in OPEN_STATES:
+        return "state", f"its story {story_name} is {found.state}"
+    children = _child_rows(conn, found.ticketId)
+    edges = found.approvedPlan["edges"]
+    name = children[ticket_id][0]
+    approved, depends = edges.get(name, []), children[ticket_id][2]
+    merged = {issue for issue, (_, status) in names.items()
+              if status == "merged"}
+    missing = [dep for dep in approved
+               if dep not in merged and dep not in depends]
+    extra = [dep for dep in depends if dep not in approved]
+    if (missing or extra) and not any(
+            decision.kind == "plan_drift" and decision.ticketId == ticket_id
+            for decision in found.decisions):
+        return "drift", _drift(story_name, names, missing, extra)
+    for decision in found.decisions:
+        about = children.get(decision.ticketId, ("the whole story",))[0]
+        if decision.ticketId is None or name in _downstream(children, edges,
+                                                             about):
+            return "decision", (f"its story {story_name} is parked on"
+                                f" decision {decision.id} ({decision.kind})"
+                                f" about {about}")
+    waiting = [names.get(dep, (dep,))[0] for dep in approved
+               if dep not in merged]
+    if waiting:
+        return "dependency", (f"it waits on {', '.join(waiting)} of story"
+                              f" {story_name} to merge")
+    at_cap = _cap_refusal(conn, ticket_id, max_parallel)
+    return None if at_cap is None else ("cap", at_cap)
+
+
+def _cap_refusal(conn, ticket_id, max_parallel):
+    row = conn.execute(
+        "SELECT (SELECT linearIdentifier FROM tickets WHERE id = c.storyId),"
+        " (SELECT COUNT(DISTINCT r.ticketId) FROM runs r JOIN storyChildren s"
+        " ON s.ticketId = r.ticketId WHERE s.storyId = c.storyId"
+        " AND r.endedAt IS NULL AND r.ticketId != c.ticketId)"
+        " FROM storyChildren c WHERE c.ticketId = ? LIMIT 1",
+        (ticket_id,)).fetchone()
+    if row is None or row[1] < max_parallel:
+        return None
+    return (f"story {row[0]} has {row[1]} children in flight, at its"
+            f" [story] max_parallel of {max_parallel}")
+
+
+def _drift(story_name, names, missing, extra):
+    parts = [f"drops {', '.join(names.get(dep, (dep,))[0] for dep in missing)}"
+             ] if missing else []
+    if extra:
+        parts.append("adds " + ", ".join(names.get(dep, (dep,))[0]
+                                         for dep in extra))
+    return (f"its dependencies no longer match story {story_name}'s approved"
+            f" edges: it {' and '.join(parts)}")
+
+
+def _downstream(children, edges, name):
+    issues = {row[1]: row[0] for row in children.values()}
+    reached, grew = {name}, True
+    while grew:
+        grew = False
+        for child, deps in edges.items():
+            if child not in reached and any(issues.get(dep) in reached
+                                            for dep in deps):
+                reached.add(child)
+                grew = True
+    return reached
+
+
+def _child_rows(conn, story_id):
+    return {row[0]: (row[1], row[2], json.loads(row[3]))
+            for row in conn.execute(
+                "SELECT id, linearIdentifier, linearIssueId, dependsOn"
+                " FROM tickets WHERE id IN (SELECT ticketId FROM storyChildren"
+                " WHERE storyId = ?)", (story_id,))}
+
+
+def _issue_names(conn, story_id):
+    return {issue: (identifier, status) for issue, identifier, status in
+            conn.execute("SELECT linearIssueId, linearIdentifier, status"
+                         " FROM tickets WHERE projectId = (SELECT projectId"
+                         " FROM tickets WHERE id = ?)", (story_id,))}
+
+
+def _ticket_name(conn, ticket_id):
+    return conn.execute("SELECT linearIdentifier FROM tickets WHERE id = ?",
+                        (ticket_id,)).fetchone()[0]
+
+
 def advance_story(conn, run_id, now=None):
     if now is None:
         now = int(time.time() * 1000)

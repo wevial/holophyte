@@ -1,11 +1,19 @@
-"""A story's guards: no child runs before approval, no board Done closes it."""
+"""A story's guards: a child runs from its frontier, no board Done closes it."""
 import json
 import re
 import subprocess
 
+from holophyte.config_tables import story_config
 from holophyte.redact import safe_print as print
 from store.notes import record_note
-from store.stories import abandon_story, story, witness_ledger
+from store.schema import transaction
+from store.stories import (
+    _frontier_refusal,
+    abandon_story,
+    park_story,
+    story,
+    witness_ledger,
+)
 from store.tickets import walk_ticket
 
 CLOSED_STATES = ("closed", "abandoned")
@@ -15,14 +23,52 @@ WITNESS = "## Story witness this ticket completes"
 UPSTREAM_BYTES = 2048
 NOTE_ROOM = 96
 GIT_TIMEOUT = 30
+DRIFT_OPTIONS = ("restore the approved edges",
+                 "re-approve the plan as it stands")
 
 
-def refusal(conn, ticket_id):
+def refusal(project, conn, ticket_id):
     """Why the claim must not take `ticket_id` now; None lets it go."""
     found = story(conn, ticket_id)
-    if found is None or found.state == "approved":
+    if found is None:
         return None
-    return f"its story {_identifier(conn, found.ticketId)} is {found.state}"
+    if found.ticketId == ticket_id:
+        return None if found.state == "approved" else (
+            f"its story {_identifier(conn, ticket_id)} is {found.state}")
+    max_parallel = story_config(project).max_parallel
+    refused = _frontier_refusal(conn, found, ticket_id, max_parallel)
+    if refused is None or refused[0] != "drift":
+        return refused and refused[1]
+    with transaction(conn):
+        found = story(conn, ticket_id)
+        refused = _frontier_refusal(conn, found, ticket_id, max_parallel)
+        if refused is not None and refused[0] == "drift":
+            _park_on_drift(conn, found.ticketId, ticket_id, refused[1])
+    return refused and refused[1]
+
+
+def _park_on_drift(conn, story_id, ticket_id, reason):
+    name = _identifier(conn, ticket_id)
+    park_story(conn, story_id, "plan_drift", f"{name}: {reason}",
+               DRIFT_OPTIONS, DRIFT_OPTIONS[0], ticket_id=ticket_id)
+    print(f"[holo2] story {_identifier(conn, story_id)} parked on plan drift"
+          f" at {name}: {reason}")
+
+
+def waiting_children(conn, project_id):
+    """The open story's children the queue holds back, for the claim to read
+    back from the board: an edge dropped there parks the story now."""
+    import store.read
+    queued = {row.id for row in store.read.claimable(conn, project_id)}
+    return [store.read.ticket_by_id(conn, ticket_id) for (ticket_id,) in
+            conn.execute(
+                "SELECT DISTINCT c.ticketId FROM storyChildren c JOIN stories s"
+                " ON s.ticketId = c.storyId JOIN tickets t ON t.id = c.ticketId"
+                " WHERE t.projectId = ? AND s.state IN ('approved', 'parked')"
+                " AND t.status IN ('ready', 'blocked_on_deps')"
+                " AND t.activeRunId IS NULL AND t.boardColumn = 'ready'"
+                " AND t.goneSince IS NULL ORDER BY c.ticketId", (project_id,))
+            if ticket_id not in queued]
 
 
 def open_story(conn, ticket_id):
