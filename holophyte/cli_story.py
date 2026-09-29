@@ -8,13 +8,15 @@ from holophyte.story_filing import StoryRefused, file_story, update_story
 def add_story_arguments(parser, modes):
     modes.add_argument(
         "--file-story", metavar="SLUG",
-        help="on a native board: validate the story directory stories/SLUG "
-             "in the project's state directory and file it in one "
-             "transaction -- the parent in Backlog at needs_spec, each child "
-             "in Backlog in dependency order with --priority, and the story "
-             "rows, planned -- then write 'Story: KEY-n' atop its story.md "
-             "and 'Ticket: KEY-m' atop each child; exits 1 with the problem "
-             "and nothing written when the story is invalid or already filed. "
+        help="on a native board, or a Linear board in store mode: validate "
+             "the story directory stories/SLUG in the project's state "
+             "directory and file it -- the parent in Backlog at needs_spec, "
+             "each child in Backlog in dependency order with --priority (on "
+             "Linear, a sub-issue of the parent), and the story rows, "
+             "planned, in one store transaction -- then write 'Story: KEY-n' "
+             "atop its story.md and 'Ticket: KEY-m' atop each child; exits 1 "
+             "with the problem and nothing written when the story is invalid "
+             "or already filed. "
              "With --update KEY-n --revision N: apply the directory to the "
              "story filed as KEY-n, its parent read at revision N -- edit "
              "each child file headed 'Ticket:', file each child without one "
@@ -37,12 +39,14 @@ def story_verb(args, target, board, out=None):
     if args.file_story is None:
         return False
     out = sys.stdout if out is None else out
-    if not getattr(board, "native", False):
-        print("[holo2] --file-story " + (
-            "--update changes a story on a native board only; a Linear "
-            "story's children are edited on Linear" if args.update else
-            "files on a native board only ([board] kind = \"native\")"),
-            file=out)
+    if args.update is not None and not getattr(board, "native", False):
+        print("[holo2] --file-story --update changes a story on a native "
+              "board only; a Linear story's children are edited on Linear",
+              file=out)
+        raise SystemExit(1)
+    if not getattr(board, "store_mode", False):
+        print("[holo2] --file-story files on a native board or a Linear "
+              "board in store mode ([board] mode = \"store\")", file=out)
         raise SystemExit(1)
     priority = FILE_TICKET_PRIORITIES[args.priority] if args.priority else None
     try:
