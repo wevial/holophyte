@@ -43,6 +43,7 @@ from holophyte.redact import safe_print as print
 from holophyte.reproduce import tests_only_line
 from holophyte.runs import heartbeat_while, set_phase, warn_on_run
 from holophyte.stop import end_aborted, stop_if_requested
+from holophyte.story_drift import review_refresh, shared_files
 
 
 class DriftRequeued(store.RunEnded):
@@ -356,7 +357,9 @@ def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
     gate leaves it. In local mode the caller holds the merge lock; in PR
     mode it runs unlocked, as the babysitter's does."""
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
+    reviewed, shared = sha, None
     if sync_main:
+        shared = shared_files(conn, run_id, wt, sha)
         sha = _sync_main_into_branch(project, conn, run_id, provider, task_id,
                                      branch, wt, sha, beat_s, ticket,
                                      budget_min)
@@ -375,6 +378,9 @@ def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
         raise RunFailure(f"verify failed before merge; branch {branch}"
                          f" preserved at {sha[:12]}", "verify")
     print("[holo2] verify ok before merge")
+    if shared:
+        review_refresh(project, conn, run_id, provider, task_id, branch, wt,
+                       reviewed, sha, beat_s, ticket, verify_cmd, out, shared)
 
     # The other half of the gate, and the one a mechanical verify cannot ask:
     # this candidate was implemented, reviewed and verified against the ticket
