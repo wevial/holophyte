@@ -299,12 +299,16 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # HOLO-60: a landed merge's generation.
                                  # HOLO-54: `replan_story`, its plan's update.
                                  # HOLO-58: `story_frontier`, claimable children.
+                                 # HOLO-64: `accept_witness`, `reapprove_edges`,
+                                 # two answers of a decision.
                                  (store.stories, ["abandon_story",
+                                                  "accept_witness",
                                                   "advance_story",
                                                   "answer_decision",
                                                   "approve_story",
                                                   "close_story", "file_story",
                                                   "park_story",
+                                                  "reapprove_edges",
                                                   "record_witness_result",
                                                   "replan_story",
                                                   "story", "story_frontier",

@@ -179,11 +179,11 @@ def _note_checks(parser, args):
                      "sha; say so with --note TEXT")
     if args.hold or args.release_hold or args.pause or args.resume \
             or args.abort or args.cancel or args.gap_layer \
-            or args.approve_story:
+            or args.approve_story or args.decide:
         if not (args.note or "").strip():
             parser.error("--hold, --release-hold, --pause, --resume, --abort,"
-                         " --cancel, --gap-layer and --approve-story require"
-                         " --note TEXT")
+                         " --cancel, --gap-layer, --approve-story and --decide"
+                         " require --note TEXT")
         return
     optional = args.approve or args.babysit or args.close or args.move
     if args.note is not None and args.requeue is None \
@@ -488,7 +488,8 @@ def _legacy_cli(argv):
              f"unless {BABYSIT_DEFAULT_NOTE!r}; with --close: context for the external "
              "landing; recorded on the intervention row's "
              "event; with --cancel, required, or --move: the ticket's note; "
-             "with --approve-story, required: the approval's")
+             "with --approve-story, required: the approval's; with "
+             "--decide, required: the answer's")
     # Only the two states a filed ticket can start in: Todo is ready to
     # claim, Backlog waits on triage. Anything else is a state the loop
     # projects, never one a file declares, so argparse refuses it.
