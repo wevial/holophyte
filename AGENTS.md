@@ -56,8 +56,11 @@ for the operator.
 
 These fail the `unit` check, which you do not run locally, so settle them in
 the same commit:
-* `tests/test_file_sizes.py`: 1000 lines a module, 1500 a test module. A file
-  in `PINNED` may not grow past its pin; raise the pin in the same commit.
+* `tests/test_file_sizes.py`: 1000 lines a module, 1500 a test module. Only
+  a file over its ceiling has a `PINNED` entry, and a file over its ceiling
+  may not grow: its entry never rises, so a change that would grow it puts
+  the new code in a new module. A file brought to or under its ceiling
+  leaves the table.
 * `tests/test_comment_budget.py`: each module under `holophyte/` and `store/`
   and each top-level module has a pinned count of comment and docstring lines
   and of lines citing a ticket id. Neither may grow; a lowered count lowers its

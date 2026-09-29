@@ -5,6 +5,7 @@ import io
 import re
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -30,42 +31,126 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 import holophyte.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.maintainer_notes  # noqa: E402 - after the sys.path insert above
 import holophyte.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
+import store  # noqa: E402 - after the sys.path insert above
 
 
 class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
     """Check folding, parking reasons, and merge vetoes."""
-    def test_pending_checks_expire_at_the_configured_deadline(self):
-        self.configure('[merge]\nmode = "pr"\ncheck_wait_sec = 60\n')
-        self.fake_route(states=[self.pr_state(checks="PENDING")])
+    def parked_as(self):
+        return self.read("SELECT r.phase, r.parkKind, t.activeRunId FROM runs r"
+                         " JOIN tickets t ON t.lastRunId = r.id")
+
+    def seen_as(self, state):
+        """The park's pull-status read answers `state`'s pull request."""
+        real = holophyte.pr_status.graphql
+        def graphql(target, pull, query, variables):
+            if "mergedBy" not in query:
+                return real(target, pull, query, variables)
+            return state["data"]
+        self.enterContext(patch.object(holophyte.pr_status, "graphql", graphql))
+
+    def test_pending_checks_park_the_run_as_ci_and_free_its_worker(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        pending = self.pr_state(checks="PENDING")
+        self.fake_route(states=[pending, self.pr_state()])
+        self.seen_as(pending)
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertEqual(naps, [])
+        self.assertEqual(self.parked_as(),
+                         [("awaiting_merge_approval", "ci", None)])
+        self.assertEqual(self.read("SELECT prSeenAt, prSeenChecks FROM runs"),
+                         [("2000-01-01T00:00:00Z", "pending")])
+        self.assertIn("pending checks", self.question())
+        self.assertEqual([kind for kind, _ in self.api_calls()], ["state"])
+
+    def test_a_pause_during_the_pending_read_pauses_instead_of_parking_ci(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        pending = self.pr_state(checks="PENDING")
+        self.fake_route(states=[pending, self.pr_state()])
+        self.seen_as(pending)
+        real = holophyte.maintainer_notes.pending_state
+        def paused_mid_read(conn, run_id, state, url):
+            state = real(conn, run_id, state, url)
+            conn = store.open(self.db)
+            try:
+                store.pause(conn, conn.execute(
+                    "SELECT id FROM runs WHERE endedAt IS NULL").fetchone()[0],
+                    "reboot writer")
+            finally:
+                conn.close()
+            return state
+        with patch.object(holophyte.maintainer_notes, "pending_state",
+                             paused_mid_read), \
+                patch.object(holophyte.pr, "SLEEP", self.fail):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertEqual(self.read("SELECT outcome, resumePhase, parkKind FROM runs"),
+                         [("paused", "merge_gate", None)])
+
+    def test_a_green_pr_in_its_quiet_period_parks_as_ci(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.fake_route(states=[self.pr_state(updated_at=fresh)])
         naps = []
         with patch.object(holophyte.pr, "SLEEP", naps.append), \
                 patch.object(holophyte.babysitter, "monotonic",
                              side_effect=lambda: sum(naps)):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
+        self.assertEqual(naps, [])
+        self.assertEqual(self.parked_as(),
+                         [("awaiting_merge_approval", "ci", None)])
+        self.assertIn("quiet wait", self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_pending_checks_after_a_thread_fix_wait_in_the_worker(self):
+        self.configure('[merge]\nmode = "pr"\ncheck_wait_sec = 60\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state(checks="PENDING")])
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      Reply("THREAD 1: ADDRESS -- a real crash"),
+                      Commit("fix: default load()"), provider=self.provider())
         self.assertEqual(sum(naps), 60)
+        self.assertEqual(len(self.pushed()), 2)
+        self.assertEqual(self.parked_as(),
+                         [("awaiting_merge_approval", "pull_request", None)])
         self.assertIn("pending checks exceeded 60s on the pull request",
                       self.question())
-        self.assertEqual({kind for kind, _ in self.api_calls()}, {"state"})
 
+    def test_pending_checks_with_a_required_check_unreported_wait_in_the_worker(self):
+        self.configure('[merge]\nmode = "pr"\nmissing_check_sec = 120\n')
+        self.fake_route(states=[self.pr_state()])
 
-    def test_pending_checks_are_waited_for_before_the_verdict(self):
-        self.configure('[merge]\nmode = "pr"\n')
-        self.fake_route(states=[self.pr_state(checks="PENDING"),
-                                self.pr_state(checks="SUCCESS")])
+        def rest(target, pull, method, path, payload=None):
+            if "rules/branches/" in path:
+                return [{"type": "required_status_checks", "parameters": {
+                    "required_status_checks": [{"context": "vercel"}]}}]
+            if path.endswith("/branches/main"):
+                return {"name": "main", "protected": False}
+            return {"total_count": 0, "check_runs": []}
         naps = []
-        with patch.object(holophyte.pr, "SLEEP", naps.append):
+        with patch.object(holophyte.pr_status, "rest", rest), \
+                patch.object(holophyte.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
-
-        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
-        self.assertEqual([kind for kind, _ in self.api_calls()],
-                         ["state", "state", "merge"])
-        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
-                         [("merged", self.MERGE_SHA)])
+        self.assertEqual(sum(naps), 120)
+        self.assertEqual(self.parked_as(),
+                         [("awaiting_merge_approval", "pull_request", None)])
+        self.assertIn("required checks never reported on the head commit:"
+                      " vercel", self.question())
 
 
     def test_a_check_runs_read_the_babysitter_cannot_make_is_pending(self):
@@ -297,6 +382,26 @@ class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual([v["sha"] for kind, v in self.api_calls()
                           if kind == "merge"], [fixed])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_pending_checks_after_a_check_rerun_wait_in_the_worker(self):
+        self.configure('[merge]\nmode = "pr"\nbot_authors = ["style-bot"]\n')
+        self.fake_route(states=[self.pr_state(), self.pr_state([self.NIT]),
+                                self.pr_state(checks="PENDING"), self.pr_state()])
+        reads = []
+        def check_runs(target, pull, sha):
+            reads.append(sha)
+            return [self.UNIT] if len(reads) == 1 else []
+        self.enterContext(patch("holophyte.pr_status._check_runs_of", check_runs))
+        naps = []
+        with patch.object(holophyte.pr, "SLEEP", naps.append):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      Reply("THREAD 1: DECLINE -- a naming preference"),
+                      provider=self.provider())
+        self.assertIn("rerun-failed-jobs", "".join(self.recorded()))
+        self.assertEqual(len(self.pushed()), 1)
+        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S])
+        self.assertEqual(self.read("SELECT outcome, parkKind FROM runs"),
+                         [("merged", None)])
 
     def test_a_check_still_red_after_its_one_fix_parks(self):
         self.red_check(self.UNIT, self.FAILED)

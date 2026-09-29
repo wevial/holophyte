@@ -442,8 +442,10 @@ run, else the run's last heartbeat (both null only for a ticket parked
 with no run behind it). A `pr_open` item is a `blocked_on_operator`
 ticket whose parked run has a `pr_url` and whose recorded park kind
 (`runs.parkKind`, one of `store/enums.py` `ParkKind`) is `pull_request`,
-as a park under `[merge] mode = "pr"` records it; the question's wording
-plays no part. The run waits on a review or a merge, not on an answer,
+as a park under `[merge] mode = "pr"` records it, or `ci`, as a babysit
+waiting only on pending checks or the quiet period records it; the
+question's wording plays no part. The run waits on a review, its checks
+or a merge, not on an answer,
 so the item carries `pr_url` and `reason` (the question with its first
 line removed, or the whole question when it has one line) in place of
 `question`; its `run` and `asked_ms` are as on `blocked`. Its `pr` is
@@ -626,7 +628,7 @@ is 404, naming the `/projects/NAME` prefix. Tokens are in
   "projects": [
     {"name": "holophyte", "path": "/path/to/holophyte",
      "store": "/home/op/.holophyte/holophyte-HASH/store.db", "error": null,
-     "host": "writer-1", "schema_version": 39, "admission": "enabled",
+     "host": "writer-1", "schema_version": 40, "admission": "enabled",
      "hold_note": null, "project_row": 1,
      "supervisor": {"state": "live", "pid": 0, "heartbeat_age_ms": 21000,
                     "host": "writer-1"},

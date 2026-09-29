@@ -103,17 +103,16 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     def test_wait_threads_fix_steps_are_recorded_once_per_change(self):
         self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
         fresh = datetime.now(timezone.utc).isoformat()
-        self.fake_route(states=[self.pr_state(checks="PENDING"),
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                               self.pr_state(checks="PENDING"),
                                self.pr_state(checks="PENDING"),
                                self.pr_state(updated_at=fresh),
-                               self.pr_state(updated_at=fresh),
-                               self.pr_state([self.DEFECT, self.NIT]), self.pr_state()])
+                               self.pr_state(updated_at=fresh), self.pr_state()])
         with patch.object(holophyte.pr, "SLEEP"):
             self.loop(Commit("candidate"), APPROVE, Idle(""),
-                      Reply("THREAD 1: ADDRESS -- crash\n"
-                            "THREAD 2: DECLINE -- preference"),
+                      Reply("THREAD 1: ADDRESS -- crash"),
                       Commit("fix crash"), provider=self.provider())
-        self.assertEqual(self.steps(), ["checks", "quiet", "threads", "fix", "parked"])
+        self.assertEqual(self.steps(), ["threads", "fix", "checks", "quiet", "parked"])
         self.assertEqual(len(self.pushed()), 2)
 
     def test_conflict_covering_review_and_park_steps(self):
@@ -290,11 +289,15 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     def test_pr_merged_by_a_person_mid_pass_ends_the_run_merged(self):
         # KO-653: a person merged the PR while the run waited on its
         # checks in `merge_gate`; the worker crashed on `merge_gate -> done`.
+        # The wait is its thread fix's, which a babysit keeps in the worker.
         self.configure('[merge]\nmode = "pr"\n')
-        self.fake_route(states=[self.pr_state(checks="PENDING"),
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state(checks="PENDING"),
                                 self.pr_state(merged=True)])
         # Through the pool's worker, where the crash escaped (`pool._worker`).
-        fake = FakeAgent(Commit("the scripted work"), APPROVE, Idle(""))
+        fake = FakeAgent(Commit("the scripted work"), APPROVE, Idle(""),
+                         Reply("THREAD 1: ADDRESS -- a real crash"),
+                         Commit("fix: default load()"))
         with no_agent_processes(), \
                 patch.dict(sys.modules, {"linear_provider": self.provider()}), \
                 patch.object(holophyte.loop, "agent", fake), \
@@ -340,24 +343,27 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertIsNone(self.rc)
 
 
-    def test_a_green_pr_quieter_than_pr_quiet_sec_is_not_merged(self):
+    def test_a_green_pr_quieter_than_pr_quiet_sec_after_a_fix_is_not_merged(self):
         self.configure('[merge]\nmode = "pr"\npr_rounds = 1\ncheck_wait_sec = 45\n')
         fresh = (datetime.now(timezone.utc)
                  - timedelta(seconds=10)).isoformat()
-        self.fake_route(states=[self.pr_state(updated_at=fresh)])
+        self.fake_route(states=[self.pr_state([self.DEFECT]),
+                                self.pr_state(updated_at=fresh)])
         naps = []
         with patch.object(holophyte.pr, "SLEEP", naps.append), \
                 patch.object(holophyte.babysitter, "monotonic",
                              side_effect=lambda: sum(naps)):
             out = self.main_output(Commit("the scripted work"), APPROVE, Idle(""),
+                                   Reply("THREAD 1: ADDRESS -- a real crash"),
+                                   Commit("fix: default load()"),
                                    provider=self.provider())
 
         self.assertTrue(naps)
         self.assertRegex(out, r"green and quiet for \d+s of the 300s"
                               r" required; waiting")
-        calls = self.api_calls()
-        self.assertGreater(len(calls), 1)
-        self.assertEqual({kind for kind, _ in calls}, {"state"})
+        kinds = [kind for kind, _ in self.api_calls()]
+        self.assertGreater(kinds.count("state"), 2)
+        self.assertNotIn("merge", kinds)
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("awaiting_merge_approval", None)])
         self.assertIn("quiet wait exceeded 45s", self.question())
@@ -652,7 +658,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertIn("required checks never reported on the head commit:"
                       " vercel", self.question())
 
-    def test_pending_checks_with_none_required_wait_as_before(self):
+    def test_pending_checks_with_none_required_park_as_ci_without_a_retrigger(self):
         self.configure('[merge]\nmode = "pr"\nmissing_check_sec = 30\n'
                        'retrigger_missing_checks = true\n')
         self.fake_route(states=[self.pr_state(checks="PENDING")] * 4
@@ -663,9 +669,11 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                              side_effect=lambda: sum(naps)):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
-        self.assertEqual(naps, [holophyte.pr.CHECK_POLL_S] * 4)
+        self.assertEqual(naps, [])
         self.assertEqual(len(self.pushed()), 1)
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.retriggers(), [])
+        self.assertEqual(self.read("SELECT phase, parkKind FROM runs"),
+                         [("awaiting_merge_approval", "ci")])
 
 
 if __name__ == "__main__":
