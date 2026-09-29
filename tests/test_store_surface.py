@@ -289,8 +289,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                  (store.working, ["agent_work", "effective_work",
                                                   "settle_work", "verify_work",
                                                   "working"]),
-                                 # The gap layer record's writer and count.
-                                 (store.gap_layers, ["gap_layer_counts",
+                                 # The gap layer record's writer and count;
+                                 # HOLO-66: `gap_finder_counts`, by finder.
+                                 (store.gap_layers, ["gap_finder_counts",
+                                                     "gap_layer_counts",
                                                      "record_gap_layer"]),
                                  # A story's filing, approval, ledger,
                                  # decisions, closing and abandonment;

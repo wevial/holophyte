@@ -2,17 +2,21 @@
 import re
 import time
 
-from .enums import GapLayer
+from .enums import GapFinder, GapLayer
 from .schema import _transaction
 
 TICKET_IDENTIFIER = re.compile(r"[A-Z][A-Z0-9]*-[0-9]+\Z")
 
 
 def record_gap_layer(conn, ticket_id, layer, note, author, carried_by=None,
-                     now=None):
+                     now=None, found_by=next(iter(GapFinder)).value):
     layers = [member.value for member in GapLayer]
     if layer not in layers:
         raise ValueError(f"layer {layer!r} is not one of {', '.join(layers)}")
+    finders = [member.value for member in GapFinder]
+    if found_by not in finders:
+        raise ValueError(f"found_by {found_by!r} is not one of"
+                         f" {', '.join(finders)}")
     if not isinstance(note, str) or not note.strip():
         raise ValueError("note is blank")
     if not isinstance(author, str) or not author.strip():
@@ -29,8 +33,8 @@ def record_gap_layer(conn, ticket_id, layer, note, author, carried_by=None,
             raise ValueError(f"ticket {ticket_id!r} is not in the store")
         cursor = conn.execute(
             "INSERT INTO gapLayers (ticketId, layer, note, carriedBy, author,"
-            " at) VALUES (?, ?, ?, ?, ?, ?)",
-            (ticket_id, layer, note, carried_by, author, now))
+            " at, foundBy) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (ticket_id, layer, note, carried_by, author, now, found_by))
     return cursor.lastrowid
 
 
@@ -41,4 +45,14 @@ def gap_layer_counts(conn):
             " (SELECT MAX(id) FROM gapLayers GROUP BY ticketId)"
             " GROUP BY layer"):
         counts[layer] = count
+    return counts
+
+
+def gap_finder_counts(conn):
+    counts = dict.fromkeys((member.value for member in GapFinder), 0)
+    for found_by, count in conn.execute(
+            "SELECT foundBy, COUNT(*) FROM gapLayers WHERE id IN"
+            " (SELECT MAX(id) FROM gapLayers GROUP BY ticketId)"
+            " GROUP BY foundBy"):
+        counts[found_by] = count
     return counts

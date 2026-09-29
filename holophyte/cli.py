@@ -62,7 +62,7 @@ from holophyte.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.sweep_report import sweep_report
 from provider import board_for
 from store import RevisionMoved
-from store.enums import GapLayer
+from store.enums import GapFinder, GapLayer
 
 # The entry point the loop's spawned supervisor is started through: the
 # `factory.py` beside this package, by path, so the supervisor runs the same
@@ -216,6 +216,8 @@ def _gap_layer_checks(parser, args):
                      f"{args.gap_layer[1]!r}")
     if args.carried_by is not None and args.gap_layer is None:
         parser.error("--carried-by belongs to --gap-layer")
+    if args.found_by is not None and args.gap_layer is None:
+        parser.error("--found-by belongs to --gap-layer")
 
 
 def _modifier_checks(parser, args):
@@ -358,6 +360,10 @@ def _legacy_cli(argv):
         "--carried-by", metavar="KEY-n",
         help="with --gap-layer: the ticket carrying the lesson when it is "
              "not the gap's own")
+    parser.add_argument(
+        "--found-by", choices=[member.value for member in GapFinder],
+        help="with --gap-layer: who found the gap, a witness or the "
+             "operator (the default)")
     modes.add_argument(
         "--close", metavar="KO-n",
         help="close a ticket whose change landed outside the factory; requires "
@@ -766,7 +772,7 @@ def _store_verb(args, target, board):
     if args.gap_layer is not None:
         identifier, layer = args.gap_layer
         gap_layer(target, identifier, layer, args.note,
-                  carried_by=args.carried_by)
+                  carried_by=args.carried_by, found_by=args.found_by)
         return True
     if args.close is not None:
         close_ticket(target, args.close, args.landed, args.note,
