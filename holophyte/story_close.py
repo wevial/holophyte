@@ -1,14 +1,24 @@
 """A story settles after each witness pass: closed at main's tip, or parked."""
 import collections
+import json
+import re
+import subprocess
 
 from holophyte.board import mirror_push
 from holophyte.gates import MergeLockHeld, merge_lock
 from holophyte.redact import safe_print as print
+from holophyte.story_claim import DRIFT_OPTIONS
 from provider import board_for
+from store.schema import transaction
 from store.stories import (
     CLOSED_STATUSES,
+    abandon_story,
+    accept_witness,
+    answer_decision,
     close_story,
     park_story,
+    reapprove_edges,
+    replan_story,
     story,
     witness_ledger,
 )
@@ -16,6 +26,14 @@ from store.stories import (
 UNMET_OPTIONS = ("file a follow-up child", "accept the changed witness file",
                  "amend the witness (re-plan)", "abandon the story")
 REGRESSED_OPTIONS = ("file a fix child", "rerun", "drop {key} (re-plan)")
+ACCEPT, ABANDON = UNMET_OPTIONS[1], UNMET_OPTIONS[3]
+RERUN, REAPPROVE, REPLAN = REGRESSED_OPTIONS[1], DRIFT_OPTIONS[1], "(re-plan)"
+WITNESS_KEY = re.compile(r"Witness (\S+) ")
+GIT_TIMEOUT = 30
+
+
+class DecisionRefused(Exception):
+    pass
 
 
 def settle_story(target, conn, story_id, sha):
@@ -139,3 +157,120 @@ def _open_children(conn, story_id):
 def _identifier(conn, ticket_id):
     return conn.execute("SELECT linearIdentifier FROM tickets WHERE id = ?",
                         (ticket_id,)).fetchone()[0]
+
+
+def decide(target, conn, identifier, decision_id, option, note):
+    from holophyte.witness import witness_pass
+    story_id = _parent(conn, target, identifier)
+    decision = _decision(conn, story_id, identifier, decision_id)
+    answer = _chosen(decision, decision_id, option)
+    source = (_tip_source(target, conn, story_id, decision)
+              if answer == ACCEPT else None)
+    try:
+        with transaction(conn):
+            answer_decision(conn, decision_id, answer, "cli", note)
+            _apply(conn, story_id, decision, answer, note, source)
+    except ValueError as refused:
+        raise DecisionRefused(str(refused)) from None
+    lines = [f"decision {decision_id} of story {identifier}: {answer}"]
+    if answer == ABANDON:
+        board = board_for(target)
+        if board is not None:
+            mirror_push(conn, story_id, board)
+    if answer == RERUN:
+        rows = witness_pass(target, conn, story_id, "operator")
+        if rows:
+            lines.append(f"witness pass at {rows[0].mainSha}: " + ", ".join(
+                f"{row.witnessKey} {row.verdict}" for row in rows))
+    return [*lines, f"story {identifier} is {story(conn, story_id).state}"]
+
+
+def _parent(conn, target, identifier):
+    from holophyte.admission import project_of
+    row = conn.execute("SELECT id FROM tickets WHERE projectId = ? AND"
+                       " linearIdentifier = ?",
+                       (project_of(conn, target), identifier)).fetchone()
+    if row is None:
+        raise DecisionRefused("no such ticket in this project")
+    found = story(conn, row[0])
+    if found is None or found.ticketId != row[0]:
+        raise DecisionRefused("not a story's parent")
+    return row[0]
+
+
+def _decision(conn, story_id, identifier, decision_id):
+    row = conn.execute(
+        "SELECT ticketId, question, options, defaultOption, answer"
+        " FROM storyDecisions WHERE id = ? AND storyId = ?",
+        (decision_id, story_id)).fetchone()
+    if row is None:
+        raise DecisionRefused(f"story {identifier} holds no decision"
+                              f" {decision_id}")
+    if row[4] is not None:
+        raise DecisionRefused(f"decision {decision_id} is already answered:"
+                              f" {row[4]}")
+    return {"ticketId": row[0], "question": row[1],
+            "options": json.loads(row[2]), "default": row[3]}
+
+
+def _chosen(decision, decision_id, option):
+    if option is None or option == "default":
+        return decision["default"]
+    options = decision["options"]
+    if not 1 <= int(option) <= len(options):
+        raise DecisionRefused(f"decision {decision_id} has {len(options)}"
+                              f" options; there is no option {option}")
+    return options[int(option) - 1]
+
+
+def _witness(conn, story_id, decision):
+    matched = WITNESS_KEY.match(decision["question"])
+    found = story(conn, story_id)
+    for witness in found.witnesses:
+        if matched and witness.key == matched.group(1):
+            return witness
+    raise DecisionRefused("the decision names no witness of the story")
+
+
+def _tip_source(target, conn, story_id, decision):
+    from holophyte.witness import main_tip
+    witness = _witness(conn, story_id, decision)
+    try:
+        shown = subprocess.run(
+            ["git", "show", f"{main_tip(target)}:{witness.file}"],
+            cwd=target.path, capture_output=True, timeout=GIT_TIMEOUT)
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        raise DecisionRefused(f"main's tip could not be read: {error}") from None
+    if shown.returncode != 0:
+        raise DecisionRefused(f"{witness.file} is not at main's tip")
+    try:
+        return witness.key, shown.stdout.decode()
+    except UnicodeDecodeError:
+        raise DecisionRefused(f"{witness.file} at main's tip is not"
+                              " UTF-8 text") from None
+
+
+def _apply(conn, story_id, decision, answer, note, source):
+    if answer == ABANDON:
+        abandon_story(conn, story_id, note, "cli")
+    elif answer == ACCEPT:
+        accept_witness(conn, story_id, *source)
+    elif answer == REAPPROVE:
+        reapprove_edges(conn, story_id, decision["ticketId"])
+    elif answer.endswith(REPLAN):
+        _replan(conn, story_id)
+
+
+def _replan(conn, story_id):
+    found = story(conn, story_id)
+    witnesses = [witness._asdict() for witness in found.witnesses]
+    keys = collections.defaultdict(list)
+    roles = {}
+    for child in found.children:
+        roles[child.ticketId] = child.role
+        if child.witnessKey:
+            keys[child.ticketId].append(child.witnessKey)
+    replan_story(conn, story_id, witnesses,
+                 [(ticket_id, role, keys[ticket_id])
+                  for ticket_id, role in roles.items()],
+                 found.standingOrders)

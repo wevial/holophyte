@@ -1,4 +1,4 @@
-"""`--file-story`, `--approve-story` and `--witness-pass`: options and dispatch."""
+"""`--file-story`, `--approve-story`, `--witness-pass` and `--decide`."""
 import sys
 from contextlib import closing
 
@@ -6,6 +6,7 @@ from holophyte.admission import project_of
 from holophyte.board import FILE_TICKET_PRIORITIES
 from holophyte.runs import open_store
 from holophyte.story_approval import ApprovalRefused, approve
+from holophyte.story_close import DecisionRefused, decide
 from holophyte.story_filing import StoryRefused, file_story, update_story
 from holophyte.witness import pass_refusal, witness_pass
 
@@ -47,6 +48,18 @@ def add_story_arguments(parser, modes):
              "the ledger as verifier operator, even at a tip the ledger "
              "already holds; print each verdict. Exits 1 for a story not "
              "approved or parked, or a held project")
+    modes.add_argument(
+        "--decide", nargs="+", metavar=("KEY-n", "ID [OPTION]"),
+        help="answer decision ID of the parked story KEY-n with OPTION, the "
+             "option's number counting from 1 or 'default' (the default when "
+             "left out), recording a 'decide' intervention carrying --note, "
+             "and apply it: abandon the story, accept the witness file at "
+             "main's tip as approved, re-approve the child's current edges, "
+             "rerun a witness pass, or return the story to planned for a "
+             "re-plan; an option asking a person to act first is recorded "
+             "only. With no decision left open the story is approved again. "
+             "An answered or unknown ID, or an option out of range, exits 1 "
+             "and writes nothing")
     parser.add_argument(
         "--baseline-green", metavar="W", action="append", default=[],
         help="with --approve-story: approve although witness W is green at "
@@ -60,6 +73,12 @@ def add_story_arguments(parser, modes):
 
 def check_story_arguments(parser, args):
     _check_approval_arguments(parser, args)
+    if args.decide is not None and not (
+            len(args.decide) in (2, 3) and args.decide[1].isdigit()
+            and (args.decide[2:] in ([], ["default"])
+                 or args.decide[2].isdigit())):
+        parser.error("--decide takes KEY-n, the decision's ID and optionally "
+                     "the option's number or 'default'")
     if args.file_story is None:
         return
     if args.update is not None and args.revision is None:
@@ -124,14 +143,34 @@ def _witness_pass(args, target, out):
     return True
 
 
+def _decide(args, target, out):
+    identifier, decision_id, *option = args.decide
+    with closing(open_store(target)) as conn:
+        try:
+            lines = decide(target, conn, identifier, int(decision_id),
+                           option[0] if option else None, args.note)
+        except DecisionRefused as refused:
+            print(f"[holo2] {identifier}: {refused}", file=out)
+            raise SystemExit(1) from None
+    for line in lines:
+        print(f"[holo2] {line}", file=out)
+    return True
+
+
 def story_verb(args, target, board, out=None):
     out = sys.stdout if out is None else out
+    if args.decide is not None:
+        return _decide(args, target, out)
     if args.witness_pass is not None:
         return _witness_pass(args, target, out)
     if args.approve_story is not None:
         return _approve_story(args, target, board, out)
     if args.file_story is None:
         return False
+    return _file_story(args, target, board, out)
+
+
+def _file_story(args, target, board, out):
     if args.update is not None and not getattr(board, "native", False):
         print("[holo2] --file-story --update changes a story on a native "
               "board only; a Linear story's children are edited on Linear",

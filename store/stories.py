@@ -401,6 +401,39 @@ def answer_decision(conn, decision_id, answer, author, note, now=None):
         return _story_state(conn, story_id)
 
 
+def accept_witness(conn, story_id, key, source, now=None):
+    _check_text(source=source)
+    with _transaction(conn):
+        state = _story_state(conn, story_id)
+        if state not in OPEN_STATES:
+            raise ValueError(f"story {story_id} is {state}, not approved or"
+                             " parked")
+        if conn.execute(
+                "UPDATE storyWitnesses SET source = ?, sourceHash = ?"
+                " WHERE storyId = ? AND key = ?",
+                (source, hashlib.sha256(source.encode()).hexdigest(),
+                 story_id, key)).rowcount == 0:
+            raise ValueError(f"story {story_id} has no witness {key!r}")
+
+
+def reapprove_edges(conn, story_id, ticket_id, now=None):
+    with _transaction(conn):
+        state = _story_state(conn, story_id)
+        if state not in OPEN_STATES:
+            raise ValueError(f"story {story_id} is {state}, not approved or"
+                             " parked")
+        child = _child_rows(conn, story_id).get(ticket_id)
+        if child is None:
+            raise ValueError(f"ticket {ticket_id} is not a child of story"
+                             f" {story_id}")
+        (plan,) = conn.execute("SELECT approvedPlan FROM stories"
+                               " WHERE ticketId = ?", (story_id,)).fetchone()
+        plan = json.loads(plan)
+        plan["edges"][child[0]] = child[2]
+        conn.execute("UPDATE stories SET approvedPlan = ? WHERE ticketId = ?",
+                     (json.dumps(plan), story_id))
+
+
 def close_story(conn, story_id, main_sha, note, now=None):
     _check_text(main_sha=main_sha, note=note)
     if now is None:
