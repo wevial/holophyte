@@ -256,7 +256,8 @@ def credential_mount_flags(credential, scratch, mounted):
 
 
 def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
-                      project=None, cache_for=None, credential_scratch=None):
+                      project=None, cache_for=None, credential_scratch=None,
+                      carry=None):
     uid, gid = os.getuid(), os.getgid()
     if uid == 0:
         raise RuntimeError("container implementer requires a non-root factory user")
@@ -278,6 +279,11 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
         "--volume",
         f"{workspace}:/workspace:{'rw' if route.writable else 'ro'}",
     ]
+    for entry, source in (carry or {}).items():
+        source = Path(source).resolve(strict=True)
+        if ":" in str(source):
+            raise RuntimeError(f"carry bind source {source} must not contain a colon")
+        command += ["--volume", f"{source}:{PurePosixPath('/workspace', entry)}:rw"]
     mounted = {PurePosixPath("/home/implementer"): None}
     if route.writable and task is not None:
         session = session_directory(task, project)
@@ -336,7 +342,7 @@ def unwinding_on_signal(name):
 
 
 def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
-           project=None, mounts=(), keep_session=False):
+           project=None, mounts=(), keep_session=False, carry=None):
     """Preserve host process semantics; always remove isolated descendants."""
     hook = {"on_start": on_start} if on_start is not None else {}
     if route.backend == "none":
@@ -344,11 +350,16 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
         return (runner or run_capped)(argv, worktree, timeout, **hook, **kwargs)
     if route.backend != "container":
         raise ValueError(f"unknown isolation backend: {route.backend}")
-    from holophyte.isolation_clone import turn_clone
+    from holophyte.config import carry_directories
+    from holophyte.isolation_clone import carry_mounts, turn_clone
 
     image_ready(route)
     name = "holophyte-implement-" + uuid.uuid4().hex
-    checkout = (turn_clone(worktree, project) if route.writable
+    if carry is None:
+        carry = carry_directories(project) if project is not None else []
+    task = Path(worktree).resolve()
+    carry = carry_mounts(task, carry) if route.writable else []
+    checkout = (turn_clone(worktree, project, carry) if route.writable
                 else contextlib.nullcontext((worktree, {})))
     with (unwinding_on_signal(name),
           credential_copy(route, worktree, project) as scratch,
@@ -357,6 +368,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
             route, workspace, dict(env or {}, **git_env), argv, name, mounts,
             task=worktree if keep_session else None, project=project,
             cache_for=worktree, credential_scratch=scratch,
+            carry={entry: task / entry for entry in carry},
         )
         try:
             return run_capped(command, workspace, timeout, env=host_env, **hook)

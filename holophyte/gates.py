@@ -23,7 +23,7 @@ from pathlib import Path
 from time import monotonic, sleep, time
 
 import ticket_template
-from holophyte.config import VERIFY_TIMEOUT
+from holophyte.config import VERIFY_TIMEOUT, carry_directories
 
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
 
@@ -506,7 +506,9 @@ def _verify_command(project, command, cwd, timeout):
     route = isolation.route_for(project) if project is not None else isolation.Route()
     argv = ['/bin/sh', '-c', command] if route.backend == 'container' else command
     env = isolation.environment(project) if project is not None else None
-    return isolation.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped)
+    carry = carry_directories(project) if project is not None else None
+    return isolation.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped,
+                            carry=carry)
 
 
 def _run_verify(cmd, cwd, contracts=None, timeout=None, *, project=None,
