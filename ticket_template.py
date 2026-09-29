@@ -56,9 +56,10 @@ from pathlib import Path
 TEMPLATE_ORDER = [
     "Summary", "What / Why / How", "Reproduce", "In scope", "Out of scope",
     "Acceptance criteria", "Verify command(s)", "Contract checks", "Evidence",
-    "Implementation notes", "Estimate & dependencies", "Open questions",
+    "Implementation notes", "Story", "Estimate & dependencies",
+    "Open questions",
 ]
-OPTIONAL_SECTIONS = {"Reproduce", "Contract checks", "Evidence"}
+OPTIONAL_SECTIONS = {"Reproduce", "Contract checks", "Evidence", "Story"}
 SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
 # Mechanical scope caps. Module-level so a future per-project config can
 # override them without touching validate().
