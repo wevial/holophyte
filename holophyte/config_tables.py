@@ -271,6 +271,27 @@ def loop_config(project):
     return LoopConfig(**values)
 
 
+
+STORY_KEYS = {"witness_sec": 600}
+StoryConfig = collections.namedtuple("StoryConfig", STORY_KEYS)
+
+
+def story_config(project):
+    table = project.config().get("story", {})
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [story] must be a table, got "
+            f"{type(table).__name__}")
+    values = {}
+    for key, default in STORY_KEYS.items():
+        value = table.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise SystemExit(
+                f"[holo2] {project.config_path}: [story] {key} must be a "
+                f"positive integer, got {value!r}")
+        values[key] = value
+    return StoryConfig(**values)
+
 # The board the loop claims from: the Linear project's UUID and the name of
 # the team it belongs to (the workflow states are looked up per team). Both
 # live in the target's config because a target is a repository plus its

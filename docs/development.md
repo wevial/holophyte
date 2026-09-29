@@ -239,6 +239,11 @@ Each module, one line:
 - `holophyte/main_checkout.py` — the detached main checkout the babysit
   pass verifies main in, given the task worktree's `[worktree] carry`
   directories, or its `[worktree] setup`, first.
+- `holophyte/witness.py` — `run_witnesses()` runs a story's witness
+  commands at one commit of main in a scratch worktree, within
+  `[story] witness_sec`, and appends each verdict to the ledger;
+  `main_tip()` reads the commit a pass runs at and `red_kind()` reads a
+  red's kind from its output.
 - `holophyte/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget
