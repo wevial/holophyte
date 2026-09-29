@@ -40,6 +40,8 @@ class FileSizesBaselineTests(unittest.TestCase):
         git(self.repo, "init", "-q", "-b", "main")
         git(self.repo, "config", "user.email", "factory@example.invalid")
         git(self.repo, "config", "user.name", "Factory Test")
+        git(self.repo, "config", "gc.auto", "0")
+        git(self.repo, "config", "maintenance.auto", "false")
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "checkout")
         self.enterContext(patch.dict(
@@ -52,6 +54,11 @@ class FileSizesBaselineTests(unittest.TestCase):
     def baseline(self):
         return holophyte.gates.with_baseline(self.project, self.repo, "",
                                              True, "")
+
+    def test_the_temporary_repository_turns_off_automatic_maintenance(self):
+        self.assertEqual(git(self.repo, "config", "--get", "gc.auto"), "0\n")
+        self.assertEqual(
+            git(self.repo, "config", "--get", "maintenance.auto"), "false\n")
 
     def test_a_file_grown_past_its_pin_fails_the_baseline_naming_the_module(self):
         ok, out = self.baseline()
