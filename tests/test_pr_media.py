@@ -138,6 +138,13 @@ class MediaTests(unittest.TestCase):
         self.ledger = ledger
         return create.call_args.args[3]
 
+    def stub_capture_runner(self):
+        runner = self.root / "factory" / "holophyte" / "capture_playwright.py"
+        runner.parent.mkdir(parents=True)
+        runner.write_text("")
+        self.enterContext(patch.object(review_runner, "ROOT", runner.parent.parent))
+        return runner.resolve()
+
     def test_isolated_capture_publishes_from_worktree(self):
         import shlex
 
@@ -154,6 +161,7 @@ class MediaTests(unittest.TestCase):
         self.git('worktree', 'add', '-qb', 'task', str(worktree))
         self.repo = worktree
         states = ['Dialog open', 'Saved']
+        runner = self.stub_capture_runner()
 
         def capture(argv, cwd, timeout, *, env):
             mounts = [argv[i + 1] for i, v in enumerate(argv) if v == '--volume']
@@ -162,8 +170,6 @@ class MediaTests(unittest.TestCase):
             self.assertEqual(cache_destination, isolation.CACHE)
             self.assertTrue(Path(cache).is_relative_to(
                 state_dir(self.target.path).resolve()))
-            runner = str(Path(review_runner.ROOT,
-                              'holophyte/capture_playwright.py').resolve())
             self.assertEqual(mounts[2], f'{runner}:{runner}:ro')
             source, destination, mode = mounts[0].split(':')
             workspace = Path(source).resolve()
@@ -817,6 +823,7 @@ class MediaTests(unittest.TestCase):
         worktree = self.root / "task"
         self.git("worktree", "add", "-qb", "task", str(worktree))
         self.repo = worktree
+        self.stub_capture_runner()
         with (patch.object(isolation, "image_ready"),
               patch.object(isolation.review_runner, "_remove_container"),
               patch.object(isolation, "run_capped",

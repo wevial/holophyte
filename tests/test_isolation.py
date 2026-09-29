@@ -576,9 +576,13 @@ class IsolationTests(unittest.TestCase):
         self.table["agents"]["implementer_isolation"] = "container"
         (worktree / "deps").mkdir()
         os.mkfifo(worktree / "deps" / "pipe")
-        failure, volumes = self.recorded_volumes(lambda: pr_media._capture(
-            "capture", worktree, worktree.resolve() / "shot.png", "HOLO-1", [],
-            project=self.target))
+        runner = self.root / "factory" / "holophyte" / "capture_playwright.py"
+        runner.parent.mkdir(parents=True)
+        runner.write_text("")
+        with patch.object(pr_media.review_runner, "ROOT", runner.parent.parent):
+            failure, volumes = self.recorded_volumes(lambda: pr_media._capture(
+                "capture", worktree, worktree.resolve() / "shot.png", "HOLO-1", [],
+                project=self.target))
         self.assertEqual(failure, "")
         self.assertIn(f"{worktree.resolve() / 'deps'}:/workspace/deps:rw", volumes)
 
@@ -1305,6 +1309,38 @@ class IsolationTests(unittest.TestCase):
             ["/bin/sh", "-c", 'test ! -e "$0"', str(runner.resolve())],
         )
         self.assertEqual(code, 0, output)
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_capture_modules_pass_with_the_checkout_at_the_workspace(self):
+        import shutil
+        import uuid
+
+        import review_runner
+        from holophyte import isolation
+        from holophyte.isolation_git import git
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        checkout = self.root / "checkout"
+        git(self.root, "clone", "-q", str(review_runner.ROOT), str(checkout))
+        name = "holophyte-test-" + uuid.uuid4().hex
+        script = ('export HOLOPHYTE_HOME="$(mktemp -d)"; status=0; for module; do'
+                  ' python3 -m unittest discover -s tests -p "$module" || status=1;'
+                  ' done; exit $status')
+        command = ["docker", "run", "--rm", "--pull=never", "--name", name,
+                   f"--user={os.getuid()}:{os.getgid()}", "--env=HOME=/tmp",
+                   f"--volume={checkout}:/workspace:rw", "--workdir=/workspace",
+                   isolation.Route().image, "/bin/sh", "-c", script, "sh",
+                   "test_isolation.py", "test_pr_media.py"]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    timeout=600)
+        finally:
+            review_runner._remove_container(name, env={"PATH": os.defpath})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @unittest.skipUnless(
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
