@@ -28,7 +28,7 @@ from pathlib import Path
 from holophyte.board import FILE_TICKET_PRIORITIES, file_ticket
 from holophyte.board_diff import board_diff
 from holophyte.board_import import board_import
-from holophyte.cli_story import add_story_arguments, story_verb
+from holophyte.cli_story import add_story_arguments, check_story_arguments, story_verb
 from holophyte.config import (
     check_agent_commands,
     check_config,
@@ -100,7 +100,7 @@ def _file_ticket_only(parser, args):
     `--state`, a create-time field an update leaves as it is; `--priority`
     beside it is a native board's, which `_native_update_only()` decides."""
     if args.file_ticket is None:
-        if args.update is not None:
+        if args.update is not None and args.file_story is None:
             parser.error("--update says which issue --file-ticket replaces "
                          "the body of; it names nothing by itself")
         for flag, value in (("--state", args.state),
@@ -125,7 +125,8 @@ def _native_update_only(parser, args, board):
     """Refuse `--revision`, `--priority` and `--labels` beside `--update`
     on a board that is not native: an update there leaves priority and
     labels as they are, and has no revision to be made at (KO-760)."""
-    if args.update is None or getattr(board, "native", False):
+    if (args.update is None or args.file_story is not None
+            or getattr(board, "native", False)):
         return
     if args.priority is not None:
         parser.error("--priority is set when --file-ticket creates an "
@@ -491,16 +492,18 @@ def _legacy_cli(argv):
              "the story's tickets are created with (default none)")
     parser.add_argument(
         "--update", metavar="KO-n",
-        help="with --file-ticket: replace that issue's title, description "
+        help="with --file-story: the filed story to apply the directory "
+             "to. With --file-ticket: replace that issue's title, description "
              "and estimate from the validated file instead of creating one; "
              "state, priority and relations stay as they are, and the stored "
              "body is read back and validated as on filing; on a native "
              "board it requires --revision and takes --priority and --labels")
     parser.add_argument(
         "--revision", metavar="N", type=int,
-        help="with --file-ticket --update, --move or --cancel on a native "
-             "board: the revision the ticket was read at; a ticket that moved "
-             "past it is left unchanged and its current revision printed")
+        help="with --file-ticket --update, --file-story --update, --move or "
+             "--cancel on a native board: the revision the ticket (a story's "
+             "parent) was read at; a ticket that moved past it is left "
+             "unchanged and its current revision printed")
     parser.add_argument(
         "--labels", metavar="a,b", type=label_names,
         help="with --file-ticket --update on a native board: the ticket's "
@@ -525,6 +528,7 @@ def _legacy_cli(argv):
     args = parser.parse_args(argv)
     eager_import()
     _file_ticket_only(parser, args)
+    check_story_arguments(parser, args)
     _board_verb_checks(parser, args)
     _modifier_checks(parser, args)
     _note_checks(parser, args)

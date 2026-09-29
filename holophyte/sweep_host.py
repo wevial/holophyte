@@ -88,6 +88,7 @@ from holophyte.supervisor_lock import (
     supervisor_lock_path,
 )
 from holophyte.sweep_report import merge_lock_lines, restart_lines, sweep_lines
+from store import launch_backoff
 
 # Consecutive runs a store may be locked or corrupt before it is listed
 # `unavailable`: the project form's three skipped passes.
@@ -241,7 +242,8 @@ def sweep_store(entry, state, now, out):
     conn = open_store(target)
     try:
         conn.execute(f"PRAGMA busy_timeout = {SWEEP_BUSY_MS}")
-        if project_of(conn, target) is None:
+        project = project_of(conn, target)
+        if project is None:
             return (f"skipped: no project row for {target.path};"
                     f" `factory.py project add {target.path}` writes it"), None
         admission, note = admission_state(conn, target)
@@ -253,9 +255,19 @@ def sweep_store(entry, state, now, out):
         for line in restart_lines(seen):
             print(f"[{entry_key(entry)}] {line}", file=out)
         beat(conn, state, now)
+        outcome = backoff_outcome(conn, project, now) or "ok"
     finally:
         conn.close()
-    return "ok", seen
+    return outcome, seen
+
+
+def backoff_outcome(conn, project, now):
+    backoff = launch_backoff.current(conn, project)
+    if backoff is None or backoff["until"] is None or backoff["until"] <= now:
+        return None
+    until = time.strftime("%H:%M", time.gmtime(backoff["until"] / 1000))
+    reason = next(iter(str(backoff.get("reason") or "").splitlines()), "")
+    return f"backoff: until {until} UTC ({reason})"
 
 
 def sweep_project(entry, state, now, out):
