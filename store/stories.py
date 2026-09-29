@@ -4,12 +4,13 @@ import hashlib
 import json
 import time
 
+from . import _append_event
 from .enums import ChildRole, DecisionKind, RedKind, WitnessVerdict, WitnessVerifier
 from .notes import record_note
 from .operate import record_project_intervention
 from .revisions import BOARD_FIELDS, record_board_fields
 from .schema import _transaction
-from .tickets import walk_ticket
+from .tickets import STORY_ADVANCED, _story_advanced, walk_ticket
 from .writes import set_board_state
 
 STORY_COLUMNS = ("ticketId", "state", "generation", "standingOrders",
@@ -110,6 +111,27 @@ def story(conn, ticket_id):
             (fields["ticketId"],)))
     return Story(**fields, witnesses=witnesses, children=children,
                  decisions=decisions)
+
+
+def advance_story(conn, run_id, now=None):
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        (ticket_id,) = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
+                                    (run_id,)).fetchone()
+        row = conn.execute("SELECT storyId FROM storyChildren"
+                           " WHERE ticketId = ? LIMIT 1",
+                           (ticket_id,)).fetchone()
+        if row is None or _story_advanced(conn, ticket_id):
+            return None
+        conn.execute("UPDATE stories SET generation = generation + 1"
+                     " WHERE ticketId = ?", row)
+        (generation,) = conn.execute(
+            "SELECT generation FROM stories WHERE ticketId = ?", row).fetchone()
+        _append_event(conn, run_id, "narrative", STORY_ADVANCED,
+                      f"story generation advanced to {generation} by this"
+                      " run's merge", now)
+        return generation
 
 
 def approve_story(conn, parent_id, revision, author, note, now=None):
