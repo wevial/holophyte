@@ -4,6 +4,7 @@ import unittest
 import store
 from store.read import ticket_notes
 from store.stories import (
+    abandon_story,
     answer_decision,
     approve_story,
     close_story,
@@ -176,6 +177,55 @@ class StoryLedgerTests(StoryFixture, unittest.TestCase):
         self.assertEqual(self.conn.execute(
             "SELECT * FROM tickets WHERE id = ?", (self.advance,)).fetchone(),
             merged)
+
+    def decision_rows(self):
+        return self.conn.execute(
+            "SELECT id, answer, answeredBy, answeredAt FROM storyDecisions"
+            " ORDER BY id").fetchall()
+
+    def park_twice_answer_once(self):
+        self.approve()
+        first = park_story(self.conn, self.parent, "unmet", "W1 is red",
+                           ["retry", "abandon"], "retry")
+        second = park_story(self.conn, self.parent, "regressed", "W2 fell",
+                            ["revert", "accept"], "revert")
+        answer_decision(self.conn, first, "retry", "operator", "try", now=20)
+        return first, second
+
+    def test_closing_supersedes_the_open_decisions(self):
+        first, second = self.park_twice_answer_once()
+        close_story(self.conn, self.parent, "T", "green at T", now=30)
+        self.assertEqual(self.decision_rows(),
+                         [(first, "retry", "operator", 20),
+                          (second, "superseded", "close_story", 30)])
+        self.assertEqual(story(self.conn, self.parent).decisions, ())
+
+    def test_abandoning_supersedes_the_open_decisions(self):
+        first, second = self.park_twice_answer_once()
+        abandon_story(self.conn, self.parent, "given up", "operator", now=40)
+        self.assertEqual(self.decision_rows(),
+                         [(first, "retry", "operator", 20),
+                          (second, "superseded", "abandon_story", 40)])
+        self.assertEqual(story(self.conn, self.parent).decisions, ())
+
+    def test_a_decision_of_a_closed_or_abandoned_story_is_not_answered(self):
+        for state in ("closed", "abandoned"):
+            with self.subTest(state=state):
+                self.setUp()
+                self.approve()
+                decision = park_story(self.conn, self.parent, "unmet",
+                                      "W1 is red", ["retry", "abandon"],
+                                      "retry")
+                with store.transaction(self.conn):
+                    self.conn.execute("UPDATE stories SET state = ?"
+                                      " WHERE ticketId = ?",
+                                      (state, self.parent))
+                before = self.snapshot()
+                with self.assertRaisesRegex(
+                        ValueError, f"story {self.parent} is {state}"):
+                    answer_decision(self.conn, decision, "retry", "operator",
+                                    "late")
+                self.assertEqual(self.snapshot(), before)
 
     def test_closing_a_planned_or_closed_story_is_refused(self):
         self.file()

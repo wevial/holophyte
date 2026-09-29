@@ -138,6 +138,7 @@ def abandon_story(conn, parent_id, note, author, now=None):
             raise ValueError(f"story {parent_id} is already {state}")
         conn.execute("UPDATE stories SET state = 'abandoned'"
                      " WHERE ticketId = ?", (parent_id,))
+        _supersede_decisions(conn, parent_id, "abandon_story", now)
         (status,) = conn.execute("SELECT status FROM tickets WHERE id = ?",
                                  (parent_id,)).fetchone()
         if status not in CLOSED_STATUSES:
@@ -230,6 +231,10 @@ def answer_decision(conn, decision_id, answer, author, note, now=None):
         if row is None:
             raise ValueError(f"no decision {decision_id}")
         story_id, options, answered = row
+        state = _story_state(conn, story_id)
+        if state in ("closed", "abandoned"):
+            raise ValueError(f"decision {decision_id}'s story {story_id} is"
+                             f" {state}")
         if answered is not None:
             raise ValueError(f"decision {decision_id} is already answered"
                              f" {answered!r}")
@@ -265,12 +270,19 @@ def close_story(conn, story_id, main_sha, note, now=None):
         conn.execute("UPDATE stories SET state = 'closed', closedSha = ?,"
                      " closedAt = ? WHERE ticketId = ?",
                      (main_sha, now, story_id))
+        _supersede_decisions(conn, story_id, "close_story", now)
         walk_ticket(conn, story_id, "merged")
         record_note(conn, story_id, "verdict", note,
                     f"story-closed:{story_id}:{main_sha}", now=now)
         _backlog_unclaimed(conn, story_id,
                            f"story closed on its witnesses at {main_sha}",
                            "factory", now)
+
+
+def _supersede_decisions(conn, story_id, operation, now):
+    conn.execute("UPDATE storyDecisions SET answer = 'superseded',"
+                 " answeredBy = ?, answeredAt = ? WHERE storyId = ?"
+                 " AND answer IS NULL", (operation, now, story_id))
 
 
 def _backlog_unclaimed(conn, parent_id, note, author, now):
