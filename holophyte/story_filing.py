@@ -76,32 +76,42 @@ def _in_transaction(conn, write, *args):
 def _file_on_board(board, conn, project, project_id, directory, text,
                    children, priority):
     slugs = {child.slug for child in children}
+    issue_ids = {}
     for child in children:
-        _check_merged(conn, project_id, child, slugs)
+        issue_ids.update(_merged_issue_ids(conn, project_id, child, slugs))
     label = board_config(project).label
     created = []
     try:
         parent = _create(board, created, text, priority)
         tasks = [(board.fetch_task(parent), None)]
-        identifiers, issue_ids = {}, {}
+        identifiers = {}
         for child in children:
             body = _resolve(_child_body(directory, child), identifiers)
             identifier = _create(board, created, body, priority,
                                  parent=tasks[0][0]["issue_id"])
-            if label is not None:
-                board.label_issue(identifier, label)
             task = board.fetch_task(identifier)
+            if label is not None:
+                board.label_issue(task["issue_id"], label)
+                task = board.fetch_task(identifier)
             identifiers[child.slug] = identifier
             issue_ids[child.slug] = task["issue_id"]
             tasks.append((task, [issue_ids[dep] for dep in child.depends_on
                                  if dep in issue_ids]))
     except Exception as refused:
-        raise StoryRefused([
-            f"the board refused the story: {refused}",
-            "already created, to cancel on the board: "
-            + (", ".join(created) or "none")]) from None
-    return _in_transaction(conn, _mirror_rows, conn, project_id, directory,
-                           text, children, tasks)
+        raise StoryRefused([f"the board refused the story: {refused}",
+                            _to_cancel(created)]) from None
+    try:
+        return _in_transaction(conn, _mirror_rows, conn, project_id,
+                               directory, text, children, tasks)
+    except Exception as refused:
+        lines = getattr(refused, "lines",
+                        [f"the store refused the story: {refused}"])
+        raise StoryRefused([*lines, _to_cancel(created)]) from refused
+
+
+def _to_cancel(created):
+    return ("already created, to cancel on the board: "
+            + (", ".join(created) or "none"))
 
 
 def _create(board, created, body, priority, parent=None):
@@ -161,7 +171,7 @@ def _file_rows(conn, project_id, key, directory, text, children, priority):
     answer = [(parent, ticket_template.parse(text).title, "story")]
     identifiers, rows = {}, []
     for child in children:
-        _check_merged(conn, project_id, child, identifiers)
+        _merged_issue_ids(conn, project_id, child, identifiers)
         body = _child_body(directory, child)
         identifier = store.board.file_ticket(
             conn, project_id, key, _resolve(body, identifiers),
@@ -190,17 +200,20 @@ def _witnesses(directory, story):
             for witness in story.witnesses]
 
 
-def _check_merged(conn, project_id, child, siblings):
+def _merged_issue_ids(conn, project_id, child, siblings):
+    merged = {}
     for dep in child.depends_on:
         if dep in siblings or not ticket_template.LINEAR_ID_RE.match(dep):
             continue
-        row = conn.execute("SELECT status FROM tickets WHERE projectId = ?"
-                           " AND linearIdentifier = ?",
+        row = conn.execute("SELECT status, linearIssueId FROM tickets"
+                           " WHERE projectId = ? AND linearIdentifier = ?",
                            (project_id, dep)).fetchone()
         if row is None or row[0] != "merged":
             state = "not in this project" if row is None else row[0]
             raise StoryRefused([f"child {child.name} depends on {dep}, which "
                                 f"is {state}, not merged"])
+        merged[dep] = row[1]
+    return merged
 
 
 def _resolve(body, identifiers):

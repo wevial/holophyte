@@ -24,6 +24,9 @@ from story_fixture import write_children, write_story  # noqa: E402
 import holophyte.cli  # noqa: E402
 import linear_provider  # noqa: E402
 import provider  # noqa: E402
+import store  # noqa: E402
+import store.tickets  # noqa: E402
+from holophyte.runs import open_store  # noqa: E402
 
 SLUG = "orders-csv"
 STORE_LINEAR = ('[board]\nproject_id = "p-1"\nteam = "T"\nmode = "store"\n')
@@ -41,7 +44,8 @@ class FakeLinear:
 
     def create_issue(self, project_id, team, title, body, estimate, state,
                      priority=None, parent=None):
-        number = len(self.board.issues) + 1
+        number = 1 + sum(issue["id"].startswith("issue-")
+                         for issue in self.board.issues.values())
         self.board.issues[f"REL-{number}"] = {
             "identifier": f"REL-{number}", "id": f"issue-{number}",
             "url": None, "title": title, "description": body,
@@ -81,7 +85,9 @@ class RecordingBoard(provider.LinearBoard):
 
     def label_issue(self, issue_id, name):
         self.calls.append(("label", issue_id, name))
-        self.issues[issue_id]["labels"]["nodes"].append({"name": name})
+        issue = next(issue for issue in self.issues.values()
+                     if issue["id"] == issue_id)
+        issue["labels"]["nodes"].append({"name": name})
 
     def answer(self, query, variables=None):
         if query != linear_provider.ISSUE_QUERY:
@@ -96,16 +102,18 @@ class LinearFileStoryTests(ConfigTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def run_story(self, config=STORE_LINEAR, **failure):
+    def run_story(self, config=STORE_LINEAR, depends_a=(), **failure):
         """File SLUG's children a, b and c (c depending on a and b) on a
         recording board; the exit status, printed lines and the board."""
         self.locate(config)
         subprocess.run(["git", "init", "-q", str(self.target)], check=True)
+        for identifier in depends_a:
+            self.merged(identifier)
         self.directory = write_story(self.project.holo_dir / "stories",
                                      name=SLUG)
         write_children(self.directory, [
             ("c", "completes W1", ["a", "b"], []),
-            ("a", "scaffolding", [], []),
+            ("a", "scaffolding", list(depends_a), []),
             ("b", "completes W2", [], []),
         ])
         self.before = self.files()
@@ -113,6 +121,8 @@ class LinearFileStoryTests(ConfigTestCase):
 
         def build(*args, **kwargs):
             boards.append(RecordingBoard(*args, **failure, **kwargs))
+            for identifier in depends_a:
+                boards[-1].issues[identifier] = {"id": f"merged-{identifier}"}
             return boards[-1]
 
         out = io.StringIO()
@@ -126,6 +136,17 @@ class LinearFileStoryTests(ConfigTestCase):
             except SystemExit as exited:
                 status = exited.code
         return status, out.getvalue().splitlines(), boards[0]
+
+    def merged(self, identifier):
+        with contextlib.closing(open_store(self.project)) as conn:
+            project_id = store.tickets.ensure_project(conn, "T",
+                                                      self.project.path)
+            with store.transaction(conn):
+                ticket_id = store.tickets.mirror_ticket(
+                    conn, project_id, f"merged-{identifier}", identifier,
+                    "Orders table")
+                conn.execute("UPDATE tickets SET status = 'merged'"
+                             " WHERE id = ?", (ticket_id,))
 
     def files(self):
         return {path.relative_to(self.directory): path.read_text()
@@ -168,7 +189,7 @@ class LinearFileStoryTests(ConfigTestCase):
 
         self.assertEqual(status, 0, lines)
         self.assertEqual([call for call in board.calls if call[0] == "label"],
-                         [("label", f"REL-{n}", "holo") for n in (2, 3, 4)])
+                         [("label", f"issue-{n}", "holo") for n in (2, 3, 4)])
 
     def test_a_board_failure_part_way_names_what_it_created_and_stores_nothing(
             self):
@@ -192,6 +213,26 @@ class LinearFileStoryTests(ConfigTestCase):
         self.assertIn("REL-1, REL-2, REL-3, REL-4", lines[-1])
         self.assertEqual(self.store("SELECT * FROM tickets"), [])
         self.assertEqual(self.files(), self.before)
+
+    def test_a_store_failure_names_what_it_created_and_stores_nothing(self):
+        refused = sqlite3.IntegrityError("story row refused")
+        with patch.object(store.stories, "file_story", side_effect=refused):
+            status, lines, board = self.run_story()
+
+        self.assertEqual(status, 1)
+        self.assertIn("story row refused", lines[0])
+        self.assertIn("REL-1, REL-2, REL-3, REL-4", lines[-1])
+        self.assertEqual(self.store("SELECT * FROM tickets"), [])
+        self.assertEqual(self.files(), self.before)
+
+    def test_a_merged_ticket_outside_the_story_is_kept_in_depends_on(self):
+        status, lines, board = self.run_story(depends_a=["REL-8"])
+
+        self.assertEqual(status, 0, lines)
+        self.assertEqual(board.calls[1][4], ["REL-8"])
+        self.assertEqual(json.loads(self.store(
+            "SELECT dependsOn FROM tickets WHERE linearIdentifier = 'REL-2'"
+        )[0][0]), ["merged-REL-8"])
 
     def test_a_linear_board_in_mirror_mode_is_refused_naming_store_mode(self):
         status, lines, board = self.run_story(
