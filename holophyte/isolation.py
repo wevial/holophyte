@@ -8,10 +8,11 @@ import shlex
 import shutil
 import signal
 import subprocess
+import tempfile
 import threading
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import review_runner
 from holophyte.gates import run_capped
@@ -205,8 +206,57 @@ def cache_directory(task, project):
     return cache
 
 
+@contextlib.contextmanager
+def credential_copy(route, task, project):
+    if "file" not in route.credential:
+        yield None
+        return
+    source = Path(route.credential["file"]).expanduser().resolve(strict=True)
+    if not source.is_file() or ":" in str(source):
+        raise RuntimeError("implementer credential must be a regular file")
+    try:
+        parent = project_state(Path(task).resolve(strict=True), project) / "credentials"
+    except subprocess.CalledProcessError:
+        parent = Path(tempfile.gettempdir())
+    scratch = private_directory(parent / f"holophyte-credential-{uuid.uuid4().hex}")
+    try:
+        copy = scratch / PurePosixPath(route.credential["destination"]).name
+        shutil.copyfile(source, copy)
+        copy.chmod(0o600)
+        yield scratch
+    finally:
+        remove_scratch(scratch)
+
+
+def remove_scratch(scratch):
+    try:
+        scratch.chmod(0o700)
+        for directory, names, _ in os.walk(scratch):
+            for name in names:
+                if not (path := Path(directory, name)).is_symlink():
+                    path.chmod(0o700)
+        shutil.rmtree(scratch)
+    except OSError as error:
+        raise RuntimeError(
+            f"implementer credential copy remains at {scratch}: {error}") from error
+
+
+def credential_mount_flags(credential, scratch, mounted):
+    if scratch is None:
+        raise RuntimeError("a file credential needs its private copy")
+    destination = PurePosixPath(credential["destination"])
+    for mount_point, source in mounted.items():
+        if destination.parent == mount_point or (
+                source is not None and destination.parent.is_relative_to(mount_point)):
+            if source is not None:
+                (source / destination.parent.relative_to(mount_point)).mkdir(
+                    mode=0o700, parents=True, exist_ok=True)
+            return ["--volume", f"{scratch / destination.name}:{destination}:rw"]
+    return ["--volume", f"{scratch}:{destination.parent}:rw"]
+
+
 def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
-                      project=None, cache_for=None):
+                      project=None, cache_for=None, credential_scratch=None):
     uid, gid = os.getuid(), os.getgid()
     if uid == 0:
         raise RuntimeError("container implementer requires a non-root factory user")
@@ -228,19 +278,19 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
         "--volume",
         f"{workspace}:/workspace:{'rw' if route.writable else 'ro'}",
     ]
+    mounted = {PurePosixPath("/home/implementer"): None}
     if route.writable and task is not None:
         session = session_directory(task, project)
         command += ["--volume", f"{session}:/home/implementer/.claude:rw"]
+        mounted[PurePosixPath("/home/implementer/.claude")] = session
     cache = cache_directory(cache_for, project) if cache_for is not None else None
     caches = {} if cache is None else CACHE_ENVIRONMENT
     if cache is not None:
         command += ["--volume", f"{cache}:{CACHE}:rw"]
+        mounted[PurePosixPath(CACHE)] = cache
     credential = route.credential
     if "file" in credential:
-        source = Path(credential["file"]).expanduser().resolve(strict=True)
-        if not source.is_file() or ":" in str(source):
-            raise RuntimeError("implementer credential must be a regular file")
-        command += ["--volume", f"{source}:{credential['destination']}:ro"]
+        command += credential_mount_flags(credential, credential_scratch, mounted)
     command += file_mount_flags(mounts)
     if route.codex:
         command += codex_mount_flags()
@@ -300,11 +350,13 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
     name = "holophyte-implement-" + uuid.uuid4().hex
     checkout = (turn_clone(worktree, project) if route.writable
                 else contextlib.nullcontext((worktree, {})))
-    with unwinding_on_signal(name), checkout as (workspace, git_env):
+    with (unwinding_on_signal(name),
+          credential_copy(route, worktree, project) as scratch,
+          checkout as (workspace, git_env)):
         command, host_env = container_command(
             route, workspace, dict(env or {}, **git_env), argv, name, mounts,
             task=worktree if keep_session else None, project=project,
-            cache_for=worktree,
+            cache_for=worktree, credential_scratch=scratch,
         )
         try:
             return run_capped(command, workspace, timeout, env=host_env, **hook)

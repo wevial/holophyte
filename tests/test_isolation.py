@@ -129,14 +129,116 @@ class IsolationTests(unittest.TestCase):
         self.assertFalse(Path(run.call_args.args[1]).exists())
         argv = run.call_args.args[0]
         mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
+        scratch = Path(mounts[2].split(":")[0])
         self.assertEqual(
             mounts,
             [
                 f"{run.call_args.args[1]}:/workspace:rw",
                 f"{(state_dir(main) / 'cache').resolve()}:/home/implementer/.cache:rw",
-                f"{credential}:/home/implementer/.agent/auth.json:ro",
+                f"{scratch}:/home/implementer/.agent:rw",
             ],
         )
+        self.assertTrue(scratch.is_relative_to(state_dir(main).resolve()))
+        self.assertFalse(scratch.exists())
+
+    def test_file_credential_launch_outside_a_repository_stages_its_copy(self):
+        from holophyte import isolation
+
+        scratch = self.root / "scratch"
+        scratch.mkdir()
+        credential = self.root / "auth.json"
+        credential.write_text("private")
+        route = isolation.Route("container", writable=False, credential={
+            "file": str(credential),
+            "destination": "/home/implementer/.agent/auth.json"})
+        seen = {}
+
+        def run(argv, cwd, timeout, env):
+            source = next(flag.split(":")[0] for flag in argv
+                          if flag.endswith(":/home/implementer/.agent:rw"))
+            seen["copy"] = Path(source) / "auth.json"
+            return 0, seen["copy"].read_text()
+
+        with (
+            patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(self.root)}),
+            patch.object(isolation, "image_ready"),
+            patch.object(isolation.review_runner, "_remove_container"),
+            patch.object(isolation, "run_capped", side_effect=run),
+        ):
+            self.assertEqual(
+                isolation.launch(route, scratch, {}, ["agent"]), (0, "private"))
+        self.assertFalse(seen["copy"].exists())
+
+    def test_file_credential_beside_a_mounted_directory_mounts_its_copy(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        credential = self.root / "netrc"
+        credential.write_text("private")
+        route = isolation.Route("container", credential={
+            "file": str(credential), "destination": "/home/implementer/.netrc"})
+        with isolation.credential_copy(route, worktree, None) as scratch:
+            command, _ = isolation.container_command(
+                route, worktree, {}, ["true"], "n", credential_scratch=scratch)
+            self.assertEqual((scratch / ".netrc").read_text(), "private")
+            self.assertEqual((scratch / ".netrc").stat().st_mode & 0o777, 0o600)
+        self.assertIn(f"{scratch}/.netrc:/home/implementer/.netrc:rw", command)
+        self.assertFalse(scratch.exists())
+
+    def test_file_credential_copy_is_removed_after_the_turn_locks_its_directory(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        credential = self.root / "auth.json"
+        credential.write_text("private")
+        route = isolation.Route("container", credential={
+            "file": str(credential),
+            "destination": "/home/implementer/.agent/auth.json"})
+        with isolation.credential_copy(route, worktree, None) as scratch:
+            (scratch / "sessions").mkdir()
+            (scratch / "sessions" / "log").write_text("state")
+            (scratch / "sessions").chmod(0o500)
+            scratch.chmod(0o500)
+        self.assertFalse(scratch.exists())
+
+    def test_file_credential_copy_left_behind_is_reported(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        credential = self.root / "auth.json"
+        credential.write_text("private")
+        route = isolation.Route("container", credential={
+            "file": str(credential),
+            "destination": "/home/implementer/.agent/auth.json"})
+        with (
+            patch.object(isolation.shutil, "rmtree",
+                         side_effect=PermissionError("denied")),
+            self.assertRaisesRegex(RuntimeError, "credential copy remains") as caught,
+        ):
+            with isolation.credential_copy(route, worktree, None) as scratch:
+                pass
+        self.assertIn(str(scratch), str(caught.exception))
+        self.assertTrue((scratch / "auth.json").exists())
+
+    def test_file_credential_below_a_persistent_mount_mounts_only_its_copy(self):
+        from holophyte import isolation
+
+        _, worktree = self.make_worktree()
+        credential = self.root / "auth.json"
+        credential.write_text("private")
+        for nested in (".claude/projects/example", ".cache/go/auth"):
+            destination = f"/home/implementer/{nested}/auth.json"
+            route = isolation.Route("container", credential={
+                "file": str(credential), "destination": destination})
+            with isolation.credential_copy(route, worktree, None) as scratch:
+                command, _ = isolation.container_command(
+                    route, worktree, {}, ["true"], "n", task=worktree,
+                    cache_for=worktree, credential_scratch=scratch)
+            mounts = [command[i + 1] for i, part in enumerate(command)
+                      if part == "--volume"]
+            self.assertIn(f"{scratch}/auth.json:{destination}:rw", mounts)
+            self.assertFalse(any(mount.startswith(f"{scratch}:") for mount in mounts))
+            self.assertFalse(any(mount.endswith(f"/{nested}:rw") for mount in mounts))
 
     def make_worktree(self):
         from holophyte.isolation_git import git
@@ -1074,6 +1176,71 @@ class IsolationTests(unittest.TestCase):
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
+    def test_real_file_credential_is_a_writable_private_copy(self):
+        import shutil
+
+        from holophyte import isolation
+        from holophyte.project import state_dir
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        main, worktree = self.make_worktree()
+        credential = self.root / "auth.json"
+        credential.write_text("host-token")
+        os.utime(credential, ns=(1_000_000_000_000_000_000,) * 2)
+        route = isolation.Route("container", credential={
+            "file": str(credential),
+            "destination": "/home/implementer/.agent/state/auth.json"})
+        script = (
+            "cd /home/implementer/.agent/state; echo log > session.log;"
+            " echo refreshed > auth.json; stat -c %a auth.json; cat auth.json"
+        )
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")}):
+            code, output = isolation.launch(route, worktree, {},
+                                            ["/bin/sh", "-ec", script])
+            state = state_dir(main)
+        self.assertEqual((code, output.split()), (0, ["600", "refreshed"]), output)
+        self.assertEqual(credential.read_text(), "host-token")
+        self.assertEqual(credential.stat().st_mtime_ns, 1_000_000_000_000_000_000)
+        self.assertTrue(state.is_dir())
+        left = [path for path in state.rglob("*")
+                if path.name in ("auth.json", "session.log")]
+        self.assertEqual(left, [])
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_file_credential_below_the_session_keeps_its_state(self):
+        import shutil
+
+        from holophyte import isolation
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        _, worktree = self.make_worktree()
+        credential = self.root / "auth.json"
+        credential.write_text("host-token")
+        route = isolation.Route("container", credential={
+            "file": str(credential),
+            "destination": "/home/implementer/.claude/projects/example/auth.json"})
+        script = ("cd /home/implementer/.claude/projects/example;"
+                  " cat saved.json auth.json; echo new > next.json")
+        with patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")}):
+            saved = isolation.session_directory(worktree, None) / "projects/example"
+            saved.mkdir(parents=True)
+            (saved / "saved.json").write_text("earlier\n")
+            code, output = isolation.launch(route, worktree, {},
+                                            ["/bin/sh", "-ec", script],
+                                            keep_session=True)
+        self.assertEqual((code, output.split()), (0, ["earlier", "host-token"]), output)
+        self.assertEqual((saved / "next.json").read_text(), "new\n")
+        self.assertEqual(credential.read_text(), "host-token")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
     def test_real_container_commit(self):
         import shutil
 
@@ -1095,7 +1262,9 @@ class IsolationTests(unittest.TestCase):
             [
                 "/bin/sh",
                 "-ec",
-                "echo content > created; git add created; git commit -qm isolated",
+                'test "$(cat "$0")" = agent-only;'
+                " echo content > created; git add created; git commit -qm isolated",
+                "/home/implementer/.agent/auth.json",
             ],
         )
         self.assertEqual(code, 0, output)
