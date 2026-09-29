@@ -44,6 +44,7 @@ from holophyte.config_tables import (
     loop_config,
     merge_config,
     sweep_config,
+    verify_config,
 )
 from holophyte.dispatch import SWEPT
 from holophyte.environment_git import (
@@ -569,14 +570,23 @@ def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal):
             raise InfraFailure(f"{reason}; retry budget exhausted; branch preserved")
 
 
+def _commands_brief(project, verify_cmd):
+    always = "\n".join(verify_config(project).always)
+    listed = (f"\n\nThese verify commands must pass before review and again "
+              f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
+    if always:
+        listed += (f"\n\nThe project's baseline checks run after them at "
+                   f"every verify gate and must pass too:\n\n{always}")
+    return (f"{listed}\n\nThe full unit suite runs as a pull request check; "
+            f"do not run it in the worktree. Run only the commands listed "
+            f"above." if listed else "")
+
+
 def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening=""):
     """Implement the ticket, opening with reuse conflicts and `opening`; return
     its SHA and whether the reply declared the defect not reproduced (KO-657)."""
-    commands = (f"\n\nThese verify commands must pass before review and again "
-                f"before merge:\n\n{verify_cmd}\n\nThe full unit suite runs "
-                f"as a pull request check; do not run it in the worktree. Run "
-                f"only the commands listed above." if verify_cmd else "")
+    commands = _commands_brief(project, verify_cmd)
     # A reclaimed run can already be old; refuse a turn that would exceed
     # its remaining budget.
     _check_run_cap(project, conn, run_id, budget_min, start_sha)
