@@ -31,6 +31,7 @@ import holophyte.cli  # noqa: E402
 import holophyte.supervisor_lock as supervisor_lock  # noqa: E402
 import holophyte.sweep_host as sweep_host  # noqa: E402
 import store  # noqa: E402
+import store.launch_backoff  # noqa: E402
 import store.schema  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte import deadline  # noqa: E402
@@ -368,6 +369,37 @@ class HostSweepTests(HostSweepFixture):
         self.assertIn("no board today", self.state()["projects"]["alpha"])
         self.assertIn("[alpha] loop did not return after re-exec from abc1234",
                       out.getvalue())
+
+
+    def back_off(self, name, reason, now):
+        """`name`'s implementer route failed its launch probe at `now`, which
+        puts the project in a minute's launch backoff."""
+        conn = self.conn(name)
+        project = conn.execute("SELECT id FROM projects").fetchone()[0]
+        store.launch_backoff.failure(conn, project, reason, now)
+        return conn, project
+
+    def test_a_project_in_launch_backoff_reports_it_not_ok(self):
+        self.back_off("alpha", "probe: no credential\nTraceback: boom", T0)
+
+        _, printed = self.run_once(T0 + MINUTE // 2)
+
+        # T0 is 22:13:20 UTC; the first backoff lasts one minute.
+        expected = "backoff: until 22:14 UTC (probe: no credential)"
+        self.assertEqual(self.state()["projects"]["alpha"], expected)
+        self.assertIn(f"[holo2] alpha: {expected}", printed.splitlines())
+        self.assertEqual(self.state()["projects"]["beta"], "ok")
+
+    def test_an_expired_or_cleared_launch_backoff_reports_ok(self):
+        self.back_off("alpha", "probe: no credential", T0)
+        conn, project = self.back_off("beta", "probe: no credential", T0)
+        store.launch_backoff.clear(conn, project)
+
+        _, printed = self.run_once(T0 + 2 * MINUTE)
+
+        self.assertEqual(self.state()["projects"]["alpha"], "ok")
+        self.assertEqual(self.state()["projects"]["beta"], "ok")
+        self.assertNotIn("backoff", printed)
 
 
 class HomeLockTests(HostSweepFixture):

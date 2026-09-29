@@ -293,13 +293,17 @@ class StoreSurfaceTests(unittest.TestCase):
                                  (store.gap_layers, ["gap_layer_counts",
                                                      "record_gap_layer"]),
                                  # A story's filing, approval, ledger,
-                                 # decisions, closing and abandonment.
+                                 # decisions, closing and abandonment;
+                                 # HOLO-60: a landed merge's generation.
+                                 # HOLO-54: `replan_story`, its plan's update.
                                  (store.stories, ["abandon_story",
+                                                  "advance_story",
                                                   "answer_decision",
                                                   "approve_story",
                                                   "close_story", "file_story",
                                                   "park_story",
                                                   "record_witness_result",
+                                                  "replan_story",
                                                   "story", "witness_ledger"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
