@@ -729,6 +729,48 @@ def criteria_brief(criteria):
             "the verdict line.\n\n")
 
 
+_FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
+
+
+def _unfenced_heading_levels(lines):
+    fence = ""
+    for line in lines:
+        match = _FENCE.match(line)
+        run, rest = match.groups() if match else ("", "")
+        if not fence and run and not (run[0] == "`" and "`" in rest):
+            fence = run
+        elif fence and run.startswith(fence) and not rest.strip():
+            fence = ""
+        elif not fence:
+            hashes = len(line) - len(line.lstrip("#"))
+            yield line, hashes if line[hashes:hashes + 1] == " " else 0
+            continue
+        yield line, 0
+
+
+def tests_brief(root):
+    try:
+        lines = (Path(root) / "AGENTS.md").read_text().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return ""
+    section, level = [], 0
+    for line, hashes in _unfenced_heading_levels(lines):
+        heading = hashes > 0
+        if level and heading and hashes <= level:
+            break
+        if not level and heading and line[hashes:].strip() == "Tests":
+            level = hashes
+        if level:
+            section.append(line)
+    while section and not section[-1].strip():
+        section.pop()
+    if not section:
+        return ""
+    quoted = "\n".join(f"> {line}".rstrip() for line in section)
+    return ("The project's rules for tests, quoted from its AGENTS.md; hold "
+            f"the candidate's tests to them:\n{quoted}\n\n")
+
+
 def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
                   run_agent=None, review_round=None):
     """Re-ask a malformed review once; keep its evidence out of the verdict."""
