@@ -6,6 +6,7 @@ import store.read
 from holophyte.config_tables import merge_config
 
 FINISHED = ("success", "failure")
+EXPIRED = object()
 
 
 def wake_reason(target, conn, ticket, pull, status, latest_s):
@@ -24,6 +25,7 @@ def wake_reason(target, conn, ticket, pull, status, latest_s):
             and now * 1000 - ticket.askedMs > merge.check_wait_sec * 1000:
         _expire(conn, ticket, pull, f"pending checks exceeded"
                 f" {merge.check_wait_sec}s on the pull request")
+        return EXPIRED
     return None
 
 

@@ -74,6 +74,9 @@ class CiParkWakeTests(MergeModeFixture):
                       " t.activeRunId FROM runs r JOIN tickets t"
                       " ON t.lastRunId = r.id"),
             [("awaiting_merge_approval", "ci", self.URL, "pending", None)])
+
+    def age(self):
+        """Move the parked run's clock past `[merge] pr_poll_sec`."""
         conn = sqlite3.connect(self.db)
         with conn:
             conn.execute("UPDATE runs SET lastHeartbeat = lastHeartbeat"
@@ -97,6 +100,7 @@ class CiParkWakeTests(MergeModeFixture):
 
     def test_green_checks_wake_the_park_and_the_next_loop_merges_it(self):
         self.park_on_pending_checks()
+        self.age()
         self.github = self.open_pull("SUCCESS")
         self.serve(self.pr_state())
 
@@ -110,7 +114,7 @@ class CiParkWakeTests(MergeModeFixture):
         self.assertEqual(
             [kind for kind, _ in self.api_calls()].count("merge"), 1)
 
-    def test_red_checks_wake_the_park_into_a_rerun_of_the_failed_jobs(self):
+    def test_red_checks_seen_early_still_wake_the_park_into_a_rerun(self):
         def check_runs(target, pull, sha):
             if any("rerun-failed-jobs" in call for call in self.recorded()):
                 return [dict(UNIT, id=43, conclusion="success")]
@@ -122,6 +126,9 @@ class CiParkWakeTests(MergeModeFixture):
         red.append(UNIT)
         self.github = self.open_pull("FAILURE")
         self.serve(self.pr_state(checks="FAILURE"), self.pr_state())
+        self.sweep()
+        self.assertEqual(self.supervisor_wakes(), 0)
+        self.age()
 
         self.sweep()
 

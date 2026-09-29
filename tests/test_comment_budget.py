@@ -48,6 +48,7 @@ PINNED = {
     "holophyte/bot_threads.py": 2,
     "holophyte/capture_playwright.py": 44,
     "holophyte/check_fix.py": 38,
+    "holophyte/ci_wake.py": 1,
     "holophyte/claim.py": 364,
     "holophyte/claim_store.py": 90,
     "holophyte/cli.py": 232,

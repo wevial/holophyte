@@ -893,7 +893,6 @@ class CiParkTests(MergeModeFixture):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])
-        self.age()
 
     def pull(self, at, checks):
         from test_pullrequest import MergeModePullRequestTests as H
@@ -928,6 +927,7 @@ class CiParkTests(MergeModeFixture):
     def test_a_green_park_wakes_once_its_quiet_period_has_passed(self):
         fresh = datetime.now(timezone.utc).isoformat()
         self.ci_parked("SUCCESS", fresh)
+        self.age()
         green = self.pull(fresh, "SUCCESS")
 
         self.reconcile(green)
@@ -936,9 +936,10 @@ class CiParkTests(MergeModeFixture):
         self.reconcile(green, later_s=300)
         self.assertEqual(self.wakes(), [("supervisor",)])
 
-    def test_pending_checks_past_check_wait_sec_park_for_a_human(self):
+    def test_pending_checks_past_check_wait_sec_park_for_a_human_unwoken(self):
         pending = self.pull(self.OLD, "PENDING")
         self.ci_parked("PENDING")
+        self.age()
         low = holophyte.reconcile.GitHubBudget()
         low.remaining, low.reset_at = 0, "2099-01-01T00:00:00Z"
         with patch.object(holophyte.reconcile, "GITHUB_BUDGET", low):
@@ -946,7 +947,9 @@ class CiParkTests(MergeModeFixture):
         self.reconcile(pending)
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])
 
-        self.reconcile(pending, later_s=1801)
+        from test_pullrequest import MergeModePullRequestTests as H
+        self.reconcile(H.open_pull(H, self.OLD, 1, checks="PENDING"),
+                       later_s=1801)
 
         self.assertEqual(self.read("SELECT parkKind FROM runs"),
                          [("pull_request",)])
