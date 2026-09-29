@@ -218,16 +218,10 @@ def turn_clone(worktree, project=None, carry=()):
     state = state_dir(project.path if project is not None else common.parent)
     state.mkdir(parents=True, exist_ok=True)
     old = git(worktree, "rev-parse", "HEAD")
-    env = {"GIT_CONFIG_COUNT": "3"}
-    for i, (key, value) in enumerate(
-        [
-            ("safe.directory", "/workspace"),
-            ("user.name", git(worktree, "config", "--get", "user.name")),
-            ("user.email", git(worktree, "config", "--get", "user.email")),
-        ]
-    ):
-        env[f"GIT_CONFIG_KEY_{i}"] = key
-        env[f"GIT_CONFIG_VALUE_{i}"] = value
+    identity = {key: git(worktree, "config", "--get", key)
+                for key in ("user.name", "user.email")}
+    env = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory",
+           "GIT_CONFIG_VALUE_0": "/workspace"}
     with tempfile.TemporaryDirectory(prefix="implementer-", dir=state) as directory:
         root = Path(directory)
         clone = root / "clone"
@@ -244,6 +238,8 @@ def turn_clone(worktree, project=None, carry=()):
             str(clone),
         )
         git(clone, "remote", "remove", "origin")
+        for key, value in identity.items():
+            git(clone, "config", key, value)
         index = Path(
             git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "index")
         )
