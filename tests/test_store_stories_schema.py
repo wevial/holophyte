@@ -83,9 +83,10 @@ class PreviousStoreMigrationTests(unittest.TestCase):
         note = json.loads(store.schema.latest_migration_note(conn))
         self.assertEqual(note["readableFrom"], store.schema.READABLE_FROM)
 
-    def test_the_previous_build_writes_and_claims_on_the_migrated_store(self):
+    def test_the_oldest_readable_build_writes_and_claims_on_the_migrated_store(self):
         store.open(self.path).close()
-        with patch.object(store.schema, "SCHEMA_VERSION", frozen_version()):
+        with patch.object(store.schema, "SCHEMA_VERSION",
+                          store.schema.READABLE_FROM):
             conn = store.open(self.path)
         self.addCleanup(conn.close)
         with conn:

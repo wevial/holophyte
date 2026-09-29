@@ -62,6 +62,7 @@ class ParkKind(str, Enum):
     MERGE_LOCK = 'merge_lock'
     QUESTION = 'question'
     NOT_REPRODUCED = 'not_reproduced'
+    CI = 'ci'
 
 
 class RunOutcome(str, Enum):
