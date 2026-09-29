@@ -22,7 +22,7 @@ from time import time
 import store
 import store.board
 import store.read
-from holophyte import freshness
+from holophyte import freshness, story_claim
 from holophyte.board import (
     body_problem,
     foreign_lease_holders,
@@ -171,6 +171,11 @@ def claim_from_store(target, conn, project_id, provider, order, skip, seen):
                     if r.linearIdentifier not in skip), None)
         if row is None:
             return None, None, None
+        refused = story_claim.refusal(conn, row.id)
+        if refused:
+            print(f"[holo2] {row.linearIdentifier} skipped: {refused}")
+            skip.add(row.linearIdentifier)
+            continue
         answer = _candidate(target, conn, project_id, provider, row, seen)
         if answer == STOP:
             return BOARD_DOWN, None, None

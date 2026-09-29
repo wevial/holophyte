@@ -40,7 +40,7 @@ PINNED = {
     "holophyte/operator.py": 539, "holophyte/pool.py": 438,
     "holophyte/pr.py": 768, "holophyte/pr_status.py": 553,
     "holophyte/pullrequest.py": 489,
-    "holophyte/reconcile.py": 743, "holophyte/reexec.py": 98,
+    "holophyte/reconcile.py": 745, "holophyte/reexec.py": 98,
     "holophyte/report.py": 256, "linear_provider.py": 708,
     "provider.py": 520,
     "holophyte/serve.py": 1167,
