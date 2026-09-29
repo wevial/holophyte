@@ -45,6 +45,8 @@ HostSettings = collections.namedtuple(
 # it gives up naming the file: a crash mid-write is the one way it stays.
 WRITE_WAIT_SEC = 10
 WRITE_POLL_SEC = 0.05
+UNIT_TARGET_KEYS = frozenset(("HOLOPHYTE_TARGET", "HOLOPHYTE_SERVE_ADDRESS",
+                              "HOLOPHYTE_SERVE_PORT"))
 TOMLKIT_MISSING = ("[holo2] project add and remove need the tomlkit module to"
                    " rewrite host.toml; install it with"
                    " python3 -m pip install --user -r requirements.txt")
@@ -89,16 +91,17 @@ def loop_unit_environment(target):
         values = unit_environment(path.read_text())
     except FileNotFoundError:
         values = {}
-    child_only = {name: value for name, value in values.items()
-                  if name.startswith("HOLOPHYTE_")}
+    credential = (target.config().get("agents") or {}).get(
+        "implementer_credential")
+    kept = {credential.get("env")} if isinstance(credential, dict) else set()
     saved = {}
     with values_held(values.values()):
         try:
             for name, value in values.items():
-                if name not in child_only:
+                if name not in UNIT_TARGET_KEYS or name in kept:
                     saved[name] = os.environ.get(name)
                     os.environ[name] = value
-            yield dict(os.environ, **child_only)
+            yield
         finally:
             for name, value in saved.items():
                 if value is None:

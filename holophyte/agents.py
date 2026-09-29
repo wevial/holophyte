@@ -171,7 +171,7 @@ def probe_diagnostic(project, probe):
     return route_prose(project, safe.describe())
 
 
-def probe_implementer(project, timeout=None, env=None):
+def probe_implementer(project, timeout=None):
     """Run the configured `[agents] implementer` once, with `PROBE_GOAL` as
     the goal, and say whether it answered. `None` when the table names no
     implementer or fallback: unconfigured defaults are not probed here.
@@ -189,23 +189,23 @@ def probe_implementer(project, timeout=None, env=None):
     so that too is a failed result naming the reason, not an exception: the
     daemon's config write has already landed by the time it probes.
     """
-    return probe_seat(project, "implement", timeout=timeout, env=env)
+    return probe_seat(project, "implement", timeout=timeout)
 
 
-def probe_seat(project, role, *, fallback=False, timeout=None, env=None):
+def probe_seat(project, role, *, fallback=False, timeout=None):
     """Probe the exact command; a fallback list in order, to its first pass."""
     probe = None
     for entry in range(max(len(fallback_entries(project, role)), 1)
                        if fallback else 1):
         if probe is not None:
             print(probe_diagnostic(project, probe))
-        probe = probe_route(project, role, fallback, timeout, entry, env)
+        probe = probe_route(project, role, fallback, timeout, entry)
         if probe is None or probe.ok:
             break
     return probe
 
 
-def probe_route(project, role, fallback, timeout, entry, env=None):
+def probe_route(project, role, fallback, timeout, entry):
     goal = REVIEW_PROBE_GOAL if role in ("review", "adjudicate") else PROBE_GOAL
     cmd = agent_command(project, role, goal, fallback=fallback, entry=entry)
     default = cmd is None
@@ -240,11 +240,10 @@ def probe_route(project, role, fallback, timeout, entry, env=None):
                     timeout=cap, verdicts=None)
                 code = 0
             elif role == "implement":
-                container_env = isolation.environment(project)
                 code, out = isolation.launch(
                     replace(isolation.route_for(project), writable=False), scratch,
-                    env if container_env is None else container_env, cmd,
-                    timeout=cap, runner=run_capped)
+                    isolation.environment(project), cmd, timeout=cap,
+                    runner=run_capped)
             else:
                 code, out = probe_configured_review(project, role, fallback, goal,
                                                     cmd, scratch, cap)

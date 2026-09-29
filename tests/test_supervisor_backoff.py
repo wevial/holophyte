@@ -242,7 +242,7 @@ class StoreModeFiles(FileProvider):
 
 
 class LoopEnvironmentProbeTests(SweepTestCase):
-    def fixture(self, probe_lines, serve_env):
+    def fixture(self, probe_lines, serve_env, agents=""):
         """A released store-mode project whose implementer is `probe_lines`."""
         from holophyte.host import home
 
@@ -260,7 +260,7 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         systemctl.chmod(0o755)
         self.configure(
             '[board]\nproject_id = "project-1"\nteam = "team-1"\n'
-            f'mode = "store"\n[agents]\nimplementer = "{probe}"\n')
+            f'mode = "store"\n[agents]\nimplementer = "{probe}"\n{agents}')
         unit_dir = home() / "repo"
         unit_dir.mkdir(parents=True, exist_ok=True)
         (unit_dir / "serve.env").write_text(serve_env)
@@ -374,30 +374,36 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         self.assertFalse(self.calls.exists())
         self.assertEqual(self.started(), [])
 
-    def test_the_files_holophyte_values_reach_the_probe_and_not_the_sweep(self):
-        from holophyte import agents
+    def test_the_container_probe_gets_a_holophyte_credential_but_no_target_key(self):
+        from holophyte import isolation
         from holophyte.redact import redact_values
 
         self.fixture(
-            "ok = (os.environ.get('HOLOPHYTE_FIXTURE_CREDENTIAL') == 'loop-only'\n"
-            "      and os.environ.get('HOLOPHYTE_HOME') == '/unit/home')\n"
-            "print('ready' if ok else 'unit values missing')\n"
-            "raise SystemExit(0 if ok else 1)\n",
-            "HOLOPHYTE_HOME=/unit/home\nHOLOPHYTE_FIXTURE_CREDENTIAL=loop-only\n"
-            "UNIT_SETTING=plain-unit-setting\n")
-        seen, run_capped = [], agents.run_capped
+            "print('ready')\n",
+            "HOLOPHYTE_TARGET=/another/project\nHOLOPHYTE_SERVE_PORT=9999\n"
+            "HOLOPHYTE_FIXTURE_CREDENTIAL=loop-only\n"
+            "UNIT_SETTING=plain-unit-setting\n",
+            'implementer_isolation = "container"\n'
+            'implementer_credential = { env = "HOLOPHYTE_FIXTURE_CREDENTIAL" }\n')
+        seen = []
 
-        def sweep_side(*args, **kwargs):
-            seen.append((os.environ.get("HOLOPHYTE_HOME"),
-                         os.environ.get("HOLOPHYTE_FIXTURE_CREDENTIAL")))
-            return run_capped(*args, **kwargs)
+        def container(argv, cwd, timeout, env, **kwargs):
+            seen.append((env.get("HOLOPHYTE_FIXTURE_CREDENTIAL"),
+                         os.environ.get("HOLOPHYTE_TARGET"),
+                         os.environ.get("HOLOPHYTE_SERVE_PORT")))
+            ok = env.get("HOLOPHYTE_FIXTURE_CREDENTIAL") == "loop-only"
+            return (0, "ready") if ok else (1, "credential missing")
 
         with self.sweep_environment(), \
-                patch("holophyte.agents.run_capped", side_effect=sweep_side):
-            home = os.environ["HOLOPHYTE_HOME"]
+                patch.dict(os.environ, HOLOPHYTE_SERVE_PORT="4242"), \
+                patch.object(isolation, "image_ready"), \
+                patch.object(isolation.review_runner, "_remove_container"), \
+                patch.object(isolation, "run_capped", side_effect=container):
+            os.environ.pop("HOLOPHYTE_TARGET", None)
             self.one_pass(T0)
-            self.assertEqual(os.environ["HOLOPHYTE_HOME"], home)
-        self.assertEqual(seen, [(home, None)])
+            self.assertNotIn("HOLOPHYTE_FIXTURE_CREDENTIAL", os.environ)
+            self.assertEqual(os.environ["HOLOPHYTE_SERVE_PORT"], "4242")
+        self.assertEqual(seen, [("loop-only", None, "4242")])
         self.assertEqual(self.count("launch_backoff"), 0)
         self.assertEqual(self.started(), ["--user start holophyte-loop@repo"])
         self.assertEqual(redact_values("plain-unit-setting"), "plain-unit-setting")

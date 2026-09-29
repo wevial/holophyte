@@ -32,9 +32,9 @@ adjust them before enabling. Without the `PATH`, the reconcile and the
 route probe fail on a missing executable. Before it starts a loop, the
 sweep probes the implementer route with that loop's
 `~/.holophyte/NAME/serve.env` laid over its own environment for the probe
-alone (its `HOLOPHYTE_*` settings reach the probe's process, never the
-sweep's), so a credential only the loop unit reads need not be copied into
-`host.env`.
+alone, all but the keys that name a target (`HOLOPHYTE_TARGET`,
+`HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT`), so a credential only the
+loop unit reads need not be copied into `host.env`.
 
 - `deploy/holophyte.target` — `Wants=` the socket and the timer, and is the
   only host unit with an `[Install]` section. `systemctl --user enable --now
