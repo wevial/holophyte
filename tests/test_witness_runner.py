@@ -13,7 +13,7 @@ from unittest.mock import patch
 import store
 from holophyte import config_tables
 from holophyte.project import Project
-from holophyte.witness import main_tip, red_kind, run_witnesses
+from holophyte.witness import LOG_TAIL_BYTES, main_tip, red_kind, run_witnesses
 from store.stories import approve_story, file_story, witness_ledger
 
 PYTHON = shlex.quote(sys.executable)
@@ -230,6 +230,91 @@ class WitnessEvidenceTests(WitnessRunnerFixture, unittest.TestCase):
                          [("W1", "green"), ("W2", "green")])
 
 
+class WitnessIsolationTests(WitnessRunnerFixture, unittest.TestCase):
+    def test_a_command_cannot_change_a_later_witness_verdict(self):
+        target = self.project()
+        self.approve([
+            ("W1", "tests/test_w1.py",
+             "rm tests/test_w2.py && cp tests/test_w1.py tests/test_w3.py",
+             PASSES),
+            ("W2", "tests/test_w2.py", f"{PYTHON} -m unittest tests.test_w2",
+             PASSES),
+            ("W3", "tests/test_w3.py", "true", PASSES)])
+        commit_file(self.repo, "tests/test_w1.py", PASSES, "w1 lands")
+        sha = commit_file(self.repo, "tests/test_w2.py", PASSES, "w2 lands")
+
+        rows = run_witnesses(target, self.conn, self.story_id, sha, "loop")
+
+        self.assertEqual([(row.witnessKey, row.verdict) for row in rows],
+                         [("W1", "green"), ("W2", "green"), ("W3", "absent")])
+        self.assertEqual(rows[1].fileHash,
+                         hashlib.sha256(PASSES.encode()).hexdigest())
+
+    def test_a_witness_path_outside_the_checkout_is_refused_unrun(self):
+        target = self.project()
+        escape = self.root / "escape.py"
+        outside = "../../" + os.path.relpath(escape, tempfile.gettempdir())
+        absolute = self.root / "absolute.py"
+        touch = f"touch {shlex.quote(str(self.marker))}"
+        self.approve([("W1", outside, touch, PASSES),
+                      ("W2", str(absolute), touch, PASSES),
+                      ("W3", "tests/test_w3.py",
+                       f"{PYTHON} -m unittest tests.test_w3", PASSES)])
+
+        rows = run_witnesses(target, self.conn, self.story_id,
+                             main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual([(row.witnessKey, row.verdict) for row in rows],
+                         [("W1", "error"), ("W2", "error"), ("W3", "green")])
+        self.assertFalse(escape.exists())
+        self.assertFalse(absolute.exists())
+        self.assertFalse(self.marker.exists())
+
+
+class WitnessOutputTests(WitnessRunnerFixture, unittest.TestCase):
+    def test_a_command_that_runs_no_tests_is_an_error(self):
+        target = self.project()
+        self.approve([("W1", "tests/test_w1.py",
+                       f"{PYTHON} -m unittest discover -s tests"
+                       " -p 'test_nothing*.py' 2>&1 | tail -3", PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual(row.verdict, "error")
+        self.assertIn("Ran 0 tests", Path(row.evidencePath).read_text())
+
+    def test_a_stored_log_keeps_only_its_tail(self):
+        target = self.project()
+        self.approve([("W1", "tests/test_w1.py",
+                       f"{PYTHON} -c \"print('x' * 300000); print('the end')\"",
+                       PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "baseline", copy_files=True)
+
+        stored = Path(row.evidencePath).read_bytes()
+        self.assertEqual(row.verdict, "green")
+        self.assertLessEqual(len(stored), LOG_TAIL_BYTES + 100)
+        self.assertTrue(stored.endswith(b"x\nthe end\n"))
+
+    def test_a_known_secret_is_redacted_from_the_stored_log(self):
+        secret = "ghp_witnessLogSecret0123456789"
+        token = patch.dict(os.environ, {"GH_TOKEN": secret})
+        token.start()
+        self.addCleanup(token.stop)
+        target = self.project()
+        self.approve([("W1", "tests/test_w1.py",
+                       f"echo token {secret} printed", PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "baseline", copy_files=True)
+
+        stored = Path(row.evidencePath).read_text()
+        self.assertNotIn(secret, stored)
+        self.assertIn("token [redacted] printed", stored)
+
+
 class WitnessWorktreeTests(WitnessRunnerFixture, unittest.TestCase):
     def post_checkout(self, body):
         hook = self.repo / ".git" / "hooks" / "post-checkout"
@@ -301,8 +386,19 @@ class RedKindTests(unittest.TestCase):
             " 'orders' has no attribute 'export'\n"
             "============================== 2 failed in 0.02s"
             " ===============================\n")
+        pytest_plain_assert = (
+            "FAILED tests/test_w1.py::test_value - assert 1 == 2\n"
+            "FAILED tests/test_w1.py::test_total - AssertionError: 3 != 4\n"
+            "============================== 2 failed in 0.02s"
+            " ===============================\n")
+        pytest_assert_and_error = (
+            "FAILED tests/test_w1.py::test_value - assert 1 == 2\n"
+            "ERROR tests/test_w2.py - ModuleNotFoundError: No module named"
+            " 'orders'\n")
         cases = [(two_failures, "assert"), (failure_and_error, "exception"),
                  (pytest_asserts, "assert"), (pytest_attribute, "exception"),
+                 (pytest_plain_assert, "assert"),
+                 (pytest_assert_and_error, "exception"),
                  ("Segmentation fault (core dumped)\n", "exception")]
         for output, kind in cases:
             with self.subTest(kind=kind, output=output[-60:]):
