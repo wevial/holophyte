@@ -1343,15 +1343,20 @@ misses, and exits nonzero below the floor. Unit tests replace the service.
 
 ## `[story]`
 
-A story's witness runs.
+A story's witness runs and how many of its children run at once.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `witness_sec` | Default: `600` seconds | Positive integer; the most one witness run at a commit of `main` may take, all of the story's witness commands together. A witness still waiting when it is spent is recorded `error`. |
+| `max_parallel` | Default: `2` | Positive integer; the most children of the open story holding a live run at once. The claim refuses another child, naming the cap, until one ends. |
+| `dependency_ready` | Default: `merged` | When a child's approved dependencies count as ready. `merged`, the only value, waits until each one has merged. |
 
 ```toml
 [story]
 witness_sec = 600
+max_parallel = 2
+dependency_ready = "merged"
 ```
 
-A value that is not a positive integer is a startup error naming the key.
+A `witness_sec` or `max_parallel` that is not a positive integer, or a
+`dependency_ready` other than `merged`, is a startup error naming the key.

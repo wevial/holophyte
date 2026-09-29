@@ -296,6 +296,7 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # decisions, closing and abandonment;
                                  # HOLO-60: a landed merge's generation.
                                  # HOLO-54: `replan_story`, its plan's update.
+                                 # HOLO-58: `story_frontier`, claimable children.
                                  (store.stories, ["abandon_story",
                                                   "advance_story",
                                                   "answer_decision",
@@ -304,7 +305,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                                   "park_story",
                                                   "record_witness_result",
                                                   "replan_story",
-                                                  "story", "witness_ledger"])):
+                                                  "story", "story_frontier",
+                                                  "witness_ledger"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
             missing = sorted(set(expected) - set(actual))

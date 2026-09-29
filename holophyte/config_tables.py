@@ -272,7 +272,9 @@ def loop_config(project):
 
 
 
-STORY_KEYS = {"witness_sec": 600}
+STORY_KEYS = {"witness_sec": 600, "max_parallel": 2,
+              "dependency_ready": "merged"}
+STORY_CHOICES = {"dependency_ready": ("merged",)}
 StoryConfig = collections.namedtuple("StoryConfig", STORY_KEYS)
 
 
@@ -285,7 +287,12 @@ def story_config(project):
     values = {}
     for key, default in STORY_KEYS.items():
         value = table.get(key, default)
-        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        if key in STORY_CHOICES:
+            if value not in STORY_CHOICES[key]:
+                raise SystemExit(
+                    f"[holo2] {project.config_path}: [story] {key} must be "
+                    f"one of {', '.join(STORY_CHOICES[key])}, got {value!r}")
+        elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise SystemExit(
                 f"[holo2] {project.config_path}: [story] {key} must be a "
                 f"positive integer, got {value!r}")
