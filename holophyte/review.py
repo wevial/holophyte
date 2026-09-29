@@ -562,7 +562,8 @@ def covering_scope(root, reviewed, sha, url):
     review_range = f"Review this range: {span}, those commits and whatever they touch; "
     if set(files) != changed:
         review_range = (
-            f"Review this range as `git diff {span} -- {shlex.join(files)}`, "
+            f"Review this range as `git --literal-pathspecs diff {span} -- "
+            f"{shlex.join(files)}`, "
             "the candidate's own files; " if files else
             f"This range, {span}, changes none of the candidate's own files; ")
         review_range += ("its changes to any other file came from a merge of "

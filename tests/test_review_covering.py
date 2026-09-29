@@ -3,6 +3,7 @@
 import contextlib
 import json
 import re
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -70,6 +71,20 @@ class CoveringPromptTests(unittest.TestCase):
             f"Review this range: {self.approved}..{head}, those commits and "
             f"whatever they touch; the rest was approved at {self.approved}. ",
             self.instructions(head))
+
+    def test_range_diff_command_matches_candidate_paths_literally(self):
+        self.git("checkout", "-qb", "fix")
+        self.candidate("[ab].py")
+        self.git("checkout", "-q", "main")
+        self.candidate("a.py")
+        self.git("checkout", "-q", "fix")
+        self.git("merge", "--no-ff", "-qm", "merge main", "main")
+        command = re.search(r"Review this range as `([^`]+)`",
+                            self.instructions(self.git("rev-parse", "HEAD")))
+        diff = subprocess.check_output(shlex.split(command.group(1)),
+                                       cwd=self.root, text=True)
+        self.assertIn("b/[ab].py", diff)
+        self.assertNotIn("b/a.py", diff)
 
     def test_no_changed_tests_keeps_approval_citations(self):
         instructions = self.instructions(self.candidate("holophyte/fix.py"))
@@ -271,7 +286,8 @@ class CoveringAfterMainMergeTests(unittest.TestCase):
         prompt = review.covering_scope(self.root, self.approved, self.head, "pr")
         instructions = prompt.split("BEGIN UNTRUSTED METADATA", 1)[0]
         self.assertIn(
-            f"Review this range as `git diff {self.approved}..{self.head} -- "
+            f"Review this range as `git --literal-pathspecs diff "
+            f"{self.approved}..{self.head} -- "
             "shared.py`", instructions)
         self.assertNotIn("other.py", instructions)
         self.assertNotIn("those commits and whatever they touch", instructions)
