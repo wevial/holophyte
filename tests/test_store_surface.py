@@ -294,8 +294,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                                      "record_gap_layer"]),
                                  # A story's filing, approval, ledger,
                                  # decisions, closing and abandonment;
+                                 # HOLO-60: a landed merge's generation.
                                  # HOLO-54: `replan_story`, its plan's update.
                                  (store.stories, ["abandon_story",
+                                                  "advance_story",
                                                   "answer_decision",
                                                   "approve_story",
                                                   "close_story", "file_story",
