@@ -25,7 +25,7 @@ from time import time
 import store
 import store.read
 import store.tickets
-from holophyte import deadline, pr_activity, pr_status, story_claim
+from holophyte import ci_wake, deadline, pr_activity, pr_status, story_claim
 from holophyte.board import (
     ledger,
     mirror_push,
@@ -348,7 +348,9 @@ def _reconcile_pull_requests(target, conn, project, provider,
         elif not low:
             # A babysit round is many reads and writes: not on a budget
             # that is already low.
-            issue = _rebabysit(conn, ticket, pull, status, poll_ms)
+            reason = ci_wake.wake_reason(target, conn, ticket, pull, status,
+                                         _iso_epoch(_seen(status)[0]))
+            issue = _rebabysit(conn, ticket, pull, status, poll_ms, reason)
             if issue is not None:
                 sent.add(issue)
         if low:
@@ -576,10 +578,10 @@ def _seen(status):
             status.title)
 
 
-def _rebabysit(conn, ticket, pull, status, poll_ms):
+def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None):
     """Send the run parked on `pull` back to the babysitter when the pull
-    request has review activity the last pass did not see; the ticket's
-    Linear id when it was sent, None otherwise (KO-362).
+    request has review activity the last pass did not see, or `reason` says
+    a `ci` park may act; the ticket's Linear id when sent, None otherwise.
 
     Only newly authored content beyond the park's mark can wake it. A
     timestamp bump alone refreshes facts; it never dispatches a paid pass.
@@ -594,43 +596,47 @@ def _rebabysit(conn, ticket, pull, status, poll_ms):
         return None
     seen_at, seen_threads, parked_ms, issue = row
     mark = _seen(status)
-    if seen_at is None:
+    if seen_at is None and reason is None:
         store.record_pr_seen(conn, run_id, mark, parked_only=True)
         pr_activity.record_commits(conn, run_id, status)
         return None
-    arrived = pr_activity.arrived(conn, run_id, status, seen_at)
-    if not arrived:
+    arrived = (pr_activity.arrived(conn, run_id, status, seen_at)
+               if seen_at is not None else [])
+    if not arrived and reason is None:
         store.record_pr_seen(conn, run_id, mark, parked_only=True,
                              facts_only=True)
         pr_activity.break_empty_wakes(conn, ticket)
         return None
+    why = f"{pull.url} has new review activity" if arrived else reason
     waited_ms = int(time() * 1000) - (parked_ms or 0)
     if waited_ms < poll_ms:
         store.record_pr_seen(conn, run_id, mark, parked_only=True,
                              facts_only=True)
-        print(f"[holo2] {identifier}: {pull.url} has new review activity;"
-              f" the next babysit round waits"
+        print(f"[holo2] {identifier}: {why}; the next babysit round waits"
               f" {-(-(poll_ms - waited_ms) // 1000)}s ([merge] pr_poll_sec)")
         return None
     threads = "?" if status.threads is None else status.threads
     note = (f"new review activity on {pull.url}: "
             f"{', '.join(sorted({item[0] for item in arrived}))}; updated"
             f" {status.updated_at} (last seen {seen_at}), {threads} review"
-            f" threads (last seen {seen_threads})")
+            f" threads (last seen {seen_threads})") if arrived else reason
     try:
         with store.transaction(conn):
             store.record_pr_seen(conn, run_id, mark)
             pr_activity.record_commits(conn, run_id, status)
-            store.record_event(conn, run_id, "pr_wake", json.dumps(arrived))
+            if arrived:
+                store.record_event(conn, run_id, "pr_wake", json.dumps(arrived))
+            if reason:
+                store.record_event(conn, run_id, "ci_wake", reason)
             store.babysit(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
-        print(f"[holo2] {identifier}: {pull.url} has new review activity but"
-              f" the ticket moved while GitHub was asked ({refused}); left"
-              " alone")
+        print(f"[holo2] {identifier}: {why} but the ticket moved while GitHub"
+              f" was asked ({refused}); left alone")
         return None
-    print(f"[holo2] {identifier}: {pull.url} has new review activity"
-          f" (updated {status.updated_at}, {threads} review threads); run"
-          f" {run_id} sent back to the babysitter")
+    detail = (f" (updated {status.updated_at}, {threads} review threads)"
+              if arrived else "")
+    print(f"[holo2] {identifier}: {why}{detail}; run {run_id} sent back to"
+          " the babysitter")
     return issue
 
 

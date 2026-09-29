@@ -196,7 +196,7 @@ CITED = {
     "holophyte/pr_status.py": 4,
     "holophyte/project.py": 2,
     "holophyte/pullrequest.py": 7,
-    "holophyte/reconcile.py": 16,
+    "holophyte/reconcile.py": 15,
     "holophyte/redact.py": 3,
     "holophyte/reexec.py": 1,
     "holophyte/report.py": 1,

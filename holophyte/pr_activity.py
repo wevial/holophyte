@@ -115,7 +115,9 @@ def record_pass(conn, run_id, status):
     supervised = conn.execute('SELECT 1 FROM interventions WHERE runId = ? '
                               "AND action = 'babysit' AND source = 'supervisor'",
                               previous).fetchone()
-    if not supervised:
+    ci = conn.execute("SELECT 1 FROM runEvents WHERE runId = ? AND kind ="
+                      " 'ci_wake'", previous).fetchone()
+    if not supervised or ci:
         store.record_event(conn, run_id, "pr_empty_wakes", "0")
         return
     expected = json.loads(wake[0]) if wake else []
