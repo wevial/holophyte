@@ -1,19 +1,21 @@
-"""KO-384: the module-size ratchet — a ceiling table that only moves down.
+"""The module-size ratchet: a ceiling table that only moves down.
 
 Nothing else stops a module from growing; this file is the rule that runs
-with the suite. `CEILING` sets the caps — 1000 lines a source module,
-1500 a test module — and `OVER` holds every unpinned tracked Python file over its
-cap. The walk fails the suite when a listed file grows past its entry,
-when an unlisted file passes its ceiling, and when a listed file is back
-under the ceiling — a stale entry. `PINNED` bounds a file a slice brought
-back under its ceiling. Pins allow growth up to their bound; more than
-150 lines of slack fails so the bounds keep following the code down.
+with the suite. `CEILING` sets the caps: 1000 lines a source module, 1500 a
+test module. `PINNED` lists exactly the tracked Python files over their
+ceiling, one entry to a line, each at its `wc -l` count. A pinned file may
+not grow past its entry, and the entry never rises: new code goes in a new
+module. The walk fails the suite when a file grows past its pin, when an
+unpinned file passes its ceiling, when a pinned file is back at or under its
+ceiling (a stale entry), and when a pin sits more than 150 lines above its
+file. `OVER` holds any unpinned file over its cap at its exact count.
 
 Run: python3 -m unittest discover -s tests -p 'test_file_sizes*' -v
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 import unittest
@@ -28,60 +30,19 @@ CEILING = {"source": 1000, "test": 1500}
 # back under its ceiling leaves the table.
 OVER = {}
 
-# Pins are upper bounds, initialized with 60 lines of headroom in KO-576.
+# Only files over their ceiling, one to a line, sorted by path. An entry
+# only goes down; a file brought to or under its ceiling leaves the table.
 # Lower a pin when it sits more than 150 lines above its file's count.
 PINNED = {
-    "holophyte/babysitter.py": 1107, "holophyte/board.py": 599,
-    "holophyte/claim.py": 1001, "holophyte/cli.py": 862,
-    "holophyte/config.py": 943, "holophyte/dispatch.py": 327,
-    "holophyte/config_tables.py": 794, "holophyte/findings.py": 391,
-    "holophyte/gates.py": 926, "holophyte/loop.py": 936,
-    "holophyte/merge_gate.py": 591,
-    "holophyte/operator.py": 539, "holophyte/pool.py": 438,
-    "holophyte/pr.py": 768, "holophyte/pr_status.py": 553,
-    "holophyte/pullrequest.py": 489,
-    "holophyte/reconcile.py": 745, "holophyte/reexec.py": 98,
-    "holophyte/report.py": 256, "linear_provider.py": 708,
-    "provider.py": 535,
-    "holophyte/serve.py": 1167,
-    "holophyte/serve_actions.py": 214, "holophyte/serve_config.py": 402,
-    "holophyte/serve_runs.py": 662, "holophyte/supervisor.py": 982,
-    "holophyte/supervisor_lock.py": 287,
-    "holophyte/sweep_report.py": 322, "store/__init__.py": 657,
-    "store/operate.py": 654, "store/read.py": 1218,
-    "store/schema.py": 1147, "store/tickets.py": 587,
-    "tests/config_fixture.py": 136, "tests/loop_fixture.py": 733,
-    "tests/serve_fixture.py": 230, "tests/test_babysit_pass.py": 680,
-    "tests/test_babysit_threads.py": 1168, "tests/test_babysit_checks.py": 422,
-    "tests/test_babysitter.py": 711, "tests/test_config_tables.py": 558,
-    "tests/test_claim.py": 1692, "tests/test_claim_mirror.py": 238,
-    "tests/test_cli.py": 328,
-    "tests/test_cli_approve.py": 390, "tests/test_cli_requeue.py": 414,
-    "tests/test_file_sizes.py": 280, "tests/test_holophyte_package.py": 421,
+    "holophyte/babysitter.py": 1107,
+    "holophyte/claim.py": 1001,
+    "holophyte/serve.py": 1166,
+    "store/read.py": 1218,
+    "store/schema.py": 1146,
+    "tests/test_claim.py": 1692,
     "tests/test_isolation.py": 1627,
-    "tests/test_factory_config.py": 1235,
-    "tests/test_factory_loop.py": 1416, "tests/test_merge_gate.py": 948,
-    "tests/test_pool.py": 913, "tests/test_provider.py": 721, "tests/test_runs.py": 115,
-    "tests/test_pullrequest.py": 1616, "tests/test_reconcile.py": 875,
-    "tests/test_serve.py": 1487,
-    "tests/test_serve_actions.py": 377, "tests/test_serve_config.py": 769,
-    "tests/test_serve_ledger.py": 509, "tests/test_serve_runs.py": 980,
-    "tests/test_serve_shipped.py": 241,
-    "tests/sweep_fixture.py": 257, "tests/test_startup_checks.py": 708,
-    "tests/test_store.py": 342,
-    "tests/test_store_claim.py": 345, "tests/test_store_heartbeat.py": 124,
-    "tests/test_store_interventions.py": 442,
-    "tests/test_store_lease.py": 140, "tests/test_store_pickable.py": 181,
-    "tests/test_store_read.py": 414, "tests/test_store_resume.py": 263,
-    "tests/test_store_schema.py": 1621, "tests/test_store_status.py": 372,
-    "tests/test_store_status_graph.py": 171,
-    "tests/test_store_surface.py": 371, "tests/test_store_tickets.py": 178,
-    "tests/test_supervise.py": 1109, "tests/test_supervisor_sweep.py": 1100,
-    "tests/test_wiring_claim.py": 700, "tests/test_wiring_findings.py": 549,
-    "tests/test_wiring_mirror.py": 349, "tests/test_wiring_phases.py": 501,
-    "tests/test_wiring_rounds.py": 657,
-    "tests/test_wiring_telemetry.py": 509,
-    "tests/test_worktree_reuse.py": 299,
+    "tests/test_pullrequest.py": 1615,
+    "tests/test_store_schema.py": 1621,
 }
 
 
@@ -126,7 +87,8 @@ def expected_over(counts, ceiling=CEILING, pinned=PINNED):
 def violations(counts, over=OVER, ceiling=CEILING, pinned=PINNED):
     """The ratchet's rules as failure lines: a listed file over its
     entry, an unlisted file over its ceiling, a pinned file over its pin,
-    excessive pin slack, an entry whose file is not over the ceiling — stale."""
+    excessive pin slack, an entry or pin whose file is not over the
+    ceiling — stale."""
     bad = []
     for name, lines in sorted(counts.items()):
         cap = ceiling["test" if name.startswith("tests/") else "source"]
@@ -144,6 +106,9 @@ def violations(counts, over=OVER, ceiling=CEILING, pinned=PINNED):
         if pin is not None and lines > pin:
             bad.append(f"{name}: {lines} lines is over its pinned entry "
                        f"of {pin}")
+        elif pin is not None and lines <= cap:
+            bad.append(f"{name}: {lines} lines is at or under the {cap}-line "
+                       f"ceiling; the pinned entry is stale — delete it")
         elif pin is not None and pin - lines > 150:
             bad.append(f"{name}: {lines} lines leaves more than 150 lines "
                        f"of slack under its pinned entry of {pin}; lower the pin")
@@ -163,6 +128,21 @@ class FileSizeRatchet(unittest.TestCase):
         counts = wc_counts()
         self.assertEqual(OVER, expected_over(counts))
         self.assertEqual(violations(counts), [])
+
+    def test_the_pinned_paths_are_exactly_the_files_over_their_ceiling(self):
+        counts = wc_counts()
+        over = {name for name, lines in counts.items()
+                if lines > CEILING["test" if name.startswith("tests/")
+                                   else "source"]}
+        self.assertEqual(set(PINNED), over)
+
+    def test_the_pinned_table_holds_one_entry_to_a_line(self):
+        lines = Path(__file__).read_text().splitlines()
+        start = lines.index("PINNED = {")
+        end = lines.index("}", start)
+        crowded = [line for line in lines[start + 1:end]
+                   if len(re.findall(r'"[^"]+":\s*\d+', line)) > 1]
+        self.assertEqual(crowded, [])
 
 
 class RatchetSelfTests(unittest.TestCase):
@@ -191,24 +171,38 @@ class RatchetSelfTests(unittest.TestCase):
         ])
         self.assertEqual(expected_over(counts, pinned={}), counts)
 
-    def test_a_pinned_file_can_grow_or_shrink_within_its_bound(self):
-        for count in (900, 899, 840, 751, 750):
+    def test_a_pinned_file_can_shrink_within_its_bound(self):
+        for count in (1200, 1199, 1140, 1051, 1050):
             with self.subTest(count=count):
                 self.assertEqual(violations({"pkg/mod.py": count}, over={},
-                                            pinned={"pkg/mod.py": 900}), [])
+                                            pinned={"pkg/mod.py": 1200}), [])
 
     def test_a_pinned_file_over_its_pin_keeps_the_failure_message(self):
         self.assertEqual(
-            violations({"pkg/mod.py": 901}, over={},
-                       pinned={"pkg/mod.py": 900}),
-            ["pkg/mod.py: 901 lines is over its pinned entry of 900"])
+            violations({"pkg/mod.py": 1201}, over={},
+                       pinned={"pkg/mod.py": 1200}),
+            ["pkg/mod.py: 1201 lines is over its pinned entry of 1200"])
 
     def test_a_pinned_file_more_than_150_lines_under_its_pin_is_slack(self):
         self.assertEqual(
-            violations({"pkg/mod.py": 749}, over={},
-                       pinned={"pkg/mod.py": 900}),
-            ["pkg/mod.py: 749 lines leaves more than 150 lines of slack "
-             "under its pinned entry of 900; lower the pin"])
+            violations({"pkg/mod.py": 1049}, over={},
+                       pinned={"pkg/mod.py": 1200}),
+            ["pkg/mod.py: 1049 lines leaves more than 150 lines of slack "
+             "under its pinned entry of 1200; lower the pin"])
+
+    def test_a_pinned_file_at_or_under_the_ceiling_is_a_stale_pin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, cap in (("pkg/mod.py", 1000), ("tests/test_mod.py", 1500)):
+                for count in (cap, cap - 40):
+                    with self.subTest(name=name, count=count):
+                        path = Path(tmp) / "mod.py"
+                        path.write_text("\n" * count)
+                        bad = violations({name: line_count(path)}, over={},
+                                         pinned={name: cap + 10})
+                        (msg,) = bad
+                        for needle in (name, str(count), "stale",
+                                       "delete it"):
+                            self.assertIn(needle, msg)
 
     def test_a_listed_file_over_its_entry_fails_naming_both_numbers(self):
         with tempfile.TemporaryDirectory() as tmp:
