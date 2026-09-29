@@ -87,7 +87,7 @@ skipped. `store.claim()` opens the run row and takes the project lease in
 one `BEGIN IMMEDIATE`.
 
 In `[board] mode = "store"` the store owns the queue instead
-(`holophyte/claim_store.py`). The board is read once a pass: the ready
+(`holophyte/loop/claim_store.py`). The board is read once a pass: the ready
 listing is mirrored into the store, each changed board-owned field a new
 revision, at most once a `[loop] tick_sec`. The claim takes the first row
 of `store.read.claimable()` -- `ready`, in column `ready`, pickable -- and

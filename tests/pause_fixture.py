@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from fake_agent import IMPLEMENT, REQUEST_CHANGES, Commit
 
-import holophyte.loop
+import holophyte.loop.loop
 import store
 
 
@@ -45,10 +45,10 @@ class PauseReply:
 
 class PauseFailureCases:
     def test_pause_with_run_argument_syncs_board_and_releases_label(self):
-        from holophyte import board
-        from holophyte.dispatch import SWEPT
+        from holophyte.board import board
+        from holophyte.loop.dispatch import SWEPT
 
-        run_task = holophyte.loop.run_task
+        run_task = holophyte.loop.loop.run_task
         completed = []
 
         def run_with_identity(target, task, conn, run_id, provider):
@@ -64,7 +64,9 @@ class PauseFailureCases:
             release.assert_called_once_with(target, conn, ticket_id, provider, run_id)
             completed.append(result)
 
-        with patch.object(holophyte.loop, "run_task", side_effect=run_with_identity):
+        with patch.object(
+            holophyte.loop.loop, "run_task", side_effect=run_with_identity
+        ):
             self.loop(PauseEdit(self.db))
         self.assertEqual(completed, [SWEPT])
         self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
@@ -77,7 +79,7 @@ class PauseFailureCases:
                          [("paused", "reviewing")])
 
     def test_pause_after_failed_terminal_verification_resumes_its_result(self):
-        from holophyte.stop import command
+        from holophyte.loop.stop import command
         calls = 0
         def verify(*args, **kwargs):
             nonlocal calls
@@ -86,12 +88,12 @@ class PauseFailureCases:
                 store.pause(kwargs["conn"], kwargs["run_id"], "inspect failed verify")
                 return False, "terminal check failed"
             return True, "ok"
-        with patch.object(holophyte.loop, "run_verify", side_effect=verify):
+        with patch.object(holophyte.loop.loop, "run_verify", side_effect=verify):
             self.loop(Commit(), REQUEST_CHANGES, Commit(), REQUEST_CHANGES, Commit())
         self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
                          [("paused", "reviewing")])
         command(self.project, "KO-131", None, resume=True)
-        with patch.object(holophyte.loop, "run_verify") as verify_again:
+        with patch.object(holophyte.loop.loop, "run_verify") as verify_again:
             self.loop()
         verify_again.assert_not_called()
         self.assertEqual(self.read("SELECT outcome, failureKind FROM runs ORDER BY id"),

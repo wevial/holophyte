@@ -21,7 +21,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCES = sorted((ROOT / "holophyte").glob("*.py")) + [
+SOURCES = sorted((ROOT / "holophyte").rglob("*.py")) + [
     ROOT / "factory.py", ROOT / "ticket_template.py"]
 WORD = re.compile(r"\btargets?\b", re.IGNORECASE)
 # The alias JSON key and the argparse destination.
@@ -101,7 +101,9 @@ class ProjectWordTests(unittest.TestCase):
 
     def test_the_scan_sees_the_literals_it_guards(self):
         # Zero sources or zero literals would pass the check above vacuously.
-        cli = [text for line, text in literal_text(ROOT / "holophyte" / "cli.py")]
+        cli = [
+            text for line, text in literal_text(ROOT / "holophyte" / "cli" / "cli.py")
+        ]
         self.assertIn("repository the loop works in", " ".join(cli))
         self.assertTrue(all(path.exists() for path in SOURCES))
 

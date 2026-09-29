@@ -5,10 +5,10 @@ import unittest
 from time import time
 from unittest.mock import patch
 
-import holophyte.board
-import holophyte.reconcile
-import holophyte.serve_actions
-import holophyte.supervisor
+import holophyte.board.board
+import holophyte.host.reconcile
+import holophyte.host.supervisor
+import holophyte.serve.serve_actions
 import linear_provider
 import store
 import store.read
@@ -34,7 +34,7 @@ class FailedAttentionTests(ServeTestCase):
         task = linear_provider.parse_task({
             "identifier": "KO-7", "id": "issue-7", "title": "ticket 7",
             "description": "", "state": {"name": state}})
-        holophyte.board.mirror_task(self.conn, project, task)
+        holophyte.board.board.mirror_task(self.conn, project, task)
 
     def test_shelved_board_states_hide_failure_until_unshelved(self):
         for state in ("Backlog", "Canceled", "Done", "Todo"):
@@ -64,9 +64,9 @@ class FailedAttentionTests(ServeTestCase):
         with patch.object(linear_provider, "_gql", side_effect=gql):
             self.assertEqual(provider.ready_issues(), [])
             for refresh in (
-                lambda: holophyte.reconcile._reconcile_mirror(
+                lambda: holophyte.host.reconcile._reconcile_mirror(
                     self.conn, project, provider),
-                lambda: holophyte.supervisor.board_ready(
+                lambda: holophyte.host.supervisor.board_ready(
                     self.conn, project, provider, io.StringIO(), board_ask_ms=0),
             ):
                 for state in ("Backlog", "Todo"):
@@ -152,7 +152,7 @@ class FailedAttentionTests(ServeTestCase):
                 before = list(self.conn.iterdump())
                 count = self.conn.execute(
                     "SELECT COUNT(*) FROM interventions").fetchone()[0]
-                code, body = holophyte.serve_actions.requeue_action(
+                code, body = holophyte.serve.serve_actions.requeue_action(
                     self.project, {"ticket": "KO-7", "run": self.run})
                 self.assertEqual(code, 200)
                 self.assertIs(body["ok"], False)
@@ -215,7 +215,7 @@ class StrandedAttentionTests(ServeTestCase):
 
 class PausedAttentionTests(ServeTestCase):
     def test_a_paused_ticket_is_paused_and_a_question_stays_blocked(self):
-        from holophyte.stop import stop_if_requested
+        from holophyte.loop.stop import stop_if_requested
         self.seed()
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
@@ -305,7 +305,7 @@ class TypedParkAttentionTests(unittest.TestCase):
             id=1, linearIdentifier="KO-1", blockedQuestion="Approval needed",
             prUrl="https://github.com/example/repo/pull/7",
             parkKind="pull_request")
-        self.assertEqual(holophyte.serve.parked_item(ticket)["kind"], "pr_open")
+        self.assertEqual(holophyte.serve.serve.parked_item(ticket)["kind"], "pr_open")
 
 
 if __name__ == "__main__":
@@ -363,7 +363,8 @@ class PullRequestTitleTests(ServeTestCase):
     def read_status(self, title):
         """One reconcile read of the pull request answering `title`,
         recorded as the reconcile records an unchanged pull request."""
-        from holophyte import pr_status, reconcile
+        from holophyte.host import reconcile
+        from holophyte.pr import pr_status
         node = {"state": "OPEN", "merged": False, "mergeCommit": None,
                 "mergedBy": None, "updatedAt": "2026-09-22T10:00:00Z",
                 "title": title}
@@ -416,7 +417,7 @@ class CiParkAttentionTests(ServeTestCase):
                  pr_seen=("2026-09-29T10:00:00Z", 0, "pending", None, None),
                  now=self.now)
         (blocked,) = store.read.blocked_tickets(conn)
-        item = holophyte.serve.parked_item(blocked)
+        item = holophyte.serve.serve.parked_item(blocked)
         self.assertEqual((item["kind"], item["pr_url"], item["reason"]),
                          ("pr_open", self.URL, "pending checks"))
         self.assertEqual((item["pr"]["number"], item["pr"]["checks"]), (31, "pending"))

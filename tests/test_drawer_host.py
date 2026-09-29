@@ -13,7 +13,7 @@ import json
 import sqlite3
 from time import time
 
-from holophyte.project import Project
+from holophyte.config.project import Project
 from tests.test_drawer import drawer
 from tests.test_serve_host import HostServeCase
 

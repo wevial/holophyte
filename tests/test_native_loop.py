@@ -23,16 +23,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 
-import holophyte.loop  # noqa: E402
-import holophyte.operator  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
+import holophyte.loop.loop  # noqa: E402
 import linear_provider  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.board_sync import owed  # noqa: E402
-from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.freshness import stale_reasons  # noqa: E402
-from holophyte.native_board import NativeBoard  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
+from holophyte.board.board_sync import owed  # noqa: E402
+from holophyte.board.native_board import NativeBoard  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
+from holophyte.loop.runs import open_store  # noqa: E402
+from holophyte.review.freshness import stale_reasons  # noqa: E402
 from provider import FileProvider, board_for  # noqa: E402
 
 NATIVE = '[board]\nkind = "native"\nkey = "NAT"\n'
@@ -98,10 +98,10 @@ class NativeLoopTests(LoopFixture):
                          Snapshot(self, "the second work"), APPROVE)
         out = io.StringIO()
         with no_agent_processes(), patch.object(sys, "stdout", out), \
-                patch.object(holophyte.loop, "agent", fake), \
-                patch("holophyte.freshness.critic_admits",
+                patch.object(holophyte.loop.loop, "agent", fake), \
+                patch("holophyte.review.freshness.critic_admits",
                       return_value=True):
-            self.rc = holophyte.operator.main(self.project, self.board)
+            self.rc = holophyte.cli.operator.main(self.project, self.board)
         return out.getvalue()
 
     def test_a_dependent_ticket_waits_then_runs_after_its_dependency(self):

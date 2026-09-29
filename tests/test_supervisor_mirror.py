@@ -10,8 +10,8 @@ from loop_fixture import StubProvider  # noqa: E402
 from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
 import store  # noqa: E402
-from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.supervisor import (  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
+from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
@@ -51,10 +51,10 @@ class SupervisorMirrorTests(SweepTestCase):
     def reconcile(self, provider, at):
         provider.team = "team-1"  # the project `setUp` ensures
         out = io.StringIO()
-        with patch("holophyte.reconcile._reconcile_pull_requests"), \
-                patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.reconcile._reconcile_pull_requests"), \
+                patch("holophyte.host.supervisor.linear_budget_low",
                       return_value=False), \
-                patch("holophyte.supervisor.start_loop_for"):
+                patch("holophyte.host.supervisor.start_loop_for"):
             asked = reconcile_parked_pull_requests(
                 self.project, self.conn, at, provider, out,
                 knobs=sweep_config(self.project), memory=self.memory)
@@ -91,7 +91,7 @@ class SupervisorMirrorTests(SweepTestCase):
         self.assertEqual(live.closed_asks, 0)
 
     def test_a_provider_that_raises_is_one_line_and_the_pass_goes_on(self):
-        with patch("holophyte.reconcile._reconcile_mirror",
+        with patch("holophyte.host.reconcile._reconcile_mirror",
                    side_effect=RuntimeError("board exploded")):
             asked, out = self.reconcile(RefusingProvider(), T0 + 20 * MINUTE)
         self.assertEqual(asked, [self.project_id])

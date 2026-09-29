@@ -9,10 +9,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import review_runner
-from holophyte import agents, dispatch, loop
-from holophyte.dispatch import MergeParked
-from holophyte.gates import InfraFailure, RunFailure
-from holophyte.pr import Thread
+from holophyte.agents import agents
+from holophyte.loop import dispatch, loop
+from holophyte.loop.dispatch import MergeParked
+from holophyte.loop.gates import InfraFailure, RunFailure
+from holophyte.pr.pr import Thread
 
 
 class ReviewRefsTests(unittest.TestCase):
@@ -134,7 +135,7 @@ class ReviewRefsTests(unittest.TestCase):
                 )
 
     def test_all_four_prompts_name_the_run_pair(self):
-        from holophyte import babysitter
+        from holophyte.babysit import babysitter
 
         class Captured(Exception):
             pass
@@ -198,7 +199,7 @@ class ReviewRefsTests(unittest.TestCase):
             self.assertNotIn("refs/review/candidate", prompt)
 
     def test_sweep_cleans_refs_only_after_confirmed_close_out(self):
-        from holophyte import board
+        from holophyte.board import board
 
         agents.publish_review_refs(self.repo, self.base, self.first, run_id=340)
         with contextlib.ExitStack() as stack:

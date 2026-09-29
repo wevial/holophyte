@@ -18,8 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
 
-import holophyte.sweep_host as sweep_host  # noqa: E402
-from holophyte.cli import cli  # noqa: E402
+import holophyte.host.sweep_host as sweep_host  # noqa: E402
+from holophyte.cli.cli import cli  # noqa: E402
 
 SCRATCH = Path(os.environ["HOLOPHYTE_LIFECYCLE_DIR"])
 HOLD = SCRATCH / "hold"

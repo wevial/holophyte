@@ -762,8 +762,8 @@ class StoreSchemaVersionTests(unittest.TestCase):
         self.assertEqual(
             conn.execute("SELECT runId, ticketId, kind, source FROM ledger")
             .fetchall(), [(run_id, ticket, "intervention", "operator")])
-        import holophyte.report
-        table = "\n".join(holophyte.report.report_lines(conn))
+        import holophyte.cli.report
+        table = "\n".join(holophyte.cli.report.report_lines(conn))
         self.assertIn("KO-1", table)
         self.assertIn("failed", table)
 

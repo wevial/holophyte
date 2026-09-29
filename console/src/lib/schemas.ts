@@ -46,7 +46,7 @@ export const statusSchema = z.looseObject({
 });
 
 // The last host sweep as a host daemon's root `/status` reports it
-// (holophyte/serve_host.py `sweep_view()`): `sweep.json`'s fields, each
+// (holophyte/serve/serve_host.py `sweep_view()`): `sweep.json`'s fields, each
 // null when the file has none, and the daemon's judgement in `state`.
 export const sweepSchema = z.looseObject({
   started: z.number().nullable(), ended: z.number().nullable(),

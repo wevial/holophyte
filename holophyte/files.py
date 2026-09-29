@@ -31,7 +31,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from holophyte.gates import run_capped
+from holophyte.loop.gates import run_capped
 
 # The cap on each git call. A diff over one branch is milliseconds; a repo
 # on a stalled network mount is the case this exists for.

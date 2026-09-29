@@ -7,7 +7,7 @@ import { withToken } from "./token";
  *  as "not wired yet" until its own ticket lands a daemon route. */
 export const ROUTES: Record<string, string> = {
   "Restart supervisor": "/actions/restart-supervisor",
-  // A host daemon's root route (holophyte/serve_host.py `run_sweep()`):
+  // A host daemon's root route (holophyte/serve/serve_host.py `run_sweep()`):
   // posted at `rootOf()` the row's base, never under a project's prefix.
   "Run sweep": "/actions/run-sweep",
   Requeue: "/actions/requeue",
@@ -31,7 +31,7 @@ export const ACTIONS_OFF = "This daemon has not opted into actions ([serve] acti
 export const NOT_WIRED = "not wired yet";
 
 /** What a `POST /actions/...` answered: the daemon's `ok` and `detail`
- *  (holophyte/serve.py `unit_action()`, `requeue_action()`), or for a
+ *  (holophyte/serve/serve.py `unit_action()`, `requeue_action()`), or for a
  *  non-2xx answer `ok: false` with its status and `error` as the detail. */
 export interface ActionResult {
   ok: boolean;

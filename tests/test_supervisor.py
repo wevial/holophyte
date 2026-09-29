@@ -23,8 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.supervisor  # noqa: E402 - after the sys.path insert above
+import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
 
@@ -32,7 +32,7 @@ class TimeBoxAllowanceTests(unittest.TestCase):
     """The arithmetic, witnessed without a store: 30 min, grace 1.5."""
 
     def test_the_box_is_counted_once_per_turn_up_to_the_cap(self):
-        allowance = holophyte.supervisor.time_box_allowance
+        allowance = holophyte.host.supervisor.time_box_allowance
         # A run_cap high enough not to bind keeps the per-turn arithmetic.
         self.assertEqual(allowance(30, 0, 2, 1.5, 5), 45)
         self.assertEqual(allowance(30, 1, 2, 1.5, 5), 90)
@@ -41,7 +41,7 @@ class TimeBoxAllowanceTests(unittest.TestCase):
     def test_the_run_cap_bounds_the_allowance_whatever_the_rounds(self):
         """KO-416: three rounds would earn 135 min at grace 1.5; the
         default run cap of three boxes cuts the allowance to 90."""
-        allowance = holophyte.supervisor.time_box_allowance
+        allowance = holophyte.host.supervisor.time_box_allowance
         self.assertEqual(allowance(30, 3, 2, 1.5, 3.0), 90)
         self.assertEqual(allowance(30, 0, 2, 1.5, 3.0), 45)
 
@@ -52,11 +52,11 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
     def test_disabled_supervisor_exits_before_lock_or_sweep(self):
         store.set_admission(self.conn, 1, "disabled", "retired")
         out = io.StringIO()
-        with patch.object(holophyte.supervisor, "acquire_supervisor_lock") as lock:
-            holophyte.supervisor.supervise(self.project, out=out)
+        with patch.object(holophyte.host.supervisor, "acquire_supervisor_lock") as lock:
+            holophyte.host.supervisor.supervise(self.project, out=out)
             with (contextlib.chdir(self.target),
                   patch.object(self.project, "path", Path("."))):
-                holophyte.supervisor.supervise(self.project, out=out)
+                holophyte.host.supervisor.supervise(self.project, out=out)
         lock.assert_not_called()
         self.assertIn("disabled: retired", out.getvalue())
 
@@ -70,7 +70,7 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
     def sweep_at_46(self, run_id):
         at = T0 + 46 * MINUTE
         self.heartbeat_at(run_id, at)
-        return holophyte.supervisor.sweep(self.project, self.conn, at).trips
+        return holophyte.host.supervisor.sweep(self.project, self.conn, at).trips
 
     def test_a_fix_round_after_a_review_is_not_swept_as_overtime(self):
         run_id = self.a_run(active_work=True, budget_min=30, phase="addressing")
@@ -102,10 +102,10 @@ class TimeBoxPerTurnSweepTests(SweepTestCase):
 
         at = T0 + 140 * MINUTE  # past 3 turns × 30 × 1.5 = 135, inside 4 turns
         self.heartbeat_at(run_id, at)
-        trip, = holophyte.supervisor.sweep(self.project, self.conn, at).trips
+        trip, = holophyte.host.supervisor.sweep(self.project, self.conn, at).trips
 
         self.assertEqual(trip.condition, "time_box")
-        self.assertIn(f"× {1 + holophyte.supervisor.MAX_ROUNDS} turns",
+        self.assertIn(f"× {1 + holophyte.host.supervisor.MAX_ROUNDS} turns",
                       trip.evidence)
 
 
@@ -116,12 +116,12 @@ class MergeLockSweepTests(SweepTestCase):
     def setUp(self):
         super().setUp()
         # run_sweep hides executable tools; CLI startup still needs an identity.
-        build = patch("holophyte.startup.build_sha", return_value="test-build")
+        build = patch("holophyte.host.startup.build_sha", return_value="test-build")
         build.start()
         self.addCleanup(build.stop)
 
     def lock_for(self, run_id):
-        path = holophyte.gates.merge_lock_path(self.project)
+        path = holophyte.loop.gates.merge_lock_path(self.project)
         path.write_text(f"{run_id} {T0 / 1000:.3f}\n")
         return path
 
@@ -160,8 +160,8 @@ class MergeLockSweepTests(SweepTestCase):
         run_id = self.a_run(phase="merge_gate")
         store.release(self.conn, run_id, "failed", "judged dead early",
                       now=T0 + MINUTE)
-        path = holophyte.gates.merge_lock_path(self.project)
-        with holophyte.gates.merge_lock(self.project, run_id):
+        path = holophyte.loop.gates.merge_lock_path(self.project)
+        with holophyte.loop.gates.merge_lock(self.project, run_id):
             stamp = path.read_text()
             acted = self.run_sweep(T0 + 2 * MINUTE, "--act")
             self.assertEqual(path.read_text(), stamp)
@@ -189,12 +189,14 @@ class MergeLockSweepTests(SweepTestCase):
             target=lambda: lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act")))
 
         def gate():
-            with holophyte.gates.merge_lock(self.project, live, wait=10, poll=0.01):
+            with holophyte.loop.gates.merge_lock(
+                self.project, live, wait=10, poll=0.01
+            ):
                 entered.set()
                 lines.extend(self.run_sweep(T0 + 2 * MINUTE, "--act"))
         gating = threading.Thread(target=gate)
 
-        with holophyte.gates.merge_lock_arbiter(path):
+        with holophyte.loop.gates.merge_lock_arbiter(path):
             sweeping.start()
             gating.start()
             sweeping.join(0.3)
@@ -229,11 +231,11 @@ class UnavailableStoreTests(SweepTestCase):
                     if len(waits) == len(outcomes):
                         signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
 
-                with patch.object(holophyte.supervisor, "supervise_pass",
+                with patch.object(holophyte.host.supervisor, "supervise_pass",
                                   side_effect=outcomes) as run_pass, \
-                        patch.object(holophyte.supervisor, "factory_revision",
+                        patch.object(holophyte.host.supervisor, "factory_revision",
                                      return_value="unchanged"):
-                    code = holophyte.supervisor.supervise(
+                    code = holophyte.host.supervisor.supervise(
                         self.project, interval=7, wait=wait, out=out)
                 self.assertEqual(code, expected_code)
                 self.assertEqual(run_pass.call_count, len(outcomes))

@@ -133,6 +133,6 @@ path.
 | project daemon | the factory checkout's `HEAD` moves (re-exec on its own bind) | after a renderer merge, as the host daemon |
 | drawer | every 10 s by SwiftBar | after pulling a new script version (SwiftBar refresh) |
 
-The loop and the project daemon both go through `holophyte/reexec.py`,
+The loop and the project daemon both go through `holophyte/loop/reexec.py`,
 which replaces the process image with the same command line through an
 injectable `EXEC` seam so tests can watch it happen without exec'ing.

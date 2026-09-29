@@ -8,7 +8,8 @@ class BotThreadCases:
     def test_storeless_advisory_thread_is_replied_and_resolved(self):
         from loop_fixture import BRANCH
 
-        from holophyte import babysitter, pr_status
+        from holophyte.babysit import babysitter
+        from holophyte.pr import pr_status
 
         self.configure('[merge]\nmode = "pr"\nbot_threads = "advisory"\n')
         person = ("src/app.py", 30, ("maintainer", "User"), "Fix human finding")
@@ -92,8 +93,8 @@ class BotConfigCases:
         import contextlib
         import io
 
-        from holophyte.config import check_document, merge_config
-        from holophyte.startup import banner
+        from holophyte.config.config import check_document, merge_config
+        from holophyte.host.startup import banner
 
         for value in ('"operator"', '[1]', 'false'):
             self.locate(f'[merge]\nmention_accounts = {value}\n')
@@ -117,7 +118,7 @@ class BotConfigCases:
         self.assertEqual(merge_config(self.project).mention_accounts, ("Operator",))
 
     def test_bot_thread_config_validation(self):
-        from holophyte.config_tables import merge_config
+        from holophyte.config.config_tables import merge_config
         self.locate('[merge]\nbot_threads = "sometimes"\n')
         with self.assertRaisesRegex(SystemExit, '"act" or "advisory"'):
             merge_config(self.project)

@@ -52,7 +52,7 @@ A draft: the Shipped view could read as a day-by-day timeline.
 """
 QUESTION = ("merge? The reviewer passed round 1 and the pre-merge verify is"
             " green; approve with --approve DEMO-4.")
-FINDINGS = [{"path": "holophyte/serve.py", "line": 12, "severity": "p1",
+FINDINGS = [{"path": "holophyte/serve/serve.py", "line": 12, "severity": "p1",
              "criterion": "AC1", "message": "the route is unmatched"}]
 
 
@@ -73,8 +73,8 @@ def _register(home):
     """A git repository `home/demo` with a native board, registered as
     `project add` registers it, its hostname shown as `HOST_LABEL`; its
     path."""
-    import holophyte.cli
-    from holophyte.project import Project
+    import holophyte.cli.cli
+    from holophyte.config.project import Project
 
     path = home / NAME
     subprocess.run(["git", "init", "-q", str(path)], check=True)
@@ -85,7 +85,7 @@ def _register(home):
         f'[serve]\nname = "{NAME}"\n'
         f'[report]\nhost_label = "{HOST_LABEL}"\n')
     with open(os.devnull, "w") as quiet, patch.object(sys, "stdout", quiet):
-        code = holophyte.cli.cli(["project", "add", str(path)])
+        code = holophyte.cli.cli.cli(["project", "add", str(path)])
     if code:
         raise RuntimeError(f"project add {path} exited {code}")
     return path
@@ -111,7 +111,7 @@ def _seed_store(path):
     import store
     import store.board
     import store.tickets
-    from holophyte.project import Project
+    from holophyte.config.project import Project
     from tests.phase_fixture import advance_phase, finish_run
     from tests.test_store_board import body
 

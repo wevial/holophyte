@@ -26,18 +26,22 @@ sys.path.insert(0, str(HERE))
 from fake_agent import APPROVE, Commit, Critic, FakeAgent  # noqa: E402
 from loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task  # noqa: E402
 
-import holophyte.agents  # noqa: E402 - after the sys.path insert above
-import holophyte.claim  # noqa: E402 - after the sys.path insert above
-import holophyte.freshness  # noqa: E402 - after the sys.path insert above
-import holophyte.harness  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.pool  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.runs  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.harness  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
+import holophyte.review.freshness  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
-from holophyte.agent_routes import reset, routes  # noqa: E402
-from holophyte.freshness import critic_brief, park_stale, parse_freshness  # noqa: E402
+from holophyte.agents.agent_routes import reset, routes  # noqa: E402
+from holophyte.review.freshness import (  # noqa: E402
+    critic_brief,
+    park_stale,
+    parse_freshness,
+)
 from tests.phase_fixture import finish_run  # noqa: E402
 
 # The fake codex: records its cwd, the HEAD there and whether HEAD is
@@ -83,7 +87,7 @@ class CriticProbeTests(unittest.TestCase):
 
     def target(self, config):
         (self.holo / "config.toml").write_text(config)
-        project = holophyte.project.Project(
+        project = holophyte.config.project.Project(
             path=self.repo, holo_dir=self.holo, store_path=self.holo / "store.db",
             config_path=self.holo / "config.toml",
             worktrees=self.repo.parent / "repo.worktrees")
@@ -93,7 +97,7 @@ class CriticProbeTests(unittest.TestCase):
     def start(self, project, **options):
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            started = holophyte.agents.startup_routes(
+            started = holophyte.agents.agents.startup_routes(
                 project, SimpleNamespace(team="test"), **options)
         return started, printed.getvalue()
 
@@ -107,8 +111,8 @@ class CriticProbeTests(unittest.TestCase):
 
     def test_no_critic_table_means_no_seat_and_no_probe(self):
         project = self.target("")
-        self.assertIsNone(holophyte.harness.critic_seat(project))
-        with patch.object(holophyte.agents, "critic_workspace") as workspace:
+        self.assertIsNone(holophyte.agents.harness.critic_seat(project))
+        with patch.object(holophyte.agents.agents, "critic_workspace") as workspace:
             started, printed = self.start(project)
         self.assertTrue(started)
         workspace.assert_not_called()
@@ -148,10 +152,10 @@ class CriticProbeTests(unittest.TestCase):
         def spawn(argv, env, **_):
             spawned.append(env)
             return SimpleNamespace(pid=1)
-        with patch.object(holophyte.pool, "SPAWN", spawn), \
+        with patch.object(holophyte.loop.pool, "SPAWN", spawn), \
                 contextlib.redirect_stdout(io.StringIO()):
-            holophyte.pool._spawn_worker(project, 1)
-        self.assertEqual(spawned[0].get(holophyte.pool.CRITIC_DOWN_ENV), "1")
+            holophyte.loop.pool._spawn_worker(project, 1)
+        self.assertEqual(spawned[0].get(holophyte.loop.pool.CRITIC_DOWN_ENV), "1")
 
     def test_a_worker_with_a_writer_keeps_the_critic_off_without_a_probe(self):
         writer = self.repo.parent / "writer.sh"
@@ -163,10 +167,10 @@ class CriticProbeTests(unittest.TestCase):
 
         def claim(target, _):
             seen.append(routes(target).critic_failed)
-        with patch.dict("os.environ", {holophyte.pool.CRITIC_DOWN_ENV: "1"}), \
-                patch.object(holophyte.pool, "_worker", claim), \
+        with patch.dict("os.environ", {holophyte.loop.pool.CRITIC_DOWN_ENV: "1"}), \
+                patch.object(holophyte.loop.pool, "_worker", claim), \
                 contextlib.redirect_stdout(io.StringIO()):
-            holophyte.pool.worker(project, SimpleNamespace(team="test"))
+            holophyte.loop.pool.worker(project, SimpleNamespace(team="test"))
         self.assertEqual(seen, [True])
         self.assertEqual(self.critic_calls(), [])
 
@@ -229,14 +233,14 @@ class CriticClaimTests(LoopFixture):
                  filed(13, 2, naming("holophyte/old.py")),
                  filed(1, 3, naming("holophyte/route.py"))]
         provider = StubProvider(*tasks)
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
         fake = FakeAgent(Critic(), Critic())
 
-        with patch.object(holophyte.loop, "agent", fake), \
+        with patch.object(holophyte.loop.loop, "agent", fake), \
                 patch.object(sys, "stdout", io.StringIO()):
-            admitted = [holophyte.claim._admit_ticket(
+            admitted = [holophyte.loop.claim._admit_ticket(
                 self.project, conn, project_id, provider, task,
                 SimpleNamespace(trips=[], watched=[])) for task in tasks]
 
@@ -305,12 +309,12 @@ class CriticClaimTests(LoopFixture):
 
     def admit(self, provider, task, fake):
         """`task` through `_admit_ticket()` on a fresh store connection."""
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        with patch.object(holophyte.loop, "agent", fake), \
+        with patch.object(holophyte.loop.loop, "agent", fake), \
                 patch.object(sys, "stdout", io.StringIO()):
-            admitted = holophyte.claim._admit_ticket(
+            admitted = holophyte.loop.claim._admit_ticket(
                 self.project, conn, project_id, provider, task, SEEN)
         return conn, project_id, admitted
 
@@ -321,7 +325,7 @@ class CriticClaimTests(LoopFixture):
         class SiblingClaims(Critic):
             # Another loop on the store claims the ticket mid-turn.
             def play(self, cwd, turn):
-                conn = holophyte.runs.open_store(project)
+                conn = holophyte.loop.runs.open_store(project)
                 ticket_id, project_id = conn.execute(
                     "SELECT id, projectId FROM tickets").fetchone()
                 claimed.append(store.claim(conn, project_id, ticket_id))
@@ -347,11 +351,11 @@ class CriticClaimTests(LoopFixture):
             park_stale(
                 self.project, conn, project_id, provider, task,
                 ["critic: stale \u2014 done"], admitted=True)
-            run = holophyte.claim._claim_run(
+            run = holophyte.loop.claim._claim_run(
                 self.project, conn, project_id, provider, task, ticket_id,
                 SEEN)
 
-        self.assertIs(run, holophyte.claim.HELD)
+        self.assertIs(run, holophyte.loop.claim.HELD)
         self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)])
 
 
@@ -377,12 +381,12 @@ class ClaudeCriticTests(LoopFixture):
     def test_a_claude_critic_runs_print_mode_and_its_verdict_parks(self):
         task = filed(13, 1)
         provider = StubProvider(task)
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
 
         with patch.object(sys, "stdout", io.StringIO()):
-            admitted = holophyte.freshness.critic_admits(
+            admitted = holophyte.review.freshness.critic_admits(
                 self.project, conn, project_id, provider, task)
 
         self.assertFalse(admitted)
@@ -408,7 +412,7 @@ class CriticAnswerTests(unittest.TestCase):
 
 class CriticBriefTests(LoopFixture):
     def test_the_brief_names_every_run_merged_since_filing_past_one_page(self):
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project = tickets.ensure_project(conn, "team-1", self.target)
         filed_at = int(time.time() * 1000) - HOUR_MS

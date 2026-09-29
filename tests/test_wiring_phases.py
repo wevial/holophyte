@@ -24,9 +24,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -104,7 +104,7 @@ class RunPhaseTests(unittest.TestCase):
         self.addCleanup(audit_loop_store, self)
         # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.project = holophyte.project.Project(
+        self.project = holophyte.config.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -134,8 +134,8 @@ class RunPhaseTests(unittest.TestCase):
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
-            with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.project, provider)
+            with patch.object(holophyte.loop.loop, "agent", fake_agent):
+                holophyte.cli.operator.main(self.project, provider)
         return provider
 
     def read(self, sql):
@@ -261,8 +261,8 @@ class RunPhaseTests(unittest.TestCase):
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
-            with patch.object(holophyte.loop, "agent", boom):
-                rc = holophyte.operator.main(self.project, provider)
+            with patch.object(holophyte.loop.loop, "agent", boom):
+                rc = holophyte.cli.operator.main(self.project, provider)
 
         # Contained, not propagated — and the run row still says the work
         # stopped under review, with the error text as the reason.

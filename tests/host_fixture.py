@@ -16,10 +16,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli
+import holophyte.cli.cli
 import store
-from holophyte.host import Host
-from holophyte.project import Project
+from holophyte.config.project import Project
+from holophyte.host.host import Host
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -42,7 +42,7 @@ def factory_checkout(case, directory, check):
         shutil.copytree(REPO / package, directory / package, ignore=skip)
     for module in REPO.glob("*.py"):
         shutil.copy(module, directory)
-    watch = directory / "holophyte" / "serve_watch.py"
+    watch = directory / "holophyte" / "serve" / "serve_watch.py"
     text = watch.read_text()
     case.assertIn("\nCODE_CHECK_SEC = 15\n", text)
     watch.write_text(text.replace("\nCODE_CHECK_SEC = 15\n",
@@ -82,7 +82,7 @@ class HostFixture(unittest.TestCase):
     def cli(self, *args):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            code = holophyte.cli.cli(list(args))
+            code = holophyte.cli.cli.cli(list(args))
         return code, out.getvalue()
 
     def registered(self):

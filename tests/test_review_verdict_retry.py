@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 from fake_agent import APPROVE, REQUEST_CHANGES, Reply  # noqa: E402
 
-import holophyte.loop
-import holophyte.runs
-import holophyte.supervisor
+import holophyte.host.supervisor
+import holophyte.loop.loop
+import holophyte.loop.runs
 import review_runner
 import store
 
@@ -76,7 +76,7 @@ class ReviewVerdictRetryTests(LoopFixture):
 
                 with patch.object(review_runner, "run_review",
                                   side_effect=runner) as run:
-                    reply, actual, evidence = holophyte.loop._review_reply(
+                    reply, actual, evidence = holophyte.loop.loop._review_reply(
                         self.project, "Review this candidate.", self.target,
                         self.base, self.base, None, None)
                 self.assertEqual(run.call_count, 2)
@@ -95,14 +95,16 @@ class ReviewVerdictRetryTests(LoopFixture):
         for rnd, path, prior in ((2, "src/a.py", "same boilerplate"),
                                  (3, "src/b.py", "same boilerplate"),
                                  (4, "src/b.py", "different boilerplate")):
-            holophyte.runs.record_round(
+            holophyte.loop.runs.record_round(
                 self.project, conn, run_id, rnd, "review",
                 f"- [P1] {path}:12 — Broken boundary\nVERDICT: REQUEST_CHANGES",
                 "echo ok", True, "ok", prior_reply=prior)
             if rnd == 2:
-                self.assertIsNone(holophyte.supervisor.review_overlap(conn, run_id))
+                self.assertIsNone(
+                    holophyte.host.supervisor.review_overlap(conn, run_id)
+                )
             else:
-                self.assertEqual(holophyte.supervisor.review_overlap(conn, run_id),
+                self.assertEqual(holophyte.host.supervisor.review_overlap(conn, run_id),
                                  (rnd - 1, rnd, 0.0 if rnd == 3 else 1.0))
         fingerprints = conn.execute(
             "SELECT findingsFingerprint FROM reviewRounds ORDER BY round").fetchall()

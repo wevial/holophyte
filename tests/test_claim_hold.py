@@ -6,9 +6,9 @@ import sqlite3
 from unittest.mock import Mock
 
 import store
-from holophyte.claim import _claim_next
-from holophyte.dispatch import _mirror_queue, _startup_sweep
-from holophyte.reconcile import _reconcile_at_startup
+from holophyte.host.reconcile import _reconcile_at_startup
+from holophyte.loop.claim import _claim_next
+from holophyte.loop.dispatch import _mirror_queue, _startup_sweep
 from tests.sweep_fixture import SweepTestCase
 
 

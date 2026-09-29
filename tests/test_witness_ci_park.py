@@ -20,11 +20,11 @@ from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import VALID_BODY, MergeModeFixture  # noqa: E402
 from test_store_claim_loop import STORE_MODE, StoreFiles  # noqa: E402
 
-import holophyte.pr  # noqa: E402
-import holophyte.pr_status  # noqa: E402
+import holophyte.pr.pr  # noqa: E402
+import holophyte.pr.pr_status  # noqa: E402
 import store  # noqa: E402
-from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.supervisor import (  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
+from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
@@ -44,14 +44,14 @@ class CiParkWakeTests(MergeModeFixture):
         (files / "KO-131.md").write_text(VALID_BODY)
         self.board = StoreFiles(files)
         self.github = self.open_pull("PENDING")
-        real = holophyte.pr_status.graphql
+        real = holophyte.pr.pr_status.graphql
 
         def graphql(target, pull, query, variables):
             if "mergedBy" not in query:
                 return real(target, pull, query, variables)
             return {"repository": {"pullRequest": self.github}}
-        self.enterContext(patch.object(holophyte.pr_status, "graphql", graphql))
-        self.enterContext(patch.object(holophyte.pr, "SLEEP", lambda s: None))
+        self.enterContext(patch.object(holophyte.pr.pr_status, "graphql", graphql))
+        self.enterContext(patch.object(holophyte.pr.pr, "SLEEP", lambda s: None))
 
     def open_pull(self, checks, updated_at=OLD):
         """The reconcile's read of the open pull request, no review content."""
@@ -62,7 +62,7 @@ class CiParkWakeTests(MergeModeFixture):
                     "statusCheckRollup": {"state": checks}}}]}}
 
     def run_loop(self, *script):
-        with patch("holophyte.freshness.critic_admits", return_value=True), \
+        with patch("holophyte.review.freshness.critic_admits", return_value=True), \
                 patch.object(sys, "stdout", io.StringIO()):
             self.loop(*script, provider=self.board)
 
@@ -86,9 +86,9 @@ class CiParkWakeTests(MergeModeFixture):
     def sweep(self):
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        with patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.supervisor.linear_budget_low",
                    return_value=False), \
-                patch("holophyte.supervisor.start_loop_for"):
+                patch("holophyte.host.supervisor.start_loop_for"):
             reconcile_parked_pull_requests(
                 self.project, conn, int(time.time() * 1000), self.board,
                 io.StringIO(), knobs=sweep_config(self.project),
@@ -120,7 +120,7 @@ class CiParkWakeTests(MergeModeFixture):
                 return [dict(UNIT, id=43, conclusion="success")]
             return [UNIT] if red else []
         red = []
-        self.enterContext(patch("holophyte.pr_status._check_runs_of",
+        self.enterContext(patch("holophyte.pr.pr_status._check_runs_of",
                                 check_runs))
         self.park_on_pending_checks()
         red.append(UNIT)

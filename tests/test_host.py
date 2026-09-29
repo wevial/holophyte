@@ -17,17 +17,17 @@ import time
 import unittest
 from pathlib import Path
 
-import holophyte.cli
+import holophyte.cli.cli
 import store
-from holophyte.config_tables import board_mode
-from holophyte.gates import merge_lock_path
-from holophyte.host import Host, HostError
-from holophyte.project import Project
-from holophyte.supervisor_lock import (
+from holophyte.config.config_tables import board_mode
+from holophyte.config.project import Project
+from holophyte.host.host import Host, HostError
+from holophyte.host.supervisor_lock import (
     acquire_supervisor_lock,
     release_supervisor_lock,
     supervisor_lock_path,
 )
+from holophyte.loop.gates import merge_lock_path
 from tests.host_fixture import HostFixture
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -281,7 +281,7 @@ class HostStatusTests(HostFixture):
             with self.subTest(argv=argv), \
                     contextlib.redirect_stderr(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli(argv)
+                holophyte.cli.cli.cli(argv)
             self.assertEqual(raised.exception.code, 2)
 
 

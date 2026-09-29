@@ -21,10 +21,10 @@ from loop_fixture import MergeModeFixture  # noqa: E402
 from pool_restart_cases import PreviousBuildCases  # noqa: E402
 from serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
 
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.pullrequest  # noqa: E402 - after the sys.path insert above
-import holophyte.report  # noqa: E402 - after the sys.path insert above
-import holophyte.serve_runs  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.report  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.serve_runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import finish_run
@@ -41,13 +41,13 @@ class LivePullRequestTests(MergeModeFixture):
         observed = []
 
         def open_and_observe(target, conn, run_id, *args, **kwargs):
-            url = holophyte.pullrequest._push_and_open(
+            url = holophyte.pr.pullrequest._push_and_open(
                 target, conn, run_id, *args, **kwargs)
-            observed.append(holophyte.serve_runs.run_detail(
+            observed.append(holophyte.serve.serve_runs.run_detail(
                 target, str(run_id)))
             return url
 
-        with patch.object(holophyte.loop, "_push_and_open", open_and_observe):
+        with patch.object(holophyte.loop.loop, "_push_and_open", open_and_observe):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
 
@@ -64,17 +64,17 @@ class LivePullRequestTests(MergeModeFixture):
         self.fake_route()
         self.loop(Commit("candidate"), APPROVE, Idle(""),
                   provider=self.provider())
-        holophyte.operator.babysit_ticket(
+        holophyte.cli.operator.babysit_ticket(
             self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         observed = []
-        babysit = holophyte.pullrequest.babysitter._babysit
+        babysit = holophyte.pr.pullrequest.babysitter._babysit
 
         def observe_resume(run, *args, **kwargs):
-            observed.append(holophyte.serve_runs.run_detail(
+            observed.append(holophyte.serve.serve_runs.run_detail(
                 run.project, str(run.run_id)))
             return babysit(run, *args, **kwargs)
 
-        with patch.object(holophyte.pullrequest.babysitter, "_babysit",
+        with patch.object(holophyte.pr.pullrequest.babysitter, "_babysit",
                           observe_resume):
             self.loop(provider=self.provider())
 
@@ -91,7 +91,7 @@ class LivePullRequestTests(MergeModeFixture):
 class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
     def test_consuming_round_lists_private_note_and_report_cites_event(self):
         run_id, event_id = self.operator_note_pass(False)
-        code, body = holophyte.serve_runs.run_detail(self.project, str(run_id))
+        code, body = holophyte.serve.serve_runs.run_detail(self.project, str(run_id))
         self.assertEqual(code, 200)
         notes = [n for r in body["rounds"] for n in r["operator_notes"]]
         self.assertEqual(len(notes), 1)
@@ -99,7 +99,7 @@ class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
         self.assertEqual(notes[0]["note"], "remove the subheader")
         self.assertEqual(notes[0]["event_id"], event_id)
         with store.open(str(self.project.store_path)) as conn:
-            report = "\n".join(holophyte.report.report_lines(conn))
+            report = "\n".join(holophyte.cli.report.report_lines(conn))
         self.assertIn(f"Run {run_id} round 1: operator_note event {event_id}", report)
         self.assertIn("remove the subheader", report)
 
@@ -111,7 +111,7 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
     def expected_rows(self):
         conn = store.open(str(self.db))
         try:
-            rows = holophyte.report.report_rows(conn)
+            rows = holophyte.cli.report.report_rows(conn)
         finally:
             conn.close()
         keys = ("ticket", "actual_min", "agent_min", "verify_min",
@@ -251,7 +251,7 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
 
 class ShippedTests(ServeTestCase):
 
-    FINDING = {"path": "holophyte/serve.py", "line": 1, "severity": "p2",
+    FINDING = {"path": "holophyte/serve/serve.py", "line": 1, "severity": "p2",
                "criterion": None, "message": "a finding"}
 
     def seed_shipped(self):
@@ -398,7 +398,7 @@ class ShippedTests(ServeTestCase):
 
 class RunDetailTests(BotFindingCases, ServeTestCase):
     FINDINGS = [
-        {"path": "holophyte/serve.py", "line": 12, "severity": "p1",
+        {"path": "holophyte/serve/serve.py", "line": 12, "severity": "p1",
          "criterion": "AC1", "message": "the route is unmatched"},
         {"path": "docs/reference/http.md", "line": None, "severity": "nit",
          "criterion": None, "message": "no example"},
@@ -455,8 +455,9 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
             conn.close()
 
     def test_mentioned_thread_is_an_instruction_separate_from_findings(self):
-        from holophyte import babysitter, pr, thread_mentions
-        from holophyte.review import parse_findings
+        from holophyte.babysit import babysitter, thread_mentions
+        from holophyte.pr import pr
+        from holophyte.review.review import parse_findings
 
         self.seed_reviewed()
         mentioned = thread_mentions.classify(pr.Thread(
@@ -685,7 +686,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertEqual(run["ended_ms"], self.now - 10 * MIN)
         # Older runs without a stored cap use the loop's constant.
         self.assertEqual(run["max_rounds"],
-                         holophyte.serve_runs.MAX_ROUNDS)
+                         holophyte.serve.serve_runs.MAX_ROUNDS)
         self.assertIsInstance(run["max_rounds"], int)
         self.assertIn("branch", run)
 
@@ -695,7 +696,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         _code, _headers, body = self.request("GET", f"/runs/{self.run}")
         self.assertEqual(body["run"]["max_rounds"], 4)
         self.assertNotEqual(body["run"]["max_rounds"],
-                            holophyte.serve_runs.MAX_ROUNDS)
+                            holophyte.serve.serve_runs.MAX_ROUNDS)
 
     def test_a_live_run_has_a_heartbeat_age_and_an_ended_one_null(self):
         self.seed()  # KO-7, live in `working`, beating 30 s ago
@@ -771,9 +772,9 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
 
 class ActiveRoutesTests(ServeTestCase):
     def test_status_shows_only_live_fallbacks_and_resets_to_primary(self):
-        from holophyte.agent_routes import reset
-        from holophyte.agents import ProbeResult, activate_fallback
-        from holophyte.project import Project
+        from holophyte.agents.agent_routes import reset
+        from holophyte.agents.agents import ProbeResult, activate_fallback
+        from holophyte.config.project import Project
         self.seed()
         target = Project.locate(self.target)
         target._config = {'agents': {'implementer': 'codex exec',
@@ -838,8 +839,8 @@ class MigrationFeedTests(ServeTestCase):
             store.record_intervention(conn, self.run, "migrate", "operator note")
         finally:
             conn.close()
-        target = holophyte.project.Project.locate(self.target)
-        status, body = holophyte.serve_runs.ledger(target, "since=0")
+        target = holophyte.config.project.Project.locate(self.target)
+        status, body = holophyte.serve.serve_runs.ledger(target, "since=0")
         self.assertEqual(status, 200)
         rows = [r for r in body["entries"] if r.get("action") == "migrate"]
         self.assertEqual(len(rows), 1)
@@ -849,11 +850,11 @@ class MigrationFeedTests(ServeTestCase):
         self.assertEqual(rows[0]["schema_from"], 0)
         self.assertEqual(rows[0]["schema_to"], store.SCHEMA_VERSION)
         self.assertEqual(rows[0]["project"], str(target.path))
-        _, status_body = holophyte.serve.status(target)
+        _, status_body = holophyte.serve.serve.status(target)
         self.assertEqual(status_body["schema_version"], store.SCHEMA_VERSION)
         for query in ("since=0&ticket=KO-7", "since=0&kind=merge",
                       f"since={rows[0]['at'] + 1}"):
-            _, filtered = holophyte.serve_runs.ledger(
+            _, filtered = holophyte.serve.serve_runs.ledger(
                 target, query)
             self.assertFalse(any(r.get("action") == "migrate"
                                  for r in filtered["entries"]))
@@ -878,13 +879,13 @@ class FailurePayloadTests(MergeModeFixture):
         self.assertEqual(facts['command'], command)
         self.assertEqual(facts['exit_status'], 3)
         self.assertEqual(facts['last_output_line'], 'boom')
-        code, body = holophyte.serve_runs.shipped(self.project, 'outcome=all')
+        code, body = holophyte.serve.serve_runs.shipped(self.project, 'outcome=all')
         self.assertEqual(code, 200)
         self.assertEqual(body['rows'][0]['outcome_reason'], reason)
         self.assertIsInstance(body['rows'][0]['outcome_reason'], str)
         self.assertIn('command 2', reason)
         self.assertIn('exit 3; boom', reason)
-        code, body = holophyte.serve.attention(self.project)
+        code, body = holophyte.serve.serve.attention(self.project)
         self.assertEqual(code, 200)
         (card,) = [item for item in body['items'] if item['kind'] == 'failed']
         self.assertEqual(card['reason'], reason)

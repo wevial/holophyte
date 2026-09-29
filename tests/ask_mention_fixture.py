@@ -8,7 +8,10 @@ from unittest.mock import patch
 from fake_agent import APPROVE, Commit, Idle, Reply
 from loop_fixture import BRANCH
 
-from holophyte import agents, operator, pr, thread_mentions
+from holophyte.agents import agents
+from holophyte.babysit import thread_mentions
+from holophyte.cli import operator
+from holophyte.pr import pr
 
 # The factory's answer to an earlier ask in the same thread.
 ANSWERED = "---- Comment by reviewer ----\n\nBecause guests are keyed by name."
@@ -219,7 +222,7 @@ class AskMentionCases:
             def play(self, cwd, turn):
                 kwargs = ({"side_effect": result} if isinstance(result, Exception)
                           else {"return_value": result})
-                with patch("holophyte.agents.run_capped", **kwargs):
+                with patch("holophyte.agents.agents.run_capped", **kwargs):
                     return agents.configured_review(
                         ["reviewer"], cwd, 1800, {}, "adjudicate", "reviewer")
 

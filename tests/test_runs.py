@@ -1,4 +1,4 @@
-"""`holophyte.runs.review_round_cap()`: the review-round cap a candidate
+"""`holophyte.loop.runs.review_round_cap()`: the review-round cap a candidate
 earns from its size and the `[loop]` review keys (KO-299).
 
 Run: python3 -m unittest discover -s tests -p 'test_runs*' -v
@@ -15,9 +15,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
-import holophyte.config  # noqa: E402 - after the sys.path insert above
-import holophyte.config_tables  # noqa: E402 - after the sys.path insert above
-import holophyte.runs  # noqa: E402 - after the sys.path insert above
+import holophyte.config.config  # noqa: E402 - after the sys.path insert above
+import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 from tests.schema_fixture import (  # noqa: E402 - after the sys.path insert
     DOCUMENTED_COLUMNS,
@@ -27,9 +27,9 @@ from tests.schema_fixture import (  # noqa: E402 - after the sys.path insert
 
 def a_config(**overrides):
     """A `LoopConfig` over the defaults, with the review keys overridden."""
-    values = dict(holophyte.config_tables.LOOP_KEYS)
+    values = dict(holophyte.config.config_tables.LOOP_KEYS)
     values.update(overrides)
-    return holophyte.config_tables.LoopConfig(**values)
+    return holophyte.config.config_tables.LoopConfig(**values)
 
 
 class ReviewRoundCapTests(unittest.TestCase):
@@ -43,21 +43,21 @@ class ReviewRoundCapTests(unittest.TestCase):
                        review_rounds_max=4)
 
         self.assertEqual(
-            [holophyte.runs.review_round_cap(n, cfg) for n in (300, 1700, 9000)],
+            [holophyte.loop.runs.review_round_cap(n, cfg) for n in (300, 1700, 9000)],
             [2, 4, 4])
 
         flat = a_config(review_rounds=2, review_rounds_per_lines=0,
                         review_rounds_max=4)
         self.assertEqual(
-            [holophyte.runs.review_round_cap(n, flat) for n in (0, 300, 9000)],
+            [holophyte.loop.runs.review_round_cap(n, flat) for n in (0, 300, 9000)],
             [2, 2, 2])
 
     def test_the_default_config_keeps_the_two_round_base(self):
         """`MAX_ROUNDS` is the base's default: an unconfigured target still
         pays two rounds for a small change."""
-        self.assertEqual(holophyte.config_tables.LOOP_KEYS["review_rounds"],
-                         holophyte.runs.MAX_ROUNDS)
-        self.assertEqual(holophyte.runs.review_round_cap(1, a_config()), 2)
+        self.assertEqual(holophyte.config.config_tables.LOOP_KEYS["review_rounds"],
+                         holophyte.loop.runs.MAX_ROUNDS)
+        self.assertEqual(holophyte.loop.runs.review_round_cap(1, a_config()), 2)
 
 
 class OpenStoreSchemaTests(unittest.TestCase):
@@ -69,7 +69,7 @@ class OpenStoreSchemaTests(unittest.TestCase):
         self.dir = Path(tmp.name)
 
     def opened_and_closed(self, path):
-        holophyte.runs.open_store(None, path).close()
+        holophyte.loop.runs.open_store(None, path).close()
         with closing(sqlite3.connect(path)) as conn:
             version = conn.execute('PRAGMA user_version').fetchone()[0]
             tables = {row[0] for row in conn.execute(

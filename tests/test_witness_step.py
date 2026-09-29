@@ -18,20 +18,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
 from loop_fixture import VALID_BODY, FakePool, LoopFixture  # noqa: E402
 
-import holophyte.loop  # noqa: E402
-import holophyte.operator  # noqa: E402
-import holophyte.pool  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
+import holophyte.loop.loop  # noqa: E402
+import holophyte.loop.pool  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
-from holophyte.supervisor import (  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
+from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
-from holophyte.witness import witness_step  # noqa: E402
+from holophyte.loop.runs import open_store  # noqa: E402
+from holophyte.story.witness import witness_step  # noqa: E402
 from provider import board_for  # noqa: E402
 from store.stories import approve_story, file_story  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
@@ -92,10 +92,10 @@ class WitnessStepTests(LoopFixture):
         """One host sweep pass with no loop live; the owed pairs of each
         loop start it made."""
         started = []
-        with patch("holophyte.reconcile._reconcile_pull_requests"), \
-                patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.reconcile._reconcile_pull_requests"), \
+                patch("holophyte.host.supervisor.linear_budget_low",
                       return_value=False), \
-                patch("holophyte.supervisor.start_loop_for",
+                patch("holophyte.host.supervisor.start_loop_for",
                       lambda target, conn, owed, *a, **k: started.append(owed)):
             reconcile_parked_pull_requests(
                 self.project, self.conn, int(time.time() * 1000), self.board,
@@ -109,10 +109,10 @@ class WitnessStepTests(LoopFixture):
                          APPROVE)
         out = io.StringIO()
         with no_agent_processes(), patch.object(sys, "stdout", out), \
-                patch.object(holophyte.loop, "agent", fake), \
-                patch("holophyte.freshness.critic_admits",
+                patch.object(holophyte.loop.loop, "agent", fake), \
+                patch("holophyte.review.freshness.critic_admits",
                       return_value=True):
-            holophyte.operator.main(self.project, self.board)
+            holophyte.cli.operator.main(self.project, self.board)
 
         self.assertIn("lands w1", self.subjects(), out.getvalue())
         self.assertEqual(self.read(LEDGER), [
@@ -123,10 +123,10 @@ class WitnessStepTests(LoopFixture):
         self.use(NATIVE + "[loop]\nworkers = 2\n")
         self.approved_story("backlog")
         pool = FakePool([])
-        with patch.object(holophyte.pool, "SPAWN", pool.spawn), \
-                patch.object(holophyte.pool, "WAIT", pool.wait), \
+        with patch.object(holophyte.loop.pool, "SPAWN", pool.spawn), \
+                patch.object(holophyte.loop.pool, "WAIT", pool.wait), \
                 patch.object(sys, "stdout", io.StringIO()):
-            holophyte.operator.main(self.project, self.board)
+            holophyte.cli.operator.main(self.project, self.board)
 
         self.assertEqual(pool.spawned, [])
         self.assertEqual(self.read(LEDGER), [("W1", self.base, "absent", "loop")])

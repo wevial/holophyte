@@ -428,20 +428,20 @@ class AbortedReviewTests(unittest.TestCase):
     def test_an_abort_kills_the_container_client_and_removes_the_container(self):
         import threading
 
-        import holophyte.agents
-        import holophyte.project
+        import holophyte.agents.agents
+        import holophyte.config.project
         import store
         import store.tickets
-        from holophyte.stop import Aborted
+        from holophyte.loop.stop import Aborted
         base, candidate = two_commit_repo(self.root / "repo")
         (self.root / "auth.json").write_text("{}")
         env = dict(self.env, HOLOPHYTE_HOME=str(self.root / "home"))
         with patch.dict(os.environ, env):
-            target = holophyte.project.Project.locate(self.root / "repo")
+            target = holophyte.config.project.Project.locate(self.root / "repo")
             target.store_path.parent.mkdir(parents=True)
             (target.store_path.parent / "config.toml").write_text(
                 "[supervisor]\nheartbeat_stale_min = 0.05\n")
-            target = holophyte.project.Project.locate(self.root / "repo")
+            target = holophyte.config.project.Project.locate(self.root / "repo")
             conn = store.open(str(target.store_path))
             self.addCleanup(conn.close)
             project = store.tickets.ensure_project(conn, "team", target.path)
@@ -467,7 +467,7 @@ class AbortedReviewTests(unittest.TestCase):
             with patch.object(review_runner, "SCRATCH_ROOT", root / "reviews"), \
                     patch.object(review_runner, "CODEX_AUTH", root / "auth.json"), \
                     self.assertRaises(Aborted):
-                holophyte.agents.agent(target, "review", "review", target.path,
+                holophyte.agents.agents.agent(target, "review", "review", target.path,
                                        base_sha=base, candidate_sha=candidate,
                                        conn=conn, run_id=run)
         # One 1.5 s beat, not the shim's ten-second container.
@@ -665,7 +665,7 @@ class ReviewerImageTests(unittest.TestCase):
         self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v9")
         stale = [
             path
-            for pattern in ("*.py", "holophyte/*.py", "store/*.py", "docs/**/*.md")
+            for pattern in ("*.py", "holophyte/**/*.py", "store/*.py", "docs/**/*.md")
             for path in ROOT.glob(pattern)
             if re.search(r"ubuntu24\.04-v[1-8]\b", path.read_text())
         ]
@@ -733,7 +733,7 @@ class ReviewerImageTests(unittest.TestCase):
 
 class VisualEvidencePromptTests(unittest.TestCase):
     def test_failed_capture_is_shared_by_review_and_pr(self):
-        from holophyte.review import evidence_brief
+        from holophyte.review.review import evidence_brief
         from tests.test_pr_media import MediaTests
 
         fixture = MediaTests()

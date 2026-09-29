@@ -10,7 +10,7 @@ from test_provider import FakeLinear, ticket_body  # noqa: E402
 
 import linear_provider  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.supervisor import board_ready  # noqa: E402
+from holophyte.host.supervisor import board_ready  # noqa: E402
 
 
 class FakeProvider:
@@ -40,7 +40,7 @@ class SupervisorBoardTests(SweepTestCase):
 
     def ask(self, provider, now=T0):
         out = io.StringIO()
-        with patch("holophyte.supervisor.linear_budget_low", return_value=False):
+        with patch("holophyte.host.supervisor.linear_budget_low", return_value=False):
             owed = board_ready(self.conn, self.project_id, provider, out,
                                now=now, board_ask_ms=1000)
         return owed, out.getvalue()

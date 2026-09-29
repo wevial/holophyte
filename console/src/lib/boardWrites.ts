@@ -3,7 +3,7 @@ import type { Fetch } from "./poll";
 import { withToken } from "./token";
 
 /** What a filing answered: the new ticket on a 201, every blocking
- *  problem on a 422 (holophyte/serve_board.py `on_store()`), or for any
+ *  problem on a 422 (holophyte/serve/serve_board.py `on_store()`), or for any
  *  other answer or a failed request the reason as `error`. */
 export type FileResult = { ok: true; ticket: string } | { ok: false; problems: string[] } | { ok: false; error: string };
 

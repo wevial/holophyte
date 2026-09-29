@@ -5,9 +5,9 @@ import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import holophyte.claim as claim
-import holophyte.gates as gates
-import holophyte.merge_lock as merge_lock
+import holophyte.loop.claim as claim
+import holophyte.loop.gates as gates
+import holophyte.loop.merge_lock as merge_lock
 import store
 import store.read
 from tests.sweep_fixture import SweepTestCase
@@ -36,12 +36,12 @@ class ClaimLockWaitTests(SweepTestCase):
         # cannot carry the waiter past its ceiling before it extends
         # (KO-671). Heartbeats and holder liveness keep real time.
         self.clock = 0
-        for name in ('holophyte.gates.monotonic',
-                     'holophyte.merge_lock.monotonic'):
+        for name in ('holophyte.loop.gates.monotonic',
+                     'holophyte.loop.merge_lock.monotonic'):
             self.enterContext(patch(name, self.elapsed))
-        self.enterContext(patch('holophyte.gates.MERGE_LOCK_POLL_SEC', 10))
-        self.enterContext(patch('holophyte.merge_lock.CHECK_POLL_S', 10))
-        self.enterContext(patch('holophyte.gates.sleep', self.poll))
+        self.enterContext(patch('holophyte.loop.gates.MERGE_LOCK_POLL_SEC', 10))
+        self.enterContext(patch('holophyte.loop.merge_lock.CHECK_POLL_S', 10))
+        self.enterContext(patch('holophyte.loop.gates.sleep', self.poll))
         # The waiter still beats every 30ms, so a wait of a few hundred
         # milliseconds shows its heartbeat moving.
         beat = merge_lock.heartbeat_while

@@ -12,14 +12,14 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-import holophyte.cli
-import holophyte.status
+import holophyte.cli.cli
+import holophyte.cli.status
 import store
 import store.board
 import store.schema
 import store.tickets
-from holophyte.gates import merge_lock_path
-from holophyte.supervisor_lock import supervisor_lock_path
+from holophyte.host.supervisor_lock import supervisor_lock_path
+from holophyte.loop.gates import merge_lock_path
 from tests.host_fixture import HostFixture
 from tests.phase_fixture import park_run
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase, Tripwire, no_network
@@ -53,13 +53,13 @@ class StatusTests(SweepTestCase):
 
     def status(self, *flags, at=T0 + 3 * MINUTE):
         """The mode end to end, with the board and the network as tripwires."""
-        holophyte.cli.eager_import()
+        holophyte.cli.cli.eager_import()
         out = io.StringIO()
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}), \
                 no_network(), patch.object(sys, "stdout", out), \
-                patch.object(holophyte.status, "time", lambda: at / 1000):
-            code = holophyte.cli.cli([str(self.target), "--status", *flags])
+                patch.object(holophyte.cli.status, "time", lambda: at / 1000):
+            code = holophyte.cli.cli.cli([str(self.target), "--status", *flags])
         self.assertEqual(code, 0)
         return out.getvalue()
 
@@ -99,11 +99,11 @@ class StatusTests(SweepTestCase):
         merge_lock_path(self.project).write_text(f"{self.live} {T0 / 1000}\n")
         conn = store.read.open_readonly(self.db)
         self.addCleanup(conn.close)
-        snap = holophyte.status.snapshot(self.project, conn, now=T0)
+        snap = holophyte.cli.status.snapshot(self.project, conn, now=T0)
         self.assertEqual(snap["merge_lock"], {"run": self.live, "stale": False})
         self.assertEqual(snap["supervisor_lock"],
                          {"pid": dead.pid, "stale": True})
-        lines = holophyte.status.render(snap)
+        lines = holophyte.cli.status.render(snap)
         self.assertIn(f"merge lock: held, run {self.live}", lines)
         self.assertIn(f"supervisor lock: stale, pid {dead.pid}", lines)
 

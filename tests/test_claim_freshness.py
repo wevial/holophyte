@@ -38,12 +38,12 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board  # noqa: E402 - after the sys.path insert above
-import holophyte.claim  # noqa: E402 - after the sys.path insert above
-import holophyte.runs  # noqa: E402 - after the sys.path insert above
+import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
-from holophyte.freshness import stale_reasons  # noqa: E402
+from holophyte.review.freshness import stale_reasons  # noqa: E402
 
 GONE = "holophyte/gone.py"
 # The fixture's valid body, its implementation notes naming a file the
@@ -56,8 +56,8 @@ NEW_FILE_BODY = VALID_BODY.replace(
     "## Implementation notes\n\n* None.\n",
     f"## Implementation notes\n\n* Add the new file `{GONE}` for the thing.\n")
 
-CLAIM = "holophyte/claim.py"
-# What main's `holophyte/claim.py` holds in the symbol tests.
+CLAIM = "holophyte/loop/claim.py"
+# What main's `holophyte/loop/claim.py` holds in the symbol tests.
 CLAIM_SOURCE = ("class Claimer:\n"
                 "    def admit_ticket(self):\n"
                 "        return True\n")
@@ -151,10 +151,10 @@ class ClaimFreshnessTests(LoopFixture):
         admitted as before, with no comment and no move to Backlog."""
         task = dict(a_task(), body=STALE_BODY)
         provider = StubProvider(task)
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        ticket = holophyte.board.mirror_task(conn, project_id, task)
+        ticket = holophyte.board.board.mirror_task(conn, project_id, task)
         run_id = store.claim(conn, project_id, ticket)
         tickets.transition(conn, ticket, "in_flight")
         store.set_pull_request(conn, run_id,
@@ -164,7 +164,7 @@ class ClaimFreshnessTests(LoopFixture):
         conn.commit()
 
         with patch.object(sys, "stdout", io.StringIO()):
-            admitted = holophyte.claim._admit_ticket(
+            admitted = holophyte.loop.claim._admit_ticket(
                 self.project, conn, project_id, provider, task,
                 SimpleNamespace(trips=[], watched=[]))
 
@@ -218,7 +218,7 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
                          " ON t.id = r.ticketId ORDER BY r.id")
 
     def commit_claim_to_main(self):
-        (self.target / "holophyte").mkdir()
+        (self.target / CLAIM).parent.mkdir(parents=True)
         (self.target / CLAIM).write_text(CLAIM_SOURCE)
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "claim module")
@@ -346,10 +346,10 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
         self.assert_claimed_without_comment(provider)
 
     def mirror_dependency(self, provider, status):
-        conn = holophyte.runs.open_store(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        dependency = holophyte.board.mirror_task(
+        dependency = holophyte.board.board.mirror_task(
             conn, project_id, dict(a_task(), id="KO-900", issue_id="iss-900"))
         store.walk_ticket(conn, dependency, status)
         conn.commit()

@@ -10,7 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from holophyte import pr, thread_mentions  # noqa: E402
+from holophyte.babysit import thread_mentions  # noqa: E402
+from holophyte.pr import pr  # noqa: E402
 from holophyte.redact import safe_print as print  # noqa: E402
 
 

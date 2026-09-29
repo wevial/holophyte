@@ -4,7 +4,13 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CEILINGS = {"loop": 1, "babysitter": 26, "claim": 6, "merge_gate": 2, "run": 2}
+CEILINGS = {
+    "loop/loop": 1,
+    "babysit/babysitter": 26,
+    "loop/claim": 6,
+    "loop/merge_gate": 2,
+    "loop/run": 2,
+}
 
 
 class DeferredImportTests(unittest.TestCase):

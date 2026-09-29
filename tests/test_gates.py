@@ -14,8 +14,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import APPROVE, Commit  # noqa: E402
 from tests.loop_fixture import LoopFixture  # noqa: E402
 
@@ -23,7 +23,7 @@ from tests.loop_fixture import LoopFixture  # noqa: E402
 class VerifyBlockTests(unittest.TestCase):
     def test_compound_block_preserves_errexit(self):
         with tempfile.TemporaryDirectory() as cwd:
-            ok, out = holophyte.gates.run_verify(
+            ok, out = holophyte.loop.gates.run_verify(
                 "set -e; false; touch should-not-run\ntrue", cwd)
             self.assertFalse((Path(cwd) / "should-not-run").exists())
             self.assertFalse(ok, out)
@@ -31,7 +31,7 @@ class VerifyBlockTests(unittest.TestCase):
 
     def test_block_stops_at_first_failure_and_names_its_status(self):
         with tempfile.TemporaryDirectory() as cwd:
-            ok, out = holophyte.gates.run_verify(
+            ok, out = holophyte.loop.gates.run_verify(
                 "false\ntouch should-not-run && true", cwd)
             self.assertFalse(ok, out)
             self.assertIn("clause 1 of 2 exited 1", out)
@@ -57,7 +57,7 @@ class VerifyBlockTests(unittest.TestCase):
                     commands, ("", "tolerated", "one\ntwo\nthree",
                                "chained", "heredoc", "single")):
                 with self.subTest(command=command):
-                    ok, out = holophyte.gates.run_verify(command, cwd)
+                    ok, out = holophyte.loop.gates.run_verify(command, cwd)
                     self.assertTrue(ok, out)
                     self.assertEqual(out, expected)
 
@@ -70,7 +70,7 @@ class VerifyBlockTests(unittest.TestCase):
                     config = {"verify": {tier: [
                         "false\ntouch should-not-run && true"]}}
                     target = SimpleNamespace(config=lambda: config)
-                    ok, out = holophyte.gates.with_baseline(
+                    ok, out = holophyte.loop.gates.with_baseline(
                         target, cwd, "true", True, "", before_merge=True)
                     self.assertFalse(ok, out)
                     self.assertIn("clause 1 of 2 exited 1", out)
@@ -94,7 +94,7 @@ class RepeatedPassTests(unittest.TestCase):
         self.commit("base")
         self.git("checkout", "-q", "-b", "task")
         self.commit("candidate")
-        record = patch.object(holophyte.gates, "_PASSES", set())
+        record = patch.object(holophyte.loop.gates, "_PASSES", set())
         record.start()
         self.addCleanup(record.stop)
 
@@ -111,7 +111,7 @@ class RepeatedPassTests(unittest.TestCase):
         return len(self.count.read_text().splitlines())
 
     def verify(self, run_id=7, cmd=None):
-        return holophyte.gates.run_verify(cmd or self.cmd, self.wt,
+        return holophyte.loop.gates.run_verify(cmd or self.cmd, self.wt,
                                           run_id=run_id)
 
     def test_a_repeat_on_the_same_tree_is_cited_not_run(self):
@@ -139,7 +139,10 @@ class RepeatedPassTests(unittest.TestCase):
                  ("an uncommitted change", uncommitted, 7),
                  ("another run", lambda: None, 8), ("no run", lambda: None, None))
         for name, change, run_id in cases:
-            with self.subTest(name), patch.object(holophyte.gates, "_PASSES", set()):
+            with (
+                self.subTest(name),
+                patch.object(holophyte.loop.gates, "_PASSES", set()),
+            ):
                 self.count.write_text("")
                 self.assertTrue(self.verify()[0])
                 change()
@@ -171,8 +174,8 @@ class MergeLockTests(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        holophyte.project.state_dir(root / "repo").mkdir(parents=True)
-        self.project = holophyte.project.Project.locate(root / "repo")
+        holophyte.config.project.state_dir(root / "repo").mkdir(parents=True)
+        self.project = holophyte.config.project.Project.locate(root / "repo")
 
     def test_the_second_gate_waits_for_the_first_to_release(self):
         """Two runs reach the gate together: one holds the lock while the
@@ -181,7 +184,7 @@ class MergeLockTests(unittest.TestCase):
         spans = {}
 
         def gate(run_id, hold):
-            with holophyte.gates.merge_lock(self.project, run_id, wait=10,
+            with holophyte.loop.gates.merge_lock(self.project, run_id, wait=10,
                                             poll=0.01):
                 entered = time.monotonic()
                 if run_id == 1:
@@ -199,19 +202,19 @@ class MergeLockTests(unittest.TestCase):
 
         self.assertEqual(sorted(spans), [1, 2])
         self.assertGreaterEqual(spans[2][0], spans[1][1])
-        self.assertFalse(holophyte.gates.merge_lock_path(self.project).exists())
+        self.assertFalse(holophyte.loop.gates.merge_lock_path(self.project).exists())
 
     def test_a_lock_held_past_the_bound_names_its_holder(self):
-        path = holophyte.gates.merge_lock_path(self.project)
+        path = holophyte.loop.gates.merge_lock_path(self.project)
         path.write_text(f"7 {time.time():.3f}\n")
 
-        with self.assertRaises(holophyte.gates.MergeLockHeld) as caught:
-            with holophyte.gates.merge_lock(self.project, 8, wait=0.05, poll=0.01):
+        with self.assertRaises(holophyte.loop.gates.MergeLockHeld) as caught:
+            with holophyte.loop.gates.merge_lock(self.project, 8, wait=0.05, poll=0.01):
                 self.fail("the gate entered under another run's lock")
 
         self.assertIn("run 7", str(caught.exception))
-        self.assertIsInstance(caught.exception, holophyte.gates.InfraFailure)
-        self.assertEqual(holophyte.gates.read_merge_lock(path)[0], 7)
+        self.assertIsInstance(caught.exception, holophyte.loop.gates.InfraFailure)
+        self.assertEqual(holophyte.loop.gates.read_merge_lock(path)[0], 7)
 
 
 class BaselineTests(LoopFixture):
@@ -228,7 +231,7 @@ class BaselineTests(LoopFixture):
         self.assertEqual(rows[1]["tier"], "always")
 
     def test_verify_config_document_rejects_bad_shapes(self):
-        from holophyte.config import check_document
+        from holophyte.config.config import check_document
         for setting in ('always = "true"', 'before_merge = [1]',
                         'always = [" "]', 'timeout_sec = 0',
                         'timeout_sec = true', 'timeout_sec = inf',
@@ -244,7 +247,7 @@ class BaselineTests(LoopFixture):
 
 class BaselineBriefTests(unittest.TestCase):
     def test_baseline_only_success_and_failure_are_visible_to_reviewer(self):
-        from holophyte.loop import _verify_brief
+        from holophyte.loop.loop import _verify_brief
         with tempfile.TemporaryDirectory() as wt:
             target = type("Project", (), {"config": lambda self: {
                 "verify": {"always": ["echo baseline-detail"]}}})()
@@ -253,7 +256,7 @@ class BaselineBriefTests(unittest.TestCase):
                 with self.subTest(command=command):
                     with patch.object(target, "config", return_value={
                             "verify": {"always": [command]}}):
-                        ok, out = holophyte.gates.with_baseline(
+                        ok, out = holophyte.loop.gates.with_baseline(
                             target, wt, "", True, "")
                     self.assertEqual(ok, ok_expected)
                     brief = _verify_brief("", ok, out)
@@ -267,7 +270,7 @@ class IsolatedVerifyTests(unittest.TestCase):
     def setUp(self):
         from types import SimpleNamespace
 
-        from holophyte.isolation_git import git
+        from holophyte.isolation.isolation_git import git
 
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -288,7 +291,8 @@ class IsolatedVerifyTests(unittest.TestCase):
         self.target = SimpleNamespace(path=main, config=lambda: self.config)
 
     def test_verify_and_baseline_cannot_read_host_file(self):
-        from holophyte import gates, isolation
+        from holophyte.isolation import isolation
+        from holophyte.loop import gates
         command = f'cat {self.outside}'
         self.config['verify'] = {'always': [command]}
 
@@ -298,12 +302,12 @@ class IsolatedVerifyTests(unittest.TestCase):
             cache, cache_destination, _ = mounts[1].split(':')
             self.assertEqual(cache_destination, isolation.CACHE)
             self.assertTrue(Path(cache).is_relative_to(
-                holophyte.project.state_dir(self.target.path).resolve()))
+                holophyte.config.project.state_dir(self.target.path).resolve()))
             source, destination, mode = mounts[0].split(':')
             workspace = Path(source).resolve()
             self.assertTrue(workspace.is_dir())
             self.assertTrue(workspace.is_relative_to(
-                holophyte.project.state_dir(self.target.path).resolve()))
+                holophyte.config.project.state_dir(self.target.path).resolve()))
             self.assertNotEqual(workspace, self.wt.resolve())
             self.assertEqual(Path(cwd).resolve(), workspace)
             self.assertEqual((destination, mode), ('/workspace', 'rw'))
@@ -338,7 +342,8 @@ class IsolatedVerifyTests(unittest.TestCase):
     def test_timeout_removes_named_container_and_preserves_output(self):
         import subprocess
 
-        from holophyte import gates, isolation
+        from holophyte.isolation import isolation
+        from holophyte.loop import gates
         expired = subprocess.TimeoutExpired('docker', 3, output='started\n')
         with (patch.object(isolation, 'image_ready'),
               patch.object(isolation.review_runner, '_remove_container') as remove,
@@ -353,7 +358,7 @@ class IsolatedVerifyTests(unittest.TestCase):
                                        env={'PATH': os.defpath})
 
     def test_none_preserves_runner_call(self):
-        from holophyte import gates
+        from holophyte.loop import gates
         for agents in ({}, {'implementer_isolation': 'none'}):
             self.config['agents'] = agents
             with patch.object(gates, 'run_capped', return_value=(0, 'done')) as run:
@@ -367,7 +372,7 @@ class IsolatedVerifyTests(unittest.TestCase):
         import shutil
         import subprocess
 
-        from holophyte import gates
+        from holophyte.loop import gates
         if not shutil.which('docker') or subprocess.run(
                 ['docker', 'info'], capture_output=True).returncode:
             self.skipTest('Docker unavailable')

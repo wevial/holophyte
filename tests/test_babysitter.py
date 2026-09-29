@@ -1,4 +1,4 @@
-"""`holophyte.babysitter`: the pass's texts, read and written without GitHub.
+"""`holophyte.babysit.babysitter`: the pass's texts, read and written without GitHub.
 
 The verdict parser is what decides which thread gets fixed, which gets a
 decline, and which parks the run for a person; the acceptance tests in
@@ -34,10 +34,11 @@ from loop_fixture import (  # noqa: E402
     a_task,
 )
 
-import holophyte.loop  # noqa: E402
-import holophyte.operator  # noqa: E402
-from holophyte import babysitter, pr, pr_status  # noqa: E402
-from holophyte.pr import PullRequest, Thread  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
+import holophyte.loop.loop  # noqa: E402
+from holophyte.babysit import babysitter  # noqa: E402
+from holophyte.pr import pr, pr_status  # noqa: E402
+from holophyte.pr.pr import PullRequest, Thread  # noqa: E402
 
 PULL = PullRequest(host="github.com", owner="o", name="r", number=3,
                    url="https://github.com/o/r/pull/3")
@@ -364,7 +365,7 @@ class ConflictingPullRequestTests(MergeModeFixture):
     def resume(self, *script):
         """`--babysit` the parked run and drive it through the harness,
         faked GitHub serving whatever `serve()` last laid down."""
-        holophyte.operator.babysit_ticket(
+        holophyte.cli.operator.babysit_ticket(
             self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
         return self.loop(*script, provider=self.provider())
 
@@ -421,7 +422,7 @@ class ConflictingPullRequestTests(MergeModeFixture):
                 not main_red and not (Path(cwd) / "THING.md").exists())
             return ok, "ok" if ok else "[verify] FAILED: full command: echo ok"
 
-        return calls, patch("holophyte.gates._run_verify", side_effect=verify)
+        return calls, patch("holophyte.loop.gates._run_verify", side_effect=verify)
 
     def test_red_merged_tree_and_red_main_park_before_review(self):
         self.parked_on_a_nit(Commit("candidate", path="THING.md"))
@@ -480,7 +481,7 @@ class ConflictingPullRequestTests(MergeModeFixture):
                 main_red or (cwd / "tests" / "test_branch_only.py").exists())
             return ok, "ok" if ok else "FAILED (failures=1)"
 
-        return calls, patch("holophyte.gates._run_verify", side_effect=verify)
+        return calls, patch("holophyte.loop.gates._run_verify", side_effect=verify)
 
     def module_candidate(self, command):
         """KO-597: a candidate adding `tests/test_branch_only.py`, a main

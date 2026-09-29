@@ -14,8 +14,8 @@ from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
 from loop_fixture import MergeModeFixture  # noqa: E402
 from pause_fixture import PauseEdit  # noqa: E402
 
-from holophyte.babysitter import COMMENT_HEADER  # noqa: E402
-from holophyte.stop import command  # noqa: E402
+from holophyte.babysit.babysitter import COMMENT_HEADER  # noqa: E402
+from holophyte.loop.stop import command  # noqa: E402
 
 LABELS = "repos/example/repo/issues/7/labels"
 

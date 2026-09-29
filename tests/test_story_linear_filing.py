@@ -21,12 +21,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 from story_fixture import write_children, write_story  # noqa: E402
 
-import holophyte.cli  # noqa: E402
+import holophyte.cli.cli  # noqa: E402
 import linear_provider  # noqa: E402
 import provider  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
+from holophyte.loop.runs import open_store  # noqa: E402
 
 SLUG = "orders-csv"
 STORE_LINEAR = ('[board]\nproject_id = "p-1"\nteam = "T"\nmode = "store"\n')
@@ -131,7 +131,7 @@ class LinearFileStoryTests(ConfigTestCase):
                              lambda *a: boards[0].answer(*a)), \
                 contextlib.redirect_stdout(out):
             try:
-                status = holophyte.cli.cli(
+                status = holophyte.cli.cli.cli(
                     [str(self.target), "--file-story", SLUG]) or 0
             except SystemExit as exited:
                 status = exited.code

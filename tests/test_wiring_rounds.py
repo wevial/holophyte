@@ -24,11 +24,11 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.config  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.review  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.config.config  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.review.review  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -107,7 +107,7 @@ class ReviewRoundRowTests(unittest.TestCase):
         self.db = root / "repo.holophyte.db"
         # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.project = holophyte.project.Project(
+        self.project = holophyte.config.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -138,8 +138,8 @@ class ReviewRoundRowTests(unittest.TestCase):
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": list(criteria)})
         with patch.dict(sys.modules, {"linear_provider": provider}):
-            with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.project, provider)
+            with patch.object(holophyte.loop.loop, "agent", fake_agent):
+                holophyte.cli.operator.main(self.project, provider)
         return provider
 
     def rounds(self):
@@ -201,10 +201,10 @@ class ReviewRoundRowTests(unittest.TestCase):
         findings = json.loads(self.rounds()[0]["findings"])
         self.assertEqual([(f["path"], f["severity"]) for f in findings],
                          [("factory.py", "p2"),
-                          (holophyte.review.unparsed_path(findings[1]["message"]),
+                          (holophyte.review.review.unparsed_path(findings[1]["message"]),
                            "p0")])
         self.assertTrue(
-            findings[1]["path"].startswith(holophyte.review.UNPARSED_PATH))
+            findings[1]["path"].startswith(holophyte.review.review.UNPARSED_PATH))
         self.assertIn("build deps into the runtime image",
                       findings[1]["message"])
 
@@ -417,10 +417,10 @@ class ReviewRoundRowTests(unittest.TestCase):
 
         for path in (str(outside / "named_witness.py"), str(escape)):
             with self.subTest(path=path):
-                references = holophyte.review.test_references(
+                references = holophyte.review.review.test_references(
                     f"{path}::test_fiction")
                 self.assertEqual(references, [(path, None, "test_fiction")])
-                missing = holophyte.review.missing_witnesses(
+                missing = holophyte.review.review.missing_witnesses(
                     references, worktree)
                 self.assertEqual(len(missing), 1)
                 self.assertIn("outside the worktree", missing[0])
@@ -458,7 +458,7 @@ class ReviewRoundRowTests(unittest.TestCase):
 
         (only,) = self.rounds()
         self.assertEqual((only["round"], only["verdict"], only["model"]),
-                         (1, "pass", holophyte.config.REVIEW_PROFILE))
+                         (1, "pass", holophyte.config.config.REVIEW_PROFILE))
         self.assertEqual(json.loads(only["findings"]), [])
         self.assertEqual(only["fingerprint"], store.EMPTY_FINGERPRINT)
         (result,) = json.loads(only["verification"])
@@ -497,7 +497,7 @@ class CitationParsingTests(unittest.TestCase):
     link's target; read it there rather than from the link text."""
 
     def test_a_markdown_link_citation_keeps_its_line(self):
-        (finding,) = holophyte.review.parse_findings(
+        (finding,) = holophyte.review.review.parse_findings(
             "Blocker: [ticket_template.py](/workspace/ticket_template.py:363)"
             " scans only unchecked criteria")
         self.assertEqual((finding["path"], finding["line"], finding["severity"]),
@@ -506,7 +506,7 @@ class CitationParsingTests(unittest.TestCase):
     def test_two_links_into_one_file_are_two_keys(self):
         """Run 55's failure: both rounds' findings collapsed to
         `(ticket_template.py, None, p2)` because the link text won."""
-        findings = holophyte.review.parse_findings(
+        findings = holophyte.review.review.parse_findings(
             "- [ticket_template.py](/workspace/ticket_template.py:363) one\n"
             "- [ticket_template.py](/workspace/ticket_template.py:401) two\n")
         self.assertEqual(
@@ -517,10 +517,10 @@ class CitationParsingTests(unittest.TestCase):
                             store.findings_fingerprint(findings[1:]))
 
     def test_a_plain_citation_parses_as_before(self):
-        (finding,) = holophyte.review.parse_findings(
-            "- holophyte/serve.py:122 answers before the store is open")
+        (finding,) = holophyte.review.review.parse_findings(
+            "- holophyte/serve/serve.py:122 answers before the store is open")
         self.assertEqual((finding["path"], finding["line"]),
-                         ("holophyte/serve.py", 122))
+                         ("holophyte/serve/serve.py", 122))
 
 
 class RoundWriteTests(unittest.TestCase):

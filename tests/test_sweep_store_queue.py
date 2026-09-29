@@ -19,13 +19,13 @@ from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
 import store  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.board import mirror_status  # noqa: E402
-from holophyte.claim_store import NOT_ASKED, SYNCED, sync_board  # noqa: E402
-from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.supervisor import (  # noqa: E402
+from holophyte.board.board import mirror_status  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
+from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
+from holophyte.loop.claim_store import NOT_ASKED, SYNCED, sync_board  # noqa: E402
 from provider import FileProvider  # noqa: E402
 
 BOARD = ('[board]\nproject_id = "project-1"\nteam = "team-1"\n'
@@ -70,11 +70,11 @@ class SweepStoreQueueTests(SweepTestCase):
         """One sweep pass at `at`; the pairs a loop start was owed for, or
         None when none was started."""
         started = []
-        with patch("holophyte.reconcile._reconcile_pull_requests"), \
-                patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.reconcile._reconcile_pull_requests"), \
+                patch("holophyte.host.supervisor.linear_budget_low",
                       return_value=budget_low), \
-                patch("holophyte.supervisor.board_ready", never), \
-                patch("holophyte.supervisor.start_loop_for",
+                patch("holophyte.host.supervisor.board_ready", never), \
+                patch("holophyte.host.supervisor.start_loop_for",
                       lambda target, conn, owed, *a, **k: started.append(owed)):
             reconcile_parked_pull_requests(
                 self.project, self.conn, at, self.board, io.StringIO(),
@@ -182,7 +182,7 @@ class SweepStoreQueueTests(SweepTestCase):
         self.assertEqual(sync_board(self.project, self.conn, self.project_id,
                                     self.board, now=T0), NOT_ASKED)
         store.release_hold(self.conn, self.project_id, "drained")
-        with patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.supervisor.linear_budget_low",
                    return_value=True):
             self.assertEqual(sync_board(self.project, self.conn,
                                         self.project_id, self.board, now=T0),
@@ -192,7 +192,7 @@ class SweepStoreQueueTests(SweepTestCase):
         self.assertEqual(self.conn.execute(
             "SELECT boardAskedAt FROM projects WHERE id = ?",
             (self.project_id,)).fetchone(), (None,))
-        with patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.supervisor.linear_budget_low",
                    return_value=False):
             self.assertEqual(sync_board(self.project, self.conn,
                                         self.project_id, self.board, now=T0),

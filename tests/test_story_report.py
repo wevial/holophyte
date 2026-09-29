@@ -8,7 +8,7 @@ from __future__ import annotations
 import contextlib
 import io
 
-import holophyte.cli
+import holophyte.cli.cli
 import store.board
 from store.gap_layers import record_gap_layer
 from store.operate import record_intervention
@@ -42,7 +42,7 @@ class StoryReportTests(SweepTestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
             try:
-                code = holophyte.cli.cli([str(self.target), *args])
+                code = holophyte.cli.cli.cli([str(self.target), *args])
             except SystemExit as exited:
                 code = exited.code
         return code or 0, out.getvalue()

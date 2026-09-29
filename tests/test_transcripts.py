@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from holophyte.transcripts import locate, render
+from holophyte.agents.transcripts import locate, render
 from tests.transcript_fixture import TranscriptCase
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'transcripts'

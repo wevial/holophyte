@@ -22,7 +22,7 @@ export interface RowDaemon {
 }
 
 /** The body one wired label posts: the row's ticket for "Requeue"
- *  (holophyte/serve.py `requeue_action()`), nothing for the unit actions. */
+ *  (holophyte/serve/serve.py `requeue_action()`), nothing for the unit actions. */
 function bodyFor(label: string, ticket: string | null): Record<string, unknown> {
   return label === "Requeue" && ticket != null ? { ticket } : {};
 }

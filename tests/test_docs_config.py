@@ -3,13 +3,13 @@ import re
 import unittest
 from pathlib import Path
 
-from holophyte.config import (
+from holophyte.config.config import (
     AGENT_CONFIG_KEYS,
     KNOWN_KEYS,
     REVIEW_ROUTE_KEYS,
     SERVE_KEYS,
 )
-from holophyte.config_tables import (
+from holophyte.config.config_tables import (
     AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
     BOARD_MODE_KEYS,

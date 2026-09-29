@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from holophyte.review import (
+from holophyte.review.review import (
     covering_scope,
     criteria_brief,
     criteria_findings,
@@ -105,7 +105,7 @@ class NonPythonWitnessTests(unittest.TestCase):
 class VerificationBriefTests(unittest.TestCase):
     def test_passed_verification_says_what_ran_and_where_the_suite_runs(self):
         # KO-641: the factory runs the ticket's checks, not the full suite.
-        from holophyte.loop import _verify_brief
+        from holophyte.loop.loop import _verify_brief
         for ok in (True, False):
             with self.subTest(ok=ok):
                 brief = _verify_brief("python3 -m unittest", ok, "check output")
@@ -185,7 +185,7 @@ class CoveringRangeTests(unittest.TestCase):
 class ScopeQuestionTests(unittest.TestCase):
     """KO-602: changed files the ticket never names are put to the reviewer."""
 
-    TICKET = ("Change `holophyte/review.py` and `console/lib/view.ts`, "
+    TICKET = ("Change `holophyte/review/review.py` and `console/lib/view.ts`, "
               "and add panels under `console/src/`.")
 
     def setUp(self):
@@ -212,7 +212,7 @@ class ScopeQuestionTests(unittest.TestCase):
         return self.git("rev-parse", "HEAD")
 
     def test_lists_only_the_file_the_ticket_does_not_name(self):
-        named = ("holophyte/review.py", "tests/test_review.py",
+        named = ("holophyte/review/review.py", "tests/test_review.py",
                  "console/lib/view.test.ts", "console/lib/test/view.test.ts",
                  "console/src/panel.ts")
         sha = self.candidate(*named, "other/file.ts")
@@ -224,7 +224,7 @@ class ScopeQuestionTests(unittest.TestCase):
                 self.assertNotIn(path, brief)
 
     def review_prompt(self, sha, criteria=()):
-        from holophyte import loop
+        from holophyte.loop import loop
 
         class Captured(Exception):
             pass
@@ -252,7 +252,7 @@ class ScopeQuestionTests(unittest.TestCase):
         return prompts[0]
 
     def test_review_prompt_has_no_scope_section_when_all_files_are_named(self):
-        prompt = self.review_prompt(self.candidate("holophyte/review.py"))
+        prompt = self.review_prompt(self.candidate("holophyte/review/review.py"))
         self.assertNotIn("SCOPE", prompt)
         self.assertNotIn("does not name", prompt)
         prompt = self.review_prompt(self.candidate("other/file.ts"))
@@ -262,7 +262,7 @@ class ScopeQuestionTests(unittest.TestCase):
     def test_review_prompt_quotes_the_tests_section_after_the_criteria(self):
         (self.root / "AGENTS.md").write_text(
             "# Guide\n## Tests\n* Never assert a value the code built.\n")
-        prompt = self.review_prompt(self.candidate("holophyte/review.py"),
+        prompt = self.review_prompt(self.candidate("holophyte/review/review.py"),
                                     criteria=["the behavior works"])
         criteria_at = prompt.index("1. the behavior works")
         quote_at = prompt.index("> * Never assert a value the code built.")
@@ -270,7 +270,8 @@ class ScopeQuestionTests(unittest.TestCase):
         self.assertIn("> ## Tests\n", prompt)
 
     def test_covering_review_quotes_the_tests_section_after_the_criteria(self):
-        from holophyte import loop, story_drift
+        from holophyte.loop import loop
+        from holophyte.story import story_drift
 
         class Captured(Exception):
             pass
@@ -283,7 +284,7 @@ class ScopeQuestionTests(unittest.TestCase):
 
         (self.root / "AGENTS.md").write_text(
             "# Guide\n## Tests\n* Never assert a value the code built.\n")
-        sha = self.candidate("holophyte/review.py")
+        sha = self.candidate("holophyte/review/review.py")
         contract = json.dumps({"acceptanceCriteria": ["the behavior works"]})
         with contextlib.ExitStack() as stack:
             stack.enter_context(patch.object(loop, "agent", side_effect=capture))
@@ -292,7 +293,7 @@ class ScopeQuestionTests(unittest.TestCase):
             with self.assertRaises(Captured):
                 story_drift.review_refresh(
                     Mock(), None, 602, None, 1, "task", self.root, self.base,
-                    sha, 1, self.TICKET, "true", "ok", ["holophyte/review.py"])
+                    sha, 1, self.TICKET, "true", "ok", ["holophyte/review/review.py"])
         criteria_at = prompts[0].index("1. the behavior works")
         quote_at = prompts[0].index("> * Never assert a value the code built.")
         self.assertLess(criteria_at, quote_at)

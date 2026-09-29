@@ -17,12 +17,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import holophyte.board
-import holophyte.cli
-import holophyte.project
+import holophyte.board.board
+import holophyte.cli.cli
+import holophyte.config.project
 import store
 import store.tickets
-from holophyte.runs import open_store
+from holophyte.loop.runs import open_store
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -44,7 +44,7 @@ class RepointFlagTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        self.target = holophyte.project.Project.locate(self.repo)
+        self.target = holophyte.config.project.Project.locate(self.repo)
         conn = open_store(self.target)
         self.addCleanup(conn.close)
         self.conn = conn
@@ -67,7 +67,7 @@ class RepointFlagTests(unittest.TestCase):
     def cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            holophyte.cli.cli([str(self.repo), *args])
+            holophyte.cli.cli.cli([str(self.repo), *args])
         return out.getvalue(), err.getvalue()
 
     def board_cli(self, board, *args):
@@ -75,7 +75,7 @@ class RepointFlagTests(unittest.TestCase):
         self.target.holo_dir.mkdir(parents=True, exist_ok=True)
         self.target.config_path.write_text('[board]\nteam = "team-1"\n'
                                            'project_id = "project-1"\n')
-        with patch.object(holophyte.cli, "board_for", return_value=board):
+        with patch.object(holophyte.cli.cli, "board_for", return_value=board):
             return self.cli(*args)
 
     def candidate_sha(self):
@@ -102,7 +102,7 @@ class RepointFlagTests(unittest.TestCase):
         git("init", "-q", "-b", "main")
         git("-c", "user.email=t@example.invalid", "-c", "user.name=t",
             "commit", "-q", "--allow-empty", "-m", "base")
-        wt = holophyte.project.worktree_path(self.target, "task/ko-1")
+        wt = holophyte.config.project.worktree_path(self.target, "task/ko-1")
         git("worktree", "add", "-q", "-b", "task/ko-1", str(wt))
         (wt / "edit.txt").write_text("unsaved\n")
         store.set_branch(self.conn, self.run, "task/ko-1")
@@ -135,7 +135,7 @@ class RepointFlagTests(unittest.TestCase):
         self.assertIn("no live worker", abort())
         board.set_state.assert_called_once_with("issue-1", "Todo")
         board.unlabel_issue.assert_called_once_with(
-            "issue-1", holophyte.board.lease_label(self.target))
+            "issue-1", holophyte.board.board.lease_label(self.target))
         self.assertEqual(self.conn.execute(
             "SELECT r.outcome, r.outcomeReason, t.status FROM runs r"
             " JOIN tickets t ON t.id = r.ticketId").fetchone(),
@@ -162,7 +162,7 @@ class RepointFlagTests(unittest.TestCase):
         def command(*args):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                holophyte.cli.cli(["project", *args, "--store",
+                holophyte.cli.cli.cli(["project", *args, "--store",
                                    str(self.target.store_path)])
             return out.getvalue()
         store.ensure_project(self.conn, "team-2", self.root / "aaa")
@@ -186,17 +186,17 @@ class RepointFlagTests(unittest.TestCase):
     def test_project_add_registers_once_without_runs(self):
         repo = self.root / "fresh"
         subprocess.run(["git", "init", "-q", str(repo)], check=True)
-        target = holophyte.project.Project.locate(repo)
+        target = holophyte.config.project.Project.locate(repo)
         with self.assertRaisesRegex(SystemExit, "configuration naming a team"):
-            holophyte.cli.cli(["project", "add", str(repo)])
+            holophyte.cli.cli.cli(["project", "add", str(repo)])
         self.assertFalse(target.store_path.exists())
         with self.assertRaisesRegex(SystemExit, "not a repository root"):
-            holophyte.cli.cli(["project", "add", str(self.root / "missing")])
+            holophyte.cli.cli.cli(["project", "add", str(self.root / "missing")])
         target.holo_dir.mkdir(parents=True)
         target.config_path.write_text('[board]\nteam = "fresh-team"\n'
                                       'project_id = "fresh-project"\n')
         with contextlib.redirect_stdout(io.StringIO()):
-            holophyte.cli.cli(["project", "add", str(repo)])
+            holophyte.cli.cli.cli(["project", "add", str(repo)])
         conn = open_store(target)
         self.addCleanup(conn.close)
         self.assertEqual(conn.execute(
@@ -209,7 +209,7 @@ class RepointFlagTests(unittest.TestCase):
         with self.assertRaisesRegex(
                 SystemExit,
                 re.escape(f"fresh {repo.resolve()} is already registered in")):
-            holophyte.cli.cli(["project", "add", str(repo)])
+            holophyte.cli.cli.cli(["project", "add", str(repo)])
 
     def test_note_is_required(self):
         self.park()

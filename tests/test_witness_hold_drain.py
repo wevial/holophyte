@@ -20,14 +20,14 @@ from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 from test_provider import FakeLinear  # noqa: E402
 from test_store_claim_loop import STORE_MODE, StoreFiles  # noqa: E402
 
-import holophyte.cli  # noqa: E402
+import holophyte.cli.cli  # noqa: E402
 import linear_provider  # noqa: E402
-from holophyte.config_tables import sweep_config  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
-from holophyte.supervisor import (  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
+from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
+from holophyte.loop.runs import open_store  # noqa: E402
 
 HOLD_NOTE = "moving to the native board"
 
@@ -61,14 +61,14 @@ class HoldDrainWitness(LoopFixture):
     def cli(self, *args):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            holophyte.cli.cli([str(self.target), *args])
+            holophyte.cli.cli.cli([str(self.target), *args])
         return out.getvalue()
 
     def drain(self):
         """Run the loop with the hold landing in KO-131's implementer turn;
         what the loop printed."""
         out = io.StringIO()
-        with patch("holophyte.freshness.critic_admits",
+        with patch("holophyte.review.freshness.critic_admits",
                    lambda *a, **k: True), patch.object(sys, "stdout", out):
             self.loop(HoldThenCommit(self, "the held work"), APPROVE,
                       provider=self.board)
@@ -80,10 +80,10 @@ class HoldDrainWitness(LoopFixture):
         started = []
         conn = open_store(self.project)
         self.addCleanup(conn.close)
-        with patch("holophyte.reconcile._reconcile_pull_requests"), \
-                patch("holophyte.supervisor.linear_budget_low",
+        with patch("holophyte.host.reconcile._reconcile_pull_requests"), \
+                patch("holophyte.host.supervisor.linear_budget_low",
                       return_value=False), \
-                patch("holophyte.supervisor.start_loop_for",
+                patch("holophyte.host.supervisor.start_loop_for",
                       lambda target, conn, owed, *a, **k: started.append(owed)):
             reconcile_parked_pull_requests(
                 self.project, conn, int(time.time() * 1000), self.board,

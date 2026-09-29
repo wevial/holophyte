@@ -19,7 +19,7 @@ sys.path.insert(0, str(HERE))
 from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
 from loop_fixture import BRANCH, MergeModeFixture  # noqa: E402
 
-import holophyte.operator  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
 
 
 class ConflictTurnUnderAConcurrentFetchTests(MergeModeFixture):
@@ -82,7 +82,7 @@ class ConflictTurnUnderAConcurrentFetchTests(MergeModeFixture):
                 fixture.git("fetch", "origin")
                 return said
 
-        holophyte.operator.babysit_ticket(
+        holophyte.cli.operator.babysit_ticket(
             self.project, "KO-131", "sent back to the babysitter",
             out=io.StringIO())
         fake, _ = self.loop(

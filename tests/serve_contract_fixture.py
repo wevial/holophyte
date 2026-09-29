@@ -1,10 +1,10 @@
 """Seed and normalize the JSON contracts shared with the console tests."""
 import json
 
-import holophyte.serve
-import holophyte.serve_runs
+import holophyte.serve.serve
+import holophyte.serve.serve_runs
 import store
-from holophyte.project import Project
+from holophyte.config.project import Project
 from store.operator_notes import consume
 
 NOW = 1_750_000_000_000
@@ -63,10 +63,13 @@ def contract_answers(case):
     target = Project.locate(case.target)
     answers = {}
     for name, (code, body) in {
-        "status": holophyte.serve.status(target, now=NOW, started_ms=NOW),
-        "run-detail": holophyte.serve_runs.run_detail(target, str(case.run), now=NOW),
-        "run-detail-unestimated": holophyte.serve_runs.run_detail(
-            target, str(unestimated_run), now=NOW),
+        "status": holophyte.serve.serve.status(target, now=NOW, started_ms=NOW),
+        "run-detail": holophyte.serve.serve_runs.run_detail(
+            target, str(case.run), now=NOW
+        ),
+        "run-detail-unestimated": holophyte.serve.serve_runs.run_detail(
+            target, str(unestimated_run), now=NOW
+        ),
     }.items():
         case.assertEqual(code, 200)
         answers[name] = normalize_contract(body)

@@ -54,8 +54,8 @@ def ticket_problems(text, repo):
         ticket_template.validate(ticket, repo=repo))
     if repo:
         # Deferred, as `task_contract()` is: holophyte imports this module.
-        from holophyte.pr_media import evidence_problems
-        from holophyte.project import Project
+        from holophyte.config.project import Project
+        from holophyte.pr.pr_media import evidence_problems
         problems += evidence_problems(Project.locate(repo, adopt=False),
                                       ticket.evidence_states)
     return problems
@@ -288,7 +288,7 @@ def _write(conn, project_id, issue_id, identifier, text, specced, author,
            now, **fields):
     """Write `text` as the ticket's row through `mirror_ticket()`, its
     contract withheld when it is not `specced`."""
-    from holophyte.board import task_contract
+    from holophyte.board.board import task_contract
     from provider import parse_body
     task = parse_body(identifier, text)
     title, criteria, commands, _states = task_contract(task)

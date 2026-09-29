@@ -28,11 +28,11 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     no_agent_processes,
 )
 
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.reconcile  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.host.reconcile  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
 # from `factory`'s slug rule: an expectation computed by the code under test
@@ -163,8 +163,8 @@ class LoopFixture(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         # The GitHub budget the reconcile remembers is the process's; a
         # test that ran it low must not back off the tests after it.
-        budget = patch.object(holophyte.reconcile, "GITHUB_BUDGET",
-                              holophyte.reconcile.GitHubBudget())
+        budget = patch.object(holophyte.host.reconcile, "GITHUB_BUDGET",
+                              holophyte.host.reconcile.GitHubBudget())
         budget.start()
         self.addCleanup(budget.stop)
         root = Path(tmp.name)
@@ -172,7 +172,7 @@ class LoopFixture(unittest.TestCase):
         self.worktrees = root / "repo.worktrees"
         self.target.mkdir()
         # Self-reexec tests run against the disposable factory checkout.
-        factory_file = patch("holophyte.pool_handoff.factory_checkout",
+        factory_file = patch("holophyte.loop.pool_handoff.factory_checkout",
                              return_value=self.target)
         factory_file.start()
         self.addCleanup(factory_file.stop)
@@ -195,11 +195,11 @@ class LoopFixture(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.project.state_dir(self.target) / "store.db"
+        self.db = holophyte.config.project.state_dir(self.target) / "store.db"
         from tests.test_store_phase_gate import audit_loop_store
         self.addCleanup(audit_loop_store, self)
         self.db.parent.mkdir(parents=True)
-        self.project = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.config.project.Project.locate(self.target)
         assert self.project.store_path == self.db
         assert self.project.worktrees == self.worktrees
 
@@ -215,7 +215,7 @@ class LoopFixture(unittest.TestCase):
         A fresh value, too: a `Project` parses its config once.
         """
         (self.db.parent / "config.toml").write_text(toml)
-        self.project = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.config.project.Project.locate(self.target)
 
     def loop(self, *script, provider=None, fake=None):
         """Run `main()` over the queued tasks with the script answering agents.
@@ -231,8 +231,8 @@ class LoopFixture(unittest.TestCase):
         self.last_fake = fake
         with no_agent_processes() as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
-                with patch.object(holophyte.loop, "agent", fake):
-                    self.rc = holophyte.operator.main(self.project, provider)
+                with patch.object(holophyte.loop.loop, "agent", fake):
+                    self.rc = holophyte.cli.operator.main(self.project, provider)
         return fake, guard
 
     def main_output(self, *script, provider=None):
@@ -298,7 +298,7 @@ class Refuse:
     role = "implement"
 
     def play(self, cwd, turn):
-        raise holophyte.gates.RunFailure("some reason")
+        raise holophyte.loop.gates.RunFailure("some reason")
 
 
 class InfraRefuse:
@@ -308,7 +308,7 @@ class InfraRefuse:
     role = "implement"
 
     def play(self, cwd, turn):
-        raise holophyte.gates.InfraFailure("the reviewer container did not start")
+        raise holophyte.loop.gates.InfraFailure("the reviewer container did not start")
 
 
 class Interrupt:

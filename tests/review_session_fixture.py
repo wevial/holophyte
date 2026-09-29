@@ -14,7 +14,7 @@ from fake_agent import (
 )
 from loop_fixture import VALID_BODY, StubProvider, a_task
 
-import holophyte.agents as agents
+import holophyte.agents.agents as agents
 
 
 class ReviewSessionCases:

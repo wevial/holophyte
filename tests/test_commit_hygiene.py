@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from holophyte import pr
+from holophyte.pr import pr
 
 ATTRIBUTION = ('\n\nGenerated with [Devin](<https://devin.ai>)\n\n'
                'Co-Authored-By: Devin <devin-ai-integration@users.noreply.github.com>')
@@ -127,7 +127,7 @@ class CommitHygieneTests(unittest.TestCase):
 
     def test_tree_mismatch_aborts_without_moving_branch_or_worktree(self):
         from holophyte import commit_hygiene
-        from holophyte.gates import InfraFailure
+        from holophyte.loop.gates import InfraFailure
         tip = self.commit('Change' + ATTRIBUTION)
         (self.repo / 'content').write_text('unstaged work')
         self.git('add', 'content')
@@ -148,7 +148,7 @@ class CommitHygieneTests(unittest.TestCase):
         self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/task'), '')
 
     def test_local_merge_cleans_attribution_without_a_remote(self):
-        from holophyte.merge_gate import _merge
+        from holophyte.loop.merge_gate import _merge
         self.git('remote', 'remove', 'origin')
         original = self.commit('Local change\n\n🤖 Generated with Claude Code\n\n'
                                'Co-Authored-By: Claude <noreply@anthropic.com>')
@@ -156,8 +156,8 @@ class CommitHygieneTests(unittest.TestCase):
         self.git('checkout', 'main')
         wt = self.root / 'task-worktree'
         self.git('worktree', 'add', str(wt), 'task')
-        with patch('holophyte.merge_gate.commit_findings'), \
-                patch('holophyte.merge_gate.set_phase'):
+        with patch('holophyte.loop.merge_gate.commit_findings'), \
+                patch('holophyte.loop.merge_gate.set_phase'):
             _merge(self.target, None, None, None, 'KO-560', 'Local task',
                    'task', wt, original)
         self.assertEqual(self.git('show', '-s', '--format=%B', 'main^2'),

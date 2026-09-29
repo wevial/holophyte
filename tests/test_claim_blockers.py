@@ -100,7 +100,7 @@ class ClaimBlockersLoopTests(LoopFixture):
             return True
 
         out = io.StringIO()
-        with patch("holophyte.freshness.critic_admits", gain_a_blocker), \
+        with patch("holophyte.review.freshness.critic_admits", gain_a_blocker), \
                 patch.object(sys, "stdout", out):
             self.loop(Commit("the scripted work"), APPROVE,
                       provider=self.board)

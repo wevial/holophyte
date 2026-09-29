@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import store
-from holophyte.runs import open_store
+from holophyte.loop.runs import open_store
 from tests import test_cli_approve, test_cli_requeue
 
 
@@ -48,7 +48,9 @@ class FactorySchemaCliTests(unittest.TestCase):
     def test_acting_sweep_migrates(self):
         fixture = self.fixture(test_cli_approve.ApproveCliTests)
         self.stamp_older(fixture)
-        with patch("holophyte.sweep_report.review_container_lines", return_value=[]):
+        with patch(
+            "holophyte.host.sweep_report.review_container_lines", return_value=[]
+        ):
             out, _ = fixture.cli("--sweep", "--act")
         self.assertIn("no runs in flight", out)
         self.assertEqual(self.version(fixture), store.SCHEMA_VERSION)

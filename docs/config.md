@@ -108,7 +108,7 @@ budget_scale = 1.5
 ```
 
 A role can instead be a table naming a harness adapter in
-`holophyte/harness.py`. Only `implementer`, `reviewer`, `adjudicator` and
+`holophyte/agents/harness.py`. Only `implementer`, `reviewer`, `adjudicator` and
 `critic` may be tables, and only for a role the harness supports; today that
 is `claude` for `implementer` and `critic`, `codex` for `implementer`, `reviewer`,
 `adjudicator` and `critic`, `devin` for `implementer`, `reviewer` and

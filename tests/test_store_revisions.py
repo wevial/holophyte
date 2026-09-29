@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import holophyte.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.board  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 
@@ -40,7 +40,7 @@ class MirrorRevisionTests(unittest.TestCase):
             self.conn, "team-1", "/repos/holophyte")
 
     def mirror(self, task):
-        return holophyte.board.mirror_task(self.conn, self.project_id, task)
+        return holophyte.board.board.mirror_task(self.conn, self.project_id, task)
 
     def revisions(self, ticket):
         return [(n, author, title, body, priority, json.loads(labels), column)

@@ -17,19 +17,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 
-import holophyte.loop  # noqa: E402
-import holophyte.operator  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
+import holophyte.loop.loop  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte import story_claim  # noqa: E402
-from holophyte.claim_store import claim_from_store  # noqa: E402
-from holophyte.config import check_config_keys  # noqa: E402
-from holophyte.config_tables import story_config  # noqa: E402
-from holophyte.native_board import NativeBoard  # noqa: E402
-from holophyte.pool import NOTHING_SEEN  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
+from holophyte.board.native_board import NativeBoard  # noqa: E402
+from holophyte.config.config import check_config_keys  # noqa: E402
+from holophyte.config.config_tables import story_config  # noqa: E402
+from holophyte.loop.claim_store import claim_from_store  # noqa: E402
+from holophyte.loop.pool import NOTHING_SEEN  # noqa: E402
+from holophyte.loop.runs import open_store  # noqa: E402
+from holophyte.story import story_claim  # noqa: E402
 from provider import board_for  # noqa: E402
 from store.stories import (  # noqa: E402
     approve_story,
@@ -127,7 +127,7 @@ class FrontierFixture(LoopFixture):
 
     def claim(self, board):
         with patch.object(sys, "stdout", io.StringIO()), \
-                patch("holophyte.freshness.critic_admits", return_value=True):
+                patch("holophyte.review.freshness.critic_admits", return_value=True):
             return claim_from_store(self.project, self.conn, self.project_id,
                                     board, "identifier", set(), NOTHING_SEEN)
 
@@ -156,10 +156,10 @@ class DriftInTheLoopTests(FrontierFixture):
                          APPROVE, Commit("B's work"), APPROVE)
         out = io.StringIO()
         with no_agent_processes(), patch.object(sys, "stdout", out), \
-                patch.object(holophyte.loop, "agent", fake), \
-                patch("holophyte.freshness.critic_admits",
+                patch.object(holophyte.loop.loop, "agent", fake), \
+                patch("holophyte.review.freshness.critic_admits",
                       return_value=True):
-            holophyte.operator.main(self.project, self.board)
+            holophyte.cli.operator.main(self.project, self.board)
 
         self.assertEqual(self.read(
             "SELECT t.linearIdentifier, r.outcome FROM runs r"
@@ -289,7 +289,7 @@ class ParallelCapTests(FrontierFixture):
                 store.claim(self.conn, self.project_id, b)
             return False
 
-        with patch("holophyte.freshness.parked_since_admitted",
+        with patch("holophyte.review.freshness.parked_since_admitted",
                    another_loop_claims_b):
             self.assertEqual(self.claim(self.board), (None, None, None))
 

@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
-from holophyte.project import Project  # noqa: E402 - after the sys.path insert
+from holophyte.config.project import Project  # noqa: E402 - after the sys.path insert
 
 
 def body(title="Add export endpoint", depends="none", what=True,

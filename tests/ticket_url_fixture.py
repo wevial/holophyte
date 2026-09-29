@@ -7,7 +7,7 @@ import linear_provider
 import store
 import store.schema
 import store.tickets
-from holophyte.board import mirror_task
+from holophyte.board.board import mirror_task
 from tests.phase_fixture import finish_run
 
 MIN = 60_000

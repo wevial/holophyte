@@ -3,8 +3,8 @@ import json
 import unittest
 from unittest.mock import patch
 
-import holophyte.gates
-import holophyte.pr
+import holophyte.loop.gates
+import holophyte.pr.pr
 from tests.fake_agent import (
     APPROVE,
     REQUEST_CHANGES,
@@ -95,7 +95,7 @@ class BabysitterFailureTests(MergeModeFixture):
         marker = self.db.parent / 'fail-verify'
         command = f"sh -c 'if test -f {marker}; then echo boom; exit 3; fi'"
         task = dict(a_task(), body=self.BODY, verify=f'echo first\n{command}')
-        push = holophyte.pr.push_branch
+        push = holophyte.pr.pr.push_branch
         pushes = []
 
         def push_then_fail(*args, **kwargs):
@@ -103,7 +103,7 @@ class BabysitterFailureTests(MergeModeFixture):
             pushes.append(result)
             if len(pushes) == 2:
                 marker.touch()
-                holophyte.gates._PASSES.clear()  # a re-exec (KO-646)
+                holophyte.loop.gates._PASSES.clear()  # a re-exec (KO-646)
             return result
 
         class BreakVerify(Commit):
@@ -113,7 +113,7 @@ class BabysitterFailureTests(MergeModeFixture):
                     marker.touch()
                 return result
 
-        with patch.object(holophyte.pr, 'push_branch', push_then_fail):
+        with patch.object(holophyte.pr.pr, 'push_branch', push_then_fail):
             self.loop(Commit(), APPROVE, Idle(''),
                       Reply('THREAD 1: ADDRESS -- a real crash'),
                       BreakVerify(), provider=StubProvider(task))
@@ -156,7 +156,7 @@ class BabysitterFailureTests(MergeModeFixture):
 
 class VerifyFactsTests(unittest.TestCase):
     def test_blocks_preserve_shell_state_and_stop_on_failure(self):
-        from holophyte.gates import run_verify
+        from holophyte.loop.gates import run_verify
         for command, expected in (
                 ('export ANSWER=42\n[ "$ANSWER" = 42 ]', True),
                 ('false\n[ "$?" = 1 ]', False),

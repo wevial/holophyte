@@ -7,10 +7,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import LoopFixture  # noqa: E402
 from serve_fixture import ServeTestCase  # noqa: E402
 
-import holophyte.report  # noqa: E402
+import holophyte.cli.report  # noqa: E402
 import store  # noqa: E402
-from holophyte.maintainer_notes import cite_commits  # noqa: E402
-from holophyte.pr import Thread  # noqa: E402
+from holophyte.babysit.maintainer_notes import cite_commits  # noqa: E402
+from holophyte.pr.pr import Thread  # noqa: E402
 from store.operator_notes import consume, notes, send_back  # noqa: E402
 
 
@@ -48,7 +48,7 @@ class NoteReportTests(ServeTestCase):
             store.tickets.transition(conn, 1, "blocked_on_operator")
             event_id = send_back(conn, self.run, note, author)
             consume(conn, self.run, [event_id], 1)
-            report = holophyte.report.report_lines(conn)
+            report = holophyte.cli.report.report_lines(conn)
             instruction, = notes(conn, self.run)
         self.assertEqual(instruction["note"], note)
         self.assertEqual(instruction["author"], author)

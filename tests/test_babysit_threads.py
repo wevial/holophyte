@@ -1,4 +1,4 @@
-"""`holophyte.babysitter`'s pass under `[merge] mode = "pr"`, end to end."""
+"""`holophyte.babysit.babysitter`'s pass under `[merge] mode = "pr"`, end to end."""
 from __future__ import annotations
 
 import io
@@ -28,13 +28,13 @@ from loop_fixture import BRANCH, LoopFixture, MergeModeFixture  # noqa: E402
 from mention_accounts_fixture import MentionAccountCases  # noqa: E402
 from triage_mention_fixture import TriageMentionCases  # noqa: E402
 
-import holophyte.agents  # noqa: E402 - after the sys.path insert above
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.pr  # noqa: E402 - after the sys.path insert above
-import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
-from holophyte.maintainer_notes import cite_commits  # noqa: E402
-from holophyte.thread_mentions import REFUSAL  # noqa: E402
+import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
+from holophyte.babysit.maintainer_notes import cite_commits  # noqa: E402
+from holophyte.babysit.thread_mentions import REFUSAL  # noqa: E402
 
 
 @dataclass
@@ -87,14 +87,14 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                     "@holophyte fix: preserve validation")]
         self.fake_route(states=[self.pr_state(threads), self.pr_state()])
         pending = []
-        original = holophyte.pr.reply_thread
+        original = holophyte.pr.pr.reply_thread
 
         def reply(*args, **kwargs):
             pending.extend(json.loads(self.read(
                 "SELECT findings FROM reviewRounds WHERE round = 2")[0][0]))
             return original(*args, **kwargs)
 
-        with patch("holophyte.pr.reply_thread", side_effect=reply):
+        with patch("holophyte.pr.pr.reply_thread", side_effect=reply):
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 Commit("fix tokens"), APPROVE, Idle(""),
                                 provider=self.provider())
@@ -335,7 +335,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_declined_human_is_replied_to_left_open_and_parks(self):
-        with patch("holophyte.babysitter._verdicts_by_kind",
+        with patch("holophyte.babysit.babysitter._verdicts_by_kind",
                    return_value={1: ("DECLINE", "a naming preference")}):
             _, calls = self.declined_thread(("alice", "User"))
         self.assertEqual([kind for kind, _ in calls], ["state", "reply"])
@@ -375,8 +375,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
     def test_fix_transport_retry_preserves_the_pr_on_second_failure(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])
-        failed = Idle(holophyte.agents.ImplementerOutput("fetch failed", 1))
-        with patch("holophyte.loop.sleep") as nap:
+        failed = Idle(holophyte.agents.agents.ImplementerOutput("fetch failed", 1))
+        with patch("holophyte.loop.loop.sleep") as nap:
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 Reply("THREAD 1: ADDRESS -- a real crash"),
                                 failed, failed, provider=self.provider())
@@ -433,10 +433,10 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual(
             self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
                       " ORDER BY round"),
-            [(1, "pass", holophyte.agents.agent_route(self.project, "review")),
+            [(1, "pass", holophyte.agents.agents.agent_route(self.project, "review")),
              (2, "changes_requested", "github:review-bot"),
              (3, "pass", "github:ci"),
-             (4, "pass", holophyte.agents.agent_route(self.project, "review"))])
+             (4, "pass", holophyte.agents.agents.agent_route(self.project, "review"))])
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 
@@ -538,7 +538,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
                        f'[verify]\nalways = ["{command}"]\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
-        push = holophyte.pr.push_branch
+        push = holophyte.pr.pr.push_branch
         pushes = []
 
         def push_then_break_verify(*args, **kwargs):
@@ -546,10 +546,10 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             pushes.append(result)
             if len(pushes) == 2:
                 failure.touch()
-                holophyte.gates._PASSES.clear()  # a re-exec (KO-646)
+                holophyte.loop.gates._PASSES.clear()  # a re-exec (KO-646)
             return result
 
-        with patch.object(holophyte.pr, "push_branch", push_then_break_verify):
+        with patch.object(holophyte.pr.pr, "push_branch", push_then_break_verify):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       Reply("THREAD 1: ADDRESS -- a real crash"),
                       Commit("fix: default load()"), provider=self.provider())
@@ -569,7 +569,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.configure('[merge]\nmode = "pr"\n'
                        f'[verify]\nalways = ["{command}"]\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
-        push = holophyte.pr.push_branch
+        push = holophyte.pr.pr.push_branch
         pushes = []
 
         def push_then_break_verify(*args, **kwargs):
@@ -577,10 +577,10 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             pushes.append(result)
             if len(pushes) == 2:
                 failure.touch()
-                holophyte.gates._PASSES.clear()  # a re-exec (KO-646)
+                holophyte.loop.gates._PASSES.clear()  # a re-exec (KO-646)
             return result
 
-        with patch.object(holophyte.pr, "push_branch", push_then_break_verify):
+        with patch.object(holophyte.pr.pr, "push_branch", push_then_break_verify):
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 Reply("THREAD 1: ADDRESS -- a real crash"),
                                 Commit("fix: default load()"),
@@ -590,7 +590,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertIn("verify failed", question)
         self.assertIn(command, question)
         self.assertEqual(fake.roles.count("review"), 1)
-        route = holophyte.agents.agent_route(self.project, "review")
+        route = holophyte.agents.agents.agent_route(self.project, "review")
         self.assertEqual(self.read("SELECT count(*) FROM reviewRounds WHERE"
                                    f" reviewerModel = '{route}'"), [(1,)])
         fixed = self.git("rev-parse", BRANCH).strip()
@@ -600,8 +600,9 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                          [("blocked_on_operator",)])
         self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
 
-        holophyte.operator.babysit_ticket(self.project, "KO-131", "repin the file size",
-                                          out=io.StringIO())
+        holophyte.cli.operator.babysit_ticket(
+            self.project, "KO-131", "repin the file size", out=io.StringIO()
+        )
         self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
         (payload,), = self.read("SELECT payload FROM runEvents"
                                 " WHERE kind = 'operator_note'")
@@ -686,7 +687,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertNotEqual(old, fixed)
         self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
                          [fixed])
-        self.assertEqual(naps, [5, holophyte.pr.CHECK_POLL_S])
+        self.assertEqual(naps, [5, holophyte.pr.pr.CHECK_POLL_S])
         self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 2"),
                          [("merged",)])
 
@@ -779,7 +780,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         calls = self.api_calls()
         self.assertEqual([kind for kind, _ in calls],
                          ["state", "reply", "resolve", "reply"])
-        model = holophyte.agents.agent_route(self.project, "adjudicate")
+        model = holophyte.agents.agents.agent_route(self.project, "adjudicate")
         self.assertEqual(calls[1][1]["thread"], "PRRT_1")
         self.assertTrue(calls[1][1]["body"].startswith(
             f"---- Comment by {model} ----\n"), calls[1][1]["body"])
@@ -791,7 +792,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual(
             self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
                       " ORDER BY round"),
-            [(1, "pass", holophyte.agents.agent_route(self.project, "review")),
+            [(1, "pass", holophyte.agents.agents.agent_route(self.project, "review")),
              (2, "changes_requested", "github:review-bot+style-bot")])
         # Every reply and resolve is on the run's stream.
         events = [summary for (summary,) in self.read(
@@ -994,7 +995,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                          [f"git push origin {BRANCH}"] * 2)
         calls = self.api_calls()
         self.assertEqual([kind for kind, _ in calls], ["state", "reply"])
-        model = holophyte.agents.agent_route(self.project, "adjudicate")
+        model = holophyte.agents.agents.agent_route(self.project, "adjudicate")
         self.assertEqual(calls[1][1]["thread"], "PRRT_1")
         self.assertTrue(calls[1][1]["body"].startswith(
             f"---- Comment by {model} ----\n"), calls[1][1]["body"])
@@ -1083,7 +1084,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
 
 class OperatorNoteCitationTests(LoopFixture):
     """`cite_commits()` on real git: recording a citation never fails a fix."""
-    ADDRESSED = [(7, holophyte.pr.Thread("operator_note:7", "", None, "maintainer",
+    ADDRESSED = [(7, holophyte.pr.pr.Thread("operator_note:7", "", None, "maintainer",
                                          "change requested", "",
                                          author_kind="maintainer"), "")]
 
@@ -1125,14 +1126,14 @@ class ParkQuestionQuoteTests(unittest.TestCase):
         " is then reported as merged.\n\n"
         "<details><summary>Prompt To Fix With AI</summary>\n\n"
         "`````markdown\nThis is a comment left during a code review.\n"
-        "Path: holophyte/merge_queue.py\nLine: 116\n\n"
+        "Path: holophyte/pr/merge_queue.py\nLine: 116\n\n"
         "> Queue entry is read before the merge settles\n`````\n\n"
         "</details>\n\n")
 
     def quote(self, body):
-        from holophyte import babysitter
-        return babysitter.quoted(holophyte.pr.Thread(
-            "1", "holophyte/merge_queue.py", 116, "greptile-apps[bot]", body,
+        from holophyte.babysit import babysitter
+        return babysitter.quoted(holophyte.pr.pr.Thread(
+            "1", "holophyte/pr/merge_queue.py", 116, "greptile-apps[bot]", body,
             self.URL, author_kind="bot"))
 
     def test_a_greptile_comment_reads_as_its_badge_title_and_paragraph(self):

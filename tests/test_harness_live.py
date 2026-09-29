@@ -2,7 +2,7 @@
 
 Opt in with `HOLOPHYTE_LIVE_HARNESS=claude` (an implementer turn and its
 resume), `HOLOPHYTE_LIVE_HARNESS=codex` or `devin` (two review rounds
-through `holophyte.agents.agent()`, and an implementer turn through the
+through `holophyte.agents.agents.agent()`, and an implementer turn through the
 loop's `_timed()` and its resume) or
 `HOLOPHYTE_LIVE_HARNESS=cursor` (one review round; `HOLOPHYTE_LIVE_MODEL`
 picks its model, `grok-4.7-high` by default) or
@@ -28,13 +28,13 @@ import unittest
 import uuid
 from pathlib import Path
 
-import holophyte.agents
-import holophyte.fix_session
-import holophyte.freshness
-import holophyte.loop
-import holophyte.project
+import holophyte.agents.agents
+import holophyte.agents.fix_session
+import holophyte.config.project
+import holophyte.loop.loop
+import holophyte.review.freshness
 import store
-from holophyte import harness
+from holophyte.agents import harness
 
 LIVE = os.environ.get("HOLOPHYTE_LIVE_HARNESS")
 TURN_TIMEOUT = 300
@@ -109,7 +109,7 @@ class LiveReviewCase(unittest.TestCase):
         holo = root / "holo"
         holo.mkdir()
         (holo / "config.toml").write_text(self.CONFIG)
-        self.target = holophyte.project.Project(
+        self.target = holophyte.config.project.Project(
             path=self.repo, holo_dir=holo, store_path=holo / "store.db",
             config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
         self.conn = store.open(self.target.store_path)
@@ -122,7 +122,7 @@ class LiveReviewCase(unittest.TestCase):
         self.run_id = store.claim(self.conn, project, ticket)
 
     def review(self, goal, review_round):
-        output = holophyte.agents.agent(
+        output = holophyte.agents.agents.agent(
             self.target, "review", goal, self.repo, base_sha=self.base,
             candidate_sha=self.candidate, timeout=TURN_TIMEOUT, conn=self.conn,
             run_id=self.run_id, review_round=review_round)
@@ -198,7 +198,7 @@ class LiveImplementerTests(unittest.TestCase):
             holo.mkdir()
             (holo / "config.toml").write_text(
                 '[agents.implementer]\n' + IMPLEMENTER_TABLES[LIVE])
-            target = holophyte.project.Project(
+            target = holophyte.config.project.Project(
                 path=repo, holo_dir=holo, store_path=holo / "store.db",
                 config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
             conn = store.open(target.store_path)
@@ -209,7 +209,7 @@ class LiveImplementerTests(unittest.TestCase):
                                          acceptance_criteria=["implement"],
                                          verification_commands=["true"])
             run = store.claim(conn, project, ticket)
-            output, timed_out = holophyte.loop._timed(
+            output, timed_out = holophyte.loop.loop._timed(
                 target, conn, run, 60, repo, TURN_TIMEOUT / 60,
                 "Write the text ok to a new file note.txt in the current "
                 f"directory. Also remember this word: {word}, but do not write "
@@ -221,7 +221,7 @@ class LiveImplementerTests(unittest.TestCase):
             (session,) = conn.execute("SELECT providerSessionId FROM runs "
                                       "WHERE id = ?", (run,)).fetchone()
             print(f"session: {session}")
-            argv, reason = holophyte.fix_session.resume_argv(target, conn, run)
+            argv, reason = holophyte.agents.fix_session.resume_argv(target, conn, run)
             self.assertIsNone(reason)
             print(f"resume: {[LIVE, *argv[1:]]}")
             result = subprocess.run(
@@ -270,7 +270,7 @@ class LiveCriticTests(unittest.TestCase):
             holo = root / "holo"
             holo.mkdir()
             (holo / "config.toml").write_text("[agents.critic]\n")
-            target = holophyte.project.Project(
+            target = holophyte.config.project.Project(
                 path=repo, holo_dir=holo, store_path=holo / "store.db",
                 config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
             conn = store.open(target.store_path)
@@ -278,9 +278,9 @@ class LiveCriticTests(unittest.TestCase):
             store.init(conn)
             task = {"id": "KO-715", "title": "Say hello in notes.txt",
                     "body": CRITIC_BODY, "filed_at": int(time.time() * 1000)}
-            output = holophyte.freshness.ask_critic(conn, target, task)
+            output = holophyte.review.freshness.ask_critic(conn, target, task)
         print(f"critic:\n{output}")
-        self.assertIsNotNone(holophyte.freshness.parse_freshness(output), output)
+        self.assertIsNotNone(holophyte.review.freshness.parse_freshness(output), output)
 
 
 if __name__ == "__main__":

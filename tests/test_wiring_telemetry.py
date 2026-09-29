@@ -25,12 +25,12 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.cli  # noqa: E402 - after the sys.path insert above
-import holophyte.findings  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
-import holophyte.report  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.report  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.review.findings  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -124,7 +124,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
         self.db = root / "repo.holophyte.db"
         # The `Project` the loop is handed, with the store and the worktrees
         # placed by hand: outside the target, never a file in it.
-        self.project = holophyte.project.Project(
+        self.project = holophyte.config.project.Project(
             path=self.target, holo_dir=root, store_path=self.db,
             config_path=root / "config.toml",
             worktrees=root / "repo.worktrees")
@@ -161,8 +161,8 @@ class CloseOutTelemetryTests(unittest.TestCase):
              "criteria": ["Given a merged ticket, when close-out completes, "
                           "then the run row carries its timing"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
-            with patch.object(holophyte.loop, "agent", fake_agent):
-                holophyte.operator.main(self.project, provider)
+            with patch.object(holophyte.loop.loop, "agent", fake_agent):
+                holophyte.cli.operator.main(self.project, provider)
         return provider
 
     def test_close_out_stamps_the_run_row_and_the_window_reads_it_back(self):
@@ -241,7 +241,7 @@ class ReportStoreCase(unittest.TestCase):
         home = patch.dict(os.environ, {"HOLOPHYTE_HOME": str(self.root / "home")})
         home.start()
         self.addCleanup(home.stop)
-        self.db = holophyte.project.state_dir(self.target) / "store.db"
+        self.db = holophyte.config.project.state_dir(self.target) / "store.db"
         self.db.parent.mkdir(parents=True)
         self.worktrees = self.root / "repo.worktrees"
         self.conn = store.open(str(self.db))
@@ -280,7 +280,7 @@ class ReportStoreCase(unittest.TestCase):
         self.conn.commit()
         out = io.StringIO()
         with no_network(), patch.object(sys, "stdout", out):
-            holophyte.cli.cli(["--report", str(self.target)])
+            holophyte.cli.cli.cli(["--report", str(self.target)])
         return out.getvalue().splitlines()
 
 
@@ -292,7 +292,7 @@ class ReportTests(ReportStoreCase):
                            outcome="rejected")
         # Past the live block: its "in flight" line, the two toil lines, the
         # gap layers and gaps found lines and the blank.
-        lines = holophyte.report.report_lines(self.conn)[6:]
+        lines = holophyte.cli.report.report_lines(self.conn)[6:]
         row = dict(zip(lines[0].split(), lines[1].split()))
         self.assertEqual(row["outcome"], "rejected")
         self.assertEqual(row["rejected"], "1")
@@ -301,7 +301,7 @@ class ReportTests(ReportStoreCase):
     def test_a_line_per_run_with_its_ratio_and_a_summary(self):
         self.three_runs()
 
-        lines = holophyte.report.report_lines(self.conn)[7:]
+        lines = holophyte.cli.report.report_lines(self.conn)[7:]
 
         # The host column is this machine's own name: the claim stamped it.
         host = socket.gethostname()
@@ -325,7 +325,7 @@ class ReportTests(ReportStoreCase):
         self.completed_run(4, actual_min=7, estimate_min=None, rounds=0,
                            outcome="merged")
 
-        lines = holophyte.report.report_lines(self.conn)[7:]
+        lines = holophyte.cli.report.report_lines(self.conn)[7:]
 
         self.assertEqual(lines[4].split(), ["KO-4", "7.0", "7.0", "0.0", "n/a",
                                             "n/a", "0", "merged", "0",
@@ -338,7 +338,7 @@ class ReportTests(ReportStoreCase):
         self.three_runs()
         self.conn.execute("UPDATE runs SET host = NULL WHERE id = 2")
 
-        lines = holophyte.report.report_lines(self.conn)[7:]
+        lines = holophyte.cli.report.report_lines(self.conn)[7:]
 
         self.assertEqual(lines[2].split()[-1], "?")
         self.assertEqual(lines[1].split()[-1], socket.gethostname())
@@ -357,7 +357,7 @@ class ReportTests(ReportStoreCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", out):
-                holophyte.cli.cli(["--report", str(self.target)])
+                holophyte.cli.cli.cli(["--report", str(self.target)])
 
         printed = out.getvalue().splitlines()[1:]
         self.assertEqual(printed[:2], ["in flight: none", ""])
@@ -365,7 +365,7 @@ class ReportTests(ReportStoreCase):
         # lines precede the table, and below it the `[report] findings` mode -- the
         # default, nothing configured -- and the one line on the supervisor:
         # none has ever beaten here.
-        self.assertEqual(printed[:12], holophyte.report.report_lines(self.conn))
+        self.assertEqual(printed[:12], holophyte.cli.report.report_lines(self.conn))
         self.assertEqual(printed[12], "findings: none")
         self.assertEqual(printed[13], "supervisor: none recorded")
         self.assertEqual(len(printed), 14)
@@ -401,10 +401,12 @@ class ReportTests(ReportStoreCase):
         out = io.StringIO()
 
         with no_network(), patch.object(sys, "stdout", out):
-            holophyte.cli.cli(["--report", str(self.root / "elsewhere")])
+            holophyte.cli.cli.cli(["--report", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
-        self.assertFalse(holophyte.project.state_dir(self.root / "elsewhere").exists())
+        self.assertFalse(
+            holophyte.config.project.state_dir(self.root / "elsewhere").exists()
+        )
 
 
 class HostLabelTests(ReportStoreCase):
@@ -416,13 +418,13 @@ class HostLabelTests(ReportStoreCase):
         super().setUp()
         (self.db.parent / "config.toml").write_text(
             f'[report]\nhost_label = "{self.LABEL}"\n')
-        self.project = holophyte.project.Project.locate(self.target)
+        self.project = holophyte.config.project.Project.locate(self.target)
 
     def test_the_report_and_findings_show_the_label_and_never_the_hostname(self):
         self.three_runs()
         self.conn.execute("UPDATE runs SET host = NULL WHERE id = 2")
         printed = self.report_with_a_heartbeat(age_ms=12_000)
-        rendered = holophyte.findings.render_findings(self.conn)
+        rendered = holophyte.review.findings.render_findings(self.conn)
 
         hostname = socket.gethostname()
         self.assertNotIn(hostname, "\n".join(printed))

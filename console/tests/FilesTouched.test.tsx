@@ -6,10 +6,10 @@ import type { RunFilesBody } from "../src/lib/types";
 /** Twelve files as `/runs/N/files` serves them, totals +156 −86 over the whole diff. */
 const TWELVE: RunFilesBody = {
   files: [
-    { path: "holophyte/serve.py", status: "M", added: 40, deleted: 12 },
+    { path: "holophyte/serve/serve.py", status: "M", added: 40, deleted: 12 },
     { path: "holophyte/files.py", status: "A", added: 60, deleted: 0 },
     { path: "holophyte/old_files.py", status: "D", added: 0, deleted: 30 },
-    { path: "holophyte/runs.py", status: "R", added: 3, deleted: 3 },
+    { path: "holophyte/loop/runs.py", status: "R", added: 3, deleted: 3 },
     { path: "tests/test_serve.py", status: "M", added: 20, deleted: 10 },
     { path: "tests/test_files.py", status: "A", added: 18, deleted: 0 },
     { path: "console/src/App.tsx", status: "M", added: 2, deleted: 2 },

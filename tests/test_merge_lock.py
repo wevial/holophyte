@@ -3,8 +3,8 @@ import contextlib
 import json
 from unittest.mock import patch
 
-import holophyte.gates as gates
-import holophyte.merge_gate as gate
+import holophyte.loop.gates as gates
+import holophyte.loop.merge_gate as gate
 import store
 from tests.sweep_fixture import T0, SweepTestCase
 
@@ -23,12 +23,12 @@ class LiveMergeLockTests(SweepTestCase):
         self.stale_at = None
         self.live = True
         self.stack = self.enterContext(contextlib.ExitStack())
-        for name in ('holophyte.gates.monotonic',
-                     'holophyte.merge_lock.monotonic'):
+        for name in ('holophyte.loop.gates.monotonic',
+                     'holophyte.loop.merge_lock.monotonic'):
             self.stack.enter_context(patch(name, lambda: self.elapsed))
-        self.stack.enter_context(patch('holophyte.merge_lock.time',
+        self.stack.enter_context(patch('holophyte.loop.merge_lock.time',
                                       lambda: T0 / 1000 + self.elapsed))
-        self.stack.enter_context(patch('holophyte.gates.sleep', self.sleep))
+        self.stack.enter_context(patch('holophyte.loop.gates.sleep', self.sleep))
         self.park = self.stack.enter_context(patch.object(gate, '_park_at_gate'))
 
     def sleep(self, seconds):

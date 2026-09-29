@@ -11,9 +11,9 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # the package imports store/ticket_template by name
-import holophyte.claim  # noqa: E402 - after the sys.path insert above
-from holophyte.gates import merge_lock_path, read_merge_lock  # noqa: E402
-from holophyte.project import Project  # noqa: E402
+import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
+from holophyte.config.project import Project  # noqa: E402
+from holophyte.loop.gates import merge_lock_path, read_merge_lock  # noqa: E402
 
 
 def git(cwd, *args):
@@ -58,7 +58,7 @@ class TargetLocksTests(unittest.TestCase):
                         store_path=located.store_path,
                         config_path=located.config_path,
                         worktrees=located.worktrees, locks=fake)
-        holophyte.claim._refresh_main(target, run_id=42)
+        holophyte.loop.claim._refresh_main(target, run_id=42)
         self.assertEqual(fake.calls, [(42, "fetch before the cut", "working")])
         self.assertFalse(merge_lock_path(target).exists())
         self.assertFalse(target.holo_dir.exists())
@@ -71,12 +71,12 @@ class TargetLocksTests(unittest.TestCase):
         self.assertFalse(path.exists())
 
     def test_callers_no_longer_import_live_merge_lock(self):
-        for module in ("merge_gate", "claim"):
+        for module in ("loop/merge_gate", "loop/claim"):
             with self.subTest(module=module):
                 tree = ast.parse((ROOT / "holophyte" / f"{module}.py").read_text())
                 imported = {alias.name for node in ast.walk(tree)
                             if isinstance(node, ast.ImportFrom)
-                            and node.module == "holophyte.merge_lock"
+                            and node.module == "holophyte.loop.merge_lock"
                             for alias in node.names}
                 self.assertNotIn("live_merge_lock", imported)
 

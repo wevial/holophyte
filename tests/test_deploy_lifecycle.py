@@ -43,9 +43,9 @@ import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
-from holophyte.project import Project
-from holophyte.status import HOME_LOCK, SWEEP_STATE
-from holophyte.supervisor_lock import pid_alive, read_supervisor_lock
+from holophyte.cli.status import HOME_LOCK, SWEEP_STATE
+from holophyte.config.project import Project
+from holophyte.host.supervisor_lock import pid_alive, read_supervisor_lock
 from tests.host_fixture import factory_checkout, git
 
 ROOT = Path(__file__).resolve().parent.parent

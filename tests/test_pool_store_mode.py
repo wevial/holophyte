@@ -19,12 +19,12 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import TICK, VALID_BODY, FakePool, LoopFixture  # noqa: E402
 
-import holophyte.board  # noqa: E402
-import holophyte.operator  # noqa: E402
-import holophyte.pool  # noqa: E402
+import holophyte.board.board  # noqa: E402
+import holophyte.cli.operator  # noqa: E402
+import holophyte.loop.pool  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
+from holophyte.loop.runs import open_store  # noqa: E402
 from provider import FileProvider  # noqa: E402
 
 TICK_SEC = 60
@@ -74,13 +74,13 @@ class StoreModePoolTests(LoopFixture):
     def run_scheduler(self, exits):
         pool = FakePool(exits)
         out = io.StringIO()
-        with patch.object(holophyte.pool, "SPAWN", pool.spawn), \
-                patch.object(holophyte.pool, "WAIT", pool.wait), \
-                patch("holophyte.claim._park_unlisted", never), \
+        with patch.object(holophyte.loop.pool, "SPAWN", pool.spawn), \
+                patch.object(holophyte.loop.pool, "WAIT", pool.wait), \
+                patch("holophyte.loop.claim._park_unlisted", never), \
                 patch.object(sys, "orig_argv",
                              ["python3", "-u", "factory.py", str(self.target)]), \
                 patch.object(sys, "stdout", out):
-            self.rc = holophyte.operator.main(self.project, self.board)
+            self.rc = holophyte.cli.operator.main(self.project, self.board)
         self.out = out.getvalue()
         return pool
 
@@ -96,9 +96,9 @@ class StoreModePoolTests(LoopFixture):
 
     def test_the_pool_is_sized_by_the_store_queue_and_lists_once(self):
         pool = self.run_scheduler([
-            (holophyte.pool.WORKER_MERGED,
+            (holophyte.loop.pool.WORKER_MERGED,
              lambda: self.merge("KO-1", "KO-2", "KO-3")),
-            (holophyte.pool.WORKER_MERGED, None)])
+            (holophyte.loop.pool.WORKER_MERGED, None)])
 
         self.assertEqual(len(pool.spawned), 2)
         self.assertEqual(self.board.listed, 1)
@@ -127,7 +127,7 @@ class StoreModePoolTests(LoopFixture):
             self.merge("KO-1")
 
         pool = self.run_scheduler([(TICK, lease), (TICK, age_the_ask),
-                                   (holophyte.pool.WORKER_MERGED, merged)])
+                                   (holophyte.loop.pool.WORKER_MERGED, merged)])
 
         self.assertEqual(listed, [1, 1, 2])
         self.assertEqual(len(pool.spawned), 1)
@@ -135,14 +135,14 @@ class StoreModePoolTests(LoopFixture):
 
     def test_a_board_that_cannot_list_still_leaves_the_store_queue(self):
         for n in (1, 2, 3):
-            holophyte.board.mirror_task(self.conn, self.project_id,
+            holophyte.board.board.mirror_task(self.conn, self.project_id,
                                         self.board.fetch_task(f"KO-{n}"))
         self.board.broken = True
 
         pool = self.run_scheduler([
-            (holophyte.pool.WORKER_MERGED,
+            (holophyte.loop.pool.WORKER_MERGED,
              lambda: self.merge("KO-1", "KO-2", "KO-3")),
-            (holophyte.pool.WORKER_MERGED, None)])
+            (holophyte.loop.pool.WORKER_MERGED, None)])
 
         self.assertEqual(len(pool.spawned), 2)
         self.assertEqual(self.board.listed, 1)
@@ -168,10 +168,10 @@ class StoreModePoolTests(LoopFixture):
         Spawning stops at the first, the pool drains and exits 1 with the
         board's line, whether or not a failed run stops the pool."""
         for n in (1, 2, 3):
-            holophyte.board.mirror_task(self.conn, self.project_id,
+            holophyte.board.board.mirror_task(self.conn, self.project_id,
                                         self.board.fetch_task(f"KO-{n}"))
         self.board.broken = True
-        down = holophyte.pool.WORKER_BOARD_DOWN
+        down = holophyte.loop.pool.WORKER_BOARD_DOWN
         for stop in ("true", "false"):
             with self.subTest(stop_on_failure=stop):
                 self.configure(CONFIG + f"stop_on_failure = {stop}\n")
@@ -185,7 +185,7 @@ class StoreModePoolTests(LoopFixture):
                 self.assertNotIn("no ready tickets", self.out)
 
     def test_a_worker_that_cannot_read_its_candidate_back_exits_board_down(self):
-        holophyte.board.mirror_task(self.conn, self.project_id,
+        holophyte.board.board.mirror_task(self.conn, self.project_id,
                                     self.board.fetch_task("KO-1"))
 
         def down(issue_id):
@@ -193,9 +193,9 @@ class StoreModePoolTests(LoopFixture):
 
         self.board.fetch_task = down
         with patch.object(sys, "stdout", io.StringIO()) as out:
-            status = holophyte.pool._worker(self.project, self.board)
+            status = holophyte.loop.pool._worker(self.project, self.board)
 
-        self.assertEqual(status, holophyte.pool.WORKER_BOARD_DOWN)
+        self.assertEqual(status, holophyte.loop.pool.WORKER_BOARD_DOWN)
         self.assertIn("KO-1 could not be read back from the board",
                       out.getvalue())
         self.assertNotIn("nothing left to claim", out.getvalue())

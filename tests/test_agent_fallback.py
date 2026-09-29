@@ -20,8 +20,9 @@ from loop_fixture import (  # noqa: E402 - fixture shares the tests import path
 )
 from sweep_fixture import SweepTestCase  # noqa: E402
 
-from holophyte import agents, operator  # noqa: E402
-from holophyte.agent_routes import reset  # noqa: E402
+from holophyte.agents import agents  # noqa: E402
+from holophyte.agents.agent_routes import reset  # noqa: E402
+from holophyte.cli import operator  # noqa: E402
 
 
 class AgentFallbackTests(SweepTestCase):
@@ -58,7 +59,7 @@ class AgentFallbackTests(SweepTestCase):
         return code, out.getvalue()
 
     def test_failed_writer_probe_continues_on_implementer(self):
-        from holophyte.serve_runs import active_routes
+        from holophyte.serve.serve_runs import active_routes
 
         self.routes()
         self.configure(f'[agents]\nimplementer = "{self.fallback}"\n'
@@ -80,7 +81,7 @@ class AgentFallbackTests(SweepTestCase):
             'devin-fallback describe'])
 
     def test_writer_status_tracks_implementer_fallback_and_clears(self):
-        from holophyte.serve_runs import active_routes
+        from holophyte.serve.serve_runs import active_routes
 
         self.routes()
         self.configure(f'[agents]\nimplementer = "{self.primary}"\n'
@@ -108,7 +109,7 @@ class AgentFallbackTests(SweepTestCase):
                          {'command': self.primary})
 
     def test_worker_probes_writer_without_fallback_keys(self):
-        from holophyte import pool
+        from holophyte.loop import pool
 
         subprocess.run(['git', 'init', '-q', str(self.target)], check=True)
         self.routes()
@@ -134,7 +135,7 @@ class AgentFallbackTests(SweepTestCase):
     def test_missing_implementer_image_stops_before_claim(self):
         import subprocess
 
-        from holophyte import isolation
+        from holophyte.isolation import isolation
 
         self.configure('[agents]\nimplementer_isolation = "container"\n'
                        'implementer_image = "missing-implementer:test"\n')
@@ -202,7 +203,7 @@ class AgentFallbackTests(SweepTestCase):
                          "ERROR: You've hit your usage limit")
 
     def test_command_credentials_never_reach_fallback_sinks(self):
-        from holophyte.serve_runs import active_routes
+        from holophyte.serve.serve_runs import active_routes
 
         self.routes()
         secret = 'command-only-credential'
@@ -283,7 +284,7 @@ class AgentFallbackTests(SweepTestCase):
         ).fetchone()[0], 1)
 
     def test_scheduler_readiness_does_not_activate_fallback(self):
-        from holophyte.agent_routes import routes
+        from holophyte.agents.agent_routes import routes
 
         self.routes()
         def scheduled(*_):
@@ -315,8 +316,8 @@ class AgentFallbackTests(SweepTestCase):
         ).fetchone()[0], 0)
 
     def test_review_seats_retry_with_exact_refs_and_goal(self):
-        from holophyte.agent_routes import reset
-        from holophyte.gates import sh
+        from holophyte.agents.agent_routes import reset
+        from holophyte.loop.gates import sh
 
         self.routes(probe_fails=False)
         sh(['git', 'init', '-q', str(self.target)])
@@ -346,7 +347,7 @@ class AgentFallbackTests(SweepTestCase):
         ).fetchone()[0], 2)
 
     def reviewer_repository(self):
-        from holophyte.gates import sh
+        from holophyte.loop.gates import sh
 
         sh(['git', 'init', '-q', str(self.target)])
         sh(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.test',
@@ -449,7 +450,7 @@ class AgentFallbackTests(SweepTestCase):
         self.assert_review_cleanup()
 
     def test_review_cleanup_ignores_inherited_git_repository_variables(self):
-        from holophyte.gates import sh
+        from holophyte.loop.gates import sh
 
         self.reviewer_repository()
         other = self.root / 'other-repository'
@@ -523,7 +524,7 @@ class AgentFallbackTests(SweepTestCase):
     def test_failed_mid_turn_probe_does_not_redispatch_or_log_switch(self):
         self.routes(probe_fails=False, fallback_fails=True)
         run = self.a_run()
-        from holophyte.gates import InfraFailure
+        from holophyte.loop.gates import InfraFailure
         with self.assertRaisesRegex(InfraFailure, 'probe failed'):
             self.start(lambda *_: agents.agent(
                 self.project, 'implement', 'first', self.target,
@@ -542,7 +543,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
              'review_fallback_effort = "high"\n')
 
     def setUp(self):
-        from holophyte.gates import sh
+        from holophyte.loop.gates import sh
 
         super().setUp()
         sh(['git', 'init', '-q', str(self.target)])
@@ -576,7 +577,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
             "SELECT guidance FROM interventions WHERE action='route_fallback'")]
 
     def test_config_accepts_the_pair_and_refuses_half_or_beside_commands(self):
-        from holophyte.config import check_config, review_route
+        from holophyte.config.config import check_config, review_route
 
         self.configure(self.PAIRS)
         check_config(self.project)
@@ -595,7 +596,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
             check_config(self.project)
 
     def test_the_pair_sits_beside_fallback_commands_but_not_a_reviewer(self):
-        from holophyte.config import check_config, review_route
+        from holophyte.config.config import check_config, review_route
 
         pair_and_fallbacks = ('[agents]\nreview_model = "gpt-5.6-sol"\n'
                               'review_effort = "xhigh"\n'
@@ -610,13 +611,13 @@ class ContainerReviewFallbackTests(SweepTestCase):
             check_config(self.project)
 
     def test_an_unset_pair_reviews_on_gpt_6_astra_at_high(self):
-        from holophyte.config import review_route
+        from holophyte.config.config import review_route
 
         self.configure(f'[agents]\nreviewer_fallback = "{sys.executable}"\n')
         self.assertEqual(review_route(self.project), ('gpt-6-astra', 'high'))
 
     def test_startup_switches_to_the_fallback_pair_for_later_turns(self):
-        from holophyte.agent_routes import routes
+        from holophyte.agents.agent_routes import routes
 
         self.configure(self.PAIRS)
         self.addCleanup(reset, self.project)
@@ -639,7 +640,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
                          'codex-sol-high')
 
     def test_boundary_error_mid_run_retries_the_round_on_the_fallback_pair(self):
-        from holophyte.gates import InfraFailure
+        from holophyte.loop.gates import InfraFailure
 
         self.configure(self.PAIRS)
         run = self.a_run()
@@ -688,7 +689,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
         self.assertEqual(self.switches(), [])
 
     def test_without_the_pair_startup_skips_the_reviewer_and_turns_stay_primary(self):
-        from holophyte.gates import InfraFailure
+        from holophyte.loop.gates import InfraFailure
 
         self.configure('[agents]\nreview_model = "gpt-6-astra"\n'
                        'review_effort = "medium"\n')
@@ -707,7 +708,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
 
 class ReviewerFallbackListTests(SweepTestCase):
     def setUp(self):
-        from holophyte.gates import sh
+        from holophyte.loop.gates import sh
 
         super().setUp()
         sh(['git', 'init', '-q', str(self.target)])
@@ -756,8 +757,8 @@ class ReviewerFallbackListTests(SweepTestCase):
             "SELECT guidance FROM interventions WHERE action='route_fallback'")]
 
     def test_a_list_switches_to_its_first_entry_whose_probe_passes(self):
-        from holophyte.agent_routes import routes
-        from holophyte.config import check_config
+        from holophyte.agents.agent_routes import routes
+        from holophyte.config.config import check_config
 
         devin = self.reviewer('devin-review', down=True)
         claude = self.reviewer('claude-review')
@@ -776,7 +777,7 @@ class ReviewerFallbackListTests(SweepTestCase):
         self.assertEqual((switch['seat'], switch['command']), ('reviewer', claude))
 
     def test_a_list_whose_every_probe_fails_ends_as_one_failed_fallback(self):
-        from holophyte.agent_routes import routes
+        from holophyte.agents.agent_routes import routes
 
         first = self.reviewer('devin-review', down=True)
         second = self.reviewer('claude-review', down=True)
@@ -795,8 +796,8 @@ class ReviewerFallbackListTests(SweepTestCase):
                 self.assertEqual(output.count('Quota exhausted'), len(probed))
 
     def test_a_string_still_switches_and_a_malformed_list_is_refused(self):
-        from holophyte.agent_routes import routes
-        from holophyte.config import check_config
+        from holophyte.agents.agent_routes import routes
+        from holophyte.config.config import check_config
 
         devin = self.reviewer('devin-review')
         self.configure_fallback(f'"{devin}"')

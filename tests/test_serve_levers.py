@@ -1,5 +1,5 @@
 """`POST /actions/hold`, `/release-hold`, `/pause` and `/resume`
-(`holophyte.serve_levers`, KO-609): the CLI's levers behind the daemon's
+(`holophyte.serve.serve_levers`, KO-609): the CLI's levers behind the daemon's
 action token, each recording who and why, and `--resume` requiring a note.
 
 Run: python3 -m unittest discover -s tests -p 'test_serve_levers*' -v
@@ -18,10 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
 from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 
-import holophyte.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
-from holophyte.stop import stop_if_requested  # noqa: E402
+from holophyte.loop.stop import stop_if_requested  # noqa: E402
 
 LEVER_ROUTES = ("hold", "release-hold", "pause", "resume")
 
@@ -125,7 +125,7 @@ class LeverTests(ServeTestCase):
         err = io.StringIO()
         with contextlib.redirect_stderr(err), \
                 self.assertRaises(SystemExit) as raised:
-            holophyte.cli.cli([str(self.target), "--resume", "KO-7"])
+            holophyte.cli.cli.cli([str(self.target), "--resume", "KO-7"])
         self.assertNotEqual(raised.exception.code, 0)
         self.assertIn("--note", err.getvalue())
 

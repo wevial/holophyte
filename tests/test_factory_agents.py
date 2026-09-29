@@ -15,13 +15,13 @@ from pathlib import Path
 from unittest.mock import ANY, patch
 
 ROOT = Path(__file__).resolve().parent.parent
-import holophyte.agent_routes  # noqa: E402 - after the sys.path insert above
-import holophyte.agents  # noqa: E402 - after the sys.path insert above
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.agent_routes  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.redact  # noqa: E402 - after the sys.path insert above
-import holophyte.review  # noqa: E402 - after the sys.path insert above
+import holophyte.review.review  # noqa: E402 - after the sys.path insert above
 import review_runner  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 
@@ -37,7 +37,7 @@ def bare_target(case, path):
     path = Path(path)
     holo = Path(tempfile.mkdtemp())
     case.addCleanup(shutil.rmtree, holo, ignore_errors=True)
-    return holophyte.project.Project(
+    return holophyte.config.project.Project(
         path=path, holo_dir=holo, store_path=holo / "store.db",
         config_path=holo / "config.toml",
         worktrees=path.parent / f"{path.name}.worktrees")
@@ -77,7 +77,7 @@ class AgentTurnEventTests(unittest.TestCase):
         return str(path)
 
     def turn(self, role="implement", **kwargs):
-        return holophyte.agents.agent(
+        return holophyte.agents.agents.agent(
             self.target, role, "private prompt --model secret", self.repo,
             base_sha=self.sha, candidate_sha=self.sha,
             conn=self.conn, run_id=self.run, **kwargs)
@@ -135,7 +135,7 @@ class AgentTurnEventTests(unittest.TestCase):
             self.assertGreaterEqual(event["seconds"], 0.05)
         self.assertEqual(len(self.events()), 4)
         for context in ({}, {"conn": self.conn}, {"run_id": self.run}):
-            holophyte.agents.agent(self.target, "implement", "probe", self.repo,
+            holophyte.agents.agents.agent(self.target, "implement", "probe", self.repo,
                                     **context)
         self.assertEqual(len(self.events()), 4)
         failing = self.stub("failed", "raise SystemExit(7)")
@@ -152,8 +152,8 @@ class AgentTurnEventTests(unittest.TestCase):
             with self.subTest(writer_refused=refused):
                 self.configure(implementer=command + " -m implement-model",
                                **({"writer": writer} if refused else {}))
-                holophyte.agents.routes(self.target).writer_failed = refused
-                output, timed_out = holophyte.loop._timed(
+                holophyte.agents.agents.routes(self.target).writer_failed = refused
+                output, timed_out = holophyte.loop.loop._timed(
                     self.target, self.conn, self.run, 60, self.repo, 1,
                     "write the PR", role="write")
                 self.assertEqual(output, "draft written")
@@ -182,9 +182,9 @@ class AgentTurnEventTests(unittest.TestCase):
         fallback = self.stub("fallback", "print('ready')")
         self.configure(implementer=primary,
                        implementer_fallback=fallback + " --model fallback-model")
-        self.addCleanup(holophyte.agents.routes(self.target).close)
-        with patch("holophyte.operator._record_startup_probe"):
-            self.assertTrue(holophyte.agents.startup_routes(
+        self.addCleanup(holophyte.agents.agents.routes(self.target).close)
+        with patch("holophyte.cli.operator._record_startup_probe"):
+            self.assertTrue(holophyte.agents.agents.startup_routes(
                 self.target, SimpleNamespace(team="test")))
         self.assertEqual(self.events(), [])
         self.turn()
@@ -241,7 +241,7 @@ class SeatProbeTests(unittest.TestCase):
                     with self.subTest(role=role, fallback=fallback, script=script):
                         self.configure(seat + ("_fallback" if fallback else ""),
                                        script)
-                        result = holophyte.agents.probe_seat(
+                        result = holophyte.agents.agents.probe_seat(
                             self.project, role, fallback=fallback)
                         self.assertEqual(result.ok, passes, result.describe())
                         self.assertNotIn(self.sha, result.command[-1])
@@ -266,9 +266,13 @@ class SeatProbeTests(unittest.TestCase):
         for role in ("review", "adjudicate"):
             with self.subTest(role=role), patch.object(
                     review_runner, "run_review", side_effect=run_review):
-                self.assertTrue(holophyte.agents.probe_seat(self.project, role).ok)
+                self.assertTrue(
+                    holophyte.agents.agents.probe_seat(self.project, role).ok
+                )
             with patch.object(review_runner, "run_review", return_value="ready"):
-                self.assertFalse(holophyte.agents.probe_seat(self.project, role).ok)
+                self.assertFalse(
+                    holophyte.agents.agents.probe_seat(self.project, role).ok
+                )
 
     def test_implementer_retains_text_only_goal_and_pass_rule(self):
         for fallback in (False, True):
@@ -280,7 +284,7 @@ class SeatProbeTests(unittest.TestCase):
                         "import sys; "
                         "assert sys.argv[-1] == 'Reply with the single word: ready'; "
                         f"print({output!r}); sys.exit({code})")
-                    result = holophyte.agents.probe_seat(
+                    result = holophyte.agents.agents.probe_seat(
                         self.project, "implement", fallback=fallback)
                     self.assertEqual(result.ok, passes, result.describe())
 
@@ -290,11 +294,11 @@ class AgentRouteTests(unittest.TestCase):
         self.worktree = Path("/tmp/holophyte-agent-contract")
         self.project = bare_target(self, self.worktree)
 
-    @patch.object(holophyte.agents, "run_capped")
+    @patch.object(holophyte.agents.agents, "run_capped")
     def test_implementer_uses_claude_opus_at_high_effort(self, run_capped):
         run_capped.return_value = (0, "implemented\n")
 
-        result = holophyte.agents.agent(self.project, "implement",
+        result = holophyte.agents.agents.agent(self.project, "implement",
                                         "make the focused change", self.worktree)
 
         self.assertEqual(result, "implemented")
@@ -306,15 +310,15 @@ class AgentRouteTests(unittest.TestCase):
             self.worktree, 1800,
         )
 
-    @patch.object(holophyte.agents, "run_capped")
+    @patch.object(holophyte.agents.agents, "run_capped")
     def test_implementer_budget_is_the_dispatch_timeout_under_the_hard_cap(
         self, run_capped
     ):
         run_capped.return_value = (0, "")
 
-        holophyte.agents.agent(self.project, "implement", "goal", self.worktree,
+        holophyte.agents.agents.agent(self.project, "implement", "goal", self.worktree,
                                timeout=300)
-        holophyte.agents.agent(self.project, "implement", "goal", self.worktree,
+        holophyte.agents.agents.agent(self.project, "implement", "goal", self.worktree,
                                timeout=7200)
 
         self.assertEqual([c.args[2] for c in run_capped.call_args_list],
@@ -327,7 +331,7 @@ class AgentRouteTests(unittest.TestCase):
         base = "1" * 40
         candidate = "2" * 40
 
-        result = holophyte.agents.agent(
+        result = holophyte.agents.agents.agent(
             self.project, "review",
             "review the candidate",
             self.worktree,
@@ -351,7 +355,7 @@ class AgentRouteTests(unittest.TestCase):
             carry=[],
             on_start=ANY,
         )
-        self.assertEqual(holophyte.agents.agent_route(self.project, "review"),
+        self.assertEqual(holophyte.agents.agents.agent_route(self.project, "review"),
                          "codex-astra-high")
 
     @patch.object(review_runner, "run_review")
@@ -362,17 +366,19 @@ class AgentRouteTests(unittest.TestCase):
             '[agents]\nreview_model = "gpt-6-astra"\nreview_effort = "medium"\n')
         run_review.return_value = "VERDICT: APPROVE"
 
-        holophyte.agents.agent(self.project, "review", "review the candidate",
+        holophyte.agents.agents.agent(self.project, "review", "review the candidate",
                                self.worktree, base_sha="1" * 40,
                                candidate_sha="2" * 40)
 
         kwargs = run_review.call_args.kwargs
         self.assertEqual((kwargs["model"], kwargs["effort"], kwargs["profile"]),
                          ("gpt-6-astra", "medium", "codex-astra-medium"))
-        self.assertEqual(holophyte.agents.agent_route(self.project, "review"),
+        self.assertEqual(holophyte.agents.agents.agent_route(self.project, "review"),
                          "codex-astra-medium")
-        self.assertEqual(holophyte.agents.agent_route(self.project, "adjudicate"),
-                         "codex-astra-medium")
+        self.assertEqual(
+            holophyte.agents.agents.agent_route(self.project, "adjudicate"),
+            "codex-astra-medium",
+        )
 
     def test_a_short_argument_does_not_redact_the_reviewer_model_name(self):
         # KO-603: `high` is an implementer argument; the container route's
@@ -381,8 +387,10 @@ class AgentRouteTests(unittest.TestCase):
             '[agents]\nimplementer = "claude-implement --model opus --effort high"\n'
             'review_model = "gpt-6-astra"\nreview_effort = "high"\n')
 
-        self.assertEqual(holophyte.agents.agent_route(self.project, "adjudicate"),
-                         "codex-astra-high")
+        self.assertEqual(
+            holophyte.agents.agents.agent_route(self.project, "adjudicate"),
+            "codex-astra-high",
+        )
 
     def test_a_credential_inside_the_executable_path_is_still_redacted(self):
         self.project.config_path.write_text(
@@ -390,7 +398,7 @@ class AgentRouteTests(unittest.TestCase):
             '[agents]\nimplementer = "/opt/lin-cred-7f3a/bin/claude -p"\n')
 
         self.assertEqual(
-            holophyte.agent_routes.safe_command(
+            holophyte.agents.agent_routes.safe_command(
                 self.project, "/opt/lin-cred-7f3a/bin/claude -p"),
             f"/opt/{holophyte.redact.REDACTED}/bin/claude")
 
@@ -400,8 +408,11 @@ class AgentRouteTests(unittest.TestCase):
             'reviewer = "ghost-agent --check"\n')
 
         self.assertEqual(
-            holophyte.agent_routes.safe_command(self.project, "ghost-agent --check"),
-            holophyte.redact.REDACTED)
+            holophyte.agents.agent_routes.safe_command(
+                self.project, "ghost-agent --check"
+            ),
+            holophyte.redact.REDACTED,
+        )
 
     def test_an_argument_named_executable_holding_a_credential_is_whole(self):
         # The exact-argument check reads the name before credential
@@ -411,7 +422,7 @@ class AgentRouteTests(unittest.TestCase):
             '[agents]\nimplementer = "runner --as private-example-credential-agent"\n')
 
         self.assertEqual(
-            holophyte.agent_routes.safe_command(
+            holophyte.agents.agent_routes.safe_command(
                 self.project, "private-example-credential-agent --check"),
             holophyte.redact.REDACTED)
 
@@ -423,10 +434,15 @@ class AgentRouteTests(unittest.TestCase):
         run_review.side_effect = review_runner.ReviewBoundaryError(
             "Codex CLI is not installed")
 
-        with self.assertRaises(holophyte.gates.InfraFailure) as raised:
-            holophyte.agents.agent(self.project, "review", "review the candidate",
-                                   self.worktree, base_sha="1" * 40,
-                                   candidate_sha="2" * 40)
+        with self.assertRaises(holophyte.loop.gates.InfraFailure) as raised:
+            holophyte.agents.agents.agent(
+                self.project,
+                "review",
+                "review the candidate",
+                self.worktree,
+                base_sha="1" * 40,
+                candidate_sha="2" * 40,
+            )
 
         self.assertIn("Codex CLI is not installed", str(raised.exception))
 
@@ -438,7 +454,7 @@ class AgentRouteTests(unittest.TestCase):
         # record it and read it as FAIL, not raise at the review boundary.
         run_review.return_value = "no verdict here"
 
-        result = holophyte.agents.agent(
+        result = holophyte.agents.agents.agent(
             self.project, "adjudicate",
             "adjudicate the candidate",
             self.worktree,
@@ -496,7 +512,7 @@ class ImplementerProcessGroupTests(unittest.TestCase):
             target.config_path.write_text(
                 "[agents]\nimplementer = %s\n" % json.dumps(shlex.join(argv)))
             with self.assertRaises(subprocess.TimeoutExpired) as raised:
-                holophyte.agents.agent(target, "implement", "spawn and stall",
+                holophyte.agents.agents.agent(target, "implement", "spawn and stall",
                                        Path(cwd), timeout=1)
 
         # Partial output survives the kill and names the two processes.
@@ -559,7 +575,7 @@ class ReviewLoopTests(unittest.TestCase):
         self.worktrees = root / "repo.worktrees"
         self.branch = "task/ko-116-add-a-thing"
         self.wt = self.worktrees / "ko-116-add-a-thing"
-        self.project = holophyte.project.Project(
+        self.project = holophyte.config.project.Project(
             path=self.target, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=self.worktrees)
         self.linear = FakeLinear()
@@ -570,15 +586,15 @@ class ReviewLoopTests(unittest.TestCase):
         self.events = []
         self.goals = []
         # One "verify" per gate run: `run_verify` resolves `run_capped`, its
-        # one subprocess call, in `holophyte.gates`, and `agent()` is faked
+        # one subprocess call, in `holophyte.loop.gates`, and `agent()` is faked
         # below, so nothing else in a run reaches it.
-        real_capped = holophyte.gates.run_capped
+        real_capped = holophyte.loop.gates.run_capped
 
         def spy(*args, **kwargs):
             self.events.append("verify")
             return real_capped(*args, **kwargs)
 
-        patcher = patch.object(holophyte.gates, "run_capped", spy)
+        patcher = patch.object(holophyte.loop.gates, "run_capped", spy)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -607,14 +623,14 @@ class ReviewLoopTests(unittest.TestCase):
             self.git("commit", "-q", "-m", f"work {n}", cwd=cwd)
             return f"committed work {n}"
 
-        with patch.object(holophyte.loop, "agent", fake_agent):
+        with patch.object(holophyte.loop.loop, "agent", fake_agent):
             try:
-                return holophyte.loop.run_task(self.project, {
+                return holophyte.loop.loop.run_task(self.project, {
                     "id": "KO-116", "title": "add a thing",
                     "verify": "echo ok", "budget_min": budget_min,
                     "contracts": [], **task,
                 }, provider=self.linear)
-            except holophyte.gates.RunFailure:
+            except holophyte.loop.gates.RunFailure:
                 # run_task's failure exits raise so their reasons reach the
                 # close-out; a direct call answers False the way main() does.
                 return False
@@ -733,7 +749,7 @@ class ReviewLoopTests(unittest.TestCase):
     def test_close_out_records_actual_duration_estimate_and_rounds(self):
         # Claim at t=100 s, close-out 42.7 s later: 0.711 min, reported to one
         # decimal, against a 20 min estimate and a single review round.
-        with patch.object(holophyte.loop, "monotonic", side_effect=[100.0, 142.7]):
+        with patch.object(holophyte.loop.loop, "monotonic", side_effect=[100.0, 142.7]):
             merged = self.run_task("VERDICT: APPROVE", budget_min=20)
 
         self.assertTrue(merged)
@@ -777,7 +793,7 @@ class RowWriteSanitizationTests(unittest.TestCase):
     `parse_findings()` builds its messages through the same one."""
 
     def stored(self, entry):
-        return holophyte.review.raw_finding(entry)["message"]
+        return holophyte.review.review.raw_finding(entry)["message"]
 
     def test_ansi_escapes_and_control_bytes_are_stripped(self):
         # A coloured tool trace of the shape that reached the KO-107 entry.
@@ -811,7 +827,7 @@ class RowWriteSanitizationTests(unittest.TestCase):
         self.assertIn("[… truncated]", written)
         self.assertIn("line 0 ", written)
         self.assertNotIn("line 199 ", written)
-        self.assertLessEqual(len(written), holophyte.review.MAX_FINDING_CHARS)
+        self.assertLessEqual(len(written), holophyte.review.review.MAX_FINDING_CHARS)
 
     def test_c1_escape_sequences_are_stripped_with_their_payload(self):
         # A CSI introduced by the single C1 byte, not by ESC-[: dropping only
@@ -852,7 +868,7 @@ class RowWriteSanitizationTests(unittest.TestCase):
 
         body = self.stored(entry)
 
-        self.assertLessEqual(len(body), holophyte.review.MAX_FINDING_CHARS)
+        self.assertLessEqual(len(body), holophyte.review.review.MAX_FINDING_CHARS)
 
     def test_an_oversize_verdict_line_cannot_escape_the_budget(self):
         # A malformed adjudicator reply is persisted verbatim, so the trailing
@@ -862,7 +878,7 @@ class RowWriteSanitizationTests(unittest.TestCase):
 
         body = self.stored(entry)
 
-        self.assertLessEqual(len(body), holophyte.review.MAX_FINDING_CHARS)
+        self.assertLessEqual(len(body), holophyte.review.review.MAX_FINDING_CHARS)
         self.assertIn("[… truncated]", body)
         self.assertNotIn("line 199 ", body)
         # The verdict is still recorded, cut rather than dropped.

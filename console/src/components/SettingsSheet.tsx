@@ -30,7 +30,7 @@ export type Field = { table: string; key: string; label: string } & FieldKind;
 
 /** The keys the sheet binds, in the order they are drawn; every other
  *  key stays editable in the raw tab. The option lists are the loader's
- *  (`holophyte/config.py`: `REVIEW_EFFORTS`, `MERGE_METHODS`, the
+ *  (`holophyte/config/config.py`: `REVIEW_EFFORTS`, `MERGE_METHODS`, the
  *  `[merge] mode` and `approve` pairs of `docs/config.md`). */
 export const FIELDS: readonly Field[] = [
   { table: "agents", key: "implementer", label: "Implementer command", kind: "text" },

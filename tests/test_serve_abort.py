@@ -1,4 +1,4 @@
-"""`POST /actions/abort` (`holophyte.serve_levers`, KO-612): the CLI's
+"""`POST /actions/abort` (`holophyte.serve.serve_levers`, KO-612): the CLI's
 `--abort` behind the daemon's action token, recording who and why, with
 `close` choosing whether the pull request is closed too.
 
@@ -17,10 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
 from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 
-import holophyte.serve_levers  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.serve_levers  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
-from holophyte.stop import abort_run  # noqa: E402
+from holophyte.loop.stop import abort_run  # noqa: E402
 
 BOARD = '[board]\nteam = "team-1"\nproject_id = "project-1"\n'
 
@@ -55,7 +55,7 @@ class AbortRouteTests(ServeTestCase):
             conn.close()
 
     def test_abort_and_close_records_abort_close_with_the_reason(self):
-        with patch.object(holophyte.serve_levers, "abort_run",
+        with patch.object(holophyte.serve.serve_levers, "abort_run",
                           wraps=abort_run) as called:
             code, _, body = self.post(run=self.run, note="wrong approach",
                                       author="ko", close=True)

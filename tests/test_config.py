@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402
 
-from holophyte.config import check_config  # noqa: E402
+from holophyte.config.config import check_config  # noqa: E402
 
 
 class FallbackConfigTests(ConfigTestCase):

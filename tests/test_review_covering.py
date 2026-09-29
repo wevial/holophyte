@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from holophyte import review
+from holophyte.review import review
 
 
 class CoveringPromptTests(unittest.TestCase):
@@ -201,7 +201,8 @@ class CoveringScopeQuestionTests(unittest.TestCase):
         return self.git("rev-parse", "HEAD")
 
     def test_scope_section_lists_unnamed_files_of_covered_range_only(self):
-        from holophyte import babysitter, loop
+        from holophyte.babysit import babysitter
+        from holophyte.loop import loop
 
         class Captured(Exception):
             pass

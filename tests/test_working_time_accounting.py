@@ -6,17 +6,11 @@ from unittest.mock import patch
 
 import store
 import store.read
-from holophyte import (
-    agents,
-    babysitter,
-    claim,
-    gates,
-    loop,
-    merge_gate,
-    pr,
-    pullrequest,
-    supervisor,
-)
+from holophyte.agents import agents
+from holophyte.babysit import babysitter
+from holophyte.host import supervisor
+from holophyte.loop import claim, gates, loop, merge_gate
+from holophyte.pr import pr, pullrequest
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase, no_network
 
 
@@ -84,7 +78,7 @@ class WorkingTimeTests(SweepTestCase):
                 patch.object(agents, 'check_review_refs'), \
                 patch.object(agents, 'review_scratch',
                              lambda _: nullcontext(self.target)), \
-                patch('holophyte.runs.heartbeat_while',
+                patch('holophyte.loop.runs.heartbeat_while',
                       lambda *a, **k: nullcontext()), \
                 patch.object(loop, 'heartbeat_while', lambda *a, **k: nullcontext()):
             for failure in (None, subprocess.TimeoutExpired('script', 1),
@@ -246,7 +240,7 @@ class WorkingTimeTests(SweepTestCase):
                 if hasattr(module, 'heartbeat_while'):
                     stack.enter_context(patch.object(
                         module, 'heartbeat_while', lambda *a, **k: nullcontext()))
-            stack.enter_context(patch('holophyte.runs.heartbeat_while',
+            stack.enter_context(patch('holophyte.loop.runs.heartbeat_while',
                                      lambda *a, **k: nullcontext()))
             for module, name, result in (
                     (loop, '_check_run_cap', None),

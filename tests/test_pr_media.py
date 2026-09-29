@@ -16,8 +16,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import review_runner
-from holophyte import pr_media, pullrequest
-from holophyte.gates import InfraFailure
+from holophyte.loop.gates import InfraFailure
+from holophyte.pr import pr_media, pullrequest
 from tests.test_media_store import CREDS, receiver
 
 PNG = base64.b64decode(
@@ -105,16 +105,16 @@ class MediaTests(unittest.TestCase):
     def open(self, private=False, error=None, ticket=""):
         with (
             patch(
-                "holophyte.loop._timed",
+                "holophyte.loop.loop._timed",
                 return_value=("TITLE: A screen\nDescription.", False),
             ),
-            patch("holophyte.pr_media.repo_is_private", return_value=private,
+            patch("holophyte.pr.pr_media.repo_is_private", return_value=private,
                   side_effect=error) as visibility,
-            patch("holophyte.pullrequest.ledger") as ledger,
-            patch("holophyte.pr.open_pull_request", return_value=None),
-            patch("holophyte.pr.create_pull_request", return_value="url") as create,
+            patch("holophyte.pr.pullrequest.ledger") as ledger,
+            patch("holophyte.pr.pr.open_pull_request", return_value=None),
+            patch("holophyte.pr.pr.create_pull_request", return_value="url") as create,
             patch(
-                "holophyte.pr.origin_url",
+                "holophyte.pr.pr.origin_url",
                 return_value="https://github.com/example/repo.git",
             ),
         ):
@@ -148,8 +148,8 @@ class MediaTests(unittest.TestCase):
     def test_isolated_capture_publishes_from_worktree(self):
         import shlex
 
-        from holophyte import isolation
-        from holophyte.project import state_dir
+        from holophyte.config.project import state_dir
+        from holophyte.isolation import isolation
         self.config['agents'] = {'implementer_isolation': 'container'}
         capture_source = self.root / 'capture.env'
         capture_source.write_text('CAPTURE_KEY=sentinel-capture\nOTHER=sentinel-other\n')
@@ -203,7 +203,7 @@ class MediaTests(unittest.TestCase):
               patch.object(isolation.review_runner, '_remove_container'),
               patch.object(isolation, 'run_capped', side_effect=capture) as run,
               patch.dict(os.environ, MEDIA_SECRET='host-only'),
-              patch('holophyte.pr.origin_url',
+              patch('holophyte.pr.pr.origin_url',
                     return_value='https://github.com/example/repo.git'),
               patch.object(pr_media, 'repo_is_private', return_value=False)):
             section = pr_media.prepare(self.target, self.repo, 'KO-530',
@@ -217,7 +217,7 @@ class MediaTests(unittest.TestCase):
         self.assertFalse(list(self.repo.glob('.holophyte-capture-*')))
 
     def test_readonly_capture_is_rejected_at_startup(self):
-        from holophyte.config import check_config
+        from holophyte.config.config import check_config
 
         self.config['agents'] = {
             'implementer_isolation': {'backend': 'container', 'writable': False}}
@@ -317,7 +317,7 @@ class MediaTests(unittest.TestCase):
         self.assertEqual(error, '')
 
     def test_ticket_states_reach_capture_and_review(self):
-        from holophyte.review import evidence_brief
+        from holophyte.review.review import evidence_brief
 
         self.config["merge"]["mode"] = "pr"
         states = ["Guest rename dialog open", "Guest renamed"]
@@ -327,8 +327,8 @@ class MediaTests(unittest.TestCase):
                        f'{chr(10).join(states)!r}\n'
                        f'Path(sys.argv[1], "01-first.png").write_bytes({PNG!r})\n')
         with (
-            patch("holophyte.pr_media.repo_is_private", return_value=False),
-            patch("holophyte.pr.origin_url",
+            patch("holophyte.pr.pr_media.repo_is_private", return_value=False),
+            patch("holophyte.pr.pr.origin_url",
                   return_value="https://github.com/example/repo.git"),
         ):
             section = pr_media.prepare(self.target, self.repo, "KO-522",
@@ -342,7 +342,7 @@ class MediaTests(unittest.TestCase):
             self.assertIn(line, prompt)
 
     def test_capture_brief_names_directory_and_flow_requirement(self):
-        from holophyte.loop import _capture_brief
+        from holophyte.loop.loop import _capture_brief
 
         body = "## Evidence\n\nDialog open\nName saved\n"
         brief = _capture_brief(self.target, body, "KO-7")
@@ -373,8 +373,8 @@ class MediaTests(unittest.TestCase):
             self.config["merge"]["media_bucket"] = {
                 "endpoint": endpoint, "bucket": "evidence",
                 "public_base": "https://media.example.invalid", "retention_days": 30}
-            with patch("holophyte.pr_media._push") as push, patch(
-                    "holophyte.pr_media._push_repo") as push_repo:
+            with patch("holophyte.pr.pr_media._push") as push, patch(
+                    "holophyte.pr.pr_media._push_repo") as push_repo:
                 body = self.open()
             push.assert_not_called()
             push_repo.assert_not_called()
@@ -408,7 +408,7 @@ class MediaTests(unittest.TestCase):
             keys.append(key)
             return f"https://media.example.invalid/{key}"
 
-        with patch("holophyte.pr_media.media_store.upload", side_effect=upload):
+        with patch("holophyte.pr.pr_media.media_store.upload", side_effect=upload):
             body = self.open()
         self.assertEqual(len(keys), 2)
         first, second = (key.rsplit("/", 1)[0] for key in keys)
@@ -421,7 +421,7 @@ class MediaTests(unittest.TestCase):
         self.assertNotIn("expires", body)
 
     def test_missing_bucket_credentials_reach_evidence_and_review_without_http(self):
-        from holophyte.review import evidence_brief
+        from holophyte.review.review import evidence_brief
 
         states = ["Rename dialog open", "Name saved"]
         ticket = "## Evidence\n\n" + "\n".join(states)
@@ -471,7 +471,7 @@ class MediaTests(unittest.TestCase):
         self.candidate()
         self.assertIn("![screen.png]", self.open())
         self.config["merge"]["media_max_total_mb"] = 0.000001
-        with patch("holophyte.pr_media._push") as push:
+        with patch("holophyte.pr.pr_media._push") as push:
             body = self.open()
         push.assert_not_called()
         self.assertIn("Dropped `screen.png`: exceeds media_max_total_mb", body)
@@ -519,8 +519,10 @@ class MediaTests(unittest.TestCase):
             f'[url "{remote}"]\n'
             ' insteadOf = https://github.com/example/media.git\n')
         self.enterContext(patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(config)}))
-        self.enterContext(patch("holophyte.pr_media.shutil.which", return_value=None))
-        self.enterContext(patch("holophyte.pr.token_from_env",
+        self.enterContext(
+            patch("holophyte.pr.pr_media.shutil.which", return_value=None)
+        )
+        self.enterContext(patch("holophyte.pr.pr.token_from_env",
                                 return_value="test-token"))
         self.config["merge"]["media_repo"] = "example/media"
         return remote
@@ -570,7 +572,7 @@ class MediaTests(unittest.TestCase):
                     run(["git", "push", "-q"], cwd=other, check=True)
             return run(args, **kwargs)
 
-        with patch("holophyte.pr_media.subprocess.run", side_effect=race):
+        with patch("holophyte.pr.pr_media.subprocess.run", side_effect=race):
             body = self.open()
         self.assertEqual(len(pushes), 2)
         self.assertIn("example/media/evidence/KO-505/screen.png", body)
@@ -602,9 +604,9 @@ class MediaTests(unittest.TestCase):
         self.candidate(script="import sys\nfrom pathlib import Path\n"
                        'Path(sys.argv[1], "first.png").write_bytes(b"png")\n'
                        'Path(sys.argv[1], "second screen.png").write_bytes(b"png")\n')
-        with patch("holophyte.pr.origin_url",
+        with patch("holophyte.pr.pr.origin_url",
                    return_value="https://github.com/example/repo.git"), patch(
-                       "holophyte.pr_media.repo_is_private",
+                       "holophyte.pr.pr_media.repo_is_private",
                        return_value=True) as visibility:
             pr_media.prepare(self.target, self.repo, "KO-505")
         body = self.open(private=True)
@@ -658,7 +660,7 @@ class MediaTests(unittest.TestCase):
                          f"Captured at {self.git('rev-parse', 'HEAD')[:12]}")
 
     def test_non_ui_and_unconfigured_do_not_capture(self):
-        self.candidate("holophyte/loop.py")
+        self.candidate("holophyte/loop/loop.py")
         self.assertNotIn("## Evidence", self.open())
         self.assertFalse((self.repo / "captured").exists())
         self.candidate()
@@ -704,7 +706,7 @@ class MediaTests(unittest.TestCase):
 
     def test_timeout_opens_with_missing_evidence(self):
         self.candidate(script="import time; time.sleep(30)")
-        with patch("holophyte.pr_media.CAPTURE_TIMEOUT", 0.05):
+        with patch("holophyte.pr.pr_media.CAPTURE_TIMEOUT", 0.05):
             self.assertIn("timed out", self.open())
 
     def test_timed_out_capture_runs_its_term_handler(self):
@@ -713,7 +715,7 @@ class MediaTests(unittest.TestCase):
         (self.repo / "capture.sh").write_text(
             f"trap 'touch {marker}; exit 0' TERM\nsleep 30 & wait\n")
         self.config["merge"]["ui_capture"] = "sh capture.sh"
-        with patch("holophyte.pr_media.CAPTURE_TIMEOUT", 0.5):
+        with patch("holophyte.pr.pr_media.CAPTURE_TIMEOUT", 0.5):
             body = self.open()
         self.assertTrue(marker.exists())
         self.assertIn("Capture command `sh capture.sh` failed: timed out", body)
@@ -723,8 +725,8 @@ class MediaTests(unittest.TestCase):
         (self.repo / "capture.sh").write_text("trap '' TERM\nsleep 30\n")
         self.config["merge"]["ui_capture"] = "sh capture.sh"
         started = monotonic()
-        with (patch("holophyte.pr_media.CAPTURE_TIMEOUT", 0.5),
-              patch("holophyte.pr_media.CAPTURE_GRACE", 0.5)):
+        with (patch("holophyte.pr.pr_media.CAPTURE_TIMEOUT", 0.5),
+              patch("holophyte.pr.pr_media.CAPTURE_GRACE", 0.5)):
             body = self.open()
         self.assertLess(monotonic() - started, 15)
         self.assertIn("Capture command `sh capture.sh` failed: timed out", body)
@@ -764,7 +766,7 @@ class MediaTests(unittest.TestCase):
     def test_exited_capture_kills_a_child_ignoring_term_after_the_grace(self):
         pidfile = self.leave_child("trap '' TERM")
         started = monotonic()
-        with patch("holophyte.pr_media.CAPTURE_GRACE", 0.5):
+        with patch("holophyte.pr.pr_media.CAPTURE_GRACE", 0.5):
             error = pr_media._capture("sh capture.sh", self.repo, self.root,
                                       "KO-16", [])
         pid, start = self.child_pid(pidfile)
@@ -787,7 +789,7 @@ class MediaTests(unittest.TestCase):
 
     def prepare(self):
         notes = []
-        with (patch("holophyte.pr.origin_url",
+        with (patch("holophyte.pr.pr.origin_url",
                     return_value="https://github.com/example/repo.git"),
               patch.object(pr_media, "repo_is_private", return_value=False)):
             section = pr_media.prepare(self.target, self.repo, "KO-623",
@@ -817,7 +819,7 @@ class MediaTests(unittest.TestCase):
             self.assertIn("token [redacted] refused", text)
 
     def test_failed_container_capture_shows_what_launch_returned(self):
-        from holophyte import isolation
+        from holophyte.isolation import isolation
         self.config["agents"] = {"implementer_isolation": "container"}
         self.candidate()
         worktree = self.root / "task"
@@ -870,10 +872,10 @@ class MediaTests(unittest.TestCase):
         self.assertNotIn("rendering", section)
 
     def test_visibility_transport_and_invalid_answers(self):
-        with patch("holophyte.pr.origin_url",
+        with patch("holophyte.pr.pr.origin_url",
                    return_value="https://github.com/example/repo.git"), patch(
-                       "holophyte.pr_media.shutil.which", return_value="gh"), patch(
-                       "holophyte.pr_media.subprocess.run") as run:
+                       "holophyte.pr.pr_media.shutil.which", return_value="gh"), patch(
+                       "holophyte.pr.pr_media.subprocess.run") as run:
             run.return_value = SimpleNamespace(
                 returncode=0, stdout='{"isPrivate":true}')
             self.assertTrue(pr_media.repo_is_private(self.target))
@@ -885,10 +887,10 @@ class MediaTests(unittest.TestCase):
             run.return_value.stdout = '{}'
             with self.assertRaises(ValueError):
                 pr_media.repo_is_private(self.target)
-        with patch("holophyte.pr.origin_url",
+        with patch("holophyte.pr.pr.origin_url",
                    return_value="https://github.com/example/repo.git"), patch(
-                       "holophyte.pr_media.shutil.which", return_value=None), patch(
-                       "holophyte.pr.rest", return_value={"private": True}) as rest:
+                       "holophyte.pr.pr_media.shutil.which", return_value=None), patch(
+                       "holophyte.pr.pr.rest", return_value={"private": True}) as rest:
             self.assertTrue(pr_media.repo_is_private(self.target))
             self.assertEqual(rest.call_args.args[2:], ("GET", "repos/example/repo"))
             rest.return_value = {"private": False}
@@ -898,7 +900,7 @@ class MediaTests(unittest.TestCase):
                 pr_media.repo_is_private(self.target)
 
     def test_invalid_ui_configuration(self):
-        from holophyte.config_tables import merge_config
+        from holophyte.config.config_tables import merge_config
 
         for config in (
             {"ui_paths": ["console/**"]},
@@ -914,7 +916,7 @@ class MediaTests(unittest.TestCase):
                 merge_config(self.target)
 
     def test_local_capture_key_refuses_non_boolean_and_escaping_directory(self):
-        from holophyte.config_tables import merge_config
+        from holophyte.config.config_tables import merge_config
 
         for config in (
             {"ui_capture_local": "yes"},

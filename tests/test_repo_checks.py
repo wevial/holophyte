@@ -11,8 +11,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.project  # noqa: E402 - after the sys.path insert above
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import APPROVE, Commit  # noqa: E402
 from tests.loop_fixture import LoopFixture  # noqa: E402
 
@@ -46,13 +46,13 @@ class FileSizesBaselineTests(unittest.TestCase):
         git(self.repo, "commit", "-q", "-m", "checkout")
         self.enterContext(patch.dict(
             os.environ, HOLOPHYTE_HOME=str(Path(tmp.name) / "home")))
-        state = holophyte.project.state_dir(self.repo)
+        state = holophyte.config.project.state_dir(self.repo)
         state.mkdir(parents=True)
         (state / "config.toml").write_text(f"[verify]\nalways = [{SIZES!r}]\n")
-        self.project = holophyte.project.Project.locate(self.repo)
+        self.project = holophyte.config.project.Project.locate(self.repo)
 
     def baseline(self):
-        return holophyte.gates.with_baseline(self.project, self.repo, "",
+        return holophyte.loop.gates.with_baseline(self.project, self.repo, "",
                                              True, "")
 
     def test_the_temporary_repository_turns_off_automatic_maintenance(self):
@@ -65,7 +65,7 @@ class FileSizesBaselineTests(unittest.TestCase):
         self.assertTrue(ok, str(out)[-2000:])
         self.assertNotIn("failed: test_file_sizes.py", str(out))
 
-        grown = self.repo / "holophyte" / "reexec.py"
+        grown = self.repo / "holophyte" / "loop" / "reexec.py"
         grown.write_text(grown.read_text() + "\n" * 1000)
         git(self.repo, "commit", "-q", "-am", "grow a file past its ceiling")
         ok, out = self.baseline()

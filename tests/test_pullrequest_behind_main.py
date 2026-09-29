@@ -14,11 +14,11 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import holophyte.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.merge_queue  # noqa: E402 - after the sys.path insert above
-import holophyte.pr  # noqa: E402 - after the sys.path insert above
-import holophyte.pr_status  # noqa: E402 - after the sys.path insert above
-import holophyte.pullrequest  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.merge_queue  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
 
 BRANCH = "task/ko-1-behind-main"
 URL = "https://github.com/example/repo/pull/7"
@@ -62,18 +62,18 @@ class BehindMainMergeTests(unittest.TestCase):
         project = SimpleNamespace(
             path=self.wt, config_path=self.root / "config.toml",
             config=lambda: {"merge": merge_table})
-        pull = holophyte.pr_status.parse_pr_url(URL)
+        pull = holophyte.pr.pr_status.parse_pr_url(URL)
 
         def merge_pull_request(project, pull, pinned):
             self.merged.append(pinned)
             return MERGE_SHA
 
-        with patch.object(holophyte.merge_queue, "merge_queue_required",
+        with patch.object(holophyte.pr.merge_queue, "merge_queue_required",
                           return_value=False), \
-                patch.object(holophyte.pr, "merge_pull_request",
+                patch.object(holophyte.pr.pr, "merge_pull_request",
                              merge_pull_request), \
                 patch("sys.stdout", io.StringIO()):
-            return holophyte.pullrequest._merge_pr(
+            return holophyte.pr.pullrequest._merge_pr(
                 project, None, None, None, "KO-1", BRANCH, self.wt, self.sha,
                 1, pull)
 
@@ -83,7 +83,7 @@ class BehindMainMergeTests(unittest.TestCase):
         self.assertEqual(merge_sha, MERGE_SHA)
 
     def test_absent_key_parks_a_candidate_behind_main_unmerged(self):
-        with self.assertRaises(holophyte.gates.MergeParked) as parked:
+        with self.assertRaises(holophyte.loop.gates.MergeParked) as parked:
             self.merge({})
         self.assertIn("is behind main", str(parked.exception))
         self.assertEqual(self.merged, [])

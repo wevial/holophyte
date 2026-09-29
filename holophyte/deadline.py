@@ -1,6 +1,6 @@
 """holophyte.deadline: the bound the host sweep puts on its network calls.
 
-A host sweep run (`holophyte.sweep_host`) reconciles every project under
+A host sweep run (`holophyte.host.sweep_host`) reconciles every project under
 one deadline, a share of it per project, and no timeout can cut a Linear
 read already in flight. So the run asks before each network call instead,
 in two ways that differ in what a cut leaves behind.

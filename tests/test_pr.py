@@ -9,10 +9,11 @@ from time import monotonic
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import holophyte.loop
-import holophyte.pullrequest
-from holophyte import deadline, pr
-from holophyte.gates import InfraFailure
+import holophyte.loop.loop
+import holophyte.pr.pullrequest
+from holophyte import deadline
+from holophyte.loop.gates import InfraFailure
+from holophyte.pr import pr
 
 
 class MergePayloadTests(unittest.TestCase):
@@ -136,11 +137,15 @@ class PrBodyStubTests(unittest.TestCase):
         for reply, timed_out, reason in (
                 ("TITLE: A title\n\nPartial text", True, "ran out of time"),
                 ("TITLE: A title\n", False, "empty body")):
-            with self.subTest(timed_out=timed_out), patch(
-                    "holophyte.pullrequest.sh", return_value=""), patch(
-                    "holophyte.babysitter.conventions", return_value=[]), patch.object(
-                    holophyte.loop, "_timed", return_value=(reply, timed_out)):
-                title, body = holophyte.pullrequest._written_pr_text(
+            with (
+                self.subTest(timed_out=timed_out),
+                patch("holophyte.pr.pullrequest.sh", return_value=""),
+                patch("holophyte.babysit.babysitter.conventions", return_value=[]),
+                patch.object(
+                    holophyte.loop.loop, "_timed", return_value=(reply, timed_out)
+                ),
+            ):
+                title, body = holophyte.pr.pullrequest._written_pr_text(
                     target, None, None, "KO-131", "add a thing", "task/ko-131",
                     "## Summary\nThe thing, added.", 60, Path("/unused"),
                     monotonic(), 5, None)
@@ -155,7 +160,7 @@ class PrBodyStubTests(unittest.TestCase):
 
 class RequiredStatusContextTests(unittest.TestCase):
     def read_status(self, status, more=False):
-        from holophyte import pr_status
+        from holophyte.pr import pr_status
         pull = pr.PullRequest("github.com", "example", "repo", 7,
                               "https://github.com/example/repo/pull/7")
         run = {"name": "vitest", "status": "completed", "conclusion": "success"}
@@ -198,7 +203,7 @@ class RequiredStatusContextTests(unittest.TestCase):
                                      ["vitest", "Vercel"])
 
     def test_pending_status_is_named_in_parked_reason(self):
-        from holophyte import babysitter
+        from holophyte.babysit import babysitter
         state, runs, pull = self.read_status("PENDING")
         self.assertIn({"name": "Vercel", "status": "pending",
                        "conclusion": "pending"}, runs)
@@ -216,8 +221,8 @@ class RequiredStatusContextTests(unittest.TestCase):
     def test_status_context_pagination_rejects_repeated_cursor(self):
         from unittest.mock import Mock
 
-        from holophyte.gates import InfraFailure
-        from holophyte.pr_contexts import status_contexts_of
+        from holophyte.loop.gates import InfraFailure
+        from holophyte.pr.pr_contexts import status_contexts_of
 
         rollup = {"contexts": {"nodes": [], "pageInfo": {
             "hasNextPage": True, "endCursor": "same-cursor"}}}
@@ -240,7 +245,7 @@ class PlanGatedRulesTests(unittest.TestCase):
             " repository public to enable this feature. (HTTP 403)")
 
     def read_checks(self, runs, refusal=PLAN):
-        from holophyte import pr_status
+        from holophyte.pr import pr_status
         pull = pr.PullRequest("github.com", "example", "repo", 7,
                               "https://github.com/example/repo/pull/7")
         node = {"headRefOid": "head", "commits": {"nodes": [

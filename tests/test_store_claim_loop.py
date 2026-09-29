@@ -22,12 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit  # noqa: E402
 from loop_fixture import INVALID_BODY, VALID_BODY, LoopFixture  # noqa: E402
 
-from holophyte.board import mirror_task  # noqa: E402
-from holophyte.claim import _admit_ticket  # noqa: E402
-from holophyte.claim_store import task_of  # noqa: E402
-from holophyte.freshness import park_stale  # noqa: E402
-from holophyte.pool import NOTHING_SEEN  # noqa: E402
-from holophyte.runs import open_store  # noqa: E402
+from holophyte.board.board import mirror_task  # noqa: E402
+from holophyte.loop.claim import _admit_ticket  # noqa: E402
+from holophyte.loop.claim_store import task_of  # noqa: E402
+from holophyte.loop.pool import NOTHING_SEEN  # noqa: E402
+from holophyte.loop.runs import open_store  # noqa: E402
+from holophyte.review.freshness import park_stale  # noqa: E402
 from provider import FileProvider  # noqa: E402
 from store.read import claimable  # noqa: E402
 from store.tickets import ensure_project  # noqa: E402
@@ -80,7 +80,7 @@ class StoreClaimLoopTests(LoopFixture):
 
         self.critic_calls = calls
         out = io.StringIO()
-        with patch("holophyte.freshness.critic_admits", judged), \
+        with patch("holophyte.review.freshness.critic_admits", judged), \
                 patch.object(sys, "stdout", out):
             self.loop(Commit("the scripted work"), APPROVE, provider=self.board)
         return out.getvalue()

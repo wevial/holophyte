@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 import review_runner
-from holophyte import isolation
+from holophyte.isolation import isolation
 
 
 @unittest.skipUnless(

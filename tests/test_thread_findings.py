@@ -3,9 +3,10 @@ import unittest
 from unittest.mock import patch
 
 import store
-from holophyte import babysitter, pr
-from holophyte.review import parse_findings
-from holophyte.thread_findings import bounded_raw
+from holophyte.babysit import babysitter
+from holophyte.babysit.thread_findings import bounded_raw
+from holophyte.pr import pr
+from holophyte.review.review import parse_findings
 
 
 class ThreadFindingTests(unittest.TestCase):

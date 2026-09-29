@@ -6,7 +6,8 @@ from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from holophyte import operator, pool_handoff
+from holophyte.cli import operator
+from holophyte.loop import pool_handoff
 from store.schema import SCHEMA_VERSION
 from tests.loop_fixture import LoopFixture
 
@@ -53,7 +54,7 @@ class ReexecTests(LoopFixture):
     def test_unchanged_schema_fast_forwards_under_two_live_workers(self):
         workers = {5001: Mock(), 5002: Mock()}
         with patch("os.kill") as signal_worker, \
-                patch("holophyte.pool.WAIT") as wait:
+                patch("holophyte.loop.pool.WAIT") as wait:
             events, output = self.restart(workers=workers)
         signal_worker.assert_not_called()
         wait.assert_not_called()

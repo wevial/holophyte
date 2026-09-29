@@ -3,8 +3,8 @@ import stat
 import subprocess
 from pathlib import Path
 
-from holophyte.config import config_table
-from holophyte.gates import InfraFailure, sh
+from holophyte.config.config import config_table
+from holophyte.loop.gates import InfraFailure, sh
 
 
 def protected(target):

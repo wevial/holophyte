@@ -11,7 +11,7 @@ reads `[board] kind`. Two boards ship here: `LinearBoard`, which wraps the
 functions `linear_provider.py` already has, and `FileProvider`, a
 directory of ticket files for tests and offline runs. The conformance suite
 in `tests/test_provider.py` holds both to the same observable behavior. A
-native board, the store itself, is `holophyte/native_board.py` (KO-754).
+native board, the store itself, is `holophyte/board/native_board.py` (KO-754).
 
 Kept deliberately plain for the Rust port -- a protocol with dict payloads,
 no metaclass, no dispatch on module names.
@@ -82,7 +82,7 @@ from pathlib import Path
 from typing import Protocol
 
 import ticket_template
-from holophyte.config_tables import board_config, board_mode
+from holophyte.config.config_tables import board_config, board_mode
 
 # The same fence `linear_provider.parse_task()` reads, so a body parsed by
 # either board yields the same `verify`.
@@ -198,7 +198,7 @@ class LinearBoard:
     """Linear, through the functions `linear_provider.py` already has.
 
     `project_id`, `team` and `label` are the target's `[board]` table, as
-    `holophyte.config_tables.board_config()` resolves it -- `label` the one
+    `holophyte.config.config_tables.board_config()` resolves it -- `label` the one
     optional key (KO-432): set, the ready listing keeps only the issues
     carrying it. Stored here and passed to every module call, so the module
     itself holds no board and two targets on one host drive two projects.
@@ -335,7 +335,7 @@ def board_for(target):
     if settings is None:
         return None
     if mode.kind == "native":
-        from holophyte.native_board import NativeBoard
+        from holophyte.board.native_board import NativeBoard
         return NativeBoard(target, settings.prefix, settings.team)
     return LinearBoard(settings.project_id, settings.team, settings.label,
                        store_mode=mode.mode == "store")

@@ -10,8 +10,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from holophyte import agents, board, gates, loop, pr, redact
-from holophyte.project import Project
+from holophyte import redact
+from holophyte.agents import agents
+from holophyte.board import board
+from holophyte.config.project import Project
+from holophyte.loop import gates, loop
+from holophyte.pr import pr
 
 SENTINEL = "outbound-sentinel-542"
 
