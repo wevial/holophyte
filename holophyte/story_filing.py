@@ -1,5 +1,9 @@
 """Filing a validated story directory on a native or store-mode Linear board."""
+import json
 import re
+import shutil
+import tempfile
+import time
 from contextlib import closing
 from pathlib import Path
 
@@ -14,6 +18,7 @@ from holophyte.config_tables import board_config
 from provider import FiledWithoutBlockers
 
 STORY_HEADER_RE = re.compile(r"^Story:[ \t]*(\S+)")
+TICKET_HEADER_RE = re.compile(r"^Ticket:[ \t]*(\S+)")
 ESTIMATE_SECTION = "Estimate & dependencies"
 
 
@@ -190,6 +195,169 @@ def _child_body(directory, child):
     return story_template.HEADER_RE.sub(
         "", (directory / story_template.CHILDREN
              / f"{child.name}.md").read_text(), count=1)
+
+
+def update_story(board, project, slug, identifier, revision, priority=None):
+    directory = story_directory(project, slug)
+    body_path = directory / story_template.BODY
+    filed = _header(body_path)
+    if filed != identifier:
+        raise StoryRefused([f"{body_path} is filed as {filed}, not "
+                            f"{identifier}" if filed else f"{body_path} is not "
+                            "filed; file it with --file-story SLUG"])
+    headers = {child.name: _child_header(directory, child)
+               for child in story_template.parse_children(directory)}
+    from holophyte.runs import open_store
+    with closing(open_store(project)) as conn:
+        project_id = store.tickets.ensure_project(conn, board.team,
+                                                  project.path)
+        _check_filed(conn, project_id, identifier, revision, directory,
+                     headers)
+        children = _validated_children(project, directory, headers)
+        text = body_path.read_text().partition("\n")[2]
+        try:
+            with store.transaction(conn):
+                parent_id = _check_filed(conn, project_id, identifier,
+                                         revision, directory, headers)
+                lines, filed = _update_rows(
+                    conn, project_id, board.key, directory, parent_id,
+                    identifier, revision, text, children, headers, priority)
+        except StoryRefused:
+            raise
+        except ValueError as refused:
+            raise StoryRefused(getattr(refused, "problems",
+                                       [str(refused)])) from None
+    for name, new in filed:
+        path = directory / story_template.CHILDREN / f"{name}.md"
+        path.write_text(f"Ticket: {new}\n{path.read_text()}")
+    return lines
+
+
+def _validated_children(project, directory, headers):
+    slugs = {headers[child.name]: child.slug
+             for child in story_template.parse_children(directory)
+             if headers[child.name]}
+    with tempfile.TemporaryDirectory() as scratch:
+        plan = Path(scratch) / directory.name
+        shutil.copytree(directory, plan)
+        for path in (plan / story_template.CHILDREN).glob("*.md"):
+            path.write_text(_resolve(path.read_text(), slugs))
+        problems = ticket_template.blocking(
+            story_template.validate_story(plan, repo=str(project.path)))
+        if problems:
+            raise StoryRefused(
+                f"{directory}: {problem.replace(str(plan), str(directory))}"
+                for problem in problems)
+        return _in_order(story_template.parse_children(plan))
+
+
+def _child_header(directory, child):
+    match = TICKET_HEADER_RE.match(
+        (directory / story_template.CHILDREN / f"{child.name}.md").read_text())
+    return match.group(1) if match else None
+
+
+def _update_rows(conn, project_id, key, directory, parent_id, identifier,
+                 revision, text, children, headers, priority):
+    before = _plan_state(conn, parent_id)
+    lines, filed, rows = [], [], []
+    now = int(time.time() * 1000)
+    body_revised = before[0] != text
+    if body_revised:
+        store.board.edit_ticket(conn, project_id, identifier, text, revision,
+                                now=now)
+    identifiers = {child.slug: headers[child.name] for child in children
+                   if headers[child.name]}
+    slugs = {child.slug for child in children}
+    for child in children:
+        _merged_issue_ids(conn, project_id, child, slugs)
+        body = _resolve(_child_body(directory, child), identifiers)
+        header = headers[child.name]
+        if header is None:
+            header = store.board.file_ticket(conn, project_id, key, body,
+                                             column="backlog",
+                                             priority=priority)
+            identifiers[child.slug] = header
+            filed.append((child.name, header))
+            lines.append(f"filed {header}: {child.ticket.title} "
+                         f"({child.role}, Backlog)")
+        else:
+            (stored, current) = conn.execute(
+                "SELECT body, revision FROM tickets WHERE projectId = ?"
+                " AND linearIdentifier = ?", (project_id, header)).fetchone()
+            if stored != body:
+                new = store.board.edit_ticket(conn, project_id, header, body,
+                                              current)
+                lines.append(f"updated {header} (revision {new})")
+        rows.append((_ticket_id(conn, project_id, header), child.role,
+                     child.witnesses))
+    story = story_template.parse_story(text)
+    witnesses = _witnesses(directory, story)
+    after = (text, *_rows_state(conn, witnesses, rows, story.standing_orders))
+    state = store.stories.story(conn, parent_id).state
+    if after != before:
+        state = store.stories.replan_story(conn, parent_id, witnesses, rows,
+                                           story.standing_orders, now=now,
+                                           body_revised=body_revised)
+    (current,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                              (parent_id,)).fetchone()
+    lines.append(f"story {identifier} is {state} at revision {current}")
+    return lines, filed
+
+
+def _check_filed(conn, project_id, identifier, revision, directory, headers):
+    row = conn.execute("SELECT id, revision FROM tickets WHERE projectId = ?"
+                       " AND linearIdentifier = ?",
+                       (project_id, identifier)).fetchone()
+    stored = row and store.stories.story(conn, row[0])
+    if not stored or stored.ticketId != row[0]:
+        raise StoryRefused([f"{identifier} is not a story's parent in this "
+                            "project"])
+    if row[1] != revision:
+        raise StoryRefused([f"{identifier} is at revision {row[1]}, not "
+                            f"{revision}; nothing changed"])
+    named = [header for header in headers.values() if header]
+    children = {child for (child,) in conn.execute(
+        "SELECT linearIdentifier FROM tickets WHERE id IN (SELECT ticketId"
+        " FROM storyChildren WHERE storyId = ?)", (row[0],))}
+    for header in named:
+        if header not in children:
+            raise StoryRefused([f"a child file names {header}, which is not "
+                                f"a child of story {identifier}"])
+        if named.count(header) > 1:
+            raise StoryRefused([f"two child files name {header}"])
+    missing = sorted(children - set(named))
+    if missing:
+        raise StoryRefused([f"child {missing[0]} of story {identifier} has no "
+                            f"file in {directory / story_template.CHILDREN}; "
+                            "cancel a child with --cancel"])
+    return row[0]
+
+
+def _plan_state(conn, parent_id):
+    stored = store.stories.story(conn, parent_id)
+    (body,) = conn.execute("SELECT body FROM tickets WHERE id = ?",
+                           (parent_id,)).fetchone()
+    keys = {}
+    for child in stored.children:
+        keys.setdefault(child.ticketId, (child.role, []))[1].extend(
+            [child.witnessKey] if child.witnessKey else [])
+    witnesses = [witness._asdict() for witness in stored.witnesses]
+    return (body, *_rows_state(
+        conn, witnesses, [(ticket_id, role, child_keys)
+                          for ticket_id, (role, child_keys) in keys.items()],
+        stored.standingOrders))
+
+
+def _rows_state(conn, witnesses, rows, standing_orders):
+    return (sorted(tuple(witness[field] for field in
+                         store.stories.WITNESS_FIELDS)
+                   for witness in witnesses),
+            {ticket_id: (role, sorted(keys)) for ticket_id, role, keys in rows},
+            {ticket_id: json.loads(conn.execute(
+                "SELECT dependsOn FROM tickets WHERE id = ?",
+                (ticket_id,)).fetchone()[0]) for ticket_id, _, _ in rows},
+            list(standing_orders))
 
 
 def _witnesses(directory, story):

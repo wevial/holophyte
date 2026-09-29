@@ -20,6 +20,7 @@ import store.schema
 import store.tickets
 from holophyte.gates import merge_lock_path
 from holophyte.supervisor_lock import supervisor_lock_path
+from tests.host_fixture import HostFixture
 from tests.phase_fixture import park_run
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase, Tripwire, no_network
 from tests.test_store_board import body
@@ -194,3 +195,22 @@ class StrandedStatusTests(SweepTestCase):
                           " boom\\nstranded KO-1 run 1: fake"])
         snap = json.loads(self.status("--json"))
         self.assertEqual(snap["stranded"][1]["reason"], reason)
+
+
+class HostStatusBackoffTests(HostFixture):
+    """A registered project and a `sweep.json` the host sweep last wrote."""
+
+    OUTCOME = "backoff: until 04:14 UTC (implementer route down)"
+
+    def test_last_sweep_line_shows_a_launch_backoff(self):
+        code, _ = self.cli("project", "add", str(self.repo("alpha")))
+        self.assertIsNone(code)
+        [(name, path)] = self.registered()
+        key = name or str(path)
+        (self.home / "sweep.json").write_text(json.dumps(
+            {"exit": 0, "projects": {key: self.OUTCOME}}))
+
+        _, printed = self.cli("--status")
+
+        self.assertIn(f"[{key}] last sweep: {self.OUTCOME}",
+                      printed.splitlines())
