@@ -1536,8 +1536,8 @@ class MergeAgainstMainTipTests(unittest.TestCase):
         self.git("push", "-q", "origin", "main")
         self.git("checkout", "-q", BRANCH)
 
-    def merge(self):
-        sha = self.git("rev-parse", "HEAD")
+    def merge(self, sha=None):
+        sha = sha or self.git("rev-parse", "HEAD")
         pull = holophyte.pr_status.parse_pr_url(MergeModeFixture.URL)
 
         def merge_pull_request(project, pull, pinned):
@@ -1585,6 +1585,23 @@ class MergeAgainstMainTipTests(unittest.TestCase):
         self.git("update-ref", "-d", "refs/remotes/origin/main")
         with self.assertRaises(holophyte.gates.InfraFailure):
             self.merge()
+        self.assertEqual(self.merged, [])
+
+    def test_a_stalled_main_fetch_fails_within_the_remote_deadline(self):
+        self.git("config", "protocol.ext.allow", "always")
+        self.git("remote", "set-url", "origin", "ext::sleep 5")
+        started = monotonic()
+        with patch.object(holophyte.pr, "PR_TIMEOUT", 0.5), \
+                self.assertRaises(holophyte.gates.InfraFailure) as failed:
+            self.merge()
+        self.assertLess(monotonic() - started, 4)
+        self.assertIn("did not answer", str(failed.exception))
+        self.assertEqual(self.merged, [])
+
+    def test_a_candidate_git_cannot_resolve_fails_rather_than_looks_behind(self):
+        with self.assertRaises(holophyte.gates.InfraFailure) as failed:
+            self.merge(sha="0" * 40)
+        self.assertNotIn("behind main", str(failed.exception))
         self.assertEqual(self.merged, [])
 
     def test_a_candidate_holding_origin_main_merges_through_github(self):
