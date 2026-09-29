@@ -181,6 +181,17 @@ class NativeApproveStoryTests(ApproveStoryFixture):
         (note,) = self.store(APPROVALS)
         self.assertIn("W2 red by exception", note[0])
 
+    def test_the_note_names_only_the_overrides_the_baseline_needed(self):
+        parent = self.filed(SLUG, [FAILS_AN_ASSERTION, None])
+
+        status, lines = self.approve(
+            parent, "--baseline-green", "W1", "--baseline-green", "W2",
+            "--baseline-red-kind", "exception", "W1")
+
+        self.assertEqual(status, 0, lines)
+        self.assertEqual(self.store(APPROVALS),
+                         [("plan ok (baseline overrides: W2 green)",)])
+
     def test_another_approved_story_refuses_and_writes_nothing(self):
         first = self.filed("first", [FAILS_AN_ASSERTION] * 2)
         self.assertEqual(self.approve(first)[0], 0)

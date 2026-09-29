@@ -34,7 +34,7 @@ def approve(board, project, identifier, revision, note, green=(),
                              copy_files=True)
         lines = [f"baseline at {sha}: " + ", ".join(
             _verdict(row) for row in rows)]
-        problems = _baseline_problems(rows, sha, green, exception)
+        problems, waived = _baseline_problems(rows, sha, green, exception)
         if problems:
             raise ApprovalRefused([*lines, *problems,
                                    f"story {identifier} stays planned"])
@@ -42,7 +42,7 @@ def approve(board, project, identifier, revision, note, green=(),
             with store.transaction(conn):
                 store.stories.approve_story(
                     conn, parent_id, revision, "cli",
-                    _recorded_note(note, green, exception))
+                    _recorded_note(note, waived))
                 released = _release(conn, board, project_id, parent_id,
                                     identifier)
         except ValueError as refused:
@@ -94,29 +94,31 @@ def _verdict(row):
 
 
 def _baseline_problems(rows, sha, green, exception):
-    problems = []
+    problems, waived = [], []
     for row in rows:
         key = row.witnessKey
-        if row.verdict == "green" and key not in green:
+        if row.verdict == "green" and key in green:
+            waived.append(f"{key} green")
+        elif row.verdict == "green":
             problems.append(f"{key} is green at {sha}: it witnesses nothing"
                             f" new; --baseline-green {key} approves it anyway")
-        elif row.verdict == "red" and row.redKind == "exception" \
-                and key not in exception:
-            problems.append(f"{key} is red by exception at {sha}, not by an"
-                            " assertion; --baseline-red-kind exception"
-                            f" {key} approves it anyway")
-        elif row.verdict not in ("green", "red"):
+        elif row.verdict == "red" and row.redKind == "exception":
+            if key in exception:
+                waived.append(f"{key} red by exception")
+            else:
+                problems.append(f"{key} is red by exception at {sha}, not by"
+                                " an assertion; --baseline-red-kind exception"
+                                f" {key} approves it anyway")
+        elif row.verdict != "red":
             problems.append(f"{key} is {row.verdict} at {sha}; see"
                             f" {row.evidencePath or 'the ledger'}")
-    return problems
+    return problems, waived
 
 
-def _recorded_note(note, green, exception):
-    overrides = [*(f"{key} green" for key in green),
-                 *(f"{key} red by exception" for key in exception)]
-    if not overrides:
+def _recorded_note(note, waived):
+    if not waived:
         return note
-    return f"{note} (baseline overrides: {', '.join(overrides)})"
+    return f"{note} (baseline overrides: {', '.join(waived)})"
 
 
 def _release(conn, board, project_id, parent_id, identifier):
