@@ -60,14 +60,14 @@ class FileSizesBaselineTests(unittest.TestCase):
         self.assertEqual(
             git(self.repo, "config", "--get", "maintenance.auto"), "false\n")
 
-    def test_a_file_grown_past_its_pin_fails_the_baseline_naming_the_module(self):
+    def test_a_file_grown_past_its_ceiling_fails_the_baseline_naming_the_module(self):
         ok, out = self.baseline()
         self.assertTrue(ok, str(out)[-2000:])
         self.assertNotIn("failed: test_file_sizes.py", str(out))
 
         grown = self.repo / "holophyte" / "reexec.py"
-        grown.write_text(grown.read_text() + "\n" * 200)
-        git(self.repo, "commit", "-q", "-am", "grow a pinned file")
+        grown.write_text(grown.read_text() + "\n" * 1000)
+        git(self.repo, "commit", "-q", "-am", "grow a file past its ceiling")
         ok, out = self.baseline()
         self.assertFalse(ok)
         self.assertIn("failed: test_file_sizes.py", str(out)[-2000:])
