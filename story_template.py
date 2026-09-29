@@ -6,6 +6,7 @@ with each witness file at its repository path, and a children directory.
 
 CLI: python3 ticket_template.py [--repo PATH] --story DIR  ->  exit 0 iff valid.
 """
+import posixpath
 import re
 import sys
 from pathlib import Path
@@ -35,6 +36,7 @@ class Witness(NamedTuple):
     outcome: str
     file: str
     command: str | None
+    line: str
 
 
 class Story(NamedTuple):
@@ -65,7 +67,8 @@ def parse_story(text):
         match = WITNESS_RE.match(line)
         if match:
             key, outcome, file = match.groups()
-            story.witnesses.append(Witness(key, outcome, file, commands.get(key)))
+            story.witnesses.append(
+                Witness(key, outcome, file, commands.get(key), line))
     story.standing_orders.extend(_items(story, "Standing orders"))
     return story
 
@@ -93,10 +96,11 @@ def _body_problems(story):
         if witness.command is None:
             problems.append(f"witness {witness.key} has no line in "
                             "'Witness commands'")
-        if witness.file in owners:
-            problems.append(f"witnesses {owners[witness.file]} and "
+        file = posixpath.normpath(witness.file)
+        if file in owners:
+            problems.append(f"witnesses {owners[file]} and "
                             f"{witness.key} name one file: {witness.file}")
-        owners.setdefault(witness.file, witness.key)
+        owners.setdefault(file, witness.key)
     if len(story.standing_orders) > MAX_STANDING_ORDERS:
         problems.append(f"'Standing orders' has {len(story.standing_orders)} "
                         f"lines; the limit is {MAX_STANDING_ORDERS}, since "
@@ -129,7 +133,7 @@ def _file_problems(witness, directory, repo):
 
 
 def _one_pass_advisories(witness, file_text):
-    for where, text in (("criterion", witness.outcome), ("file", file_text)):
+    for where, text in (("criterion", witness.line), ("file", file_text)):
         word = next((w for w in ONE_PASS_WORDS if w in text.lower()), None)
         if word:
             return [f"{tt.ADVISORY_PREFIX}witness {witness.key}'s {where} "

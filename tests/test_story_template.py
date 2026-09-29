@@ -99,6 +99,13 @@ class StoryBodyTests(StoryCliCase):
         self.assert_refused(directory, "witnesses W1 and W2 name one file: "
                             f"{witness_path(1)}")
 
+    def test_two_spellings_of_one_file_are_refused(self):
+        directory = self.story()
+        self.edit(directory, f"(a test in {witness_path(2)}",
+                  f"(a test in ./{witness_path(1)}")
+        self.assert_refused(directory, "witnesses W1 and W2 name one file: "
+                            f"./{witness_path(1)}")
+
     def test_six_standing_orders_are_refused(self):
         self.assert_refused(self.story(standing_orders=6),
                             "'Standing orders' has 6 lines; the limit is 5")
@@ -150,6 +157,12 @@ class StoryAdvisoryTests(StoryCliCase):
     def test_one_pass_wording_in_a_criterion_is_advised(self):
         directory = self.story()
         self.edit(directory, "outcome 1 holds (", "outcome 1 holds after one pass (")
+        self.assert_advised(directory, "W1's criterion says 'one pass'")
+
+    def test_one_pass_wording_in_what_a_criterion_witnesses_is_advised(self):
+        directory = self.story()
+        self.edit(directory, "witnesses outcome 1)",
+                  "witnesses outcome 1 after one pass)")
         self.assert_advised(directory, "W1's criterion says 'one pass'")
 
 
