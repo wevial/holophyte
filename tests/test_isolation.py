@@ -467,6 +467,21 @@ class IsolationTests(unittest.TestCase):
         self.table["worktree"] = {"carry": carry}
         return worktree
 
+    def recorded_volumes(self, launch):
+        from holophyte import isolation
+
+        volumes = []
+
+        def run(argv, cwd, timeout, *, env):
+            volumes.extend(argv[i + 1] for i, flag in enumerate(argv)
+                           if flag == "--volume")
+            return 0, "done"
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container"), \
+             patch.object(isolation, "run_capped", side_effect=run):
+            return launch(), volumes
+
     def test_nested_carry_is_mounted_and_survives_the_copy_back(self):
         from holophyte import isolation
 
@@ -496,13 +511,19 @@ class IsolationTests(unittest.TestCase):
     def test_tracked_or_escaping_carry_fails_the_launch_naming_it(self):
         from holophyte import isolation
         from holophyte.gates import InfraFailure
+        from holophyte.isolation_git import git
 
         worktree = self.carry_worktree([])
         outside = self.root / "outside"
         outside.mkdir()
         (worktree / "link").symlink_to(outside)
+        (worktree / "tracked-link").symlink_to(worktree / "tracked")
+        git(worktree, "add", "tracked-link")
+        git(worktree, "commit", "-qm", "tracked link")
+        (worktree / "deps").symlink_to(outside)
         for entry, reason in (("tracked", "tracked"), ("../outside/deps", "escapes"),
-                              ("link/deps", "escapes")):
+                              ("link/deps", "escapes"), ("tracked-link", "tracked"),
+                              ("deps", "leaves the repository")):
             with self.subTest(entry=entry):
                 run = Mock(return_value=(0, "done"))
                 with patch.object(isolation, "image_ready"), \
@@ -514,6 +535,57 @@ class IsolationTests(unittest.TestCase):
                 self.assertIn(repr(entry), str(raised.exception))
                 run.assert_not_called()
                 self.assertEqual(list(outside.iterdir()), [])
+
+    def test_copy_back_refuses_a_linked_carry_parent_and_keeps_the_install(self):
+        import shutil
+
+        from holophyte import isolation
+        from holophyte.gates import InfraFailure
+
+        worktree = self.carry_worktree(["tracked/node_modules"])
+        installed = worktree / "tracked" / "node_modules" / "dep"
+        installed.mkdir(parents=True)
+        outside = self.root / "outside"
+        outside.mkdir()
+
+        def run(argv, cwd, timeout, *, env):
+            shutil.rmtree(Path(cwd) / "tracked")
+            (Path(cwd) / "tracked").symlink_to(outside)
+            return 0, "done"
+
+        with patch.object(isolation, "image_ready"), \
+             patch.object(isolation.review_runner, "_remove_container"), \
+             patch.object(isolation, "run_capped", side_effect=run):
+            with self.assertRaisesRegex(InfraFailure, "'tracked/node_modules'"):
+                isolation.launch(isolation.Route("container"), worktree, {}, ["agent"],
+                                 project=self.target)
+        self.assertTrue(installed.is_dir())
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_carry_linked_to_another_worktree_mounts_that_worktrees_directory(self):
+        from holophyte import isolation
+
+        worktree = self.carry_worktree(["deps"])
+        (worktree / "deps").mkdir()
+        main = self.target.path
+        (main / "deps").symlink_to(worktree / "deps")
+        _, volumes = self.recorded_volumes(lambda: isolation.launch(
+            isolation.Route("container"), main, {}, ["agent"], carry=["deps"]))
+        self.assertIn(f"{(worktree / 'deps').resolve()}:/workspace/deps:rw", volumes)
+        self.assertTrue((main / "deps").is_symlink())
+
+    def test_capture_launch_mounts_the_carry_instead_of_copying_it(self):
+        from holophyte import pr_media
+
+        worktree = self.carry_worktree(["deps"])
+        self.table["agents"]["implementer_isolation"] = "container"
+        (worktree / "deps").mkdir()
+        os.mkfifo(worktree / "deps" / "pipe")
+        failure, volumes = self.recorded_volumes(lambda: pr_media._capture(
+            "capture", worktree, worktree.resolve() / "shot.png", "HOLO-1", [],
+            project=self.target))
+        self.assertEqual(failure, "")
+        self.assertIn(f"{worktree.resolve() / 'deps'}:/workspace/deps:rw", volumes)
 
     def test_clone_turn_returns_commit_and_dirty_file_safely(self):
         from holophyte import isolation

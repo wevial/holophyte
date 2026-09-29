@@ -10,7 +10,13 @@ from pathlib import Path
 import review_runner
 from holophyte.environment_git import protected, refuse_environment_history
 from holophyte.gates import InfraFailure
-from holophyte.isolation_git import copy_merge_state, git, head, import_objects
+from holophyte.isolation_git import (
+    copy_merge_state,
+    git,
+    git_environment,
+    head,
+    import_objects,
+)
 from holophyte.isolation_return import locked_return
 from holophyte.project import state_dir
 
@@ -70,10 +76,15 @@ def keeping(destination, staged, carry):
     try:
         for entry in carry:
             kept = destination / entry
-            if kept.is_dir() and not kept.is_symlink():
-                (staged / entry).parent.mkdir(parents=True, exist_ok=True)
-                kept.rename(staged / entry)
-                moved.append(entry)
+            if not (kept.is_dir() or kept.is_symlink()):
+                continue
+            parent = (staged / entry).parent
+            if parent.resolve() != staged.resolve() / Path(entry).parent:
+                raise InfraFailure(f"[worktree] carry: {entry!r} has a linked parent "
+                                   "in the working files")
+            parent.mkdir(parents=True, exist_ok=True)
+            kept.rename(staged / entry)
+            moved.append(entry)
         yield
     except BaseException:
         for entry in reversed(moved):
@@ -100,15 +111,35 @@ def copy_files(source, destination, protect, finish=lambda: None, carry=()):
             raise InfraFailure(f"cannot replace working files: {error}") from error
 
 
+def linked_carry(worktree, entry):
+    if subprocess.run(["git", "ls-files", "--error-unmatch", "--", entry],
+                      cwd=worktree, env=git_environment(),
+                      capture_output=True).returncode == 0:
+        raise InfraFailure(f"[worktree] carry: {entry!r} is tracked in git")
+    target = (worktree / entry).resolve()
+    if not target.is_dir():
+        raise InfraFailure(f"[worktree] carry: {entry!r} is a link to no directory")
+    listing = git(worktree, "worktree", "list", "--porcelain").splitlines()
+    for line in listing:
+        other = line.startswith("worktree ") and Path(line[9:]).resolve()
+        if other and other != worktree and target == other / entry:
+            review_runner.check_carry(other, entry)
+            return
+    raise InfraFailure(
+        f"[worktree] carry: {entry!r} is a link that leaves the repository")
+
+
 def carry_mounts(worktree, carry):
     mounted = []
     for entry in carry:
         path = worktree / entry
-        if path.is_symlink():
-            continue
-        if path.resolve().parent != path.parent:
+        if path.parent.resolve() != path.parent:
             raise InfraFailure(f"[worktree] carry: {entry!r} escapes the repository")
         try:
+            if path.is_symlink():
+                linked_carry(worktree, entry)
+                mounted.append(entry)
+                continue
             review_runner.check_carry(worktree, entry)
         except review_runner.ReviewBoundaryError as error:
             raise InfraFailure(str(error)) from error
