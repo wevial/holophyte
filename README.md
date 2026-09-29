@@ -49,6 +49,7 @@ python3 factory.py /path/to/repo --gap-layer KEY-n LAYER --note TEXT [--carried-
 python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
 python3 factory.py --file-ticket TICKET.md --update KEY-n --revision N [--priority urgent|high|medium|low] [--labels a,b] /path/to/repo # a native board's edit
+python3 factory.py --file-story SLUG [--priority urgent|high|medium|low] /path/to/repo # a native or store-mode Linear board's story, filed from stories/SLUG
 python3 factory.py --move KEY-n ready|backlog --revision N [--note TEXT] /path/to/repo # a native ticket to Ready or Backlog
 python3 factory.py --cancel KEY-n --revision N --note TEXT /path/to/repo # cancel a native ticket; a live run ends abandoned
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
