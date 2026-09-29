@@ -210,6 +210,10 @@ Each module, one line:
 - `holophyte/pr_head.py` — bounded settling after a push and the foreign-head
   guard before the babysitter judges or merges a candidate.
 - `holophyte/pr_activity.py` — authored PR activity and event-backed wake guards.
+- `holophyte/ci_wake.py` — when the reconcile sends a run parked `ci` back to
+  the babysitter (its checks finished, or it is green and quiet for
+  `[merge] pr_quiet_sec`), or re-parks it for a human once its checks
+  stay pending past `[merge] check_wait_sec`.
 - `holophyte/pr_status.py` — reading a pull request's state (KO-426), out
   of `holophyte/pr.py`: `pull_status()` for the parked-run reconcile,
   `pr_state()` and `fold_checks()` for the babysitter, `parse_pr_url()`.

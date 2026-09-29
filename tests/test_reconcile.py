@@ -5,6 +5,7 @@ import io
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,7 +17,11 @@ sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by nam
 # Putting it there explicitly makes `discover -s tests` and `-m unittest
 # tests.<name>` resolve the harness the same way.
 sys.path.insert(0, str(HERE))
-from fake_agent import APPROVE, Commit  # noqa: E402 - after the sys.path insert above
+from fake_agent import (  # noqa: E402 - after the sys.path insert above
+    APPROVE,
+    Commit,
+    Idle,
+)
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     INVALID_BODY,
     VALID_BODY,
@@ -873,3 +878,110 @@ class CanceledParkedPullRequestTests(MergeModeFixture):
         self.assertEqual(self.read('SELECT "action" FROM interventions'
                                    " WHERE runId IS NOT NULL"), [("approve",)])
         self.assertNotIn("left open", printed)
+
+
+class CiParkTests(MergeModeFixture):
+    OLD = "2000-01-01T00:00:00Z"
+
+    def ci_parked(self, checks, updated_at=OLD, park_read=None):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state(checks=checks,
+                                              updated_at=updated_at)])
+        self.github(park_read or self.pull(updated_at, checks))
+        with patch("holophyte.pr.SLEEP", self.fail), \
+                patch.object(sys, "stdout", io.StringIO()):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])
+
+    def pull(self, at, checks):
+        from test_pullrequest import MergeModePullRequestTests as H
+        return H.open_pull(H, at, 0, checks=checks)
+
+    def github(self, *answers):
+        from test_pullrequest import MergeModePullRequestTests as H
+        return H.fake_client(self, *answers)
+
+    def age(self):
+        conn = store.open(self.db)
+        with conn:
+            conn.execute("UPDATE runs SET lastHeartbeat = lastHeartbeat - 200000")
+        conn.close()
+
+    def reconcile(self, pull, later_s=0):
+        asked = self.github(pull)
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        with patch("holophyte.ci_wake.time", return_value=time.time() + later_s), \
+                patch.object(sys, "stdout", io.StringIO()):
+            holophyte.reconcile._reconcile_pull_requests(
+                self.project, conn,
+                conn.execute("SELECT id FROM projects").fetchone()[0],
+                StubProvider())
+        return asked
+
+    def wakes(self):
+        return self.read("SELECT source FROM interventions"
+                         " WHERE action = 'babysit'")
+
+    def test_a_green_park_wakes_once_its_quiet_period_has_passed(self):
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.ci_parked("SUCCESS", fresh)
+        self.age()
+        green = self.pull(fresh, "SUCCESS")
+
+        self.reconcile(green)
+        self.assertEqual(self.wakes(), [])
+
+        self.reconcile(green, later_s=300)
+        self.assertEqual(self.wakes(), [("supervisor",)])
+
+    def test_red_checks_wake_a_park_whose_own_read_failed(self):
+        self.ci_parked("PENDING", park_read=RuntimeError("GitHub down"))
+        self.assertEqual(self.read("SELECT prSeenChecks FROM runs"), [(None,)])
+        self.age()
+
+        self.reconcile(self.pull(self.OLD, "FAILURE"))
+
+        self.assertEqual(self.wakes(), [("supervisor",)])
+
+    def test_pending_checks_past_check_wait_sec_park_for_a_human_unwoken(self):
+        pending = self.pull(self.OLD, "PENDING")
+        self.ci_parked("PENDING")
+        self.age()
+        low = holophyte.reconcile.GitHubBudget()
+        low.remaining, low.reset_at = 0, "2099-01-01T00:00:00Z"
+        with patch.object(holophyte.reconcile, "GITHUB_BUDGET", low):
+            self.assertEqual(self.reconcile(pending, later_s=1801), [])
+        self.reconcile(pending)
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])
+
+        from test_pullrequest import MergeModePullRequestTests as H
+        self.reconcile(H.open_pull(H, self.OLD, 1, checks="PENDING"),
+                       later_s=1801)
+
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("pull_request",)])
+        self.assertIn("pending checks exceeded 1800s on the pull request",
+                      self.question())
+        self.assertEqual(self.wakes(), [])
+
+    def test_repeated_ci_wakes_never_trip_the_empty_wake_breaker(self):
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.ci_parked("PENDING")
+        for n in (1, 2):
+            with self.subTest(wake=n):
+                self.age()
+                self.github(self.pull(self.OLD, "SUCCESS"),
+                              self.pull(fresh, "PENDING"))
+                self.serve(self.pr_state(checks="PENDING"))
+                self.main_output(provider=self.provider())
+                self.assertEqual(len(self.wakes()), n)
+                self.assertEqual(self.read("SELECT parkKind FROM runs"
+                                           " ORDER BY id DESC LIMIT 1"),
+                                 [("ci",)])
+                self.assertEqual(self.read(
+                    "SELECT summary FROM runEvents WHERE kind ="
+                    " 'pr_empty_wakes' ORDER BY id DESC LIMIT 1"), [("0",)])
+        self.assertEqual(self.read("SELECT id FROM runEvents"
+                                   " WHERE kind = 'pr_wake_breaker'"), [])
