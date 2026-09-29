@@ -61,7 +61,7 @@ class RunModulesTests(unittest.TestCase):
         # One shared home in the runner's own environment: a module that
         # inherited it instead of getting its own would see its sibling's files.
         shared = self.root / "shared-home"
-        shared.mkdir()
+        shared.mkdir(exist_ok=True)
         return subprocess.run(
             [sys.executable, str(RUNNER), "--dir", str(self.tests), *args],
             env=dict(os.environ, HOLOPHYTE_HOME=str(shared)),
@@ -100,6 +100,40 @@ class RunModulesTests(unittest.TestCase):
     def test_no_module_found_fails(self):
         done = self.run_over({})
         self.assertNotEqual(done.returncode, 0, done.stdout)
+
+    def module_lines(self, done):
+        return {line.split()[0]: line for line in done.stdout.splitlines()
+                if line.startswith("test_") and line.split()[0].endswith(".py")}
+
+    def test_named_modules_and_globs_run_only_the_modules_they_match(self):
+        modules = {"test_alpha.py": PASSING, "test_beta.py": PASSING,
+                   "test_gamma_one.py": PASSING, "test_bad.py": FAILING,
+                   "test_unnamed.py": FAILING}
+        done = self.run_over(modules, "test_alpha.py", "tests/test_beta.py",
+                             "tests/test_gamma*.py")
+        self.assertEqual(done.returncode, 0, done.stdout)
+        lines = self.module_lines(done)
+        self.assertEqual(sorted(lines), ["test_alpha.py", "test_beta.py",
+                                         "test_gamma_one.py"])
+        self.assertTrue(all(line.endswith("ok") for line in lines.values()),
+                        done.stdout)
+
+        done = self.run_over(modules, "test_alpha.py", "tests/test_beta.py",
+                             "tests/test_gamma*.py", "tests/test_bad.py")
+        self.assertNotEqual(done.returncode, 0, done.stdout)
+        self.assertEqual(sorted(self.module_lines(done)),
+                         ["test_alpha.py", "test_bad.py", "test_beta.py",
+                          "test_gamma_one.py"])
+        summary = done.stdout.rstrip().splitlines()[-1]
+        self.assertIn("test_bad.py", summary)
+        self.assertNotIn("test_alpha.py", summary)
+
+    def test_a_glob_matching_no_module_fails_the_run_and_is_named(self):
+        done = self.run_over({"test_good.py": PASSING},
+                             "tests/test_good.py", "tests/test_typo*.py")
+        self.assertNotEqual(done.returncode, 0, done.stdout)
+        self.assertIn("tests/test_typo*.py: matches no", done.stdout)
+        self.assertEqual(self.module_lines(done), {}, done.stdout)
 
 
 class UnitWorkflowTests(unittest.TestCase):

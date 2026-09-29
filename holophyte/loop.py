@@ -44,6 +44,7 @@ from holophyte.config_tables import (
     loop_config,
     merge_config,
     sweep_config,
+    verify_config,
 )
 from holophyte.dispatch import SWEPT
 from holophyte.environment_git import (
@@ -87,6 +88,7 @@ from holophyte.review import (
     evidence_brief,
     scope_brief,
     scope_files,
+    tests_brief,
 )
 from holophyte.runs import (
     RunSwept,
@@ -96,6 +98,7 @@ from holophyte.runs import (
     set_phase,
 )
 from holophyte.stop import Aborted, boundary, continuation, stop_if_requested
+from holophyte.story_claim import story_brief
 from store.working import agent_work
 
 # The paths a run works against, plus the config they carry, are a `Project`
@@ -236,6 +239,9 @@ def _run_stages(run, task):
     # turns are held to one contract. A ticket with no body
     # (a file-backed task line, a stub provider) degrades to the title alone.
     ticket = f"{task}\n\n{body}" if body else task
+    if conn is not None:
+        ticket += story_brief(project, conn, store.read.run_snapshot(
+            conn, run_id).ticketId)
     # A reuse that left main's merge mid-way (conflicts) hands the paths to
     # the implementer as the opening of its brief; empty on every other cut.
     conflicts = merge_conflicts(wt)
@@ -569,14 +575,23 @@ def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal):
             raise InfraFailure(f"{reason}; retry budget exhausted; branch preserved")
 
 
+def _commands_brief(project, verify_cmd):
+    always = "\n".join(verify_config(project).always)
+    listed = (f"\n\nThese verify commands must pass before review and again "
+              f"before merge:\n\n{verify_cmd}" if verify_cmd else "")
+    if always:
+        listed += (f"\n\nThe project's baseline checks run after them at "
+                   f"every verify gate and must pass too:\n\n{always}")
+    return (f"{listed}\n\nThe full unit suite runs as a pull request check; "
+            f"do not run it in the worktree. Run only the commands listed "
+            f"above." if listed else "")
+
+
 def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening=""):
     """Implement the ticket, opening with reuse conflicts and `opening`; return
     its SHA and whether the reply declared the defect not reproduced (KO-657)."""
-    commands = (f"\n\nThese verify commands must pass before review and again "
-                f"before merge:\n\n{verify_cmd}\n\nThe full unit suite runs "
-                f"as a pull request check; do not run it in the worktree. Run "
-                f"only the commands listed above." if verify_cmd else "")
+    commands = _commands_brief(project, verify_cmd)
     # A reclaimed run can already be old; refuse a turn that would exceed
     # its remaining budget.
     _check_run_cap(project, conn, run_id, budget_min, start_sha)
@@ -756,6 +771,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f"{ticket}\n\n"
                     + _verify_brief(verify_cmd, ok, out)
                     + criteria_brief(criteria)
+                    + tests_brief(wt)
                     + scope_brief(wt, ticket, base_sha, sha)
                     + evidence_brief(project, wt, task_id,
                                      ticket_template.parse(ticket).evidence_states)
@@ -879,6 +895,7 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                 f"{ticket}\n\n"
                 + _verify_brief(verify_cmd, ok, out)
                 + criteria_brief(criteria)
+                + tests_brief(wt)
                 + "This candidate has already had its review rounds and their "
                 "fixes; no further fix round exists. Your job is a verdict on "
                 "the state as it stands, not a review.\n"

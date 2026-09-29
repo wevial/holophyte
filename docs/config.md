@@ -45,7 +45,7 @@ absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
 Tables this version does not know are left alone. Inside a table it does read
-(`[agents]`, `[verify]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`, `[console]`, `[serve]`), a key it does
+(`[agents]`, `[verify]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`, `[console]`, `[serve]`, `[story]`), a key it does
 not read is
 a startup
 error naming the file, the table, the key and the keys the table accepts:
@@ -717,9 +717,21 @@ shell programs (including semicolon-separated command lists) execute verbatim,
 with their own shell exit semantics and without clause-level reporting or
 the instrumented first-failure guarantee.
 
+The implementer's brief lists the `always` commands after the ticket's verify
+commands, so a check that runs at every verify gate is run before the
+candidate is committed too. To catch a repository-wide test module before a
+pull request's `unit` check does, name it in `always` through
+`tests/run_modules.py`, the runner that check uses: each argument is a module
+path or glob matched by file name, only the matched modules run, each in its
+own process and `HOLOPHYTE_HOME`, a pattern that matches no module fails the
+run, and the closing summary line names every module that failed.
+
 ```toml
 [verify]
-always = ["ruff check holophyte tests store"]
+always = [
+  "ruff check holophyte tests store",
+  "python3 tests/run_modules.py tests/test_file_sizes.py tests/test_comment_budget.py 'tests/test_docs*.py'",
+]
 before_merge = ["python3 -m unittest discover -s tests"]
 timeout_sec = 300
 ```
@@ -1328,3 +1340,18 @@ and `fix:` markers bypass triage.
 Run `python3 scripts/eval_triage.py --config PATH --min-accuracy 0.8` to replay
 the labelled fixture against the real service. It prints counts, accuracy and
 misses, and exits nonzero below the floor. Unit tests replace the service.
+
+## `[story]`
+
+A story's witness runs.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `witness_sec` | Default: `600` seconds | Positive integer; the most one witness run at a commit of `main` may take, all of the story's witness commands together. A witness still waiting when it is spent is recorded `error`. |
+
+```toml
+[story]
+witness_sec = 600
+```
+
+A value that is not a positive integer is a startup error naming the key.

@@ -15,6 +15,7 @@ from holophyte.review import (
     main_merge_base,
     scope_brief,
     scope_files,
+    tests_brief,
 )
 from holophyte.runs import heartbeat_while, record_round
 from holophyte.stop import stop_if_requested
@@ -92,6 +93,7 @@ def review_refresh(project, conn, run_id, provider, task_id, branch, wt,
             f"approvable.\n\n{ticket}\n\n"
             + _verify_brief(verify_cmd, True, out)
             + criteria_brief(criteria)
+            + tests_brief(wt)
             + scope_brief(wt, ticket, reviewed, sha, candidate_only=True)
             + "Do not modify anything. End your reply with exactly one "
             "line:\n"

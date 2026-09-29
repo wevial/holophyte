@@ -49,6 +49,7 @@ from holophyte.review import (
     parse_findings,
     scope_brief,
     scope_files,
+    tests_brief,
 )
 from holophyte.run import Run
 from holophyte.runs import heartbeat_while, record_round
@@ -667,6 +668,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
             f"{ticket}\n\n"
             + _verify_brief(verify_cmd, ok, out)
             + criteria_brief(criteria)
+            + tests_brief(wt)
             + scope_brief(wt, ticket, covered, sha, candidate_only=True)
             + evidence_brief(project, wt, task_id,
                                  ticket_template.parse(ticket).evidence_states)
