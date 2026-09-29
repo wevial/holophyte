@@ -83,8 +83,9 @@ def loop_unit_environment(target):
     values = parse_environment(text, str(path))
     register_values(values.values())
     saved = {name: os.environ.get(name) for name in values}
-    os.environ.update({name: process_value(v) for name, v in values.items()})
     try:
+        os.environ.update({name: process_value(v)
+                           for name, v in values.items()})
         yield
     finally:
         for name, value in saved.items():

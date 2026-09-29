@@ -346,3 +346,12 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         self.assertIn("[redacted]", events)
         self.assertIn("denied for [redacted]", reason)
         self.assertEqual(self.started(), [])
+
+    def test_a_value_the_environment_refuses_leaves_no_file_value_behind(self):
+        self.fixture("print('ready')\n",
+                     "HOLO_FIXTURE_CREDENTIAL=loop-only\nBROKEN=a\x00b\n")
+        with self.sweep_environment():
+            with contextlib.suppress(ValueError):
+                self.one_pass(T0)
+            self.assertNotIn("HOLO_FIXTURE_CREDENTIAL", os.environ)
+        self.assertFalse(self.calls.exists())
