@@ -18,6 +18,25 @@ import store
 NOTE = "host going down"
 
 
+def group_runs(pgid):
+    """Whether a member of process group `pgid` still runs; a zombie that no
+    init reaps, as under a container's plain PID 1, has stopped running."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    if not Path("/proc").is_dir():
+        return True
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            fields = stat.read_text().rsplit(")", 1)[1].split()
+        except OSError:
+            continue
+        if int(fields[2]) == pgid and fields[0] != "Z":
+            return True
+    return False
+
+
 def live_run(db):
     conn = store.open(str(db))
     run = conn.execute("SELECT id FROM runs WHERE endedAt IS NULL"
@@ -69,9 +88,7 @@ class AbortTurnCases:
                 seen["returncode"] = proc.returncode
                 deadline = time.monotonic() + 2
                 while time.monotonic() < deadline:
-                    try:
-                        os.killpg(proc.pid, 0)
-                    except ProcessLookupError:
+                    if not group_runs(proc.pid):
                         seen["group_gone"] = True
                         break
                     time.sleep(0.05)
