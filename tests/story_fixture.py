@@ -1,4 +1,5 @@
 """A valid story directory: story.md, a witnesses tree and a children directory."""
+import re
 from pathlib import Path
 
 WITNESS_FILE = """import unittest
@@ -41,3 +42,44 @@ def write_story(parent, witnesses=2, standing_orders=1, extra="", name="story"):
         extra,
         "## Open questions", "", "- None", ""]))
     return directory
+
+
+def child_body(slug, role, depends_on=(), notes=()):
+    """A valid child ticket; `role` None leaves out its Story section."""
+    module = f"tests/test_story_{slug.replace('-', '_')}.py"
+    witnesses = re.findall(r"W(\d+)", role or "") if (
+        role or "").startswith("completes") else []
+    notes = [*(f"- The new `{witness_path(n)}` is the witness this child "
+               "turns green." for n in witnesses),
+             *(f"- {note}" for note in notes)] or ["- Keep the CSV header."]
+    story = ["## Story", "", f"Role: {role}", ""] if role else []
+    return "\n".join([
+        f"# Orders export step {slug}", "",
+        "## Summary", "", f"Step {slug} of the orders export.", "",
+        "## What / Why / How", "",
+        f"**What:** Step {slug} of the CSV export.", "",
+        "**Why:** Operators need the orders outside the app.", "",
+        "**How:** Extend the existing export module.", "",
+        "## In scope", "", f"- The new `{module}` pins this step.", "",
+        "## Out of scope", "", "- Other export formats.", "",
+        "## Acceptance criteria", "",
+        f"- [ ] Given an order, when step {slug} runs, then the order is "
+        f"exported (a test in {module} witnesses it).", "",
+        "## Verify command(s)", "", "```",
+        f".venv/bin/python -m unittest {module[:-3].replace('/', '.')}",
+        "```", "",
+        "## Implementation notes", "", *notes, "",
+        *story,
+        "## Estimate & dependencies", "",
+        f"Estimate: 20 min · Depends on: {', '.join(depends_on) or 'none'}", "",
+        "## Open questions", "", "- None", ""])
+
+
+def write_children(directory, children):
+    """Write each (slug, role, depends_on, notes) as NN-slug.md, in order."""
+    folder = Path(directory) / "children"
+    folder.mkdir(parents=True, exist_ok=True)
+    for number, (slug, role, depends_on, notes) in enumerate(children, 1):
+        (folder / f"{number:02d}-{slug}.md").write_text(
+            child_body(slug, role, depends_on, notes))
+    return folder
