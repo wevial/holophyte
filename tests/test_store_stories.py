@@ -18,7 +18,7 @@ WITNESSES = [
 STORY_TABLES = ("stories", "storyWitnesses", "storyChildren")
 
 
-class StoryStoreTests(unittest.TestCase):
+class StoryFixture:
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -53,6 +53,8 @@ class StoryStoreTests(unittest.TestCase):
                    self.children() if children is None else children,
                    standing_orders=["Keep the CSV header stable."])
 
+
+class StoryStoreTests(StoryFixture, unittest.TestCase):
     def snapshot(self):
         tables = {table: self.conn.execute(
             f"SELECT * FROM {table} ORDER BY 1, 2").fetchall()
