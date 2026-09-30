@@ -1,4 +1,3 @@
-"""The store's table and index DDL."""
 from __future__ import annotations
 
 from . import enums as _enums

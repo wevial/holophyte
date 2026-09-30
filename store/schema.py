@@ -1,4 +1,3 @@
-"""store.schema: the store's schema, its migration ladder and the connection."""
 from __future__ import annotations
 
 import contextlib
@@ -281,8 +280,7 @@ ADDED_COLUMNS = (
 )
 
 
-# Each statement touches only rows that disagree with what it recomputes,
-# so `init()` stays idempotent.
+# Each statement matches only rows it would change, so `init()` stays idempotent.
 BACKFILLS = (
     (
         "runs.reviewRoundCount on runs that ended before close-out stamped it",

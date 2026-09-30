@@ -1,4 +1,3 @@
-"""Typed, read-only queries over the durable store."""
 from __future__ import annotations
 
 import json

@@ -1,4 +1,3 @@
-"""Typed reads of the `runs` table and the rows it joins."""
 from __future__ import annotations
 
 from dataclasses import dataclass
