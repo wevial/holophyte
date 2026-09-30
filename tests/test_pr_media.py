@@ -316,7 +316,7 @@ class MediaTests(unittest.TestCase):
         self.assertEqual(error, '')
 
     def test_ticket_states_reach_capture_and_review(self):
-        from holophyte.review.review import evidence_brief
+        from holophyte.review.briefs import evidence_brief
 
         self.config["merge"]["mode"] = "pr"
         states = ["Guest rename dialog open", "Guest renamed"]
@@ -420,7 +420,7 @@ class MediaTests(unittest.TestCase):
         self.assertNotIn("expires", body)
 
     def test_missing_bucket_credentials_reach_evidence_and_review_without_http(self):
-        from holophyte.review.review import evidence_brief
+        from holophyte.review.briefs import evidence_brief
 
         states = ["Rename dialog open", "Name saved"]
         ticket = "## Evidence\n\n" + "\n".join(states)

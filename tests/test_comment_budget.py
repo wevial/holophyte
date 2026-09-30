@@ -153,11 +153,12 @@ PINNED = {
     "holophyte/redact.py": 141,
 
     "holophyte/review/__init__.py": 0,
-    "holophyte/review/findings.py": 156,
-    "holophyte/review/freshness.py": 139,
-    "holophyte/review/reproduce.py": 90,
-    "holophyte/review/review.py": 274,
-    "holophyte/review/review_session.py": 6,
+    "holophyte/review/briefs.py": 4,
+    "holophyte/review/findings.py": 4,
+    "holophyte/review/freshness.py": 2,
+    "holophyte/review/reply_parsing.py": 11,
+    "holophyte/review/reproduce.py": 1,
+    "holophyte/review/review_session.py": 2,
 
     "holophyte/serve/__init__.py": 0,
     "holophyte/serve/serve_actions.py": 4,
@@ -249,10 +250,6 @@ CITED = {
     "holophyte/pr/pullrequest.py": 7,
 
     "holophyte/redact.py": 3,
-
-    "holophyte/review/freshness.py": 11,
-    "holophyte/review/reproduce.py": 4,
-    "holophyte/review/review.py": 3,
 
     "provider.py": 15,
     "review_runner.py": 2,

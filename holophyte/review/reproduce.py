@@ -1,42 +1,3 @@
-"""A reported defect the implementer could not reproduce, put to the maintainer.
-
-The implement brief (`BRIEF`) lets an implementer whose faithful test passes
-on the unchanged code say so: it commits the test(s) only and ends its reply
-with `DECLARATION`. `review_rounds()` then stands in for the loop's
-`_review_rounds()` for round 1: verify as usual, then one evidence check on
-the adjudicate seat instead of a review -- do the added tests exercise the
-reported path, and is the candidate nothing but tests? PASS parks the run
-`awaiting_merge_approval` with `parkKind = 'not_reproduced'` and the ticket
-`blocked_on_operator`, asking which of three answers the maintainer gives.
-`MergeParked` is neither a release nor a strike, so a report whose only
-fault was its premise costs the ticket nothing.
-
-Anything else hands back to `_review_rounds()`: a declaration whose verify
-fails is set aside and round 1 is an ordinary review; a FAIL (or a reply
-with no verdict line) is round 1 `changes_requested`, its reasons go to one
-fix turn, and a fix turn that declares again gets one more check before an
-ordinary round 2 (KO-657).
-
-A pause anywhere on this route resumes on it: every checkpoint the run
-saves once the route is taken carries `unreproduced` (and, once handed on,
-the raised cap as `handed_on`), and `routed()` sends the continuation back
-here. A storeless run takes the same route and parks by raising
-`MergeParked` with nothing recorded.
-
-A ticket with a `## Reproduce` section is a bug ticket, and `first_turn()`
-asks before any fix exists: a reproduce turn on the implementer seat, a third
-of the estimate (3 to 10 minutes), commits a failing test only, and the
-ticket's verify runs at that commit. A failure is a `reproduced` event and a
-`Reproduction` whose `opening()` leads the implement turn built on it; a pass
-sends the test commit straight to `review_rounds()` above, with no implement
-turn; no commit is a ledger note and the implement turn as before (KO-659).
-Whatever the turn leaves uncommitted is discarded either way, so neither the
-verify nor the implement turn sees a half-written test or fix.
-
-The loop's `agent`, `_timed`, `_check_run_cap`, `_verify_brief` and
-`_review_rounds` are read off `holophyte.loop.loop` at call time, so a test that
-patches the loop's `agent` answers these turns too.
-"""
 import json
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -54,7 +15,7 @@ from holophyte.loop.gates import MergeParked, RunFailure, run_verify, sh, with_b
 from holophyte.loop.runs import heartbeat_while, record_round, set_phase
 from holophyte.loop.stop import boundary, keep_route
 from holophyte.redact import safe_print as print
-from holophyte.review.review import raw_finding
+from holophyte.review.reply_parsing import raw_finding
 
 DECLARATION = "OUTCOME: NOT_REPRODUCED"
 
@@ -63,28 +24,17 @@ BRIEF = ("\n\nIf the ticket reports a defect and a test built from the real "
          "reproduce: commit the test(s) only, change no other code, and end "
          f"your reply with exactly this line:\n{DECLARATION}")
 
-# Appended to the evidence check's reasons for the one fix turn after a FAIL.
-# The reproduce turn's budget bounds, in minutes (KO-659).
 FIRST_MIN, FIRST_MAX = 3, 10
 
 REDECLARE = ("If, once the tests exercise the reported path, the defect "
              "still does not reproduce, commit the tests only and end your "
              f"reply with exactly this line:\n{DECLARATION}")
 
-# The first line of the pull request an approved `not_reproduced` candidate
-# opens (KO-658): written by the loop, since the writer turn is given the
-# ticket, whose title reports a bug.
 TESTS_ONLY = ("Tests only: the reported behaviour did not reproduce on {base};"
               " these tests are kept as a regression guard.")
 
 
 def tests_only_line(conn, run_id):
-    """`TESTS_ONLY` for the carried run `run_id` when it parked
-    `not_reproduced`, naming the base its park's event recorded; None for
-    any other park or with no store. The event is the witness, not
-    `runs.parkKind`: the ticket's walk out of `blocked_on_operator` on the
-    approval clears that column, and only `_park_in_store()` records the
-    event."""
     if conn is None:
         return None
     row = conn.execute(
@@ -96,7 +46,6 @@ def tests_only_line(conn, run_id):
 
 
 def declared(reply):
-    """Whether `reply`'s last non-empty line is the declaration."""
     lines = [line.strip() for line in str(reply or "").splitlines()
              if line.strip()]
     return bool(lines) and lines[-1] == DECLARATION
@@ -104,8 +53,6 @@ def declared(reply):
 
 @dataclass(frozen=True)
 class Frame:
-    """`_review_rounds()`'s positional arguments, in its order."""
-
     target: object
     conn: object
     run_id: object
@@ -129,14 +76,10 @@ class Frame:
 
 @dataclass(frozen=True)
 class Reproduction:
-    """The reproduce turn's test commit and the verify command it made fail,
-    None when the ticket's verify still passed there."""
-
     sha: str
     failing: object = None
 
     def opening(self):
-        """The implement brief's first line for a reproduced defect."""
         return (f"A reproduce turn committed a test at {self.sha} that makes "
                 f"the ticket's verify fail at `{self.failing}`. Build the fix "
                 "on top of that commit and keep the test.\n\n")
@@ -144,8 +87,6 @@ class Reproduction:
 
 def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
                ticket, body, verify_cmd, budget_min):
-    """A bug ticket's reproduce turn and the verify at its commit, or None:
-    no `## Reproduce` section or verify to run it with, or no commit."""
     from holophyte.loop import loop
 
     if not verify_cmd or "Reproduce" not in ticket_template.parse(body).order:
@@ -162,8 +103,7 @@ def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
             " the fix is a later turn's. Commit messages carry no tool "
             "attribution or co-author lines for an AI.")
     finally:
-        # Also when the turn raises: the failed run keeps its worktree, and
-        # the next claim would commit these edits as preserved work.
+        # Also when the turn raises: the next claim would commit these edits.
         _discard_leftovers(target, wt)
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if head == start_sha:
@@ -190,11 +130,6 @@ def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
 
 
 def _discard_leftovers(target, wt):
-    """Drop what the reproduce turn left uncommitted, so the verify at its
-    commit and the implement turn after it see its commit alone. Only a
-    commit is a reproduction; a half-written test or fix is not kept. The
-    protected `.env` is unstaged first and excluded from the clean, and an
-    `index.lock` a budget kill left behind can only be the dead turn's."""
     lock = Path(wt, sh(["git", "rev-parse", "--git-path", "index.lock"],
                        cwd=wt))
     lock.unlink(missing_ok=True)
@@ -204,19 +139,14 @@ def _discard_leftovers(target, wt):
 
 
 def routed(resume):
-    """Whether a continuation resumes on this route."""
     return bool(resume and resume.get("unreproduced"))
 
 
 def review_rounds(*args, resume=None):
-    """`_review_rounds()` for a candidate declared not reproduced: park it on
-    a passing evidence check, else hand back for ordinary rounds. `resume`
-    is a checkpoint this route saved, and picks up where it paused."""
     from holophyte.loop import loop
 
     frame, pending = Frame(*args), resume or {}
     if "handed_on" in pending:
-        # Paused in the ordinary rounds this route had already handed on to.
         return _hand_on(loop, frame, pending, pending["handed_on"])
     keep_route(frame.conn, frame.run_id, unreproduced=True)
     if pending.get("phase") == "addressing":
@@ -241,8 +171,6 @@ def review_rounds(*args, resume=None):
 
 
 def _second(loop, frame, pending):
-    """After round 1's fix turn: one more evidence check for a fix that
-    declared again, an ordinary round 2 for one that did not."""
     if not pending.get("declared"):
         return _hand_on(loop, frame, {"rnd": 2})
     ok, out = _verified(frame, 2, pending)
@@ -252,8 +180,6 @@ def _second(loop, frame, pending):
     if decision == "PASS":
         _record(frame, 2, reply, decision, ok, out, started)
         _park(frame)
-    # Round 2 belongs to the ordinary review this hands on to; the second
-    # check's reply is kept on the run instead.
     _event(frame, "not_reproduced_refused",
            f"second evidence check: {decision}; round 2 is an ordinary review",
            reply)
@@ -262,11 +188,6 @@ def _second(loop, frame, pending):
 
 
 def _hand_on(loop, frame, pending, floor=None):
-    """`_review_rounds()` from `pending`, whose ordinary round the evidence
-    check's round 1 must not take from a one-round cap: the cap rises to
-    that round (or to `floor`, the cap a resumed hand-on had risen to), on
-    the run too, and the loop numbers its terminal adjudication after the
-    round it returns. Later checkpoints carry the risen cap."""
     cap = max(frame.cap, floor or pending["rnd"])
     if cap != frame.cap:
         frame = replace(frame, cap=cap)
@@ -277,8 +198,6 @@ def _hand_on(loop, frame, pending, floor=None):
 
 
 def _verified(frame, rnd, pending):
-    """Round `rnd`'s verify at the declared candidate, or the result a pause
-    after it kept -- the phase walked through either way."""
     boundary(frame.conn, frame.run_id, "verifying", rnd=rnd, declared=True)
     if pending.get("phase") in ("reviewing", "addressing"):
         set_phase(frame.conn, frame.run_id, "verifying",
@@ -288,7 +207,6 @@ def _verified(frame, rnd, pending):
 
 
 def _verify(frame, rnd):
-    """The ticket's verify and the baseline at the declared candidate."""
     set_phase(frame.conn, frame.run_id, "verifying",
               f"round {rnd}: verify the not-reproduced declaration")
     with heartbeat_while(frame.conn, frame.run_id, frame.beat_s):
@@ -302,7 +220,6 @@ def _verify(frame, rnd):
 
 
 def _set_aside(loop, frame, rnd, out):
-    """A declaration verify refused: note it, then an ordinary round `rnd`."""
     _event(frame, "not_reproduced_set_aside",
            f"not-reproduced declaration at {frame.sha[:12]} set aside: verify"
            f" failed; round {rnd} is an ordinary review", str(out))
@@ -311,7 +228,6 @@ def _set_aside(loop, frame, rnd, out):
 
 
 def _check(loop, frame, rnd, ok, out):
-    """One evidence-check turn; return its reply, decision and start time."""
     boundary(frame.conn, frame.run_id, "reviewing", rnd=rnd, ok=ok,
              out=str(out), declared=True)
     set_phase(frame.conn, frame.run_id, "reviewing",
@@ -346,7 +262,6 @@ def _check(loop, frame, rnd, ok, out):
 
 
 def _reasons(reply):
-    """The check's reply without its verdict line."""
     lines = reply.rstrip().splitlines()
     if lines and lines[-1].strip().startswith("VERDICT:"):
         lines = lines[:-1]
@@ -354,8 +269,6 @@ def _reasons(reply):
 
 
 def _record(frame, rnd, reply, decision, ok, out, started):
-    """The check as round `rnd`; anything but PASS is `changes_requested`
-    with its reasons as the finding -- no verdict line reads as FAIL."""
     findings = None if decision == "PASS" else [raw_finding(_reasons(reply))]
     verdict = reply if decision != "MALFORMED" else f"{reply}\nVERDICT: FAIL"
     record_round(frame.target, frame.conn, frame.run_id, rnd, "adjudicate",
@@ -364,7 +277,6 @@ def _record(frame, rnd, reply, decision, ok, out, started):
 
 
 def _fix(loop, frame, reasons, ok, out):
-    """Round 1's fix turn on the check's reasons; return its reply and HEAD."""
     from holophyte.agents.fix_session import fix_turn
 
     loop._check_run_cap(frame.target, frame.conn, frame.run_id,
@@ -405,7 +317,6 @@ def _event(frame, kind, summary, detail):
 
 
 def _park(frame):
-    """Park on the maintainer the way `_park_for_approval()` parks."""
     conn, run_id, task_id = frame.conn, frame.run_id, frame.task_id
     first = (f"not reproduced: tests at {frame.sha[:12]} pass on base"
              f" {frame.base_sha[:12]}")
@@ -416,7 +327,6 @@ def _park(frame):
         f"- `--approve {task_id}` to keep the tests as a regression guard"
         " (a tests-only pull request under [merge] mode = \"pr\").")
     if conn is None or run_id is None:
-        # A storeless run records nothing: the question is printed instead.
         print(f"[holo2] no store to park the run in:\n{question}")
     else:
         _park_in_store(frame, first, question)
@@ -430,7 +340,6 @@ def _park(frame):
 
 
 def _park_in_store(frame, first, question):
-    """The park's store writes: the event, the ticket's question, the run."""
     conn, run_id = frame.conn, frame.run_id
     store.record_event(conn, run_id, "not_reproduced", first, level="detail",
                        payload=json.dumps({"base": frame.base_sha,

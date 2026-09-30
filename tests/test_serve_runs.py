@@ -457,7 +457,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
     def test_mentioned_thread_is_an_instruction_separate_from_findings(self):
         from holophyte.babysit import babysitter, thread_mentions
         from holophyte.pr import github
-        from holophyte.review.review import parse_findings
+        from holophyte.review.reply_parsing import parse_findings
 
         self.seed_reviewed()
         mentioned = thread_mentions.classify(github.Thread(

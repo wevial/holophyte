@@ -9,16 +9,15 @@ from holophyte.loop.gates import InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while, record_round
 from holophyte.loop.stop import stop_if_requested
 from holophyte.redact import safe_print as print
-from holophyte.review.review import (
+from holophyte.review.briefs import (
     _changed_files,
-    _review_reply,
     criteria_brief,
-    criteria_findings,
     main_merge_base,
     scope_brief,
     scope_files,
     tests_brief,
 )
+from holophyte.review.reply_parsing import _review_reply, criteria_findings
 from store.stories import advance_story, story
 
 STORY_DRIFT_QUESTION = "story siblings merged since the claim and changed: "

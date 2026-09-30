@@ -10,7 +10,7 @@ from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import github
 from holophyte.redact import known_secrets, outbound
-from holophyte.review import review
+from holophyte.review import reply_parsing
 from store.instructions import record_instruction_reply
 
 # A cited line on the end of a link target: `:92`, `:92-106` or `:92–106`.
@@ -80,7 +80,7 @@ def github_links(text, repo_url, sha):
     Link text and links to anything else are left as written."""
     def rewrite(m):
         target = m.group(1)
-        prefix = next((p for p in review.WORKSPACE_PREFIXES
+        prefix = next((p for p in reply_parsing.WORKSPACE_PREFIXES
                        if target.startswith(p)), None)
         if prefix is None:
             return m.group(0)
@@ -92,7 +92,7 @@ def github_links(text, repo_url, sha):
                 f"-L{line.group(2)}" if line.group(2) else "")
         url = f"{repo_url}/blob/{sha}/{quote(path)}{anchor}"
         return m.group(0)[:m.start(1) - m.start()] + url + ")"
-    return review.MD_LINK_TARGET_RE.sub(rewrite, text)
+    return reply_parsing.MD_LINK_TARGET_RE.sub(rewrite, text)
 
 
 def previous_park_reason(conn, run_id, branch):
