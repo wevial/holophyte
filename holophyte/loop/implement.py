@@ -7,11 +7,15 @@ from time import sleep, time
 
 import store
 import store.read
+import ticket_template
 from holophyte.agents.agent_output import transport_failure
+from holophyte.agents.agent_routes import routes
 from holophyte.agents.fix_session import resume_argv
+from holophyte.agents.harness import ORCHESTRATION_BRIEFS, implementer_orchestrations
 from holophyte.agents.roles import agent, record_session
 from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import sweep_config, verify_config
+from holophyte.config.reader import config_table
 from holophyte.environment_git import (
     factory_identity,
     paths,
@@ -220,18 +224,43 @@ def _commands_brief(project, verify_cmd):
             f"above." if listed else "")
 
 
+def _orchestration(project, conn, run_id, ticket):
+    requested, source = ticket_template.parse(ticket).orchestration, "ticket"
+    if requested not in ticket_template.ORCHESTRATION_MODES:
+        table = config_table(project, "agents").get("implementer")
+        configured = (table.get("orchestration")
+                      if isinstance(table, dict) else None)
+        requested, source = ((configured, "project") if configured
+                             else ("off", "default"))
+    supported = implementer_orchestrations(
+        project, routes(project).commands.get("implement")) | {"off"}
+    mode = requested
+    if mode not in supported:
+        mode = "subagents" if "subagents" in supported else "off"
+    if conn is not None and run_id is not None:
+        summary = f"orchestration: {mode}" + (
+            f" ({requested} requested; the route cannot run it)"
+            if mode != requested else "")
+        store.record_event(conn, run_id, "orchestration", summary,
+                           level="detail", payload=json.dumps(
+                               {"mode": mode, "requested": requested,
+                                "source": source}))
+    return ORCHESTRATION_BRIEFS[mode]
+
+
 def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening=""):
     commands = _commands_brief(project, verify_cmd)
     _check_run_cap(project, conn, run_id, budget_min, start_sha)
+    orchestration = _orchestration(project, conn, run_id, ticket)
     goal = (conflict_brief(branch, conflicts) + opening
             + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
             "The ticket above is the contract, acceptance criteria "
             "included; the task is done only when they hold. Commit your "
             "work with a clear message. Stay strictly on-scope; do not "
             "expand the task. Commit messages carry no tool attribution or "
-            "co-author lines for an AI." + _capture_brief(project, ticket, task_id)
-            + reproduce.BRIEF)
+            "co-author lines for an AI." + orchestration
+            + _capture_brief(project, ticket, task_id) + reproduce.BRIEF)
     deadline = retry_clock() + budget_min * budget_scale(project) * 60
     out, timed_out = _transport_timed(project, conn, run_id, beat_s, wt,
                                       budget_min, goal)

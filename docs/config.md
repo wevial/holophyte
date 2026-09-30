@@ -214,6 +214,30 @@ harness = "devin"
 model   = "opus"          # required; passed to --model
 ```
 
+`[agents.implementer] orchestration` (default `"off"`) is one of `"off"`,
+`"subagents"` and `"workflow"`, and a key of the implementer table only.
+`"subagents"` adds a paragraph to the implement brief inviting the agent to
+split independent pieces of the ticket across subagents it starts, keep the
+one worktree and branch, and have an independent subagent review the change
+before handing in; `claude`, `codex` and `devin` support it. `"workflow"`
+(Claude only) also carries the maintainer's opt-in to a Claude Code
+multi-agent workflow, with subagents when that tool is unavailable; startup
+refuses it beside an `implementer_fallback` that is not a `claude` command,
+since an outage switch reuses the brief. A ticket's `Orchestration: MODE`
+line in "Estimate & dependencies" overrides the key. A mode the active route
+cannot run is lowered: `"workflow"` runs as `"subagents"` on a Codex, Devin or
+command-string route, and beside an `implementer_fallback` that is not a
+`claude` command. Every implement turn records an `orchestration` run
+event with the `mode` the brief carried, the `requested` mode and its
+`source` (`ticket`, `project` or `default`). The key never reaches the
+harness command line, and the turn's time budget is unchanged.
+
+```toml
+[agents.implementer]
+harness       = "claude"
+orchestration = "workflow"   # optional; "off", "subagents" or "workflow"
+```
+
 `[agents.reviewer] harness = "cursor"` (and the same for `adjudicator`) runs
 the Cursor CLI in the same throwaway candidate checkout, as
 `cursor-agent -p --model M --force --trust PROMPT`. `model` is required and
