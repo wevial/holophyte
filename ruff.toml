@@ -12,3 +12,8 @@ select = ["E", "F", "W", "I", "C90"]
 # `noqa: C901` naming the reason and the work that retires it.
 [lint.mccabe]
 max-complexity = 12
+
+# Story witnesses land byte for byte as approved, long first lines included.
+[lint.per-file-ignores]
+"tests/test_comment_share_witness.py" = ["E501"]
+"tests/test_package_sizes_witness.py" = ["E501"]

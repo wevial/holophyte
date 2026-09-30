@@ -1,29 +1,3 @@
-"""The files a run touched, read from git: what `GET /runs/N/files` answers.
-
-The store records a run's branch and, once it merged, the merge commit on
-main; git holds which paths changed and by how many lines. This module
-turns the two store columns into a commit range and asks git for
-`git diff --numstat` and `git diff --name-status` over it, merged by path.
-It runs git through `gates.run_capped()` so a wedged repository cannot
-hang the daemon: every git call is under `GIT_TIMEOUT` and dies with its
-process group.
-
-The range is the run's own history. A merged run (a recorded `mergeSha`)
-is its merge commit's first parent to the merge commit, read in the
-target's checkout: exactly what the `--no-ff` landing added to main. A
-run with a branch whose worktree still stands is live: the diff is taken
-inside the worktree, from the merge base of `main` and its HEAD to the
-working tree -- commits and uncommitted edits together, untracked files
-listed as added -- so the panel fills in as the implementer works, and a
-worktree with nothing changed yet is an empty list, not an error (KO-304).
-A run with a branch but no worktree (a preserved branch after close-out)
-is the merge base of `main` and that branch to the branch head, read in
-the checkout: what the branch has that main does not, unaffected by what
-main gained since. `server.py` maps the outcomes here to HTTP: `RangeError`
-is its 409, a `TimeoutExpired` its 504.
-
-Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v
-"""
 from __future__ import annotations
 
 import os
@@ -33,22 +7,15 @@ from pathlib import Path
 
 from holophyte.loop.gates import run_capped
 
-# The cap on each git call. A diff over one branch is milliseconds; a repo
-# on a stalled network mount is the case this exists for.
 GIT_TIMEOUT = 30
-# How many files the answer lists before `truncated` is set. Well past any
-# one ticket's honest diff; a generated-tree commit is the case it caps.
 MAX_FILES = 200
-# The status letters served. `--diff-filter` with the same set on both
-# diffs so they name the same paths; anything else (copies, type changes)
-# is out of the run's story.
+# The same filter on both diffs, so they name the same paths.
 DIFF_FILTER = "ADMR"
 MAIN = "main"
 
 
 class RangeError(Exception):
-    """No commit range can be found for the run: it has neither a branch
-    nor a merge sha, or the ref it names no longer exists."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -61,10 +28,7 @@ class TouchedFile:
 
 @dataclass(frozen=True)
 class TouchedFiles:
-    """The answer: the range as full shas and the files sorted by path,
-    with the totals over every file the diff named, not only the ones
-    listed -- a truncated list still says how big the run was."""
-
+    """The totals cover every file the diff named, not only the ones listed."""
     base: str
     head: str
     files: list[TouchedFile] = field(default_factory=list)
@@ -74,19 +38,11 @@ class TouchedFiles:
 
 
 def git(repo, *args, timeout=GIT_TIMEOUT):
-    """`git ARGS` in `repo` under the cap: `(returncode, output)`, output
-    being stdout and stderr together as `run_capped()` captures them."""
     return run_capped(["git", *args], repo, timeout)
 
 
 def resolve(repo, rev, missing):
-    """`rev` as a full commit sha, or `RangeError(missing)` when git cannot
-    resolve it -- the branch was deleted by hand, the merge is gone.
-
-    A branch is named as `refs/heads/NAME`, never bare: a bare name falls
-    through git's ref search to a same-name tag, so a deleted branch with
-    a leftover tag would answer instead of raising.
-    """
+    """A branch is named as `refs/heads/NAME`: a bare name falls through to a tag."""
     code, out = git(repo, "rev-parse", "--verify", "--quiet",
                     f"{rev}^{{commit}}")
     if code != 0:
@@ -95,11 +51,7 @@ def resolve(repo, rev, missing):
 
 
 def run_range(repo, branch, merge_sha):
-    """The `(base, head)` shas for a run from its store columns.
-
-    A recorded merge wins over the branch: the branch may have been deleted
-    after landing, or moved on, while the merge commit is what main holds.
-    """
+    """A recorded merge wins: the branch may be deleted or moved after landing."""
     if merge_sha:
         head = resolve(repo, merge_sha,
                        f"merge commit {merge_sha} is not in the repository")
@@ -117,10 +69,6 @@ def run_range(repo, branch, merge_sha):
 
 
 def worktree_range(worktree):
-    """The `(base, head)` shas of a live run's worktree: the merge base of
-    `main` and the worktree's HEAD, and that HEAD. The diff a caller takes
-    over `base` in the worktree then reaches the working tree, so it holds
-    the uncommitted edits too; `head` says which commit they sit on."""
     code, out = git(worktree, "rev-parse", "--verify", "--quiet", "HEAD")
     if code != 0:
         raise RangeError(f"worktree {worktree} has no HEAD")
@@ -132,10 +80,6 @@ def worktree_range(worktree):
 
 
 def untracked_files(worktree, timeout=GIT_TIMEOUT):
-    """The untracked paths in `worktree` as `{path: (added, 0)}`, lines
-    counted the way numstat counts them (a final unterminated line is one),
-    a binary file as 0: what `git diff` against a commit cannot see and a
-    live run's panel would otherwise miss until the implementer staged."""
     code, out = git(worktree, "status", "--porcelain", "-z",
                     "--untracked-files=all", timeout=timeout)
     if code != 0:
@@ -155,10 +99,7 @@ def untracked_files(worktree, timeout=GIT_TIMEOUT):
 
 
 def count_lines(path):
-    """Lines in an untracked `path` as numstat would count them once staged.
-    A symlink is its link text (one line, never followed: its target may be
-    a FIFO that would block the request, or a file with a different count);
-    anything but a regular file is 0."""
+    """A symlink is its link text, never followed: its target may be a FIFO."""
     try:
         mode = os.lstat(path).st_mode
         if stat.S_ISLNK(mode):
@@ -168,7 +109,6 @@ def count_lines(path):
         else:
             return 0
     except OSError:
-        # Gone between the listing and the read: the implementer is at work.
         return 0
     if not data or b"\0" in data:
         return 0
@@ -176,12 +116,6 @@ def count_lines(path):
 
 
 def parse_numstat(text):
-    """`git diff --numstat -z` as `{path: (added, deleted)}`.
-
-    Each record is `added TAB deleted TAB path NUL`, except a rename, which
-    is `added TAB deleted TAB NUL old NUL new NUL` and is keyed by `new`.
-    A binary file's counts are `-` and count as 0 and 0.
-    """
     counts = {}
     fields = text.split("\0")
     i = 0
@@ -198,11 +132,6 @@ def parse_numstat(text):
 
 
 def parse_name_status(text):
-    """`git diff --name-status -z` as `{path: letter}`.
-
-    Each record is `status NUL path NUL`; a rename is `Rnnn NUL old NUL new
-    NUL`, served as `R` under `new`. Only the first letter is kept.
-    """
     statuses = {}
     fields = text.split("\0")
     i = 0
@@ -219,20 +148,6 @@ def parse_name_status(text):
 
 def touched_files(repo, branch, merge_sha, worktree=None, cap=None,
                   timeout=GIT_TIMEOUT):
-    """The `TouchedFiles` of a run, from its store columns and `repo`,
-    listing the first `cap` files (`MAX_FILES` when None) by path.
-
-    `worktree` is where the run's worktree would stand; when it does and
-    the run has no merge sha, the run is live and the diff is read there,
-    working tree included (see the module docstring). Otherwise the range
-    is `run_range()` over `repo`.
-
-    Raises `RangeError` when no range can be found and
-    `subprocess.TimeoutExpired` when a git call outlives `timeout`; a git
-    failure past that (a corrupt object, say) is a `RuntimeError` naming
-    the command, since a diff over two resolved commits has no expected
-    way to fail.
-    """
     cap = MAX_FILES if cap is None else cap
     live = (not merge_sha and branch and worktree is not None
             and Path(worktree).is_dir())

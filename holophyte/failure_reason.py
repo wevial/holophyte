@@ -1,4 +1,3 @@
-"""Bounded failure sentences and the structured facts behind them."""
 import json
 
 
@@ -7,8 +6,6 @@ def line(value):
 
 
 class Reason(str):
-    """A normal reason string carrying lossless facts to close-out."""
-
     def __new__(cls, text, facts, failure_kind="unclassified"):
         value = super().__new__(cls, line(text)[:400])
         value.facts = facts
@@ -17,7 +14,6 @@ class Reason(str):
 
 
 def compose(kind, **facts):
-    """One line, at most 400 characters; full facts remain in the event."""
     if kind == 'verify':
         text = (f"verify failed: command {facts.get('command_index', '?')} "
                 f"[{line(facts.get('command', ''))[:120]}], "
@@ -47,7 +43,6 @@ def compose(kind, **facts):
 
 
 def verify(output, command, context):
-    """Use gate facts, retaining a useful fallback for contract-only failures."""
     facts = getattr(output, 'failure', None) or {
         'command_index': None, 'command': command or '', 'exit_status': None,
         'last_output_line': str(output).splitlines()[-1] if output else '(no output)',
@@ -76,7 +71,6 @@ def fix_round(findings, timed_out, context):
 
 
 def record(conn, run_id, reason):
-    """The same string the failure card reads, with JSON facts beside it."""
     import store
 
     if conn is not None and getattr(reason, 'facts', None):

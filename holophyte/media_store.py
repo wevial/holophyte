@@ -1,4 +1,3 @@
-"""S3-compatible evidence PUTs, signed with SigV4 using only the standard library."""
 import hashlib
 import hmac
 import os
@@ -10,8 +9,6 @@ CREDENTIALS = ("HOLOPHYTE_MEDIA_ACCESS_KEY_ID", "HOLOPHYTE_MEDIA_SECRET_ACCESS_K
 
 
 class MissingCredentials(ValueError):
-    """A missing environment variable, safe to name in evidence and logs."""
-
     def __init__(self, name):
         self.name = name
         super().__init__(f"media_bucket requires environment variable {name}")

@@ -19,24 +19,12 @@ from typing import Sequence
 
 ROOT = Path(__file__).resolve().parent
 IMAGE = "holophyte-reviewer:ubuntu24.04-v10"
-# The Codex route the container runs, and the profile a round records for
-# it. The pair is the default an absent `[agents] review_model` /
-# `review_effort` leaves in place; `holophyte.config.agent_settings` reads the
-# keys and hands the pair to `run_review()`. `EFFORTS` is Codex's own
-# vocabulary for `model_reasoning_effort`.
 MODEL = "gpt-6-astra"
 EFFORT = "high"
 EFFORTS = ("low", "medium", "high", "xhigh")
 
 
 def profile_for(model: str, effort: str) -> str:
-    """The profile a round records for a Codex model and effort.
-
-    `codex-TAIL-EFFORT`, where TAIL is the model id's last dash-separated
-    segment: `gpt-5.6-sol` at medium is `codex-sol-medium`, `gpt-6-astra` at
-    medium is `codex-astra-medium`. The name says what actually ran, which is
-    what a `reviewRounds` row and FINDINGS.md are for.
-    """
     return f"codex-{model.rsplit('-', 1)[-1]}-{effort}"
 
 
@@ -44,20 +32,15 @@ PROFILE = profile_for(MODEL, EFFORT)
 SCRATCH_ROOT = Path.home() / ".cache" / "holophyte" / "reviews"
 SCRATCH_PREFIX = "review."
 CONTAINER_PREFIX = "holophyte-review-"
-# The signals a loop stops on that still let a handler run. A container the
-# `finally` below would have removed must not outlive a process that never
-# reached it; SIGKILL cannot be caught, and the sweep answers that case.
+# SIGKILL cannot be caught; the sweep answers that case.
 REMOVAL_SIGNALS = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
 CODEX_AUTH = Path.home() / ".codex" / "auth.json"
 DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
-# Where the candidate commit keeps the two, read by `image_for()`.
 DOCKERFILE_PATH = "docker/reviewer.Dockerfile"
 RUNNER_PATH = "review_runner.py"
 IMAGE_LINE = re.compile(r'^IMAGE = "([^"\s]+)"$', re.MULTILINE)
 CODEX_FILES = ("codex", "codex-code-mode-host")
 
-# Verdict vocabularies. A review round argues for or against the candidate; the
-# loop's terminal adjudication round issues a bare pass/fail on the final state.
 REVIEW_VERDICTS = ("APPROVE", "REQUEST_CHANGES")
 ADJUDICATION_VERDICTS = ("PASS", "FAIL")
 
@@ -78,8 +61,6 @@ def _run(
     args: Sequence[str], *, cwd: Path | None = None, timeout: int = 300,
     check: bool = True, on_start=None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run `args`; `on_start`, when given, is handed the `Popen` as it starts,
-    so a caller can end the command from outside the wait (KO-592)."""
     if on_start is None:
         result = subprocess.run(
             list(args), cwd=cwd, capture_output=True, text=True, timeout=timeout
@@ -133,12 +114,7 @@ def _fingerprint(repo: Path, run_id=None) -> str:
 
 
 def _check_clean(stage: Path) -> None:
-    """Refuse a stage with a remote or anything git would report as a change.
-
-    `--ignored=no` is the default git already applies; it is spelled so the
-    check reads the same before and after a carried directory lands, and so
-    a carried directory that git did *not* ignore in the stage is caught.
-    """
+    """`--ignored=no` is spelled so a carried directory git did not ignore is caught."""
     if _git(stage, "remote") or _git(
         stage, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=no"
     ):
@@ -146,7 +122,6 @@ def _check_clean(stage: Path) -> None:
 
 
 def check_carry(source: Path, entry: str) -> Path:
-    """Refuse, naming it, a carry entry that escapes, is tracked or is not ignored."""
     relative = Path(entry)
     if (relative.is_absolute() or not entry
             or any(part in ("..", "") for part in relative.parts)):
@@ -165,17 +140,7 @@ def check_carry(source: Path, entry: str) -> Path:
 
 
 def _carry_into(source: Path, stage: Path, carry: Sequence[str]) -> None:
-    """Copy each `[worktree] carry` directory from the worktree into the stage.
-
-    Each entry is a repository-relative directory the worktree's setup
-    installed and git ignores -- `console/node_modules`, `.venv` -- so the
-    reviewer can run the ticket's verify commands against the packages the
-    candidate was verified with. The copy lands at the same path with every
-    write bit cleared, so the reviewer reads it the way it reads the tree.
-    A tracked entry is already in the checkout; one `check_carry()` refuses,
-    or one absent from the worktree, fails the stage naming the entry rather
-    than failing the round later as an unverified gate.
-    """
+    """Each copy has every write bit cleared, so the reviewer reads it like the tree."""
     for entry in carry:
         origin = check_carry(source, entry)
         relative = Path(entry)
@@ -200,12 +165,7 @@ def stage_candidate(
     carry: Sequence[str] = (),
     run_id: int | None = None,
 ) -> StagedCandidate:
-    """Create a self-contained detached, clean, zero-remote review checkout.
-
-    `carry` names the worktree's ignored install directories to copy in
-    read-only after the checkout (`_carry_into()`); the fingerprint covers
-    the tracked tree alone, and is the same with or without them.
-    """
+    """The fingerprint covers the tracked tree alone, carried directories or not."""
     source = source.expanduser().resolve(strict=True)
     if _git(source, "rev-parse", "--is-inside-work-tree") != "true":
         raise ReviewBoundaryError(f"not a Git worktree: {source}")
@@ -235,7 +195,6 @@ def stage_candidate(
 
 
 def _prepare_runtime(root: Path, auth: Path, codex: Path) -> tuple[Path, Path]:
-    """Copy only Codex auth and its two required executables into scratch."""
     home = root / "home"
     codex_home = home / ".codex"
     toolchain = root / "toolchain"
@@ -256,7 +215,6 @@ def _prepare_runtime(root: Path, auth: Path, codex: Path) -> tuple[Path, Path]:
 
 
 def hardening_flags(uid: int, gid: int, memory: str = "2g") -> list[str]:
-    """Shared container boundary for review and implementation seats."""
     return ["--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges", "--pids-limit=256",
             f"--memory={memory}", "--cpus=2", "--network=bridge",
@@ -277,13 +235,7 @@ def container_command(
     effort: str = EFFORT,
     run_id: int | None = None,
 ) -> list[str]:
-    """Build one fixed Docker invocation.
-
-    The prompt, the model and the effort are positional arguments to the
-    container's shell script (`$1`, `$2`, `$3`), never text interpolated into
-    it: the quoting is the shell's, so none of the three can rewrite the
-    command. The effort reaches Codex as its `-c` assignment, already spelled.
-    """
+    """Prompt, model and effort are positional arguments, never interpolated."""
     from holophyte.agents.review_workspace import review_refs
 
     mounts = [
@@ -331,14 +283,7 @@ exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
 
 
 def terminal_verdict(message: str, verdicts: Sequence[str] = REVIEW_VERDICTS) -> str:
-    """The single allowed verdict `message` ends with.
-
-    Raises when the message carries anything other than exactly one allowed
-    verdict line, in final position, so an unparseable reply is never read as
-    an approval. A caller that must turn a malformed reply into a decision of
-    its own — the loop's terminal adjudication reads one as FAIL — catches the
-    error and keeps the message it already holds.
-    """
+    """Raise unless one allowed verdict line ends it: a bad reply is never approval."""
     allowed = [f"VERDICT: {verdict}" for verdict in verdicts]
     lines = [line.strip() for line in message.splitlines() if line.strip()]
     found = [line for line in lines if line in allowed]
@@ -352,11 +297,7 @@ def terminal_verdict(message: str, verdicts: Sequence[str] = REVIEW_VERDICTS) ->
 def parse_codex_output(
     output: str, verdicts: Sequence[str] | None = REVIEW_VERDICTS
 ) -> tuple[str, str | None]:
-    """Read trusted CLI JSONL events, not model-controlled transcript strings.
-
-    `verdicts=None` returns the final message unadjudicated, for a caller that
-    has to see a malformed reply rather than have it raised at the boundary.
-    """
+    """Read trusted CLI JSONL events, not model-controlled transcript strings."""
     command_succeeded = False
     messages: list[str] = []
     for line in output.splitlines():
@@ -384,15 +325,7 @@ def parse_codex_output(
 
 
 def image_for(candidate: StagedCandidate) -> tuple[str, str]:
-    """The image tag and Dockerfile text the candidate commit names.
-
-    A candidate that adds a tool to the reviewer image is reviewed in that
-    image, not in the one the main checkout names: both come out of the
-    candidate commit itself (`git show SHA:path` in the stage), so the review
-    sees the tag and the Dockerfile the candidate was written against. A
-    commit that does not carry both files -- every target that is not the
-    factory -- gets the pair this checkout names, as before.
-    """
+    """Both come from the candidate commit, so a new tool is reviewed in its image."""
     dockerfile = _run(
         ["git", "show", f"{candidate.candidate_sha}:{DOCKERFILE_PATH}"],
         cwd=candidate.path, check=False)
@@ -406,14 +339,7 @@ def image_for(candidate: StagedCandidate) -> tuple[str, str]:
 
 
 def _ensure_image(image: str, dockerfile: str, *, candidate: str) -> None:
-    """Build `image` from `dockerfile` when the host does not hold it.
-
-    The build context is a temporary directory holding that Dockerfile
-    alone, so what the candidate committed is what gets built, whatever the
-    main checkout's copy says. The build runs on the host with network; only
-    the review container is sealed. A failed build is an infra failure of
-    the run, named after the candidate whose Dockerfile it was.
-    """
+    """The build context holds that Dockerfile alone: the candidate's is what builds."""
     if subprocess.run(
         ["docker", "image", "inspect", image], capture_output=True, text=True
     ).returncode == 0:
@@ -452,15 +378,7 @@ def _remove_container(name: str, *, env=None) -> None:
 
 @contextlib.contextmanager
 def _removing_on_signal(name: str):
-    """Remove container `name` if a stop signal arrives inside the block.
-
-    Each handler removes the container, then restores the default disposition
-    and re-sends the signal to this process, so the loop still ends by the
-    signal it was sent. The handlers it displaced come back on exit, so
-    nothing changes outside the review window. Signals can only be installed
-    from the main thread; a review run anywhere else keeps the `finally` path
-    alone.
-    """
+    """Signals install only from the main thread; elsewhere `finally` alone removes."""
     if threading.current_thread() is not threading.main_thread():
         yield
         return
@@ -486,14 +404,7 @@ def _docker() -> str:
 
 
 def stray_containers() -> list[str]:
-    """Running review containers whose scratch directory no longer exists.
-
-    A review's container is named after its scratch directory, which the
-    process removes on its way out; a running container without one belongs
-    to a loop that is gone. Raises when there is no `docker` to ask or it
-    does not answer, so a caller can say the check was skipped rather than
-    report a clean host it never looked at.
-    """
+    """Raise when docker cannot be asked, so no caller reports an unseen host clean."""
     result = subprocess.run(
         [_docker(), "ps", "--filter", f"name={CONTAINER_PREFIX}",
          "--format", "{{.Names}}"],
@@ -527,21 +438,7 @@ def run_review(
     run_id: int | None = None,
     on_start=None,
 ) -> str:
-    """Review `candidate_sha` against `base_sha` in the container; the reply.
-
-    `on_start`, when given, is handed the container client's `Popen` as it
-    starts: killing it ends the wait, and the `finally` below removes the
-    container, so a caller can stop a review mid-way (KO-592).
-
-    `carry` is the target's `[worktree] carry` list, handed to
-    `stage_candidate()` so the stage holds the worktree's installed
-    dependencies and the reviewer can run the ticket's verify commands.
-
-    `model` and `effort` are the Codex route the container runs. `profile`,
-    when given, is what the caller intends to record for the round, and has
-    to be the profile the pair computes to: a row naming a route other than
-    the one that ran is the one record the runner refuses to help write.
-    """
+    """`profile` must be what the model and effort compute to; another is refused."""
     if not model:
         raise ReviewBoundaryError("empty reviewer model")
     if effort not in EFFORTS:

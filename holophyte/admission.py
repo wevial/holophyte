@@ -1,4 +1,3 @@
-"""Project admission reads and the CLI's recorded operator commands."""
 import store
 from holophyte.config.config_tables import board_config
 from holophyte.loop.runs import open_store
@@ -30,17 +29,12 @@ def state(conn, target):
 
 
 def project_of(conn, target):
-    """The store's project id for `target`'s checkout, or None."""
     paths = canonical_projects(conn)
     return next((key for key, path in paths.items()
                  if path == str(target.path.resolve())), None)
 
 
 def set_hold(conn, target, holding, note):
-    """Hold or release `target`'s project with `note`, creating its row
-    from `[board]` when the store has none; the project id. ValueError
-    for a project already so, or one with neither a row nor `[board]`.
-    `--hold`/`--release-hold` and the daemon's routes share it (KO-609)."""
     project = project_of(conn, target)
     if project is None:
         settings = board_config(target)
@@ -63,7 +57,6 @@ def change(target, holding, note):
 
 
 def held_idle(held, pool, conn, project):
-    """Let existing workers finish, then acknowledge a held scheduler's exit."""
     if not held or pool:
         return False
     print(held)
@@ -78,7 +71,6 @@ def reconcile_tick(target, conn, project, provider, first_tick):
 
 
 def disabled_startup(target, out=None):
-    """Report disabled targets before probing routes or starting a supervisor."""
     if not target.store_path.exists():
         return False
     from store.read import open_readonly

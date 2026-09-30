@@ -1,5 +1,3 @@
-"""One typed choice question, with failures represented as data."""
-
 import http.client
 import json
 import math
