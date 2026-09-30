@@ -39,12 +39,18 @@ Each module, one line:
   `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
 - `holophyte/config/project.py` — where a project's state lives (`HOLOPHYTE_HOME`,
   the `<slug>` directory, legacy adoption) and the `Project` value.
-- `holophyte/config/config.py` — `config.toml` and every table it can set, checked
-  at startup.
-- `holophyte/config/config_tables.py` — the per-table readers out of
-  `holophyte/config/config.py` (KO-397): the `[supervisor]`, `[loop]`, `[board]`,
-  `[merge]` and `[report]` tables with `CONSOLE_KEYS` and
-  `split_address()`, the namedtuples and defaults they own.
+- `holophyte/config/reader.py` — `load_config()`, `config_table()`, `KNOWN_KEYS`
+  and the role defaults an absent `[agents]` table leaves in place.
+- `holophyte/config/checks.py` — the startup checks: unknown keys, the whole
+  document, agent commands, the default routes and the `[worktree]` table.
+- `holophyte/config/agent_settings.py` — the `[agents]` readers: commands,
+  fallbacks, the review route, the session pattern and `budget_scale`.
+- `holophyte/config/worktree_settings.py` — the `[worktree]` readers: setup
+  commands and cap, carry list, branch prefix and environment allow-lists.
+- `holophyte/config/serve_settings.py` — the `[console]` and `[serve]` readers.
+- `holophyte/config/config_tables.py` — the per-table readers (KO-397): the
+  `[supervisor]`, `[loop]`, `[board]`, `[merge]` and `[report]` tables with
+  `CONSOLE_KEYS` and `split_address()`, the namedtuples and defaults they own.
 - `holophyte/failure_reason.py` — bounded failure reasons and their structured
   event facts for verify, adjudication and fix rounds.
 - `holophyte/loop/gates.py` — the verify gate: a ticket's command in, a red or

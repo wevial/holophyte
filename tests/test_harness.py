@@ -19,7 +19,7 @@ from unittest.mock import patch
 import holophyte.agents.agents
 import holophyte.agents.fix_session
 import holophyte.agents.harness
-import holophyte.config.config
+import holophyte.config.checks
 import holophyte.config.project
 import holophyte.loop.loop
 import holophyte.loop.runs
@@ -692,7 +692,7 @@ class CriticTableTests(unittest.TestCase):
     def test_a_claude_critic_is_accepted_and_a_claude_reviewer_refused(self):
         critic = self.target('[agents.critic]\nharness = "claude"\n'
                              'model = "sonnet"\neffort = "high"\n')
-        holophyte.config.config.check_document(critic)
+        holophyte.config.checks.check_document(critic)
         turn = holophyte.agents.harness.critic_seat(critic).turn("GOAL")
         self.assertEqual(turn[:3], ["claude", "-p", "--session-id"])
         self.assertEqual(turn[4:], ["--model", "sonnet", "--effort", "high",
@@ -700,7 +700,7 @@ class CriticTableTests(unittest.TestCase):
         with self.assertRaisesRegex(
                 SystemExit, r"\[agents\.reviewer\] harness: 'claude' supports "
                             r"critic, implementer, not reviewer"):
-            holophyte.config.config.check_document(self.target(
+            holophyte.config.checks.check_document(self.target(
                 '[agents.reviewer]\nharness = "claude"\nmodel = "sonnet"\n'))
 
     def test_critic_refusals_name_the_table_and_the_problem(self):
@@ -712,7 +712,7 @@ class CriticTableTests(unittest.TestCase):
         ):
             with self.subTest(config=config):
                 with self.assertRaisesRegex(SystemExit, message):
-                    holophyte.config.config.check_document(self.target(config))
+                    holophyte.config.checks.check_document(self.target(config))
 
 
 if __name__ == "__main__":

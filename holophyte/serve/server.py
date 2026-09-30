@@ -14,8 +14,8 @@ from pathlib import Path
 from time import time
 from urllib.parse import unquote, urlsplit
 
-from holophyte.config.config import console_config, serve_config
 from holophyte.config.config_tables import split_address
+from holophyte.config.serve_settings import console_config, serve_config
 from holophyte.host.supervisor import factory_revision
 from holophyte.loop.reexec import reexec_self
 from holophyte.serve.serve_actions import (

@@ -21,9 +21,9 @@ ROOT = Path(__file__).resolve().parent
 IMAGE = "holophyte-reviewer:ubuntu24.04-v10"
 # The Codex route the container runs, and the profile a round records for
 # it. The pair is the default an absent `[agents] review_model` /
-# `review_effort` leaves in place; `holophyte.config.config` reads the keys and hands
-# the pair to `run_review()`. `EFFORTS` is Codex's own vocabulary for
-# `model_reasoning_effort`.
+# `review_effort` leaves in place; `holophyte.config.agent_settings` reads the
+# keys and hands the pair to `run_review()`. `EFFORTS` is Codex's own
+# vocabulary for `model_reasoning_effort`.
 MODEL = "gpt-6-astra"
 EFFORT = "high"
 EFFORTS = ("low", "medium", "high", "xhigh")

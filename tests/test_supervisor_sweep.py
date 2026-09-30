@@ -30,7 +30,7 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
-import holophyte.config.config  # noqa: E402 - after the sys.path insert above
+import holophyte.config.checks  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.host.sweep_report  # noqa: E402 - after the sys.path insert above

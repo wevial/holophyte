@@ -3,12 +3,6 @@ import re
 import unittest
 from pathlib import Path
 
-from holophyte.config.config import (
-    AGENT_CONFIG_KEYS,
-    KNOWN_KEYS,
-    REVIEW_ROUTE_KEYS,
-    SERVE_KEYS,
-)
 from holophyte.config.config_tables import (
     AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
@@ -19,6 +13,8 @@ from holophyte.config.config_tables import (
     REPORT_KEYS,
     SUPERVISOR_KEYS,
 )
+from holophyte.config.reader import AGENT_CONFIG_KEYS, KNOWN_KEYS, REVIEW_ROUTE_KEYS
+from holophyte.config.serve_settings import SERVE_KEYS
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
 TABLES = {

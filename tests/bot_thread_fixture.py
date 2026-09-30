@@ -93,7 +93,8 @@ class BotConfigCases:
         import contextlib
         import io
 
-        from holophyte.config.config import check_document, merge_config
+        from holophyte.config.checks import check_document
+        from holophyte.config.config_tables import merge_config
         from holophyte.host.startup import banner
 
         for value in ('"operator"', '[1]', 'false'):

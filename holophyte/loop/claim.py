@@ -52,14 +52,14 @@ from holophyte.board.projection import (
     release_lease_label,
     store_status,
 )
-from holophyte.config.config import (
+from holophyte.config.config_tables import merge_config, sweep_config
+from holophyte.config.project import worktree_path
+from holophyte.config.worktree_settings import (
     branch_prefix,
     setup_commands,
     setup_timeout,
     worktree_environment,
 )
-from holophyte.config.config_tables import merge_config, sweep_config
-from holophyte.config.project import worktree_path
 from holophyte.environment_git import (
     environment_temporary_directory,
     exclude_environment,

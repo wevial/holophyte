@@ -216,7 +216,7 @@ class MediaTests(unittest.TestCase):
         self.assertFalse(list(self.repo.glob('.holophyte-capture-*')))
 
     def test_readonly_capture_is_rejected_at_startup(self):
-        from holophyte.config.config import check_config
+        from holophyte.config.checks import check_config
 
         self.config['agents'] = {
             'implementer_isolation': {'backend': 'container', 'writable': False}}

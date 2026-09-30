@@ -6,7 +6,9 @@ import store
 from holophyte.agents.agents import effective_role, routes
 from holophyte.agents.harness import seat as harness_seat
 from holophyte.agents.session_arms import select_arm
-from holophyte.config.config import check_command_path, config_table, loop_config
+from holophyte.config.checks import check_command_path
+from holophyte.config.config_tables import loop_config
+from holophyte.config.reader import config_table
 from holophyte.loop.gates import sh
 
 

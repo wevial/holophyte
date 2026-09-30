@@ -38,7 +38,7 @@ from holophyte.babysit import maintainer_notes
 from holophyte.babysit.babysitter import _babysit
 from holophyte.board import projection
 from holophyte.board.projection import ledger
-from holophyte.config.config import budget_scale
+from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import (
     loop_config,
     merge_config,

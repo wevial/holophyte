@@ -10,7 +10,8 @@ import tomllib
 from datetime import datetime, timezone
 
 from holophyte.agents.agents import probe_implementer
-from holophyte.config.config import KNOWN_KEYS, check_document
+from holophyte.config.checks import check_document
+from holophyte.config.reader import KNOWN_KEYS
 from holophyte.redact import RedactionError, redact, restore
 
 CONFIG_PATH = "/config"

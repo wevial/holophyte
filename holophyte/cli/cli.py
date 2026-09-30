@@ -46,7 +46,7 @@ from holophyte.cli.operator import (
 )
 from holophyte.cli.status import host_status_report, status_report
 from holophyte.cli.store_import import dry_run
-from holophyte.config.config import (
+from holophyte.config.checks import (
     check_agent_commands,
     check_config,
     check_worktree_setup,

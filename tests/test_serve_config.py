@@ -25,7 +25,7 @@ import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
 from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 
 import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
-import holophyte.config.config  # noqa: E402 - after the sys.path insert above
+import holophyte.config.checks  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.serve.serve_config  # noqa: E402 - after the sys.path insert above
@@ -68,7 +68,7 @@ class ConfigEditTests(ServeTestCase):
         """`text`, on disk, is a document the loop's startup accepts."""
         (self.db.parent / "config.toml").write_text(text)
         project = holophyte.config.project.Project.locate(self.target)
-        self.assertIsNone(holophyte.config.config.check_document(project))
+        self.assertIsNone(holophyte.config.checks.check_document(project))
 
     def on_disk(self):
         return (self.db.parent / "config.toml").read_text()

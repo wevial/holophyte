@@ -6,9 +6,10 @@ import time
 import tomllib
 from pathlib import Path
 
-from holophyte.config.config import ENV_NAME, process_value, serve_config
 from holophyte.config.config_tables import board_config, board_mode, split_address
 from holophyte.config.project import DEFAULT_HOLOPHYTE_HOME, Project
+from holophyte.config.serve_settings import serve_config
+from holophyte.config.worktree_settings import ENV_NAME, process_value
 from holophyte.redact import values_held
 
 HOST_FILE = "host.toml"

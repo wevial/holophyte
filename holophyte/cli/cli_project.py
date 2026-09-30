@@ -18,7 +18,7 @@ from pathlib import Path
 import store
 import store.read
 from holophyte.admission import project_of
-from holophyte.config.config import check_config
+from holophyte.config.checks import check_config
 from holophyte.config.config_tables import board_config
 from holophyte.config.project import Project
 from holophyte.host.registry import (

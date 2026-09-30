@@ -2,7 +2,7 @@
 import re
 import subprocess
 
-from holophyte.config.config import merge_config
+from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
 
 

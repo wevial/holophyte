@@ -39,7 +39,7 @@ def runs_codex(value):
 
 
 def route_for(project):
-    from holophyte.config.config import config_table
+    from holophyte.config.reader import config_table
 
     table = config_table(project, "agents")
     value = table.get("implementer_isolation", "none")
@@ -95,7 +95,7 @@ def validate_credential(value):
 
 def environment(project):
     """A container turn's `[worktree]` values, dotenv quotes removed."""
-    from holophyte.config.config import process_value, worktree_environment
+    from holophyte.config.worktree_settings import process_value, worktree_environment
 
     if route_for(project).backend == "none":
         return None
@@ -350,7 +350,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
         return (runner or run_capped)(argv, worktree, timeout, **hook, **kwargs)
     if route.backend != "container":
         raise ValueError(f"unknown isolation backend: {route.backend}")
-    from holophyte.config.config import carry_directories
+    from holophyte.config.worktree_settings import carry_directories
     from holophyte.isolation.isolation_clone import carry_mounts, turn_clone
 
     image_ready(route)

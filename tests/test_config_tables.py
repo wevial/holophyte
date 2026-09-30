@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli.cli
-import holophyte.config.config
+import holophyte.config.serve_settings
 from holophyte.config import config_tables
 
 # `config_fixture` is a helper, not a test module: discovery never imports it,
@@ -359,13 +359,13 @@ class ConsoleConfigTests(ConfigTestCase):
         self.locate()
 
         self.assertEqual(
-            holophyte.config.config.console_config(self.project).daemons, ()
+            holophyte.config.serve_settings.console_config(self.project).daemons, ()
         )
 
     def test_a_list_of_addresses_is_read_in_order(self):
         self.locate('[console]\ndaemons = ["writer-2:7710", "writer-3:7711"]\n')
 
-        self.assertEqual(holophyte.config.config.console_config(self.project).daemons,
+        self.assertEqual(holophyte.config.serve_settings.console_config(self.project).daemons,
                          ("writer-2:7710", "writer-3:7711"))
 
     def test_a_bad_entry_is_a_startup_error_naming_the_key_and_the_entry(self):

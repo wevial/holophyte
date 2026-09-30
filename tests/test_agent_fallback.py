@@ -577,7 +577,8 @@ class ContainerReviewFallbackTests(SweepTestCase):
             "SELECT guidance FROM interventions WHERE action='route_fallback'")]
 
     def test_config_accepts_the_pair_and_refuses_half_or_beside_commands(self):
-        from holophyte.config.config import check_config, review_route
+        from holophyte.config.agent_settings import review_route
+        from holophyte.config.checks import check_config
 
         self.configure(self.PAIRS)
         check_config(self.project)
@@ -596,7 +597,8 @@ class ContainerReviewFallbackTests(SweepTestCase):
             check_config(self.project)
 
     def test_the_pair_sits_beside_fallback_commands_but_not_a_reviewer(self):
-        from holophyte.config.config import check_config, review_route
+        from holophyte.config.agent_settings import review_route
+        from holophyte.config.checks import check_config
 
         pair_and_fallbacks = ('[agents]\nreview_model = "gpt-5.6-sol"\n'
                               'review_effort = "xhigh"\n'
@@ -611,7 +613,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
             check_config(self.project)
 
     def test_an_unset_pair_reviews_on_gpt_6_astra_at_high(self):
-        from holophyte.config.config import review_route
+        from holophyte.config.agent_settings import review_route
 
         self.configure(f'[agents]\nreviewer_fallback = "{sys.executable}"\n')
         self.assertEqual(review_route(self.project), ('gpt-6-astra', 'high'))
@@ -758,7 +760,7 @@ class ReviewerFallbackListTests(SweepTestCase):
 
     def test_a_list_switches_to_its_first_entry_whose_probe_passes(self):
         from holophyte.agents.agent_routes import routes
-        from holophyte.config.config import check_config
+        from holophyte.config.checks import check_config
 
         devin = self.reviewer('devin-review', down=True)
         claude = self.reviewer('claude-review')
@@ -797,7 +799,7 @@ class ReviewerFallbackListTests(SweepTestCase):
 
     def test_a_string_still_switches_and_a_malformed_list_is_refused(self):
         from holophyte.agents.agent_routes import routes
-        from holophyte.config.config import check_config
+        from holophyte.config.checks import check_config
 
         devin = self.reviewer('devin-review')
         self.configure_fallback(f'"{devin}"')

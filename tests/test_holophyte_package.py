@@ -42,20 +42,22 @@ DEFINED = {
         "legacy_state_layouts",
         "state_dir",
     ],
-    _module("config.config"): [
-        "agent_command",
-        "carry_directories",
+    _module("config.reader"): ["load_config"],
+    _module("config.checks"): [
         "check_agent_commands",
         "check_config_keys",
         "check_default_implementer",
         "check_default_reviewer",
         "check_worktree_setup",
         "docker_probe",
-        "load_config",
+    ],
+    _module("config.agent_settings"): ["agent_command"],
+    _module("config.worktree_settings"): [
+        "carry_directories",
         "setup_commands",
         "setup_timeout",
     ],
-    # KO-397: the per-table readers, out of `holophyte.config.config`.
+    # KO-397: the per-table readers.
     _module("config.config_tables"): [
         "LoopConfig", "ReportConfig", "SweepConfig", "loop_config",
         "report_config", "sweep_config",

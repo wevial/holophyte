@@ -6,12 +6,8 @@ from time import monotonic
 
 import store
 from holophyte.agents.agent_routes import routes
-from holophyte.config.config import (
-    DEFAULT_IMPLEMENTER,
-    IMPL_MODEL,
-    agent_command,
-    review_route,
-)
+from holophyte.config.agent_settings import agent_command, review_route
+from holophyte.config.reader import DEFAULT_IMPLEMENTER, IMPL_MODEL
 from holophyte.redact import known_secrets, outbound
 
 

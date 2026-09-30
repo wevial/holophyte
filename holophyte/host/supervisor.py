@@ -27,8 +27,9 @@ from holophyte.board.projection import (
     refresh_board_states,
 )
 from holophyte.cli.report import format_age, host_label
-from holophyte.config.config import budget_scale, serve_config
+from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import BOARD_ASK_SEC, sweep_config
+from holophyte.config.serve_settings import serve_config
 from holophyte.host.supervisor_lock import (
     acquire_supervisor_lock,
     release_supervisor_lock,

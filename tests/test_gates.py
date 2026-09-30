@@ -231,7 +231,7 @@ class BaselineTests(LoopFixture):
         self.assertEqual(rows[1]["tier"], "always")
 
     def test_verify_config_document_rejects_bad_shapes(self):
-        from holophyte.config.config import check_document
+        from holophyte.config.checks import check_document
         for setting in ('always = "true"', 'before_merge = [1]',
                         'always = [" "]', 'timeout_sec = 0',
                         'timeout_sec = true', 'timeout_sec = inf',

@@ -25,8 +25,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.config.config  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.config.reader  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.review.review  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -458,7 +458,7 @@ class ReviewRoundRowTests(unittest.TestCase):
 
         (only,) = self.rounds()
         self.assertEqual((only["round"], only["verdict"], only["model"]),
-                         (1, "pass", holophyte.config.config.REVIEW_PROFILE))
+                         (1, "pass", holophyte.config.reader.REVIEW_PROFILE))
         self.assertEqual(json.loads(only["findings"]), [])
         self.assertEqual(only["fingerprint"], store.EMPTY_FINGERPRINT)
         (result,) = json.loads(only["verification"])

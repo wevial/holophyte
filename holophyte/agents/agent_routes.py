@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 from holophyte.agents.harness import route_text
-from holophyte.config.config import AGENT_CONFIG_KEYS, DEFAULT_IMPLEMENTER
+from holophyte.config.reader import AGENT_CONFIG_KEYS, DEFAULT_IMPLEMENTER
 from holophyte.redact import REDACTED, known_secrets, redact_prose
 
 

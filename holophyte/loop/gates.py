@@ -7,7 +7,7 @@ classes the loop's close-out reads. Pure: strings in, report out, one
 subprocess call -- or none, for a run's repeat of a pass the per-process
 record cites. Nothing here knows the loop, the store or the target; the
 one constant it shares with worktree setup, `VERIFY_TIMEOUT`, stays in
-`holophyte.config.config`, which is the default `setup_timeout_sec` falls back to.
+`holophyte.config.reader`, which is the default `setup_timeout_sec` falls back to.
 
 Second slice of the phase-2 module split; moved verbatim from `factory.py`,
 which imports back the names its remaining call sites use.
@@ -23,7 +23,8 @@ from pathlib import Path
 from time import monotonic, sleep, time
 
 import ticket_template
-from holophyte.config.config import VERIFY_TIMEOUT, carry_directories
+from holophyte.config.reader import VERIFY_TIMEOUT
+from holophyte.config.worktree_settings import carry_directories
 
 DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
 
