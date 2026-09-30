@@ -11,7 +11,8 @@ from unittest.mock import patch
 from fake_agent import IMPLEMENT, Commit, FakeAgent
 from loop_fixture import BRANCH, VALID_BODY, StubProvider, a_task
 
-import holophyte.agents.agents as agents
+import holophyte.agents.review_workspace as review_workspace
+import holophyte.agents.roles as roles
 import holophyte.config.config_tables
 import store
 
@@ -123,7 +124,8 @@ class AbortTurnCases:
                        "reviewer = \"sh -c 'sleep 30 & exec sleep 30'\"\n")
         beat_s = holophyte.config.config_tables.sweep_config(
             self.project).heartbeat_stale_ms / 2000
-        implementer, seen, real = FakeAgent(Commit("work")), {}, agents.run_capped
+        implementer, seen, real = (FakeAgent(Commit("work")), {},
+                                   review_workspace.run_capped)
 
         def run_capped(cmd, cwd, timeout, on_start=None, **kwargs):
             def started(proc):
@@ -141,9 +143,9 @@ class AbortTurnCases:
         def dispatch(target, role, goal, cwd, **kwargs):
             if role == IMPLEMENT:
                 return implementer(target, role, goal, cwd, **kwargs)
-            return agents.agent(target, role, goal, cwd, **kwargs)
+            return roles.agent(target, role, goal, cwd, **kwargs)
 
-        with patch.object(agents, "run_capped", run_capped), \
+        with patch.object(review_workspace, "run_capped", run_capped), \
                 patch.object(sys, "stdout", io.StringIO()):
             self.loop(fake=dispatch,
                       provider=StubProvider(dict(a_task(), body=VALID_BODY)))

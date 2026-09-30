@@ -20,7 +20,13 @@ from loop_fixture import (  # noqa: E402 - fixture shares the tests import path
 )
 from sweep_fixture import SweepTestCase  # noqa: E402
 
-from holophyte.agents import agents  # noqa: E402
+from holophyte.agents import (  # noqa: E402
+    agent_output,
+    fallback,
+    probes,
+    review_workspace,
+    roles,
+)
 from holophyte.agents.agent_routes import reset  # noqa: E402
 from holophyte.cli import operator  # noqa: E402
 
@@ -34,7 +40,7 @@ class AgentFallbackTests(SweepTestCase):
                 f'#!{sys.executable}\nimport subprocess, sys\n'
                 f'with open({str(self.calls)!r}, "a") as f:\n'
                 f' f.write({name!r} + " " + sys.argv[-1] + "\\n")\n'
-                f'review_probe = sys.argv[-1] == {agents.REVIEW_PROBE_GOAL!r}\n'
+                f'review_probe = sys.argv[-1] == {probes.REVIEW_PROBE_GOAL!r}\n'
                 'probe = review_probe or '
                 'sys.argv[-1] == "Reply with the single word: ready"\n'
                 f'failed = ({probe_fails!r} or not probe) '
@@ -67,7 +73,7 @@ class AgentFallbackTests(SweepTestCase):
         def turn(*_):
             self.assertEqual(active_routes(self.project)['writer'],
                              {'command': self.fallback, 'fallback': self.fallback})
-            self.assertEqual(agents.agent(self.project, 'write', 'describe',
+            self.assertEqual(roles.agent(self.project, 'write', 'describe',
                                           self.target),
                              'turn completed')
             return 0
@@ -76,8 +82,8 @@ class AgentFallbackTests(SweepTestCase):
         self.assertIn('writer probe failed', output)
         self.assertIn('using implementer', output)
         self.assertEqual(self.calls.read_text().splitlines(), [
-            'devin-fallback ' + agents.PROBE_GOAL,
-            'codex-primary ' + agents.PROBE_GOAL,
+            'devin-fallback ' + probes.PROBE_GOAL,
+            'codex-primary ' + probes.PROBE_GOAL,
             'devin-fallback describe'])
 
     def test_writer_status_tracks_implementer_fallback_and_clears(self):
@@ -88,20 +94,20 @@ class AgentFallbackTests(SweepTestCase):
                        f'implementer_fallback = "{self.fallback}"\n'
                        f'writer = "{self.primary}"\n')
         self.addCleanup(reset, self.project)
-        self.assertTrue(agents.startup_routes(
+        self.assertTrue(fallback.startup_routes(
             self.project, SimpleNamespace(team='team-1')))
         self.assertEqual(active_routes(self.project)['writer'],
                          {'command': self.fallback, 'fallback': self.fallback})
         # A read-only startup probe must not clear the published substitution.
         Path(self.primary).write_text(f'#!{sys.executable}\nprint("ready")\n')
-        agents.probe_writer(self.project, activate=False)
+        probes.probe_writer(self.project, activate=False)
         self.assertEqual(active_routes(self.project)['writer']['command'],
                          self.fallback)
-        agents.probe_writer(self.project, activate=True)
+        probes.probe_writer(self.project, activate=True)
         self.assertEqual(active_routes(self.project)['writer'],
                          {'command': self.primary})
         Path(self.primary).write_text(f'#!{sys.executable}\nprint("unavailable")\n')
-        agents.probe_writer(self.project, activate=True)
+        probes.probe_writer(self.project, activate=True)
         self.assertEqual(active_routes(self.project)['writer']['command'],
                          self.fallback)
         reset(self.project)
@@ -116,7 +122,7 @@ class AgentFallbackTests(SweepTestCase):
         self.configure(f'[agents]\nimplementer = "{self.fallback}"\n'
                        f'writer = "{self.primary}"\n[loop]\nworkers = 2\n')
         def turn(*_):
-            self.assertEqual(agents.agent(self.project, 'write', 'describe',
+            self.assertEqual(roles.agent(self.project, 'write', 'describe',
                                           self.target),
                              'turn completed')
             return pool.WORKER_PARKED
@@ -128,8 +134,8 @@ class AgentFallbackTests(SweepTestCase):
         self.assertIn('writer probe failed', out.getvalue())
         self.assertIn('using implementer', out.getvalue())
         self.assertEqual(self.calls.read_text().splitlines(), [
-            'devin-fallback ' + agents.PROBE_GOAL,
-            'codex-primary ' + agents.PROBE_GOAL,
+            'devin-fallback ' + probes.PROBE_GOAL,
+            'codex-primary ' + probes.PROBE_GOAL,
             'devin-fallback describe'])
 
     def test_missing_implementer_image_stops_before_claim(self):
@@ -157,7 +163,7 @@ class AgentFallbackTests(SweepTestCase):
         self.routes()
         run = self.a_run()
         def turn(*_):
-            self.assertEqual(agents.agent(self.project, 'implement', 'do work',
+            self.assertEqual(roles.agent(self.project, 'implement', 'do work',
                              self.target, conn=self.conn, run_id=run),
                              'turn completed')
             return 0
@@ -165,8 +171,8 @@ class AgentFallbackTests(SweepTestCase):
         self.assertEqual(code, 0)
         self.assertIn('implementer route down', output)
         self.assertEqual(self.calls.read_text().splitlines(), [
-            'codex-primary ' + agents.PROBE_GOAL,
-            'devin-fallback ' + agents.PROBE_GOAL, 'devin-fallback do work'])
+            'codex-primary ' + probes.PROBE_GOAL,
+            'devin-fallback ' + probes.PROBE_GOAL, 'devin-fallback do work'])
         rows = self.conn.execute(
             "SELECT projectId, guidance FROM interventions "
             "WHERE action='route_fallback'").fetchall()
@@ -185,7 +191,7 @@ class AgentFallbackTests(SweepTestCase):
         run = self.a_run()
         def turn(*_):
             for goal in ('first', 'second'):
-                self.assertEqual(agents.agent(self.project, 'implement', goal,
+                self.assertEqual(roles.agent(self.project, 'implement', goal,
                                  self.target, conn=self.conn, run_id=run),
                                  'turn completed')
             return 0
@@ -193,8 +199,8 @@ class AgentFallbackTests(SweepTestCase):
         self.assertEqual(code, 0)
         self.assertEqual(output.count('using fallback:'), 1)
         self.assertEqual(self.calls.read_text().splitlines(), [
-            'codex-primary ' + agents.PROBE_GOAL, 'codex-primary first',
-            'devin-fallback ' + agents.PROBE_GOAL, 'devin-fallback first',
+            'codex-primary ' + probes.PROBE_GOAL, 'codex-primary first',
+            'devin-fallback ' + probes.PROBE_GOAL, 'devin-fallback first',
             'devin-fallback second'])
         payload, = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId=? "
@@ -211,7 +217,7 @@ class AgentFallbackTests(SweepTestCase):
                        f'implementer_fallback = "{self.fallback} --api-key {secret}"\n')
         run = self.a_run()
         def turn(*_):
-            self.assertEqual(agents.agent(self.project, 'implement', 'work',
+            self.assertEqual(roles.agent(self.project, 'implement', 'work',
                              self.target, conn=self.conn, run_id=run),
                              'turn completed')
             self.assertEqual(active_routes(self.project)['implementer'],
@@ -236,15 +242,15 @@ class AgentFallbackTests(SweepTestCase):
         reason = ("ERROR: You've hit your usage limit; execution failed; "
                   "explanation: argument 'plain', command: codex exec; "
                   "--api-key rejected '-secret'")
-        probe = agents.ProbeResult(
+        probe = probes.ProbeResult(
             command=['codex', 'exec', '--value', 'plain', '--api-key=-secret'],
             returncode=1,
             output=reason, timeout=90)
-        diagnostic = agents.probe_diagnostic(self.project, probe)
+        diagnostic = probes.probe_diagnostic(self.project, probe)
         out = io.StringIO()
         self.addCleanup(reset, self.project)
         with contextlib.redirect_stdout(out):
-            agents.activate_fallback(self.project, 'implement', reason,
+            fallback.activate_fallback(self.project, 'implement', reason,
                                      self.conn, run)
         evidence = [diagnostic, out.getvalue()]
         for query, column in (('SELECT guidance FROM interventions'
@@ -270,10 +276,11 @@ class AgentFallbackTests(SweepTestCase):
             dispatched.append(cmd)
             if cmd[0] == 'claude':
                 return 1, "You've hit your limit · resets tomorrow"
-            return 0, 'ready' if cmd[-1] == agents.PROBE_GOAL else 'completed'
-        with patch.object(agents, 'run_capped', side_effect=execute):
+            return 0, 'ready' if cmd[-1] == probes.PROBE_GOAL else 'completed'
+        with patch.object(roles, 'run_capped', side_effect=execute), \
+                patch.object(probes, 'run_capped', side_effect=execute):
             self.addCleanup(reset, self.project)
-            result = agents.agent(self.project, 'implement', 'work', self.target,
+            result = roles.agent(self.project, 'implement', 'work', self.target,
                                   conn=self.conn, run_id=run)
         self.assertEqual(result, 'completed')
         self.assertEqual([cmd[0] for cmd in dispatched],
@@ -299,8 +306,8 @@ class AgentFallbackTests(SweepTestCase):
             self.assertEqual(operator.main(self.project,
                                            SimpleNamespace(team='team-1')), 0)
         self.assertEqual(self.calls.read_text().splitlines(), [
-            'codex-primary ' + agents.PROBE_GOAL,
-            'devin-fallback ' + agents.PROBE_GOAL])
+            'codex-primary ' + probes.PROBE_GOAL,
+            'devin-fallback ' + probes.PROBE_GOAL])
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM interventions WHERE action='route_fallback'"
         ).fetchone()[0], 0)
@@ -330,17 +337,17 @@ class AgentFallbackTests(SweepTestCase):
                 self.configure(f'[agents]\n{seat} = "{self.primary}"\n'
                                f'{seat}_fallback = "{self.fallback}"\n')
                 self.addCleanup(reset, self.project)
-                output = agents.agent(self.project, role, 'judge this', self.target,
+                output = roles.agent(self.project, role, 'judge this', self.target,
                                       base_sha=sha, candidate_sha=sha,
                                       conn=self.conn, run_id=run)
                 self.assertEqual(output, 'turn completed')
-                self.assertEqual(agents.agent_route(self.project, role), self.fallback)
+                self.assertEqual(roles.agent_route(self.project, role), self.fallback)
                 self.assertEqual(sh(['git', 'rev-parse',
                                      f'refs/review/{run}/candidate'],
                                     cwd=self.target), sha)
                 reset(self.project)
         self.assertEqual(self.calls.read_text().splitlines(), 2 * [
-            'codex-primary judge this', 'devin-fallback ' + agents.REVIEW_PROBE_GOAL,
+            'codex-primary judge this', 'devin-fallback ' + probes.REVIEW_PROBE_GOAL,
             'devin-fallback judge this'])
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM interventions WHERE action='route_fallback'"
@@ -405,9 +412,9 @@ class AgentFallbackTests(SweepTestCase):
         for role, seat in (('review', 'reviewer'), ('adjudicate', 'adjudicator')):
             with self.subTest(role=role):
                 self.configure(f'[agents]\n{seat} = "{command}"\n')
-                result = agents.agent(self.project, role, 'judge', self.target,
+                result = roles.agent(self.project, role, 'judge', self.target,
                                       base_sha=sha, candidate_sha=sha, timeout=1)
-                self.assertIsInstance(result, agents.AgentOutput)
+                self.assertIsInstance(result, agent_output.AgentOutput)
                 self.assertIn(f'{seat} timed out after', result)
                 self.assertIn('minutes', result)
                 self.assert_review_cleanup()
@@ -421,12 +428,12 @@ class AgentFallbackTests(SweepTestCase):
         self.configure(f'[agents]\nreviewer = "{command}"\n'
                        f'reviewer_fallback = "{self.fallback}"\n')
         self.addCleanup(reset, self.project)
-        result = agents.agent(self.project, 'review', 'judge', self.target,
+        result = roles.agent(self.project, 'review', 'judge', self.target,
                               base_sha=sha, candidate_sha=sha, timeout=1,
                               conn=self.conn, run_id=run)
         self.assertEqual(result, 'turn completed')
         self.assertEqual(self.calls.read_text().splitlines(), [
-            'devin-fallback ' + agents.REVIEW_PROBE_GOAL, 'devin-fallback judge'])
+            'devin-fallback ' + probes.REVIEW_PROBE_GOAL, 'devin-fallback judge'])
         rows = self.conn.execute(
             "SELECT summary FROM runEvents WHERE runId=? AND kind='route_fallback'",
             (run,)).fetchall()
@@ -443,7 +450,7 @@ class AgentFallbackTests(SweepTestCase):
         self.configure(f'[agents]\nreviewer = "{command}"\n')
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            result = agents.agent(self.project, 'review', 'judge', self.target,
+            result = roles.agent(self.project, 'review', 'judge', self.target,
                                   base_sha=sha, candidate_sha=sha, timeout=5)
         self.assertEqual(result, 'PASS')
         self.assertEqual(printed.getvalue(), '')
@@ -469,7 +476,7 @@ class AgentFallbackTests(SweepTestCase):
         }
         printed = io.StringIO()
         with patch.dict(os.environ, polluted), contextlib.redirect_stdout(printed):
-            with agents.review_scratch(self.target) as scratch:
+            with review_workspace.review_scratch(self.target) as scratch:
                 # Create in the intended repository before exercising cleanup
                 # under the inherited environment pointing at another repo.
                 with patch.dict(os.environ):
@@ -488,7 +495,7 @@ class AgentFallbackTests(SweepTestCase):
 
     def test_review_cleanup_with_git_234_porcelain(self):
         sha = self.reviewer_repository()
-        real_sh = agents.sh
+        real_sh = review_workspace.sh
         checkout = 'quoted " café\\name\n\ncheckout'
 
         def git_234(argv, **kwargs):
@@ -511,9 +518,9 @@ class AgentFallbackTests(SweepTestCase):
                 self.addCleanup(self.kill_review_leftovers)
                 self.configure(f'[agents]\nreviewer = "{command}"\n')
                 printed = io.StringIO()
-                with patch.object(agents, 'sh', side_effect=git_234), \
+                with patch.object(review_workspace, 'sh', side_effect=git_234), \
                         contextlib.redirect_stdout(printed):
-                    result = agents.agent(self.project, 'review', 'judge', self.target,
+                    result = roles.agent(self.project, 'review', 'judge', self.target,
                                           base_sha=sha, candidate_sha=sha, timeout=1)
                 self.assertEqual(result.timed_out, sleep)
                 if not sleep:
@@ -526,12 +533,12 @@ class AgentFallbackTests(SweepTestCase):
         run = self.a_run()
         from holophyte.loop.gates import InfraFailure
         with self.assertRaisesRegex(InfraFailure, 'probe failed'):
-            self.start(lambda *_: agents.agent(
+            self.start(lambda *_: roles.agent(
                 self.project, 'implement', 'first', self.target,
                 conn=self.conn, run_id=run))
         self.assertEqual(self.calls.read_text().splitlines(), [
-            'codex-primary ' + agents.PROBE_GOAL, 'codex-primary first',
-            'devin-fallback ' + agents.PROBE_GOAL])
+            'codex-primary ' + probes.PROBE_GOAL, 'codex-primary first',
+            'devin-fallback ' + probes.PROBE_GOAL])
         self.assertEqual(self.conn.execute(
             "SELECT count(*) FROM interventions WHERE action='route_fallback'"
         ).fetchone()[0], 0)
@@ -562,13 +569,13 @@ class ContainerReviewFallbackTests(SweepTestCase):
             if model in down:
                 raise review_runner.ReviewBoundaryError(
                     f'{model}: container produced no events')
-            return (f'ready {candidate_sha}' if prompt == agents.REVIEW_PROBE_GOAL
+            return (f'ready {candidate_sha}' if prompt == probes.REVIEW_PROBE_GOAL
                     else 'VERDICT: PASS')
-        return patch.object(agents.review_runner, 'run_review',
+        return patch.object(roles.review_runner, 'run_review',
                             side_effect=run_review)
 
     def review(self, run=None):
-        return agents.agent(self.project, 'review', 'judge', self.target,
+        return roles.agent(self.project, 'review', 'judge', self.target,
                             base_sha=self.sha, candidate_sha=self.sha,
                             conn=self.conn, run_id=run)
 
@@ -625,20 +632,20 @@ class ContainerReviewFallbackTests(SweepTestCase):
         self.addCleanup(reset, self.project)
         with self.container(down={'gpt-6-astra'}), \
                 contextlib.redirect_stdout(io.StringIO()) as out:
-            self.assertTrue(agents.startup_routes(
+            self.assertTrue(fallback.startup_routes(
                 self.project, SimpleNamespace(team='team-1')))
             self.assertEqual(routes(self.project).commands,
                              {'review': 'codex-sol-high'})
             self.assertEqual(self.review(self.a_run()), 'VERDICT: PASS')
         self.assertIn('reviewer route down', out.getvalue())
         self.assertEqual(self.reviews, [
-            ('gpt-6-astra', 'medium', agents.REVIEW_PROBE_GOAL),
-            ('gpt-5.6-sol', 'high', agents.REVIEW_PROBE_GOAL),
+            ('gpt-6-astra', 'medium', probes.REVIEW_PROBE_GOAL),
+            ('gpt-5.6-sol', 'high', probes.REVIEW_PROBE_GOAL),
             ('gpt-5.6-sol', 'high', 'judge')])
         switch, = self.switches()
         self.assertEqual((switch['seat'], switch['command']),
                          ('reviewer', 'codex-sol-high'))
-        self.assertEqual(agents.agent_route(self.project, 'review'),
+        self.assertEqual(roles.agent_route(self.project, 'review'),
                          'codex-sol-high')
 
     def test_boundary_error_mid_run_retries_the_round_on_the_fallback_pair(self):
@@ -651,7 +658,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
             self.assertEqual(self.review(run), 'VERDICT: PASS')
         self.assertEqual(self.reviews, [
             ('gpt-6-astra', 'medium', 'judge'),
-            ('gpt-5.6-sol', 'high', agents.REVIEW_PROBE_GOAL),
+            ('gpt-5.6-sol', 'high', probes.REVIEW_PROBE_GOAL),
             ('gpt-5.6-sol', 'high', 'judge')])
         switch, = self.switches()
         self.assertIn('container produced no events', switch['reason'])
@@ -682,10 +689,10 @@ class ContainerReviewFallbackTests(SweepTestCase):
                                               candidate_sha, carry=carry)
             staged.append(candidate_sha)
             return f'ready {candidate_sha}'
-        with patch.object(agents.review_runner, 'run_review',
+        with patch.object(roles.review_runner, 'run_review',
                           side_effect=run_review), \
                 contextlib.redirect_stdout(io.StringIO()):
-            self.assertTrue(agents.startup_routes(
+            self.assertTrue(fallback.startup_routes(
                 self.project, SimpleNamespace(team='team-1')))
         self.assertEqual(len(staged), 1)
         self.assertEqual(self.switches(), [])
@@ -697,7 +704,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
                        'review_effort = "medium"\n')
         with self.container(down=set()), \
                 contextlib.redirect_stdout(io.StringIO()):
-            self.assertTrue(agents.startup_routes(
+            self.assertTrue(fallback.startup_routes(
                 self.project, SimpleNamespace(team='team-1')))
             self.assertEqual(self.reviews, [])
             self.assertEqual(self.review(self.a_run()), 'VERDICT: PASS')
@@ -727,7 +734,7 @@ class ReviewerFallbackListTests(SweepTestCase):
             f'with open({str(self.calls)!r}, "a") as f:\n'
             f' f.write({name!r} + " " + sys.argv[-1] + "\\n")\n'
             f'if {down!r}:\n sys.exit("Quota exhausted")\n'
-            f'if sys.argv[-1] == {agents.REVIEW_PROBE_GOAL!r}:\n'
+            f'if sys.argv[-1] == {probes.REVIEW_PROBE_GOAL!r}:\n'
             ' print("ready", subprocess.check_output(\n'
             '     ["git", "rev-parse", "HEAD"], text=True).strip())\n'
             'else:\n print("VERDICT: PASS")\n')
@@ -742,15 +749,15 @@ class ReviewerFallbackListTests(SweepTestCase):
         import review_runner
 
         down = review_runner.ReviewBoundaryError('container produced no events')
-        with patch.object(agents.review_runner, 'run_review', side_effect=down), \
+        with patch.object(roles.review_runner, 'run_review', side_effect=down), \
                 contextlib.redirect_stdout(io.StringIO()) as out:
-            started = agents.startup_routes(self.project,
+            started = fallback.startup_routes(self.project,
                                             SimpleNamespace(team='team-1'))
         return started, out.getvalue()
 
     def review(self):
         with contextlib.redirect_stdout(io.StringIO()):
-            return agents.agent(self.project, 'review', 'judge', self.target,
+            return roles.agent(self.project, 'review', 'judge', self.target,
                                 base_sha=self.sha, candidate_sha=self.sha,
                                 conn=self.conn, run_id=self.a_run())
 
@@ -772,8 +779,8 @@ class ReviewerFallbackListTests(SweepTestCase):
         self.assertEqual(self.review(), 'VERDICT: PASS')
         self.assertIn('Quota exhausted', output)
         self.assertEqual(self.calls.read_text().splitlines(), [
-            'devin-review ' + agents.REVIEW_PROBE_GOAL,
-            'claude-review ' + agents.REVIEW_PROBE_GOAL,
+            'devin-review ' + probes.REVIEW_PROBE_GOAL,
+            'claude-review ' + probes.REVIEW_PROBE_GOAL,
             'claude-review judge'])
         switch, = self.switches()
         self.assertEqual((switch['seat'], switch['command']), ('reviewer', claude))
@@ -794,7 +801,7 @@ class ReviewerFallbackListTests(SweepTestCase):
                 self.assertEqual(routes(self.project).commands, {})
                 self.assertEqual(self.switches(), [])
                 self.assertEqual(self.calls.read_text().splitlines(), [
-                    f'{name} {agents.REVIEW_PROBE_GOAL}' for name in probed])
+                    f'{name} {probes.REVIEW_PROBE_GOAL}' for name in probed])
                 self.assertEqual(output.count('Quota exhausted'), len(probed))
 
     def test_a_string_still_switches_and_a_malformed_list_is_refused(self):
@@ -820,7 +827,7 @@ class FailedRouteLoopTests(LoopFixture):
         primary = self.db.parent / 'codex-primary'
         primary.write_text(
             f'#!{sys.executable}\nimport sys\n'
-            f'probe = sys.argv[-1] == {agents.PROBE_GOAL!r}\n'
+            f'probe = sys.argv[-1] == {probes.PROBE_GOAL!r}\n'
             'print("ready" if probe else "You\'ve hit your usage limit")\n'
             'sys.exit(0 if probe else 1)\n')
         primary.chmod(0o755)

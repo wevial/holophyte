@@ -435,7 +435,7 @@ def ask_critic(conn, project, task):
     Through `holophyte.loop.loop.agent`, read at call time, so a test's patch
     of the loop's agent answers it."""
     import holophyte.loop.loop
-    from holophyte.agents.agents import critic_workspace
+    from holophyte.agents.review_workspace import critic_workspace
     goal = critic_brief(conn, project, task)
     with critic_workspace(project) as checkout:
         return str(holophyte.loop.loop.agent(project, "critic", goal, checkout,

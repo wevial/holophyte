@@ -1,5 +1,3 @@
-"""Disposable turn checkout and a config-free, fast-forward-only return path."""
-
 import contextlib
 import os
 import shutil
@@ -104,7 +102,6 @@ def remove_staging(staged):
 
 
 def copy_files(source, destination, protect, finish=lambda: None, carry=()):
-    """Stage the complete copy and roll back failed destination mutations."""
     excluded = {".git", ".env"} if protect else {".git"}
     staged = Path(tempfile.mkdtemp(prefix=".copy-", dir=destination))
     try:
@@ -168,7 +165,6 @@ def carry_mounts(worktree, carry):
 
 def return_turn(worktree, clone, root, old, project, merge_state, carry):
     # Never run Git against the untrusted clone: upload-pack also reads config.
-    # Build a bare transport containing only validated objects and its HEAD.
     transport = root / "return.git"
     git(worktree, "-c", "init.templateDir=", "init", "--bare", str(transport))
     sha = head(clone / ".git")

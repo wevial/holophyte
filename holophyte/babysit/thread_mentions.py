@@ -17,7 +17,7 @@ def authorized(author, accounts):
 
 
 def refuse(target, pull, thread, conn=None, run_id=None, beat_s=1):
-    from holophyte.agents.agents import agent_route
+    from holophyte.agents.roles import agent_route
     from holophyte.babysit.babysitter import COMMENT_HEADER, _post
 
     if any(c.body.startswith("---- Comment by ") and REFUSAL in c.body

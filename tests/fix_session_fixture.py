@@ -6,7 +6,8 @@ from unittest.mock import patch
 from fake_agent import APPROVE, REQUEST_CHANGES, Commit, FakeAgent
 from loop_fixture import VALID_BODY, StubProvider, a_task
 
-import holophyte.agents.agents as agents
+import holophyte.agents.probes as probes
+import holophyte.agents.roles as roles
 import holophyte.loop.loop as loop
 
 
@@ -34,9 +35,9 @@ class FixSessionCases:
         def dispatch(target, role, goal, cwd, **kwargs):
             if role != 'implement':
                 if fallback:
-                    agents.routes(target).commands['implement'] = 'fallback-cli'
+                    roles.routes(target).commands['implement'] = 'fallback-cli'
                 return reviewer(target, role, goal, cwd, **kwargs)
-            return agents.agent(target, role, goal, cwd, **kwargs)
+            return roles.agent(target, role, goal, cwd, **kwargs)
 
         real_cap = loop._check_run_cap
         checks = []
@@ -48,7 +49,8 @@ class FixSessionCases:
                     return real_cap(*args)
             return real_cap(*args)
 
-        with patch.object(agents, 'run_capped', runner), \
+        with patch.object(roles, 'run_capped', runner), \
+                patch.object(probes, 'run_capped', runner), \
                 patch.object(loop, '_check_run_cap', budget):
             task = dict(a_task(), body=VALID_BODY)
             self.loop(fake=dispatch, provider=StubProvider(task))

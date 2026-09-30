@@ -1,5 +1,3 @@
-"""One implementer launch seam; host execution remains the default."""
-
 import contextlib
 import hashlib
 import os
@@ -94,7 +92,6 @@ def validate_credential(value):
 
 
 def environment(project):
-    """A container turn's `[worktree]` values, dotenv quotes removed."""
     from holophyte.config.worktree_settings import process_value, worktree_environment
 
     if route_for(project).backend == "none":
@@ -343,7 +340,6 @@ def unwinding_on_signal(name):
 
 def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
            project=None, mounts=(), keep_session=False, carry=None):
-    """Preserve host process semantics; always remove isolated descendants."""
     hook = {"on_start": on_start} if on_start is not None else {}
     if route.backend == "none":
         kwargs = {} if env is None else {"env": env}

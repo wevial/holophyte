@@ -1,5 +1,3 @@
-"""Hold Git's index and ref locks while publishing a container turn."""
-
 import contextlib
 import shutil
 import subprocess

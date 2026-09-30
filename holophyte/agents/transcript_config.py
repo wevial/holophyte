@@ -1,9 +1,7 @@
-"""The transcript read allow-list; absent means no filesystem access."""
 from pathlib import Path
 
 
 def transcript_roots(target, value):
-    """Resolve roots like token_file: relative to config, with home expansion."""
     if isinstance(value, str):
         value = [value]
     if not isinstance(value, list) or any(

@@ -33,7 +33,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     MergeModeFixture,
 )
 
-import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.roles  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above

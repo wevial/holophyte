@@ -419,7 +419,7 @@ class MergeModePullRequestTests(MergeModeFixture):
             [("KO-131", "blocked_on_operator"), ("KO-132", "merged")])
 
     def test_writer_commands_and_prompts(self):
-        from holophyte.agents import agents
+        from holophyte.agents import roles
 
         calls = self.db.parent / "writer-calls.jsonl"
         command = self.db.parent / "fake-writer"
@@ -438,7 +438,7 @@ class MergeModePullRequestTests(MergeModeFixture):
                 if writer:
                     config += f'writer = "{command} writer"\n'
                 self.configure(config + '[merge]\npr_style = "Use plain prose."\n')
-                with patch.object(holophyte.loop.loop, "agent", agents.agent):
+                with patch.object(holophyte.loop.loop, "agent", roles.agent):
                     title, body = holophyte.pr.pullrequest._written_pr_text(
                         self.project, None, None, "KO-131", "add a thing", BRANCH,
                         self.BODY, 60, self.target, monotonic(), 5, None)
@@ -466,11 +466,11 @@ class MergeModePullRequestTests(MergeModeFixture):
                     self.assertLess(prompt.index(prohibition),
                                     prompt.index("Use plain prose."))
     def test_writer_unusable_reply_and_timeout_use_stub(self):
-        from holophyte.agents import agents
+        from holophyte.agents import roles
 
         command = self.db.parent / "refused-writer"
         self.configure(f'[agents]\nwriter = "{command}"\nimplementer="false"\n')
-        real_run = agents.run_capped
+        real_run = roles.run_capped
         for timeout in (False, True):
             command.write_text(f"#!{sys.executable}\nimport time\n"
                                + ("time.sleep(60)\n" if timeout else
@@ -479,7 +479,7 @@ class MergeModePullRequestTests(MergeModeFixture):
             def bounded(cmd, cwd, cap, **kwargs):
                 return real_run(cmd, cwd, 0.1, **kwargs)
             with self.subTest(timeout=timeout), patch.object(
-                    agents, "run_capped", side_effect=bounded), patch(
+                    roles, "run_capped", side_effect=bounded), patch(
                     "sys.stdout", new_callable=io.StringIO) as out:
                 result = holophyte.pr.pullrequest._written_pr_text(
                     self.project, None, None, "KO-131", "add a thing", BRANCH,

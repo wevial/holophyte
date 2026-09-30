@@ -36,7 +36,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 from pool_restart_cases import PoolRestartCases  # noqa: E402
 
-import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.probes  # noqa: E402 - after the sys.path insert above
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.checks  # noqa: E402 - after the sys.path insert above
@@ -918,7 +918,7 @@ class ImplementerProbeTests(LoopFixture):
 
     def test_a_route_that_hangs_past_the_cap_ends_the_pass_naming_it(self):
         path = self.script("sleep 30\n")
-        with patch.object(holophyte.agents.agents, "PROBE_TIMEOUT", 1):
+        with patch.object(holophyte.agents.probes, "PROBE_TIMEOUT", 1):
             out = self.main_output(Commit("work"), APPROVE)
         self.assertEqual(self.rc, 1)
         self.assertIn("implementer probe failed (no answer within 1s)", out)

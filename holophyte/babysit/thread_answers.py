@@ -3,7 +3,7 @@ import re
 from urllib.parse import quote
 
 import store
-from holophyte.agents.agents import agent_route
+from holophyte.agents.roles import agent_route
 from holophyte.babysit import maintainer_notes, thread_mentions
 from holophyte.babysit.conversation_comments import ASK_REPLY_MARKER, quote_request
 from holophyte.loop.gates import InfraFailure

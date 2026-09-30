@@ -2,7 +2,7 @@
 from dataclasses import replace
 
 import store
-from holophyte.agents.agents import agent_route
+from holophyte.agents.roles import agent_route
 from holophyte.babysit import maintainer_notes
 from holophyte.babysit.thread_mentions import classify, refuse, refused
 

@@ -1,4 +1,3 @@
-"""Locate opted-in session files and render only known transcript records."""
 import json
 import re
 from pathlib import Path
@@ -7,11 +6,7 @@ SESSION_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,199}\Z')
 
 
 def locate(kind, session_id, scratch_root):
-    """Find a session under one allowed root; never follow an escaping link.
-
-    Codex roots are sessions directories. Devin exports live anywhere below
-    a directory named for the session, allowing the operator's per-run layout.
-    """
+    """Find a session under one allowed root; never follow an escaping link."""
     if not isinstance(session_id, str) or not SESSION_ID.fullmatch(session_id):
         return None
     root = Path(scratch_root).resolve()
@@ -30,7 +25,6 @@ def locate(kind, session_id, scratch_root):
 
 
 def decoded(text):
-    """A JSON object, or an empty one for unknown/malformed input."""
     try:
         value = json.loads(text)
     except (ValueError, TypeError):
@@ -39,7 +33,6 @@ def decoded(text):
 
 
 def command_text(item):
-    """Known shell calls and Codex's executable tool-orchestration input."""
     name = item.get('name')
     if name in ('exec', 'apply_patch'):
         text = item.get('input')
@@ -62,7 +55,6 @@ def command_text(item):
 
 
 def tool_text(output):
-    """Plain tool text or the known structured shell result, never raw JSON."""
     if isinstance(output, list):
         texts = [tool_text(part.get('text')) for part in output
                  if isinstance(part, dict) and part.get('type') in
@@ -80,7 +72,7 @@ def tool_text(output):
 
 
 def codex_entry(record, calls):
-    """Response items are canonical; event_msg mirrors are intentionally skipped."""
+    """Response items are canonical; event_msg mirrors are skipped on purpose."""
     item = record.get('payload')
     if record.get('type') != 'response_item' or not isinstance(item, dict):
         return []
@@ -105,7 +97,6 @@ def codex_entry(record, calls):
 
 
 def devin_commands(step):
-    """Only render observations paired with a recognized command call."""
     entries, known = [], set()
     calls = step.get('tool_calls', [])
     for call in calls if isinstance(calls, list) else []:
@@ -129,7 +120,6 @@ def devin_commands(step):
 
 
 def devin_entries(document):
-    """Devin export steps carry commands and observations on the agent step."""
     entries = []
     steps = document.get('steps', [])
     if not isinstance(steps, list):
@@ -148,11 +138,7 @@ def devin_entries(document):
 
 
 def render(path):
-    """Read a Codex JSONL rollout or a Devin JSON export as (speaker, text).
-
-    Unknown records and malformed lines are skipped, including a partial last
-    line while an agent is still writing. No metadata is ever rendered raw.
-    """
+    """A malformed line is skipped: the agent may still be writing the last."""
     path = Path(path)
     with path.open(encoding='utf-8') as stream:
         if path.suffix == '.json':
@@ -164,12 +150,7 @@ def render(path):
 
 
 def turns(events):
-    """Join telemetry in sequence order, respecting each producer's ordering.
-
-    Review session events precede their turn; implement session events follow
-    it. A missing session never inherits a previous turn's handle; adjudicate
-    and write turns are listed with their recorded label but no session.
-    """
+    """A review session event precedes its turn; an implement one follows it."""
     result, pending = [], {}
     for seq, kind, payload in events:
         data = decoded(payload)

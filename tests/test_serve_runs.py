@@ -773,7 +773,8 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
 class ActiveRoutesTests(ServeTestCase):
     def test_status_shows_only_live_fallbacks_and_resets_to_primary(self):
         from holophyte.agents.agent_routes import reset
-        from holophyte.agents.agents import ProbeResult, activate_fallback
+        from holophyte.agents.fallback import activate_fallback
+        from holophyte.agents.probes import ProbeResult
         from holophyte.config.project import Project
         self.seed()
         target = Project.locate(self.target)

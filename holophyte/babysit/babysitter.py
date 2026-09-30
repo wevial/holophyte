@@ -9,7 +9,8 @@ import store
 import store.read
 import ticket_template
 from holophyte import failure_reason
-from holophyte.agents.agents import agent_route, review_refs
+from holophyte.agents.review_workspace import review_refs
+from holophyte.agents.roles import agent_route
 from holophyte.babysit import babysitter, maintainer_notes, thread_mentions
 from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads

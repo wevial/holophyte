@@ -79,13 +79,11 @@ DEFINED = {
         "timeout_failure_report",
         "vacuous_green_report",
     ],
-    _module("agents.agents"): [
-        "ProbeResult",
-        "agent",
-        "agent_route",
-        "probe_implementer",
-        "publish_review_refs",
-    ],
+    _module("agents.roles"): ["agent", "agent_route"],
+    _module("agents.probes"): ["ProbeResult", "probe_implementer"],
+    _module("agents.fallback"): ["activate_fallback"],
+    _module("agents.review_workspace"): ["publish_review_refs"],
+    _module("agents.agent_output"): ["AgentOutput"],
     _module("review.findings"): [
         "_entry",
         "_gist",

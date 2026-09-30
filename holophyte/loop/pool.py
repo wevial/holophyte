@@ -83,7 +83,7 @@ NOTHING_SEEN = Sweep(0, (), False, (), ())
 def worker(target, provider):
     """Worker processes own and probe their fallback routes independently."""
     from holophyte.agents.agent_routes import reset, routes
-    from holophyte.agents.agents import startup_routes
+    from holophyte.agents.fallback import startup_routes
     from holophyte.config.config_tables import AGENT_FALLBACK_KEYS
     from holophyte.config.reader import REVIEW_FALLBACK_KEYS
 

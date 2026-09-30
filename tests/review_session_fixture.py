@@ -14,7 +14,8 @@ from fake_agent import (
 )
 from loop_fixture import VALID_BODY, StubProvider, a_task
 
-import holophyte.agents.agents as agents
+import holophyte.agents.review_workspace as review_workspace
+import holophyte.agents.roles as roles
 
 
 class ReviewSessionCases:
@@ -50,10 +51,10 @@ class ReviewSessionCases:
             if role == 'implement':
                 return implementer(target, role, goal, cwd, **kwargs)
             if fallback and calls:
-                agents.routes(target).commands['review'] = 'fallback-cli'
-            return answer_scope(goal, agents.agent(target, role, goal, cwd, **kwargs))
+                roles.routes(target).commands['review'] = 'fallback-cli'
+            return answer_scope(goal, roles.agent(target, role, goal, cwd, **kwargs))
 
-        with patch.object(agents, 'run_capped', runner), \
+        with patch.object(review_workspace, 'run_capped', runner), \
                 patch.object(store, 'claim', claim), \
                 patch.dict(os.environ, HOLOPHYTE_REVIEW_RESUME='inherited'):
             task = dict(a_task(), body=VALID_BODY)

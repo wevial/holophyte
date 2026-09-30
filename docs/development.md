@@ -72,8 +72,15 @@ Each module, one line:
 - `holophyte/isolation/isolation_return.py` — Git ref and index locks for atomic turn returns.
 - `holophyte/isolation/isolation_clone.py` — disposable container checkouts and sanitized,
   fast-forward-only commit imports with environment-file exclusions.
-- `holophyte/agents/agents.py` — the agent routes and the `agent()` call, one turn
+- `holophyte/agents/roles.py` — the agent routes and the `agent()` call, one turn
   of a role.
+- `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
+- `holophyte/agents/fallback.py` — outage detection and the switch to a probed
+  fallback route.
+- `holophyte/agents/review_workspace.py` — review refs and the scratch checkouts a
+  configured reviewer or the critic runs in.
+- `holophyte/agents/agent_output.py` — a turn's text with its route, exit status
+  and transport failure.
 - `holophyte/review/review.py` — reviewer output as structured findings and a
   verdict.
 - `holophyte/review/findings.py` — `FINDINGS.md` as a bounded window over the

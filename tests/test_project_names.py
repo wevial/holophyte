@@ -171,7 +171,9 @@ class ProjectNamesTest(unittest.TestCase):
             "holophyte/config/agent_settings.py",
             "holophyte/config/worktree_settings.py",
             "holophyte/config/serve_settings.py", "holophyte/config/config_tables.py",
-            "holophyte/agents/agents.py", "holophyte/agents/agent_routes.py",
+            "holophyte/agents/roles.py", "holophyte/agents/probes.py",
+            "holophyte/agents/fallback.py", "holophyte/agents/review_workspace.py",
+            "holophyte/agents/agent_output.py", "holophyte/agents/agent_routes.py",
             "holophyte/agents/agent_turns.py", "holophyte/isolation/launcher.py",
             "holophyte/isolation/isolation_clone.py", "holophyte/pr/pr_media.py")
 

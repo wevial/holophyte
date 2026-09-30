@@ -28,12 +28,9 @@ import store
 import store.read
 import ticket_template
 from holophyte import failure_reason
-from holophyte.agents.agents import (
-    agent,
-    record_session,
-    review_refs,
-    transport_failure,
-)
+from holophyte.agents.agent_output import transport_failure
+from holophyte.agents.review_workspace import review_refs
+from holophyte.agents.roles import agent, record_session
 from holophyte.babysit import maintainer_notes
 from holophyte.babysit.babysitter import _babysit
 from holophyte.board import projection

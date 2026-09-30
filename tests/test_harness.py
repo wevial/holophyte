@@ -16,9 +16,10 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.agents.agents
 import holophyte.agents.fix_session
 import holophyte.agents.harness
+import holophyte.agents.review_workspace
+import holophyte.agents.roles
 import holophyte.config.checks
 import holophyte.config.project
 import holophyte.loop.loop
@@ -86,7 +87,7 @@ class ClaudeTableTests(unittest.TestCase):
                                  (self.run,)).fetchone()[0]
 
     def implement(self, goal, timeout=60):
-        return holophyte.agents.agents.agent(self.target, "implement", goal, self.repo,
+        return holophyte.agents.roles.agent(self.target, "implement", goal, self.repo,
                                       timeout=timeout, conn=self.conn,
                                       run_id=self.run)
 
@@ -208,7 +209,7 @@ class TableReviewCase(unittest.TestCase):
             "SELECT payload FROM runEvents WHERE kind = ? ORDER BY seq", (kind,))]
 
     def dispatch(self, role, goal, review_round=1):
-        return holophyte.agents.agents.agent(
+        return holophyte.agents.roles.agent(
             self.target, role, goal, self.repo, base_sha=self.base,
             candidate_sha=self.candidate, timeout=60, conn=self.conn,
             run_id=self.run, review_round=review_round)
@@ -379,7 +380,7 @@ class DevinTableTests(TableReviewCase):
         # A 3 s stale threshold beats every 1.5 s.
         (self.holo / "config.toml").write_text(
             self.CONFIG + "[supervisor]\nheartbeat_stale_min = 0.05\n")
-        real = holophyte.agents.agents.run_capped
+        real = holophyte.agents.review_workspace.run_capped
 
         def run_capped(cmd, cwd, timeout, on_start=None, **kwargs):
             def started(proc):
@@ -391,7 +392,8 @@ class DevinTableTests(TableReviewCase):
                     other.close()
             return real(cmd, cwd, timeout, on_start=started, **kwargs)
 
-        with patch.object(holophyte.agents.agents, "run_capped", run_capped), \
+        with patch.object(holophyte.agents.review_workspace, "run_capped",
+                          run_capped), \
                 self.assertRaises(holophyte.loop.runs.RunSwept):
             self.dispatch("review", "stall until swept")
         [turn] = self.received()
@@ -548,7 +550,7 @@ class DevinImplementerTests(ClaudeTableTests):
         self.assertIsNone(self.session())
 
     def test_a_run_swept_while_its_session_is_listed_kills_the_list(self):
-        real = holophyte.agents.agents.run_capped
+        real = holophyte.agents.roles.run_capped
 
         def run_capped(cmd, cwd, timeout, on_start=None, **kwargs):
             def started(proc):
@@ -570,7 +572,7 @@ class DevinImplementerTests(ClaudeTableTests):
 
         began = time.monotonic()
         with patch.dict(os.environ, {"FAKE_LIST_STALLS": "1"}), \
-                patch.object(holophyte.agents.agents, "run_capped", run_capped), \
+                patch.object(holophyte.agents.roles, "run_capped", run_capped), \
                 self.assertRaises(holophyte.loop.runs.RunSwept):
             holophyte.loop.loop._timed(self.target, self.conn, self.run, 0.05,
                                   self.repo, 1, "implement the thing")
@@ -616,14 +618,14 @@ class ContainerImplementerTests(unittest.TestCase):
             launched.append(argv)
             return 0, "fake turn ran"
 
-        with patch.object(holophyte.agents.agents.launcher, "launch", launch):
+        with patch.object(holophyte.agents.roles.launcher, "launch", launch):
             run()
         [argv] = launched
         return argv
 
     def test_a_claude_turn_records_the_session_id_its_argv_carries(self):
         self.configure(CONFIG)
-        argv = self.launch_turn(lambda: holophyte.agents.agents.agent(
+        argv = self.launch_turn(lambda: holophyte.agents.roles.agent(
             self.target, "implement", "implement the thing", self.repo,
             conn=self.conn, run_id=self.run))
         chosen = argv[argv.index("--session-id") + 1]
@@ -635,7 +637,7 @@ class ContainerImplementerTests(unittest.TestCase):
 
     def test_its_fix_round_resumes_that_session_with_the_image_binary(self):
         self.configure(CONFIG)
-        argv = self.launch_turn(lambda: holophyte.agents.agents.agent(
+        argv = self.launch_turn(lambda: holophyte.agents.roles.agent(
             self.target, "implement", "implement the thing", self.repo,
             conn=self.conn, run_id=self.run))
         chosen = argv[argv.index("--session-id") + 1]

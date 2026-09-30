@@ -14,7 +14,7 @@ import store.read
 import store.tickets
 import ticket_template
 from holophyte import deadline
-from holophyte.agents.agents import cleanup_review_refs
+from holophyte.agents.review_workspace import cleanup_review_refs
 from holophyte.cli.report import host_label
 from holophyte.loop.runs import warn_on_run
 from holophyte.redact import outbound, redact_values
