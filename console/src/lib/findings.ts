@@ -43,8 +43,8 @@ export interface FindingParts {
   criterion: string | null;
 }
 
-// The reviewer's checklist line, the shape `holophyte/review/review.py` writes and
-// reads: `CRITERION n: met|not met|unwitnessed — reason`, with the
+// The reviewer's checklist line, the shape `holophyte/review/reply_parsing.py`
+// writes and reads: `CRITERION n: met|not met|unwitnessed — reason`, with the
 // criterion's own text on the following lines.
 const CRITERION_RE = /^\s*CRITERION\s+(\d+)\s*:\s*(met|not met|unwitnessed)\b\s*(?:[-–—:]+\s*)?(.*)$/i;
 const BULLET_RE = /^\s*(?:[-*+]|\d+[.)])\s+/;

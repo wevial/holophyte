@@ -23,7 +23,7 @@ import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.redact  # noqa: E402 - after the sys.path insert above
-import holophyte.review.review  # noqa: E402 - after the sys.path insert above
+import holophyte.review.reply_parsing  # noqa: E402 - after the sys.path insert above
 import review_runner  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 
@@ -795,7 +795,7 @@ class RowWriteSanitizationTests(unittest.TestCase):
     `parse_findings()` builds its messages through the same one."""
 
     def stored(self, entry):
-        return holophyte.review.review.raw_finding(entry)["message"]
+        return holophyte.review.reply_parsing.raw_finding(entry)["message"]
 
     def test_ansi_escapes_and_control_bytes_are_stripped(self):
         # A coloured tool trace of the shape that reached the KO-107 entry.
@@ -829,7 +829,8 @@ class RowWriteSanitizationTests(unittest.TestCase):
         self.assertIn("[… truncated]", written)
         self.assertIn("line 0 ", written)
         self.assertNotIn("line 199 ", written)
-        self.assertLessEqual(len(written), holophyte.review.review.MAX_FINDING_CHARS)
+        self.assertLessEqual(
+            len(written), holophyte.review.reply_parsing.MAX_FINDING_CHARS)
 
     def test_c1_escape_sequences_are_stripped_with_their_payload(self):
         # A CSI introduced by the single C1 byte, not by ESC-[: dropping only
@@ -870,7 +871,8 @@ class RowWriteSanitizationTests(unittest.TestCase):
 
         body = self.stored(entry)
 
-        self.assertLessEqual(len(body), holophyte.review.review.MAX_FINDING_CHARS)
+        self.assertLessEqual(
+            len(body), holophyte.review.reply_parsing.MAX_FINDING_CHARS)
 
     def test_an_oversize_verdict_line_cannot_escape_the_budget(self):
         # A malformed adjudicator reply is persisted verbatim, so the trailing
@@ -880,7 +882,8 @@ class RowWriteSanitizationTests(unittest.TestCase):
 
         body = self.stored(entry)
 
-        self.assertLessEqual(len(body), holophyte.review.review.MAX_FINDING_CHARS)
+        self.assertLessEqual(
+            len(body), holophyte.review.reply_parsing.MAX_FINDING_CHARS)
         self.assertIn("[… truncated]", body)
         self.assertNotIn("line 199 ", body)
         # The verdict is still recorded, cut rather than dropped.

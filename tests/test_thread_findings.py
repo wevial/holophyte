@@ -6,7 +6,7 @@ import store
 from holophyte.babysit import babysitter
 from holophyte.babysit.thread_findings import bounded_raw
 from holophyte.pr import github
-from holophyte.review.review import parse_findings
+from holophyte.review.reply_parsing import parse_findings
 
 
 class ThreadFindingTests(unittest.TestCase):

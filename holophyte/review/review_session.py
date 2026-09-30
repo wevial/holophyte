@@ -1,4 +1,4 @@
-"""Session-file protocol for configured reviewers; never shares implementer state."""
+# Session files for configured reviewers; never shares implementer state.
 import json
 
 import store
@@ -8,7 +8,7 @@ from holophyte.config.config_tables import loop_config
 
 
 def record_session(scratch, conn, run_id, role, route, round_number):
-    """Read before scratch cleanup; invalid or absent wrapper output is harmless."""
+    # Read before scratch cleanup; invalid or absent wrapper output is harmless.
     if (role != 'review' or round_number is None
             or conn is None or run_id is None):
         return
@@ -27,7 +27,6 @@ def record_session(scratch, conn, run_id, role, route, round_number):
 
 
 def first_session(conn, run_id):
-    """Use the last round-one primary session, including a malformed-reply retry."""
     rows = conn.execute(
         "SELECT payload FROM runEvents WHERE runId=? AND kind='agent_session' "
         "ORDER BY seq DESC", (run_id,))
@@ -40,14 +39,11 @@ def first_session(conn, run_id):
 
 
 def resumable(target):
-    """False for a table reviewer whose adapter declares it cannot resume;
-    a command string's wrapper answers the resume protocol itself."""
     seat = harness_seat(target, 'review')
     return seat is None or seat.adapter.resumes
 
 
 def prepare_environment(target, env, conn, run_id, role, route, round_number):
-    """Request a resume only on an eligible re-review, recording the decision."""
     env.pop('HOLOPHYTE_REVIEW_RESUME', None)
     mode = loop_config(target).review_session
     if (role != 'review' or round_number is None or round_number < 2

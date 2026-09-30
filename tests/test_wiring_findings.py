@@ -25,7 +25,7 @@ import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.review.findings  # noqa: E402 - after the sys.path insert above
-import holophyte.review.review  # noqa: E402 - after the sys.path insert above
+import holophyte.review.reply_parsing  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -88,7 +88,7 @@ class CitationMountTests(unittest.TestCase):
         """`/workspace/` was the read-only mount; since KO-366 the agent runs
         on the writable copy at `/home/reviewer/candidate`, and a citation to
         either is the same repository file."""
-        findings = holophyte.review.review.parse_findings(
+        findings = holophyte.review.reply_parsing.parse_findings(
             "- [loop.py](/workspace/holophyte/loop/loop.py:345) one\n"
             "- [loop.py](/home/reviewer/candidate/holophyte/loop/loop.py:400) two\n")
         self.assertEqual(

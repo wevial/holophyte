@@ -110,10 +110,10 @@ DEFINED = {
         "report_rows",
         "report_summary",
     ],
-    _module("review.review"): [
+    _module("review.briefs"): ["criteria_brief"],
+    _module("review.reply_parsing"): [
         "_trailing_verdict",
         "criteria_block",
-        "criteria_brief",
         "criteria_findings",
         "finding_blocks",
         "finding_message",

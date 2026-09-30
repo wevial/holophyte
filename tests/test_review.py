@@ -8,14 +8,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from holophyte.review.review import (
+from holophyte.review.briefs import (
     covering_scope,
     criteria_brief,
+    scope_brief,
+    tests_brief,
+)
+from holophyte.review.reply_parsing import (
     criteria_findings,
     missing_witnesses,
-    scope_brief,
     test_references,
-    tests_brief,
 )
 
 ROOT = Path(__file__).resolve().parent.parent

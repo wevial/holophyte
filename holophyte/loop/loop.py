@@ -95,15 +95,14 @@ from holophyte.pr.pullrequest import (
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review import reproduce
-from holophyte.review.review import (
-    _review_reply,
+from holophyte.review.briefs import (
     criteria_brief,
-    criteria_findings,
     evidence_brief,
     scope_brief,
     scope_files,
     tests_brief,
 )
+from holophyte.review.reply_parsing import _review_reply, criteria_findings
 from holophyte.story.story_claim import story_brief
 from store.working import agent_work
 

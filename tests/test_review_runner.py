@@ -739,7 +739,7 @@ class ReviewerImageTests(unittest.TestCase):
 
 class VisualEvidencePromptTests(unittest.TestCase):
     def test_failed_capture_is_shared_by_review_and_pr(self):
-        from holophyte.review.review import evidence_brief
+        from holophyte.review.briefs import evidence_brief
         from tests.test_pr_media import MediaTests
 
         fixture = MediaTests()

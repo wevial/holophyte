@@ -39,17 +39,19 @@ from holophyte.pr.github import NO_AUTHOR
 from holophyte.pr.missing_checks import Retrigger, unreported
 from holophyte.pr.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
-from holophyte.review.review import (
-    _review_reply,
+from holophyte.review.briefs import (
     covering_scope,
     criteria_brief,
-    criteria_findings,
     evidence_brief,
     main_merge_base,
-    parse_findings,
     scope_brief,
     scope_files,
     tests_brief,
+)
+from holophyte.review.reply_parsing import (
+    _review_reply,
+    criteria_findings,
+    parse_findings,
 )
 
 # Quote conventions in brief order, capped per file, so rules aren't guessed.

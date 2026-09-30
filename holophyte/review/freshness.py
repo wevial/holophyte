@@ -1,39 +1,3 @@
-"""The claim's freshness check (KO-709): a ticket against main as it is now.
-
-A ticket is judged against the repository when it is filed, and since
-KO-381 a named path that does not exist is only an advisory there, so a
-ticket filed against files a later merge moved or deleted used to be
-claimed as if nothing had changed. `stale_reasons()` asks `main` -- the
-ref, through git, not the checkout's working tree, which may be on
-another branch -- for every file the body names in a code span in its
-acceptance criteria and implementation notes, skipping the ones the body
-declares new. `park_stale()` is the refusal: the mirror lands in
-`needs_spec`, the board issue gets one comment, a `stale` label and a
-move to Backlog, which the ready listing does not read, so the ticket is
-not offered again until its maintainer moves it back. The label is the
-visible mark (KO-716): the claim skips an issue carrying it, so a ticket
-dragged back to Todo unfixed is not checked again, and the maintainer
-takes it off once the body is fixed.
-
-The landmarks can all be there and the ticket still overtaken: a merge
-since filing did the work, or moved the design on (KO-715). A ticket
-`critic_due()` names -- filed more than `[loop] critic_after_hours` ago, or
-naming a file `main` changed since -- is put to the `[agents.critic]` seat
-once, with `critic_brief()`: the body and what merged since. The answer's
-last line (`parse_freshness()`) decides: FRESH claims, STALE or UNSURE
-parks through `park_stale()`, under the claim's lease turn so a sibling
-loop's claim made meanwhile stands. The critic never blocks the queue on
-its own failure: a turn that raises or answers no verdict claims anyway,
-and the run the claim opens carries a `warning` naming the failure.
-
-KO-713 adds two more stale landmarks. A function or class an
-implementation-notes item names beside a file must still occur, as a
-whole word, in one of that item's files on `main` -- lenient on purpose:
-a name used there but defined elsewhere passes, a renamed or removed one
-does not. And every `Depends on:` ticket must be merged, by the store's
-mirror or the board's word, whether or not the board relation was ever
-recorded.
-"""
 import re
 import subprocess
 import time
@@ -61,10 +25,7 @@ STALE_HEADING = "Not claimed: this ticket is out of date with main"
 BACKLOG_STATE = "Backlog"
 STALE_LABEL = "stale"
 HOUR_MS = 3600 * 1000
-# The critic's cap, in seconds: a turn is about half a minute.
 CRITIC_TIMEOUT = 300
-# The merge history is read a page at a time, back to the filing; a brief
-# names the first files of each merge.
 MERGE_PAGE = 50
 BRIEF_FILES = 20
 CRITIC_BRIEF = """\
@@ -87,16 +48,11 @@ FRESHNESS: STALE <one-line reason>
 FRESHNESS: UNSURE <one-line reason>
 """
 FRESHNESS_LINE = re.compile(r"FRESHNESS:\s+(FRESH|STALE|UNSURE)(?:\s+(.*))?")
-# The claim's warning for a due ticket the critic could not judge, by task
-# identifier, until the run the claim opens takes it (`carry_warning()`).
 WARNINGS = {}
 
 
-# A code span naming a function (`name()`, `module.name()`; group 1 is the
-# name searched for) or a CapWords class (`Name`, `HTTPServer`): a capital,
-# then letters and digits with at least one lowercase, so an all-caps word
-# or constant (`HTTP`, `MAX_RUNS`) is not one.
 FUNCTION_SPAN_RE = re.compile(r"(?:[A-Za-z_]\w*\.)*([A-Za-z_]\w*)\(\)")
+# At least one lowercase letter, so a constant like `MAX_RUNS` is no class.
 CLASS_SPAN_RE = re.compile(r"[A-Z][A-Z0-9]*[a-z][A-Za-z0-9]*")
 
 
@@ -106,9 +62,7 @@ def _git(repo, *args):
 
 
 def _main_text(repo, path):
-    """`path`'s text on `main`, or None when main has no such file -- a
-    directory included: `cat-file blob` refuses a tree, where `show` would
-    print its listing as if it were the file's text."""
+    # `cat-file blob` refuses a directory, which `show` would list as text.
     r = subprocess.run(["git", "-C", str(repo), "cat-file", "blob",
                         f"main:{path}"],
                        capture_output=True, text=True, errors="replace")
@@ -123,9 +77,6 @@ def _declared_new(path, declarations):
 
 
 def named_paths(body):
-    """`(label, path)` for each file `body` names in a code span in its
-    acceptance criteria and implementation notes, first mention only,
-    skipping the ones the body declares new."""
     if body is None:
         return []
     t = ticket_template.parse(body)
@@ -146,18 +97,6 @@ def named_paths(body):
 
 
 def stale_reasons(repo, body, conn=None, provider=None):
-    """One reason per stale landmark in the body, in body order: a named
-    file absent from `main`, a named symbol absent from its item's files
-    there, then a `Depends on:` ticket not merged.
-
-    Paths are found as the validator finds them (`_prose_paths()` over the
-    criteria and the implementation notes; `_new_paths()` for the new
-    ones). A repository with no `main` commit has nothing to judge files
-    against and yields no file or symbol reason, so the check never
-    refuses a ticket on git's say-so about the ref rather than the path.
-    The dependency check asks the store `conn` and the board `provider`,
-    whichever are given.
-    """
     if body is None:
         return []
     t = ticket_template.parse(body)
@@ -171,8 +110,6 @@ def stale_reasons(repo, body, conn=None, provider=None):
 
 
 def _named_symbols(item):
-    """(span, name) per function or class span in `item`, skipping one the
-    item declares new: the word "new" before it in the same sentence."""
     masked = ticket_template._mask_code_spans(item)
     for span in re.finditer(r"`([^`\n]+)`", item):
         text = span.group(1)
@@ -189,10 +126,6 @@ def _named_symbols(item):
 
 
 def _missing_symbols(repo, t, declarations):
-    """One reason per function or class an implementation-notes item names
-    that occurs as a whole word in none of the item's files on `main`. An
-    item naming no file main holds (none, only new ones, or only missing
-    ones, which `_missing_files()` reports) is not checked."""
     reasons, texts = [], {}
     notes = t.sections.get("Implementation notes", "")
     for i, item in enumerate(ticket_template._list_item_blocks(notes), 1):
@@ -217,12 +150,6 @@ def _missing_symbols(repo, t, declarations):
 
 
 def _unmerged_dependencies(t, conn, provider):
-    """One reason per `Depends on:` ticket that is not merged: the store's
-    mirror says `merged`, or else the board answers `completed` -- over an
-    `abandoned` mirror too. A board that cannot be asked gives no evidence,
-    so every dependency the store does not hold merged is refused. A
-    native board's unmerged dependency is a wait, not a stale body
-    (KO-762): `resolve_dependencies()` ends it, so none is refused."""
     if getattr(provider, "native", False) is True:
         return []
     status = {}
@@ -235,7 +162,7 @@ def _unmerged_dependencies(t, conn, provider):
     if unmerged and provider is not None:
         try:
             closed = provider.closed_identifiers(unmerged)
-        except Exception as e:  # any transport failure: the board was not asked
+        except Exception as e:
             unasked = f" (the board could not be asked: {e})"
     reasons = []
     for dep in unmerged:
@@ -250,7 +177,6 @@ def _unmerged_dependencies(t, conn, provider):
 
 
 def stale_comment(reasons):
-    """The one board comment a stale ticket gets."""
     lines = "\n".join(f"* {reason}" for reason in reasons)
     return (f"**{STALE_HEADING}**\n\n{lines}\n\nUpdate the body to name"
             " what main holds now, or wait for its dependencies to merge,"
@@ -258,10 +184,6 @@ def stale_comment(reasons):
 
 
 def skip_labelled_stale(conn, project_id, task):
-    """Skip an issue carrying the `stale` label (KO-716), the maintainer's
-    mark that the body is still out of date: mirror it `needs_spec` and
-    print why, without asking main again or commenting a second time.
-    Returns whether the issue was skipped."""
     if STALE_LABEL not in (task.get("labels") or []):
         return False
     mirror_task(conn, project_id, task, specced=False)
@@ -272,29 +194,6 @@ def skip_labelled_stale(conn, project_id, task):
 
 def park_stale(project, conn, project_id, provider, task, reasons, why=None,
                admitted=False):
-    """Refuse a stale ticket: mirror it `needs_spec`, comment once, label
-    the issue `stale`, move it to Backlog, print the skip line, which `why`
-    words when the reasons are not missing files. A board call that fails
-    is a warning; the ticket is skipped either way and the loop goes on.
-
-    Serialized with the claim (KO-715): the row is re-read and the mirror
-    written under the claim's `lease_turn()`, so no sibling loop's
-    `store.claim()` lands in between. A ticket a live run holds by then is
-    that run's -- its contract is not blanked, its issue not moved -- and so
-    is an `admitted` one, `ready` when this pass admitted it, that is no
-    longer `ready`: another loop parked or moved it while the critic ran.
-    Either is skipped with nothing written.
-
-    A store-mode board (KO-745) is not commented on or moved: the comment is
-    a `stale` note keyed on the body and the reasons, and the move a queued
-    push, so the next observation reads Backlog as the factory's move and
-    not a person's. The label is still written inline. A native board
-    (KO-759) is the store: the note is written and nothing else, no label
-    and no queued push.
-
-    A task a store-mode claim built at a revision the ticket has since
-    left (Phase 3 stage 3) was judged on a body the board no longer holds:
-    that verdict is dropped the same way, with nothing written."""
     issue_id = mirror_key(task)
     with lease_turn(project), store.transaction(conn):
         row = conn.execute(
@@ -331,9 +230,6 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
 
 
 def _label_and_move(conn, provider, task, issue_id, ticket_id, store_mode):
-    """Label a parked ticket's issue `stale` and move it to Backlog, the
-    move queued on a store-mode board; a board call that fails is a
-    warning."""
     try:
         provider.label_issue(issue_id, STALE_LABEL)
     except Exception as e:
@@ -351,11 +247,6 @@ def _label_and_move(conn, provider, task, issue_id, ticket_id, store_mode):
 
 
 def critic_due(project, task):
-    """Whether the claim asks the critic about `task`: the target has a
-    critic seat its startup probe did not turn off, and the ticket was
-    filed more than `[loop] critic_after_hours` ago, or `main` has a
-    commit since its filing that touches a file its body names. A task
-    with no `filed_at` is never due."""
     filed = task.get("filed_at")
     if (filed is None or critic_seat(project) is None
             or routes(project).critic_failed):
@@ -374,7 +265,6 @@ def critic_due(project, task):
 
 
 def _changed_files(project, run):
-    """The files `run`'s merge changed, as one brief line's tail."""
     if not run.mergeSha:
         return "(no merge commit recorded)"
     try:
@@ -387,8 +277,6 @@ def _changed_files(project, run):
 
 
 def merged_since(conn, filed):
-    """Every merged run that ended after `filed`, newest first, paged back
-    through `merged_runs()` until a page reaches the filing."""
     before = None
     while True:
         page = store.read.merged_runs(conn, MERGE_PAGE, before)
@@ -402,9 +290,6 @@ def merged_since(conn, filed):
 
 
 def critic_brief(conn, project, task):
-    """The critic's goal: the ticket body, one line per run merged since
-    `filed_at` -- identifier, title and the files its merge changed --
-    newest first, then the answer contract."""
     filed = task.get("filed_at") or 0
     merges = [f"- {run.linearIdentifier} {run.title}: "
               f"{_changed_files(project, run)}"
@@ -416,9 +301,6 @@ def critic_brief(conn, project, task):
 
 
 def parse_freshness(output):
-    """The critic's verdict from its last non-empty line: `("fresh", "")`,
-    `("stale", reason)` or `("unsure", reason)`; None for anything else:
-    a FRESH with text after it, or a STALE or UNSURE with no reason."""
     lines = [line.strip() for line in (output or "").splitlines()
              if line.strip()]
     match = FRESHNESS_LINE.fullmatch(lines[-1].strip("*` ")) if lines else None
@@ -431,9 +313,6 @@ def parse_freshness(output):
 
 
 def ask_critic(conn, project, task):
-    """One critic turn on `task` in a `critic_workspace()`; its output.
-    Through `holophyte.loop.loop.agent`, read at call time, so a test's patch
-    of the loop's agent answers it."""
     import holophyte.loop.loop
     from holophyte.agents.review_workspace import critic_workspace
     goal = critic_brief(conn, project, task)
@@ -443,7 +322,6 @@ def ask_critic(conn, project, task):
 
 
 def _failure(error):
-    """A failed critic turn in one line, never the argv (the brief)."""
     if isinstance(error, subprocess.TimeoutExpired):
         return f"timed out after {error.timeout:g} seconds"
     first = (str(error).splitlines() or [""])[0][:200]
@@ -451,14 +329,6 @@ def _failure(error):
 
 
 def critic_admits(project, conn, project_id, provider, task):
-    """The claim's critic question: False when the critic parked `task`.
-
-    A ticket not `critic_due()` is admitted unasked. FRESH admits; STALE
-    and UNSURE park it through `park_stale()`, the reason prefixed
-    `critic: stale` or `critic: unsure`. A turn that raises or times out,
-    or an answer `parse_freshness()` reads no verdict in, admits it too,
-    with a warning `carry_warning()` records on the run the claim opens.
-    """
     WARNINGS.pop(task["id"], None)
     if not critic_due(project, task):
         return True
@@ -482,18 +352,12 @@ def critic_admits(project, conn, project_id, provider, task):
 
 
 def carry_warning(conn, run_id, task):
-    """Record the claim's critic warning for `task`, if any, as a `warning`
-    event on `run_id`, the run the claim opened."""
     warning = WARNINGS.pop(task["id"], None)
     if warning is not None:
         store.record_event(conn, run_id, "warning", warning)
 
 
 def parked_since_admitted(conn, ticket_id, task):
-    """True, with the skip line printed, when a sibling critic parked
-    `ticket_id` since this pass admitted it (KO-715): read under the claim's
-    `lease_turn()`, which `park_stale()` also takes, so the ticket is
-    skipped rather than claimed and refused."""
     if store_status(conn, ticket_id) != "needs_spec":
         return False
     print(f"[holo2] {task['id']} was parked since it was admitted; skipping it")

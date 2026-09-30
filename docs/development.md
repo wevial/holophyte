@@ -81,8 +81,10 @@ Each module, one line:
   configured reviewer or the critic runs in.
 - `holophyte/agents/agent_output.py` — a turn's text with its route, exit status
   and transport failure.
-- `holophyte/review/review.py` — reviewer output as structured findings and a
-  verdict.
+- `holophyte/review/briefs.py` — the scope, criteria, tests and evidence briefs a
+  reviewer is sent, with the git scope they read.
+- `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
+  witness checks and a verdict.
 - `holophyte/review/findings.py` — `FINDINGS.md` as a bounded window over the
   store's rows.
 - `holophyte/cli/report.py` — `--report`: estimate vs actual per finished run
