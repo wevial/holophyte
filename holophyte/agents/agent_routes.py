@@ -1,9 +1,3 @@
-"""Process-owned active routes, with a locked snapshot for the serve process.
-
-A held lock proves the snapshot's writer still exists, including after a crash
-or PID reuse. Closing the owner resets all seats to primary at the next start.
-The store keeps history; this small file is only the console's live indicator.
-"""
 import fcntl
 import json
 import re
@@ -17,7 +11,6 @@ from holophyte.redact import REDACTED, known_secrets, redact_prose
 
 
 def command_secrets(project):
-    """Treat command arguments as private, including values echoed by a CLI."""
     secrets = set(known_secrets(project.config()))
     table = project.config().get('agents') or {}
     for seat in AGENT_CONFIG_KEYS.values():
@@ -28,8 +21,7 @@ def command_secrets(project):
                 if not isinstance(command, str):
                     continue  # A harness table carries no free-form arguments.
                 for arg in shlex.split(command)[1:]:
-                    # An assignment's value may start with a dash; only bare
-                    # option names are excluded from argument redaction.
+                    # An assignment's value may itself start with a dash.
                     if arg.startswith('-') and '=' not in arg:
                         continue
                     value = arg.split('=', 1)[-1]
@@ -39,11 +31,7 @@ def command_secrets(project):
 
 
 def safe_command(project, command):
-    """Public route identifier: executable only, never command arguments.
-    A table-form route is named by its harness.
-
-    Known credentials redact substrings of the name; an argument value only
-    the whole name, so `high` does not eat `codex-astra-high`."""
+    """An argument redacts only a whole name: `high` keeps `codex-astra-high`."""
     command = route_text(command)
     if not command:
         return command
@@ -54,14 +42,7 @@ def safe_command(project, command):
 
 
 def route_prose(project, text):
-    """Hide arbitrary argument echoes without damaging surrounding words.
-
-    Command arguments are not necessarily credentials: `exec` must not eat
-    `execution`. Match complete values in prose, including quoted values and
-    flag assignments. Ambiguous standalone echoes stay private regardless of
-    flag name or value entropy. Known credentials still redact substrings.
-    Command fields use safe_command instead and never expose arguments.
-    """
+    """Argument values match whole words only: `exec` must not eat `execution`."""
     secrets = known_secrets(project.config())
     text = redact_prose(text, secrets)
     arguments = command_secrets(project) - secrets
@@ -126,7 +107,7 @@ def reset(project):
 
 
 def active_fallbacks(project):
-    """Read only snapshots whose process still owns its lock."""
+    """A snapshot is live only while its writer holds the lock, PID reuse or not."""
     active = {}
     for path in project.holo_dir.glob('active-routes-*.json'):
         try:
@@ -136,7 +117,5 @@ def active_fallbacks(project):
                 except BlockingIOError:
                     active.update(json.load(stream))
         except (OSError, ValueError):
-            # A writer may be publishing while the read starts; the next
-            # status poll will see the complete snapshot.
-            continue
+            continue  # A writer mid-publish; the next poll reads it whole.
     return active

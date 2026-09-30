@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import review_runner
-from holophyte.agents import agents
+from holophyte.agents import review_workspace, roles
 from holophyte.loop import dispatch, loop
 from holophyte.loop.dispatch import MergeParked
 from holophyte.loop.gates import InfraFailure, RunFailure
@@ -40,8 +40,10 @@ class ReviewRefsTests(unittest.TestCase):
         ).strip()
 
     def test_two_worktrees_keep_their_own_candidates_and_stage(self):
-        agents.publish_review_refs(self.repo, self.base, self.first, run_id=340)
-        agents.publish_review_refs(self.other, self.base, self.second, run_id=341)
+        review_workspace.publish_review_refs(
+            self.repo, self.base, self.first, run_id=340)
+        review_workspace.publish_review_refs(
+            self.other, self.base, self.second, run_id=341)
         self.assertEqual(self.git("rev-parse", "refs/review/340/candidate"), self.first)
         self.assertEqual(
             self.git("rev-parse", "refs/review/341/candidate"), self.second
@@ -76,9 +78,9 @@ class ReviewRefsTests(unittest.TestCase):
                         return 0, "VERDICT: APPROVE"
 
                     with patch.object(
-                        agents, "run_capped", side_effect=dispatch_command
+                        review_workspace, "run_capped", side_effect=dispatch_command
                     ):
-                        call = lambda: agents.agent(  # noqa: E731
+                        call = lambda: roles.agent(  # noqa: E731
                             target,
                             role,
                             "judge",
@@ -96,8 +98,9 @@ class ReviewRefsTests(unittest.TestCase):
     def test_close_out_removes_only_its_run_for_every_outcome(self):
         for outcome in ("merged", "failed", "parked", "killed"):
             with self.subTest(outcome=outcome), contextlib.ExitStack() as stack:
-                agents.publish_review_refs(self.repo, self.base, self.first, run_id=340)
-                agents.publish_review_refs(
+                review_workspace.publish_review_refs(
+                    self.repo, self.base, self.first, run_id=340)
+                review_workspace.publish_review_refs(
                     self.other, self.base, self.second, run_id=341
                 )
                 task = stack.enter_context(patch.object(loop, "run_task"))
@@ -201,7 +204,8 @@ class ReviewRefsTests(unittest.TestCase):
     def test_sweep_cleans_refs_only_after_confirmed_close_out(self):
         from holophyte.board import projection
 
-        agents.publish_review_refs(self.repo, self.base, self.first, run_id=340)
+        review_workspace.publish_review_refs(
+            self.repo, self.base, self.first, run_id=340)
         with contextlib.ExitStack() as stack:
             stack.enter_context(
                 patch.object(

@@ -26,8 +26,9 @@ sys.path.insert(0, str(HERE))
 from fake_agent import APPROVE, Commit, Critic, FakeAgent  # noqa: E402
 from loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task  # noqa: E402
 
-import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.fallback  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.harness  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.probes  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
@@ -97,7 +98,7 @@ class CriticProbeTests(unittest.TestCase):
     def start(self, project, **options):
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
-            started = holophyte.agents.agents.startup_routes(
+            started = holophyte.agents.fallback.startup_routes(
                 project, SimpleNamespace(team="test"), **options)
         return started, printed.getvalue()
 
@@ -112,7 +113,7 @@ class CriticProbeTests(unittest.TestCase):
     def test_no_critic_table_means_no_seat_and_no_probe(self):
         project = self.target("")
         self.assertIsNone(holophyte.agents.harness.critic_seat(project))
-        with patch.object(holophyte.agents.agents, "critic_workspace") as workspace:
+        with patch.object(holophyte.agents.probes, "critic_workspace") as workspace:
             started, printed = self.start(project)
         self.assertTrue(started)
         workspace.assert_not_called()

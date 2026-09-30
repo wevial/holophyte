@@ -210,7 +210,7 @@ def block_until_killed(cwd, printed="", timeout=1):
 
 
 class FakeAgent:
-    """A drop-in for `holophyte.agents.agents.agent` that replays `script`, one step per
+    """A drop-in for `holophyte.agents.roles.agent` that replays `script`, one step per
     turn.
 
     Patch it over the real callable — `patch.object(holophyte.loop.loop, "agent", fake)`
@@ -228,7 +228,7 @@ class FakeAgent:
                  candidate_sha=None, timeout=None, on_start=None, run_id=None,
                  review_round=None):
         # Like agent(), dispatch the requested turn through its effective seat.
-        from holophyte.agents.agents import effective_role
+        from holophyte.agents.roles import effective_role
         role = effective_role(target, role)
         n = len(self.turns) + 1
         if not self.script:

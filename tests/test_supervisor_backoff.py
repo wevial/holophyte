@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import VALID_BODY  # noqa: E402
 from sweep_fixture import T0, SweepTestCase  # noqa: E402
 
-from holophyte.agents.agents import ProbeResult  # noqa: E402
+from holophyte.agents.probes import ProbeResult  # noqa: E402
 from holophyte.host.supervisor import start_loop_for  # noqa: E402
 from provider import FileProvider  # noqa: E402
 
@@ -78,7 +78,7 @@ class LaunchBackoffTests(SweepTestCase):
             ).fetchone()[0], 1)
 
     def test_healthy_first_pass_starts_without_backoff(self):
-        with patch('holophyte.agents.agents.probe_implementer',
+        with patch('holophyte.agents.probes.probe_implementer',
                    return_value=ProbeResult(['fake-probe'], 0, 'ready', 90)), \
                 patch('holophyte.host.supervisor.start_loop',
                       return_value=('loop', True, '')) as start:
@@ -96,7 +96,7 @@ class LaunchBackoffTests(SweepTestCase):
 
         launch_backoff.failure(self.conn, self.project_id, 'fake-probe: quota',
                                T0, pending=True)
-        with patch('holophyte.agents.agents.probe_implementer') as probe, \
+        with patch('holophyte.agents.probes.probe_implementer') as probe, \
                 patch('holophyte.host.supervisor.start_loop') as start:
             start_loop_for(self.project, self.conn, [(None, None)], T0 + 1000,
                            io.StringIO())
@@ -105,7 +105,7 @@ class LaunchBackoffTests(SweepTestCase):
         reopened = store.open(str(self.db))
         self.addCleanup(reopened.close)
         now = T0 + 61_000
-        with patch('holophyte.agents.agents.probe_implementer',
+        with patch('holophyte.agents.probes.probe_implementer',
                    return_value=ProbeResult(['fake-probe'], 1, 'quota', 90)), \
                 patch('holophyte.host.supervisor.start_loop') as start:
             for interval in (120, 240, 480, 960, 1800, 1800):
@@ -183,7 +183,7 @@ class LaunchBackoffTests(SweepTestCase):
         provider = SimpleNamespace(team='team-2')
         failure = ProbeResult(['fake-probe'], 1, 'quota exhausted', 90)
         with (
-            patch('holophyte.agents.agents.probe_implementer', return_value=failure),
+            patch('holophyte.agents.probes.probe_implementer', return_value=failure),
             patch('holophyte.host.supervisor.start_loop') as start,
             patch('holophyte.host.reconcile._reconcile_pull_requests'),
             patch('holophyte.host.supervisor.linear_budget_low', return_value=False),
@@ -220,7 +220,7 @@ class LaunchBackoffTests(SweepTestCase):
                     with contextlib.redirect_stdout(out), \
                             patch('holophyte.cli.operator.probe_implementer',
                                   return_value=probe), \
-                            patch('holophyte.agents.agents.probe_implementer',
+                            patch('holophyte.agents.probes.probe_implementer',
                                   return_value=probe), \
                             patch('holophyte.cli.operator._serial', return_value=0), \
                             patch('holophyte.host.supervisor.start_loop',

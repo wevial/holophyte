@@ -28,7 +28,8 @@ from loop_fixture import BRANCH, LoopFixture, MergeModeFixture  # noqa: E402
 from mention_accounts_fixture import MentionAccountCases  # noqa: E402
 from triage_mention_fixture import TriageMentionCases  # noqa: E402
 
-import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.agent_output  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.roles  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
@@ -375,7 +376,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
     def test_fix_transport_retry_preserves_the_pr_on_second_failure(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])
-        failed = Idle(holophyte.agents.agents.ImplementerOutput("fetch failed", 1))
+        failed = Idle(holophyte.agents.agent_output.ImplementerOutput(
+            "fetch failed", 1))
         with patch("holophyte.loop.loop.sleep") as nap:
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 Reply("THREAD 1: ADDRESS -- a real crash"),
@@ -433,10 +435,10 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual(
             self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
                       " ORDER BY round"),
-            [(1, "pass", holophyte.agents.agents.agent_route(self.project, "review")),
+            [(1, "pass", holophyte.agents.roles.agent_route(self.project, "review")),
              (2, "changes_requested", "github:review-bot"),
              (3, "pass", "github:ci"),
-             (4, "pass", holophyte.agents.agents.agent_route(self.project, "review"))])
+             (4, "pass", holophyte.agents.roles.agent_route(self.project, "review"))])
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 
@@ -590,7 +592,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertIn("verify failed", question)
         self.assertIn(command, question)
         self.assertEqual(fake.roles.count("review"), 1)
-        route = holophyte.agents.agents.agent_route(self.project, "review")
+        route = holophyte.agents.roles.agent_route(self.project, "review")
         self.assertEqual(self.read("SELECT count(*) FROM reviewRounds WHERE"
                                    f" reviewerModel = '{route}'"), [(1,)])
         fixed = self.git("rev-parse", BRANCH).strip()
@@ -780,7 +782,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         calls = self.api_calls()
         self.assertEqual([kind for kind, _ in calls],
                          ["state", "reply", "resolve", "reply"])
-        model = holophyte.agents.agents.agent_route(self.project, "adjudicate")
+        model = holophyte.agents.roles.agent_route(self.project, "adjudicate")
         self.assertEqual(calls[1][1]["thread"], "PRRT_1")
         self.assertTrue(calls[1][1]["body"].startswith(
             f"---- Comment by {model} ----\n"), calls[1][1]["body"])
@@ -792,7 +794,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual(
             self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
                       " ORDER BY round"),
-            [(1, "pass", holophyte.agents.agents.agent_route(self.project, "review")),
+            [(1, "pass", holophyte.agents.roles.agent_route(self.project, "review")),
              (2, "changes_requested", "github:review-bot+style-bot")])
         # Every reply and resolve is on the run's stream.
         events = [summary for (summary,) in self.read(
@@ -995,7 +997,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                          [f"git push origin {BRANCH}"] * 2)
         calls = self.api_calls()
         self.assertEqual([kind for kind, _ in calls], ["state", "reply"])
-        model = holophyte.agents.agents.agent_route(self.project, "adjudicate")
+        model = holophyte.agents.roles.agent_route(self.project, "adjudicate")
         self.assertEqual(calls[1][1]["thread"], "PRRT_1")
         self.assertTrue(calls[1][1]["body"].startswith(
             f"---- Comment by {model} ----\n"), calls[1][1]["body"])

@@ -8,7 +8,7 @@ from unittest.mock import patch
 from fake_agent import APPROVE, Commit, Idle, Reply
 from loop_fixture import BRANCH
 
-from holophyte.agents import agents
+from holophyte.agents import review_workspace
 from holophyte.babysit import thread_mentions
 from holophyte.cli import operator
 from holophyte.pr import github
@@ -222,8 +222,8 @@ class AskMentionCases:
             def play(self, cwd, turn):
                 kwargs = ({"side_effect": result} if isinstance(result, Exception)
                           else {"return_value": result})
-                with patch("holophyte.agents.agents.run_capped", **kwargs):
-                    return agents.configured_review(
+                with patch("holophyte.agents.review_workspace.run_capped", **kwargs):
+                    return review_workspace.configured_review(
                         ["reviewer"], cwd, 1800, {}, "adjudicate", "reviewer")
 
         fake, _ = self.loop(FailedAnswer(), provider=self.provider())

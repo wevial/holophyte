@@ -30,7 +30,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.roles  # noqa: E402 - after the sys.path insert above
 import holophyte.babysit.maintainer_notes  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above

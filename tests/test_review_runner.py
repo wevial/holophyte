@@ -428,7 +428,7 @@ class AbortedReviewTests(unittest.TestCase):
     def test_an_abort_kills_the_container_client_and_removes_the_container(self):
         import threading
 
-        import holophyte.agents.agents
+        import holophyte.agents.roles
         import holophyte.config.project
         import store
         import store.tickets
@@ -467,7 +467,7 @@ class AbortedReviewTests(unittest.TestCase):
             with patch.object(review_runner, "SCRATCH_ROOT", root / "reviews"), \
                     patch.object(review_runner, "CODEX_AUTH", root / "auth.json"), \
                     self.assertRaises(Aborted):
-                holophyte.agents.agents.agent(target, "review", "review", target.path,
+                holophyte.agents.roles.agent(target, "review", "review", target.path,
                                        base_sha=base, candidate_sha=candidate,
                                        conn=conn, run_id=run)
         # One 1.5 s beat, not the shim's ten-second container.

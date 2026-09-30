@@ -117,7 +117,7 @@ Trace: `runs.branch`, phase `working`.
 
 ### 3. Implementer
 
-`agents.agent()` runs the configured implementer command (`claude -p
+`roles.agent()` runs the configured implementer command (`claude -p
 --model opus --effort high` by default) in its own process
 group with the whole ticket body as the prompt and a wall-clock budget from
 the estimate. `runs.heartbeat_while()` beats `runs.lastHeartbeat` on a

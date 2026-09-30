@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
 from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 
-import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.probes  # noqa: E402 - after the sys.path insert above
 import holophyte.config.checks  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
@@ -430,7 +430,7 @@ class ConfigEditTests(ServeTestCase):
         self.assertEqual(code, 200, body)
         self.assertIs(body["probe"]["ok"], True)
         self.assertEqual(body["probe"]["command"],
-                         [str(path), holophyte.agents.agents.PROBE_GOAL])
+                         [str(path), holophyte.agents.probes.PROBE_GOAL])
         self.assertEqual(self.on_disk(), text)
         code, _, body = self.request("PUT", "/config", self.BEARER,
                                      body={"text": text.replace(
@@ -476,7 +476,7 @@ class ConfigEditTests(ServeTestCase):
         self.assertIs(body["probe"]["timed_out"], False)
         self.assertIsNone(body["probe"]["returncode"])
         self.assertEqual(body["probe"]["command"],
-                         [str(missing), holophyte.agents.agents.PROBE_GOAL])
+                         [str(missing), holophyte.agents.probes.PROBE_GOAL])
         self.assertIn("No such file", body["probe"]["launch_error"])
         self.assertEqual(self.on_disk(), text)
         self.assertEqual(Path(body["backup"]).read_text(), before)

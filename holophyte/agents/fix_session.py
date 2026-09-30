@@ -1,10 +1,10 @@
-"""Optional experiment for retaining implementer context between review rounds."""
 import json
 import shlex
 
 import store
-from holophyte.agents.agents import effective_role, routes
+from holophyte.agents.agent_routes import routes
 from holophyte.agents.harness import seat as harness_seat
+from holophyte.agents.roles import effective_role
 from holophyte.agents.session_arms import select_arm
 from holophyte.config.checks import check_command_path
 from holophyte.config.config_tables import loop_config
@@ -13,7 +13,6 @@ from holophyte.loop.gates import sh
 
 
 def resume_template(target):
-    """Validate once at startup; substitute only after splitting shell words."""
     value = config_table(target, 'agents').get('implementer_resume')
     if value is None:
         return None
@@ -29,10 +28,6 @@ def resume_template(target):
 
 
 def resume_argv(target, conn, run_id):
-    """Return safe resume argv or the reason this turn must start fresh.
-
-    A table-form implementer's adapter builds the argv; a command string
-    goes through its `implementer_resume` template."""
     role = effective_role(target, 'implement')
     if role in routes(target).commands:
         return None, 'fallback implementer route'
@@ -46,12 +41,12 @@ def resume_argv(target, conn, run_id):
     template = resume_template(target)
     if template is None:
         return None, 'no implementer_resume template'
+    # Substituted after splitting, so a session id cannot add shell words.
     return [arg.replace('{session}', row[0]) for arg in template], None
 
 
 def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
              *, timed, check_cap):
-    """Use the common timed dispatcher, retrying a failed resume at most once."""
     findings = (f'Reviewer findings:\n\n{verdict}\n\n'
         'For EACH finding, adjudicate it first: ADDRESS (concrete '
         'blocker — fix now), FOLLOW_UP (valid but out of scope — name '

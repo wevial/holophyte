@@ -10,11 +10,8 @@ import store
 import store.read
 import store.tickets
 from holophyte.agents.agent_routes import reset, routes
-from holophyte.agents.agents import (
-    probe_diagnostic,
-    probe_implementer,
-    startup_routes,
-)
+from holophyte.agents.fallback import startup_routes
+from holophyte.agents.probes import probe_diagnostic, probe_implementer
 from holophyte.board.projection import release_lease_label
 from holophyte.cli.report import migration_header, report_lines
 from holophyte.config.config_tables import loop_config, report_config

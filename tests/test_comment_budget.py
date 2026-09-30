@@ -39,14 +39,18 @@ PINNED = {
     "holophyte/admission.py": 9,
 
     "holophyte/agents/__init__.py": 0,
-    "holophyte/agents/agent_routes.py": 26,
-    "holophyte/agents/agent_turns.py": 12,
-    "holophyte/agents/agents.py": 182,
-    "holophyte/agents/fix_session.py": 7,
-    "holophyte/agents/harness.py": 157,
-    "holophyte/agents/session_arms.py": 2,
-    "holophyte/agents/transcript_config.py": 2,
-    "holophyte/agents/transcripts.py": 23,
+    "holophyte/agents/agent_output.py": 0,
+    "holophyte/agents/agent_routes.py": 6,
+    "holophyte/agents/agent_turns.py": 1,
+    "holophyte/agents/fallback.py": 4,
+    "holophyte/agents/fix_session.py": 1,
+    "holophyte/agents/harness.py": 11,
+    "holophyte/agents/probes.py": 2,
+    "holophyte/agents/review_workspace.py": 6,
+    "holophyte/agents/roles.py": 8,
+    "holophyte/agents/session_arms.py": 0,
+    "holophyte/agents/transcript_config.py": 0,
+    "holophyte/agents/transcripts.py": 4,
 
     "holophyte/babysit/__init__.py": 0,
     "holophyte/babysit/babysit_steps.py": 2,
@@ -107,10 +111,10 @@ PINNED = {
     "holophyte/host/sweep_report.py": 3,
 
     "holophyte/isolation/__init__.py": 0,
-    "holophyte/isolation/isolation_clone.py": 8,
-    "holophyte/isolation/isolation_git.py": 10,
-    "holophyte/isolation/isolation_return.py": 3,
-    "holophyte/isolation/launcher.py": 4,
+    "holophyte/isolation/isolation_clone.py": 5,
+    "holophyte/isolation/isolation_git.py": 4,
+    "holophyte/isolation/isolation_return.py": 2,
+    "holophyte/isolation/launcher.py": 1,
 
     "holophyte/loop/__init__.py": 0,
     "holophyte/loop/claim.py": 364,
@@ -204,8 +208,6 @@ PINNED = {
 
 CITED = {
     "holophyte/admission.py": 1,
-
-    "holophyte/agents/agents.py": 4,
 
     "holophyte/babysit/babysitter.py": 2,
     "holophyte/babysit/check_fix.py": 3,

@@ -3,7 +3,7 @@ import json
 from time import time
 
 import store
-from holophyte.agents.agents import review_refs
+from holophyte.agents.review_workspace import review_refs
 from holophyte.board.projection import ledger
 from holophyte.loop.gates import InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while, record_round

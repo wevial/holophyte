@@ -1,8 +1,4 @@
-"""Self-contained Git metadata for a worktree-only container mount.
-
-Only objects, HEAD and the index return; container-written config and hooks
-never execute on the host. The original Git link/config stays outside the mount.
-"""
+"""Container-written Git config and hooks never execute on the host."""
 
 import contextlib
 import os
@@ -72,7 +68,6 @@ def packed_ref(metadata, ref):
 
 
 def atomic_copy(source, destination):
-    """Publish complete Git files atomically on the destination filesystem."""
     mode_source = destination if destination.exists() else source
     mode = stat.S_IMODE(mode_source.stat().st_mode)
     descriptor, name = tempfile.mkstemp(
@@ -89,7 +84,6 @@ def atomic_copy(source, destination):
 
 
 def copy_merge_state(worktree, clone):
-    """Carry only validated pending-merge metadata into the disposable repository."""
     metadata = Path(git(worktree, "rev-parse", "--absolute-git-dir"))
     paths = [metadata / name for name in ("MERGE_HEAD", "MERGE_MSG", "MERGE_MODE")]
     for path in paths:

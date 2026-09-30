@@ -1,4 +1,3 @@
-"""Per-dispatch identity and elapsed time, without prompts or arbitrary argv."""
 import json
 import shlex
 import subprocess
@@ -12,7 +11,6 @@ from holophyte.redact import known_secrets, outbound
 
 
 def turn_label(project, role):
-    """First command word plus the first -m/--model value, if configured."""
     active = routes(project).commands.get(role)
     argv = shlex.split(active) if active else agent_command(project, role, "")
     if not active and argv is not None:
@@ -23,13 +21,11 @@ def turn_label(project, role):
 
 
 def default_argv(project, role):
-    """The route the loop dispatches for a role the config leaves unset."""
     return ([DEFAULT_IMPLEMENTER, "--model", IMPL_MODEL] if role == "implement"
             else ["codex", "--model", review_route(project)[0]])
 
 
 def argv_label(argv):
-    """`argv[0]`, plus the value of its first -m/--model flag."""
     for flag, value in zip(argv[1:], argv[2:]):
         if flag in ("-m", "--model"):
             return f"{argv[0]} {value}"
@@ -37,17 +33,12 @@ def argv_label(argv):
 
 
 def route_labels(project):
-    """The configured label per seat, as `turn_label()` would record it.
-
-    An unset seat gets the default the loop dispatches; an unset writer
-    follows the implementer, as `effective_role()` sends it; an unset
-    reviewer fallback is None."""
     secrets = known_secrets(project.config())
 
     def label(role, fallback=False):
         argv = agent_command(project, role, "", fallback=fallback)
         if argv is not None:
-            argv = argv[:-1]  # The appended prompt is never label material.
+            argv = argv[:-1]
         elif fallback:
             return None
         else:
@@ -64,7 +55,6 @@ def route_labels(project):
 
 
 def recorded_turn(project, role, routed_role, conn, run_id, launch):
-    """Record each attempt, excluding fallback probing and route-switch time."""
     if conn is None or run_id is None:
         return launch()
     payload = dict(role=role, label=turn_label(project, routed_role),

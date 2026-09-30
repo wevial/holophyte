@@ -118,7 +118,7 @@ def _commit(repo: Path, revision: str) -> str:
 
 
 def _fingerprint(repo: Path, run_id=None) -> str:
-    from holophyte.agents.agents import review_refs
+    from holophyte.agents.review_workspace import review_refs
 
     base_ref, candidate_ref = review_refs(run_id)
     facts = [
@@ -222,7 +222,7 @@ def stage_candidate(
     stage.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     _run(["git", "init", "-q", str(stage)])
     _git(stage, "fetch", "--quiet", "--no-tags", str(source), base, candidate)
-    from holophyte.agents.agents import review_refs
+    from holophyte.agents.review_workspace import review_refs
 
     base_ref, candidate_ref = review_refs(run_id)
     _git(stage, "update-ref", base_ref, base)
@@ -284,7 +284,7 @@ def container_command(
     it: the quoting is the shell's, so none of the three can rewrite the
     command. The effort reaches Codex as its `-c` assignment, already spelled.
     """
-    from holophyte.agents.agents import review_refs
+    from holophyte.agents.review_workspace import review_refs
 
     mounts = [
         f"{workspace.expanduser().resolve(strict=True)}:/workspace:ro",

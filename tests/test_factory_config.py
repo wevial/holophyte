@@ -15,7 +15,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
 
-import holophyte.agents.agents
+import holophyte.agents.review_workspace
+import holophyte.agents.roles
 import holophyte.cli.cli
 import holophyte.cli.operator
 import holophyte.config.agent_settings
@@ -614,13 +615,13 @@ class AgentCommandTests(ConfigTestCase):
     def test_an_absent_config_leaves_todays_routes_byte_identical(self):
         self.locate()
 
-        with patch.object(holophyte.agents.agents, "run_capped") as run:
+        with patch.object(holophyte.agents.roles, "run_capped") as run:
             run.return_value = (0, "implemented")
-            holophyte.agents.agents.agent(self.project, "implement", "make the change",
+            holophyte.agents.roles.agent(self.project, "implement", "make the change",
                                    self.WORKTREE)
         with patch.object(review_runner, "run_review") as run_review:
             run_review.return_value = "VERDICT: APPROVE"
-            holophyte.agents.agents.agent(
+            holophyte.agents.roles.agent(
                 self.project,
                 "review",
                 "review it",
@@ -643,9 +644,9 @@ class AgentCommandTests(ConfigTestCase):
         self.locate('[agents]\n'
                       'implementer = "claude --model sonnet --effort medium -p"\n')
 
-        with patch.object(holophyte.agents.agents, "run_capped") as run:
+        with patch.object(holophyte.agents.roles, "run_capped") as run:
             run.return_value = (0, "implemented")
-            result = holophyte.agents.agents.agent(self.project, "implement",
+            result = holophyte.agents.roles.agent(self.project, "implement",
                                             "make the change", self.WORKTREE)
 
         self.assertEqual(result, "implemented")
@@ -662,17 +663,17 @@ class AgentCommandTests(ConfigTestCase):
 
         with (
             patch.object(review_runner, "run_review") as run_review,
-            patch.object(holophyte.agents.agents, "publish_review_refs") as publish,
-            patch.object(holophyte.agents.agents, "check_review_refs"),
+            patch.object(holophyte.agents.roles, "publish_review_refs") as publish,
+            patch.object(holophyte.agents.roles, "check_review_refs"),
             patch.object(
-                holophyte.agents.agents,
+                holophyte.agents.roles,
                 "review_scratch",
                 return_value=contextlib.nullcontext(Path("/scratch")),
             ),
-            patch.object(holophyte.agents.agents, "run_capped") as run,
+            patch.object(holophyte.agents.review_workspace, "run_capped") as run,
         ):
             run.return_value = (0, "VERDICT: APPROVE")
-            result = holophyte.agents.agents.agent(self.project, "review", "review it",
+            result = holophyte.agents.roles.agent(self.project, "review", "review it",
                                             self.WORKTREE,
                                    base_sha="1" * 40, candidate_sha="2" * 40)
 
@@ -792,9 +793,9 @@ class BudgetScaleTests(ConfigTestCase):
         self.locate("[agents]\nbudget_scale = 1.5\n")
 
         worktree = Path("/tmp/holophyte-scale")
-        with patch.object(holophyte.agents.agents, "run_capped") as run:
+        with patch.object(holophyte.agents.roles, "run_capped") as run:
             run.return_value = (0, "implemented")
-            holophyte.agents.agents.agent(self.project, "implement", "make the change",
+            holophyte.agents.roles.agent(self.project, "implement", "make the change",
                                    worktree, timeout=60 * 60)
 
         self.assertEqual(run.call_args.args[2], 45 * 60)
@@ -1239,7 +1240,7 @@ class ReviewRefTests(ConfigTestCase):
         reviewer.chmod(0o755)
         self.locate(f'[agents]\nreviewer = "{reviewer}"\n')
 
-        reply = holophyte.agents.agents.agent(self.project, "review", "review it", root,
+        reply = holophyte.agents.roles.agent(self.project, "review", "review it", root,
                               base_sha=self.base, candidate_sha=self.head)
 
         # What the command printed is the pair the round is about, read out of
@@ -1251,7 +1252,7 @@ class ReviewRefTests(ConfigTestCase):
         self.locate('[agents]\nreviewer = "true"\n')
 
         with self.assertRaises(review_runner.ReviewBoundaryError):
-            holophyte.agents.agents.agent(self.project, "review", "review it", root,
+            holophyte.agents.roles.agent(self.project, "review", "review it", root,
                           base_sha=self.base, candidate_sha="0" * 40)
 
         # Nothing was published: a refused round leaves no ref claiming a
@@ -1268,7 +1269,7 @@ class ReviewRefTests(ConfigTestCase):
         unrelated = self.commit(root, "unrelated.txt")
 
         with self.assertRaises(review_runner.ReviewBoundaryError):
-            holophyte.agents.agents.agent(self.project, "adjudicate", "judge it", root,
+            holophyte.agents.roles.agent(self.project, "adjudicate", "judge it", root,
                           base_sha=unrelated, candidate_sha=self.head)
 
     def test_the_default_route_is_left_to_stage_its_own_refs(self):
@@ -1277,10 +1278,10 @@ class ReviewRefTests(ConfigTestCase):
         self.locate()
         root = self.repo()
 
-        with patch.object(holophyte.agents.agents, "publish_review_refs") as publish, \
+        with patch.object(holophyte.agents.roles, "publish_review_refs") as publish, \
                 patch.object(review_runner, "run_review") as run_review:
             run_review.return_value = "VERDICT: APPROVE"
-            holophyte.agents.agents.agent(self.project, "review", "review it", root,
+            holophyte.agents.roles.agent(self.project, "review", "review it", root,
                           base_sha=self.base, candidate_sha=self.head)
 
         publish.assert_not_called()

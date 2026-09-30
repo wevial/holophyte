@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from holophyte import redact
-from holophyte.agents import agents
+from holophyte.agents import roles
 from holophyte.board import projection
 from holophyte.config.project import Project
 from holophyte.loop import gates, loop
@@ -60,12 +60,12 @@ class OutboundRedactionTests(unittest.TestCase):
                         route = shlex.join([sys.executable, str(fake)])
                         routes = SimpleNamespace(
                             commands={role: route} if configured else {})
-                        with (patch.object(agents, "routes", return_value=routes),
-                              patch.object(agents, "publish_review_refs"),
-                              patch.object(agents, "check_review_refs"),
-                              patch.object(agents.review_runner, "run_review",
+                        with (patch.object(roles, "routes", return_value=routes),
+                              patch.object(roles, "publish_review_refs"),
+                              patch.object(roles, "check_review_refs"),
+                              patch.object(roles.review_runner, "run_review",
                                            return_value="VERDICT: APPROVE") as runner):
-                            reply = agents.agent(self.target, role, goal, self.root,
+                            reply = roles.agent(self.target, role, goal, self.root,
                                                  base_sha="1" * 40,
                                                  candidate_sha="2" * 40)
                         received = (json.loads(reply) if configured

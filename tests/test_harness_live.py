@@ -2,7 +2,7 @@
 
 Opt in with `HOLOPHYTE_LIVE_HARNESS=claude` (an implementer turn and its
 resume), `HOLOPHYTE_LIVE_HARNESS=codex` or `devin` (two review rounds
-through `holophyte.agents.agents.agent()`, and an implementer turn through the
+through `holophyte.agents.roles.agent()`, and an implementer turn through the
 loop's `_timed()` and its resume) or
 `HOLOPHYTE_LIVE_HARNESS=cursor` (one review round; `HOLOPHYTE_LIVE_MODEL`
 picks its model, `grok-4.7-high` by default) or
@@ -28,8 +28,8 @@ import unittest
 import uuid
 from pathlib import Path
 
-import holophyte.agents.agents
 import holophyte.agents.fix_session
+import holophyte.agents.roles
 import holophyte.config.project
 import holophyte.loop.loop
 import holophyte.review.freshness
@@ -122,7 +122,7 @@ class LiveReviewCase(unittest.TestCase):
         self.run_id = store.claim(self.conn, project, ticket)
 
     def review(self, goal, review_round):
-        output = holophyte.agents.agents.agent(
+        output = holophyte.agents.roles.agent(
             self.target, "review", goal, self.repo, base_sha=self.base,
             candidate_sha=self.candidate, timeout=TURN_TIMEOUT, conn=self.conn,
             run_id=self.run_id, review_round=review_round)

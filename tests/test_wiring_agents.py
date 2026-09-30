@@ -3,7 +3,7 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-import holophyte.agents.agents
+import holophyte.agents.roles
 import holophyte.loop.runs
 import store
 import store.tickets
@@ -68,7 +68,7 @@ class ConfiguredHeartbeatTests(ConfigTestCase):
             acceptance_criteria=["beats during the command"],
             verification_commands=["true"])
         run_id = store.claim(self.conn, self.project_id, ticket)
-        reply = holophyte.agents.agents.agent(
+        reply = holophyte.agents.roles.agent(
             self.project, role, "review it", self.repo,
             base_sha=self.sha, candidate_sha=self.sha,
             conn=self.conn, run_id=run_id)

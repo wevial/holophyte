@@ -413,7 +413,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
 
 
 def launch_route_ready(target, conn, project, run_id, now, out):
-    from holophyte.agents.agents import probe_diagnostic, probe_implementer, probe_seat
+    from holophyte.agents.probes import probe_diagnostic, probe_implementer, probe_seat
     from holophyte.host.registry import loop_unit_environment
     from store import launch_backoff
 

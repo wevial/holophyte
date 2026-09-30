@@ -13,7 +13,7 @@ adjudication round is numbered past, lives beside them, with
 and the `[loop]` review keys. Beyond the standard
 library it imports `store` for the writes,
 `review_runner` for the verdict vocabularies, `agent_route` from
-`holophyte.agents.agents` for the route a round is stamped with, and the findings
+`holophyte.agents.roles` for the route a round is stamped with, and the findings
 parsers from `holophyte.review.review`.
 
 Fifth slice of the phase-2 module split; moved verbatim from `factory.py`,
@@ -28,7 +28,7 @@ from time import time
 import review_runner
 import store
 import store.read
-from holophyte.agents.agents import agent_route
+from holophyte.agents.roles import agent_route
 from holophyte.redact import safe_print as print
 from holophyte.review.review import (
     criteria_findings,

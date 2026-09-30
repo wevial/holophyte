@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import store
 import store.read
-from holophyte.agents import agents
+from holophyte.agents import agent_output, review_workspace, roles
 from holophyte.babysit import babysitter
 from holophyte.host import supervisor
 from holophyte.loop import claim, gates, loop, merge_gate
@@ -71,12 +71,13 @@ class WorkingTimeTests(SweepTestCase):
             return 0, 'done'
 
         with patch('store.working.time', lambda: now[0] / 1000), \
-                patch.object(agents, 'run_capped', route), \
+                patch.object(roles, 'run_capped', route), \
+                patch.object(review_workspace, 'run_capped', route), \
                 patch.object(gates, 'run_capped', route), \
-                patch.object(agents, 'agent_command', return_value=['script']), \
-                patch.object(agents, 'publish_review_refs'), \
-                patch.object(agents, 'check_review_refs'), \
-                patch.object(agents, 'review_scratch',
+                patch.object(roles, 'agent_command', return_value=['script']), \
+                patch.object(roles, 'publish_review_refs'), \
+                patch.object(roles, 'check_review_refs'), \
+                patch.object(roles, 'review_scratch',
                              lambda _: nullcontext(self.target)), \
                 patch('holophyte.loop.runs.heartbeat_while',
                       lambda *a, **k: nullcontext()), \
@@ -94,7 +95,7 @@ class WorkingTimeTests(SweepTestCase):
                             elif path in ('review', 'adjudicate',
                                           'PR-thread-adjudicate'):
                                 role = 'review' if path == 'review' else 'adjudicate'
-                                agents.agent(self.project, role, 'goal', self.target,
+                                roles.agent(self.project, role, 'goal', self.target,
                                              base_sha='base', candidate_sha='sha',
                                              conn=self.conn, run_id=run)
                             else:
@@ -127,7 +128,7 @@ class WorkingTimeTests(SweepTestCase):
             return 0, 'done'
 
         def role():
-            agents.agent(self.project, 'review', 'goal', self.target,
+            roles.agent(self.project, 'review', 'goal', self.target,
                          base_sha='base', candidate_sha='sha',
                          conn=self.conn, run_id=run)
 
@@ -136,12 +137,13 @@ class WorkingTimeTests(SweepTestCase):
                              conn=self.conn, run_id=run)
 
         with patch('store.working.time', lambda: now[0] / 1000), \
-                patch.object(agents, 'run_capped', route), \
+                patch.object(roles, 'run_capped', route), \
+                patch.object(review_workspace, 'run_capped', route), \
                 patch.object(gates, 'run_capped', route), \
-                patch.object(agents, 'agent_command', return_value=['script']), \
-                patch.object(agents, 'publish_review_refs'), \
-                patch.object(agents, 'check_review_refs'), \
-                patch.object(agents, 'review_scratch',
+                patch.object(roles, 'agent_command', return_value=['script']), \
+                patch.object(roles, 'publish_review_refs'), \
+                patch.object(roles, 'check_review_refs'), \
+                patch.object(roles, 'review_scratch',
                              lambda _: nullcontext(self.target)):
             for call, minutes in ((role, 2), (verify, 3)):
                 step['minutes'] = minutes
@@ -218,14 +220,15 @@ class WorkingTimeTests(SweepTestCase):
 
         with ExitStack() as stack:
             stack.enter_context(patch('store.working.time', lambda: now[0] / 1000))
-            stack.enter_context(patch.object(agents, 'run_capped', route))
+            stack.enter_context(patch.object(roles, 'run_capped', route))
+            stack.enter_context(patch.object(review_workspace, 'run_capped', route))
             stack.enter_context(patch.object(gates, 'run_capped', route))
-            stack.enter_context(patch.object(agents, 'review_scratch',
+            stack.enter_context(patch.object(roles, 'review_scratch',
                                              lambda _: nullcontext(self.target)))
-            stack.enter_context(patch.object(agents, 'agent_command',
+            stack.enter_context(patch.object(roles, 'agent_command',
                                              return_value=['script']))
-            stack.enter_context(patch.object(agents, 'publish_review_refs'))
-            stack.enter_context(patch.object(agents, 'check_review_refs'))
+            stack.enter_context(patch.object(roles, 'publish_review_refs'))
+            stack.enter_context(patch.object(roles, 'check_review_refs'))
             for module in (loop, babysitter, merge_gate, claim, pullrequest):
                 for name, result in (('sh', 'after'),
                                      ('main_merge_base', 'after'),
@@ -284,7 +287,7 @@ class WorkingTimeTests(SweepTestCase):
             stack.enter_context(patch.object(loop, 'sleep', nap))
             stack.enter_context(patch.object(loop, 'retry_clock',
                                              lambda: now[0] / 1000))
-            with patch.object(agents, 'transport_failure', return_value=None):
+            with patch.object(agent_output, 'transport_failure', return_value=None):
                 # loop imported this function; script just its diagnosis.
                 with patch.object(loop, 'transport_failure',
                                   side_effect=['ECONNRESET', None]):

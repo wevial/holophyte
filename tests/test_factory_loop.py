@@ -51,7 +51,7 @@ from pause_fixture import PauseFailureCases  # noqa: E402
 from review_session_fixture import ReviewSessionCases  # noqa: E402
 from run_landing_fixture import landing_path  # noqa: E402
 
-import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.roles  # noqa: E402 - after the sys.path insert above
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.checks  # noqa: E402 - after the sys.path insert above
@@ -159,7 +159,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         class CappedSession(Commit):
             def play(step, cwd, turn):
                 super().play(cwd, turn)
-                commands = holophyte.agents.agents.routes(self.project).commands
+                commands = holophyte.agents.roles.routes(self.project).commands
                 commands["implement"] = "fallback-cli"
                 raise subprocess.TimeoutExpired(
                     "fallback-cli", 1, output=b"session id: capped-session")
@@ -1190,9 +1190,9 @@ class TransportRetryTests(LoopFixture):
 
             def play(inner, cwd, turn):
                 # Exercise the real exit-code capture at the agent boundary.
-                with patch.object(holophyte.agents.agents, "run_capped",
+                with patch.object(holophyte.agents.roles, "run_capped",
                                   return_value=(code, message)):
-                    return holophyte.agents.agents.agent(
+                    return holophyte.agents.roles.agent(
                         self.project, "implement", "task", cwd)
         return FailedTurn()
 

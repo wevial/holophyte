@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 from go_race_cases import GoRaceCases
 
-from holophyte.agents import agents
+from holophyte.agents import roles
 
 
 class IsolationTests(GoRaceCases, unittest.TestCase):
@@ -31,9 +31,9 @@ class IsolationTests(GoRaceCases, unittest.TestCase):
         for backend in (None, "none"):
             if backend:
                 self.table["agents"]["implementer_isolation"] = backend
-            with patch.object(agents, "run_capped", return_value=(0, "done")) as run:
+            with patch.object(roles, "run_capped", return_value=(0, "done")) as run:
                 self.assertEqual(
-                    agents.agent(
+                    roles.agent(
                         self.target, "implement", "task", self.root, timeout=17
                     ),
                     "done",
@@ -66,7 +66,7 @@ class IsolationTests(GoRaceCases, unittest.TestCase):
             patch.object(launcher.review_runner, "_remove_container"),
             patch.object(launcher, "run_capped", return_value=(0, "done")) as run,
         ):
-            agents.agent(self.target, "implement", "task", worktree, timeout=17)
+            roles.agent(self.target, "implement", "task", worktree, timeout=17)
         argv = run.call_args.args[0]
         mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
         self.assertEqual(len(mounts), 3)
@@ -1595,12 +1595,12 @@ class IsolationTests(GoRaceCases, unittest.TestCase):
                                      verification_commands=["true"])
         run = store.claim(conn, project, ticket)
 
-        first = agents.agent(target, "implement", "implement", worktree,
+        first = roles.agent(target, "implement", "implement", worktree,
                              conn=conn, run_id=run)
         self.assertEqual(first.exit_code, 0, first)
         argv, reason = fix_session.resume_argv(target, conn, run)
         self.assertIsNone(reason)
         self.assertEqual(argv[:3], ["claude", "-p", "--resume"])
-        resumed = agents.agent(target, "implement", "findings", worktree,
+        resumed = roles.agent(target, "implement", "findings", worktree,
                                conn=conn, run_id=run, argv=argv)
         self.assertEqual(resumed.exit_code, 0, resumed)
