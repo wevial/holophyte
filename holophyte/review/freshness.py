@@ -44,7 +44,7 @@ import store.read
 import ticket_template
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.harness import critic_seat
-from holophyte.board.board import (
+from holophyte.board.projection import (
     comment_body,
     lease_turn,
     mirror_key,

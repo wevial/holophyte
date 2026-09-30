@@ -13,12 +13,12 @@ import holophyte.loop.loop
 import holophyte.pr.pullrequest
 from holophyte import deadline
 from holophyte.loop.gates import InfraFailure
-from holophyte.pr import pr
+from holophyte.pr import github
 
 
 class MergePayloadTests(unittest.TestCase):
     def test_merge_commit_metadata(self):
-        pull = pr.PullRequest("github.com", "example", "repo", 7,
+        pull = github.PullRequest("github.com", "example", "repo", 7,
                               "https://github.com/example/repo/pull/7")
         for method in ("squash", "merge", "rebase"):
             for body, message in (
@@ -32,11 +32,11 @@ class MergePayloadTests(unittest.TestCase):
                 target = SimpleNamespace(config=lambda: {
                     "merge": {"pr_merge_method": method}})
                 with self.subTest(method=method, body=body), patch.object(
-                        pr, "rest", side_effect=lambda _t, _p, verb, path,
+                        github, "rest", side_effect=lambda _t, _p, verb, path,
                         *args: {"title": "feat(x): do y (KO-1)", "body": body}
                         if verb == "GET" else {"merged": True, "sha": "landed"}
                         ) as rest:
-                    self.assertEqual(pr.merge_pull_request(target, pull, "head"),
+                    self.assertEqual(github.merge_pull_request(target, pull, "head"),
                                      "landed")
                 expected = {"merge_method": method, "sha": "head"}
                 if method != "rebase":
@@ -52,13 +52,13 @@ class MergePayloadTests(unittest.TestCase):
 
 
 class ReactionTests(unittest.TestCase):
-    PULL = pr.PullRequest("github.com", "example", "repo", 7,
+    PULL = github.PullRequest("github.com", "example", "repo", 7,
                           "https://github.com/example/repo/pull/7")
 
     def test_react_eyes_sends_one_eyes_reaction_on_the_comment(self):
-        with patch.object(pr, "_call",
+        with patch.object(github, "_call",
                           return_value={"data": {"addReaction": {}}}) as call:
-            pr.react_eyes(SimpleNamespace(), self.PULL, "IC_kwDOAbc")
+            github.react_eyes(SimpleNamespace(), self.PULL, "IC_kwDOAbc")
         _, host, method, path, payload = call.call_args.args
         self.assertEqual((call.call_count, host, method, path),
                          (1, "github.com", "POST", "graphql"))
@@ -68,9 +68,9 @@ class ReactionTests(unittest.TestCase):
 
     def test_a_reaction_github_refuses_is_an_infra_failure(self):
         answer = {"errors": [{"message": "Could not resolve to a node"}]}
-        with patch.object(pr, "_call", return_value=answer), \
+        with patch.object(github, "_call", return_value=answer), \
                 self.assertRaisesRegex(InfraFailure, "Could not resolve"):
-            pr.react_eyes(SimpleNamespace(), self.PULL, "IC_gone")
+            github.react_eyes(SimpleNamespace(), self.PULL, "IC_gone")
 
 
 class RedirectDeadlineTests(unittest.TestCase):
@@ -101,7 +101,7 @@ class RedirectDeadlineTests(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         clock = SimpleNamespace(monotonic=lambda: time.monotonic() + skew[0])
-        opener = urllib.request.build_opener(pr._TokenStaysHome)
+        opener = urllib.request.build_opener(github._TokenStaysHome)
         with patch.object(deadline, "time", clock), \
                 deadline.bounded(time.monotonic() + 60), \
                 self.assertRaises(deadline.CallRefused):
@@ -112,7 +112,7 @@ class RedirectDeadlineTests(unittest.TestCase):
 
 class PrBodyStubTests(unittest.TestCase):
     def test_stub_uses_only_the_first_summary_paragraph(self):
-        body = pr.pr_body_stub(
+        body = github.pr_body_stub(
             {"id": "KO-441", "body": "# Contract\n\n## Summary\n\n"
              "Describe the change\non two lines.\n  \nSecond paragraph.\n\n"
              "## Acceptance criteria\n\nMust pass."},
@@ -123,13 +123,13 @@ class PrBodyStubTests(unittest.TestCase):
             "\n\nLinear: KO-441 (https://linear.app/example/KO-441)")
 
     def test_stub_caps_summary_and_handles_a_missing_summary(self):
-        body = pr.pr_body_stub(
+        body = github.pr_body_stub(
             {"id": "KO-441", "body": "## Summary\n" + "Long text. " * 80},
             "empty reply", None)
         self.assertEqual(len(body.split("\n\n")[0]), 600)
         self.assertNotIn("## Summary", body)
         self.assertEqual(
-            pr.pr_body_stub({"id": "KO-441"}, "empty reply", None),
+            github.pr_body_stub({"id": "KO-441"}, "empty reply", None),
             "The description could not be written: empty reply\n\nLinear: KO-441")
 
     def test_a_timeout_or_empty_body_uses_the_stub(self):
@@ -161,7 +161,7 @@ class PrBodyStubTests(unittest.TestCase):
 class RequiredStatusContextTests(unittest.TestCase):
     def read_status(self, status, more=False):
         from holophyte.pr import pr_status
-        pull = pr.PullRequest("github.com", "example", "repo", 7,
+        pull = github.PullRequest("github.com", "example", "repo", 7,
                               "https://github.com/example/repo/pull/7")
         run = {"name": "vitest", "status": "completed", "conclusion": "success"}
         contexts = [{"__typename": "CheckRun", "name": "vitest",
@@ -246,7 +246,7 @@ class PlanGatedRulesTests(unittest.TestCase):
 
     def read_checks(self, runs, refusal=PLAN):
         from holophyte.pr import pr_status
-        pull = pr.PullRequest("github.com", "example", "repo", 7,
+        pull = github.PullRequest("github.com", "example", "repo", 7,
                               "https://github.com/example/repo/pull/7")
         node = {"headRefOid": "head", "commits": {"nodes": [
             {"commit": {"statusCheckRollup": None}}]}}

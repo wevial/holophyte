@@ -8,7 +8,7 @@ from holophyte.babysit import maintainer_notes, thread_mentions
 from holophyte.babysit.conversation_comments import ASK_REPLY_MARKER, quote_request
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
-from holophyte.pr import pr
+from holophyte.pr import github
 from holophyte.redact import known_secrets, outbound
 from holophyte.review import review
 from store.instructions import record_instruction_reply
@@ -122,10 +122,10 @@ def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=
     )
     with heartbeat_while(conn, run_id, beat_s):
         if thread.kind == "conversation":
-            pr.comment_on_pull(target, pull, outbound(
+            github.comment_on_pull(target, pull, outbound(
                 f"{quote_request(thread)}\n\n{body}", secrets))
         else:
-            pr.reply_thread(target, pull, thread.id, body)
+            github.reply_thread(target, pull, thread.id, body)
         if thread.classification == "MENTIONED":
             record_instruction_reply(conn, run_id, thread.url,
                                      "asked" if thread.intent == "ask" else "changed",
@@ -135,7 +135,7 @@ def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=
                                f"replied on thread {thread.url}:"
                                f" {babysitter.gist(body.splitlines()[-1])}")
         if resolve and thread.kind != "conversation":
-            pr.resolve_thread(target, pull, thread.id)
+            github.resolve_thread(target, pull, thread.id)
             if conn is not None and run_id is not None:
                 store.record_event(conn, run_id, "pull_request",
                                    f"resolved thread {thread.url}")

@@ -511,7 +511,7 @@ def main_ref(root):
     """The main the babysitter merges into a candidate: the fetched remote
     one, which runs ahead of the local branch while the loop holds it (a
     schema drain); the local branch only where no remote main exists."""
-    from holophyte.pr.pr import BASE, REMOTE
+    from holophyte.pr.github import BASE, REMOTE
 
     ref = f"{REMOTE}/{BASE}"
     found = subprocess.run(["git", "rev-parse", "--verify", "-q", ref],
@@ -786,7 +786,7 @@ def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
                   run_agent=None, review_round=None):
     """Re-ask a malformed review once; keep its evidence out of the verdict."""
     from holophyte.agents.agents import agent
-    from holophyte.board.board import comment_body
+    from holophyte.board.projection import comment_body
 
     run_agent = run_agent or agent
     first_reply = ""

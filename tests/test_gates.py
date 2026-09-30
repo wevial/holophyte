@@ -291,7 +291,7 @@ class IsolatedVerifyTests(unittest.TestCase):
         self.target = SimpleNamespace(path=main, config=lambda: self.config)
 
     def test_verify_and_baseline_cannot_read_host_file(self):
-        from holophyte.isolation import isolation
+        from holophyte.isolation import launcher
         from holophyte.loop import gates
         command = f'cat {self.outside}'
         self.config['verify'] = {'always': [command]}
@@ -300,7 +300,7 @@ class IsolatedVerifyTests(unittest.TestCase):
             mounts = [argv[i + 1] for i, v in enumerate(argv) if v == '--volume']
             self.assertEqual(len(mounts), 2)
             cache, cache_destination, _ = mounts[1].split(':')
-            self.assertEqual(cache_destination, isolation.CACHE)
+            self.assertEqual(cache_destination, launcher.CACHE)
             self.assertTrue(Path(cache).is_relative_to(
                 holophyte.config.project.state_dir(self.target.path).resolve()))
             source, destination, mode = mounts[0].split(':')
@@ -324,10 +324,10 @@ class IsolatedVerifyTests(unittest.TestCase):
                     return 0, (Path(source) / path.relative_to(destination)).read_text()
             return 1, f'cat: {path}: No such file or directory\n'
 
-        with (patch.object(isolation, 'image_ready'),
-              patch.object(isolation.review_runner, '_remove_container'),
+        with (patch.object(launcher, 'image_ready'),
+              patch.object(launcher.review_runner, '_remove_container'),
               patch.dict(os.environ, HOST_SECRET='private'),
-              patch.object(isolation, 'run_capped',
+              patch.object(launcher, 'run_capped',
                            side_effect=filesystem_runner) as run):
             ok, out = gates.run_verify(command, self.wt, project=self.target)
             self.assertFalse(ok)
@@ -342,12 +342,12 @@ class IsolatedVerifyTests(unittest.TestCase):
     def test_timeout_removes_named_container_and_preserves_output(self):
         import subprocess
 
-        from holophyte.isolation import isolation
+        from holophyte.isolation import launcher
         from holophyte.loop import gates
         expired = subprocess.TimeoutExpired('docker', 3, output='started\n')
-        with (patch.object(isolation, 'image_ready'),
-              patch.object(isolation.review_runner, '_remove_container') as remove,
-              patch.object(isolation, 'run_capped', side_effect=expired) as run):
+        with (patch.object(launcher, 'image_ready'),
+              patch.object(launcher.review_runner, '_remove_container') as remove,
+              patch.object(launcher, 'run_capped', side_effect=expired) as run):
             ok, out = gates.run_verify('sleep 20', self.wt, timeout=3,
                                        project=self.target)
         self.assertFalse(ok)

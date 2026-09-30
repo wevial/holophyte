@@ -12,7 +12,7 @@ from holophyte import deadline, redact
 from holophyte.admission import held_line
 from holophyte.config.config_tables import merge_config, story_config
 from holophyte.loop.gates import _verify_command, run_capped, vacuous_green_report
-from holophyte.pr import pr
+from holophyte.pr import github
 from holophyte.redact import safe_print as print
 from holophyte.story.story_close import (
     main_ledger,
@@ -37,17 +37,17 @@ TIP_FAILURES = (OSError, RuntimeError, subprocess.SubprocessError)
 
 
 def main_tip(target):
-    ref = pr.BASE
+    ref = github.BASE
     if merge_config(target).mode == "pr":
         try:
-            subprocess.run(["git", "fetch", pr.REMOTE, pr.BASE],
+            subprocess.run(["git", "fetch", github.REMOTE, github.BASE],
                            cwd=target.path, capture_output=True, text=True,
-                           check=True, timeout=pr.PR_TIMEOUT,
+                           check=True, timeout=github.PR_TIMEOUT,
                            env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
         except subprocess.TimeoutExpired:
-            raise RuntimeError(f"git fetch {pr.REMOTE} {pr.BASE} did not answer"
-                               f" in {pr.PR_TIMEOUT}s") from None
-        ref = f"{pr.REMOTE}/{pr.BASE}"
+            raise RuntimeError(f"git fetch {github.REMOTE} {github.BASE} did not answer"
+                               f" in {github.PR_TIMEOUT}s") from None
+        ref = f"{github.REMOTE}/{github.BASE}"
     return _git(target.path, "rev-parse", "--verify", f"{ref}^{{commit}}")
 
 

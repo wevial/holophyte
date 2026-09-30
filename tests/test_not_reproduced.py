@@ -36,7 +36,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -116,7 +116,7 @@ class NotReproducedTests(LoopFixture):
                          {"base": self.base, "candidate": head})
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        self.assertEqual(holophyte.board.board.failure_history(conn, 1), [])
+        self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
 
     def test_a_passing_evidence_check_parks_without_a_strike(self):
         fake, _ = self.loop(Declare("test the modal"), REPRODUCED)
@@ -194,7 +194,7 @@ class ResumedRouteTests(LoopFixture):
             [("paused", None), (None, "not_reproduced")])
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        self.assertEqual(holophyte.board.board.failure_history(conn, 1), [])
+        self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
         return fake
 
     def test_a_pause_after_the_declaring_turn_resumes_at_the_evidence_check(self):
@@ -244,7 +244,7 @@ class AnsweredParkTests(LoopFixture):
                          [("abandoned",), ("merged",)])
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
-        self.assertEqual(holophyte.board.board.failure_history(conn, 1), [])
+        self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
 
     def test_approve_lands_the_tests_locally_with_no_agent_turn(self):
         self.configure('[merge]\nmode = "local"\n')

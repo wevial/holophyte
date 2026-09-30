@@ -13,7 +13,7 @@ import store
 import store.tickets
 from holophyte import questions, redact
 from holophyte.babysit import thread_mentions
-from holophyte.pr import pr
+from holophyte.pr import github
 
 
 class QuestionsTests(unittest.TestCase):
@@ -76,14 +76,14 @@ class QuestionsTests(unittest.TestCase):
                 }
             }
         }
-        thread = pr.Thread(
+        thread = github.Thread(
             "1",
             secret,
             12,
             "writer",
             secret + "x" * 2000,
             "",
-            replies=(pr.Comment("reader", secret + "y" * 5000),),
+            replies=(github.Comment("reader", secret + "y" * 5000),),
         )
         with (
             patch.dict(os.environ, {"TYPESAFE_API_KEY": secret}),
@@ -150,7 +150,7 @@ class QuestionsTests(unittest.TestCase):
         self.assertEqual(out.getvalue(), "printed [redacted]\n")
 
     def test_configuration_and_confidence_boundary(self):
-        thread = pr.Thread("1", "app.py", 1, "author", "Rename it", "")
+        thread = github.Thread("1", "app.py", 1, "author", "Rename it", "")
         for floor, decision in ((0.6, "fix"), (0.61, "unclear")):
             with patch(
                 "holophyte.questions.ask", return_value=questions.Answer("fix", 0.6)

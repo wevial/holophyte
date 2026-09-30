@@ -20,7 +20,7 @@ from serve_action_fixture import UnitActionCases  # noqa: E402
 from serve_fixture import MIN, ServeTestCase  # noqa: E402 - after the insert
 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
-import holophyte.serve.serve  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.server  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
@@ -182,7 +182,7 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         (self.db.parent / "config.toml").write_text("[serve]\nactions = true\n")
         project = holophyte.config.project.Project.locate(self.target)
         with self.assertRaises(SystemExit) as raised:
-            holophyte.serve.serve.serve(project, "127.0.0.1:0", out=io.StringIO())
+            holophyte.serve.server.serve(project, "127.0.0.1:0", out=io.StringIO())
         message = str(raised.exception)
         self.assertIn("[serve] token_file", message)
         self.assertIn("actions", message)

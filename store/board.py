@@ -288,7 +288,7 @@ def _write(conn, project_id, issue_id, identifier, text, specced, author,
            now, **fields):
     """Write `text` as the ticket's row through `mirror_ticket()`, its
     contract withheld when it is not `specced`."""
-    from holophyte.board.board import task_contract
+    from holophyte.board.projection import task_contract
     from provider import parse_body
     task = parse_body(identifier, text)
     title, criteria, commands, _states = task_contract(task)

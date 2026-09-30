@@ -15,7 +15,7 @@ from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while, warn_on_run
 from holophyte.loop.stop import stop_if_requested
-from holophyte.pr import pr
+from holophyte.pr import github
 from holophyte.pr.pr_head import _just_pushed_state
 from holophyte.redact import safe_print as print
 
@@ -34,7 +34,7 @@ class CheckFix:
 
 def rerun_failed_jobs(target, pull, workflow_run_id):
     """Rerun the failed jobs of Actions workflow run `workflow_run_id`."""
-    return pr.rest(target, pull, "POST",
+    return github.rest(target, pull, "POST",
                    f"repos/{pull.owner}/{pull.name}/actions/runs"
                    f"/{workflow_run_id}/rerun-failed-jobs")
 
@@ -87,7 +87,7 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     with heartbeat_while(run.conn, run.run_id, beat_s):
         for check in failed:
             try:
-                logs.append(pr.job_log(run.project, pull, check.job_id))
+                logs.append(github.job_log(run.project, pull, check.job_id))
             except InfraFailure:
                 logs.append(None)
     print(f"[holo2] checks failed on {pull.url}"
@@ -175,7 +175,7 @@ def _rerun_result(run, beat_s, pull, reviewed, names, rerun_jobs):
                         f" {wait}s on the pull request", (), reviewed=reviewed)
         stop_if_requested(run.conn, run.run_id, "merge_gate")
         with heartbeat_while(run.conn, run.run_id, beat_s):
-            pr.SLEEP(min(pr.CHECK_POLL_S, remaining))
+            github.SLEEP(min(github.CHECK_POLL_S, remaining))
 
 
 def _red(state, sha):

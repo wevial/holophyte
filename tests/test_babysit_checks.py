@@ -33,7 +33,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.babysit.maintainer_notes  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 
@@ -59,7 +59,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.fake_route(states=[pending, self.pr_state()])
         self.seen_as(pending)
         naps = []
-        with patch.object(holophyte.pr.pr, "SLEEP", naps.append):
+        with patch.object(holophyte.pr.github, "SLEEP", naps.append):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
         self.assertEqual(naps, [])
@@ -88,7 +88,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
             return state
         with patch.object(holophyte.babysit.maintainer_notes, "pending_state",
                              paused_mid_read), \
-                patch.object(holophyte.pr.pr, "SLEEP", self.fail):
+                patch.object(holophyte.pr.github, "SLEEP", self.fail):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
         self.assertEqual(self.read("SELECT outcome, resumePhase, parkKind FROM runs"),
@@ -99,7 +99,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         fresh = datetime.now(timezone.utc).isoformat()
         self.fake_route(states=[self.pr_state(updated_at=fresh)])
         naps = []
-        with patch.object(holophyte.pr.pr, "SLEEP", naps.append), \
+        with patch.object(holophyte.pr.github, "SLEEP", naps.append), \
                 patch.object(holophyte.babysit.babysitter, "monotonic",
                              side_effect=lambda: sum(naps)):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
@@ -115,7 +115,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state(checks="PENDING")])
         naps = []
-        with patch.object(holophyte.pr.pr, "SLEEP", naps.append), \
+        with patch.object(holophyte.pr.github, "SLEEP", naps.append), \
                 patch.object(holophyte.babysit.babysitter, "monotonic",
                              side_effect=lambda: sum(naps)):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
@@ -141,7 +141,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
             return {"total_count": 0, "check_runs": []}
         naps = []
         with patch.object(holophyte.pr.pr_status, "rest", rest), \
-                patch.object(holophyte.pr.pr, "SLEEP", naps.append), \
+                patch.object(holophyte.pr.github, "SLEEP", naps.append), \
                 patch.object(holophyte.babysit.babysitter, "monotonic",
                              side_effect=lambda: sum(naps)):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
@@ -155,7 +155,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
 
     def test_a_check_runs_read_the_babysitter_cannot_make_is_pending(self):
         def raising_rest(target, pull, method, path, payload=None):
-            raise holophyte.pr.pr.InfraFailure(f"GitHub refused GET {path}")
+            raise holophyte.pr.github.InfraFailure(f"GitHub refused GET {path}")
         pull = holophyte.pr.pr_status.parse_pr_url(self.URL)
         with patch.object(holophyte.pr.pr_status, "graphql",
                           lambda *a, **k: self.pr_state(checks="SUCCESS")
@@ -318,7 +318,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
 
 
     def test_a_head_that_is_not_the_candidate_parks_instead_of_merging(self):
-        self.enterContext(patch.object(holophyte.pr.pr, "SLEEP"))
+        self.enterContext(patch.object(holophyte.pr.github, "SLEEP"))
         self.configure('[merge]\nmode = "pr"\n')
         other = "a" * 40
         self.enterContext(
@@ -395,13 +395,13 @@ class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
             return [self.UNIT] if len(reads) == 1 else []
         self.enterContext(patch("holophyte.pr.pr_status._check_runs_of", check_runs))
         naps = []
-        with patch.object(holophyte.pr.pr, "SLEEP", naps.append):
+        with patch.object(holophyte.pr.github, "SLEEP", naps.append):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       Reply("THREAD 1: DECLINE -- a naming preference"),
                       provider=self.provider())
         self.assertIn("rerun-failed-jobs", "".join(self.recorded()))
         self.assertEqual(len(self.pushed()), 1)
-        self.assertEqual(naps, [holophyte.pr.pr.CHECK_POLL_S])
+        self.assertEqual(naps, [holophyte.pr.github.CHECK_POLL_S])
         self.assertEqual(self.read("SELECT outcome, parkKind FROM runs"),
                          [("merged", None)])
 

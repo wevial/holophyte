@@ -28,7 +28,7 @@ import holophyte.config.config
 import holophyte.config.project
 import linear_provider
 import ticket_template
-from holophyte.board.board import file_ticket
+from holophyte.board.projection import file_ticket
 from provider import FileProvider
 
 TICKET = """\

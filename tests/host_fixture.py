@@ -19,7 +19,7 @@ from unittest.mock import patch
 import holophyte.cli.cli
 import store
 from holophyte.config.project import Project
-from holophyte.host.host import Host
+from holophyte.host.registry import Host
 
 REPO = Path(__file__).resolve().parent.parent
 

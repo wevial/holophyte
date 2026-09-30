@@ -48,7 +48,7 @@ import store.read
 import ticket_template
 from holophyte import failure_reason
 from holophyte.agents.agents import review_refs
-from holophyte.board.board import block_ticket, ledger
+from holophyte.board.projection import block_ticket, ledger
 from holophyte.environment_git import paths, unstage_environment
 from holophyte.loop.gates import MergeParked, RunFailure, run_verify, sh, with_baseline
 from holophyte.loop.runs import heartbeat_while, record_round, set_phase

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from holophyte.pr import pr
+from holophyte.pr import github
 
 ATTRIBUTION = ('\n\nGenerated with [Devin](<https://devin.ai>)\n\n'
                'Co-Authored-By: Devin <devin-ai-integration@users.noreply.github.com>')
@@ -46,7 +46,7 @@ class CommitHygieneTests(unittest.TestCase):
         first = self.commit('First change')
         second = self.commit('Second change\n\nReal details.' + ATTRIBUTION)
         metadata = self.git('show', '-s', '--format=%T%n%an%n%ae%n%aI%n%cI', second)
-        pr.push_branch(self.target, 'task')
+        github.push_branch(self.target, 'task')
         tip = self.git('rev-parse', 'task', cwd=self.remote)
         self.assertNotEqual(tip, second)
         self.assertEqual(self.git('show', '-s', '--format=%B', tip),
@@ -69,7 +69,7 @@ class CommitHygieneTests(unittest.TestCase):
         tip = self.commit(message)
         original = subprocess.check_output(['git', 'cat-file', 'commit', tip],
                                            cwd=self.repo).split(b'\n\n', 1)[1]
-        pr.push_branch(self.target, 'task')
+        github.push_branch(self.target, 'task')
         self.assertEqual(self.git('rev-parse', 'task', cwd=self.remote), tip)
         self.assertEqual(self.git('rev-parse', tip + '^'), published)
         self.assertEqual(self.git('show', '-s', '--format=%B', tip), message)
@@ -83,7 +83,7 @@ class CommitHygieneTests(unittest.TestCase):
         human = 'Co-Authored-By: Pat Person <pat@example.com>\n'
         self.commit(body + ATTRIBUTION + '\n' + human)
 
-        pr.push_branch(self.target, 'task')
+        github.push_branch(self.target, 'task')
 
         raw = subprocess.check_output(['git', 'cat-file', 'commit', 'task'],
                                       cwd=self.remote)
@@ -104,7 +104,7 @@ class CommitHygieneTests(unittest.TestCase):
         original = self.commit('New change' + ATTRIBUTION)
         tree = self.git('rev-parse', 'HEAD^{tree}')
 
-        pr.push_branch(self.target, 'task')
+        github.push_branch(self.target, 'task')
 
         tip = self.git('rev-parse', 'task', cwd=self.remote)
         self.assertNotEqual(tip, original)
@@ -118,11 +118,11 @@ class CommitHygieneTests(unittest.TestCase):
     def test_disabled_and_custom_patterns(self):
         self.config = {'merge': {'strip_attribution': []}}
         tip = self.commit('Keep this' + ATTRIBUTION)
-        pr.push_branch(self.target, 'task')
+        github.push_branch(self.target, 'task')
         self.assertEqual(self.git('rev-parse', 'task', cwd=self.remote), tip)
         self.config['merge']['strip_attribution'] = ['^Build credit:']
         self.commit('Custom\n\nBuild credit: automation')
-        pr.push_branch(self.target, 'task')
+        github.push_branch(self.target, 'task')
         self.assertEqual(self.git('show', '-s', '--format=%B', 'task'), 'Custom')
 
     def test_tree_mismatch_aborts_without_moving_branch_or_worktree(self):
@@ -142,7 +142,7 @@ class CommitHygieneTests(unittest.TestCase):
 
         with patch.object(commit_hygiene, '_git', side_effect=mismatched):
             with self.assertRaisesRegex(InfraFailure, 'tree'):
-                pr.push_branch(self.target, 'task')
+                github.push_branch(self.target, 'task')
         self.assertEqual(self.git('rev-parse', 'task'), tip)
         self.assertEqual(self.git('diff', '--binary', 'HEAD'), before)
         self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/task'), '')

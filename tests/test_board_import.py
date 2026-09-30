@@ -23,8 +23,8 @@ import holophyte.config.project  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.board.board import mirror_task  # noqa: E402
 from holophyte.board.board_import import board_import  # noqa: E402
+from holophyte.board.projection import mirror_task  # noqa: E402
 
 TEAM = "team-1"
 CRITERIA = ["Given the ticket, then it is worked"]

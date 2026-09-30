@@ -50,7 +50,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
@@ -60,7 +60,7 @@ import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.merge_gate  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.review.findings  # noqa: E402 - after the sys.path insert above
-import holophyte.serve.serve  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.server  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -321,8 +321,8 @@ class MergeApprovalTests(LoopFixture):
 
         self.loop(Commit("the scripted work"), APPROVE)
 
-        import holophyte.serve.serve
-        code, body = holophyte.serve.serve.attention(self.project)
+        import holophyte.serve.server
+        code, body = holophyte.serve.server.attention(self.project)
         self.assertEqual(code, 200)
         blocked = [item for item in body["items"] if item["kind"] == "blocked"]
         # The item names the parked run; this path records no `redirect`
@@ -354,8 +354,8 @@ class MergeApprovalTests(LoopFixture):
         conn = sqlite3.connect(self.db)
         self.addCleanup(conn.close)
         for (ticket_id,) in conn.execute("SELECT id FROM tickets"):
-            self.assertEqual(holophyte.board.board.failure_history(conn, ticket_id),
-                             [])
+            self.assertEqual(holophyte.board.projection.failure_history(conn,
+                             ticket_id), [])
 
     def test_approve_then_the_next_claim_merges_the_candidate_unreviewed(self):
         """`--approve KO-n` releases the parked run, and the loop's next

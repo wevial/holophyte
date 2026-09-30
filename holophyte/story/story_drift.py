@@ -4,7 +4,7 @@ from time import time
 
 import store
 from holophyte.agents.agents import review_refs
-from holophyte.board.board import ledger
+from holophyte.board.projection import ledger
 from holophyte.loop.gates import InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while, record_round
 from holophyte.loop.stop import stop_if_requested

@@ -26,7 +26,7 @@ import store
 import store.read
 import store.tickets
 from holophyte import deadline
-from holophyte.board.board import (
+from holophyte.board.projection import (
     ledger,
     mirror_push,
     post_ledger_comment,
@@ -219,7 +219,7 @@ def _close_canceled(target, conn, provider, ticket_id):
         story_claim.walk_closed(conn, ticket_id, identifier, "abandoned")
     if parked:
         if target is not None:
-            from holophyte.board.board import release_lease_label
+            from holophyte.board.projection import release_lease_label
             release_lease_label(target, conn, ticket_id, provider, run_id)
         print(f"[holo2] reconciled {identifier}: canceled on the board; run"
               f" {run_id} ended abandoned, {url} left open on GitHub")
@@ -717,7 +717,7 @@ def _note_closed_pr(target, conn, provider, ticket, pull, status):
             "SELECT branch, candidateSha FROM runs WHERE id = ?",
             (ticket.runId,)).fetchone()
         _reject_pr(conn, ticket.runId, pull, status.closed_by, branch, sha)
-    from holophyte.board.board import release_lease_label
+    from holophyte.board.projection import release_lease_label
     release_lease_label(target, conn, ticket.id, provider, ticket.runId)
 
 

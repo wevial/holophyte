@@ -37,7 +37,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 from pool_restart_cases import PoolRestartCases  # noqa: E402
 
 import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
@@ -76,7 +76,7 @@ class GateConflictRequeueTests(LoopFixture):
         try:
             project_id = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
-            ticket = holophyte.board.board.mirror_task(conn, project_id, a_task())
+            ticket = holophyte.board.projection.mirror_task(conn, project_id, a_task())
             run_id = store.claim(conn, project_id, ticket)
             tickets.transition(conn, ticket, "in_flight")
             store.set_branch(conn, run_id, branch)
@@ -87,7 +87,7 @@ class GateConflictRequeueTests(LoopFixture):
                     holophyte.loop.merge_gate._sync_main_into_branch(
                         self.project, conn, run_id, provider, "KO-131", branch,
                         wt, sha, 60, "add a thing", 5)
-            holophyte.board.board.close_out_failure(
+            holophyte.board.projection.close_out_failure(
                 self.project, conn, run_id, ticket, reason=str(failed.exception),
                 provider=provider, refresh=False)
         finally:
@@ -131,12 +131,12 @@ class GateConflictRequeueTests(LoopFixture):
         try:
             project_id = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
-            ticket = holophyte.board.board.mirror_task(conn, project_id, a_task())
+            ticket = holophyte.board.projection.mirror_task(conn, project_id, a_task())
             run_id = store.claim(conn, project_id, ticket)
             tickets.transition(conn, ticket, "in_flight")
             park_run(conn, run_id, "awaiting_merge_approval",
                        pr_url=url, candidate_sha="a" * 40)
-            self.assertTrue(holophyte.board.board.block_ticket(
+            self.assertTrue(holophyte.board.projection.block_ticket(
                 conn, ticket, provider, f"PR open: {url}"))
         finally:
             conn.close()
@@ -222,8 +222,11 @@ class PoolTests(PoolRestartCases, LoopFixture):
 
         def filed_one():
             # Worker 1 holds ticket 1; ticket 2 arrives on the board.
-            store.claim(conn, project_id,
-                        holophyte.board.board.mirror_task(conn, project_id, a_task(1)))
+            store.claim(
+                conn,
+                project_id,
+                holophyte.board.projection.mirror_task(conn, project_id, a_task(1)),
+            )
             conn.commit()
             provider.queue.append(a_task(2))
 
@@ -281,7 +284,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
                 store.claim(
                     conn,
                     project_id,
-                    holophyte.board.board.mirror_task(conn, project_id, a_task(n)),
+                    holophyte.board.projection.mirror_task(conn, project_id, a_task(n)),
                 )
             conn.commit()
 
@@ -304,7 +307,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
         conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        ticket = holophyte.board.board.mirror_task(conn, project_id, a_task(1))
+        ticket = holophyte.board.projection.mirror_task(conn, project_id, a_task(1))
         store.claim(conn, project_id, ticket)
 
         pool = self.run_scheduler(3, provider, [
@@ -320,7 +323,7 @@ class PoolTests(PoolRestartCases, LoopFixture):
         conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        ids = [holophyte.board.board.mirror_task(conn, project_id, a_task(n))
+        ids = [holophyte.board.projection.mirror_task(conn, project_id, a_task(n))
                for n in range(1, 6)]
         for ticket in ids[2:]:
             conn.execute("UPDATE tickets SET dependsOn = ? WHERE id = ?",
@@ -344,8 +347,8 @@ class PoolTests(PoolRestartCases, LoopFixture):
         conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        holophyte.board.board.mirror_task(conn, project_id, a_task(1))
-        second = holophyte.board.board.mirror_task(conn, project_id, a_task(2))
+        holophyte.board.projection.mirror_task(conn, project_id, a_task(1))
+        second = holophyte.board.projection.mirror_task(conn, project_id, a_task(2))
         conn.execute("UPDATE tickets SET dependsOn = ? WHERE id = ?",
                      (json.dumps([a_task(1)["issue_id"]]), second))
         conn.commit()
@@ -649,7 +652,8 @@ class WorkerTests(LoopFixture):
 
         with (
             patch.object(holophyte.loop.pool, "refresh_findings", render_under_lock),
-            patch.object(holophyte.board.board, "refresh_findings", render_under_lock),
+            patch.object(holophyte.board.projection, "refresh_findings",
+                         render_under_lock),
         ):
             rc, _ = self.worker(Refuse(), provider=provider)
 

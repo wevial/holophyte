@@ -38,7 +38,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -154,7 +154,7 @@ class ClaimFreshnessTests(LoopFixture):
         conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        ticket = holophyte.board.board.mirror_task(conn, project_id, task)
+        ticket = holophyte.board.projection.mirror_task(conn, project_id, task)
         run_id = store.claim(conn, project_id, ticket)
         tickets.transition(conn, ticket, "in_flight")
         store.set_pull_request(conn, run_id,
@@ -349,7 +349,7 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
         conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        dependency = holophyte.board.board.mirror_task(
+        dependency = holophyte.board.projection.mirror_task(
             conn, project_id, dict(a_task(), id="KO-900", issue_id="iss-900"))
         store.walk_ticket(conn, dependency, status)
         conn.commit()

@@ -18,9 +18,9 @@ every file; this page lists what each seam promises.
 | **`agents`** | `holophyte/agents/agents.py` | `agent_route()` (which command, which model, from `[agents]`) and `agent()` (one turn of a role in a process group with a budget). The implementer and the reviewer are both routes; `review_runner` is the reviewer's transport. |
 | **`review`** | `holophyte/review/review.py` | Reviewer prose in, structured findings and a verdict out: the `CRITERION n:` checklist parser, the witness-test resolver, the finding key. |
 | **`findings`** | `holophyte/review/findings.py` | The `FINDINGS.md` window renderer, byte-stable, from `EndedRun` and `ReviewRound` rows only. |
-| **`board`** | `holophyte/board/board.py` | Linear as a notice board: mirror a ticket into the store with its contract snapshot, push status, detect drift at merge, escalate a twice-failed ticket, file and update tickets from files. |
+| **`board`** | `holophyte/board/projection.py` | Linear as a notice board: mirror a ticket into the store with its contract snapshot, push status, detect drift at merge, escalate a twice-failed ticket, file and update tickets from files. |
 | **`reexec`** | `holophyte/loop/reexec.py` | Replace the process with the same command line, through an `EXEC` seam tests can intercept, shared by the loop and the project daemon; and `systemctl --user` on the deploy units (the loop's, the sweep's), shared by the supervisor and the daemon's actions. |
-| **`host`** | `holophyte/host/host.py` | The host registry, `host.toml`: the projects the host daemon serves and the host sweep watches, by path, re-read when it changes; written by `project add` and `project remove` alone. A route name resolves through `Host.project()` alone. Opens no store. |
+| **`host`** | `holophyte/host/registry.py` | The host registry, `host.toml`: the projects the host daemon serves and the host sweep watches, by path, re-read when it changes; written by `project add` and `project remove` alone. A route name resolves through `Host.project()` alone. Opens no store. |
 | **`config`** | `holophyte/config/config.py`, `holophyte/config/config_tables.py` | Every `config.toml` table as a typed value with defaults, validated at startup; unknown keys are startup errors. |
 
 ## What depends on what
@@ -78,11 +78,11 @@ flowchart TB
 ```
 
 Arrows point at what a module imports. The three modules the PR merge mode
-and the console brought: `pr.py` (the push, the pull request and its merge
+and the console brought: `github.py` (the push, the pull request and its merge
 API; imports `store.read`, `findings` and `gates`), `babysitter.py` (the
-thread verdicts of a PR pass; imports `pr.py`) and `files.py` (touched-file
+thread verdicts of a PR pass; imports `github.py`) and `files.py` (touched-file
 counts read from git for the daemon; imports `gates`, and is imported by
-`serve`). `config` imports `pr.py` lazily, at the startup route check only.
+`serve`). `config` imports `github.py` lazily, at the startup route check only.
 Three rules hold the graph in this shape: `serve` reads through
 `store.read`, and its action endpoints (`serve_actions`) write only through
 the store API (`store.record_intervention()`, `store.requeue()`,
@@ -120,7 +120,7 @@ The host's own file, `host.toml`, is the third: the registry's
 ## What a port would replace
 
 The store schema and the ticket template are the cross-language contracts.
-A Rust daemon replaces `serve.py` against the same store; a Rust verify
+A Rust daemon replaces `server.py` against the same store; a Rust verify
 gate replaces `gates.py` with the same clause-by-clause report; the Python
 test suite run against the other binary is the acceptance oracle. That
 ordering is the roadmap's, and it is why the seams came first.

@@ -478,7 +478,7 @@ def board_mode(project):
 #
 # `pr_quiet_sec`: quiet since GitHub updatedAt before merging (default 300;
 # 0 merges as soon as green). `check_wait_sec`: positive pending/quiet wait
-# cap, default pr.CHECK_WAIT_S (1800), independently set per target (KO-477).
+# cap, default github.CHECK_WAIT_S (1800), independently set per target (KO-477).
 # `missing_check_sec`: how long a check main requires may report nothing on
 # the head before the wait stops for it (default 600); with
 # `retrigger_missing_checks = true` one empty commit per candidate wakes it
@@ -517,7 +517,7 @@ MERGE_KEYS = {
     "pr_merge_method": "merge",
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
-    "check_wait_sec": None,  # Resolved from pr.CHECK_WAIT_S by merge_config.
+    "check_wait_sec": None,  # Resolved from github.CHECK_WAIT_S by merge_config.
     "missing_check_sec": 600, "retrigger_missing_checks": False,
     "require_up_to_date": True,
     "pr_style": "", "pr_changes_log": False, "review_fixes": False,
@@ -546,7 +546,7 @@ MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
 
 def merge_config(project):
     """Validate merge settings at startup; refusals name the config and key."""
-    from holophyte.pr.pr import CHECK_WAIT_S  # Deferred: pr also reads config.
+    from holophyte.pr.github import CHECK_WAIT_S  # Deferred: github also reads config.
     table = project.config().get("merge", {})
     if not isinstance(table, dict):
         raise SystemExit(

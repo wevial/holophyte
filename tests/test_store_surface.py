@@ -68,7 +68,7 @@ EXPECTED = [
     "record_agent_session",  # KO-569: latest session and ordered event history.
     "record_event",
     "record_intervention",
-    # KO-250: the run's narrative lives in the store; `board.ledger()` writes
+    # KO-250: the run's narrative lives in the store; `projection.ledger()` writes
     # the row here before it posts the board comment that projects it.
     "record_ledger",
     "record_loop_restart",

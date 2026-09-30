@@ -42,7 +42,7 @@ from holophyte.config.config import (
     review_route,
     sweep_config,
 )
-from holophyte.isolation import isolation
+from holophyte.isolation import launcher
 from holophyte.loop.gates import GroupKill, InfraFailure, run_capped, sh
 from holophyte.redact import known_secrets, outbound
 from holophyte.redact import safe_print as print
@@ -212,7 +212,7 @@ def probe_route(project, role, fallback, timeout, entry):
     pair = None
     if default and role == "implement":
         if fallback or (agent_command(project, role, "", fallback=True) is None
-                        and isolation.route_for(project).backend != "container"):
+                        and launcher.route_for(project).backend != "container"):
             return None
         cmd = [DEFAULT_IMPLEMENTER, "-p", PROBE_GOAL, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
@@ -240,9 +240,9 @@ def probe_route(project, role, fallback, timeout, entry):
                     timeout=cap, verdicts=None)
                 code = 0
             elif role == "implement":
-                code, out = isolation.launch(
-                    replace(isolation.route_for(project), writable=False), scratch,
-                    isolation.environment(project), cmd, timeout=cap,
+                code, out = launcher.launch(
+                    replace(launcher.route_for(project), writable=False), scratch,
+                    launcher.environment(project), cmd, timeout=cap,
                     runner=run_capped)
             else:
                 code, out = probe_configured_review(project, role, fallback, goal,
@@ -360,7 +360,7 @@ def record_session(project, conn, run_id, role, output, cwd=None,
 
     if role != "implement" or conn is None or run_id is None:
         return
-    if isolation.route_for(project).backend == "container":
+    if launcher.route_for(project).backend == "container":
         return
     fallback = role in routes(project).commands
     seat = None if fallback else harness_seat(project, role)
@@ -596,8 +596,8 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     if session_id is not None and conn is not None and run_id is not None:
         import store
         store.record_agent_session(conn, run_id, session_id, role, "primary")
-    code, out = isolation.launch(isolation.route_for(project), cwd,
-                                 isolation.environment(project), cmd,
+    code, out = launcher.launch(launcher.route_for(project), cwd,
+                                 launcher.environment(project), cmd,
                                  timeout=cap, runner=run_capped, project=project,
                                  keep_session=True, **hook)
     return ImplementerOutput(out.strip(), code, dispatched_route)

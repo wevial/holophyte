@@ -8,8 +8,8 @@ from holophyte.babysit.check_fix import CheckFix
 from holophyte.cli import report
 from holophyte.host import supervisor
 from holophyte.loop import loop
-from holophyte.pr import pr
-from holophyte.serve import serve, serve_runs
+from holophyte.pr import github
+from holophyte.serve import serve_runs, server
 from store.working import settle_work, working
 from tests.phase_fixture import finish_run
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase
@@ -120,7 +120,7 @@ class WorkingConsumers(SweepTestCase):
         start = T0 + 5 * MINUTE
 
         def answers(now):
-            return (serve.status(self.project, now=now)[1]["runs"][0],
+            return (server.status(self.project, now=now)[1]["runs"][0],
                     serve_runs.run_detail(self.project, str(run), now=now)[1]["run"])
 
         with patch("store.working.time", return_value=start / 1000):
@@ -152,7 +152,7 @@ class WorkingConsumers(SweepTestCase):
         self.configure(
             "[merge]\npr_quiet_sec = 3600\npr_poll_sec = 13\npr_rounds = 1\n"
         )
-        pull = pr.PullRequest(
+        pull = github.PullRequest(
             "github.com", "owner", "repo", 1, "https://github.com/owner/repo/pull/1"
         )
         for checks, final_fix in (
@@ -168,14 +168,14 @@ class WorkingConsumers(SweepTestCase):
             def state(*args):
                 if first[0]:
                     first[0] = False
-                    return pr.PrState((pr.Thread("1", "app.py", 1, "bot",
+                    return github.PrState((github.Thread("1", "app.py", 1, "bot",
                                                 "Fix this", "url"),), "success", "sha")
                 check = (
                     ("pending" if clock[0] < 10 else "success")
                     if checks == "alternating"
                     else checks
                 )
-                return pr.PrState((), check, "sha", updated_at=T0 + clock[0] * 1000)
+                return github.PrState((), check, "sha", updated_at=T0 + clock[0] * 1000)
 
             def nap(seconds):
                 clock[0] += seconds
@@ -185,8 +185,8 @@ class WorkingConsumers(SweepTestCase):
                 patch.object(
                     babysitter, "time", side_effect=lambda: T0 / 1000 + clock[0]
                 ),
-                patch.object(pr, "CHECK_WAIT_S", 20),
-                patch.object(pr, "SLEEP", side_effect=nap),
+                patch.object(github, "CHECK_WAIT_S", 20),
+                patch.object(github, "SLEEP", side_effect=nap),
                 patch.object(babysitter.pr_status, "pr_state", side_effect=state),
                 patch.object(babysitter, "_answer_threads", return_value="sha") as fix,
                 # A spent check rerun keeps the babysit's wait in the worker.
@@ -220,19 +220,19 @@ class WorkingConsumers(SweepTestCase):
                 self.assertNotIn("out of time", reason)
                 self.assertEqual(fix.call_count, int(final_fix))
             self.assertEqual(clock[0], 20)
-        thread = pr.PrState(("thread",), "pending", "sha")
+        thread = github.PrState(("thread",), "pending", "sha")
         with (
             patch.object(
                 babysitter.pr_status,
                 "pr_state",
-                side_effect=[pr.PrState((), "pending", "sha"), thread],
+                side_effect=[github.PrState((), "pending", "sha"), thread],
             ),
-            patch.object(pr, "SLEEP") as sleep,
+            patch.object(github, "SLEEP") as sleep,
         ):
             self.assertIs(
                 babysitter._settled_state(self.project, None, None, 10, pull), thread
             )
-            sleep.assert_called_once_with(pr.CHECK_POLL_S)
+            sleep.assert_called_once_with(github.CHECK_POLL_S)
 
     def test_clock_api_projection(self):
         run = self.a_run(budget_min=10)
@@ -242,14 +242,14 @@ class WorkingConsumers(SweepTestCase):
         )
         self.conn.commit()
         now = T0 + 10 * MINUTE
-        live = serve.status(self.project, now=now)[1]["runs"][0]
+        live = server.status(self.project, now=now)[1]["runs"][0]
         self.assertEqual(
             (live["working_ms"], live["elapsed_ms"]), (4 * MINUTE, 10 * MINUTE)
         )
         detail = serve_runs.run_detail(self.project, str(run), now=now)[1]["run"]
         self.assertEqual(detail["working_ms"], live["working_ms"])
         store.working.settle_work(self.conn, run, now=now)
-        waiting = serve.status(self.project, now=now + 20 * MINUTE)[1]["runs"][0]
+        waiting = server.status(self.project, now=now + 20 * MINUTE)[1]["runs"][0]
         self.assertEqual(
             (waiting["working_ms"], waiting["elapsed_ms"], waiting["work_started_ms"]),
             (4 * MINUTE, 30 * MINUTE, None),

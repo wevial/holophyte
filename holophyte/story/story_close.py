@@ -4,7 +4,7 @@ import json
 import re
 import subprocess
 
-from holophyte.board.board import mirror_push
+from holophyte.board.projection import mirror_push
 from holophyte.loop.gates import MergeLockHeld, merge_lock
 from holophyte.redact import safe_print as print
 from holophyte.story.story_claim import DRIFT_OPTIONS

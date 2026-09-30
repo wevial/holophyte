@@ -111,12 +111,11 @@ class MediaTests(unittest.TestCase):
             patch("holophyte.pr.pr_media.repo_is_private", return_value=private,
                   side_effect=error) as visibility,
             patch("holophyte.pr.pullrequest.ledger") as ledger,
-            patch("holophyte.pr.pr.open_pull_request", return_value=None),
-            patch("holophyte.pr.pr.create_pull_request", return_value="url") as create,
-            patch(
-                "holophyte.pr.pr.origin_url",
-                return_value="https://github.com/example/repo.git",
-            ),
+            patch("holophyte.pr.github.open_pull_request", return_value=None),
+            patch("holophyte.pr.github.create_pull_request",
+                  return_value="url") as create,
+            patch("holophyte.pr.github.origin_url",
+                  return_value="https://github.com/example/repo.git"),
         ):
             title, text = pullrequest._prepare_pr(
                 self.target,
@@ -149,7 +148,7 @@ class MediaTests(unittest.TestCase):
         import shlex
 
         from holophyte.config.project import state_dir
-        from holophyte.isolation import isolation
+        from holophyte.isolation import launcher
         self.config['agents'] = {'implementer_isolation': 'container'}
         capture_source = self.root / 'capture.env'
         capture_source.write_text('CAPTURE_KEY=sentinel-capture\nOTHER=sentinel-other\n')
@@ -167,7 +166,7 @@ class MediaTests(unittest.TestCase):
             mounts = [argv[i + 1] for i, v in enumerate(argv) if v == '--volume']
             self.assertEqual(len(mounts), 3)
             cache, cache_destination, _ = mounts[1].split(':')
-            self.assertEqual(cache_destination, isolation.CACHE)
+            self.assertEqual(cache_destination, launcher.CACHE)
             self.assertTrue(Path(cache).is_relative_to(
                 state_dir(self.target.path).resolve()))
             self.assertEqual(mounts[2], f'{runner}:{runner}:ro')
@@ -199,17 +198,17 @@ class MediaTests(unittest.TestCase):
             self.assertFalse(host_image.exists())
             return 0, ''
 
-        with (patch.object(isolation, 'image_ready'),
-              patch.object(isolation.review_runner, '_remove_container'),
-              patch.object(isolation, 'run_capped', side_effect=capture) as run,
+        with (patch.object(launcher, 'image_ready'),
+              patch.object(launcher.review_runner, '_remove_container'),
+              patch.object(launcher, 'run_capped', side_effect=capture) as run,
               patch.dict(os.environ, MEDIA_SECRET='host-only'),
-              patch('holophyte.pr.pr.origin_url',
+              patch('holophyte.pr.github.origin_url',
                     return_value='https://github.com/example/repo.git'),
               patch.object(pr_media, 'repo_is_private', return_value=False)):
             section = pr_media.prepare(self.target, self.repo, 'KO-530',
                                        evidence_states=states)
         run.assert_called_once()
-        self.assertNotIn('CAPTURE_KEY', isolation.environment(self.target))
+        self.assertNotIn('CAPTURE_KEY', launcher.environment(self.target))
         self.assertIn('Dialog open — captured', section)
         self.assertEqual(subprocess.check_output(
             ['git', '--git-dir', str(self.remote), 'show',
@@ -328,7 +327,7 @@ class MediaTests(unittest.TestCase):
                        f'Path(sys.argv[1], "01-first.png").write_bytes({PNG!r})\n')
         with (
             patch("holophyte.pr.pr_media.repo_is_private", return_value=False),
-            patch("holophyte.pr.pr.origin_url",
+            patch("holophyte.pr.github.origin_url",
                   return_value="https://github.com/example/repo.git"),
         ):
             section = pr_media.prepare(self.target, self.repo, "KO-522",
@@ -522,7 +521,7 @@ class MediaTests(unittest.TestCase):
         self.enterContext(
             patch("holophyte.pr.pr_media.shutil.which", return_value=None)
         )
-        self.enterContext(patch("holophyte.pr.pr.token_from_env",
+        self.enterContext(patch("holophyte.pr.github.token_from_env",
                                 return_value="test-token"))
         self.config["merge"]["media_repo"] = "example/media"
         return remote
@@ -604,7 +603,7 @@ class MediaTests(unittest.TestCase):
         self.candidate(script="import sys\nfrom pathlib import Path\n"
                        'Path(sys.argv[1], "first.png").write_bytes(b"png")\n'
                        'Path(sys.argv[1], "second screen.png").write_bytes(b"png")\n')
-        with patch("holophyte.pr.pr.origin_url",
+        with patch("holophyte.pr.github.origin_url",
                    return_value="https://github.com/example/repo.git"), patch(
                        "holophyte.pr.pr_media.repo_is_private",
                        return_value=True) as visibility:
@@ -789,7 +788,7 @@ class MediaTests(unittest.TestCase):
 
     def prepare(self):
         notes = []
-        with (patch("holophyte.pr.pr.origin_url",
+        with (patch("holophyte.pr.github.origin_url",
                     return_value="https://github.com/example/repo.git"),
               patch.object(pr_media, "repo_is_private", return_value=False)):
             section = pr_media.prepare(self.target, self.repo, "KO-623",
@@ -819,16 +818,16 @@ class MediaTests(unittest.TestCase):
             self.assertIn("token [redacted] refused", text)
 
     def test_failed_container_capture_shows_what_launch_returned(self):
-        from holophyte.isolation import isolation
+        from holophyte.isolation import launcher
         self.config["agents"] = {"implementer_isolation": "container"}
         self.candidate()
         worktree = self.root / "task"
         self.git("worktree", "add", "-qb", "task", str(worktree))
         self.repo = worktree
         self.stub_capture_runner()
-        with (patch.object(isolation, "image_ready"),
-              patch.object(isolation.review_runner, "_remove_container"),
-              patch.object(isolation, "run_capped",
+        with (patch.object(launcher, "image_ready"),
+              patch.object(launcher.review_runner, "_remove_container"),
+              patch.object(launcher, "run_capped",
                            return_value=(3, "no spec at e2e/rel139.spec.ts\n"))):
             section, _ = self.prepare()
         self.assertIn("failed (exit 3).\n\n```\nno spec at e2e/rel139.spec.ts\n```",
@@ -872,7 +871,7 @@ class MediaTests(unittest.TestCase):
         self.assertNotIn("rendering", section)
 
     def test_visibility_transport_and_invalid_answers(self):
-        with patch("holophyte.pr.pr.origin_url",
+        with patch("holophyte.pr.github.origin_url",
                    return_value="https://github.com/example/repo.git"), patch(
                        "holophyte.pr.pr_media.shutil.which", return_value="gh"), patch(
                        "holophyte.pr.pr_media.subprocess.run") as run:
@@ -887,10 +886,14 @@ class MediaTests(unittest.TestCase):
             run.return_value.stdout = '{}'
             with self.assertRaises(ValueError):
                 pr_media.repo_is_private(self.target)
-        with patch("holophyte.pr.pr.origin_url",
-                   return_value="https://github.com/example/repo.git"), patch(
-                       "holophyte.pr.pr_media.shutil.which", return_value=None), patch(
-                       "holophyte.pr.pr.rest", return_value={"private": True}) as rest:
+        with (
+            patch(
+                "holophyte.pr.github.origin_url",
+                return_value="https://github.com/example/repo.git",
+            ),
+            patch("holophyte.pr.pr_media.shutil.which", return_value=None),
+            patch("holophyte.pr.github.rest", return_value={"private": True}) as rest,
+        ):
             self.assertTrue(pr_media.repo_is_private(self.target))
             self.assertEqual(rest.call_args.args[2:], ("GET", "repos/example/repo"))
             rest.return_value = {"private": False}

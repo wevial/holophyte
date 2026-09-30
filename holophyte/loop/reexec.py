@@ -8,7 +8,7 @@ it started with). Both replace the process image with the command line they
 were launched with -- never a module reloaded -- and both do it through a
 seam a test can patch, so `reexec_self()` takes the caller's `EXEC` rather
 than owning one: the loop's tests patch `holophyte.cli.operator.EXEC`, the
-daemon's `holophyte.serve.serve.EXEC`, and neither ever execs the test runner.
+daemon's `holophyte.serve.server.EXEC`, and neither ever execs the test runner.
 
 The other way a factory process is started: `start_loop()` asks the user
 service manager for the target's `holophyte-loop@` unit, the one call the

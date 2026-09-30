@@ -7,14 +7,14 @@ import store
 import store.read
 import ticket_template
 from holophyte.babysit import babysitter
-from holophyte.board.board import block_ticket, ledger
+from holophyte.board.projection import block_ticket, ledger
 from holophyte.config.config_tables import merge_config, sweep_config
 from holophyte.host.reconcile import _pr_seen
 from holophyte.loop import run as run_state
 from holophyte.loop.gates import InfraFailure, MergeParked, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while, set_phase
 from holophyte.loop.stop import resume_babysit_fix, stop_if_requested
-from holophyte.pr import merge_queue, pr, pr_activity, pr_media, pr_status
+from holophyte.pr import github, merge_queue, pr_activity, pr_media, pr_status
 from holophyte.redact import safe_print as print
 
 
@@ -140,7 +140,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
         f"Write the pull request title and description for branch {branch},"
         f" the candidate for ticket {task_id}: {task}.",
         "Answer with exactly one line `TITLE: ...` (the title alone, under"
-        f" {pr.PR_TITLE_MAX} characters) followed by the description in"
+        f" {github.PR_TITLE_MAX} characters) followed by the description in"
         " Markdown. Explain what the change does for a user or caller and why"
         " first. Note decisions, risks and anything surprising. Do not narrate"
         " the diff. Do not list files, styles, class names, renames or tests."
@@ -191,22 +191,22 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     reply, timed_out = _timed(project, conn, run_id, beat_s, wt, minutes,
                               goal, role="write")
     stop_if_requested(conn, run_id, "merge_gate")
-    parsed = None if timed_out else pr.parse_pr_text(reply)
+    parsed = None if timed_out else github.parse_pr_text(reply)
     if parsed is None or not parsed[1]:
         why = ("the turn ran out of time" if timed_out
                else "the reply has no `TITLE:` line, an empty title, or a"
-               f" title over {pr.PR_TITLE_MAX} characters, or an empty body")
+               f" title over {github.PR_TITLE_MAX} characters, or an empty body")
         if refresh is not None:
             print(f"[holo2] written PR text refused for {task_id}: {why};"
                   " leaving the pull request body unchanged")
             return None
         print(f"[holo2] written PR text refused for {task_id}: {why};"
               " opening the pull request with the ticket's title and a stub")
-        return pr.pr_title(task_id, task), pr.pr_body_stub(
+        return github.pr_title(task_id, task), github.pr_body_stub(
             {"id": task_id, "body": body}, why, issue_url)
     title, text = parsed
     return title, (text if refresh is not None else
-                   pr.pr_body_written(text, task_id, issue_url))
+                   github.pr_body_written(text, task_id, issue_url))
 
 CHANGES_HEADING = "## Changes since first review"
 
@@ -230,8 +230,8 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
         return
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
-        current = pr.rest(project, pull, "GET", endpoint)["body"] or ""
-    own, _, evidence, _ = pr.split_pr_body(current)
+        current = github.rest(project, pull, "GET", endpoint)["body"] or ""
+    own, _, evidence, _ = github.split_pr_body(current)
     with heartbeat_while(conn, run_id, beat_s):
         section = pr_media.refresh(
             project, wt, task_id, evidence,
@@ -242,12 +242,12 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
     if text is None and section is None:
         return
     with heartbeat_while(conn, run_id, beat_s):
-        body = pr.rest(project, pull, "GET", endpoint)["body"] or ""
+        body = github.rest(project, pull, "GET", endpoint)["body"] or ""
         if text is not None:
-            body = pr.replace_pr_text(body, text)
+            body = github.replace_pr_text(body, text)
         if section is not None:
-            body = pr.replace_pr_evidence(body, section)
-        pr.edit_pr_body(project, pull, body)
+            body = github.replace_pr_evidence(body, section)
+        github.edit_pr_body(project, pull, body)
     if text is not None and sha and conn is not None and run_id is not None:
         store.record_event(conn, run_id, "pr_text_sha", sha)
 
@@ -306,7 +306,7 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
 
     `git push origin BRANCH`, then the PR, so a PR never names a branch the
     remote does not hold. Either refusing is `InfraFailure` out of
-    `holophyte.pr.pr`: the route gave out, not the ticket, so no strike is
+    `holophyte.pr.github`: the route gave out, not the ticket, so no strike is
     spent and the branch and worktree stay exactly as after a refused
     merge. Nothing touches main.
 
@@ -319,18 +319,18 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
     # way out of the gate, named on the stream rather than as a phase move.
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "pull_request",
-                           f"pushing {branch} to {pr.REMOTE} and opening its"
+                           f"pushing {branch} to {github.REMOTE} and opening its"
                            " pull request")
     adopted = False
     with heartbeat_while(conn, run_id, beat_s):
-        pr.push_branch(project, branch)
-        print(f"[holo2] pushed {branch} to {pr.REMOTE}")
+        github.push_branch(project, branch)
+        print(f"[holo2] pushed {branch} to {github.REMOTE}")
         # A branch already open as a pull request is adopted, not opened
         # again: `gh pr create` refuses with one still open, which is how
         # a requeued run used to fail after doing everything right.
-        url = pr.open_pull_request(project, branch)
+        url = github.open_pull_request(project, branch)
         if url is None:
-            url = pr.create_pull_request(project, branch, title, text)
+            url = github.create_pull_request(project, branch, title, text)
             print(f"[holo2] pull request open: {url}")
         else:
             adopted = True
@@ -370,7 +370,7 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
         with heartbeat_while(conn, run_id, beat_s):
             behind = _behind_main(wt, sha)
     if behind and retry_conflicts:
-        raise pr.MergeRefused(behind)
+        raise github.MergeRefused(behind)
     if behind:
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     behind, (), reviewed=reviewed)
@@ -380,14 +380,14 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
             merge_sha = (merge_queue.land_through_queue(project, conn, run_id,
                                                         pull, sha)
                          if merge_queue.merge_queue_required(project, pull)
-                         else pr.merge_pull_request(project, pull, sha))
+                         else github.merge_pull_request(project, pull, sha))
     except merge_queue.QueueLeft as left:
         removed = merge_queue.red_group(project, conn, run_id, pull, left)
         if removed is not None:
             raise removed from None  # The babysit's check fix turn's.
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     str(left), (), reviewed=reviewed)
-    except pr.MergeRefused as refused:
+    except github.MergeRefused as refused:
         if (retry_conflicts and "405" in str(refused)
                 and "merge conflicts" in str(refused).lower()):
             raise
@@ -408,17 +408,17 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
 
 def _behind_main(wt, sha):
     """Why `sha` may not land yet: the fetched main's tip is not in it."""
-    ref = f"{pr.REMOTE}/{pr.BASE}"
+    ref = f"{github.REMOTE}/{github.BASE}"
     try:
         fetched = subprocess.run(
-            ["git", "fetch", pr.REMOTE,
-             f"+refs/heads/{pr.BASE}:refs/remotes/{ref}"],
-            cwd=wt, capture_output=True, text=True, timeout=pr.PR_TIMEOUT)
+            ["git", "fetch", github.REMOTE,
+             f"+refs/heads/{github.BASE}:refs/remotes/{ref}"],
+            cwd=wt, capture_output=True, text=True, timeout=github.PR_TIMEOUT)
     except subprocess.TimeoutExpired:
-        raise InfraFailure(f"git fetch {pr.REMOTE} {pr.BASE} did not answer in"
-                           f" {pr.PR_TIMEOUT}s; branch preserved") from None
+        raise InfraFailure(f"git fetch {github.REMOTE} {github.BASE} did not answer in"
+                           f" {github.PR_TIMEOUT}s; branch preserved") from None
     if fetched.returncode != 0:
-        raise InfraFailure(f"git fetch {pr.REMOTE} {pr.BASE} failed before the"
+        raise InfraFailure(f"git fetch {github.REMOTE} {github.BASE} failed before the"
                            f" merge: {(fetched.stderr or fetched.stdout).strip()}")
     tip = subprocess.run(["git", "rev-parse", "--verify", "-q", ref], cwd=wt,
                          capture_output=True, text=True).stdout.strip()

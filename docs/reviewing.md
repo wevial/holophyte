@@ -200,8 +200,8 @@ One pass:
    declines allow the next pass to proceed toward merge if no other gate
    holds it. The next pass reads the PR again -- new threads, the checks
    the fix restarted. A pass with no
-   thread waits for pending checks (`pr.CHECK_POLL_S` between reads, at
-   most `pr.CHECK_WAIT_S`). The checks are read beside the rollup: the
+   thread waits for pending checks (`github.CHECK_POLL_S` between reads, at
+   most `github.CHECK_WAIT_S`). The checks are read beside the rollup: the
    head's check runs and the contexts `main`'s rules require. A check
    still running, or a required check not yet reported, is pending even
    when the rollup already says success -- seconds after a PR opens only

@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 import holophyte.cli.cli
 import store
 import store.tickets
-from holophyte.board.board import lease_label
+from holophyte.board.projection import lease_label
 from holophyte.config.project import Project
 from holophyte.loop.runs import open_store
 

@@ -21,7 +21,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
-from holophyte.host.host import Host, settings
+from holophyte.host.registry import Host, settings
 from tests import console_fixture
 
 REPO = Path(__file__).resolve().parent.parent

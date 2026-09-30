@@ -28,7 +28,7 @@ import unittest
 from pathlib import Path
 
 import linear_provider
-from holophyte.host.host import SWEEP_SEC
+from holophyte.host.registry import SWEEP_SEC
 from holophyte.loop.reexec import SWEEP_UNIT
 from holophyte.serve.serve_host import SWEEP_TIMEOUT_SEC
 from holophyte.serve.serve_watch import DRAIN_SEC

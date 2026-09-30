@@ -30,8 +30,8 @@ import store.board
 import store.tickets
 from holophyte.config.config_tables import board_config, board_mode
 from holophyte.loop.runs import open_store
-from holophyte.serve.serve import authorized
 from holophyte.serve.serve_runs import no_store
+from holophyte.serve.server import authorized
 
 TICKETS = "/tickets"
 TICKETS_PREFIX = TICKETS + "/"

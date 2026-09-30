@@ -21,9 +21,9 @@ import ticket_template
 from holophyte import media_store, redact
 from holophyte.config.config import capture_environment, carry_directories
 from holophyte.config.config_tables import merge_config
-from holophyte.isolation import isolation
+from holophyte.isolation import launcher
 from holophyte.loop.gates import InfraFailure, sh
-from holophyte.pr import pr
+from holophyte.pr import github
 
 CAPTURE_TIMEOUT = 300
 CAPTURE_GRACE = 30  # HOLO-13, HOLO-16: a stopped capture's teardown runs.
@@ -95,18 +95,18 @@ def repo_is_private(project, repo=None):
     """Read the evidence repository visibility using the PR transport."""
     if repo:
         owner, name = repo.split("/")
-        pull = pr.PullRequest("github.com", owner, name, 0, "")
+        pull = github.PullRequest("github.com", owner, name, 0, "")
     else:
-        pull = pr._origin_pull(project)
+        pull = github._origin_pull(project)
     if pull is None:
         raise ValueError('origin does not name a GitHub repository')
-    if shutil.which(pr.GH) is None:
-        answer = pr.rest(project, pull, 'GET', f'repos/{pull.repo}')
+    if shutil.which(github.GH) is None:
+        answer = github.rest(project, pull, 'GET', f'repos/{pull.repo}')
         field = 'private'
     else:
         result = subprocess.run(
-            [pr.GH, 'repo', 'view', pull.repo, '--json', 'isPrivate'],
-            cwd=project.path, capture_output=True, text=True, timeout=pr.PR_TIMEOUT)
+            [github.GH, 'repo', 'view', pull.repo, '--json', 'isPrivate'],
+            cwd=project.path, capture_output=True, text=True, timeout=github.PR_TIMEOUT)
         if result.returncode:
             raise InfraFailure('gh repo view failed')
         answer = json.loads(result.stdout)
@@ -148,9 +148,9 @@ def _failed(command, code, output, project):
 
 
 def _capture(command, wt, output, task_id, states, *, project=None):
-    route = isolation.route_for(project) if project is not None else isolation.Route()
+    route = launcher.route_for(project) if project is not None else launcher.Route()
     if route.backend == 'container':
-        env = dict(isolation.environment(project) or {})
+        env = dict(launcher.environment(project) or {})
     else:
         env = dict(os.environ)
     if project is not None:
@@ -166,7 +166,7 @@ def _capture(command, wt, output, task_id, states, *, project=None):
         runner = review_runner.ROOT / 'holophyte' / 'capture_playwright.py'
         carry = carry_directories(project) if project is not None else None
         try:
-            code, printed = isolation.launch(route, wt, env, argv,
+            code, printed = launcher.launch(route, wt, env, argv,
                                              timeout=CAPTURE_TIMEOUT,
                                              mounts=[runner], carry=carry)
         except subprocess.TimeoutExpired as expired:
@@ -225,7 +225,7 @@ def _push(wt, output, files, task_id):
             tree = sh(['git', 'write-tree'], cwd=stage)
             commit = sh(['git', 'commit-tree', tree, '-m',
                          f'Evidence for {task_id}'], cwd=stage)
-            sh(['git', 'push', '--force', pr.REMOTE,
+            sh(['git', 'push', '--force', github.REMOTE,
                 f'{commit}:refs/heads/pr-media/{task_id}'], cwd=wt)
         finally:
             sh(['git', 'worktree', 'remove', '--force', str(stage)], cwd=wt)
@@ -233,14 +233,18 @@ def _push(wt, output, files, task_id):
 
 def _media_git_env():
     """Use the PR token without putting credentials in argv or disk config."""
-    if shutil.which(pr.GH) is not None:
-        result = subprocess.run([pr.GH, "auth", "token", "--hostname", "github.com"],
-                                capture_output=True, text=True, timeout=pr.PR_TIMEOUT)
+    if shutil.which(github.GH) is not None:
+        result = subprocess.run(
+            [github.GH, "auth", "token", "--hostname", "github.com"],
+            capture_output=True,
+            text=True,
+            timeout=github.PR_TIMEOUT,
+        )
         if result.returncode:
             raise InfraFailure("media repository authentication failed")
         token = result.stdout.strip()
     else:
-        token = pr.token_from_env()
+        token = github.token_from_env()
     if not token:
         raise InfraFailure("media repository authentication is missing")
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
@@ -256,8 +260,14 @@ def _push_repo(wt, output, files, task_id, repo):
     env = _media_git_env()
 
     def git(*args, cwd):
-        result = subprocess.run(["git", *args], cwd=cwd, env=env,
-                                capture_output=True, text=True, timeout=pr.PR_TIMEOUT)
+        result = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=github.PR_TIMEOUT,
+        )
         if result.returncode:
             # Transport output can contain credentials; never propagate it.
             raise InfraFailure(f"media repository git {args[0]} failed")
@@ -285,7 +295,7 @@ def _push_repo(wt, output, files, task_id, repo):
             result = subprocess.run(
                 ["git", "push", "--porcelain", "origin", f"HEAD:refs/heads/{branch}"],
                 cwd=stage, env=env, capture_output=True, text=True,
-                timeout=pr.PR_TIMEOUT)
+                timeout=github.PR_TIMEOUT)
             if not result.returncode:
                 return branch
             if attempt or not any(reason in result.stdout for reason in
@@ -297,7 +307,7 @@ def _push_repo(wt, output, files, task_id, repo):
 
 
 def _publish_git(project, wt, output, files, task_id, note, media_repo):
-    repo = media_repo or pr.repo_of(pr.origin_url(project))
+    repo = media_repo or github.repo_of(github.origin_url(project))
     if repo is None:
         raise ValueError('origin does not name a GitHub repository')
     try:
@@ -383,7 +393,7 @@ def _missing(section, states):
 
 
 def _produce(project, wt, task_id, command, note, cfg, states):
-    isolated = isolation.route_for(project).backend == 'container'
+    isolated = launcher.route_for(project).backend == 'container'
     directory = ({'dir': Path(wt).resolve(), 'prefix': '.holophyte-capture-'}
                  if isolated else {'prefix': 'pr-media-'})
     with tempfile.TemporaryDirectory(**directory) as tmp:
@@ -430,8 +440,8 @@ def _produce(project, wt, task_id, command, note, cfg, states):
 
 def _execution_fingerprint(project):
     """Hash execution inputs without storing raw environment values in receipts."""
-    route = isolation.route_for(project)
-    env = (dict(isolation.environment(project) or {}) if route.backend == 'container'
+    route = launcher.route_for(project)
+    env = (dict(launcher.environment(project) or {}) if route.backend == 'container'
            else dict(os.environ))
     credential_digest = None
     if route.backend == 'container':
@@ -470,7 +480,7 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
         return '', ''
     revisions = sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt)
     identity = [RECEIPT_VERSION, revisions,
-                task_id, cfg.ui_paths, cfg.ui_capture, pr.origin_url(project),
+                task_id, cfg.ui_paths, cfg.ui_capture, github.origin_url(project),
                 cfg.media_repo, cfg.media_bucket, cfg.media_max_file_mb,
                 cfg.media_max_total_mb, list(evidence_states),
                 _execution_fingerprint(project)]

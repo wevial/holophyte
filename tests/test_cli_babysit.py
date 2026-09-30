@@ -14,7 +14,7 @@ import store.tickets
 from holophyte.babysit import maintainer_notes
 from holophyte.config.project import Project
 from holophyte.loop.runs import open_store
-from holophyte.pr.pr import PrState
+from holophyte.pr.github import PrState
 from tests.phase_fixture import park_run
 
 

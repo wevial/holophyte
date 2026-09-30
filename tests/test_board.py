@@ -2,7 +2,7 @@
 import unittest
 
 import store
-from holophyte.board import board
+from holophyte.board import projection
 from tests.serve_fixture import MIN, ServeTestCase
 
 
@@ -68,14 +68,14 @@ class CommentBodyTests(unittest.TestCase):
             "Keep the timeout finding and its proposed fix.\n"
             "The model: label in this sentence is prose.\n"
         )
-        self.assertEqual(board.comment_body(text), (
+        self.assertEqual(projection.comment_body(text), (
             "Round 1: changes requested\n\n\nReviewer findings:\n"
             "Keep the timeout finding and its proposed fix.\n"
             "The model: label in this sentence is prose.\n"
         ))
 
     def test_long_body_is_capped_with_an_accurate_cut_count(self):
-        result = board.comment_body("x" * 20000)
+        result = projection.comment_body("x" * 20000)
         head, closing = result.rsplit("\n", 1)
         self.assertEqual(head, "x" * 12000)
         self.assertEqual(closing, (
@@ -86,4 +86,4 @@ class CommentBodyTests(unittest.TestCase):
 
     def test_short_clean_body_is_unchanged(self):
         text = "Round 2: approved\n\nReviewer findings:\nNo findings.\n"
-        self.assertEqual(board.comment_body(text), text)
+        self.assertEqual(projection.comment_body(text), text)

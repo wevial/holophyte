@@ -10,7 +10,7 @@ from holophyte.agents import agents
 from holophyte.babysit import babysitter
 from holophyte.host import supervisor
 from holophyte.loop import claim, gates, loop, merge_gate
-from holophyte.pr import pr, pullrequest
+from holophyte.pr import github, pullrequest
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase, no_network
 
 
@@ -191,8 +191,8 @@ class WorkingTimeTests(SweepTestCase):
         now = [T0]
         responses = []
         calls = []
-        pull = pr.PullRequest('example.invalid', 'owner', 'repo', 1, 'pull-url')
-        thread = pr.Thread('thread', 'code.py', 1, 'bot', 'fix this', 'url',
+        pull = github.PullRequest('example.invalid', 'owner', 'repo', 1, 'pull-url')
+        thread = github.Thread('thread', 'code.py', 1, 'bot', 'fix this', 'url',
                            author_kind='bot')
         values = dict(project=self.project, conn=self.conn, run_id=run, provider=None,
                       task_id='KO-1', issue_id='issue-1', task='task', branch='task',
@@ -201,7 +201,7 @@ class WorkingTimeTests(SweepTestCase):
                       verify_cmd='echo done', budget_min=25, contracts=[],
                       criteria=[], cap=1, conflicts=['code.py'], body='body',
                       started=0, issue_url=None, sync_main=False, pull=pull,
-                      state=pr.PrState((thread,), 'success', 'before'), rnd=1,
+                      state=github.PrState((thread,), 'success', 'before'), rnd=1,
                       pass_no=1, model='test', addressed=[], reviewed='before',
                       review_follows=True)
 
@@ -248,7 +248,7 @@ class WorkingTimeTests(SweepTestCase):
                     (merge_gate, '_is_ancestor', True),
                     (merge_gate, 'merge_drift', ((), None)),
                     (babysitter, '_decline_threads', ()),
-                    (pr, 'push_branch', None)):
+                    (github, 'push_branch', None)):
                 stack.enter_context(patch.object(module, name, return_value=result))
             stack.enter_context(patch.object(pullrequest, 'monotonic', return_value=0))
             scenarios = (
@@ -290,9 +290,9 @@ class WorkingTimeTests(SweepTestCase):
                                   side_effect=['ECONNRESET', None]):
                     loop._transport_timed(self.project, self.conn, run, 100,
                                           self.target, 25, 'retry')
-            stack.enter_context(patch.object(pr, 'SLEEP', nap))
-            pending = pr.PrState((), 'pending', 'after')
-            quiet = pr.PrState((), 'success', 'after', updated_at=now[0])
+            stack.enter_context(patch.object(github, 'SLEEP', nap))
+            pending = github.PrState((), 'pending', 'after')
+            quiet = github.PrState((), 'success', 'after', updated_at=now[0])
             with patch.object(babysitter.pr_status, 'pr_state',
                               side_effect=[pending, quiet, quiet]), \
                     patch.object(babysitter, '_quiet_left', side_effect=[1000, 0]):

@@ -11,8 +11,8 @@
 `--import-store PATH --dry-run`, `--board-import [--dry-run]`,
 `--supervise`, `--serve PORT|HOST:PORT`, the internal `--worker` and the
 loop itself
-dispatch from here to `holophyte.cli.operator`, `holophyte.board.board`,
-`holophyte.host.supervisor`, `holophyte.cli.status` and `holophyte.serve.serve`; the
+dispatch from here to `holophyte.cli.operator`, `holophyte.board.projection`,
+`holophyte.host.supervisor`, `holophyte.cli.status` and `holophyte.serve.server`; the
 `Project` is built once from the command line and handed down, and the board
 (`provider.board_for()`) is built here and never reached for by name below.
 Importing this module locates no target, reads no config and touches no
@@ -25,9 +25,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from holophyte.board.board import FILE_TICKET_PRIORITIES, file_ticket
 from holophyte.board.board_diff import board_diff
 from holophyte.board.board_import import board_import
+from holophyte.board.projection import FILE_TICKET_PRIORITIES, file_ticket
 from holophyte.cli.cli_story import (
     add_story_arguments,
     check_story_arguments,
@@ -57,13 +57,13 @@ from holophyte.config.config_tables import (
     loop_config,
 )
 from holophyte.config.project import Project
-from holophyte.host.host import native_key_conflict, watched_line
+from holophyte.host.registry import native_key_conflict, watched_line
 from holophyte.host.startup import eager_import
 from holophyte.host.supervisor import supervise, supervisor_liveness_line
 from holophyte.host.supervisor_lock import SupervisorHeld, supervisor_running
 from holophyte.host.sweep_report import sweep_report
 from holophyte.loop.pool import worker
-from holophyte.serve.serve import ADDRESS_SHAPE, parse_address, serve
+from holophyte.serve.server import ADDRESS_SHAPE, parse_address, serve
 from provider import board_for
 from store import RevisionMoved
 from store.enums import GapFinder, GapLayer
@@ -683,7 +683,7 @@ def _host_mode(parser, args):
     """The flags with no project mean the host; `--status`, `--serve` and
     `--supervise [--once]` are the host forms. Anything else still needs
     the project it acts on."""
-    from holophyte.host.host import Host, HostError
+    from holophyte.host.registry import Host, HostError
     if args.serve is not None:
         from holophyte.serve.serve_host import serve_host
         return serve_host(Host.locate(), args.serve or None)

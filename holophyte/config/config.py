@@ -182,7 +182,7 @@ def check_config(project):
     implementer_session(project)
     from holophyte.agents.fix_session import resume_template
     resume_template(project)
-    from holophyte.isolation.isolation import route_for
+    from holophyte.isolation.launcher import route_for
     route = route_for(project)
     if merge.ui_capture and route.backend == "container" and not route.writable:
         raise SystemExit(
@@ -403,7 +403,7 @@ def check_agent_commands(project):
     Container implementers are live-probed before claiming. Host routes without
     fallbacks need installed executables; default reviewers need Docker and an
     image. PR merge mode also checks its remote and authentication prerequisites."""
-    from holophyte.isolation.isolation import route_for
+    from holophyte.isolation.launcher import route_for
     isolated = route_for(project).backend == "container"
     review_route(project)
     default_container_keys = []
@@ -437,10 +437,10 @@ def check_agent_commands(project):
     # pushes to `origin` and opens a pull request, so a target with no
     # `origin`, or a host with neither an authenticated `gh` nor a token, is
     # found here rather than by the first approved run reaching the gate with
-    # its lease held. Imported at the call: `holophyte.pr.pr` imports the gates,
+    # its lease held. Imported at the call: `holophyte.pr.github` imports the gates,
     # which import this module.
     if merge_config(project).mode == "pr":
-        from holophyte.pr.pr import check_pr_route
+        from holophyte.pr.github import check_pr_route
         check_pr_route(project)
 
 
@@ -653,7 +653,7 @@ def capture_environment(project):
 
     Only `pr_media._capture()` adds these values to a command's environment:
     they are never written to the worktree and never reach agent turns,
-    verify commands or `isolation.environment()`. Values lose their
+    verify commands or `launcher.environment()`. Values lose their
     surrounding dotenv quotes, since no dotenv loader reads them.
     """
     values = allowed_environment(project, "merge", "capture_env_source",
@@ -854,7 +854,7 @@ def console_config(project):
 # as `Authorization: Bearer ...`. A non-loopback bind without it is a
 # startup error; a loopback bind ignores it. The file, not the token, lives
 # in config, so the config can be committed to a host's notes and the
-# token cannot. `holophyte.serve.serve` reads the file and holds it to a private
+# token cannot. `holophyte.serve.server` reads the file and holds it to a private
 # mode. `machine_token_file` (KO-647) names a second file, one token for
 # every daemon on the machine, accepted wherever the project's token is;
 # `token_file` stays for sharing one project without the machine.
@@ -890,7 +890,7 @@ def serve_config(project):
     `machine_token_file` must be a non-empty string, the path as written --
     `~` is expanded, a relative path is taken against the config's
     directory, so the file sits beside the config it is named in. Whether
-    the daemon needs it at all is `holophyte.serve.serve`'s to decide from the
+    the daemon needs it at all is `holophyte.serve.server`'s to decide from the
     bind address; this only holds the value to its shape. `actions` is a
     boolean, false by default, as is `config_edit`, which opens the
     `/config` routes (KO-356); `name` is the systemd instance name the

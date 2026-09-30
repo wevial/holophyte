@@ -81,7 +81,7 @@ def end_aborted(conn, run_id):
     killed. An `abort_close` then comments on and closes the pull request;
     nothing is merged or deleted, and the branch and worktree are kept."""
     from holophyte.loop.gates import InfraFailure
-    from holophyte.pr import pr
+    from holophyte.pr import github
     (branch, ticket_id, repo, note, pr_url, action, source, trigger,
      identifier) = conn.execute(
         "SELECT r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl,"
@@ -94,7 +94,7 @@ def end_aborted(conn, run_id):
     sha = preserve(target, branch, "abort") if branch else None
     if sha and pr_url:
         try:
-            pr.push_branch(target, branch)
+            github.push_branch(target, branch)
         except InfraFailure as refused:
             store.record_event(conn, run_id, "warning", f"abort push: {refused}")
     with _transaction(conn):
@@ -128,11 +128,11 @@ def close_pull(target, conn, run_id, pr_url, body):
     """Post `body` on the pull request, then close it. A refusal of either
     is a warning event on the run and a printed line; the abort stands."""
     from holophyte.loop.gates import InfraFailure
-    from holophyte.pr import pr
+    from holophyte.pr import github
     from holophyte.pr.pr_status import parse_pr_url
     pull = parse_pr_url(pr_url)
-    steps = (("comment", lambda: pr.comment_on_pull(target, pull, body)),
-             ("close", lambda: pr.rest(
+    steps = (("comment", lambda: github.comment_on_pull(target, pull, body)),
+             ("close", lambda: github.rest(
                  target, pull, "PATCH",
                  f"repos/{pull.repo}/pulls/{pull.number}", {"state": "closed"})))
     for step, call in steps if pull else ():
@@ -269,7 +269,7 @@ def abort_run(target, conn, run_id, note, *, provider, close=False,
     next heartbeat. `--abort` and `POST /actions/abort` both call this
     (KO-612), and the store-mode sweep for a board cancel (KO-741);
     ValueError, before any write, when the store refuses the abort."""
-    from holophyte.board import board
+    from holophyte.board import projection
     store.abort(conn, run_id, note, source=source, close=close,
                 trigger=trigger)
     if not worker_gone(conn, run_id):
@@ -279,8 +279,8 @@ def abort_run(target, conn, run_id, note, *, provider, close=False,
     except Aborted:
         (ticket_id,) = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
                                     (run_id,)).fetchone()
-        board.mirror_push(conn, ticket_id, provider)
-        board.release_lease_label(target, conn, ticket_id, provider, run_id)
+        projection.mirror_push(conn, ticket_id, provider)
+        projection.release_lease_label(target, conn, ticket_id, provider, run_id)
     return True
 
 
@@ -324,7 +324,7 @@ def resume_babysit_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                        carried):
     """Finish the preserved fix before reading another babysit pass."""
     from holophyte.babysit.babysitter import _fix_threads
-    from holophyte.pr.pr import Comment, Thread
+    from holophyte.pr.github import Comment, Thread
     row = conn.execute("SELECT payload FROM runEvents WHERE runId = ?"
                        " AND kind = 'pause_checkpoint' ORDER BY id DESC LIMIT 1",
                        (carried.run_id,)).fetchone()

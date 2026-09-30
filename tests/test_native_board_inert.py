@@ -10,9 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
 import store.tickets  # noqa: E402
-from holophyte.board.board import mirror_status  # noqa: E402
 from holophyte.board.board_sync import observe_board  # noqa: E402
 from holophyte.board.native_board import NativeBoard  # noqa: E402
+from holophyte.board.projection import mirror_status  # noqa: E402
 from holophyte.review.freshness import park_stale  # noqa: E402
 
 ASK = 10 * MINUTE

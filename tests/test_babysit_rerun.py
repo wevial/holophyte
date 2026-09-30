@@ -13,7 +13,7 @@ import babysit_fixture as cases  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture, StubProvider, a_task  # noqa: E402
 
-import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 
 RERUN = "repos/example/repo/actions/runs/77/rerun-failed-jobs"
 JOB = "https://github.com/example/repo/actions/runs/77/job/"
@@ -37,7 +37,7 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         self.fake_route(refuse_rerun=refuse_rerun)
         self.job_log.write_text("FAIL: test_x (tests.test_y.Case.test_x)")
         self.naps = []
-        self.enterContext(patch.object(holophyte.pr.pr, "SLEEP", self.naps.append))
+        self.enterContext(patch.object(holophyte.pr.github, "SLEEP", self.naps.append))
         heads, served = [], list(after_rerun or [self.RERUN_RED])
         def check_runs(target, pull, sha):
             heads.extend([sha] if sha not in heads else [])

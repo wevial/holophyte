@@ -204,15 +204,15 @@ opened, so its last path segment is the PR number.
  "rounds": [
   {"round": 1, "started_ms": 1788450761675, "ended_ms": 1788450941675,
    "verdict": "changes_requested", "reviewer_model": "reviewer-model",
-   "findings": [{"path": "holophyte/serve/serve.py", "line": 12, "severity": "p1",
+   "findings": [{"path": "holophyte/serve/server.py", "line": 12, "severity": "p1",
                  "criterion": "AC1", "message": "the route is unmatched"},
-                {"path": "holophyte/serve/serve.py", "line": 40, "severity": "p1",
+                {"path": "holophyte/serve/server.py", "line": 40, "severity": "p1",
                  "criterion": null, "message": "Validate input", "kind": "thread",
                  "author": "review-bot", "author_kind": "bot",
                  "summary": "Validate input", "verdict": "ADDRESS",
                  "raw": "Please validate input",
                  "url": "https://github.com/example/repo/pull/2170#discussion_r1"}],
-   "instructions": [{"kind": "instruction", "path": "holophyte/serve/serve.py", "line": null,
+   "instructions": [{"kind": "instruction", "path": "holophyte/serve/server.py", "line": null,
                      "author": "operator", "severity": "nit",
                      "message": "Keep validation", "request": "Keep validation",
                      "url": "https://github.com/example/repo/pull/2170#discussion_r2",
@@ -287,7 +287,7 @@ pull request the run opened, each null when there is none.
  "files": [
   {"path": "docs/reference/http.md", "status": "M", "added": 31, "deleted": 2},
   {"path": "holophyte/files.py", "status": "A", "added": 168, "deleted": 0},
-  {"path": "holophyte/serve/serve.py", "status": "M", "added": 62, "deleted": 14}
+  {"path": "holophyte/serve/server.py", "status": "M", "added": 62, "deleted": 14}
  ],
  "total_added": 261, "total_deleted": 16, "truncated": false}
 ```

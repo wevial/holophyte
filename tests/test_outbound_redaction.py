@@ -12,10 +12,10 @@ from unittest.mock import Mock, patch
 
 from holophyte import redact
 from holophyte.agents import agents
-from holophyte.board import board
+from holophyte.board import projection
 from holophyte.config.project import Project
 from holophyte.loop import gates, loop
-from holophyte.pr import pr
+from holophyte.pr import github
 
 SENTINEL = "outbound-sentinel-542"
 
@@ -74,21 +74,23 @@ class OutboundRedactionTests(unittest.TestCase):
 
     def test_writer_reply_is_redacted_at_gh_create_and_refresh(self):
         url = "https://github.com/example/repo/pull/1"
-        title, prose = pr.parse_pr_text(f"TITLE: Fix {SENTINEL}\nObserved {SENTINEL}.")
-        body = pr.pr_body_written(prose, "KO-542", "https://linear.app/issue/KO-542")
+        title, prose = github.parse_pr_text(
+            f"TITLE: Fix {SENTINEL}\nObserved {SENTINEL}."
+        )
+        body = github.pr_body_written(prose, "KO-542", "https://linear.app/issue/KO-542")
         body += "\n\n## Evidence\n![demo](https://example.com/demo.png?key=public-image)\n"
         pull = SimpleNamespace(url=url, repo="example/repo", number=1)
         for enabled in (False, True, "config"):
             replacement = self.register(enabled)
             with (self.subTest(redacted=enabled),
-                  patch.object(pr.shutil, "which", return_value="gh"),
-                  patch.object(pr, "origin_url", return_value="https://github.com/example/repo"),
-                  patch.object(pr.subprocess, "run",
+                  patch.object(github.shutil, "which", return_value="gh"),
+                  patch.object(github, "origin_url", return_value="https://github.com/example/repo"),
+                  patch.object(github.subprocess, "run",
                                return_value=subprocess.CompletedProcess(
                                    [], 0, url, "")) as gh):
                 self.assertEqual(
-                    pr.create_pull_request(self.target, "task", title, body), url)
-                pr.edit_pr_body(self.target, pull, body)
+                    github.create_pull_request(self.target, "task", title, body), url)
+                github.edit_pr_body(self.target, pull, body)
                 create, edit = gh.call_args_list
                 argv = create.args[0]
                 self.assertEqual(argv[argv.index("--title") + 1],
@@ -112,15 +114,19 @@ class OutboundRedactionTests(unittest.TestCase):
         for enabled in (False, True):
             replacement = self.register(enabled)
             provider = Mock()
-            with (self.subTest(redacted=enabled),
-                  patch.object(board.store.read, "ticket_by_id", return_value=ticket),
-                  patch.object(board, "failure_history", return_value=history),
-                  patch.object(board, "block_ticket", return_value=True)):
-                self.assertTrue(board.escalate(object(), 1, provider))
+            with (
+                self.subTest(redacted=enabled),
+                patch.object(
+                    projection.store.read, "ticket_by_id", return_value=ticket
+                ),
+                patch.object(projection, "failure_history", return_value=history),
+                patch.object(projection, "block_ticket", return_value=True),
+            ):
+                self.assertTrue(projection.escalate(object(), 1, provider))
             provider.comment.assert_called_once_with(
                 "issue", expected.replace(SENTINEL, replacement))
         # Redact before a comment's length cap can split a registered value.
-        self.assertNotIn(SENTINEL[:10], board.comment_body(SENTINEL, limit=10))
+        self.assertNotIn(SENTINEL[:10], projection.comment_body(SENTINEL, limit=10))
 
     def test_a_native_boards_prefix_survives_outbound_text(self):
         """The ticket prefix is not a credential: a title naming `HOLO-1`

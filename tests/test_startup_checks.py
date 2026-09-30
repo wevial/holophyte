@@ -16,7 +16,7 @@ from unittest.mock import ANY, patch
 import holophyte.cli.cli
 import holophyte.config.config
 import holophyte.host.supervisor_lock
-import holophyte.pr.pr
+import holophyte.pr.github
 import review_runner
 from holophyte.config.config_tables import board_config
 from provider import LinearBoard
@@ -125,7 +125,7 @@ class StartupCheckTests(ConfigTestCase):
         # No `gh` at all: the program is renamed to one nothing on PATH
         # answers to, since the host running this may well have a real,
         # authenticated `gh` in a system directory the stubs sit ahead of.
-        with patch.object(holophyte.pr.pr, "GH", "gh-absent-under-test"), \
+        with patch.object(holophyte.pr.github, "GH", "gh-absent-under-test"), \
                 patch.dict(os.environ, {"GH_TOKEN": "", "GITHUB_TOKEN": ""}):
             with self.assertRaises(SystemExit) as raised:
                 holophyte.config.config.check_agent_commands(self.project)

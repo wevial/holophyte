@@ -13,7 +13,7 @@ from holophyte.agents import agents
 from holophyte.loop import dispatch, loop
 from holophyte.loop.dispatch import MergeParked
 from holophyte.loop.gates import InfraFailure, RunFailure
-from holophyte.pr.pr import Thread
+from holophyte.pr.github import Thread
 
 
 class ReviewRefsTests(unittest.TestCase):
@@ -199,13 +199,13 @@ class ReviewRefsTests(unittest.TestCase):
             self.assertNotIn("refs/review/candidate", prompt)
 
     def test_sweep_cleans_refs_only_after_confirmed_close_out(self):
-        from holophyte.board import board
+        from holophyte.board import projection
 
         agents.publish_review_refs(self.repo, self.base, self.first, run_id=340)
         with contextlib.ExitStack() as stack:
             stack.enter_context(
                 patch.object(
-                    board.store,
+                    projection.store,
                     "transaction",
                     side_effect=lambda conn: contextlib.nullcontext(),
                 )
@@ -216,10 +216,10 @@ class ReviewRefsTests(unittest.TestCase):
                 "release_lease_label",
                 "refresh_findings",
             ):
-                stack.enter_context(patch.object(board, name))
+                stack.enter_context(patch.object(projection, name))
             for confirmed in (False, True):
                 self.assertEqual(
-                    board.close_out_failure(
+                    projection.close_out_failure(
                         SimpleNamespace(path=self.repo),
                         None,
                         340,

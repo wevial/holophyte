@@ -24,7 +24,7 @@ from dataclasses import replace
 import store
 import store.read
 from holophyte.babysit.babysitter import _babysit
-from holophyte.board.board import block_ticket, ledger, merge_drift, mirror_task
+from holophyte.board.projection import block_ticket, ledger, merge_drift, mirror_task
 from holophyte.config.config_tables import merge_config, sweep_config
 from holophyte.environment_git import refuse_environment_history
 from holophyte.loop import run as run_state

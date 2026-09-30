@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
@@ -30,7 +30,7 @@ import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.host.supervisor_lock  # noqa: E402 - after the sys.path insert above
 import holophyte.host.sweep_report  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
-import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
@@ -726,7 +726,7 @@ class ParkedPullRequestTests(SweepTestCase):
         self.seen_before_activity(run_id)
         self.fake_github(self.ACTIVE_PULL)
         calls = self.fake_systemctl()
-        lock = holophyte.board.board.lease_turn_path(self.project)
+        lock = holophyte.board.projection.lease_turn_path(self.project)
         lock.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
         self.addCleanup(os.close, fd)
@@ -1050,7 +1050,7 @@ class ParkedPullRequestTests(SweepTestCase):
         booting loop's own, and the pass starts nothing."""
         self.ready_ticket()
         calls = self.fake_systemctl()
-        lock = holophyte.board.board.lease_turn_path(self.project)
+        lock = holophyte.board.projection.lease_turn_path(self.project)
         lock.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o644)
         self.addCleanup(os.close, fd)

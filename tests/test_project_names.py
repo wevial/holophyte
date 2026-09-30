@@ -104,7 +104,7 @@ class ProjectNamesTest(unittest.TestCase):
 
     def test_the_daemon_modules_spell_the_project_project(self):
         self.assert_no_old_names(
-            "holophyte/serve/serve.py", "holophyte/serve/serve_runs.py",
+            "holophyte/serve/server.py", "holophyte/serve/serve_runs.py",
             "holophyte/serve/serve_config.py", "holophyte/serve/serve_actions.py")
 
     def test_the_tests_hold_the_project_as_project_and_its_id_as_project_id(self):
@@ -169,7 +169,7 @@ class ProjectNamesTest(unittest.TestCase):
         self.assert_no_old_names(
             "holophyte/config/config.py", "holophyte/config/config_tables.py",
             "holophyte/agents/agents.py", "holophyte/agents/agent_routes.py",
-            "holophyte/agents/agent_turns.py", "holophyte/isolation/isolation.py",
+            "holophyte/agents/agent_turns.py", "holophyte/isolation/launcher.py",
             "holophyte/isolation/isolation_clone.py", "holophyte/pr/pr_media.py")
 
     def test_active_routes_hold_a_project_and_a_project_id(self):

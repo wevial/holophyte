@@ -3,7 +3,7 @@ import json
 import sys
 
 import store.read
-from holophyte.board.board import board_owned_labels, mirror_key
+from holophyte.board.projection import board_owned_labels, mirror_key
 from holophyte.loop.claim_store import store_mode
 
 TASK_FIELDS = ("title", "body", "priority", "labels")

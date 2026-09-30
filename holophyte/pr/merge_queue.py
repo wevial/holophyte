@@ -16,7 +16,7 @@ import store
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.stop import stop_if_requested
-from holophyte.pr import pr, pr_status
+from holophyte.pr import github, pr_status
 from holophyte.redact import safe_print as print
 
 ENQUEUE_MUTATION = """
@@ -70,7 +70,7 @@ def red_merge_group(target, pull, since):
     since_ms = pr_status._iso_ms(since)
     if since_ms is None:
         return None
-    prefix = f"gh-readonly-queue/{pr.BASE}/pr-{pull.number}-"
+    prefix = f"gh-readonly-queue/{github.BASE}/pr-{pull.number}-"
     ours = [r for r in group_runs(target, pull, since, since_ms)
             if str(r.get("head_branch") or "").startswith(prefix)
             and (pr_status._iso_ms(r.get("created_at")) or 0) >= since_ms]
@@ -91,7 +91,7 @@ def group_runs(target, pull, since, since_ms):
             f"{quote('>=' + since, safe='')}&per_page={RUNS_PAGE}")
     runs, page = [], 1
     while True:
-        answer = pr.rest(target, pull, "GET", f"{base}&page={page}")
+        answer = github.rest(target, pull, "GET", f"{base}&page={page}")
         batch = answer.get("workflow_runs") if isinstance(answer, dict) else None
         if not isinstance(batch, list):
             return runs
@@ -138,21 +138,21 @@ def enqueue_pull_request(target, pull, sha):
     """Add the pull request to the queue pinned to head `sha`; GitHub's
     `enqueuedAt` for it, None unnamed. GitHub's refusal (an `errors`
     answer) is `MergeRefused`, as a REST merge's is."""
-    node = pr.rest(target, pull, "GET",
+    node = github.rest(target, pull, "GET",
                    f"repos/{pull.repo}/pulls/{pull.number}")["node_id"]
     try:
-        data = pr.graphql(target, pull, ENQUEUE_MUTATION,
+        data = github.graphql(target, pull, ENQUEUE_MUTATION,
                           {"pull": node, "sha": sha})
     except InfraFailure as e:
         if str(e).startswith("GitHub GraphQL refused"):
-            raise pr.MergeRefused(str(e)) from None
+            raise github.MergeRefused(str(e)) from None
         raise
     entry = (data.get("enqueuePullRequest") or {}).get("mergeQueueEntry")
     return (entry or {}).get("enqueuedAt")
 
 
 def land_through_queue(target, conn, run_id, pull, sha):
-    """Enqueue at `sha`, then read the queue every `pr.CHECK_POLL_S` until
+    """Enqueue at `sha`, then read the queue every `github.CHECK_POLL_S` until
     the queue merges it; return the queue's merge commit."""
     since = enqueue_pull_request(target, pull, sha)
     if conn is not None and run_id is not None:
@@ -161,7 +161,7 @@ def land_through_queue(target, conn, run_id, pull, sha):
     wait_s = merge_config(target).check_wait_sec
     deadline = monotonic() + wait_s
     while True:
-        node = pr.graphql(target, pull, QUEUE_QUERY,
+        node = github.graphql(target, pull, QUEUE_QUERY,
                           {"owner": pull.owner, "name": pull.name,
                            "number": pull.number}
                           )["repository"]["pullRequest"]
@@ -178,9 +178,9 @@ def land_through_queue(target, conn, run_id, pull, sha):
         if remaining <= 0:
             raise QueueLeft(f"the pull request was {where} after"
                             f" [merge] check_wait_sec = {wait_s}s")
-        print(f"[holo2] {pull.url} is {where}; waiting {pr.CHECK_POLL_S}s")
+        print(f"[holo2] {pull.url} is {where}; waiting {github.CHECK_POLL_S}s")
         stop_if_requested(conn, run_id, "merge_gate")
-        pr.SLEEP(min(pr.CHECK_POLL_S, remaining))
+        github.SLEEP(min(github.CHECK_POLL_S, remaining))
 
 
 def verified_merge(project, conn, run_id, provider, task_id, issue_id, branch,

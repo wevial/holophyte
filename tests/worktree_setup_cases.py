@@ -145,7 +145,7 @@ class WorktreeSetupCases:
                 with patch.object(module, "refuse_environment_history",
                                   move_after_check):
                     if operation == "push":
-                        holophyte.pr.pr.push_branch(self.project, branch)
+                        holophyte.pr.github.push_branch(self.project, branch)
                         landed = _git(remote, "rev-parse", f"refs/heads/{branch}")
                     else:
                         with patch.object(module, "set_phase"), patch.object(
@@ -257,11 +257,11 @@ class WorktreeSetupCases:
         _git(wt, "add", "-f", ".env")
         _git(wt, "commit", "-m", "unsafe candidate")
         with self.assertRaisesRegex(holophyte.loop.gates.InfraFailure, r"\.env"):
-            holophyte.pr.pr.push_branch(self.project, BRANCH)
+            holophyte.pr.github.push_branch(self.project, BRANCH)
         _git(wt, "rm", ".env")
         _git(wt, "commit", "-m", "remove unsafe file")
         with self.assertRaisesRegex(holophyte.loop.gates.InfraFailure, r"\.env"):
-            holophyte.pr.pr.push_branch(self.project, BRANCH)
+            holophyte.pr.github.push_branch(self.project, BRANCH)
 
     def test_source_disappearing_after_startup_releases_run(self):
         source = self.target.parent / "source.env"

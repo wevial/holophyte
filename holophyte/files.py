@@ -19,7 +19,7 @@ worktree with nothing changed yet is an empty list, not an error (KO-304).
 A run with a branch but no worktree (a preserved branch after close-out)
 is the merge base of `main` and that branch to the branch head, read in
 the checkout: what the branch has that main does not, unaffected by what
-main gained since. `serve.py` maps the outcomes here to HTTP: `RangeError`
+main gained since. `server.py` maps the outcomes here to HTTP: `RangeError`
 is its 409, a `TimeoutExpired` its 504.
 
 Run the tests: python3 -m unittest discover -s tests -p 'test_serve*' -v

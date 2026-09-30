@@ -20,7 +20,7 @@ from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import VALID_BODY, MergeModeFixture  # noqa: E402
 from test_store_claim_loop import STORE_MODE, StoreFiles  # noqa: E402
 
-import holophyte.pr.pr  # noqa: E402
+import holophyte.pr.github  # noqa: E402
 import holophyte.pr.pr_status  # noqa: E402
 import store  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
@@ -51,7 +51,7 @@ class CiParkWakeTests(MergeModeFixture):
                 return real(target, pull, query, variables)
             return {"repository": {"pullRequest": self.github}}
         self.enterContext(patch.object(holophyte.pr.pr_status, "graphql", graphql))
-        self.enterContext(patch.object(holophyte.pr.pr, "SLEEP", lambda s: None))
+        self.enterContext(patch.object(holophyte.pr.github, "SLEEP", lambda s: None))
 
     def open_pull(self, checks, updated_at=OLD):
         """The reconcile's read of the open pull request, no review content."""

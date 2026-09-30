@@ -13,7 +13,7 @@ import store.stories
 import store.tickets
 import story_template
 import ticket_template
-from holophyte.board.board import mirror_task
+from holophyte.board.projection import mirror_task
 from holophyte.config.config_tables import board_config
 from provider import FiledWithoutBlockers
 

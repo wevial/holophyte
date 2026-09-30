@@ -246,7 +246,7 @@ class StoreModeFiles(FileProvider):
 class LoopEnvironmentProbeTests(SweepTestCase):
     def fixture(self, probe_lines, serve_env, agents=""):
         """A released store-mode project whose implementer is `probe_lines`."""
-        from holophyte.host.host import home
+        from holophyte.host.registry import home
 
         self.calls, self.starts = self.root / "probe.calls", self.root / "start.calls"
         probe = self.root / "probe"
@@ -369,7 +369,7 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         values = {"HOLO_FIXTURE_CREDENTIAL": "loop-only",
                   "SECOND": "also-loop-only", "BROKEN": "a\x00b"}
         with self.sweep_environment(), patch(
-                "holophyte.host.host.unit_environment", return_value=values):
+                "holophyte.host.registry.unit_environment", return_value=values):
             os.environ["SECOND"] = "the sweep's own"
             with self.assertRaises(ValueError):
                 self.one_pass(T0)
@@ -379,7 +379,7 @@ class LoopEnvironmentProbeTests(SweepTestCase):
         self.assertEqual(self.started(), [])
 
     def test_the_container_probe_gets_a_holophyte_credential_but_no_target_key(self):
-        from holophyte.isolation import isolation
+        from holophyte.isolation import launcher
         from holophyte.redact import redact_values
 
         self.fixture(
@@ -400,9 +400,9 @@ class LoopEnvironmentProbeTests(SweepTestCase):
 
         with self.sweep_environment(), \
                 patch.dict(os.environ, HOLOPHYTE_SERVE_PORT="4242"), \
-                patch.object(isolation, "image_ready"), \
-                patch.object(isolation.review_runner, "_remove_container"), \
-                patch.object(isolation, "run_capped", side_effect=container):
+                patch.object(launcher, "image_ready"), \
+                patch.object(launcher.review_runner, "_remove_container"), \
+                patch.object(launcher, "run_capped", side_effect=container):
             os.environ.pop("HOLOPHYTE_TARGET", None)
             self.one_pass(T0)
             self.assertNotIn("HOLOPHYTE_FIXTURE_CREDENTIAL", os.environ)

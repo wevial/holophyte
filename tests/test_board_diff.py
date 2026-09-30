@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.board.board
+import holophyte.board.projection
 import holophyte.cli.cli
 import holophyte.config.project
 import store.tickets
@@ -61,7 +61,7 @@ class BoardDiffTests(unittest.TestCase):
             project = store.tickets.ensure_project(conn, self.board.team,
                                                    self.repo)
             for task in self.board.ready_issues():
-                holophyte.board.board.mirror_task(conn, project, task)
+                holophyte.board.projection.mirror_task(conn, project, task)
         finally:
             conn.close()
 

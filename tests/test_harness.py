@@ -616,7 +616,7 @@ class ContainerImplementerTests(unittest.TestCase):
             launched.append(argv)
             return 0, "fake turn ran"
 
-        with patch.object(holophyte.agents.agents.isolation, "launch", launch):
+        with patch.object(holophyte.agents.agents.launcher, "launch", launch):
             run()
         [argv] = launched
         return argv

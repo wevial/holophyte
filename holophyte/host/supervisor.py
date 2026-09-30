@@ -17,7 +17,7 @@ process runs the code it started with, and a newer store ends the project
 form for its service manager to start again on the new code. Beyond the
 standard library it imports `store` and `store.read` for the rows,
 `open_store` from `holophyte.loop.runs`, `close_out_failure` from
-`holophyte.board.board`, `sweep_config` from `holophyte.config.config_tables`, and
+`holophyte.board.projection`, `sweep_config` from `holophyte.config.config_tables`, and
 `host_label`, `format_age`, `REPORT_GAP` from `holophyte.cli.report`; nothing
 from `factory`.
 
@@ -42,7 +42,9 @@ import holophyte
 import store
 import store.read
 from holophyte import deadline
-from holophyte.board.board import (
+from holophyte.board.board_sync import observe_board
+from holophyte.board.board_sync import owed as tickets_owed
+from holophyte.board.projection import (
     body_problem,
     close_out_failure,
     lease_turn_held,
@@ -50,8 +52,6 @@ from holophyte.board.board import (
     mirror_task,
     refresh_board_states,
 )
-from holophyte.board.board_sync import observe_board
-from holophyte.board.board_sync import owed as tickets_owed
 from holophyte.cli.report import format_age, host_label
 from holophyte.config.config import budget_scale, serve_config
 from holophyte.config.config_tables import BOARD_ASK_SEC, sweep_config
@@ -777,7 +777,7 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
 def launch_route_ready(target, conn, project, run_id, now, out):
     """Wait out backoff, then probe a usable primary or fallback before launch."""
     from holophyte.agents.agents import probe_diagnostic, probe_implementer, probe_seat
-    from holophyte.host.host import loop_unit_environment
+    from holophyte.host.registry import loop_unit_environment
     from store import launch_backoff
 
     state = launch_backoff.current(conn, project)

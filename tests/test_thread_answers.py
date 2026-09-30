@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from holophyte.babysit import thread_answers
-from holophyte.pr import pr
+from holophyte.pr import github
 
 REPO = "https://github.com/OWNER/NAME"
 
@@ -40,9 +40,9 @@ class GithubLinksTests(unittest.TestCase):
 
 class AskPromptTests(unittest.TestCase):
     def test_prompt_says_thread_and_ticket_are_included_and_github_unreachable(self):
-        pull = pr.PullRequest("github.com", "OWNER", "NAME", 7,
+        pull = github.PullRequest("github.com", "OWNER", "NAME", 7,
                               "https://github.com/OWNER/NAME/pull/7")
-        thread = pr.Thread("1", "app.py", 1, "maintainer",
+        thread = github.Thread("1", "app.py", 1, "maintainer",
                            "@holophyte ask: Why?", "url")
         prompt = thread_answers.ask_prompt(pull, "Ticket body", thread)
         self.assertIn("thread and ticket are included", prompt)

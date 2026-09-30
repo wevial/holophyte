@@ -122,7 +122,7 @@ says why.
 The narrative of a run -- each review round's verdict and the implementer's
 answer, the terminal adjudication, the merge line, a failure's why, a note
 such as a run parked for merge approval, and every intervention -- is a row
-in `ledger` ([design note 9](../design/0009-ledger.md)). `board.ledger()`
+in `ledger` ([design note 9](../design/0009-ledger.md)). `projection.ledger()`
 writes the row on the run's own connection and only then posts the Linear
 comment, so the comment is a projection of the row the way a ticket's
 Linear state is a projection of `tickets.status`: a board that is down or

@@ -9,7 +9,7 @@ from typing import Any
 
 import store
 import store.read
-from holophyte.board.board import block_ticket, ledger
+from holophyte.board.projection import block_ticket, ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.config.project import Project
 from holophyte.loop.gates import MergeParked

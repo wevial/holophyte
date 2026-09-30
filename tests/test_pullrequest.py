@@ -59,8 +59,8 @@ import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert 
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.merge_queue  # noqa: E402 - after the sys.path insert above
-import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_media  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
@@ -261,7 +261,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         adopted = "https://github.com/example/repo/pull/2177"
         self.fake_route(open_pr=adopted)
         provider = self.provider()
-        with patch.object(holophyte.pr.pr, "SLEEP") as sleep:
+        with patch.object(holophyte.pr.github, "SLEEP") as sleep:
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 provider=provider)
         sleep.assert_not_called()
@@ -312,7 +312,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         def sleep(seconds):
             observed.append((seconds, self.read("SELECT phase FROM runs")))
 
-        with patch.object(holophyte.pr.pr, "SLEEP", sleep):
+        with patch.object(holophyte.pr.github, "SLEEP", sleep):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 provider=self.provider())
 
@@ -328,7 +328,7 @@ class MergeModePullRequestTests(MergeModeFixture):
     def test_adopted_stale_head_continues_after_bounded_reads(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
         self.fake_route(open_pr=self.URL, states=[self.pr_state(head=self.base)])
-        with patch.object(holophyte.pr.pr, "SLEEP") as sleep:
+        with patch.object(holophyte.pr.github, "SLEEP") as sleep:
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 provider=self.provider())
 
@@ -442,9 +442,9 @@ class MergeModePullRequestTests(MergeModeFixture):
                     title, body = holophyte.pr.pullrequest._written_pr_text(
                         self.project, None, None, "KO-131", "add a thing", BRANCH,
                         self.BODY, 60, self.target, monotonic(), 5, None)
-                    with patch.object(holophyte.pr.pr, "rest",
+                    with patch.object(holophyte.pr.github, "rest",
                                       return_value={"body": body}), \
-                            patch.object(holophyte.pr.pr, "edit_pr_body") as edit:
+                            patch.object(holophyte.pr.github, "edit_pr_body") as edit:
                         holophyte.pr.pullrequest.refresh_pr_text(
                             self.project, None, None, "KO-131", "add a thing", BRANCH,
                             self.BODY, 60, self.target, 5, pull,
@@ -619,7 +619,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         evidence = "## Evidence\n\nCaptured with `capture`.  \n\n![screen](https://example/screen.png)\n\n"
         link = "Linear: KO-131 (https://linear.app/example/KO-131)"
         tail = "\n\n<!-- bot -->\nAppended block.\n"
-        base = holophyte.pr.pr.pr_body_written(
+        base = holophyte.pr.github.pr_body_written(
             "Old description.", "KO-131", "https://linear.app/example/KO-131")
         production = holophyte.pr.pr_media.append(base, evidence[:-2]) + tail
         after = base + "\n\n" + evidence + tail
@@ -630,15 +630,15 @@ class MergeModePullRequestTests(MergeModeFixture):
              "New description.\n\n" + evidence + link + tail),
         ]:
             with self.subTest(body=body):
-                self.assertEqual(holophyte.pr.pr.replace_pr_text(
+                self.assertEqual(holophyte.pr.github.replace_pr_text(
                     body, "New description."), expected)
 
     def test_replace_without_evidence_matches_existing_layout(self):
-        body = holophyte.pr.pr.pr_body_written(
+        body = holophyte.pr.github.pr_body_written(
             "Old description.", "KO-131", None)
         body += "\n\n<!-- bot -->\nAppended block.\n"
         self.assertEqual(
-            holophyte.pr.pr.replace_pr_text(body, "New description.\n"),
+            holophyte.pr.github.replace_pr_text(body, "New description.\n"),
             "New description.\n\nLinear: KO-131\n\n"
             "<!-- bot -->\nAppended block.\n")
 
@@ -663,7 +663,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\npr_changes_log = true\n')
         self.fake_route()
         original = holophyte.pr.pr_media.append(
-            holophyte.pr.pr.pr_body_written(
+            holophyte.pr.github.pr_body_written(
                 "Original subquery description.", "KO-131",
                 "https://linear.app/example/KO-131"),
             "## Evidence\n\n![capture](https://example/screen.png)")
@@ -716,7 +716,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         a = self.commit_file("console/app.txt")[:12]
         self.old_evidence = (f"## Evidence\n\nCaptured at {a}\n\n"
                              f"![screen](https://example/{a}.png)")
-        self.pr_body.write_text(holophyte.pr.pr_media.append(holophyte.pr.pr.pr_body_written(
+        self.pr_body.write_text(holophyte.pr.pr_media.append(holophyte.pr.github.pr_body_written(
             "Old.", "KO-131", None), self.old_evidence))
         return a
 
@@ -744,14 +744,14 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.refresh(("TITLE: Ignored\nNew description.", False))
         body = self.pr_body.read_text()
         self.assertFalse(self.captures.exists())
-        self.assertEqual(holophyte.pr.pr.split_pr_body(body)[2].rstrip(),
+        self.assertEqual(holophyte.pr.github.split_pr_body(body)[2].rstrip(),
                          self.old_evidence)
 
     def test_a_failed_recapture_keeps_the_old_evidence_marked_stale(self):
         a = self.captured_pr(exit_code=3)
         b = self.commit_file("console/app.txt")
         self.refresh(("TITLE: Ignored\nNew description.", False))
-        evidence = holophyte.pr.pr.split_pr_body(self.pr_body.read_text())[2]
+        evidence = holophyte.pr.github.split_pr_body(self.pr_body.read_text())[2]
         self.assertEqual(self.captures.read_text().split(), [b])
         notice, _, rest = evidence.removeprefix("## Evidence\n\n").partition("\n\n")
         self.assertEqual(f"## Evidence\n\n{rest}".rstrip(), self.old_evidence)
@@ -1102,7 +1102,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         does. Only the pull-status read is faked here: the babysitter's own
         reads and writes still go to the scripted `gh`."""
         asked = []
-        real = holophyte.pr.pr.graphql
+        real = holophyte.pr.github.graphql
 
         def graphql(target, pull, query, variables):
             if "mergedBy" not in query:
@@ -1545,7 +1545,7 @@ class MergeAgainstMainTipTests(unittest.TestCase):
 
         with patch.object(holophyte.pr.merge_queue, "merge_queue_required",
                           return_value=False), \
-                patch.object(holophyte.pr.pr, "merge_pull_request",
+                patch.object(holophyte.pr.github, "merge_pull_request",
                              merge_pull_request), \
                 patch("sys.stdout", io.StringIO()):
             return sha, holophyte.pr.pullrequest._merge_pr(
@@ -1562,7 +1562,7 @@ class MergeAgainstMainTipTests(unittest.TestCase):
                  "+refs/heads/other:refs/remotes/origin/other")
 
     def assert_refused_behind_main(self):
-        with self.assertRaises(holophyte.pr.pr.MergeRefused) as refused:
+        with self.assertRaises(holophyte.pr.github.MergeRefused) as refused:
             self.merge()
         self.assertIn("behind main", str(refused.exception))
         self.assertEqual(self.merged, [])
@@ -1590,7 +1590,7 @@ class MergeAgainstMainTipTests(unittest.TestCase):
         self.git("config", "protocol.ext.allow", "always")
         self.git("remote", "set-url", "origin", "ext::sleep 5")
         started = monotonic()
-        with patch.object(holophyte.pr.pr, "PR_TIMEOUT", 0.5), \
+        with patch.object(holophyte.pr.github, "PR_TIMEOUT", 0.5), \
                 self.assertRaises(holophyte.loop.gates.InfraFailure) as failed:
             self.merge()
         self.assertLess(monotonic() - started, 4)

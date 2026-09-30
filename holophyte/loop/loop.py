@@ -36,8 +36,8 @@ from holophyte.agents.agents import (
 )
 from holophyte.babysit import maintainer_notes
 from holophyte.babysit.babysitter import _babysit
-from holophyte.board import board
-from holophyte.board.board import ledger
+from holophyte.board import projection
+from holophyte.board.projection import ledger
 from holophyte.config.config import budget_scale
 from holophyte.config.config_tables import (
     loop_config,
@@ -153,8 +153,8 @@ def run_task(project, task, conn=None, run_id=None, provider=None):
         if ended.outcome == "paused" or isinstance(ended, (Aborted,
                                                            DriftRequeued)):
             ticket_id = store.read.run_snapshot(run.conn, run.run_id).ticketId
-            board.mirror_push(run.conn, ticket_id, run.provider)
-            board.release_lease_label(run.project, run.conn, ticket_id,
+            projection.mirror_push(run.conn, ticket_id, run.provider)
+            projection.release_lease_label(run.project, run.conn, ticket_id,
                                       run.provider, run.run_id)
             return SWEPT
         print(f"[holo2] run {ended.run_id} was ended by the supervisor"

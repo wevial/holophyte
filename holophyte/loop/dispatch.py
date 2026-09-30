@@ -18,7 +18,7 @@ from time import time
 
 import store
 from holophyte.agents.agents import cleanup_review_refs
-from holophyte.board.board import (
+from holophyte.board.projection import (
     body_problems,
     close_out_failure,
     mirror_status,

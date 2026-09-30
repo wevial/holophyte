@@ -3,7 +3,7 @@ import re
 
 from holophyte.babysit.thread_mentions import REFUSAL, classify, refuse, refused
 from holophyte.config.config_tables import merge_config
-from holophyte.pr.pr import Thread, acknowledged
+from holophyte.pr.github import Thread, acknowledged
 from holophyte.redact import known_secrets, outbound
 
 ASK_REPLY_MARKER = "<!-- holophyte:ask-answered -->"

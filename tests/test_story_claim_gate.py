@@ -222,7 +222,7 @@ class StoryReconcileTests(unittest.TestCase):
         board = ClosedBoard({}, {"NAT-1": "Canceled"})
         with redirect_stdout(io.StringIO()), \
                 patch.object(pr_status, "pull_status", return_value=pull), \
-                patch("holophyte.board.board.release_lease_label"):
+                patch("holophyte.board.projection.release_lease_label"):
             _reconcile_mirror(self.conn, self.project_id, board, object())
         return self.value("SELECT outcome FROM runs WHERE id = ?", run_id)
 
