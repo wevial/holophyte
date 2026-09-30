@@ -20,7 +20,9 @@ an issue carrying it until the maintainer takes it off.
 from __future__ import annotations
 
 import io
+import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -30,7 +32,12 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 # Both discovery and named-module unittest commands need the harness on sys.path.
 sys.path.insert(0, str(HERE))
-from fake_agent import APPROVE, Commit  # noqa: E402 - after the sys.path insert
+from fake_agent import (  # noqa: E402 - after the sys.path insert
+    APPROVE,
+    Commit,
+    Critic,
+    FakeAgent,
+)
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     VALID_BODY,
     LoopFixture,
@@ -40,9 +47,11 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
+from holophyte.agents.agent_routes import reset  # noqa: E402
 from holophyte.review.freshness import stale_reasons  # noqa: E402
 
 GONE = "holophyte/gone.py"
@@ -370,3 +379,149 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
         self.loop(Commit("the change"), APPROVE, provider=provider)
 
         self.assert_claimed_without_comment(provider)
+
+
+FIXTURE = "fixture.txt"
+
+
+class CheckoutCritic(Critic):
+    """A critic whose answer depends on `FIXTURE` being in the checkout it
+    reads; it records the local `main` it was asked on."""
+
+    def __init__(self, target, seen):
+        super().__init__()
+        self.target, self.seen = target, seen
+
+    def play(self, cwd, turn):
+        self.seen.append(subprocess.run(
+            ["git", "rev-parse", "main"], cwd=self.target, check=True,
+            capture_output=True, text=True).stdout.strip())
+        if (Path(cwd) / FIXTURE).exists():
+            return "The fixture is on main.\nFRESHNESS: FRESH"
+        return f"FRESHNESS: UNSURE the merge adding {FIXTURE} is not here"
+
+
+class OriginBackAtLease(StubProvider):
+    """A board whose lease label lands as origin becomes reachable again:
+    the admission's fetch fails and the cut's would succeed."""
+
+    def __init__(self, restore, *tasks):
+        super().__init__(*tasks)
+        self.restore = restore
+
+    def label_issue(self, issue_id, name):
+        self.restore()
+        super().label_issue(issue_id, name)
+
+
+class ClaimRefreshTests(LoopFixture):
+    """The critic reads a checkout of `main` refreshed from a real origin."""
+
+    def setUp(self):
+        super().setUp()
+        probe = self.target.parent / "critic-probe"
+        probe.write_text(f"#!{sys.executable}\nprint('ready')\n")
+        probe.chmod(0o755)
+        self.configure(f'[agents.critic]\n[harnesses]\ncodex = "{probe}"\n'
+                       '[loop]\ncritic_after_hours = 12\n')
+        self.addCleanup(reset, self.project)
+        self.origin = self.target.parent / "origin.git"
+        self.git("init", "-q", "--bare", "-b", "main", str(self.origin))
+        self.git("remote", "add", "origin", str(self.origin))
+        self.git("push", "-q", "origin", "main")
+        self.task = dict(a_task(), body=VALID_BODY,
+                         filed_at=int(time.time() * 1000) - 13 * 3600 * 1000)
+
+    def merge_on_origin(self):
+        """A commit adding `FIXTURE` lands on origin's main from another
+        clone, as a pull request merged on the host would."""
+        clone = self.target.parent / "elsewhere"
+        self.git("clone", "-q", str(self.origin), str(clone))
+        self.git("config", "user.email", "person@example.invalid", cwd=clone)
+        self.git("config", "user.name", "A Person", cwd=clone)
+        (clone / FIXTURE).write_text("the dependency's fixture\n")
+        self.git("add", FIXTURE, cwd=clone)
+        self.git("commit", "-q", "-m", "Merge the dependency", cwd=clone)
+        self.git("push", "-q", "origin", "main", cwd=clone)
+        return self.git("rev-parse", "main", cwd=clone).strip()
+
+    def admit(self, seen):
+        provider = StubProvider(self.task)
+        conn = holophyte.loop.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+        out = io.StringIO()
+        with patch.object(holophyte.loop.review_round, "agent",
+                          FakeAgent(CheckoutCritic(self.target, seen))), \
+                patch.object(sys, "stdout", out):
+            admitted = holophyte.loop.claim._admit_ticket(
+                self.project, conn, project_id, provider, self.task,
+                SimpleNamespace(trips=[], watched=[]))
+        return admitted, out.getvalue()
+
+    def status(self):
+        return self.read("SELECT status FROM tickets"
+                         " WHERE linearIdentifier = 'KO-131'")
+
+    def test_a_dependency_merged_on_origin_is_in_the_critic_s_checkout(self):
+        merged = self.merge_on_origin()
+        seen = []
+
+        admitted, _ = self.admit(seen)
+
+        self.assertIsNotNone(admitted)
+        self.assertEqual(seen, [merged])
+        self.assertEqual(self.git("rev-parse", "main").strip(), merged)
+        self.assertNotEqual(self.status(), [("needs_spec",)])
+
+    def test_a_checkout_already_at_origin_moves_nothing_and_asks_the_critic(self):
+        (self.target / FIXTURE).write_text("the dependency's fixture\n")
+        self.git("add", FIXTURE)
+        self.git("commit", "-q", "-m", "Merge the dependency")
+        self.git("push", "-q", "origin", "main")
+        head = self.git("rev-parse", "main").strip()
+        seen = []
+
+        admitted, out = self.admit(seen)
+
+        self.assertIsNotNone(admitted)
+        self.assertEqual(seen, [head])
+        self.assertEqual(self.git("rev-parse", "main").strip(), head)
+        self.assertNotIn("fast-forwarded", out)
+
+    def test_a_failed_fetch_fails_the_run_as_infra_and_parks_nothing(self):
+        self.merge_on_origin()
+        self.git("remote", "set-url", "origin",
+                 str(self.target.parent / "missing.git"))
+        seen = []
+
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=StubProvider(self.task),
+                      fake=FakeAgent(CheckoutCritic(self.target, seen)))
+
+        self.assertEqual(seen, [])
+        self.assertNotEqual(self.status(), [("needs_spec",)])
+        ((outcome_class, reason),) = self.read(
+            "SELECT outcomeClass, outcomeReason FROM runs")
+        self.assertEqual(outcome_class, "infra")
+        self.assertIn("git fetch origin failed", reason)
+
+    def test_a_fetch_failed_at_admission_fails_the_run_though_origin_is_back(self):
+        self.merge_on_origin()
+        self.git("remote", "set-url", "origin",
+                 str(self.target.parent / "missing.git"))
+        provider = OriginBackAtLease(
+            lambda: self.git("remote", "set-url", "origin", str(self.origin)),
+            self.task)
+        seen = []
+
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=provider,
+                      fake=FakeAgent(CheckoutCritic(self.target, seen)))
+
+        self.assertEqual(seen, [])
+        self.assertNotEqual(self.status(), [("needs_spec",)])
+        ((outcome_class, reason),) = self.read(
+            "SELECT outcomeClass, outcomeReason FROM runs")
+        self.assertEqual(outcome_class, "infra")
+        self.assertIn("git fetch origin failed", reason)
