@@ -1,6 +1,4 @@
-"""PR babysitting: adjudicate threads, verify fixes, and wait for a safe merge."""
 import json
-import re
 import subprocess
 from dataclasses import replace
 from time import monotonic, time
@@ -16,9 +14,30 @@ from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park
 from holophyte.babysit.main_checkout import detached_main
-from holophyte.babysit.plain_text import readable
 from holophyte.babysit.thread_answers import answer_asks, post
 from holophyte.babysit.thread_findings import thread_finding
+from holophyte.babysit.thread_text import (  # noqa: F401
+    COMMENT_HEADER,
+    CONVENTIONS_CAP,
+    VERDICTS,
+    addressed_reply,
+    adjudication_brief,
+    conventions,
+    conventions_paragraph,
+    conversation,
+    declined_reply,
+    fix_brief,
+    gist,
+    open_threads_question,
+    parse_summaries,
+    parse_verdicts,
+    people_paragraph,
+    quoted,
+    round_reply,
+    route_of,
+    thread_line,
+    where,
+)
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import (
@@ -35,7 +54,6 @@ from holophyte.loop.run import Run
 from holophyte.loop.runs import heartbeat_while, record_round
 from holophyte.loop.stop import boundary, fix_state, stop_if_requested
 from holophyte.pr import github, merge_queue, pr_status
-from holophyte.pr.github import NO_AUTHOR
 from holophyte.pr.missing_checks import Retrigger, unreported
 from holophyte.pr.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
@@ -54,225 +72,11 @@ from holophyte.review.reply_parsing import (
     parse_findings,
 )
 
-# Quote conventions in brief order, capped per file, so rules aren't guessed.
-CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
-CONVENTIONS_CAP = 4000
-
-VERDICTS = ("ADDRESS", "DECLINE", "HUMAN")
-VERDICT_LINE_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?THREAD\s+(\d+)\s*[:.)-]\s*(ADDRESS|DECLINE|HUMAN)\b"
-    r"\s*(?:[-–—:,]+\s*)?(.*?)\s*$", re.IGNORECASE | re.MULTILINE)
-# Fix summaries keep the adjudicator's numbering.
-SUMMARY_LINE_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?THREAD\s+(\d+)\s*[:.)-]\s*(.+?)\s*$",
-    re.IGNORECASE | re.MULTILINE)
-COMMENT_HEADER = "---- Comment by {model} ----"
-GIST_CHARS = 200
-
-
-def gist(text, limit=GIST_CHARS):
-    """`text` as one line of at most `limit` characters."""
-    line = " ".join((text or "").split())
-    return line if len(line) <= limit else line[:limit - 1].rstrip() + "…"
-
-
-def where(thread):
-    """A review location or pull request conversation label."""
-    if thread.kind == "conversation":
-        return "conversation on the pull request"
-    if not thread.path:
-        return "(no file)"
-    return f"{thread.path}:{thread.line}" if thread.line else thread.path
-
-
-def conversation(thread, *, label_all=False):
-    """A thread's text as the adjudicator and implementer read it: the
-    opening comment, then each follow-up under a line naming who wrote it
-    -- a later rejection or question is judged, not the opener alone."""
-    if label_all:
-        return "\n\n".join(f"@{c.author}: {c.body.strip()}" for c in thread.comments)
-    parts = [thread.body.strip()]
-    parts.extend(f"@{c.author} replied:\n{c.body.strip()}" for c in thread.replies)
-    return "\n\n".join(parts)
-
-
-def thread_line(number, thread):
-    """One thread as one line: number, where, who, and the gist of it."""
-    return f"{number}. {where(thread)} (@{thread.author}): {gist(thread.body)}"
-
-
-def conventions(wt):
-    """The repository's conventions files at the worktree root, `(name,
-    text)` per file present in `CONVENTIONS_FILES` order; the same lookup
-    feeds the pull request text and the adjudication brief."""
-    return tuple((n, (wt / n).read_text(errors="replace").strip())
-                 for n in CONVENTIONS_FILES if (wt / n).is_file())
-
-
-def conventions_paragraph(files):
-    """The brief's conventions excerpt, capped per file; empty with none."""
-    if not files:
-        return ""
-    parts = []
-    for name, text in files:
-        if len(text) > CONVENTIONS_CAP:
-            text = (text[:CONVENTIONS_CAP]
-                    + f"\n\n[{name} truncated here]")
-        parts.append(f"The repository's {name}:\n\n{text}")
-    return "\n\n".join(parts) + "\n\n"
-
-
-def adjudication_brief(pull, threads, ticket, sha, conventions=(), run_id=None):
-    """The adjudicator's goal: the numbered threads, the verdicts to give
-    each, and the repository's conventions when it has any."""
-    listing = "\n\n".join(
-        f"THREAD {n} -- {where(t)} by @{t.author}"
-        + (" (outdated: the lines it was left on have changed)"
-           if t.outdated else "")
-        + (f" ({len(t.replies)} follow-up(s))" if t.replies else "")
-        + f"\n{conversation(t, label_all=True)}"
-        for n, t in enumerate(threads, 1))
-    return (
-        f"You are a READ-ONLY adjudicator of the review threads on pull "
-        f"request {pull.url}. Judge commit {sha} using {review_refs(run_id)[0]} as "
-        f"the frozen base and {review_refs(run_id)[1]} as the candidate in this "
-        "repo, against the ticket below. The ticket is the contract: a "
-        "thread asking for work outside it is out of scope.\n\n"
-        f"{ticket}\n\n"
-        f"Unresolved review threads ({len(threads)}):\n\n{listing}\n\n"
-        + conventions_paragraph(conventions)
-        + people_paragraph(threads)
-        + "For EACH thread give exactly one verdict line, in this form and "
-        "nothing else on the line:\n"
-        "THREAD n: ADDRESS -- one sentence naming the defect to fix\n"
-        "THREAD n: DECLINE -- one sentence saying why it is not a defect or "
-        "not in scope\n"
-        "THREAD n: HUMAN -- one sentence saying why a person must answer\n"
-        "ADDRESS is for a concrete defect in the candidate. A thread that "
-        "names an existing function, helper or constant already in the "
-        "repository which the diff duplicates is a concrete change request, "
-        "not a preference: ADDRESS, the fix being reuse. The repository's "
-        "own conventions (its AGENTS.md or CLAUDE.md, quoted above when it "
-        "has one) are the reviewer's standard: a thread asking for what "
-        "they ask for is concrete. DECLINE is for a thread that asks for "
-        "nothing specific, or asks for what the ticket puts out of scope. "
-        "HUMAN is for a genuine question, a rejection of the approach, or "
-        "anything you would not answer on the operator's behalf. Judge each "
-        "thread by its whole conversation: a concrete change stated by a later reply "
-        "is the thread's request. A follow-up can withdraw, "
-        "sharpen, or turn a finding into a question. Do not modify "
-        "anything.")
-
-
-def people_paragraph(threads):
-    """The brief's paragraph on the threads a person opened, numbered as
-    the listing has them; empty when every thread is a bot's."""
-    people = [str(n) for n, t in enumerate(threads, 1)
-              if t.author_kind != "bot"]
-    if not people:
-        return ""
-    return (
-        f"THREAD {', '.join(people)} " + ("was" if len(people) == 1 else
-                                          "were")
-        + " opened by a person, not a bot. For a person's thread give "
-        "ADDRESS only when it asks for a concrete change the diff can make "
-        "(\"change X to Y\", \"this should also handle Z\", \"rename "
-        "this\"). A question, a request for reasoning, a design objection, "
-        "a request outside the ticket, or anything you are not sure is a "
-        "change request is HUMAN -- do not guess in the person's favour. "
-        "Never DECLINE a person's thread: the factory does not argue with a "
-        "person; a DECLINE on it is read as HUMAN.\n\n")
-
-
-def parse_verdicts(reply, count):
-    """`{number: (verdict, reason)}` for threads 1..`count` off the
-    adjudicator's reply; no verdict line is `HUMAN`; last line wins."""
-    found = {}
-    for m in VERDICT_LINE_RE.finditer(reply or ""):
-        number = int(m.group(1))
-        if 1 <= number <= count:
-            found[number] = (m.group(2).upper(), m.group(3).strip())
-    return {n: found.get(n, ("HUMAN", "the adjudicator gave no verdict for"
-                                      " this thread"))
-            for n in range(1, count + 1)}
-
-
-def fix_brief(pull, addressed, ticket):
-    """Fix goal: adjudicator-numbered threads and a summary line for each."""
-    listing = "\n\n".join(
-        f"THREAD {n} -- {where(t)} by @{t.author}\n{conversation(t)}\n"
-        + (maintainer_notes.instruction(t) if maintainer_notes.is_note(t)
-         else thread_mentions.instruction(t) if t.classification == "MENTIONED"
-         else f"Adjudicator: {reason}")
-        for n, t, reason in addressed)
-    return (
-        f"Review threads on pull request {pull.url} were accepted as "
-        "defects. The ticket you are held to, acceptance criteria "
-        f"included:\n\n{ticket}\n\nThreads to address:\n\n{listing}\n\n"
-        "Fix each one on this branch and commit; keep the ticket's verify "
-        "commands passing. Then end your reply with one line per thread, "
-        "in this form:\nTHREAD n: one sentence saying what changed")
-
-
-def parse_summaries(output):
-    """`{number: summary}` off the fix round's output; last line wins."""
-    return {int(m.group(1)): m.group(2).strip()
-            for m in SUMMARY_LINE_RE.finditer(output or "")}
-
-
-def addressed_reply(model, summary, sha):
-    """The reply on an addressed thread: the header, what changed, the sha."""
-    return (f"{COMMENT_HEADER.format(model=model)}\n\n"
-            f"Addressed in {sha}: {summary}")
-
-
-def declined_reply(model, reason):
-    """The reply on a declined thread: the header and the reason."""
-    return (f"{COMMENT_HEADER.format(model=model)}\n\n"
-            f"Declined: {reason}")
-
-
-def round_reply(pull, pass_no, threads, verdicts, checks, sha):
-    """The text a pass is recorded as, in `record_round()`'s shape: one
-    bullet per thread citing its file and verdict, and a closing
-    `VERDICT:` -- `APPROVE` when no thread was found."""
-    lines = [f"Babysit pass {pass_no} over {pull.url} at {sha[:12]}:"
-             f" {len(threads)} unresolved thread(s), checks {checks}."]
-    lines += [f"- {where(t)} @{t.author}: {gist(t.body)}"
-              f" -- {t.classification + ': ' if t.classification else ''}"
-              f"{verdicts[n][0]}: {' '.join(verdicts[n][1].split())}"
-              for n, t in enumerate(threads, 1)]
-    lines.append("VERDICT: " + ("APPROVE" if not threads
-                                else "REQUEST_CHANGES"))
-    return "\n".join(lines)
-
-
-def route_of(threads):
-    """`github:LOGIN` for the pass: the threads' authors sorted and joined
-    with `+`; `github:ci` for a pass that judged the checks alone."""
-    authors = sorted({t.author for t in threads})
-    return "github:" + ("+".join(authors) if authors else NO_AUTHOR)
-
-
-def open_threads_question(pull, why, threads):
-    """The ticket's question for a run parked on its PR: the URL, why the
-    pass stopped, and the open threads listed."""
-    return "\n".join([f"PR open: {pull.url}", why]
-                     + [thread_line(n, t) for n, t in enumerate(threads, 1)])
-
-
-def quoted(thread):
-    """A thread whole, follow-ups included, as plain text for the question."""
-    body = "\n\n".join([readable(thread.body)] + [
-        f"@{c.author} replied:\n{readable(c.body)}" for c in thread.replies])
-    return f"{where(thread)} by @{thread.author} ({thread.url}):\n{body or '(empty)'}"
-
 
 def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
                        sha, beat_s, pull, budget_min, reviewed=None, refusal=None,
                        previous=None, refresh=None, verify_cmd=None, contracts=(),
                        ticket=""):
-    """Merge and push main; unresolved conflicts get one turn, then park."""
     from holophyte.loop.claim import merge_conflicts
     from holophyte.loop.implement import _timed
     from holophyte.loop.merge_gate import _is_ancestor, _merge_ref, merge_conflict_goal
@@ -311,9 +115,7 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
                 " left it unresolved", (), reviewed=reviewed)
         merged = sh(["git", "rev-parse", "HEAD"], wt)
     elif status == "ancestor":
-        # `origin/main` is already in the branch: GitHub's answer was
-        # stale, or an earlier pass merged it. Push anyway so the remote
-        # head stands at the merged sha and GitHub recomputes.
+        # Push anyway so GitHub recomputes a stale answer at the merged sha.
         merged = sha
     else:
         merged = detail
@@ -348,7 +150,6 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
 
 
 def _refresh_verify(project, conn, run_id, beat_s, wt, sha, command, contracts):
-    """Record the checked tree beside its mechanical result, including red main."""
     started = int(time() * 1000)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(command, wt, contracts, conn=conn, run_id=run_id,
@@ -365,7 +166,6 @@ def _refresh_verify(project, conn, run_id, beat_s, wt, sha, command, contracts):
 
 
 def _verify_detached_main(project, conn, run_id, beat_s, wt, ref, command, contracts):
-    """Check the fetched main once in a prepared sibling, then remove it."""
     sha = sh(["git", "rev-parse", ref], wt)
     with detached_main(project, conn, run_id, beat_s, wt, sha) as detached:
         command, skipped = drop_candidate_modules(command, wt, detached)
@@ -383,7 +183,6 @@ def _verify_detached_main(project, conn, run_id, beat_s, wt, ref, command, contr
 def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
                          sha, beat_s, pull, budget_min, command, contracts, ticket,
                          ref):
-    """Verify before carrying review forward; diagnose red once before a fix."""
     from holophyte.pr.pullrequest import _park_on_pr
     ok, out = _refresh_verify(project, conn, run_id, beat_s, wt, sha, command,
                               contracts)
@@ -409,7 +208,6 @@ def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
 
 
 def _diff_identity(wt, ref):
-    """Compare the candidate against the fetched main, never a stale local main."""
     diff = subprocess.run(["git", "diff", f"{ref}...HEAD"], cwd=wt,
                           capture_output=True, check=True).stdout
     return subprocess.run(["git", "patch-id", "--stable"], cwd=wt, input=diff,
@@ -417,7 +215,6 @@ def _diff_identity(wt, ref):
 
 
 def _babysit(run, *args, **kwargs):
-    """Accept a Run; retain the positional seam for storeless callers."""
     legacy = not isinstance(run, Run)
     if legacy:
         (conn, run_id, provider, task_id, issue_id, task, branch, wt, sha,
@@ -432,9 +229,7 @@ def _babysit(run, *args, **kwargs):
 def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                    approved=False, reviewed=None, verified=None, fix_note=None,
                    just_pushed=False):
-    """Watch a PR until merge or park, bounded by rounds and a no-work deadline.
-    Changed candidates need verification and independent review; human approval
-    covers only the released SHA. Conflict recovery pushes origin/main's merge."""
+    """Human approval covers only the released sha; later fixes are reviewed."""
     project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
     task_id, issue_id = run.task_id, run.issue_id
     branch, wt, sha = run.branch, run.wt, run.sha
@@ -447,7 +242,6 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                          f" branch {branch} preserved at {sha[:12]}")
     ticket = maintainer_notes.amended_ticket(conn, run_id, ticket, url)
     model = agent_route(project, "adjudicate")
-    # A fix moves sha past the candidate covered by reviewed.
     pushed_state = (_just_pushed_state(
         project, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
         reviewed) if just_pushed else None)
@@ -471,7 +265,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
             pull, thread_mentions.classified(state.threads, merge), ticket, reviewed))
         if state.mergeable == "CONFLICTING":
-            # Push origin/main's merge and settle again; UNKNOWN is not conflict.
+            # UNKNOWN is not a conflict.
             sha, pushed_state, reviewed = _merge_origin_main(
                 project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
                 pull, budget_min, reviewed=reviewed, previous=state, refresh=refresh,
@@ -494,11 +288,11 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         ledger(conn, run_id, task_id, "round",
                f"Babysit pass {pass_no} over {pull.url}: no unresolved"
                f" threads, checks {state.checks}", provider)
-        if state.checks != "success":  # Parks unless one fix is due.
+        if state.checks != "success":
             sha, pushed_state = fix_checks_or_park(
                 replace(run, sha=sha), beat_s, pull, state, ticket, verify_cmd,
                 contracts, pass_no, reviewed, check_fix)
-            continue  # Settle the pushed fix; its review comes before merge.
+            continue
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
         released = sha
@@ -512,8 +306,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                 pushed_state = _just_pushed_state(
                     project, conn, run_id, provider, task_id, branch, sha,
                     beat_s, pull, reviewed)
-                continue  # Settle the pushed fix's checks and threads first.
-            # Keep verified behind: the reviewed fix still needs the merge gate.
+                continue
             # An `--approve` covered the release, not these reviewed fixes.
             released, reviewed, approved = reviewed, sha, False
         if merge.approve == "auto" or approved:
@@ -523,7 +316,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                     wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
                     contracts, ticket, budget_min, merge.approve == "auto")
                 return replace(run, sha=sha, merge_sha=merge_sha)
-            except merge_queue.QueueRemoved as removed:  # Red merge group.
+            except merge_queue.QueueRemoved as removed:
                 sha, pushed_state = fix_checks_or_park(
                     replace(run, sha=sha), beat_s, pull, replace(
                         state, checks="failure", failed_checks=removed.failed),
@@ -553,14 +346,10 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
 
 
 def _fixes_reviewed(merge):
-    """Whether a covering review follows a fix: always under automatic
-    approval, and under human approval once `review_fixes` opts in."""
     return merge.approve == "auto" or merge.review_fixes
 
 
 def _moved(sha, reviewed):
-    """Why the candidate at `sha` needs an independent look: it sits past
-    the sha the last judgement covered, or nothing on record covers it."""
     if reviewed is None:
         return (f"no approval on record covers the candidate at {sha[:12]}"
                 " (the last review asked for changes, or the park recorded"
@@ -570,8 +359,6 @@ def _moved(sha, reviewed):
 
 
 def _ready(released, sha):
-    """The human park's reason, naming what a covering review of fix
-    commits since the release at `released` approved (KO-663)."""
     covered = ""
     if released != sha:
         covered = (f"fix commits since {released[:12]} reviewed at {sha[:12]}; "
@@ -581,7 +368,6 @@ def _ready(released, sha):
 
 
 def _fix_answers(conn, run_id, rnd, fix_note):
-    """Recover addressed adjudications since the preceding independent pass."""
     lines, rounds = [], store.read.rounds_of(conn, run_id) if conn is not None else []
     for recorded in reversed(rounds):
         if recorded.round >= rnd:
@@ -603,7 +389,6 @@ def _fix_answers(conn, run_id, rnd, fix_note):
 def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=(), fix_note=None, budget_min=None, *, fix_context=""):
-    """Verify and review; allow one fix past the cap, then park on rejection."""
     from holophyte.loop.review_round import _verify_brief, agent, set_phase
     from holophyte.pr.pullrequest import _park_on_pr, refresh_pr_text
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
@@ -617,7 +402,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
     merge = merge_config(project)
     auto = merge.approve == "auto"
     if not ok:
-        # Park under either mode so `--babysit --note` can send a fix (KO-666).
+        # Park under either mode so `--babysit --note` can send a fix.
         record_unreviewed_verification(conn, run_id, out)
         if auto:
             ledger(conn, run_id, task_id, "failure",
@@ -686,8 +471,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
             store.record_event(conn, run_id, "route_failure", reason)
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
                     pull, reason, ())
-    # The same gate as a review round's: a criterion left not met or
-    # unwitnessed is a blocker whatever the verdict line says.
+    # A criterion not met or unwitnessed blocks whatever the verdict says.
     unwitnessed = criteria_findings(
         verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None,
         scope=scope)
@@ -738,12 +522,10 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
 
 
 def _next_round(conn, run_id):
-    """The number the run's next `reviewRounds` row takes; 1 with no store."""
     return len(store.read.rounds_of(conn, run_id)) + 1 if conn else 1
 
 
 def _quiet_left(state, quiet_ms, refresh=None):
-    """Quiet milliseconds remaining since the last PR update."""
     key = (state.head_sha, state.updated_at)
     if refresh and key not in refresh:
         refresh.clear()  # A later update or another head is real activity.
@@ -767,14 +549,14 @@ def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
                     pull, str(waiting), (), reviewed=reviewed, park_kind="ci")
     except WaitExpired as expired:
-        if retrigger is not None:  # Park the head the retrigger pushed.
+        if retrigger is not None:
             sha, reviewed = retrigger.sha, retrigger.reviewed
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
                     pull, str(expired), (), reviewed=reviewed)
 
 
 class WaitExpired(Exception):
-    """A continuous PR wait reached its independent liveness deadline."""
+    pass
 
 
 class WaitsOnCI(Exception):
@@ -783,9 +565,6 @@ class WaitsOnCI(Exception):
 
 def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None,
                    retrigger=None, deadline=None, park_ci=False):
-    """Bound pending/quiet waiting with one deadline; return threads promptly.
-    A required check with no report for `missing_check_sec` is retriggered
-    once (`Retrigger`) or ends the wait naming it."""
     merge = merge_config(project)
     quiet_ms = merge.pr_quiet_sec * 1000
     deadline = deadline or monotonic() + merge.check_wait_sec
@@ -843,10 +622,7 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
 def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                     beat_s, pull, state, rnd, pass_no, model, ticket,
                     verify_cmd, contracts, budget_min, reviewed=None):
-    """Adjudicate threads, fix ADDRESSes, then reply to DECLINEs; return sha or park.
-    Resolve declines only for configured bots or `[bot]` logins. Other declines
-    park open. Human ADDRESSes under act are answered but stay open; other
-    human verdicts park without a reply."""
+    """Only configured bots' or `[bot]` logins' declines are resolved."""
     from holophyte.loop.review_round import agent
     from holophyte.pr.pullrequest import _park_human, _park_on_pr
     merge = merge_config(project)
@@ -854,7 +630,6 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     threads = thread_mentions.classified(state.threads, merge)
     base_sha = main_merge_base(wt, sha)
     round_started = int(time() * 1000)
-    # Park unmentioned human threads unless human_threads = "act".
     act = merge.human_threads == "act"
     judged = tuple(t for t in threads if not maintainer_notes.is_note(t)
                    and t.classification != "MENTIONED"
@@ -892,13 +667,8 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     by_verdict = {v: [(n, t, verdicts[n][1]) for n, t in
                       enumerate(threads, 1) if verdicts[n][0] == v]
                   for v in babysitter.VERDICTS}
-    # A HUMAN verdict on a bot's thread ends the pass before anything is
-    # posted, under either setting -- bot handling does not move. Only a
-    # person's HUMAN under `act` waits: the bots' threads and the
-    # person's ADDRESSes are fixed and answered first; the pass then
-    # parks with that thread quoted, unanswered, and any addressed one
-    # listed as left open for them to close -- so the next pass does not
-    # judge it again.
+    # A HUMAN on a bot's thread parks before anything is posted; a person's
+    # HUMAN under `act` waits until the rest are fixed and answered.
     if by_verdict["HUMAN"] and (not act or any(
             t.author_kind == "bot" for _, t, _ in by_verdict["HUMAN"])):
         _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
@@ -938,7 +708,6 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
 
 
 def _decline_threads(project, conn, run_id, beat_s, pull, declined, model):
-    """Reply before resolving bot declines; return the threads left open."""
     bot_authors = merge_config(project).bot_authors
     left_open = []
     for _, thread, reason in declined:
@@ -954,7 +723,6 @@ def _decline_threads(project, conn, run_id, beat_s, pull, declined, model):
 
 
 def _thread_findings(pull, pass_no, threads, verdicts, checks, sha, bot_logins):
-    """Keep instructions and adjudicated thread findings structured."""
     findings = []
     for n, thread in enumerate(threads, 1):
         if thread.classification == "MENTIONED":
@@ -977,12 +745,7 @@ def _thread_findings(pull, pass_no, threads, verdicts, checks, sha, bot_logins):
 
 
 def _verdicts_by_kind(threads, judged, parsed):
-    """`{number: (verdict, reason)}` over `threads`, numbered as the
-    round row lists them: a thread not in `judged` -- a person's under
-    `human_threads = "park"` -- is `HUMAN`, "opened by a person"; a
-    judged thread takes the next verdict off `parsed` in order, and one
-    on a person's thread that is not `ADDRESS` folds to `HUMAN` -- the
-    factory never declines a person."""
+    """The factory never declines a person: that folds to `HUMAN`."""
     pending = iter(sorted(parsed))
     verdicts = {}
     for n, t in enumerate(threads, 1):
@@ -1038,7 +801,7 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         why = outbound(why, known_secrets(project.config()))
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull, why,
                     (), park_kind="fix_declined")
-    if no_commit_why and fixed == sha and not timed_out:  # Maintainer's to see.
+    if no_commit_why and fixed == sha and not timed_out:
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     no_commit_why, (), reviewed=reviewed)
     if timed_out or fixed == sha:
@@ -1096,6 +859,5 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
 
 
 def _post(project, conn, run_id, beat_s, pull, thread, body, resolve):
-    """Keep the babysitter reply seam shared with read-only answers."""
     stop_if_requested(conn, run_id, "merge_gate")
     return post(project, conn, run_id, beat_s, pull, thread, body, resolve)

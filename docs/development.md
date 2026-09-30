@@ -301,10 +301,14 @@ Each module, one line:
   and read-only normalization of legacy thread rows.
 - `holophyte/babysit/babysit_steps.py` — records PR babysitting step changes without
   repeating unchanged steps during polling.
-- `holophyte/babysit/babysitter.py` — the babysit pass over a pull request: the
-  adjudicator's brief over its threads, the `ADDRESS`/`DECLINE`/`HUMAN`
-  verdict parser, the `---- Comment by MODEL ----` replies, the round
-  text, the parked question, and the passes that drive them.
+- `holophyte/babysit/babysitter.py` — the babysit pass over a pull request:
+  thread answering and fixing, the merge of `main`, and the waits that drive
+  them.
+- `holophyte/babysit/thread_text.py` — the babysitter's thread text: the
+  conventions it quotes, the adjudicator's brief over its threads, the
+  `ADDRESS`/`DECLINE`/`HUMAN` verdict parser, the fix brief and summary
+  parser, the `---- Comment by MODEL ----` replies, the round text, and the
+  parked question.
 - `holophyte/babysit/plain_text.py` — a review comment as plain text for a parked
   question (KO-717): HTML reduced to its text, an `img` to its `alt`,
   `details` blocks and quote markers dropped, and a 600-character cap.

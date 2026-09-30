@@ -1,10 +1,3 @@
-"""Required checks that never report on a pull request's head (KO-652).
-
-A check the base branch requires but that has reported nothing -- no run,
-no status -- is not a slow check: the babysitter's wait notices it after
-`[merge] missing_check_sec`, wakes it with one empty commit per candidate
-when `[merge] retrigger_missing_checks` is on, and otherwise parks naming it.
-"""
 import subprocess
 
 import store
@@ -20,18 +13,13 @@ SUBJECT = "Retrigger missing checks: "
 
 
 class Retrigger:
-    """One empty commit per candidate to wake the required checks that never
-    reported on it (KO-652), pushed on the babysitter's own push path so its
-    later pushes stay fast-forward. `sha` and `reviewed` follow the push:
-    an empty commit changes no tree the last review covered."""
+    """Pushed on the babysitter's own push path, so later pushes fast-forward."""
 
     def __init__(self, run, beat_s, pull, sha, reviewed):
         self.run, self.beat_s, self.pull = run, beat_s, pull
         self.sha, self.reviewed = sha, reviewed
 
     def __call__(self, names):
-        """The pushed head's state, or None when `[merge]
-        retrigger_missing_checks` is off or the head is itself a retrigger."""
         run = self.run
         if (not merge_config(run.project).retrigger_missing_checks
                 or retriggered(run.wt, self.sha)):
@@ -58,9 +46,7 @@ class Retrigger:
 
 
 def retriggered(wt, sha):
-    """Whether `sha` is itself a retrigger: an empty commit carrying the
-    retrigger subject. Read off the commit rather than remembered, so a
-    babysit resumed on a parked retrigger head cannot push a second one."""
+    """Read off the commit, so a resumed babysit cannot push a second one."""
     def git(*args):
         return subprocess.run(["git", *args], cwd=wt, capture_output=True,
                               text=True)
@@ -71,11 +57,6 @@ def retriggered(wt, sha):
 
 
 def unreported(state, absent, limit_s, clock):
-    """The required checks the head has carried no report of for `limit_s`
-    seconds by `clock`; `absent` keeps when each (head, check) was first
-    seen so, and forgets it once the check reports or the head moves. The
-    clock is read only when a check is missing, so a wait with none missing
-    reads it as it did before."""
     for key in [k for k in absent if k[0] != state.head_sha
                 or k[1] not in state.missing_checks]:
         del absent[key]

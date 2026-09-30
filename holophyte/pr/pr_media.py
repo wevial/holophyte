@@ -1,4 +1,3 @@
-"""Capture user-facing candidates and publish their review artifacts."""
 import base64
 import fnmatch
 import hashlib
@@ -26,10 +25,9 @@ from holophyte.loop.gates import InfraFailure, sh
 from holophyte.pr import github
 
 CAPTURE_TIMEOUT = 300
-CAPTURE_GRACE = 30  # HOLO-13, HOLO-16: a stopped capture's teardown runs.
-TAIL_LINES = 20  # KO-623: a failed capture shows why.
-RECEIPT_VERSION = 5  # KO-604: sections name the sha they capture.
-# The first line under an Evidence heading: the candidate it shows (KO-604).
+CAPTURE_GRACE = 30  # Seconds a stopped capture's teardown gets.
+TAIL_LINES = 20
+RECEIPT_VERSION = 5
 CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
 STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
 
@@ -58,13 +56,7 @@ def implementer_brief(project, ticket, task_id):
 
 
 def evidence_problems(project, evidence_states):
-    """Why `project` cannot capture `evidence_states`: [] or one line.
-
-    Evidence is captured only for a pull request (`[merge] mode = "pr"`),
-    by `[merge] ui_capture` over `ui_paths`; anywhere else the section is
-    dropped unseen, so filing and claim refuse it. A body with no states
-    reads no config, and a malformed one is the refusal, not an exit.
-    """
+    """A malformed body is the refusal, not an exit."""
     if not evidence_states:
         return []
     try:
@@ -92,7 +84,6 @@ def media_url(repo, branch, name, private):
 
 
 def repo_is_private(project, repo=None):
-    """Read the evidence repository visibility using the PR transport."""
     if repo:
         owner, name = repo.split("/")
         pull = github.PullRequest("github.com", owner, name, 0, "")
@@ -124,9 +115,6 @@ def matches(wt, patterns):
 
 
 def _tail(output, project):
-    """The last `TAIL_LINES` non-empty lines of a capture's output, redacted,
-    as a fenced block to follow the failure sentence; empty when it printed
-    nothing."""
     if isinstance(output, bytes):
         output = output.decode(errors='replace')
     document = project.config() if project is not None else None
@@ -180,7 +168,7 @@ def _capture(command, wt, output, task_id, states, *, project=None):
             code = process.wait(timeout=CAPTURE_TIMEOUT)
         except subprocess.TimeoutExpired:
             code = None
-        _stop(process)  # HOLO-16: nothing the capture started outlives it.
+        _stop(process)  # Nothing the capture started outlives it.
         if code == 0:
             return ''
         log.seek(0)
@@ -188,7 +176,6 @@ def _capture(command, wt, output, task_id, states, *, project=None):
 
 
 def _stop(process):
-    """TERM the capture's group, then KILL whatever outlives the grace."""
     if not _signal_group(process, signal.SIGTERM):
         return
     deadline = time.monotonic() + CAPTURE_GRACE
@@ -201,7 +188,6 @@ def _stop(process):
 
 
 def _signal_group(process, sig):
-    """Send `sig` to the capture's group: False when the group is empty."""
     try:
         os.killpg(process.pid, sig)
     except ProcessLookupError:
@@ -210,7 +196,6 @@ def _signal_group(process, sig):
 
 
 def _push(wt, output, files, task_id):
-    """An empty index and commit-tree make one root commit, without a local branch."""
     with tempfile.TemporaryDirectory() as tmp:
         stage = Path(tmp) / 'media'
         sh(['git', 'worktree', 'add', '--detach', str(stage)], cwd=wt)
@@ -459,22 +444,16 @@ def _execution_fingerprint(project):
 
 
 def prepare(project, wt, task_id, record_note=None, evidence_states=()):
-    """Reuse evidence only for this exact candidate, base, and configuration.
-
-    Keep the receipt in the worktree's git directory, outside candidate files.
-    Both the pre-PR review and PR creation call this entry point.
-    """
+    """Keep the receipt in the worktree's git directory, outside candidate files."""
     return _prepare(project, wt, task_id, record_note, evidence_states)[0]
 
 
 def _stamp(section, sha):
-    """Name the candidate a section shows on its first line under the heading."""
     return section.replace('## Evidence\n\n',
                            f'## Evidence\n\nCaptured at {sha[:12]}\n\n', 1)
 
 
 def _prepare(project, wt, task_id, record_note, evidence_states):
-    """`prepare()`'s section with why its capture failed, empty on success."""
     cfg = merge_config(project)
     if not cfg.ui_paths or not matches(wt, cfg.ui_paths):
         return '', ''
@@ -513,8 +492,7 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
 
 
 def _touched(wt, captured, patterns):
-    """Whether the change from the captured sha to HEAD touches `patterns`;
-    a sha this worktree cannot read counts as touched."""
+    """A sha this worktree cannot read counts as touched."""
     try:
         paths = sh(['git', 'diff', '--name-only', '-z', captured, 'HEAD'], cwd=wt)
     except RuntimeError:
@@ -524,13 +502,6 @@ def _touched(wt, captured, patterns):
 
 
 def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()):
-    """The Evidence section after a fix round moved the candidate, or None
-    when `evidence`, the pull request's current section, still stands.
-
-    Capture again only when the change since the sha `evidence` names
-    touches `ui_paths`. When that capture fails, the old section stays,
-    headed by one line naming both shas and the failure.
-    """
     cfg = merge_config(project)
     if not cfg.ui_paths:
         return None
