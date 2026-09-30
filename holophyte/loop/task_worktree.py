@@ -1,4 +1,3 @@
-"""A task worktree's `.env`, capture `.gitignore`, setup run and retirement."""
 import os
 import subprocess
 import tempfile

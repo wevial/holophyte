@@ -1,4 +1,3 @@
-"""Same-process worker ownership across exec, beside the target store."""
 import ast
 import json
 import os

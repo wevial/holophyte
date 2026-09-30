@@ -1,4 +1,3 @@
-"""Claiming a ticket and cutting its worktree."""
 import os  # noqa: F401
 import re
 import subprocess

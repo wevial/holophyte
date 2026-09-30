@@ -1,4 +1,3 @@
-"""The self re-exec and the loop unit start."""
 import os
 import shutil
 import subprocess

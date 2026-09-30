@@ -1,4 +1,3 @@
-"""A store-mode project claims from the store's queue."""
 from time import time
 
 import store

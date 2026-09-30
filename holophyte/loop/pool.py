@@ -1,4 +1,3 @@
-"""Worker pool: the scheduler mirrors and reconciles; children claim one task."""
 import os
 import subprocess
 import sys

@@ -1,4 +1,3 @@
-"""The run dispatch wrapper and its crash containment."""
 import traceback
 from pathlib import Path
 from time import time
