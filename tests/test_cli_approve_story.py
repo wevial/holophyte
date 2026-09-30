@@ -20,6 +20,7 @@ from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path ins
 from story_fixture import witness_path, write_children, write_story  # noqa: E402
 
 import holophyte.cli.cli  # noqa: E402
+import holophyte.story.witness  # noqa: E402
 import linear_provider  # noqa: E402
 import provider  # noqa: E402
 from tests.test_cli_native_update import NATIVE, no_linear  # noqa: E402
@@ -45,6 +46,8 @@ class Witness{n}Tests(unittest.TestCase):
 LEDGER = ("SELECT witnessKey, mainSha, verdict, redKind, verifier"
           " FROM witnessResults ORDER BY id")
 APPROVALS = "SELECT note FROM interventions WHERE action = 'approve_story'"
+UNIT_VARIABLE = "HOLO_FIXTURE_CREDENTIAL"
+UNIT_VALUE = "loop-unit-credential-7f3a"
 
 
 def git(cwd, *args):
@@ -89,6 +92,26 @@ class ApproveStoryFixture(ConfigTestCase):
             except SystemExit as exited:
                 status = exited.code
         return status, out.getvalue().splitlines()
+
+    def serve_env(self, text):
+        """The loop unit's `serve.env` under the host home, which the unit
+        loads and an operator shell does not."""
+        unit = self.home / self.target.name
+        unit.mkdir(parents=True, exist_ok=True)
+        (unit / "serve.env").write_text(text)
+
+    @contextlib.contextmanager
+    def recording_launcher(self):
+        """Every witness command fails an assertion without running; `seen`
+        holds `UNIT_VARIABLE` as each launch found it."""
+        seen = []
+
+        def launch(target, command, cwd, timeout):
+            seen.append(os.environ.get(UNIT_VARIABLE))
+            return 1, "FAILED (failures=1)\n"
+
+        with patch.object(holophyte.story.witness, "_verify_command", launch):
+            yield seen
 
     def store(self, query, params=()):
         with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
@@ -228,6 +251,42 @@ class NativeApproveStoryTests(ApproveStoryFixture):
         self.assertEqual(status, 1)
         self.assertIn("no witness W9", lines[0])
         self.assertEqual(self.store(LEDGER), [])
+
+    def test_witnesses_launch_with_the_loop_units_environment_only(self):
+        self.serve_env(f"{UNIT_VARIABLE}={UNIT_VALUE}\n")
+        parent = self.filed(SLUG, [FAILS_AN_ASSERTION] * 2)
+        self.assertNotIn(UNIT_VARIABLE, os.environ)
+
+        with self.recording_launcher() as seen:
+            status, lines = self.approve(parent)
+
+        self.assertEqual(status, 0, lines)
+        self.assertEqual(seen, [UNIT_VALUE, UNIT_VALUE])
+        self.assertNotIn(UNIT_VARIABLE, os.environ)
+
+    def test_an_approval_refusal_line_redacts_a_unit_value(self):
+        self.serve_env(f"{UNIT_VARIABLE}={UNIT_VALUE}\n")
+        parent = self.filed(SLUG, [FAILS_AN_ASSERTION] * 2)
+
+        status, lines = self.approve(parent, "--baseline-green", UNIT_VALUE)
+
+        self.assertEqual(status, 1)
+        self.assertIn("no witness [redacted]", lines[0])
+        self.assertNotIn(UNIT_VALUE, "\n".join(lines))
+
+    def test_a_witness_pass_refusal_line_redacts_a_unit_value(self):
+        self.serve_env(f"{UNIT_VARIABLE}={UNIT_VALUE}\n")
+        parent = self.filed(SLUG, [FAILS_AN_ASSERTION] * 2)
+        with self.recording_launcher():
+            self.assertEqual(self.approve(parent)[0], 0)
+        status, lines = self.cli("--hold", "--note", f"rotating {UNIT_VALUE}")
+        self.assertEqual(status, 0, lines)
+
+        status, lines = self.cli("--witness-pass", parent)
+
+        self.assertEqual(status, 1)
+        self.assertIn("held: rotating [redacted]", lines[0])
+        self.assertNotIn(UNIT_VALUE, "\n".join(lines))
 
     def test_a_red_kind_other_than_exception_is_a_usage_error(self):
         with contextlib.redirect_stderr(io.StringIO()):
