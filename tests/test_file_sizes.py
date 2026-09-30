@@ -36,7 +36,6 @@ OVER = {}
 PINNED = {
     "holophyte/babysit/babysitter.py": 1107,
 
-    "holophyte/loop/claim.py": 1001,
 
     "tests/test_claim.py": 1692,
 

@@ -2,6 +2,7 @@
 from unittest.mock import patch
 
 import holophyte.loop.claim
+import holophyte.loop.task_worktree
 from tests.fake_agent import _git
 from tests.loop_fixture import BRANCH, LoopFixture, StubProvider, a_task
 
@@ -25,14 +26,14 @@ class WorktreeHooksTests(LoopFixture):
     def test_hooks_config_failure_records_detail_and_discards_fresh_worktree(self):
         self.configure('[worktree]\nsetup = ["mkdir .githooks"]\n')
         provider = StubProvider(a_task())
-        original = holophyte.loop.claim.sh
+        original = holophyte.loop.task_worktree.sh
 
         def fail_config(args, *a, **kw):
             if args[:2] == ["git", "config"]:
                 raise RuntimeError("git config: cannot lock config")
             return original(args, *a, **kw)
 
-        with patch.object(holophyte.loop.claim, "sh", side_effect=fail_config):
+        with patch.object(holophyte.loop.task_worktree, "sh", side_effect=fail_config):
             fake, _ = self.loop(provider=provider)
         self.assertEqual(fake.roles, [])
         self.assertNotIn(BRANCH, self.branches())
