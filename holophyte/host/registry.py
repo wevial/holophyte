@@ -1,22 +1,3 @@
-"""holophyte.host.registry: the host registry, `HOLOPHYTE_HOME/host.toml`.
-
-One file per host lists the projects the host daemon serves and the host
-sweep watches, by path; everything else about a project -- its route and
-unit name (`[serve] name`), its thresholds, its store -- stays in that
-project's own config and state directory. `Host.locate()` finds the file,
-`Host.projects()` enumerates it, re-reading it only when its stat changed,
-and `register()` / `unregister()` are the only writers, each rewriting the
-file whole through an exclusive temporary file and a rename: two concurrent
-writers queue on the temporary file instead of losing each other's entry,
-and a crash leaves the old file or the new one.
-
-A route name resolves through `Host.project()` only, never through a path
-built from outside input; `registry_of()` answers whether a project is the
-host sweep's to watch. `settings()` is the file's own keys, typed:
-`[serve] bind`, `machine_token_file` and `actions`, `[console] daemons`,
-`[supervisor] sweep_sec`. `native_key_conflict()` alone opens stores, each
-read-only: a native board's `KEY` is its own on the host (KO-752).
-"""
 import collections
 import contextlib
 import dataclasses
@@ -31,18 +12,14 @@ from holophyte.config.project import DEFAULT_HOLOPHYTE_HOME, Project
 from holophyte.redact import values_held
 
 HOST_FILE = "host.toml"
-# The known shape of the file: a key outside it is refused, as the project
-# config refuses one, so a typo is not a knob the operator believes is set.
+# Any other key is refused, so a typo is not a knob the operator believes set.
 HOST_KEYS = {"serve": {"bind", "machine_token_file", "actions"},
              "supervisor": {"sweep_sec"}, "console": {"daemons"}}
-# The host sweep's interval when `[supervisor] sweep_sec` is absent: the
-# timer's `OnUnitActiveSec`.
 SWEEP_SEC = 60
 HostSettings = collections.namedtuple(
     "HostSettings", ("bind", "machine_token_file", "actions", "sweep_sec",
                      "daemons"))
-# How long a writer waits for another writer's temporary file to go before
-# it gives up naming the file: a crash mid-write is the one way it stays.
+# A crash mid-write is the one way another writer's temporary file stays.
 WRITE_WAIT_SEC = 10
 WRITE_POLL_SEC = 0.05
 UNIT_TARGET_KEYS = frozenset(("HOLOPHYTE_TARGET", "HOLOPHYTE_SERVE_ADDRESS",
@@ -53,21 +30,16 @@ TOMLKIT_MISSING = ("[holo2] project add and remove need the tomlkit module to"
 
 
 class HostError(ValueError):
-    """A registry that cannot be used as written, or a refused edit."""
+    pass
 
 
 def home():
-    """The host's state directory, `HOLOPHYTE_HOME` or `~/.holophyte`."""
     return Path(os.environ.get("HOLOPHYTE_HOME")
                 or DEFAULT_HOLOPHYTE_HOME).expanduser()
 
 
 @dataclasses.dataclass(frozen=True)
 class HostProject:
-    """One registry entry: its name from its own config, its resolved path,
-    the `Project` located without adoption, and why the config could not
-    give a name (`name` is then None and nothing routes to it)."""
-
     name: str | None
     path: Path
     target: Project
@@ -119,7 +91,6 @@ def _stamp(path):
 
 
 def _paths(document, source):
-    """The `[[project]]` paths of a parsed registry, its tables checked."""
     for table, value in document.items():
         if table == "project":
             continue
@@ -144,13 +115,11 @@ def _paths(document, source):
 
 
 def _entry(path):
-    """The entry for `path`; a config that cannot give a name -- refused as
-    written, unreadable, not UTF-8 -- is this entry's `error`, never the
-    registry's, so one bad project does not hide the others."""
     target = Project.locate(path, adopt=False)
     try:
         return HostProject(serve_config(target).name, path, target)
     except SystemExit as bad:
+        # A config that gives no name is this entry's error, never the registry's.
         return HostProject(None, path, target, str(bad))
     except Exception as bad:
         return HostProject(None, path, target,
@@ -158,9 +127,6 @@ def _entry(path):
 
 
 def settings(host):
-    """The registry's own keys over their defaults; HostError naming the
-    key when one is the wrong shape. `machine_token_file` is a path, `~`
-    expanded, a relative one taken against the home."""
     table = host.table()
     serve = table.get("serve", {})
     bind = serve.get("bind")
@@ -204,24 +170,13 @@ def _daemons(table, source):
 
 
 class Host:
-    """The registry at `home()/host.toml`, read on demand.
-
-    `projects()` stats the file on every call and re-reads it, rebuilding
-    each `Project` (and so re-reading each config), only when the stat
-    moved: an add or a remove is seen at the next call without a restart.
-    """
-
     def __init__(self, path):
         self.path = Path(path)
-        # `(stamp, table, projects)`, swapped whole by one assignment so a
-        # request thread never pairs one reload's table with another's
-        # projects under the daemon's threading server.
+        # Swapped whole: a request thread never pairs two reloads' table and entries.
         self._state = (None, {}, ())
 
     @classmethod
     def locate(cls, home_dir=None):
-        """The registry of `home_dir`, the host's home by default; the file
-        need not exist yet."""
         return cls(Path(home_dir or home()) / HOST_FILE)
 
     @property
@@ -229,27 +184,16 @@ class Host:
         return self.path.parent
 
     def table(self):
-        """The parsed file, `{}` when there is none."""
         return self._current()[1]
 
     def projects(self):
-        """The registered projects in file order.
-
-        Two entries whose configs give one name are refused naming both,
-        the check the daemon and the sweep make at every start and reload.
-        """
         return self._current()[2]
 
     def project(self, name):
-        """The entry named `name`, None when the registry has none."""
         return next((entry for entry in self.projects()
                      if name is not None and entry.name == name), None)
 
     def _current(self):
-        # The stamp covers each registered project's config too: a hand edit
-        # (a native move, a mode flip) rebuilds that entry's `Project`. A
-        # rebuild stamps the new entries' configs before parsing them, so an
-        # edit made mid-rebuild is not lost.
         state = self._state
         registry = _stamp(self.path)
         stamp = (registry, tuple(_stamp(entry.target.config_path)
@@ -264,6 +208,7 @@ class Host:
                 tomllib.TOMLDecodeError) as bad:
             raise HostError(f"[holo2] unreadable {self.path}: {bad}") from None
         paths = _paths(table, self.path)
+        # Stamped before parsing, so a config edited mid-rebuild is seen next call.
         configs = tuple(_stamp(Project.locate(path, adopt=False).config_path)
                         for path in paths)
         entries = tuple(_entry(path) for path in paths)
@@ -288,10 +233,6 @@ def _refuse_duplicates(entries, source):
 
 
 def registry_of(target, host=None):
-    """The registry file that lists `target`'s path, None when none does or
-    there is no registry; HostError when the registry cannot be read. The
-    loop's supervisor spawn and a hand `PROJECT --supervise` ask it: a
-    registered project is the host sweep's to watch."""
     host = Host.locate() if host is None else host
     if not host.path.exists():
         return None
@@ -301,15 +242,10 @@ def registry_of(target, host=None):
 
 
 def watched_line(target):
-    """None when the registry does not list `target`; otherwise the line
-    saying the host sweep watches it, which refuses a hand `PROJECT
-    --supervise` and stops the loop's supervisor spawn. A registry that
-    cannot be read answers with its error: it cannot say the host sweep is
-    not watching, and two watchers on one store would manufacture the second
-    strike the two-strike rule demands."""
     try:
         registry = registry_of(target)
     except HostError as bad:
+        # Unreadable cannot rule out the host sweep: two watchers fake strikes.
         return f"{bad}; no supervisor for {target.path} beside it"
     if registry is None:
         return None
@@ -318,21 +254,17 @@ def watched_line(target):
 
 
 def already_registered(host, entry):
-    """The refusal naming `entry` as already in the registry."""
     return HostError(f"[holo2] {entry.name or '(no name)'} {entry.path} is"
                      f" already registered in {host.path}")
 
 
 def registered_at(host, target):
-    """The entry registered at `target`'s resolved path, None when none."""
     path = Path(target.path).resolve()
     return next((entry for entry in host.projects() if entry.path == path),
                 None)
 
 
 def check_new(host, target):
-    """Refuse registering `target` when its path or name is already an
-    entry, naming the entry; returns the name it would register under."""
     name = serve_config(target).name
     path = Path(target.path).resolve()
     for entry in host.projects():
@@ -342,16 +274,6 @@ def check_new(host, target):
 
 
 def native_key_conflict(target, host=None):
-    """The first reason `target`'s native `[board] prefix` is not its own on
-    the host, as one line; None when it is, when `target` is not native,
-    and when its table cannot be read: the table's own reader refuses that.
-
-    Another registry entry whose native board has the same key conflicts,
-    and so does any registered store -- `target`'s own included, registered
-    or not -- holding a Linear ticket `KEY-n`: one whose board id is not
-    its identifier, as a native ticket's is. An entry whose config or store
-    cannot be read is skipped, as `project list` skips it.
-    """
     key = _native_key(target)
     if key is None:
         return None
@@ -379,8 +301,6 @@ def native_key_conflict(target, host=None):
 
 
 def _native_key(target):
-    """`target`'s native `[board] prefix`, None when it has none or its
-    config cannot be read."""
     try:
         if board_mode(target).kind != "native":
             return None
@@ -390,8 +310,6 @@ def _native_key(target):
 
 
 def _linear_identifier(target, key):
-    """A `KEY-n` identifier of a Linear ticket in `target`'s store, None
-    when it holds none or cannot be read."""
     import store.read
     if not target.store_path.exists():
         return None
@@ -411,8 +329,6 @@ def _linear_identifier(target, key):
 
 
 def register(host, target):
-    """Append `target`'s path to the registry, checked against the file as
-    it stands once this writer holds the temporary file."""
     def edit(document, tomlkit):
         check_new(host, target)
         entries = document.get("project") or tomlkit.aot()
@@ -422,18 +338,10 @@ def register(host, target):
 
 
 def unregister(host, key):
-    """Drop the entry whose `[serve] name` or registered path is `key`; no
-    store is touched. Returns the entry's `(name, path)`, name None when
-    its config gives none.
-
-    The entry is found in the file as parsed here, each config read on its
-    own, never through `projects()`: an entry whose config cannot give a
-    name, or two entries that give one name, are what a remove repairs, and
-    `projects()` refuses the second. A key matching two entries is refused
-    naming both, so the operator names the path."""
     removed = []
 
     def edit(document, tomlkit):
+        # Not `projects()`: a remove repairs the duplicates `projects()` refuses.
         entries = [_entry(Path(table["path"]).resolve())
                    for table in document.get("project", [])]
         path = Path(key).expanduser().resolve()
@@ -459,16 +367,13 @@ def unregister(host, key):
 
 
 def _rewrite(host, edit, wait=WRITE_WAIT_SEC):
-    """Hold `host.toml.tmp` by exclusive create, re-read the registry, apply
-    `edit(document, tomlkit)`, write the result into the held file and
-    rename it over the registry. A second writer waits for the first's
-    temporary file to go, so it edits the file the first one wrote."""
     try:
         import tomlkit
     except ImportError as missing:
         raise SystemExit(TOMLKIT_MISSING) from missing
     host.home.mkdir(parents=True, exist_ok=True)
     temporary = host.path.with_name(host.path.name + ".tmp")
+    # Held by exclusive create: a second writer waits, then edits the first's file.
     handle = _hold(temporary, wait)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as out:
