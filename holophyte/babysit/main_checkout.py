@@ -1,12 +1,3 @@
-"""The detached main checkout the babysitter's main-side verify runs in.
-
-A baseline that fails on missing packages is not a baseline (KO-643): the
-checkout gets what a task worktree has before the verify runs. Each
-`[worktree] carry` directory the task worktree holds is linked in at the
-same relative path; a carry entry the task worktree lacks runs the target's
-`[worktree] setup` in the checkout instead, through the claim's own runner
-and timeout. The run event names what was carried and what ran.
-"""
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -20,8 +11,7 @@ from holophyte.loop.runs import heartbeat_while
 
 @contextmanager
 def detached_main(target, conn, run_id, beat_s, wt, sha):
-    """A prepared detached checkout of `sha` beside `wt`, removed on exit
-    -- its links first, since the directories behind them are `wt`'s."""
+    """On exit the links go first: the directories behind them are `wt`'s."""
     wt = Path(wt)
     with tempfile.TemporaryDirectory(prefix="main-verify-", dir=wt.parent) as tmp:
         detached = Path(tmp) / "tree"
@@ -41,7 +31,6 @@ def detached_main(target, conn, run_id, beat_s, wt, sha):
 
 
 def _prepare(target, conn, run_id, beat_s, wt, detached, sha):
-    """Carry or set up `detached` like a task worktree; returns the links."""
     entries = carry_directories(target)
     carried = [entry for entry in entries if (wt / entry).is_dir()]
     missing = [entry for entry in entries if entry not in carried]
