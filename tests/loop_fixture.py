@@ -258,7 +258,8 @@ class LoopFixture(unittest.TestCase):
     def transitions(self):
         """The edges the run's narrative stream says it walked."""
         return [summary.split(":")[0] for (summary,) in
-                self.read("SELECT summary FROM runEvents ORDER BY seq")]
+                self.read("SELECT summary FROM runEvents"
+                          " WHERE kind = 'phase_change' ORDER BY seq")]
 
     def branches(self):
         return [line[2:].strip() for line in

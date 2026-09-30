@@ -53,6 +53,8 @@ LIST_ITEM_RE = re.compile(rf"^(?:{BULLET}|\d+[.)])\s+(.*)$")
 # Linear rewrites "**What:**" as "**What: **" on every body patch.
 BOLD_KEY_RE = re.compile(r"^(?:\*\*)?(What|Why|How):(?:[ \t]*\*\*)?\s*(.*)$")
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
+ORCHESTRATION_RE = re.compile(r"^Orchestration:\s*(.*?)\s*$")
+ORCHESTRATION_MODES = ("off", "subagents", "workflow")
 LINEAR_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}|<[^<>\n\s][^<>\n]*>")
 # Linear wraps file names and ticket ids in links on save; only links unwrap.
@@ -196,6 +198,7 @@ class Ticket:
         self.notes = []
         self.estimate_min = None
         self.depends_on = None
+        self.orchestration = None
         self.open_questions_none = False
 
 
@@ -242,9 +245,10 @@ def parse(text):
     est = None
     for ln in t.sections.get("Estimate & dependencies", "").splitlines():
         m = ESTIMATE_RE.match(ln.strip())
-        if m:
-            est = m
-            break
+        est = est or m
+        mode = ORCHESTRATION_RE.match(ln.strip())
+        if mode and t.orchestration is None:
+            t.orchestration = mode.group(1)
     t.estimate_min = int(est.group(1)) if est else None
     t.depends_on = _deps(est.group(2)) if est else None
     oq = COMMENT_RE.sub("", t.sections.get("Open questions", ""))
@@ -719,6 +723,11 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
         for d in t.depends_on:
             if not LINEAR_ID_RE.match(d):
                 p.append(f"'Depends on' entry is not a ticket ID or \"none\": {d}")
+
+    if t.orchestration is not None and t.orchestration not in ORCHESTRATION_MODES:
+        p.append(f"'Estimate & dependencies' line 'Orchestration: "
+                 f"{t.orchestration}' must name one of "
+                 f"{', '.join(ORCHESTRATION_MODES)}")
 
     if not t.open_questions_none:
         p.append("'Open questions' must read exactly '- None' before the "

@@ -292,6 +292,18 @@ class ValidateTests(unittest.TestCase):
                            "Estimate: half a day"),
             "'Estimate & dependencies' must read")
 
+    def test_orchestration_line_outside_the_modes_is_named(self):
+        self.assert_problems_contain(
+            FILLED.replace("Depends on: none\n",
+                           "Depends on: none\nOrchestration: sometimes\n"),
+            "'Orchestration: sometimes'")
+
+    def test_orchestration_line_with_a_mode_or_absent_is_valid(self):
+        with_mode = FILLED.replace(
+            "Depends on: none\n", "Depends on: none\nOrchestration: subagents\n")
+        self.assertEqual(tt.validate(tt.parse(with_mode)), [])
+        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+
     def test_autolinked_file_name_is_not_a_placeholder(self):
         # Linear rewrites a bare "factory.py:1632" into this exact link.
         linked = FILLED.replace(
