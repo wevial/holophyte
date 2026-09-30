@@ -1,4 +1,3 @@
-"""Cooperative run stops and their durable continuation at stage boundaries."""
 import json
 import socket
 from contextvars import ContextVar
@@ -9,17 +8,13 @@ from holophyte.config.project import Project, worktree_path
 from store.schema import _transaction
 
 _checkpoint = ContextVar("pause_checkpoint", default=None)
-# State every later checkpoint of one run carries, whichever boundary saved
-# it: the review route a not-reproduced declaration took (KO-657).
 _route = ContextVar("pause_route", default=None)
 
-# The intervention actions that end a run now; `abort_close` also closes the
-# run's pull request once the abort is finished (KO-611).
 ABORTS = ("abort", "abort_close")
 
 
 def stop_if_requested(conn, run_id, phase):
-    """Preserve work and end a marked run at its next phase; never kill a turn."""
+    """End a marked run at its next phase; never kill a turn."""
     if conn is None or run_id is None:
         return
     row = conn.execute(
@@ -60,12 +55,10 @@ def stop_if_requested(conn, run_id, phase):
 
 
 class Aborted(store.RunEnded):
-    """This worker ended its own run `abandoned` for an operator's `--abort`
-    or the board's cancel."""
+    pass
 
 
 def abort_requested(conn, run_id):
-    """Whether the live run carries an operator's pending abort."""
     return conn.execute(
         "SELECT 1 FROM runs r JOIN interventions i ON i.id = r.stopRequested"
         " WHERE r.id = ? AND r.endedAt IS NULL"
@@ -74,12 +67,6 @@ def abort_requested(conn, run_id):
 
 
 def end_aborted(conn, run_id):
-    """Commit the tree as WIP, push it when a pull request is open, then end
-    the run `abandoned` with the note and park the ticket -- or, for the
-    board's cancel (trigger `linear_cancelled`, KO-741), walk it `abandoned`
-    with no question; the turn's process group is the caller's to have
-    killed. An `abort_close` then comments on and closes the pull request;
-    nothing is merged or deleted, and the branch and worktree are kept."""
     from holophyte.loop.gates import InfraFailure
     from holophyte.pr import github
     (branch, ticket_id, repo, note, pr_url, action, source, trigger,
@@ -109,9 +96,7 @@ def end_aborted(conn, run_id):
         else:
             store.walk_ticket(conn, ticket_id, "blocked_on_operator")
             store.set_question(conn, ticket_id, note)
-    # Closed only once the run has ended, so a reconcile that sees the pull
-    # request closed never finds a parked run to reject. Signed by the
-    # factory, not a model: the operator decided this.
+    # Closed after the run ends, so a reconcile never finds a parked run to reject.
     if pr_url and action == "abort_close":
         from holophyte.babysit.babysitter import COMMENT_HEADER
         who = "the operator" if source == "human" else f"the {source}"
@@ -125,8 +110,6 @@ def end_aborted(conn, run_id):
 
 
 def close_pull(target, conn, run_id, pr_url, body):
-    """Post `body` on the pull request, then close it. A refusal of either
-    is a warning event on the run and a printed line; the abort stands."""
     from holophyte.loop.gates import InfraFailure
     from holophyte.pr import github
     from holophyte.pr.pr_status import parse_pr_url
@@ -146,7 +129,6 @@ def close_pull(target, conn, run_id, pr_url, body):
 
 
 def preserve(target, branch, why="pause"):
-    """Reuse the reclaim path's environment exclusions and staging policy."""
     from holophyte.environment_git import factory_identity
     from holophyte.loop.claim import paths, sh, stage_work, unstage_environment
     wt = worktree_path(target, branch)
@@ -162,18 +144,15 @@ def preserve(target, branch, why="pause"):
 
 
 def boundary(conn, run_id, phase, **state):
-    """Save the continuation inputs before honoring a pending stop."""
     _checkpoint.set((conn, run_id, phase, state))
     stop_if_requested(conn, run_id, phase)
 
 
 def keep_route(conn, run_id, **state):
-    """Carry `state` in every checkpoint this run saves from now on."""
     _route.set((conn, run_id, state))
 
 
 def continuation(conn, run_id):
-    """Read a prior paused run released by --resume, without consuming it."""
     if conn is None:
         return None
     row = conn.execute(
@@ -191,7 +170,6 @@ def continuation(conn, run_id):
 
 
 def command(target, identifier, note, *, resume=False):
-    """CLI adapter: request a stop, or release a paused continuation to claim."""
     from holophyte.cli.operator import _operator_store, _ticket_by_identifier
     conn = _operator_store(target)
     try:
@@ -212,11 +190,6 @@ def command(target, identifier, note, *, resume=False):
 
 
 def resume_paused(target, conn, ticket_id, note):
-    """Release the ticket's paused run to claim, `note` on its resume
-    intervention, then clear its pull request's pause notice; the run's
-    id. `--resume` and `POST /actions/resume` both call this (KO-609);
-    ValueError or `store.ResumeRefused`, before any write, when the
-    ticket's latest run did not end paused."""
     with _transaction(conn):
         (run_id,) = conn.execute("SELECT COALESCE(activeRunId, lastRunId)"
                                  " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
@@ -236,8 +209,6 @@ def resume_paused(target, conn, ticket_id, note):
 
 
 def abort_command(target, identifier, note, *, provider, close=False):
-    """CLI adapter: `abort_run()` on the ticket's latest run, printing
-    whether it ended here or waits for its worker's next heartbeat."""
     from holophyte.cli.operator import _operator_store, _ticket_by_identifier
     conn = _operator_store(target)
     try:
@@ -262,13 +233,6 @@ def abort_command(target, identifier, note, *, provider, close=False):
 
 def abort_run(target, conn, run_id, note, *, provider, close=False,
               source="human", trigger="manual"):
-    """Record the abort (`close`: and the pull request's close) with its
-    `source` and `trigger`, then end the run here when no worker can still
-    touch its tree, and project the park to the board as the worker path
-    does; True when it ended here, False when a live worker ends it at its
-    next heartbeat. `--abort` and `POST /actions/abort` both call this
-    (KO-612), and the store-mode sweep for a board cancel (KO-741);
-    ValueError, before any write, when the store refuses the abort."""
     from holophyte.board import projection
     store.abort(conn, run_id, note, source=source, close=close,
                 trigger=trigger)
@@ -285,11 +249,7 @@ def abort_run(target, conn, run_id, note, *, provider, close=False,
 
 
 def worker_gone(conn, run_id):
-    """Whether no worker can still write the run's tree: the run is parked,
-    or it was claimed on this host by a recorded process that no longer
-    exists. A stale heartbeat proves nothing -- a slow worker, another
-    host's pid, or a run with no recorded pid may still be writing -- so
-    those leave the abort pending rather than commit under a live writer."""
+    """A stale heartbeat proves nothing, so an unproven worker keeps the abort."""
     from holophyte.host.supervisor_lock import pid_alive
     phase, host, pid = conn.execute(
         "SELECT phase, host, workerPid FROM runs WHERE id = ?",
@@ -300,8 +260,7 @@ def worker_gone(conn, run_id):
 
 
 def pending_requests(conn):
-    """Pending stops as run id -> (action, note); older read-only stores
-    have no request column until their writer migrates."""
+    """Older read-only stores have no request column until their writer migrates."""
     columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
     if "stopRequested" not in columns or not conn.execute(
             "SELECT 1 FROM sqlite_master WHERE name = 'interventions'").fetchone():
@@ -312,7 +271,6 @@ def pending_requests(conn):
 
 
 def fix_state(sha, fixes, timed_out, addressed, model, pass_no, review_follows):
-    """Serializable inputs for finishing an already-completed babysit fix turn."""
     return dict(step="babysit_fix", sha=sha, fixes=str(fixes), timed_out=timed_out,
                 addressed=[(n, asdict(thread), reason)
                            for n, thread, reason in addressed],
@@ -322,7 +280,6 @@ def fix_state(sha, fixes, timed_out, addressed, model, pass_no, review_follows):
 def resume_babysit_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                        beat_s, pull, ticket, verify_cmd, contracts, budget_min,
                        carried):
-    """Finish the preserved fix before reading another babysit pass."""
     from holophyte.babysit.babysitter import _fix_threads
     from holophyte.pr.github import Comment, Thread
     row = conn.execute("SELECT payload FROM runEvents WHERE runId = ?"

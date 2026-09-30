@@ -1,17 +1,3 @@
-"""The verify gate: a ticket's command in, a red or green report out.
-
-Task-line parsing, the `&&`-clause instrumentation that makes a failure
-attributable, the four report builders, the process-group cap the gate and
-the agent dispatch both run under, `run_verify` itself, and the two failure
-classes the loop's close-out reads. Pure: strings in, report out, one
-subprocess call -- or none, for a run's repeat of a pass the per-process
-record cites. Nothing here knows the loop, the store or the target; the
-one constant it shares with worktree setup, `VERIFY_TIMEOUT`, stays in
-`holophyte.config.reader`, which is the default `setup_timeout_sec` falls back to.
-
-Second slice of the phase-2 module split; moved verbatim from `factory.py`,
-which imports back the names its remaining call sites use.
-"""
 import contextlib
 import fcntl
 import os
@@ -26,7 +12,7 @@ import ticket_template
 from holophyte.config.reader import VERIFY_TIMEOUT
 from holophyte.config.worktree_settings import carry_directories
 
-DEFAULT_BUDGET_MIN = 20  # per-task wall-clock cap unless the line says "(N min)"
+DEFAULT_BUDGET_MIN = 20
 
 
 TASK_RE = re.compile(r"^[-*] \[ \] (.+)$", re.M)
@@ -35,7 +21,6 @@ VERIFY_RE = re.compile(r"\(verify:\s*(.+?)\)\s*$")
 
 
 def parse_task(line):
-    """Split 'do thing (verify: cmd) (15 min)' -> text, verify cmd, budget."""
     text = line.strip()
     budget, verify = DEFAULT_BUDGET_MIN, None
     m = BUDGET_RE.search(text)
@@ -49,26 +34,13 @@ def parse_task(line):
     return text, verify, budget
 
 
-# Markers the instrumented verify script prints around each `&&` clause, so a
-# failure can be attributed to the clause that produced it.
 CLAUSE_MARK = "__holo2_verify_clause__"
 FAIL_MARK = "__holo2_verify_failed__"
 
-# Zero-test summaries a runner prints while still exiting 0 — a gate that went
-# green having verified nothing. Deliberately narrow: only the standard
-# unittest and pytest phrasings, anchored to their own line, with no
-# natural-language inference about other runners.
 VACUOUS_RE = re.compile(r"^\s*(?:Ran 0 tests\b|collected 0 items\b)", re.M)
 
 
-def split_and_clauses(cmd, *, allow_or=False):  # noqa: C901 -- hand-written tokenizer; slice 4b owns it
-    """Split a verify command on its top-level `&&` operators.
-
-    Returns the clause list, or None when the command uses shell constructs
-    whose meaning per-clause instrumentation could change (`||`, `;`, `&`,
-    newlines, heredocs, backticks) or whose quoting/nesting is unbalanced.
-    Those commands are run verbatim instead. Block classification allows
-    `||` with allow_or=True so explicit failure tolerance stays eligible."""
+def split_and_clauses(cmd, *, allow_or=False):  # noqa: C901 - hand-written shell tokenizer
     if "<<" in cmd:
         return None
     clauses, buf = [], []
@@ -94,9 +66,8 @@ def split_and_clauses(cmd, *, allow_or=False):  # noqa: C901 -- hand-written tok
             if depth < 0:
                 return None
         elif ch == "#" and (i == 0 or cmd[i - 1].isspace() or cmd[i - 1] in "&("):
-            # A comment runs to end of line, so any `&&` inside it is text.
-            # Only a trailing comment is safe to keep: a newline would resume
-            # code, and inside `(...)` the comment would swallow the closer.
+            # Only a trailing comment is safe: a newline resumes code, and
+            # inside `(...)` the comment would swallow the closer.
             if depth or "\n" in cmd[i:]:
                 return None
             buf.append(cmd[i:])
@@ -108,7 +79,7 @@ def split_and_clauses(cmd, *, allow_or=False):  # noqa: C901 -- hand-written tok
                 buf = []
                 i += 2
                 continue
-            if ch == "&" and prev not in "><":  # background job
+            if ch == "&" and prev not in "><":
                 return None
             if (cmd[i:i + 2] == "||" and not allow_or) or ch in ";\n":
                 return None
@@ -121,14 +92,6 @@ def split_and_clauses(cmd, *, allow_or=False):  # noqa: C901 -- hand-written tok
 
 
 def instrumented_script(clauses, *, stop_on_failure=True):
-    """One shell script that runs clauses in order. Chains and newline blocks
-    stop at the first failure by default.
-    Failures retain the original exit status. Clauses stay in a single shell,
-    so `cd` and exported variables still carry across them.
-
-    The failure is reported from an EXIT trap reading a clause counter, so a
-    clause that ends the shell itself (`exit 7`) is still attributed rather
-    than escaping as a bare non-zero status."""
     parts = ["__holo2_clause=0",
              "trap '__holo2_rc=$?; [ \"$__holo2_rc\" -eq 0 ] || "
              "printf \"%s\\n\" \"{} $__holo2_clause $__holo2_rc\"' EXIT"
@@ -149,12 +112,6 @@ def instrumented_script(clauses, *, stop_on_failure=True):
 
 
 def parse_clause_output(output):
-    """Split marked output into per-clause text. Returns
-    (per_clause, failed, cleaned) where failed is (clause index, exit code).
-
-    A clause whose output has no trailing newline glues the next marker onto
-    its last line ("first__holo2_verify_clause__ 2"), so markers are split
-    off mid-line: the prefix stays with the clause that printed it."""
     per_clause, failed, cleaned, current = {}, None, [], None
 
     def emit(text):
@@ -163,7 +120,6 @@ def parse_clause_output(output):
             per_clause[current].append(text)
 
     for line in output.splitlines():
-        # Peel off any output a marker got glued onto.
         cut = len(line)
         for mark in (CLAUSE_MARK, FAIL_MARK):
             pos = line.find(mark)
@@ -186,13 +142,6 @@ def parse_clause_output(output):
 
 
 def failure_report(cmd, clauses, per_clause, failed, returncode, cleaned):
-    """Name the command that failed and show its output — never a bare
-    non-zero exit. Silence is reported as silence, not as an empty pass.
-
-    For a chain, every clause that actually ran is listed with its own
-    output, and the clauses the failure short-circuited are named as not
-    executed, so the reader can tell "did not run" from "ran and said
-    nothing"."""
     if not (failed and clauses and 1 <= failed[0] <= len(clauses)):
         body = cleaned.strip() or "(no output — the command failed silently)"
         return (f"[verify] FAILED: command exited {returncode}\n"
@@ -219,21 +168,10 @@ TIMEOUT_HEAD = "[verify] FAILED: verify timed out after "
 
 
 def verify_timed_out(out):
-    """Whether a failed verify's report is `timeout_failure_report()`'s: the
-    command ran past its cap, which no change to the candidate can shorten."""
     return str(out).startswith(TIMEOUT_HEAD)
 
 
 def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
-    """Name the cap a command ran past and, for a marked chain, the clause
-    that was running when it fired. Same shape as `failure_report()`, so a
-    hung verify reads like any other failed verify: the earlier clauses are
-    listed with their output, the running one is marked as timed out, and
-    the ones the cap short-circuited are named as not executed.
-
-    The running clause is the last one that announced itself: the chain
-    stops at the first failure, so the highest marker seen is the one that
-    never finished."""
     running = max(per_clause) if per_clause else None
     head = f"{TIMEOUT_HEAD}{timeout:g}s"
     if not (clauses and running and 1 <= running <= len(clauses)):
@@ -258,10 +196,6 @@ def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
 
 
 def vacuous_green_report(cmd, cleaned):
-    """A test command that exits 0 having collected no tests verified nothing,
-    so it is RED. Returns the report naming `vacuous-green`, quoting the
-    summary line that gave it away and the output around it, or None when the
-    output shows tests actually ran."""
     m = VACUOUS_RE.search(cleaned)
     if not m:
         return None
@@ -273,17 +207,13 @@ def vacuous_green_report(cmd, cleaned):
             f"[verify]   output:\n{body[-2000:]}")
 
 
-# The module list after `-m unittest`, up to a shell operator, and one
-# `tests.name` token in it with its leading space (KO-597). A pipeline
-# stays one clause: dropping `unittest` must not leave its `| tail` behind.
+# A pipeline stays one clause: dropping `unittest` must not leave its `| tail`.
 _UNITTEST_ARGS = re.compile(r"-m\s+unittest\b([^;&|\n]*)")
 _TEST_MODULE = re.compile(r"\s+tests\.(\w+)[\w.]*(?=\s|$)")
 _CLAUSE_OPERATOR = re.compile(r"(&&|\|\||;)")
 
 
 def _drop_clause_modules(clause, candidate, main):
-    """One clause without its candidate-only modules, and their names; the
-    clause is None when it named modules and none is left for main."""
     found = _UNITTEST_ARGS.search(clause)
     args = found.group(1) if found else ""
     named = list(_TEST_MODULE.finditer(args))
@@ -299,11 +229,6 @@ def _drop_clause_modules(clause, candidate, main):
 
 
 def drop_candidate_modules(command, candidate, main):
-    """Drop unittest modules whose file only the candidate has: main cannot
-    import them, so naming them there can only fail. A clause left with no
-    module is dropped with its operator rather than run as a bare,
-    discovering `unittest`; the line's other clauses still run.
-    Returns the command to run on main and the skipped module names."""
     lines, skipped = [], []
     for line in (command or "").splitlines():
         parts = _CLAUSE_OPERATOR.split(line)
@@ -322,20 +247,7 @@ def drop_candidate_modules(command, candidate, main):
 
 
 def contract_report(contracts, cwd):
-    """Run the ticket's literal contract checks — each a (relative path,
-    expected literal) pair parsed from its `## Contract checks` fence — against
-    the worktree.
-
-    Returns the report for the first declaration that does not hold, naming the
-    path and the expected literal so a drifted value (KO-106's port) is
-    actionable, or None when every declared literal is present. The comparison
-    is a verbatim substring test: no globs, no regex, no shell.
-
-    The checked file's contents are never echoed. A ticket may point a
-    declaration at a configuration file holding credentials, and this report is
-    forwarded to the reviewer; the path and the missing literal say what
-    drifted without logging a secret.
-    """
+    """Never echoes the file: a declaration may point at one holding credentials."""
     root = Path(cwd)
     for path, literal in contracts or ():
         problem = ticket_template.contract_path_problem(path)
@@ -354,24 +266,11 @@ def contract_report(contracts, cwd):
     return None
 
 
-REAP_GRACE = 10       # how long the cap waits for a killed tree's last output
+REAP_GRACE = 10
 
 
 def reap_group(proc, expired):
-    """Kill `proc`'s whole process group and return what it printed.
-
-    `SIGKILL`, not a term-then-kill escalation: a command that ran past its
-    cap has already had every chance to finish, and the caller's next move is
-    to throw away the directory it was running in, so a graceful shutdown has
-    nothing to save.
-
-    A grandchild that put itself in a session of its own is outside the group
-    and can keep the output pipe open after the group is gone, so the wait for
-    the last output is itself capped -- reporting a timeout must not be a
-    second way to hang. That fallback keeps the partial output the cap already
-    captured and gives up on the trailing bytes such a process was still
-    writing.
-    """
+    """A grandchild in its own session can hold the pipe, so the last read is capped."""
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
@@ -379,8 +278,7 @@ def reap_group(proc, expired):
     try:
         out, _ = proc.communicate(timeout=REAP_GRACE)
     except subprocess.TimeoutExpired:
-        # CPython attaches the partial output as `bytes` even under
-        # `text=True`; hand back the text the caller was promised.
+        # CPython attaches the partial output as bytes even under `text=True`.
         out = expired.output or ""
         if isinstance(out, bytes):
             out = out.decode(errors="replace")
@@ -388,19 +286,6 @@ def reap_group(proc, expired):
 
 
 class GroupKill:
-    """A kill of the process group a turn runs in, callable before it starts.
-
-    The hook `heartbeat_while()` fires when the run it is beating for has
-    been ended from outside (`on_swept`), bound to the turn `agent()` is
-    running: `arm()` is handed the turn's `Popen` the moment it starts
-    (`run_capped()`'s `on_start`), and calling the instance kills the whole
-    group the way the timeout does, through `reap_group()`'s `SIGKILL`. The
-    two can arrive in either order -- a sweep that lands before the turn's
-    process exists kills it as soon as `arm()` names it -- and each process
-    armed, a retry or a session query after the turn, is killed once.
-    `fired` says a kill was sent; `wanted`, that one was asked for.
-    """
-
     def __init__(self):
         self._lock = threading.Lock()
         self._proc = None
@@ -429,27 +314,8 @@ class GroupKill:
 
 def run_capped(cmd, cwd, timeout, on_start=None, *, env=None,
                stderr=subprocess.STDOUT):
-    """Run one command under a hard cap. Returns `(returncode, output)`,
-    or raises `subprocess.TimeoutExpired` carrying whatever it printed first.
-
-    `on_start`, when given, is called with the `Popen` as soon as the command
-    is running: the handle a caller needs to end the group from outside the
-    wait -- `GroupKill.arm` for a turn the supervisor may sweep mid-way. A
-    group killed that way ends the wait normally, with the signal as the
-    return code and what it printed first as the output.
-
-    `cmd` is a shell string (a ticket's verify command, a setup command) or an
-    argv list (an agent dispatch). `env=None` preserves inherited environment.
-
-    The process group is the point. `subprocess.run(timeout=...)` signals the
-    shell it started and nothing underneath it, so a `make` that reached the
-    cap is reported as over while its compilers keep running -- writing into a
-    worktree the caller is about to delete, against caches the next round
-    reads, with no handle left to stop them by. Starting the command in a
-    session of its own makes the tree one killable unit, so the cap can end
-    the command it timed rather than just the shell that spawned it.
-    """
     environment = {} if env is None else {"env": env}
+    # A session of its own makes the command's whole tree one killable group.
     with subprocess.Popen(cmd, shell=isinstance(cmd, str), cwd=str(cwd),
                           stdout=subprocess.PIPE, stderr=stderr,
                           text=True, start_new_session=True, **environment) as proc:
@@ -465,7 +331,6 @@ def run_capped(cmd, cwd, timeout, on_start=None, *, env=None,
 
 def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None,
                project=None):
-    """Account for a mechanical verification, preserving its tuple interface."""
     from store.working import working
 
     with working(conn, run_id, verify=True):
@@ -473,26 +338,18 @@ def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None
                            run_id=run_id)
 
 
-# Passes this process has seen: (run id, worktree, head, main, command). A
-# repeat for the same run on the same clean tree -- the merge gate after an
-# approving round, `main` unmoved -- is cited instead of run. The worktree
-# keeps another store's run 1 on the same commits from matching. Failures
-# are never recorded; a re-exec starts empty; nothing outlives the process.
+# Failures are never recorded; the worktree keeps another store's run 1 apart.
 _PASSES = set()
 
 
 def _pass_key(run_id, cmd, cwd):
-    """The record's key for `cmd` in `cwd`, or None when a pass there must
-    not be reused: no run id, not a git worktree, or uncommitted or
-    untracked changes, which make the head's sha not name the tree."""
     if run_id is None:
         return None
     try:
         head, main = subprocess.run(
             ["git", "rev-parse", "HEAD", "main"], cwd=cwd, capture_output=True,
             text=True, check=True).stdout.split()
-        # Untracked files asked for explicitly: `status.showUntrackedFiles
-        # = no` would otherwise hide a tree the head does not name.
+        # `status.showUntrackedFiles = no` would hide a tree the head does not name.
         dirty = subprocess.run(
             ["git", "status", "--porcelain", "--untracked-files=normal"],
             cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
@@ -514,17 +371,6 @@ def _verify_command(project, command, cwd, timeout):
 
 def _run_verify(cmd, cwd, contracts=None, timeout=None, *, project=None,
                 run_id=None):
-    """Mechanical acceptance check. Returns (ok, output), with structured
-    command facts on failed output's `failure` attribute. Runs via shell on
-    purpose: the command is author-supplied on the ticket, not agent output.
-
-    Literal contracts run first. Reports reject drift and zero-test discovery.
-    Timeout is a failed gate, after run_capped has reaped the process group;
-    the caller receives the same (ok, output) tuple on every normal return.
-    A command that already passed for `run_id` on this clean tree, with
-    `main` where it was, is not run again (`_PASSES`).
-
-    """
     drifted = contract_report(contracts, cwd)
     if drifted:
         return False, drifted
@@ -544,14 +390,7 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, project=None,
 
 
 def _run_command(cmd, cwd, timeout, project):
-    """Run a verify command once; (ok, output) as `_run_verify` returns it,
-    less the contract line."""
-    # Complete, simple command lines can be marked without splitting the
-    # shell: exported variables and cd still carry, and a newline block stops
-    # at the first failing line. Compound lists force verbatim
-    # execution: wrapping compound lists in `||` suppresses their errexit.
-    # Complex shell programs remain
-    # verbatim; the whole program is their command.
+    # A compound list runs verbatim: wrapping it in `||` suppresses its errexit.
     lines = [text for text in cmd.splitlines()
              if text.strip() and not text.lstrip().startswith('#')]
     block = len(lines) > 1 and all(
@@ -567,9 +406,6 @@ def _run_command(cmd, cwd, timeout, project):
             instrumented_script(clauses, stop_on_failure=True) if marked else cmd,
             cwd, VERIFY_TIMEOUT if timeout is None else timeout)
     except subprocess.TimeoutExpired as expired:
-        # The cap is a failed verify, not a crash: `run_capped` has already
-        # reaped the process group, and what the command printed before the
-        # kill says which clause was running when it fired.
         per_clause, _, cleaned = parse_clause_output(expired.output or "")
         report = timeout_failure_report(cmd, clauses if marked else None,
                                         per_clause, cleaned, expired.timeout)
@@ -601,14 +437,6 @@ def _verify_failure(report, cmd, clauses, index, status, output):
 
 
 class RunFailure(Exception):
-    """A run failing on purpose: the message is the close-out reason.
-
-    Raised inside `run_task()` where the code knows *why* the run cannot
-    continue, and caught in `main()` beside the crash handler — the
-    difference is only the log line; both end as the same failed run with
-    the text as its `outcomeReason`.
-    """
-
     failure_kind = 'unclassified'
 
     def __init__(self, reason, failure_kind=None):
@@ -621,93 +449,41 @@ class RunFailure(Exception):
 
 
 class InfraFailure(RunFailure):
-    """A run failing for a reason that says nothing about the ticket.
-
-    The factory's own plumbing gave out — a reviewer container that would not
-    start, a route that did not answer — or the run ended before any work
-    began. Caught exactly where `RunFailure` is and closed out the same way,
-    with one difference: the row is written with `outcomeClass = 'infra'`, and
-    `failure_history()` leaves it out of the count that parks a ticket for a
-    human. A Docker outage is not evidence about the ticket, and two of them
-    must not spend its attempts (holophyte-bugs #4 and #6: a spurious
-    post-claim failure was KO-150's second strike).
-
-    A subclass rather than a flag on the message so every existing raise site
-    keeps its meaning: nothing that raises `RunFailure` today is reclassified.
-    """
+    """Says nothing about the ticket, so it spends none of its attempts."""
 
     failure_kind = 'infra'
 
 
 class MergeLockHeld(InfraFailure):
-    """The merge lock stayed held past the wait bound.
-
-    Another run's gate held `main` for longer than this one waited, or a
-    lock a dead run left behind has not been swept yet. Either says nothing
-    about the ticket, so it is an `InfraFailure`: the branch stays as it is,
-    no strike is spent, and the message names the holder so the operator
-    knows which run (or which stale lock) to look at.
-    """
-
     failure_kind = 'merge_lock'
 
 
 class MergeParked(Exception):
-    """An approved, verified candidate parked for a human to say "merge".
-
-    Raised at the merge gate under `[merge] approve = "human"`, after the
-    review approved and the pre-merge verify passed and after `store.park()`
-    has moved the run to `awaiting_merge_approval` and given the lease back.
-    Not a `RunFailure`: nothing went wrong, the run is not over, and the loop
-    must neither release it nor count it. It unwinds `run_task()` the way a
-    failure does only so the branch and worktree are left in place, and the
-    message is the line the loop prints.
-    """
+    """Not a failure: the run is parked, neither released nor counted."""
 
 
 def outcome_class_of(exc):
-    """The `runs.outcomeClass` a failure that ended in `exc` is written with."""
     return "infra" if isinstance(exc, InfraFailure) else "work"
 
 
 def sh(args, cwd=None, env=None):
-    """Run an argv list — no shell, so task text can't break quoting."""
     r = subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=env)
     if r.returncode != 0:
         raise RuntimeError(f"`{args}` failed:\n{r.stdout}\n{r.stderr}")
     return r.stdout.strip()
 
 
-# --- the merge lock ---------------------------------------------------------
-# Two runs on one target can reach the merge gate together (KO-341 leases the
-# ticket, not the project), and a candidate approved against an older `main`
-# can land on a `main` that moved. The gate therefore runs under one lock per
-# target: a file in the target's state directory, taken with an exclusive
-# create and held for the gate's duration -- merge `main` into the branch,
-# re-verify, `--no-ff` merge -- so merges into `main` serialise (design note
-# 11). A file rather than an flock so the supervisor, a separate process, can
-# see who holds it and clear one whose run has ended.
-
-# Default wait for a holder whose liveness cannot be established. The gate
-# may extend this bound while its holder is healthy (KO-496).
+# A file rather than an flock, so the supervisor can see and clear a dead holder.
 MERGE_LOCK_WAIT_SEC = 180
 MERGE_LOCK_POLL_SEC = 1.0
 
 
 def merge_lock_path(project):
-    """The merge lock for `project`, beside its store in the state directory
-    -- never in the repository, where a task's `git add -A` could commit it."""
+    """Never in the repository, where a task's `git add -A` could commit it."""
     return project.holo_dir / "merge.lock"
 
 
 def read_merge_lock(path):
-    """The `(run_id, taken_at)` the lock at `path` names, or None if none.
-
-    `run_id` is an int, or None for a lock a storeless `run_task()` wrote (it
-    has no run to name); `taken_at` is epoch seconds. A file that exists but
-    says neither is read as `(None, None)`: a lock, but not one whose holder
-    can be judged.
-    """
     try:
         text = path.read_text()
     except FileNotFoundError:
@@ -724,20 +500,6 @@ def read_merge_lock(path):
 @contextlib.contextmanager
 def merge_lock(project, run_id, wait=None, poll=None, on_wait=None,
                extend_wait=None, operation="gate"):
-    """Hold `project`'s merge lock for the block; raise `MergeLockHeld` if it
-    cannot be had within `wait` seconds. `extend_wait(holder, elapsed)` may
-    return a positive poll delay to keep waiting past that default bound.
-
-    Create-then-check, never check-then-create: `O_EXCL` makes the create
-    the arbitration, and a create that fails means someone holds it. The
-    holder is then polled every `poll` seconds until it releases or the
-    bound passes; `on_wait` is called once per poll so the caller can keep
-    its run's heartbeat fresh through a wait the sweep would otherwise read
-    as silence. The file holds `RUN_ID TIMESTAMP` so the supervisor can tell
-    a live holder from a dead one. Released on every way out of the block,
-    and only if the file is still ours: a sweep that judged this run dead
-    and cleared the lock may have let another gate take it since.
-    """
     from holophyte.loop.merge_lock import lock_nap
 
     wait = MERGE_LOCK_WAIT_SEC if wait is None else wait
@@ -750,12 +512,8 @@ def merge_lock(project, run_id, wait=None, poll=None, on_wait=None,
         try:
             with merge_lock_arbiter(path):
                 fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-                # The flock rides on the open descriptor for the block: a
-                # sweep that finds it taken knows the holding process is
-                # alive whatever the store says of its run, and the kernel
-                # drops it with the process, so a holder that died cannot
-                # keep the lock "in use". Taken under the arbiter, so no
-                # sweep can open the fresh file before we hold it.
+                # The flock marks the holder alive whatever the store says of
+                # its run; taken under the arbiter, before any sweep can open.
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 os.write(fd, stamp.encode())
         except FileExistsError:
@@ -779,42 +537,18 @@ def merge_lock(project, run_id, wait=None, poll=None, on_wait=None,
 
 @contextlib.contextmanager
 def merge_lock_arbiter(path):
-    """Serialise every change to the merge lock at `path`: the gate's
-    exclusive create and the sweep's judge-and-remove both run inside this.
-
-    A flock on a permanent sibling file (`merge.lock.arbiter`, created once
-    and never unlinked, since unlinking a flock file is what lets two
-    holders exist). Held for microseconds -- one create, or one open, probe
-    and unlink -- never across a gate. It exists because judging a lock
-    stale and removing it must be one step: a sweep that opened a stale
-    inode, paused, and acted after another sweep had cleared it and a gate
-    had taken a fresh lock at the same path would remove the live lock, and
-    two gates would merge at once. Under the arbiter no creator or remover
-    can move between the sweep's open and its unlink, so the file it opened
-    is the file at `path`.
-    """
+    """The arbiter is never unlinked: unlinking a flock file lets two hold it."""
     fd = os.open(path.with_name(f"{path.name}.arbiter"),
                  os.O_RDWR | os.O_CREAT, 0o644)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
     finally:
-        os.close(fd)  # drops the flock
+        os.close(fd)
 
 
 def remove_dead_merge_lock(path):
-    """Remove the merge lock at `path` if no live process holds it; say what
-    happened: `removed`, `in_use`, or `gone`.
-
-    Runs under `merge_lock_arbiter()`, as `merge_lock()`'s acquisition does,
-    so the whole of open, probe and unlink is one step against every gate
-    and every other sweep. Inside it: open the file, take its flock without
-    blocking -- a refusal means the process that created it is still alive,
-    and the lock is `in_use`, whatever the store says of its run -- else
-    unlink it, `removed`. `gone` is a lock already cleared. Nothing can
-    have replaced the file between the open and the unlink, so the file
-    judged is the file removed and a gate's fresh lock is never touched.
-    """
+    """`removed`, `in_use` (its flock is held) or `gone`, judged under the arbiter."""
     with merge_lock_arbiter(path):
         try:
             fd = os.open(path, os.O_RDONLY)
@@ -835,8 +569,6 @@ def remove_dead_merge_lock(path):
 
 
 class VerificationOutput(str):
-    """Human-readable output carrying the rows for the review's existing record."""
-
     def __new__(cls, output, results, *, failure=None):
         value = super().__new__(cls, output)
         value.results = results
@@ -845,7 +577,6 @@ class VerificationOutput(str):
 
 
 def run_baseline(project, wt, tier, conn=None, run_id=None):
-    """Run one baseline tier in order, stopping at its first failed command."""
     from holophyte.config.config_tables import verify_config
 
     config = verify_config(project)
@@ -869,12 +600,6 @@ def run_baseline(project, wt, tier, conn=None, run_id=None):
 
 def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
                   *, before_merge=False):
-    """Complete a ticket verify with the applicable target baseline tiers.
-
-    Review rounds own verificationResults. The output carries these rows into
-    the next review; at the merge gate append the final checks to that review.
-    An event also preserves checks that fail before a review can be recorded.
-    """
     import json
 
     import store
@@ -905,10 +630,6 @@ def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
 
 
 def record_unreviewed_verification(conn, run_id, output):
-    """Attach checks with no subsequent review to the run's latest round.
-
-    This includes the merge gate and failures that abort before the next review.
-    """
     import json
 
     from holophyte.redact import redact_document
