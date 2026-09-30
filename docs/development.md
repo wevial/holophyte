@@ -122,6 +122,9 @@ Each module, one line:
 - `holophyte/serve/server.py` — `--serve PORT|HOST:PORT`, the HTTP daemon: it
   reads by default and writes only through `[serve] actions` and
   `config_edit`.
+- `holophyte/serve/views.py` — the daemon's store read views: `/status`,
+  `/attention`, `/board` and `/tickets/ID`, with the supervisor and
+  parked-ticket items they share.
 - `holophyte/serve/serve_config.py` — the daemon's `/config` routes (KO-394):
   `GET`'s redacted read and `PUT`'s validated, recorded and backed-up
   write, `text` and `{"patch": ...}` bodies alike.

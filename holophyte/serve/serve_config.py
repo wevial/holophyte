@@ -1,15 +1,3 @@
-"""holophyte.serve.serve_config: the daemon's `/config` routes (KO-394).
-
-Moved verbatim out of `holophyte/serve/server.py`: `GET /config`'s
-`read_config()` with `config_text()` and `config_values()`; `PUT
-/config`'s `write_config()` with `validate_config()` and the
-`_write_config()`/`next_backup()` write path shared by text and patch
-bodies; patch validation; and probing changes to `[agents] implementer`.
-`record_action_intervention()`, shared with the `POST /actions/...`
-routes, stays home: `holophyte.serve.server` imports this module's handlers
-for its route table, so `_write_config()` reaches the name back through
-a deferred `from holophyte.serve.server import`.
-"""
 from __future__ import annotations
 
 import dataclasses
@@ -25,21 +13,12 @@ from holophyte.agents.agents import probe_implementer
 from holophyte.config.config import KNOWN_KEYS, check_document
 from holophyte.redact import RedactionError, redact, restore
 
-# `GET /config` and `PUT /config` (KO-356), behind `[serve] config_edit =
-# true` and the write token. `holophyte.redact` finds, hides and puts back
-# the secret values -- any key whose name ends in `token` or `key`, so
-# `token_file` (a path) is left alone. `CONFIG_LOCK` serialises the
-# read-restore-validate-backup-replace of a `PUT`: the server is threaded,
-# and two writers interleaved could back up the same previous text twice
-# and lose one of the two edits without either being told.
 CONFIG_PATH = "/config"
 CONFIG_ACTION = "config_edit"
 CONFIG_APPLIES = "next loop start"
+# The server is threaded: one PUT holds this from its read to its rename.
 CONFIG_LOCK = threading.Lock()
 BACKUP_STAMP = "%Y%m%dT%H%M%SZ"
-# `PUT /config` with `{"patch": {...}}` (KO-364) edits the file in place
-# with `tomlkit`, the factory's one dependency (`requirements.txt`): a
-# patch value is one of these, a list holding strings only.
 PATCH_VALUE_TYPES = (str, int, float, bool, list)
 TOMLKIT_MISSING = ("[holo2] the daemon needs the tomlkit module to edit the"
                    " config in place (PUT /config patch); install it with"
@@ -47,7 +26,6 @@ TOMLKIT_MISSING = ("[holo2] the daemon needs the tomlkit module to edit the"
 
 
 def config_text(project):
-    """The target's config file as written, `""` when there is none yet."""
     try:
         return project.config_path.read_text()
     except FileNotFoundError:
@@ -55,10 +33,7 @@ def config_text(project):
 
 
 def read_config(project):
-    """`GET /config`: the file's text, secrets redacted, the same text as
-    parsed `values` with the check-wait default, its path and applicability. A
-    text `redact()` cannot vouch for is 500 with its sentence and no text:
-    better no page than a secret on it."""
+    """A text `redact()` cannot vouch for is served as no text at all."""
     try:
         text = redact(config_text(project))
     except RedactionError as bad:
@@ -68,12 +43,6 @@ def read_config(project):
 
 
 def config_values(text):
-    """Parse response values, supplying the effective check wait for the UI.
-
-    Quoted tables and triple-quoted strings become ordinary JSON values.
-    Explicit values, including invalid shapes, remain visible for correction.
-    Invalid TOML returns None; raw text and persisted patches stay unchanged.
-    """
     from holophyte.pr.github import CHECK_WAIT_S
     try:
         document = tomllib.loads(text)
@@ -86,11 +55,6 @@ def config_values(text):
 
 
 def validate_config(project, text):
-    """Hold `text` to what startup would accept for `project`: parsed as
-    TOML and run through `config.check_document()` on a copy of the target
-    carrying the parsed document instead of the file's. The refusal, when
-    there is one, is the loader's own sentence -- naming the file, the
-    table and the key -- or `tomllib`'s; None when the document passes."""
     try:
         document = tomllib.loads(text)
     except tomllib.TOMLDecodeError as bad:
@@ -104,33 +68,6 @@ def validate_config(project, text):
 
 
 def write_config(project, body, now=None):
-    """`PUT /config`: replace the target's config with `body["text"]`
-    after validating it: `(http status, JSON-able body)`.
-
-    `text` must be a string, 400 otherwise. Every `[redacted]` value in it
-    is the current file's (`restore()`) before anything is judged, so the
-    text validated and written is the whole document. A document
-    `validate_config()` refuses is 400 with its sentence as `error`,
-    nothing written. The `config_edit` interventions row lands first, on
-    the store's newest run as the actions record theirs; a target with no
-    store or no run has nothing to record against and the file is left
-    alone, 503 saying so. Then the previous text is copied to
-    `config.toml.bak-STAMP` beside the file (`-2`, `-3` when the second
-    has a sibling already; none when there was no file) and the new text
-    lands by rename from a staging file of its own, so a reader sees the
-    old file or the new one and never a torn one. One `PUT` at a time
-    holds `CONFIG_LOCK` from the read to the rename. The reply names the
-    backup.
-
-    A write that changes `[agents] implementer` is followed by the probe
-    the loop runs at startup (KO-357): `probe_implementer()` on the
-    document as written, outside the lock, its result under `probe` in
-    the reply -- `null` when the key did not change or now names no route.
-    The probe reports; it does not gate: the file is already replaced and
-    backed up when it runs, so a route that does not answer is a `200`
-    whose `probe.ok` is false, the same text the next loop start refuses
-    with, and the operator fixes the key or restores the backup.
-    """
     if "patch" in body:
         return patch_config(project, body["patch"], now)
     text = body.get("text")
@@ -146,23 +83,10 @@ def write_config(project, body, now=None):
 
 
 class PatchError(ValueError):
-    """A `patch` the daemon cannot apply: its sentence names the key."""
+    pass
 
 
 def patch_config(project, patch, now):
-    """`PUT /config` with `{"patch": {...}}` (KO-364): the current file
-    edited in place with `tomlkit`, then held, recorded, backed up and
-    written exactly as a `text` is. `patch` is a flat object of dotted
-    `table.key` to a string, integer, float, boolean or list of strings; the
-    table is one this version reads (`config.KNOWN_KEYS`) and is created
-    when the file lacks it. Comments, order and the layout of everything
-    but the patched values are kept byte for byte; a multi-line array is
-    edited item by item so its lines and their comments stay. A key the
-    patch cannot apply -- no table part, a table the loader does not read,
-    a value of another shape, a `[table]` that is not a table (an inline
-    `table = { ... }` is one, edited in place) -- is 400
-    naming it and nothing is written; a result the loader refuses is the
-    same 400 a `text` gets."""
     if not isinstance(patch, dict):
         return 400, {"ok": False, "error": "patch must be an object of"
                                             " dotted table.key to value"}
@@ -182,8 +106,6 @@ def patch_config(project, patch, now):
 
 
 def apply_patch(current, patch):
-    """`current` with every `patch` entry applied, as `tomlkit` writes
-    it; `PatchError` naming the first key that cannot be."""
     tomlkit = require_tomlkit()
     try:
         document = tomlkit.parse(current)
@@ -212,8 +134,6 @@ def apply_patch(current, patch):
 
 
 def check_patch_value(key, value):
-    """`PatchError` unless `value` is a string, an integer, a float, a
-    boolean or a list of strings -- the shapes a patch carries and the loader reads."""
     if not isinstance(value, PATCH_VALUE_TYPES):
         raise PatchError(f"{key}: a patch value is a string, an integer, a"
                          f" float, a boolean or a list of strings, not"
@@ -224,12 +144,7 @@ def check_patch_value(key, value):
 
 
 def set_patched(tomlkit, section, name, value):
-    """`section[name] = value`, editing an existing array item by item so
-    a multi-line array keeps its lines and the comments beside them:
-    replacing the whole array would rewrite it on one line. A removed
-    entry leaves with its own line, inline comment included -- a note
-    about a command no longer in the file would only mislead -- and
-    every comment outside that line stays."""
+    """Item by item: replacing a multi-line array puts it on one line."""
     existing = section.get(name)
     if isinstance(value, float) or (type(value) is int
                                    and isinstance(existing, tomlkit.items.Float)):
@@ -248,9 +163,6 @@ def set_patched(tomlkit, section, name, value):
 
 
 def require_tomlkit():
-    """The `tomlkit` module, or `SystemExit` with the one line naming it
-    and its install command: `serve()` asks before it binds, so a daemon
-    without it fails at start rather than at the first patch."""
     try:
         import tomlkit
     except ImportError as missing:
@@ -259,8 +171,6 @@ def require_tomlkit():
 
 
 def implementer_of(text):
-    """`[agents] implementer` in `text`, None when unset or when the text
-    does not parse: a file the loop would refuse names no route."""
     try:
         document = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
@@ -270,10 +180,7 @@ def implementer_of(text):
 
 
 def probe_changed_implementer(project, before, after):
-    """`probe_implementer().to_json()` for the `after` document when its
-    `[agents] implementer` differs from `before`'s; None otherwise. The
-    probed target carries `after` parsed, not the file: the `Project`
-    the server was bound with read its config once, at bind."""
+    """The bound `Project` read its config at bind, so `after` is probed."""
     if implementer_of(after) == implementer_of(before):
         return None
     candidate = dataclasses.replace(project, _config=tomllib.loads(after))
@@ -283,9 +190,6 @@ def probe_changed_implementer(project, before, after):
 
 def _write_config(project, text, now, current,
                   how="replaced {path} from the console (PUT /config)"):
-    """`(status, reply, written)` under the lock: `written` is the text
-    on disk after a `200`, None when nothing was. `how` opens the
-    interventions note, `{path}` the file."""
     try:
         text = restore(text, current)
     except ValueError as bad:
@@ -309,8 +213,7 @@ def _write_config(project, text, now, current,
                                             " the intervention against;"
                                             " nothing written"}, None
     if backup is not None:
-        # The backup holds the same secrets as the file: it is born with
-        # the file's mode, never the umask's default for a new file.
+        # The backup holds the file's secrets: its mode, never the umask's.
         mode = stat.S_IMODE(path.stat().st_mode)
         handle = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(handle, "w") as out:
@@ -329,8 +232,6 @@ def _write_config(project, text, now, current,
 
 
 def next_backup(path, stamp):
-    """`path.bak-STAMP`, or the first of `-2`, `-3`, ... that does not
-    exist yet: two writes in one second keep two backups."""
     first = path.with_name(f"{path.name}.bak-{stamp}")
     if not first.exists():
         return first
