@@ -17,7 +17,8 @@ from unittest.mock import ANY, patch
 
 import holophyte.agents.review_workspace
 import holophyte.agents.roles
-import holophyte.cli.cli
+import holophyte.cli.entry
+import holophyte.cli.host_modes
 import holophyte.cli.operator
 import holophyte.config.agent_settings
 import holophyte.config.checks
@@ -221,7 +222,7 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         self.write_config("[agents\n")
 
         with self.assertRaises(SystemExit) as raised:
-            holophyte.cli.cli.cli([str(target), "--report"])
+            holophyte.cli.entry.cli([str(target), "--report"])
 
         self.assertIn(str(self.project.config_path), str(raised.exception))
 
@@ -282,7 +283,7 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
                              autospec=True) as adopt:
             with contextlib.redirect_stdout(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli(["--help"])
+                holophyte.cli.entry.cli(["--help"])
 
         self.assertEqual(raised.exception.code, 0)
         load.assert_not_called()
@@ -305,7 +306,7 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
                              autospec=True) as adopt:
             with contextlib.redirect_stderr(stderr), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli([])
+                holophyte.cli.entry.cli([])
 
         self.assertNotEqual(raised.exception.code, 0)
         self.assertIn("usage:", stderr.getvalue())
@@ -327,8 +328,8 @@ class ConfigLoadingTests(FixSessionConfigCases, BotConfigCases, ConfigTestCase):
         )
         self.assertEqual(command, ["harness", "run", "do it"])
         # And startup tolerates the table: a report against this config runs.
-        with patch.object(holophyte.cli.cli, "report") as report:
-            holophyte.cli.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.host_modes, "report") as report:
+            holophyte.cli.entry.cli([str(target), "--report"])
         report.assert_called_once_with(self.project)
 
 
@@ -345,9 +346,9 @@ class KnownKeyTests(ConfigTestCase):
     def test_an_unknown_key_in_a_known_table_is_a_startup_error(self):
         target = self.locate('[worktree]\nsetup_timeout_min = 10\n').path
 
-        with patch.object(holophyte.cli.cli, "report") as report:
+        with patch.object(holophyte.cli.host_modes, "report") as report:
             with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli([str(target), "--report"])
+                holophyte.cli.entry.cli([str(target), "--report"])
 
         message = str(raised.exception)
         self.assertIn(str(self.project.config_path), message)
@@ -381,8 +382,8 @@ class KnownKeyTests(ConfigTestCase):
             '[supervisor]\nheartbeat_stale_min = 7\n'
             '[loop]\nstop_on_failure = false\n').path
 
-        with patch.object(holophyte.cli.cli, "report") as report:
-            holophyte.cli.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.host_modes, "report") as report:
+            holophyte.cli.entry.cli([str(target), "--report"])
 
         report.assert_called_once_with(self.project)
 
@@ -764,9 +765,9 @@ class BudgetScaleTests(ConfigTestCase):
             with self.subTest(line=line):
                 target = self.locate(f"[agents]\n{line}\n").path
 
-                with patch.object(holophyte.cli.cli, "report") as report:
+                with patch.object(holophyte.cli.host_modes, "report") as report:
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli.cli([str(target), "--report"])
+                        holophyte.cli.entry.cli([str(target), "--report"])
 
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)
@@ -781,8 +782,8 @@ class BudgetScaleTests(ConfigTestCase):
         config loads and the value is what the reader hands back."""
         target = self.locate("[agents]\nbudget_scale = 2\n").path
 
-        with patch.object(holophyte.cli.cli, "report") as report:
-            holophyte.cli.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.host_modes, "report") as report:
+            holophyte.cli.entry.cli([str(target), "--report"])
 
         report.assert_called_once_with(self.project)
 
@@ -1013,13 +1014,13 @@ class WorktreeSetupTests(ConfigTestCase):
                     patch.object(holophyte.config.checks, "check_default_implementer"),
                     patch.object(holophyte.config.checks, "check_default_reviewer"),
                     patch.object(
-                        holophyte.cli.cli,
+                        holophyte.cli.entry,
                         "main",
                         side_effect=AssertionError("claimed work"),
                     ),
                 ):
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli.cli([str(target)])
+                        holophyte.cli.entry.cli([str(target)])
 
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)
@@ -1036,13 +1037,13 @@ class WorktreeSetupTests(ConfigTestCase):
                     patch.object(holophyte.config.checks, "check_default_implementer"),
                     patch.object(holophyte.config.checks, "check_default_reviewer"),
                     patch.object(
-                        holophyte.cli.cli,
+                        holophyte.cli.entry,
                         "main",
                         side_effect=AssertionError("claimed work"),
                     ),
                 ):
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli.cli([str(target)])
+                        holophyte.cli.entry.cli([str(target)])
 
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)
@@ -1143,10 +1144,10 @@ class WorktreeSetupTests(ConfigTestCase):
 
         with patch.object(holophyte.config.checks, "check_default_implementer"), \
                 patch.object(holophyte.config.checks, "check_default_reviewer"), \
-                patch.object(holophyte.cli.cli, "main",
+                patch.object(holophyte.cli.entry, "main",
                              side_effect=AssertionError("claimed work")) as main:
             with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli([str(target)])
+                holophyte.cli.entry.cli([str(target)])
 
         self.assertIn("must be a list", str(raised.exception))
         main.assert_not_called()
@@ -1156,8 +1157,8 @@ class WorktreeSetupTests(ConfigTestCase):
         # that reading's problem.
         target = self.locate('[worktree]\nsetup = [7]\n').path
 
-        with patch.object(holophyte.cli.cli, "report") as report:
-            holophyte.cli.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.host_modes, "report") as report:
+            holophyte.cli.entry.cli([str(target), "--report"])
 
         report.assert_called_once_with(self.project)
 
@@ -1187,13 +1188,13 @@ class WorktreeSetupTests(ConfigTestCase):
                     patch.object(holophyte.config.checks, "check_default_implementer"),
                     patch.object(holophyte.config.checks, "check_default_reviewer"),
                     patch.object(
-                        holophyte.cli.cli,
+                        holophyte.cli.entry,
                         "main",
                         side_effect=AssertionError("claimed work"),
                     ),
                 ):
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli.cli([str(target)])
+                        holophyte.cli.entry.cli([str(target)])
 
                 message = str(raised.exception)
                 self.assertIn(str(self.project.config_path), message)

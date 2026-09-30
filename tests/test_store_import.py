@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli.cli
+import holophyte.cli.entry
 import holophyte.config.project
 import store
 import store.read
@@ -67,7 +67,7 @@ class ImportStoreDryRunTests(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                holophyte.cli.cli.cli([*flags, str(self.target)])
+                holophyte.cli.entry.cli([*flags, str(self.target)])
             except SystemExit as exit_:
                 return out.getvalue(), err.getvalue(), exit_
         return out.getvalue(), err.getvalue(), None

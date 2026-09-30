@@ -12,7 +12,7 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-import holophyte.cli.cli
+import holophyte.cli.entry
 import holophyte.cli.status
 import store
 import store.board
@@ -53,13 +53,13 @@ class StatusTests(SweepTestCase):
 
     def status(self, *flags, at=T0 + 3 * MINUTE):
         """The mode end to end, with the board and the network as tripwires."""
-        holophyte.cli.cli.eager_import()
+        holophyte.cli.entry.eager_import()
         out = io.StringIO()
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}), \
                 no_network(), patch.object(sys, "stdout", out), \
                 patch.object(holophyte.cli.status, "time", lambda: at / 1000):
-            code = holophyte.cli.cli.cli([str(self.target), "--status", *flags])
+            code = holophyte.cli.entry.cli([str(self.target), "--status", *flags])
         self.assertEqual(code, 0)
         return out.getvalue()
 

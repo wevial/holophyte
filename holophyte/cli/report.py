@@ -1,8 +1,3 @@
-"""Live runs and the finished estimate-vs-actual table, read-only.
-
-The report shares age and host formatting with supervisor and sweep output.
-Opening the store belongs to the callers in operator and supervisor.
-"""
 import json
 import statistics
 import time
@@ -15,7 +10,6 @@ from holophyte.story.story_views import story_report_lines
 from store.gap_layers import gap_finder_counts, gap_layer_counts
 from store.working import agent_work, effective_work, verify_work
 
-# Render timing and review counts from the store without writing or claiming.
 REPORT_HEADERS = ("ticket", "actual", "agent", "verify", "estimate", "ratio",
                   "rounds", "outcome", "rejected", "host")
 REPORT_GAP = "  "
@@ -31,7 +25,6 @@ def migration_line(note, version):
 
 
 def migration_header(conn):
-    """The latest recorded migration, absent on stores with no such history."""
     note = store.schema.latest_migration_note(conn)
     if note is None:
         return []
@@ -40,9 +33,6 @@ def migration_header(conn):
 
 
 def live_rows(conn):
-    """Unfinished runs as (ticket, phase, started_at, heartbeat, pr_url).
-    Include every phase with no end timestamp, oldest claim first.
-    """
     return conn.execute(
         "SELECT t.linearIdentifier, r.phase, r.startedAt, r.lastHeartbeat,"
         " r.prUrl FROM runs r JOIN tickets t ON t.id = r.ticketId"
@@ -50,7 +40,6 @@ def live_rows(conn):
 
 
 def live_lines(conn, now):
-    """An aligned in-flight block, with ages relative to epoch milliseconds."""
     rows = live_rows(conn)
     if not rows:
         return ["in flight: none"]
@@ -68,22 +57,10 @@ def live_lines(conn, now):
 
 
 def report_rows(conn):
-    """Ended runs, oldest first: ticket, actual_min, agent_min, verify_min,
-    estimate_min, ratio, rounds, outcome, host. Missing estimates and ratios
-    are None and excluded from averages; a missing host marks a run older
-    than that column. actual_min is agent plus verify time and the ratio is
-    judged on it; a run recorded before the split has verify_min None and
-    all its working time as agent_min.
-    """
     return [row[:9] for row in ended_rows(conn)]
 
 
 def ended_rows(conn):
-    """Report tuples with ended_at, merge_sha and wall_min appended.
-
-    The daemon uses these to show when a run ended and link its merge;
-    report_rows() drops them to preserve the terminal table's shape.
-    """
     rows = []
     for run in store.read.ended_runs(conn):
         actual, agent, verify = (
@@ -101,7 +78,6 @@ def ended_rows(conn):
 
 
 def report_summary(rows):
-    """Run count and mean/median ratios, excluding runs with no estimate."""
     ratios = [row[5] for row in rows if row[5] is not None]
     if not ratios:
         return f"{len(rows)} runs · no estimates to compare against"
@@ -112,20 +88,15 @@ def report_summary(rows):
 
 
 def failure_lines(conn):
-    """Typed failure counts, shared by the report and supervisor sweep."""
     return [f"failures {kind}: {count}" for kind, count in conn.execute(
         "SELECT COALESCE(failureKind, 'unclassified'), COUNT(*) FROM runs"
         " WHERE outcome = 'failed' GROUP BY 1 ORDER BY 1")]
 
 
-# The toil windows (KO-705), label to span: interventions per merge over
-# each, so a factory change is judged by the hand work it saved.
 TOIL_WINDOWS = (("24h", 24 * 3_600_000), ("7d", 7 * 24 * 3_600_000))
 
 
 def toil_status(conn, now):
-    """`/status`'s `toil` object: each window's human interventions, merged
-    runs, their ratio (null with nothing merged) and the actions counted."""
     body = {}
     for label, span in TOIL_WINDOWS:
         toil = store.read.toil_since(conn, now - span)
@@ -138,7 +109,6 @@ def toil_status(conn, now):
 
 
 def toil_lines(conn, now):
-    """One report line per toil window, the rate left out with no merge."""
     lines = []
     for label, window in toil_status(conn, now).items():
         rate = ("" if window["per_merge"] is None
@@ -152,7 +122,6 @@ def toil_lines(conn, now):
 
 
 def approval_lines(conn):
-    """Explicit human approvals, including released candidates awaiting claim."""
     rows = conn.execute(
         "SELECT t.linearIdentifier, r.id, r.approvedBy, r.approvedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
@@ -165,15 +134,10 @@ def approval_lines(conn):
 
 
 def report_lines(conn, target=None):
-    """Render a consistent snapshot of live runs, completed work and ratios.
-
-    Unmeasured work prints n/a and is excluded from ratios. The target supplies
-    an optional host label; callers without it see the stored hostname."""
     owns_transaction = not conn.in_transaction
     if owns_transaction:
         conn.execute("BEGIN")
     try:
-        # Both sections describe one snapshot while WAL writers keep working.
         now = int(time.time() * 1000)
         live = live_lines(conn, now) + [""]
         rows = report_rows(conn)
@@ -191,7 +155,7 @@ def report_lines(conn, target=None):
         live += story_report_lines(conn)
     finally:
         if owns_transaction:
-            conn.rollback()  # Release only our read transaction, even on errors.
+            conn.rollback()
     if not rows:
         return live + ["no completed runs yet"]
     table = [REPORT_HEADERS]
@@ -219,10 +183,6 @@ def report_lines(conn, target=None):
 
 
 def format_age(ms):
-    """An age in milliseconds as an operator reads one: `12s`, `9m`, `3h`.
-
-    Whole units, largest that fits: distinguish a quiet minute from an evening.
-    """
     seconds = max(0, int(ms // 1000))
     if seconds < 60:
         return f"{seconds}s"
@@ -232,22 +192,10 @@ def format_age(ms):
 
 
 def host_name(host):
-    """A `host` column as printed: the hostname, or `?` for a row without one."""
     return "?" if host is None else host
 
 
 def host_label(target, host):
-    """A `host` column as a rendering shows it: the label, or `host_name()`.
-
-    `[report] host_label` in `target`'s config replaces the hostname wherever
-    the factory renders one -- the report and sweep tables and the
-    supervisor's lines; the FINDINGS window a public repository commits has
-    no host column to replace -- while the store goes on holding the real
-    hostname for the supervisor's own-host checks.
-    With no label (or no `target`), this is `host_name(host)` exactly; so
-    is a `host` of None, label or not: a row older than the column has no
-    recorded host, and calling it the writer would state something the
-    store does not know.
-    """
+    """The store keeps the real hostname for the own-host checks."""
     label = report_config(target).host_label if target is not None else None
     return host_name(host) if host is None or label is None else label

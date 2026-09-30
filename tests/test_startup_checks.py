@@ -13,7 +13,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
 
-import holophyte.cli.cli
+import holophyte.cli.board_verbs
+import holophyte.cli.entry
+import holophyte.cli.host_modes
+import holophyte.cli.store_verbs
 import holophyte.config.agent_settings
 import holophyte.config.checks
 import holophyte.host.supervisor_lock
@@ -172,10 +175,10 @@ class StartupCheckTests(ConfigTestCase):
         self.stub_path(claude=False, system=False)
         target = self.locate().path
 
-        with patch.object(holophyte.cli.cli, "main",
+        with patch.object(holophyte.cli.entry, "main",
                           side_effect=AssertionError("claimed work")) as main:
             with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli([str(target)])
+                holophyte.cli.entry.cli([str(target)])
 
         message = str(raised.exception)
         self.assertIn("claude", message)
@@ -196,11 +199,11 @@ class StartupCheckTests(ConfigTestCase):
         ):
             with self.subTest(key=key, config=config):
                 target = self.locate(config).path
-                with patch.object(holophyte.cli.cli, "main",
+                with patch.object(holophyte.cli.entry, "main",
                                   side_effect=AssertionError("claimed work")) \
                         as main:
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli.cli([str(target)])
+                        holophyte.cli.entry.cli([str(target)])
                 self.assertIn(f"[agents] {key}", str(raised.exception))
                 self.assertIn(reason, str(raised.exception))
                 self.assertNotIn("unknown key", str(raised.exception))
@@ -232,10 +235,10 @@ class StartupCheckTests(ConfigTestCase):
         self.stub_path(docker="down")
         target = self.locate().path
 
-        with patch.object(holophyte.cli.cli, "main",
+        with patch.object(holophyte.cli.entry, "main",
                           side_effect=AssertionError("claimed work")) as main:
             with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli([str(target)])
+                holophyte.cli.entry.cli([str(target)])
 
         message = str(raised.exception)
         self.assertIn("Docker daemon", message)
@@ -327,10 +330,10 @@ class StartupCheckTests(ConfigTestCase):
         target = self.locate(
             '[agents]\nimplementer = "holophyte-no-such-harness -p"\n').path
 
-        with patch.object(holophyte.cli.cli, "main",
+        with patch.object(holophyte.cli.entry, "main",
                           side_effect=AssertionError("claimed work")) as main:
             with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli([str(target)])
+                holophyte.cli.entry.cli([str(target)])
 
         self.assertIn("holophyte-no-such-harness", str(raised.exception))
         main.assert_not_called()
@@ -341,8 +344,8 @@ class StartupCheckTests(ConfigTestCase):
         target = self.locate(
             '[agents]\nreviewer = "holophyte-no-such-reviewer --diff"\n').path
 
-        with patch.object(holophyte.cli.cli, "report") as report:
-            holophyte.cli.cli.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.host_modes, "report") as report:
+            holophyte.cli.entry.cli([str(target), "--report"])
 
         report.assert_called_once_with(self.project)
 
@@ -352,10 +355,10 @@ class StartupCheckTests(ConfigTestCase):
         self.stub_path(claude=False, docker="down", system=False)
         target = self.locate('[board]\nproject_id = "p-1"\nteam = "T"\n').path
 
-        with patch.object(holophyte.cli.cli, "report") as report:
-            holophyte.cli.cli.cli([str(target), "--report"])
-        with patch.object(holophyte.cli.cli, "sweep_report") as sweep_report:
-            holophyte.cli.cli.cli([str(target), "--sweep"])
+        with patch.object(holophyte.cli.host_modes, "report") as report:
+            holophyte.cli.entry.cli([str(target), "--report"])
+        with patch.object(holophyte.cli.board_verbs, "sweep_report") as sweep_report:
+            holophyte.cli.entry.cli([str(target), "--sweep"])
 
         report.assert_called_once_with(self.project)
         # The board is handed down from `cli()`, never reached for by name;
@@ -383,9 +386,9 @@ class BoardConfigTests(StartupCheckTests):
         """Run `cli([target])` to the point the loop would claim, and hand
         back the board it was built with and what startup printed."""
         printed = io.StringIO()
-        with patch.object(holophyte.cli.cli, "main") as main, \
+        with patch.object(holophyte.cli.entry, "main") as main, \
                 contextlib.redirect_stdout(printed):
-            holophyte.cli.cli.cli([str(target)])
+            holophyte.cli.entry.cli([str(target)])
         main.assert_called_once()
         return main.call_args.args[1], printed.getvalue()
 
@@ -440,17 +443,17 @@ class BoardConfigTests(StartupCheckTests):
 
         with patch.dict(os.environ, self.RETIRED_ENV):
             printed = io.StringIO()
-            with patch.object(holophyte.cli.cli, "main") as main, \
+            with patch.object(holophyte.cli.entry, "main") as main, \
                     contextlib.redirect_stdout(printed):
                 with self.assertRaises(SystemExit) as raised:
-                    holophyte.cli.cli.cli([str(target)])
-            with patch.object(holophyte.cli.cli, "supervise") as supervise, \
+                    holophyte.cli.entry.cli([str(target)])
+            with patch.object(holophyte.cli.host_modes, "supervise") as supervise, \
                     contextlib.redirect_stdout(printed):
                 with self.assertRaises(SystemExit):
-                    holophyte.cli.cli.cli([str(target), "--supervise"])
+                    holophyte.cli.entry.cli([str(target), "--supervise"])
             report = io.StringIO()
             with contextlib.redirect_stdout(report):
-                status = holophyte.cli.cli.cli([str(target), "--report"])
+                status = holophyte.cli.entry.cli([str(target), "--report"])
 
         self.assertNotEqual(raised.exception.code, 0)
         self.assertIn("[board] project_id", str(raised.exception))
@@ -466,17 +469,17 @@ class BoardConfigTests(StartupCheckTests):
         target = self.locate().path
 
         with patch.dict(os.environ, self.RETIRED_ENV), \
-                patch.object(holophyte.cli.cli, "sweep_report") as sweep_report:
-            holophyte.cli.cli.cli([str(target), "--sweep"])
+                patch.object(holophyte.cli.board_verbs, "sweep_report") as sweep_report:
+            holophyte.cli.entry.cli([str(target), "--sweep"])
 
         sweep_report.assert_called_once_with(self.project, act=False, provider=None)
 
     def test_a_misspelt_key_is_a_startup_error_naming_it(self):
         target = self.locate('[board]\nprojet_id = "x"\n').path
 
-        with patch.object(holophyte.cli.cli, "main") as main:
+        with patch.object(holophyte.cli.entry, "main") as main:
             with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli([str(target)])
+                holophyte.cli.entry.cli([str(target)])
 
         message = str(raised.exception)
         self.assertIn("[board]", message)
@@ -495,9 +498,9 @@ class BoardConfigTests(StartupCheckTests):
                 target = self.locate(config).path
 
                 with patch.dict(os.environ, env), \
-                        patch.object(holophyte.cli.cli, "main") as main:
+                        patch.object(holophyte.cli.entry, "main") as main:
                     with self.assertRaises(SystemExit) as raised:
-                        holophyte.cli.cli.cli([str(target)])
+                        holophyte.cli.entry.cli([str(target)])
 
                 self.assertIn(f"[board] {key}", str(raised.exception))
                 main.assert_not_called()
@@ -534,9 +537,9 @@ class SupervisorSpawnTests(StartupCheckTests):
 
     def start_loop(self, target):
         printed = io.StringIO()
-        with patch.object(holophyte.cli.cli, "board_for", self.EmptyBoard), \
+        with patch.object(holophyte.cli.entry, "board_for", self.EmptyBoard), \
                 contextlib.redirect_stdout(printed):
-            holophyte.cli.cli.cli([str(target)])
+            holophyte.cli.entry.cli([str(target)])
         out = printed.getvalue()
         self.assertIn("[holo2] Linear has no ready tickets. done.", out)
         return out
@@ -598,9 +601,9 @@ class SupervisorSpawnTests(StartupCheckTests):
     def test_a_non_boolean_spawn_supervisor_is_a_startup_error_naming_it(self):
         target = self.locate(self.BOARD + '[loop]\nspawn_supervisor = "no"\n').path
 
-        with patch.object(holophyte.cli.cli, "main") as main:
+        with patch.object(holophyte.cli.entry, "main") as main:
             with self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli([str(target)])
+                holophyte.cli.entry.cli([str(target)])
 
         self.assertIn("spawn_supervisor", str(raised.exception))
         # `main` stays a mock here: the exit is the assertion, and a real
@@ -615,13 +618,13 @@ class SupervisorSpawnTests(StartupCheckTests):
                  ["--file-ticket", str(self.root / "t.md")])
         for argv in modes:
             with self.subTest(argv=argv), \
-                    patch.object(holophyte.cli.cli, "report"), \
-                    patch.object(holophyte.cli.cli, "sweep_report"), \
-                    patch.object(holophyte.cli.cli, "serve"), \
-                    patch.object(holophyte.cli.cli, "requeue"), \
-                    patch.object(holophyte.cli.cli, "file_ticket"), \
+                    patch.object(holophyte.cli.host_modes, "report"), \
+                    patch.object(holophyte.cli.board_verbs, "sweep_report"), \
+                    patch.object(holophyte.cli.host_modes, "serve"), \
+                    patch.object(holophyte.cli.store_verbs, "requeue"), \
+                    patch.object(holophyte.cli.entry, "file_ticket"), \
                     contextlib.redirect_stdout(io.StringIO()):
-                holophyte.cli.cli.cli([str(target), *argv])
+                holophyte.cli.entry.cli([str(target), *argv])
         self.popen.assert_not_called()
 
     def test_a_worker_runs_one_ticket_and_starts_no_supervisor(self):
@@ -631,12 +634,12 @@ class SupervisorSpawnTests(StartupCheckTests):
         spawning nothing, and exits with the status it returns (KO-343)."""
         target = self.locate(self.BOARD).path
 
-        with patch.object(holophyte.cli.cli, "worker", return_value=3) as worker, \
-                patch.object(holophyte.cli.cli, "main") as main, \
-                patch.object(holophyte.cli.cli, "check_agent_commands") as probe, \
-                patch.object(holophyte.cli.cli, "board_for", self.EmptyBoard), \
+        with patch.object(holophyte.cli.entry, "worker", return_value=3) as worker, \
+                patch.object(holophyte.cli.entry, "main") as main, \
+                patch.object(holophyte.cli.entry, "check_agent_commands") as probe, \
+                patch.object(holophyte.cli.entry, "board_for", self.EmptyBoard), \
                 contextlib.redirect_stdout(io.StringIO()):
-            rc = holophyte.cli.cli.cli([str(target), "--worker"])
+            rc = holophyte.cli.entry.cli([str(target), "--worker"])
 
         self.assertEqual(rc, 3)
         worker.assert_called_once()

@@ -32,7 +32,7 @@ class EagerImportTests(unittest.TestCase):
             script = '''
 import json, sys
 from unittest.mock import patch
-from holophyte.cli.cli import cli
+from holophyte.cli.entry import cli
 
 def worker(*args):
     print(json.dumps(sorted(sys.modules)), flush=True)
@@ -43,9 +43,9 @@ def worker(*args):
     print(linear_provider.build_witness(), flush=True)
 
 with patch('holophyte.host.startup.build_sha', return_value='original'), \
-     patch('holophyte.cli.cli.Project'), patch('holophyte.cli.cli.check_config'), \\
-     patch('holophyte.cli.cli.board_for', return_value=object()), \\
-     patch('holophyte.cli.cli.worker', worker):
+     patch('holophyte.cli.entry.Project'), patch('holophyte.cli.entry.check_config'), \\
+     patch('holophyte.cli.entry.board_for', return_value=object()), \\
+     patch('holophyte.cli.entry.worker', worker):
     cli(['.', '--worker'])
 '''
             with subprocess.Popen(

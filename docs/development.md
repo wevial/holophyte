@@ -34,9 +34,18 @@ Each module, one line:
 - `holophyte/host/registry.py` — the host registry, `HOLOPHYTE_HOME/host.toml`: the
   projects a host serves and sweeps, by path, reloaded when the file changes;
   its one writer path is an exclusive temporary file and a rename.
-- `holophyte/cli/cli.py` — the argument parser and mode dispatch: `--report`,
-  `--requeue`, `--approve`, `--babysit`, `--repoint`, `--file-ticket`,
-  `--sweep [--act]`, `--supervise`, `--serve` and the loop itself.
+- `holophyte/cli/entry.py` — `cli()`, the entry point: parses the command
+  line and dispatches to the mode it names, the loop itself included.
+- `holophyte/cli/arguments.py` — `build_parser()`, every flag and its help,
+  and the checks that refuse a modifier without its mode.
+- `holophyte/cli/store_verbs.py` — the operator verbs that write the store:
+  `--requeue`, `--approve`, `--babysit`, `--repoint`, `--close`, `--abort`
+  and the rest.
+- `holophyte/cli/board_verbs.py` — the modes on the built board: `--sweep
+  [--act]`, `--board-diff`, `--board-import`, `--move`, `--cancel`, and
+  `require_board()`.
+- `holophyte/cli/host_modes.py` — the host forms of `--status`, `--serve` and
+  `--supervise`, the read-only modes, and `start_supervisor()`.
 - `holophyte/config/project.py` — where a project's state lives (`HOLOPHYTE_HOME`,
   the `<slug>` directory, legacy adoption) and the `Project` value.
 - `holophyte/config/reader.py` — `load_config()`, `config_table()`, `KNOWN_KEYS`

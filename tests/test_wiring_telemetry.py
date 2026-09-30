@@ -25,7 +25,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.report  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
@@ -280,7 +280,7 @@ class ReportStoreCase(unittest.TestCase):
         self.conn.commit()
         out = io.StringIO()
         with no_network(), patch.object(sys, "stdout", out):
-            holophyte.cli.cli.cli(["--report", str(self.target)])
+            holophyte.cli.entry.cli(["--report", str(self.target)])
         return out.getvalue().splitlines()
 
 
@@ -357,7 +357,7 @@ class ReportTests(ReportStoreCase):
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", out):
-                holophyte.cli.cli.cli(["--report", str(self.target)])
+                holophyte.cli.entry.cli(["--report", str(self.target)])
 
         printed = out.getvalue().splitlines()[1:]
         self.assertEqual(printed[:2], ["in flight: none", ""])
@@ -401,7 +401,7 @@ class ReportTests(ReportStoreCase):
         out = io.StringIO()
 
         with no_network(), patch.object(sys, "stdout", out):
-            holophyte.cli.cli.cli(["--report", str(self.root / "elsewhere")])
+            holophyte.cli.entry.cli(["--report", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
         self.assertFalse(

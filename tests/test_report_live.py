@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli.cli
+import holophyte.cli.entry
 import holophyte.cli.report as report
 import store
 import store.tickets
@@ -150,7 +150,7 @@ class LiveReportTests(ReportStoreCase):
             self.assertEqual("\n".join(lines[7:]), FINISHED)
             out = io.StringIO()
             with patch.object(sys, "stdout", out):
-                holophyte.cli.cli.cli(["--report", str(self.target)])
+                holophyte.cli.entry.cli(["--report", str(self.target)])
         self.assertEqual(out.getvalue().splitlines()[1:4], expected)
 
     def test_no_unfinished_runs(self):
@@ -202,7 +202,7 @@ class MigrationReportTests(ReportStoreCase):
         store.record_intervention(self.conn, run, "migrate", "operator note")
         out = io.StringIO()
         with patch.object(sys, "stdout", out):
-            holophyte.cli.cli.cli(["--report", str(self.target)])
+            holophyte.cli.entry.cli(["--report", str(self.target)])
         line = next(line for line in out.getvalue().splitlines()
                     if line.startswith("store schema"))
         self.assertIn(

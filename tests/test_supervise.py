@@ -23,7 +23,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
-import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
@@ -102,7 +102,7 @@ class SuperviseTests(SweepTestCase):
 
         with patch.object(sys, "stderr", io.StringIO()), \
                 self.assertRaises(SystemExit) as exited:
-            holophyte.cli.cli.cli(["--supervise", str(self.target)])
+            holophyte.cli.entry.cli(["--supervise", str(self.target)])
 
         message = str(exited.exception)
         self.assertIn(f"pid {holder.pid}", message.splitlines()[0])
@@ -397,7 +397,7 @@ class SupervisorConfigTests(SweepTestCase):
                 with self.assertRaises(SystemExit) as raised, \
                         patch.object(holophyte.host.sweep_report, "time",
                                      lambda: (T0 + 6 * MINUTE) / 1000):
-                    holophyte.cli.cli.cli(["--sweep", str(self.target)])
+                    holophyte.cli.entry.cli(["--sweep", str(self.target)])
                 message = str(raised.exception)
                 self.assertIn(f"[supervisor] {key}", message)
                 self.assertIn(constraint, message)
@@ -568,7 +568,7 @@ class HostLabelTests(SweepTestCase):
 
         with patch.object(sys, "stderr", io.StringIO()), \
                 self.assertRaises(SystemExit) as exited:
-            holophyte.cli.cli.cli(["--supervise", str(self.target)])
+            holophyte.cli.entry.cli(["--supervise", str(self.target)])
 
         hostname = socket.gethostname()
         self.assertIn(f"as pid {os.getpid()} on {self.LABEL}", out.getvalue())

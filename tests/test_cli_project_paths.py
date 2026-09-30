@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.admission
-import holophyte.cli.cli
+import holophyte.cli.entry
 import holophyte.config.project
 import store
 
@@ -38,7 +38,7 @@ class ProjectPathTests(unittest.TestCase):
                                       'project_id = "fresh-project"\n')
         with self.assertRaisesRegex(
                 SystemExit, f"project {project} already registered: {repo}"):
-            holophyte.cli.cli.cli(["project", "add", str(repo), "--store",
+            holophyte.cli.entry.cli(["project", "add", str(repo), "--store",
                                str(self.root / "store.db")])
         self.assertEqual(self.conn.execute(
             "SELECT linearTeamId, repoPath, admission, holdNote FROM projects "

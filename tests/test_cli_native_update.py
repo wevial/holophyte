@@ -17,7 +17,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
-import holophyte.cli.cli  # noqa: E402
+import holophyte.cli.entry  # noqa: E402
 import linear_provider  # noqa: E402
 from tests.test_provider import ticket_body  # noqa: E402
 
@@ -62,7 +62,7 @@ class NativeUpdateCliTests(ConfigTestCase):
         """Run `--file-ticket path args` on the project; status and stdout."""
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            status = holophyte.cli.cli.cli(
+            status = holophyte.cli.entry.cli(
                 [str(self.target), "--file-ticket", str(path), *args])
         return status, out.getvalue()
 
@@ -72,7 +72,7 @@ class NativeUpdateCliTests(ConfigTestCase):
         with self.assertRaises(SystemExit) as raised, \
                 contextlib.redirect_stderr(err), \
                 contextlib.redirect_stdout(io.StringIO()):
-            holophyte.cli.cli.cli([str(self.target), *args])
+            holophyte.cli.entry.cli([str(self.target), *args])
         self.assertEqual(raised.exception.code, 2)
         return err.getvalue()
 
