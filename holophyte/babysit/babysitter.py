@@ -18,7 +18,7 @@ from holophyte.babysit.main_checkout import detached_main
 from holophyte.babysit.plain_text import readable
 from holophyte.babysit.thread_answers import answer_asks, post
 from holophyte.babysit.thread_findings import thread_finding
-from holophyte.board.board import ledger
+from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import (
     InfraFailure,
@@ -33,9 +33,9 @@ from holophyte.loop.gates import (
 from holophyte.loop.run import Run
 from holophyte.loop.runs import heartbeat_while, record_round
 from holophyte.loop.stop import boundary, fix_state, stop_if_requested
-from holophyte.pr import merge_queue, pr, pr_status
+from holophyte.pr import github, merge_queue, pr_status
+from holophyte.pr.github import NO_AUTHOR
 from holophyte.pr.missing_checks import Retrigger, unreported
-from holophyte.pr.pr import NO_AUTHOR
 from holophyte.pr.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
 from holophyte.review.review import (
@@ -275,13 +275,13 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
     from holophyte.loop.merge_gate import _is_ancestor, _merge_ref, merge_conflict_goal
     from holophyte.pr.pullrequest import _park_on_pr
     with heartbeat_while(conn, run_id, beat_s):
-        fetched = subprocess.run(["git", "fetch", pr.REMOTE], cwd=wt,
+        fetched = subprocess.run(["git", "fetch", github.REMOTE], cwd=wt,
                                  capture_output=True, text=True)
-    ref = f"{pr.REMOTE}/{pr.BASE}"
+    ref = f"{github.REMOTE}/{github.BASE}"
     if fetched.returncode != 0 or subprocess.run(
             ["git", "rev-parse", "--verify", "-q", ref], cwd=wt,
             capture_output=True).returncode != 0:
-        raise InfraFailure(f"git fetch {pr.REMOTE} did not deliver {ref}"
+        raise InfraFailure(f"git fetch {github.REMOTE} did not deliver {ref}"
                            f" for the conflicting {pull.url}:"
                            f" {(fetched.stderr or fetched.stdout).strip()}"
                            f"; branch {branch} preserved at {sha[:12]}")
@@ -303,7 +303,7 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
                 project, conn, run_id, provider, task_id, branch, sha, pull,
                 (f"GitHub refused the merge: {refusal}; " if refusal else "")
                 + f"GitHub reported the pull request conflicting; merging"
-                f" {pr.BASE} into {branch} stopped on"
+                f" {github.BASE} into {branch} stopped on"
                 f" {', '.join(still or detail)} and the implementer turn"
                 " left it unresolved", (), reviewed=reviewed)
         merged = sh(["git", "rev-parse", "HEAD"], wt)
@@ -316,9 +316,9 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
         merged = detail
     with heartbeat_while(conn, run_id, beat_s):
         stop_if_requested(conn, run_id, "merge_gate")
-        pr.push_branch(project, branch)
+        github.push_branch(project, branch)
     merged = sh(["git", "rev-parse", branch], wt)
-    print(f"[holo2] pushed {branch} to {pr.REMOTE} at {merged[:12]}"
+    print(f"[holo2] pushed {branch} to {github.REMOTE} at {merged[:12]}"
           " after the conflict merge")
     if merged != sha:
         note = (f"Merged main into {branch} at {merged} (GitHub reported"
@@ -527,7 +527,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                     ticket, verify_cmd, contracts, pass_no, reviewed,
                     check_fix, removed.group)
                 continue
-            except pr.MergeRefused as refused:
+            except github.MergeRefused as refused:
                 verified = sha
                 sha, pushed_state, reviewed = _merge_origin_main(
                     project, conn, run_id, provider, task_id, branch, wt, sha,
@@ -811,7 +811,7 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
                     reason += f" ({', '.join(state.pending_contexts)})"
                 if park_ci and not state.missing_checks:
                     raise WaitsOnCI(reason)
-                nap = pr.CHECK_POLL_S
+                nap = github.CHECK_POLL_S
                 print(f"[holo2] checks pending on {pull.url}; waiting"
                       f" {nap}s")
             elif state.checks == "success" \
@@ -831,7 +831,7 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
                 raise WaitExpired(
                     f"{reason} exceeded {merge.check_wait_sec}s on the pull request")
             stop_if_requested(conn, run_id, "merge_gate")
-            pr.SLEEP(min(nap, remaining))
+            github.SLEEP(min(nap, remaining))
             state = pr_status.pr_state(project, pull)
             state = route_bot_threads(project, conn, run_id, beat_s, pull, state, merge)
     return state
@@ -1076,9 +1076,9 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
             f"branch {branch} preserved at {fixed[:12]}"))
     with heartbeat_while(conn, run_id, beat_s):
         stop_if_requested(conn, run_id, "merge_gate")
-        pr.push_branch(project, branch)
+        github.push_branch(project, branch)
     fixed = sh(["git", "rev-parse", branch], wt)
-    print(f"[holo2] pushed the fix round to {pr.REMOTE} at {fixed[:12]}")
+    print(f"[holo2] pushed the fix round to {github.REMOTE} at {fixed[:12]}")
     for index, (n, thread, reason) in enumerate(addressed):
         if index < saved["posted"]:
             continue

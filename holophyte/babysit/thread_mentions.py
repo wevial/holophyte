@@ -7,7 +7,7 @@ from dataclasses import replace
 import store
 from holophyte import questions, redact
 from holophyte.loop.gates import InfraFailure
-from holophyte.pr import pr
+from holophyte.pr import github
 
 REFUSAL = "Only listed maintainers may instruct the factory here"
 
@@ -74,7 +74,7 @@ def acknowledge(target, conn, run_id, pull, threads, merge):
                 or bot_author(comment.author, bots, comment.author_kind)):
             continue
         try:
-            pr.react_eyes(target, pull, comment.node_id)
+            github.react_eyes(target, pull, comment.node_id)
         except InfraFailure as e:
             if conn is not None and run_id is not None:
                 store.record_event(conn, run_id, "pull_request",

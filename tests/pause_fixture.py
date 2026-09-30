@@ -45,7 +45,7 @@ class PauseReply:
 
 class PauseFailureCases:
     def test_pause_with_run_argument_syncs_board_and_releases_label(self):
-        from holophyte.board import board
+        from holophyte.board import projection
         from holophyte.loop.dispatch import SWEPT
 
         run_task = holophyte.loop.loop.run_task
@@ -55,9 +55,14 @@ class PauseFailureCases:
             run = task["_run"]
             ticket_id = store.read.run_snapshot(conn, run_id).ticketId
             with (
-                patch.object(board, "mirror_push", wraps=board.mirror_push) as mirror,
-                patch.object(board, "release_lease_label",
-                             wraps=board.release_lease_label) as release,
+                patch.object(
+                    projection, "mirror_push", wraps=projection.mirror_push
+                ) as mirror,
+                patch.object(
+                    projection,
+                    "release_lease_label",
+                    wraps=projection.release_lease_label,
+                ) as release,
             ):
                 result = run_task(run, task)
             mirror.assert_called_once_with(conn, ticket_id, provider)

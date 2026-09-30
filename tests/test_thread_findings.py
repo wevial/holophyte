@@ -5,7 +5,7 @@ from unittest.mock import patch
 import store
 from holophyte.babysit import babysitter
 from holophyte.babysit.thread_findings import bounded_raw
-from holophyte.pr import pr
+from holophyte.pr import github
 from holophyte.review.review import parse_findings
 
 
@@ -21,10 +21,10 @@ class ThreadFindingTests(unittest.TestCase):
                              "<details>[redacted]</details>")
 
     def test_thread_location_changes_do_not_change_the_legacy_fingerprint(self):
-        pull = pr.PullRequest("github.com", "example", "repo", 1, "https://example.test")
+        pull = github.PullRequest("github.com", "example", "repo", 1, "https://example.test")
         for path, line in (("app.py", 3), ("Dockerfile", None), ("", None)):
             with self.subTest(path=path):
-                thread = pr.Thread("T1", path, line, "review-bot",
+                thread = github.Thread("T1", path, line, "review-bot",
                                    "**defect**", pull.url)
                 args = (pull, 1, (thread,), {1: ("ADDRESS", "fix the defect")},
                         "ok", "abc")

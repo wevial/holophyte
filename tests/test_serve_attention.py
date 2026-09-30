@@ -5,7 +5,7 @@ import unittest
 from time import time
 from unittest.mock import patch
 
-import holophyte.board.board
+import holophyte.board.projection
 import holophyte.host.reconcile
 import holophyte.host.supervisor
 import holophyte.serve.serve_actions
@@ -34,7 +34,7 @@ class FailedAttentionTests(ServeTestCase):
         task = linear_provider.parse_task({
             "identifier": "KO-7", "id": "issue-7", "title": "ticket 7",
             "description": "", "state": {"name": state}})
-        holophyte.board.board.mirror_task(self.conn, project, task)
+        holophyte.board.projection.mirror_task(self.conn, project, task)
 
     def test_shelved_board_states_hide_failure_until_unshelved(self):
         for state in ("Backlog", "Canceled", "Done", "Todo"):
@@ -305,7 +305,7 @@ class TypedParkAttentionTests(unittest.TestCase):
             id=1, linearIdentifier="KO-1", blockedQuestion="Approval needed",
             prUrl="https://github.com/example/repo/pull/7",
             parkKind="pull_request")
-        self.assertEqual(holophyte.serve.serve.parked_item(ticket)["kind"], "pr_open")
+        self.assertEqual(holophyte.serve.server.parked_item(ticket)["kind"], "pr_open")
 
 
 if __name__ == "__main__":
@@ -417,7 +417,7 @@ class CiParkAttentionTests(ServeTestCase):
                  pr_seen=("2026-09-29T10:00:00Z", 0, "pending", None, None),
                  now=self.now)
         (blocked,) = store.read.blocked_tickets(conn)
-        item = holophyte.serve.serve.parked_item(blocked)
+        item = holophyte.serve.server.parked_item(blocked)
         self.assertEqual((item["kind"], item["pr_url"], item["reason"]),
                          ("pr_open", self.URL, "pending checks"))
         self.assertEqual((item["pr"]["number"], item["pr"]["checks"]), (31, "pending"))

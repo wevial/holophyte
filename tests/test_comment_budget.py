@@ -34,8 +34,10 @@ TARGET_ENFORCED = False
 
 PINNED = {
     "factory.py": 30,
+
     "holophyte/__init__.py": 20,
     "holophyte/admission.py": 9,
+
     "holophyte/agents/__init__.py": 0,
     "holophyte/agents/agent_routes.py": 26,
     "holophyte/agents/agent_turns.py": 12,
@@ -45,6 +47,7 @@ PINNED = {
     "holophyte/agents/session_arms.py": 2,
     "holophyte/agents/transcript_config.py": 2,
     "holophyte/agents/transcripts.py": 23,
+
     "holophyte/babysit/__init__.py": 0,
     "holophyte/babysit/babysit_steps.py": 2,
     "holophyte/babysit/babysitter.py": 101,
@@ -57,13 +60,16 @@ PINNED = {
     "holophyte/babysit/thread_answers.py": 8,
     "holophyte/babysit/thread_findings.py": 6,
     "holophyte/babysit/thread_mentions.py": 9,
+
     "holophyte/board/__init__.py": 0,
-    "holophyte/board/board.py": 15,
     "holophyte/board/board_diff.py": 2,
     "holophyte/board/board_import.py": 2,
     "holophyte/board/board_sync.py": 10,
     "holophyte/board/native_board.py": 4,
+    "holophyte/board/projection.py": 15,
+
     "holophyte/capture_playwright.py": 44,
+
     "holophyte/cli/__init__.py": 0,
     "holophyte/cli/cli.py": 232,
     "holophyte/cli/cli_project.py": 25,
@@ -72,30 +78,36 @@ PINNED = {
     "holophyte/cli/report.py": 54,
     "holophyte/cli/status.py": 75,
     "holophyte/cli/store_import.py": 40,
+
     "holophyte/commit_hygiene.py": 11,
+
     "holophyte/config/__init__.py": 0,
     "holophyte/config/config.py": 318,
     "holophyte/config/config_tables.py": 294,
     "holophyte/config/locks.py": 15,
     "holophyte/config/project.py": 124,
+
     "holophyte/deadline.py": 44,
     "holophyte/environment_git.py": 14,
     "holophyte/failure_reason.py": 5,
     "holophyte/files.py": 93,
+
     "holophyte/host/__init__.py": 0,
     "holophyte/host/ci_wake.py": 1,
-    "holophyte/host/host.py": 102,
     "holophyte/host/reconcile.py": 230,
+    "holophyte/host/registry.py": 102,
     "holophyte/host/startup.py": 5,
     "holophyte/host/supervisor.py": 430,
     "holophyte/host/supervisor_lock.py": 108,
     "holophyte/host/sweep_host.py": 131,
     "holophyte/host/sweep_report.py": 101,
+
     "holophyte/isolation/__init__.py": 0,
-    "holophyte/isolation/isolation.py": 4,
     "holophyte/isolation/isolation_clone.py": 8,
     "holophyte/isolation/isolation_git.py": 10,
     "holophyte/isolation/isolation_return.py": 3,
+    "holophyte/isolation/launcher.py": 4,
+
     "holophyte/loop/__init__.py": 0,
     "holophyte/loop/claim.py": 364,
     "holophyte/loop/claim_store.py": 90,
@@ -111,27 +123,31 @@ PINNED = {
     "holophyte/loop/run.py": 35,
     "holophyte/loop/runs.py": 201,
     "holophyte/loop/stop.py": 49,
+
     "holophyte/media_store.py": 3,
+
     "holophyte/pr/__init__.py": 0,
+    "holophyte/pr/github.py": 184,
     "holophyte/pr/merge_queue.py": 38,
     "holophyte/pr/missing_checks.py": 21,
-    "holophyte/pr/pr.py": 184,
     "holophyte/pr/pr_activity.py": 9,
     "holophyte/pr/pr_contexts.py": 2,
     "holophyte/pr/pr_head.py": 4,
     "holophyte/pr/pr_media.py": 44,
     "holophyte/pr/pr_status.py": 96,
     "holophyte/pr/pullrequest.py": 105,
+
     "holophyte/questions.py": 2,
     "holophyte/redact.py": 141,
+
     "holophyte/review/__init__.py": 0,
     "holophyte/review/findings.py": 156,
     "holophyte/review/freshness.py": 139,
     "holophyte/review/reproduce.py": 90,
     "holophyte/review/review.py": 274,
     "holophyte/review/review_session.py": 6,
+
     "holophyte/serve/__init__.py": 0,
-    "holophyte/serve/serve.py": 410,
     "holophyte/serve/serve_actions.py": 69,
     "holophyte/serve/serve_board.py": 54,
     "holophyte/serve/serve_config.py": 105,
@@ -139,6 +155,8 @@ PINNED = {
     "holophyte/serve/serve_levers.py": 43,
     "holophyte/serve/serve_runs.py": 160,
     "holophyte/serve/serve_watch.py": 49,
+    "holophyte/serve/server.py": 410,
+
     "holophyte/story/__init__.py": 0,
     "holophyte/story/story_approval.py": 4,
     "holophyte/story/story_claim.py": 5,
@@ -147,9 +165,11 @@ PINNED = {
     "holophyte/story/story_filing.py": 7,
     "holophyte/story/story_views.py": 1,
     "holophyte/story/witness.py": 1,
+
     "linear_provider.py": 21,
     "provider.py": 175,
     "review_runner.py": 116,
+
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,
     "store/board.py": 87,
@@ -170,37 +190,46 @@ PINNED = {
     "store/tickets.py": 249,
     "store/working.py": 3,
     "store/writes.py": 2,
+
     "story_template.py": 11,
     "ticket_template.py": 197,
 }
 
 CITED = {
     "holophyte/admission.py": 1,
+
     "holophyte/agents/agents.py": 4,
+
     "holophyte/babysit/babysitter.py": 2,
     "holophyte/babysit/check_fix.py": 3,
     "holophyte/babysit/main_checkout.py": 1,
     "holophyte/babysit/maintainer_notes.py": 2,
     "holophyte/babysit/plain_text.py": 1,
     "holophyte/babysit/thread_mentions.py": 1,
+
     "holophyte/capture_playwright.py": 1,
+
     "holophyte/cli/cli.py": 5,
     "holophyte/cli/operator.py": 5,
     "holophyte/cli/report.py": 1,
     "holophyte/cli/status.py": 1,
     "holophyte/cli/store_import.py": 1,
+
     "holophyte/config/config.py": 6,
     "holophyte/config/config_tables.py": 21,
     "holophyte/config/locks.py": 1,
     "holophyte/config/project.py": 2,
+
     "holophyte/environment_git.py": 1,
     "holophyte/files.py": 1,
-    "holophyte/host/host.py": 1,
+
     "holophyte/host/reconcile.py": 15,
+    "holophyte/host/registry.py": 1,
     "holophyte/host/supervisor.py": 16,
     "holophyte/host/supervisor_lock.py": 1,
     "holophyte/host/sweep_host.py": 2,
     "holophyte/host/sweep_report.py": 1,
+
     "holophyte/loop/claim.py": 20,
     "holophyte/loop/claim_store.py": 3,
     "holophyte/loop/dispatch.py": 10,
@@ -214,31 +243,38 @@ CITED = {
     "holophyte/loop/run.py": 1,
     "holophyte/loop/runs.py": 5,
     "holophyte/loop/stop.py": 5,
+
+    "holophyte/pr/github.py": 4,
     "holophyte/pr/merge_queue.py": 2,
     "holophyte/pr/missing_checks.py": 2,
-    "holophyte/pr/pr.py": 4,
     "holophyte/pr/pr_activity.py": 1,
     "holophyte/pr/pr_head.py": 1,
     "holophyte/pr/pr_media.py": 5,
     "holophyte/pr/pr_status.py": 4,
     "holophyte/pr/pullrequest.py": 7,
+
     "holophyte/redact.py": 3,
+
     "holophyte/review/freshness.py": 11,
     "holophyte/review/reproduce.py": 4,
     "holophyte/review/review.py": 3,
-    "holophyte/serve/serve.py": 9,
+
     "holophyte/serve/serve_actions.py": 6,
     "holophyte/serve/serve_board.py": 1,
     "holophyte/serve/serve_config.py": 5,
     "holophyte/serve/serve_levers.py": 1,
     "holophyte/serve/serve_runs.py": 1,
     "holophyte/serve/serve_watch.py": 1,
+    "holophyte/serve/server.py": 9,
+
     "provider.py": 15,
     "review_runner.py": 2,
+
     "store/board.py": 3,
     "store/read.py": 26,
     "store/schema.py": 21,
     "store/tickets.py": 6,
+
     "ticket_template.py": 5,
 }
 
@@ -441,7 +477,7 @@ class CommentBudget(unittest.TestCase):
         self.assertEqual(CITED, {n: len(m.cited)
                                  for n, m in modules.items() if m.cited})
         self.assertLessEqual(
-            {"holophyte/board/board.py", "store/__init__.py", "factory.py"},
+            {"holophyte/board/projection.py", "store/__init__.py", "factory.py"},
             set(PINNED))
 
     def test_the_in_scope_ratio_against_the_target(self):

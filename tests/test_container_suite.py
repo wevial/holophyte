@@ -17,7 +17,7 @@ class ContainerSuiteTests(unittest.TestCase):
     )
     def test_whole_suite_passes_inside_an_isolated_launch(self):
         from holophyte.config.project import Project
-        from holophyte.isolation import isolation
+        from holophyte.isolation import launcher
         from holophyte.isolation.isolation_git import git
 
         if not shutil.which("docker"):
@@ -35,9 +35,9 @@ class ContainerSuiteTests(unittest.TestCase):
                 'implementer_isolation = { backend = "container",'
                 ' memory = "4g", writable = true }\n'
             )
-            code, output = isolation.launch(
-                isolation.route_for(project), clone,
-                isolation.environment(project),
+            code, output = launcher.launch(
+                launcher.route_for(project), clone,
+                launcher.environment(project),
                 ["python3", "tests/run_modules.py", "--jobs", "4"],
                 timeout=1500, project=project,
             )

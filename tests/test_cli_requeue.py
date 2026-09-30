@@ -21,7 +21,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.board.board
+import holophyte.board.projection
 import holophyte.cli.cli
 import holophyte.config.project
 import holophyte.loop.stop
@@ -124,7 +124,7 @@ class RequeueCliTests(unittest.TestCase):
                 task = linear_provider.parse_task({
                     "identifier": "KO-1", "id": "issue-1", "title": "a ticket",
                     "description": "", "state": {"name": state}})
-                holophyte.board.board.mirror_task(self.conn, self.project_id, task)
+                holophyte.board.projection.mirror_task(self.conn, self.project_id, task)
                 before = list(self.conn.iterdump())
                 with self.assertRaisesRegex(SystemExit, state):
                     self.cli("--requeue", "KO-1", "--note", "retry")
@@ -334,7 +334,7 @@ class RequeuedClaimTests(LoopFixture):
         self.addCleanup(conn.close)
         project_id = store.tickets.ensure_project(
             conn, StubProvider.TEAM, self.target)
-        ticket = holophyte.board.board.mirror_task(conn, project_id, a_task())
+        ticket = holophyte.board.projection.mirror_task(conn, project_id, a_task())
         run = store.claim(conn, project_id, ticket, now=T0)
         store.tickets.transition(conn, ticket, "in_flight")
         for n, (verdict, messages) in enumerate(rounds, 1):

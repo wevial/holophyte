@@ -31,7 +31,7 @@ export const ACTIONS_OFF = "This daemon has not opted into actions ([serve] acti
 export const NOT_WIRED = "not wired yet";
 
 /** What a `POST /actions/...` answered: the daemon's `ok` and `detail`
- *  (holophyte/serve/serve.py `unit_action()`, `requeue_action()`), or for a
+ *  (holophyte/serve/server.py `unit_action()`, `requeue_action()`), or for a
  *  non-2xx answer `ok: false` with its status and `error` as the detail. */
 export interface ActionResult {
   ok: boolean;

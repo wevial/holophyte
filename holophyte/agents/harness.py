@@ -418,7 +418,7 @@ def seat(target, role, *, fallback=False):
     if not isinstance(table, dict):
         return None
     adapter = parse_role(where, key, table)
-    from holophyte.isolation.isolation import route_for
+    from holophyte.isolation.launcher import route_for
     binary = adapter.binary
     if role != "implement" or route_for(target).backend != "container":
         paths = config_table(target, "harnesses")

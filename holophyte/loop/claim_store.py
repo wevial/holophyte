@@ -22,7 +22,7 @@ from time import time
 import store
 import store.board
 import store.read
-from holophyte.board.board import (
+from holophyte.board.projection import (
     body_problem,
     foreign_lease_holders,
     lease_host,

@@ -40,7 +40,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 from worktree_setup_cases import WorktreeSetupCases  # noqa: E402
 
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.environment_git  # noqa: E402
@@ -138,7 +138,7 @@ class WorktreeSetupLoopTests(WorktreeSetupCases, LoopFixture):
             store.resume(conn, 1)
             store.release(conn, 1, "failed", "sentinel-db-value")
             ticket_id = conn.execute("SELECT id FROM tickets").fetchone()[0]
-            self.assertTrue(holophyte.board.board.block_ticket(
+            self.assertTrue(holophyte.board.projection.block_ticket(
                 conn, ticket_id, provider, "verify failed: sentinel-public-value"))
         finally:
             conn.close()
@@ -265,7 +265,7 @@ class SkipLineTests(unittest.TestCase):
         self.assertNotIn("a question", conflicted)
 
         struck = holophyte.loop.claim.skip_line(
-            "KO-131", 2, None, holophyte.board.board.strike_question(2))
+            "KO-131", 2, None, holophyte.board.projection.strike_question(2))
         self.assertIn("struck out after 2 failures", struck)
         self.assertNotIn("a question", struck)
 
@@ -1206,7 +1206,7 @@ class BoardLeaseLabelTests(LoopFixture):
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                            str(self.target))
-            ticket = holophyte.board.board.mirror_task(conn, project, a_task())
+            ticket = holophyte.board.projection.mirror_task(conn, project, a_task())
             run_id = store.claim(conn, project, ticket)
             tickets.transition(conn, ticket, "in_flight")
             store.release(conn, run_id, "failed", "the board was down")
@@ -1356,12 +1356,12 @@ class BoardLeaseLabelTests(LoopFixture):
             provider = StubProvider(a_task())
             provider.label_issue("iss-131", "holo:writer-1")
 
-            holophyte.board.board.release_lease_label(self.project, conn, ticket_id,
-                                                provider, ended)
+            holophyte.board.projection.release_lease_label(self.project, conn,
+                                                ticket_id, provider, ended)
             self.assertEqual(provider.labels["iss-131"], ["holo:writer-1"])
 
-            holophyte.board.board.release_lease_label(self.project, conn, ticket_id,
-                                                provider, live)
+            holophyte.board.projection.release_lease_label(self.project, conn,
+                                                ticket_id, provider, live)
             self.assertEqual(provider.labels["iss-131"], [])
         finally:
             conn.close()
@@ -1417,8 +1417,8 @@ class BoardLeaseLabelTests(LoopFixture):
         conn = store.open(str(self.db))
         try:
             (ticket_id,) = conn.execute("SELECT id FROM tickets").fetchone()
-            holophyte.board.board.release_lease_label(self.project, conn, ticket_id,
-                                                provider, ended)
+            holophyte.board.projection.release_lease_label(self.project, conn,
+                                                ticket_id, provider, ended)
         finally:
             conn.close()
         threads[0].join(10)

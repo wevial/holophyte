@@ -36,8 +36,8 @@ import store.schema  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte import deadline  # noqa: E402
 from holophyte.config.project import Project  # noqa: E402
-from holophyte.host.host import Host  # noqa: E402
 from holophyte.host.reconcile import GITHUB_BUDGET  # noqa: E402
+from holophyte.host.registry import Host  # noqa: E402
 from holophyte.host.supervisor import supervisor_liveness_line  # noqa: E402
 from holophyte.pr.pr_status import PullStatus  # noqa: E402
 from provider import LinearBoard  # noqa: E402
@@ -542,7 +542,7 @@ from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, sys.argv[1])
 import holophyte.host.sweep_host as sweep_host
-from holophyte.host.host import Host
+from holophyte.host.registry import Host
 
 def reconcile(entry, seen, state, now, out):
     if entry.name == "beta":

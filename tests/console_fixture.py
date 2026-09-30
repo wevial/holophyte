@@ -52,7 +52,7 @@ A draft: the Shipped view could read as a day-by-day timeline.
 """
 QUESTION = ("merge? The reviewer passed round 1 and the pre-merge verify is"
             " green; approve with --approve DEMO-4.")
-FINDINGS = [{"path": "holophyte/serve/serve.py", "line": 12, "severity": "p1",
+FINDINGS = [{"path": "holophyte/serve/server.py", "line": 12, "severity": "p1",
              "criterion": "AC1", "message": "the route is unmatched"}]
 
 

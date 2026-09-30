@@ -2,7 +2,7 @@
 import re
 from dataclasses import replace
 
-from holophyte.pr.pr import Thread
+from holophyte.pr.github import Thread
 from holophyte.review.findings import decode_findings
 from store import operator_notes
 

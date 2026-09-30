@@ -1,4 +1,4 @@
-"""holophyte.host.host: the host registry, `HOLOPHYTE_HOME/host.toml`.
+"""holophyte.host.registry: the host registry, `HOLOPHYTE_HOME/host.toml`.
 
 One file per host lists the projects the host daemon serves and the host
 sweep watches, by path; everything else about a project -- its route and

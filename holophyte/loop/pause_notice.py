@@ -11,7 +11,7 @@ from urllib.parse import quote
 import store
 from holophyte.babysit.babysitter import COMMENT_HEADER
 from holophyte.loop.gates import InfraFailure
-from holophyte.pr.pr import rest
+from holophyte.pr.github import rest
 from holophyte.pr.pr_status import parse_pr_url
 from holophyte.redact import safe_print as print
 

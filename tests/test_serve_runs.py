@@ -251,7 +251,7 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
 
 class ShippedTests(ServeTestCase):
 
-    FINDING = {"path": "holophyte/serve/serve.py", "line": 1, "severity": "p2",
+    FINDING = {"path": "holophyte/serve/server.py", "line": 1, "severity": "p2",
                "criterion": None, "message": "a finding"}
 
     def seed_shipped(self):
@@ -398,7 +398,7 @@ class ShippedTests(ServeTestCase):
 
 class RunDetailTests(BotFindingCases, ServeTestCase):
     FINDINGS = [
-        {"path": "holophyte/serve/serve.py", "line": 12, "severity": "p1",
+        {"path": "holophyte/serve/server.py", "line": 12, "severity": "p1",
          "criterion": "AC1", "message": "the route is unmatched"},
         {"path": "docs/reference/http.md", "line": None, "severity": "nit",
          "criterion": None, "message": "no example"},
@@ -456,18 +456,18 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
 
     def test_mentioned_thread_is_an_instruction_separate_from_findings(self):
         from holophyte.babysit import babysitter, thread_mentions
-        from holophyte.pr import pr
+        from holophyte.pr import github
         from holophyte.review.review import parse_findings
 
         self.seed_reviewed()
-        mentioned = thread_mentions.classify(pr.Thread(
+        mentioned = thread_mentions.classify(github.Thread(
             "T1", "app.py", 1, "operator", "@holophyte use the path tokenId\n"
             "- Drop guestTokenId\n- Preserve token validation",
             "https://github.com/example/repo/pull/1#discussion_r1"), "holophyte")
-        finding = pr.Thread("T2", "app.py", 2, "reviewer", "Handle empty tokens",
+        finding = github.Thread("T2", "app.py", 2, "reviewer", "Handle empty tokens",
                             "https://github.com/example/repo/pull/1#discussion_r2")
         reply = babysitter.round_reply(
-            pr.PullRequest("github.com", "example", "repo", 1,
+            github.PullRequest("github.com", "example", "repo", 1,
                            "https://github.com/example/repo/pull/1"),
             1, (finding, mentioned),
             {1: ("ADDRESS", "handle empty tokens"), 2: ("ADDRESS", mentioned.request)},
@@ -850,7 +850,7 @@ class MigrationFeedTests(ServeTestCase):
         self.assertEqual(rows[0]["schema_from"], 0)
         self.assertEqual(rows[0]["schema_to"], store.SCHEMA_VERSION)
         self.assertEqual(rows[0]["project"], str(target.path))
-        _, status_body = holophyte.serve.serve.status(target)
+        _, status_body = holophyte.serve.server.status(target)
         self.assertEqual(status_body["schema_version"], store.SCHEMA_VERSION)
         for query in ("since=0&ticket=KO-7", "since=0&kind=merge",
                       f"since={rows[0]['at'] + 1}"):
@@ -885,7 +885,7 @@ class FailurePayloadTests(MergeModeFixture):
         self.assertIsInstance(body['rows'][0]['outcome_reason'], str)
         self.assertIn('command 2', reason)
         self.assertIn('exit 3; boom', reason)
-        code, body = holophyte.serve.serve.attention(self.project)
+        code, body = holophyte.serve.server.attention(self.project)
         self.assertEqual(code, 200)
         (card,) = [item for item in body['items'] if item['kind'] == 'failed']
         self.assertEqual(card['reason'], reason)

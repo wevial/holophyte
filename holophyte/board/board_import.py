@@ -2,7 +2,7 @@
 import sys
 
 import store
-from holophyte.board.board import (
+from holophyte.board.projection import (
     body_problems,
     mirror_key,
     mirror_task,

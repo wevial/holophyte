@@ -10,7 +10,7 @@ from serve_fixture import ServeTestCase  # noqa: E402
 import holophyte.cli.report  # noqa: E402
 import store  # noqa: E402
 from holophyte.babysit.maintainer_notes import cite_commits  # noqa: E402
-from holophyte.pr.pr import Thread  # noqa: E402
+from holophyte.pr.github import Thread  # noqa: E402
 from store.operator_notes import consume, notes, send_back  # noqa: E402
 
 

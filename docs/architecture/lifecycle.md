@@ -79,7 +79,7 @@ Trace: nothing in the store yet; the issue in Linear, in Todo.
 `linear_provider.claim_next()` lists the board's non-terminal, unblocked
 issues (Linear `blocks` relations are the only machine-checked
 dependencies), orders them by `[loop] order` (identifier or priority), and
-returns the first the store will accept. `board.mirror_task()` upserts the
+returns the first the store will accept. `projection.mirror_task()` upserts the
 ticket row with a **contract snapshot**: title, criteria, verify commands,
 estimate. `body_problem()` runs the validator against the live body with
 the project repository; a body that fails is mirrored as `needs_spec` and
@@ -173,7 +173,7 @@ Trace: each round and the adjudication as `reviewRounds` rows; phases
 
 ### 7. Merge gate
 
-The verify command runs once more. `board.merge_drift()` re-reads the
+The verify command runs once more. `projection.merge_drift()` re-reads the
 ticket from Linear and compares it with the snapshot from step 1; a body
 edited while the run worked refuses the merge and preserves the branch. A
 board that cannot be read is recorded as "no evidence" and the merge

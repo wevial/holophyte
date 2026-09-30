@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import store
 from holophyte.config.project import Project
-from holophyte.host import host
+from holophyte.host import registry
 from tests.host_fixture import HostFixture
 
 
@@ -44,13 +44,13 @@ class NativeKeyTest(HostFixture):
     def test_add_refuses_a_key_a_linear_store_holds(self):
         linear = self.linear("linear", "KO-7")
         native = self.native("native", "KO")
-        registry = (self.home / "host.toml").read_bytes()
+        host_registry = (self.home / "host.toml").read_bytes()
         with self.assertRaises(SystemExit) as refused:
             self.cli("project", "add", str(native))
         line = str(refused.exception.code)
         self.assertIn("KO", line.replace(str(native), ""))
         self.assertIn(str(linear), line)
-        self.assertEqual((self.home / "host.toml").read_bytes(), registry)
+        self.assertEqual((self.home / "host.toml").read_bytes(), host_registry)
         self.assertFalse(Project.locate(native).store_path.exists())
 
     def test_add_refuses_a_second_native_board_with_one_key(self):
@@ -63,12 +63,12 @@ class NativeKeyTest(HostFixture):
         self.assertEqual([path for _, path in self.registered()], [first])
 
     def test_a_prefix_and_its_key_alias_name_one_board(self):
-        registry = host.Host.locate()
+        host_registry = registry.Host.locate()
         first = self.native("first", "HOLO")
         second = self.native("second", "HOLO", name="key")
         for path in (first, second):
-            host.register(registry, Project.locate(path))
-        conflict = host.native_key_conflict(Project.locate(second), registry)
+            registry.register(host_registry, Project.locate(path))
+        conflict = registry.native_key_conflict(Project.locate(second), host_registry)
         self.assertIn("[board] prefix HOLO", conflict)
         self.assertIn(str(first), conflict)
 

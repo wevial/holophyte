@@ -11,7 +11,11 @@ from sweep_fixture import SweepTestCase  # noqa: E402
 
 import store  # noqa: E402
 from holophyte import redact  # noqa: E402
-from holophyte.board.board import BOARD_COMMENT_LIMIT, escalate, ledger  # noqa: E402
+from holophyte.board.projection import (  # noqa: E402
+    BOARD_COMMENT_LIMIT,
+    escalate,
+    ledger,
+)
 
 SENTINEL = "ticket-notes-sentinel-742"
 

@@ -32,7 +32,7 @@ import store.read
 import store.schema
 import store.tickets
 from holophyte.config.project import Project
-from holophyte.host.host import Host, settings
+from holophyte.host.registry import Host, settings
 from holophyte.serve.serve_host import (
     HostServer,
     host_attention,

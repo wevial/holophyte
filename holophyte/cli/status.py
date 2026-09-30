@@ -18,7 +18,7 @@ queue, `claimable()`, in store mode); the locks are read with
 Nothing here calls Linear or GitHub.
 
 With no project, `host_status_report()` is the host form: the registry
-(`holophyte.host.host`), the build, the home's sweep lock and `sweep.json`, and
+(`holophyte.host.registry`), the build, the home's sweep lock and `sweep.json`, and
 each registered project's snapshot, one project's failure its own `error`.
 """
 import json

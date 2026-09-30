@@ -181,7 +181,7 @@ class BabysitHelpers:
         fixes = [Commit("Resolve main", path="tests/test_file_sizes.py",
                         body="branch's line\nmain's line\n"), APPROVE, Idle("")
                  ] if changed else []
-        with patch.object(holophyte.pr.pr, "SLEEP", naps.append), \
+        with patch.object(holophyte.pr.github, "SLEEP", naps.append), \
                 patch("holophyte.babysit.babysitter.time",
                       side_effect=lambda: 1000 + sum(naps)):
             out = self.main_output(work, review, Idle(""), *fixes,
@@ -197,7 +197,7 @@ class BabysitHelpers:
             states += [self.pr_state(checks="PENDING"), self.pr_state()]
         self.serve(*states)
         naps = []
-        with patch.object(holophyte.pr.pr, "SLEEP", naps.append):
+        with patch.object(holophyte.pr.github, "SLEEP", naps.append):
             fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE,
                                 Idle(""), provider=self.provider())
         return old, fake, naps
@@ -359,7 +359,7 @@ class ConflictRefusalCases(BabysitHelpers):
     def test_conflict_push_waits_for_the_head_to_catch_up(self):
         review = self.conflict_refusal(heads=("old", "pushed"))
         naps = []
-        with patch.object(holophyte.pr.pr, "SLEEP", naps.append):
+        with patch.object(holophyte.pr.github, "SLEEP", naps.append):
             self.loop(Commit("candidate"), review, Idle(""), APPROVE, Idle(""),
                       provider=self.provider())
         self.assert_conflict_merge_landed()
@@ -370,7 +370,7 @@ class ConflictRefusalCases(BabysitHelpers):
     def test_conflict_push_stale_api_uses_remote_head(self):
         review = self.conflict_refusal(heads=("old",))
         naps = []
-        with patch.object(holophyte.pr.pr, "SLEEP", naps.append):
+        with patch.object(holophyte.pr.github, "SLEEP", naps.append):
             self.loop(Commit("candidate"), review, Idle(""), APPROVE, Idle(""),
                       provider=self.provider())
         original, pushed = [sha for _, sha in self.pushed()]

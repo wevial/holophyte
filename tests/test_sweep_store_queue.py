@@ -19,7 +19,7 @@ from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
 import store  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.board.board import mirror_status  # noqa: E402
+from holophyte.board.projection import mirror_status  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,

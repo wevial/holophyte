@@ -518,9 +518,9 @@ class CitationParsingTests(unittest.TestCase):
 
     def test_a_plain_citation_parses_as_before(self):
         (finding,) = holophyte.review.review.parse_findings(
-            "- holophyte/serve/serve.py:122 answers before the store is open")
+            "- holophyte/serve/server.py:122 answers before the store is open")
         self.assertEqual((finding["path"], finding["line"]),
-                         ("holophyte/serve/serve.py", 122))
+                         ("holophyte/serve/server.py", 122))
 
 
 class RoundWriteTests(unittest.TestCase):

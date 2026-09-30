@@ -52,7 +52,7 @@ from review_session_fixture import ReviewSessionCases  # noqa: E402
 from run_landing_fixture import landing_path  # noqa: E402
 
 import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
@@ -63,7 +63,7 @@ import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.merge_gate  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
-import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -706,7 +706,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
                      (t1 + 1, last_run))
         conn.commit()
 
-        self.assertEqual(holophyte.board.board.failure_history(conn, 1), [])
+        self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
 
     def test_a_supervisor_intervention_grants_no_amnesty(self):
         """Supervisor intervention does not reset the work-failure count."""
@@ -945,7 +945,7 @@ class GateConflictImplementerTests(LoopFixture):
         self.addCleanup(conn.close)
         project = tickets.ensure_project(conn, StubProvider.TEAM,
                                        str(self.target))
-        ticket = holophyte.board.board.mirror_task(conn, project, a_task())
+        ticket = holophyte.board.projection.mirror_task(conn, project, a_task())
         run_id = store.claim(conn, project, ticket)
         tickets.transition(conn, ticket, "in_flight")
         store.set_branch(conn, run_id, branch)
@@ -1167,7 +1167,7 @@ class GateConflictImplementerTests(LoopFixture):
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
-        ticket = holophyte.board.board.mirror_task(conn, project_id, a_task())
+        ticket = holophyte.board.projection.mirror_task(conn, project_id, a_task())
         run_id = store.claim(conn, project_id, ticket)
         tickets.transition(conn, ticket, "in_flight")
         store.set_branch(conn, run_id, branch)

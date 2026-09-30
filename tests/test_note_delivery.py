@@ -12,7 +12,7 @@ from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.board.board_sync import observe_board  # noqa: E402
-from holophyte.serve.serve import ticket_detail  # noqa: E402
+from holophyte.serve.server import ticket_detail  # noqa: E402
 from provider import FileProvider  # noqa: E402
 
 ASK = 10 * MINUTE

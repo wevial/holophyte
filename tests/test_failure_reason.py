@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import holophyte.loop.gates
-import holophyte.pr.pr
+import holophyte.pr.github
 from tests.fake_agent import (
     APPROVE,
     REQUEST_CHANGES,
@@ -95,7 +95,7 @@ class BabysitterFailureTests(MergeModeFixture):
         marker = self.db.parent / 'fail-verify'
         command = f"sh -c 'if test -f {marker}; then echo boom; exit 3; fi'"
         task = dict(a_task(), body=self.BODY, verify=f'echo first\n{command}')
-        push = holophyte.pr.pr.push_branch
+        push = holophyte.pr.github.push_branch
         pushes = []
 
         def push_then_fail(*args, **kwargs):
@@ -113,7 +113,7 @@ class BabysitterFailureTests(MergeModeFixture):
                     marker.touch()
                 return result
 
-        with patch.object(holophyte.pr.pr, 'push_branch', push_then_fail):
+        with patch.object(holophyte.pr.github, 'push_branch', push_then_fail):
             self.loop(Commit(), APPROVE, Idle(''),
                       Reply('THREAD 1: ADDRESS -- a real crash'),
                       BreakVerify(), provider=StubProvider(task))

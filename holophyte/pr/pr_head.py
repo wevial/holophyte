@@ -7,7 +7,7 @@ from holophyte.config.project import worktree_path
 from holophyte.files import git
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
-from holophyte.pr import pr, pr_status
+from holophyte.pr import github, pr_status
 
 
 def _just_pushed_state(target, conn, run_id, provider, task_id, branch,
@@ -18,7 +18,7 @@ def _just_pushed_state(target, conn, run_id, provider, task_id, branch,
         reads = 1
         while (state.head_sha != sha and not state.merged and not state.closed
                and reads < 4):
-            pr.SLEEP(5)
+            github.SLEEP(5)
             state = pr_status.pr_state(target, pull)
             reads += 1
     if (reads > 1 and state.head_sha == sha
@@ -35,7 +35,7 @@ def _just_pushed_state(target, conn, run_id, provider, task_id, branch,
 
 
 def _remote_head(target, branch):
-    code, out = git(worktree_path(target, branch), "ls-remote", pr.REMOTE,
+    code, out = git(worktree_path(target, branch), "ls-remote", github.REMOTE,
                     f"refs/heads/{branch}")
     if code or not out.strip():
         raise InfraFailure(f"cannot read remote head for {branch}: {out.strip()}")
@@ -64,7 +64,7 @@ def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
               f" {(state.merge_sha or '?')[:12]}")
         return state.merge_sha
     if state.closed:
-        from holophyte.board.board import release_lease_label
+        from holophyte.board.projection import release_lease_label
         from holophyte.host.reconcile import _reject_pr
         from holophyte.loop.gates import MergeParked
         if conn is not None and run_id is not None:

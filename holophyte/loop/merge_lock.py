@@ -8,7 +8,7 @@ import store.read
 from holophyte.config.config_tables import merge_config, sweep_config
 from holophyte.loop.gates import MergeLockHeld, merge_lock, read_merge_lock
 from holophyte.loop.runs import heartbeat_while, set_phase
-from holophyte.pr.pr import CHECK_POLL_S
+from holophyte.pr.github import CHECK_POLL_S
 
 
 @contextlib.contextmanager

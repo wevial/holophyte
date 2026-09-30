@@ -1,8 +1,8 @@
 """Seed and normalize the JSON contracts shared with the console tests."""
 import json
 
-import holophyte.serve.serve
 import holophyte.serve.serve_runs
+import holophyte.serve.server
 import store
 from holophyte.config.project import Project
 from store.operator_notes import consume
@@ -63,7 +63,7 @@ def contract_answers(case):
     target = Project.locate(case.target)
     answers = {}
     for name, (code, body) in {
-        "status": holophyte.serve.serve.status(target, now=NOW, started_ms=NOW),
+        "status": holophyte.serve.server.status(target, now=NOW, started_ms=NOW),
         "run-detail": holophyte.serve.serve_runs.run_detail(
             target, str(case.run), now=NOW
         ),

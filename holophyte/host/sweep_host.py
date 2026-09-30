@@ -1,6 +1,6 @@
 """holophyte.host.sweep_host: the host sweep, `factory.py --supervise [--once]`.
 
-One run watches every project the host registry (`holophyte.host.host`) lists,
+One run watches every project the host registry (`holophyte.host.registry`) lists,
 each in its own store. `supervise_host()` is the mode: `--once` is one run
 and an exit, what the sweep timer's oneshot runs; without it the run
 repeats every `[supervisor] sweep_sec` of `host.toml` for a host with no
@@ -65,8 +65,8 @@ from holophyte import deadline
 from holophyte.admission import project_of
 from holophyte.admission import state as admission_state
 from holophyte.cli.status import HOME_LOCK, SWEEP_STATE, load_sweep_state
-from holophyte.host.host import HostError, settings
 from holophyte.host.reconcile import GITHUB_BUDGET, _failed_pull_requests
+from holophyte.host.registry import HostError, settings
 from holophyte.host.supervisor import (
     HOST_SWEEP_PID,
     NEWER_SCHEMA,

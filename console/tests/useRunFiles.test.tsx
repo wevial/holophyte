@@ -15,7 +15,7 @@ afterEach(cleanup);
 test("/runs/N/files is requested on expand and again on each poll tick, alongside /runs/N on the same tick", async () => {
   const detail = { run: { id: 91, started_ms: 0, time_box_ms: 1 }, rounds: [], events: [] } as unknown as RunDetailBody;
   const files: RunFilesBody = {
-    files: [{ path: "holophyte/serve/serve.py", status: "M", added: 4, deleted: 1 }],
+    files: [{ path: "holophyte/serve/server.py", status: "M", added: 4, deleted: 1 }],
     total_added: 4,
     total_deleted: 1,
   };

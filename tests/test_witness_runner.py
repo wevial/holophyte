@@ -514,7 +514,7 @@ class MainTipTests(WitnessRunnerFixture, unittest.TestCase):
         target = self.project('[merge]\nmode = "pr"\n')
 
         started = time.monotonic()
-        with patch("holophyte.pr.pr.PR_TIMEOUT", 1), \
+        with patch("holophyte.pr.github.PR_TIMEOUT", 1), \
                 self.assertRaisesRegex(RuntimeError, "did not answer in 1s"):
             main_tip(target)
 

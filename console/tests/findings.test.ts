@@ -71,7 +71,7 @@ const A = finding({
   severity: "p0",
   message: "- [P0] **Merge gate conflict fails the run outright** — the gate returns before `release()` runs",
 });
-const B = finding({ path: "holophyte/serve/serve.py", line: 12, severity: "p2", message: "Trailing comma in the route table" });
+const B = finding({ path: "holophyte/serve/server.py", line: 12, severity: "p2", message: "Trailing comma in the route table" });
 const C = finding({ path: "store/__init__.py", line: 60, severity: "nit", message: "Ledger write is not transactional" });
 const ROUNDS: Round[] = [
   { round: 1, started_ms: T, ended_ms: T + 60_000, verdict: "changes_requested", findings: [A, B, C] },
@@ -95,7 +95,7 @@ test("findingsHistory marks a finding absent next round fixed, one still standin
   // raised, so it was open after the round.
   const fates = new Map(history[2]!.findings.map(({ finding, fate }) => [finding.path, fate]));
   expect(fates.get("holophyte/loop/loop.py")).toBe("fixed");
-  expect(fates.get("holophyte/serve/serve.py")).toBe("fixed");
+  expect(fates.get("holophyte/serve/server.py")).toBe("fixed");
   expect(fates.get("store/__init__.py")).toBe("open");
 });
 
@@ -112,7 +112,7 @@ test("a DECLINE or FOLLOW_UP line in the round's ledger row sets the fate and be
         "Reviewer findings:\nthe verdict text\n\n" +
         "Implementer response:\n" +
         "ADDRESS holophyte/loop/loop.py — the gate now returns to the implementer\n" +
-        "DECLINE holophyte/serve/serve.py — the comma is house style\n" +
+        "DECLINE holophyte/serve/server.py — the comma is house style\n" +
         "FOLLOW_UP Ledger write is not transactional — filed KO-441",
     },
   ];
@@ -120,8 +120,8 @@ test("a DECLINE or FOLLOW_UP line in the round's ledger row sets the fate and be
   const byPath = new Map(history[2]!.findings.map((entry) => [entry.finding.path, entry]));
   // B's path is named on the DECLINE line; it stays declined even though
   // round 2 no longer raises it.
-  expect(byPath.get("holophyte/serve/serve.py")!.fate).toBe("declined");
-  expect(byPath.get("holophyte/serve/serve.py")!.sentence).toBe("DECLINE holophyte/serve/serve.py — the comma is house style");
+  expect(byPath.get("holophyte/serve/server.py")!.fate).toBe("declined");
+  expect(byPath.get("holophyte/serve/server.py")!.sentence).toBe("DECLINE holophyte/serve/server.py — the comma is house style");
   // C is named by its first words on the FOLLOW_UP line.
   expect(byPath.get("store/__init__.py")!.fate).toBe("follow_up");
   expect(byPath.get("store/__init__.py")!.sentence).toBe(
@@ -145,15 +145,15 @@ test("a bulleted DECLINE or FOLLOW_UP line still sets the fate and sentence", ()
         "Round 1: REQUEST_CHANGES -> fix round\n" +
         "Reviewer findings:\nthe verdict text\n\n" +
         "Implementer response:\n" +
-        "- DECLINE holophyte/serve/serve.py — the comma is house style\n" +
+        "- DECLINE holophyte/serve/server.py — the comma is house style\n" +
         "2. FOLLOW_UP Ledger write is not transactional — filed KO-441",
     },
   ];
   const history = findingsHistory(ROUNDS, ledger);
   const byPath = new Map(history[2]!.findings.map((entry) => [entry.finding.path, entry]));
-  expect(byPath.get("holophyte/serve/serve.py")!.fate).toBe("declined");
-  expect(byPath.get("holophyte/serve/serve.py")!.sentence).toBe(
-    "- DECLINE holophyte/serve/serve.py — the comma is house style",
+  expect(byPath.get("holophyte/serve/server.py")!.fate).toBe("declined");
+  expect(byPath.get("holophyte/serve/server.py")!.sentence).toBe(
+    "- DECLINE holophyte/serve/server.py — the comma is house style",
   );
   expect(byPath.get("store/__init__.py")!.fate).toBe("follow_up");
   expect(byPath.get("store/__init__.py")!.sentence).toBe(

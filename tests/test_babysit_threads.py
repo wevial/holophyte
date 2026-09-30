@@ -31,7 +31,7 @@ from triage_mention_fixture import TriageMentionCases  # noqa: E402
 import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 from holophyte.babysit.maintainer_notes import cite_commits  # noqa: E402
 from holophyte.babysit.thread_mentions import REFUSAL  # noqa: E402
@@ -87,14 +87,14 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                     "@holophyte fix: preserve validation")]
         self.fake_route(states=[self.pr_state(threads), self.pr_state()])
         pending = []
-        original = holophyte.pr.pr.reply_thread
+        original = holophyte.pr.github.reply_thread
 
         def reply(*args, **kwargs):
             pending.extend(json.loads(self.read(
                 "SELECT findings FROM reviewRounds WHERE round = 2")[0][0]))
             return original(*args, **kwargs)
 
-        with patch("holophyte.pr.pr.reply_thread", side_effect=reply):
+        with patch("holophyte.pr.github.reply_thread", side_effect=reply):
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 Commit("fix tokens"), APPROVE, Idle(""),
                                 provider=self.provider())
@@ -538,7 +538,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
                        f'[verify]\nalways = ["{command}"]\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
-        push = holophyte.pr.pr.push_branch
+        push = holophyte.pr.github.push_branch
         pushes = []
 
         def push_then_break_verify(*args, **kwargs):
@@ -549,7 +549,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                 holophyte.loop.gates._PASSES.clear()  # a re-exec (KO-646)
             return result
 
-        with patch.object(holophyte.pr.pr, "push_branch", push_then_break_verify):
+        with patch.object(holophyte.pr.github, "push_branch", push_then_break_verify):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       Reply("THREAD 1: ADDRESS -- a real crash"),
                       Commit("fix: default load()"), provider=self.provider())
@@ -569,7 +569,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.configure('[merge]\nmode = "pr"\n'
                        f'[verify]\nalways = ["{command}"]\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
-        push = holophyte.pr.pr.push_branch
+        push = holophyte.pr.github.push_branch
         pushes = []
 
         def push_then_break_verify(*args, **kwargs):
@@ -580,7 +580,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                 holophyte.loop.gates._PASSES.clear()  # a re-exec (KO-646)
             return result
 
-        with patch.object(holophyte.pr.pr, "push_branch", push_then_break_verify):
+        with patch.object(holophyte.pr.github, "push_branch", push_then_break_verify):
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 Reply("THREAD 1: ADDRESS -- a real crash"),
                                 Commit("fix: default load()"),
@@ -687,7 +687,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertNotEqual(old, fixed)
         self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
                          [fixed])
-        self.assertEqual(naps, [5, holophyte.pr.pr.CHECK_POLL_S])
+        self.assertEqual(naps, [5, holophyte.pr.github.CHECK_POLL_S])
         self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 2"),
                          [("merged",)])
 
@@ -1084,8 +1084,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
 
 class OperatorNoteCitationTests(LoopFixture):
     """`cite_commits()` on real git: recording a citation never fails a fix."""
-    ADDRESSED = [(7, holophyte.pr.pr.Thread("operator_note:7", "", None, "maintainer",
-                                         "change requested", "",
+    ADDRESSED = [(7, holophyte.pr.github.Thread("operator_note:7", "", None,
+                                         "maintainer", "change requested", "",
                                          author_kind="maintainer"), "")]
 
     def sh(self, argv, cwd):
@@ -1132,7 +1132,7 @@ class ParkQuestionQuoteTests(unittest.TestCase):
 
     def quote(self, body):
         from holophyte.babysit import babysitter
-        return babysitter.quoted(holophyte.pr.pr.Thread(
+        return babysitter.quoted(holophyte.pr.github.Thread(
             "1", "holophyte/pr/merge_queue.py", 116, "greptile-apps[bot]", body,
             self.URL, author_kind="bot"))
 

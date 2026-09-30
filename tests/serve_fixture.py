@@ -21,7 +21,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
-import holophyte.serve.serve  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.server  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import finish_run
@@ -109,8 +109,8 @@ class ServeTestCase(unittest.TestCase):
             (self.db.parent / "config.toml").write_text(config)
         self.project = holophyte.config.project.Project.locate(self.target)
         console_dir = console_dir or self.root / "console" / "dist"
-        token = holophyte.serve.serve.resolve_token(self.project, host)
-        server = holophyte.serve.serve.make_server(self.project, host, 0,
+        token = holophyte.serve.server.resolve_token(self.project, host)
+        server = holophyte.serve.server.make_server(self.project, host, 0,
                                              console_dir=console_dir,
                                              token=token)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

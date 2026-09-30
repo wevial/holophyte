@@ -31,7 +31,7 @@ Each module, one line:
 - `holophyte/story/story_filing.py` — files a validated story directory on a native
   board: its parent, its children in dependency order and its story rows in
   one store transaction, then the header lines in its files.
-- `holophyte/host/host.py` — the host registry, `HOLOPHYTE_HOME/host.toml`: the
+- `holophyte/host/registry.py` — the host registry, `HOLOPHYTE_HOME/host.toml`: the
   projects a host serves and sweeps, by path, reloaded when the file changes;
   its one writer path is an exclusive temporary file and a rename.
 - `holophyte/cli/cli.py` — the argument parser and mode dispatch: `--report`,
@@ -51,7 +51,7 @@ Each module, one line:
   green fail-loud report out.
 - `holophyte/agents/agent_routes.py` — process-owned route state and live console snapshots.
 - `holophyte/agents/agent_turns.py` — per-turn command labels, timing and run events.
-- `holophyte/isolation/isolation.py` — host/container implementer launch seam, validated
+- `holophyte/isolation/launcher.py` — host/container implementer launch seam, validated
   isolation settings, credential boundary and container cleanup.
 - `holophyte/isolation/isolation_git.py` — Git metadata validation and atomic object copying.
 - `holophyte/isolation/isolation_return.py` — Git ref and index locks for atomic turn returns.
@@ -71,7 +71,7 @@ Each module, one line:
 - `holophyte/loop/stop.py` — cooperative pause requests, operator aborts and durable
   continuations.
 - `holophyte/loop/runs.py` — the store seam: a run's progress as store rows.
-- `holophyte/board/board.py` — Linear as the notice board: the ticket mirror, its
+- `holophyte/board/projection.py` — Linear as the notice board: the ticket mirror, its
   pushes, `--file-ticket` and the escalation. Ticket status lives in the
   store and is projected onto a Linear workflow state by `mirror_push()` —
   one way, last write wins, never read back — so the provider's `set_state`
@@ -119,7 +119,7 @@ Each module, one line:
 - `holophyte/host/supervisor_lock.py` — the one-supervisor-per-project lock
   (KO-396): the lockfile's path, read, acquire and release, the
   `SupervisorHeld` refusal and the `supervisor_running()` probe.
-- `holophyte/serve/serve.py` — `--serve PORT|HOST:PORT`, the HTTP daemon: it
+- `holophyte/serve/server.py` — `--serve PORT|HOST:PORT`, the HTTP daemon: it
   reads by default and writes only through `[serve] actions` and
   `config_edit`.
 - `holophyte/serve/serve_config.py` — the daemon's `/config` routes (KO-394):
@@ -213,7 +213,7 @@ Each module, one line:
 - `holophyte/loop/pause_notice.py` — a paused run's pull request gets the
   `holophyte:paused` label and one notice comment; `--resume` removes both
   (KO-608).
-- `holophyte/pr/pr.py` — `[merge] mode = "pr"`'s GitHub writes: the startup
+- `holophyte/pr/github.py` — `[merge] mode = "pr"`'s GitHub writes: the startup
   route check, the push, the pull request and its body, the babysitter's
   replies and resolves, the merge through the PR API, and the `gh`/API
   transport they ride on.
@@ -227,7 +227,7 @@ Each module, one line:
   `[merge] pr_quiet_sec`), or re-parks it for a human once its checks
   stay pending past `[merge] check_wait_sec`.
 - `holophyte/pr/pr_status.py` — reading a pull request's state (KO-426), out
-  of `holophyte/pr/pr.py`: `pull_status()` for the parked-run reconcile,
+  of `holophyte/pr/github.py`: `pull_status()` for the parked-run reconcile,
   `pr_state()` and `fold_checks()` for the babysitter, `parse_pr_url()`.
 - `holophyte/media_store.py` — standard-library SigV4 PUTs for evidence in an
   S3-compatible bucket. Operator setup lives in the

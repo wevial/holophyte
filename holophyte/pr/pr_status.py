@@ -1,4 +1,4 @@
-"""Reading a pull request's state, out of `holophyte.pr.pr` (KO-426)."""
+"""Reading a pull request's state, out of `holophyte.pr.github` (KO-426)."""
 import contextlib
 import re
 from dataclasses import dataclass
@@ -8,7 +8,7 @@ from holophyte.babysit.conversation_comments import conversation_threads
 from holophyte.babysit.thread_mentions import classify
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
-from holophyte.pr.pr import (
+from holophyte.pr.github import (
     Comment,
     PrState,
     PullRequest,
@@ -496,7 +496,7 @@ def _state_of(node, threads, runs, required):
 @dataclass(frozen=True)
 class FailedCheck:
     """A check run on the head commit whose conclusion is red. `job_id` is
-    the GitHub Actions job whose log `pr.job_log()` reads; None for a check
+    the GitHub Actions job whose log `github.job_log()` reads; None for a check
     run another app made or a commit status, which have no such log.
     `workflow_run_id` is the Actions workflow run in `url`
     (`.../actions/runs/RUN/job/JOB`), None for a URL without one."""

@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { hostProjectSchema, hostStatusSchema, statusSchema, supervisorSchema, sweepSchema, runSchema, findingSchema, roundSchema, runDetailSchema, runEventSchema } from "./schemas";
 
-/** The daemon's `/attention` body (holophyte/serve/serve.py `attention()`). */
+/** The daemon's `/attention` body (holophyte/serve/server.py `attention()`). */
 export interface Attention {
   level: "none" | "working" | "attention" | "critical";
   now: number;
@@ -25,7 +25,7 @@ export interface TouchedFile {
   deleted: number;
 }
 
-/** The daemon's `/runs/N/files` body (holophyte/serve/serve.py `run_files()`). */
+/** The daemon's `/runs/N/files` body (holophyte/serve/server.py `run_files()`). */
 export interface RunFilesBody {
   run?: number;
   base?: string;
@@ -36,7 +36,7 @@ export interface RunFilesBody {
   truncated?: boolean;
 }
 
-/** One finished run of `/shipped` (holophyte/serve/serve.py `shipped()`), newest
+/** One finished run of `/shipped` (holophyte/serve/server.py `shipped()`), newest
  *  end first on the wire. `estimate_min` is null for a run with no box. */
 export interface ShippedRow {
   /** Absent on older daemons, whose ledger contains only merges. */
@@ -59,7 +59,7 @@ export interface ShippedRow {
   estimate_min: number | null;
   merge_sha: string | null;
   /** The merge commit's page on the repository's origin when the sha has
-   *  reached `origin/main`, else null (holophyte/serve/serve.py `commit_url()`). */
+   *  reached `origin/main`, else null (holophyte/serve/server.py `commit_url()`). */
   commit_url: string | null;
   /** The pull request the run merged through under PR mode (`runs.prUrl`),
    *  else null; a daemon older than the field sends none. */
@@ -86,11 +86,11 @@ export interface ShippedBody {
 }
 
 /** The open ticket states, in the order `/board` answers them: left to
- *  right the path to merge (holophyte/serve/serve.py `BOARD_STATES`), after
+ *  right the path to merge (holophyte/serve/server.py `BOARD_STATES`), after
  *  the `backlog` column a native project answers first. */
 export type BoardState = "backlog" | "needs_spec" | "blocked_on_deps" | "ready" | "blocked_on_operator" | "in_flight";
 
-/** One open ticket of `/board` (holophyte/serve/serve.py `board()`): `run` is
+/** One open ticket of `/board` (holophyte/serve/server.py `board()`): `run` is
  *  the live run's id or null, `question` the blocked question or null,
  *  `waits_on` the open tickets its dependencies name. */
 export interface BoardWireTicket {

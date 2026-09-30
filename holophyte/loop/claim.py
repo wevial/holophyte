@@ -30,7 +30,7 @@ from time import monotonic
 import store
 import store.read
 import store.tickets
-from holophyte.board.board import (
+from holophyte.board.projection import (
     MAX_FAILED_RUNS,
     body_problems,
     drop_lease_label,

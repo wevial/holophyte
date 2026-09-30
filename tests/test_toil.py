@@ -3,7 +3,7 @@
 from time import time
 
 import holophyte.cli.report as report
-import holophyte.serve.serve
+import holophyte.serve.server
 import store
 import store.read
 import store.tickets
@@ -82,7 +82,7 @@ class ToilTests(ServeTestCase):
         self.conn.commit()
         self.assertIn("toil 24h: 3 human interventions, 0 merged (requeue 3)",
                       report.report_lines(self.conn))
-        code, body = holophyte.serve.serve.status(Project.locate(self.target),
+        code, body = holophyte.serve.server.status(Project.locate(self.target),
                                             now=self.now)
         self.assertEqual(code, 200)
         self.assertEqual(body["toil"]["24h"], {

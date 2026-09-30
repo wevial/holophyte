@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from holophyte.babysit import thread_mentions  # noqa: E402
-from holophyte.pr import pr  # noqa: E402
+from holophyte.pr import github  # noqa: E402
 from holophyte.redact import safe_print as print  # noqa: E402
 
 
@@ -36,9 +36,11 @@ def main(argv=None):
         label = row["label"]
         if label not in thread_mentions.MENTION_INTENT.criteria:
             parser.error(f"unknown fixture label: {label}")
-        comments = [pr.Comment("", text) for text in row.get("earlier_comments", [])]
-        comments.append(pr.Comment("", row["comment"]))
-        thread = pr.Thread(
+        comments = [
+            github.Comment("", text) for text in row.get("earlier_comments", [])
+        ]
+        comments.append(github.Comment("", row["comment"]))
+        thread = github.Thread(
             "",
             row.get("file", ""),
             row.get("line"),

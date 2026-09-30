@@ -32,7 +32,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.host.reconcile  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
@@ -441,7 +441,7 @@ class QueueMirrorTests(LoopFixture):
         a, b, c = self.queue()
         conn = store.open(str(self.db))
         project = tickets.ensure_project(conn, StubProvider.TEAM, str(self.target))
-        ticket = holophyte.board.board.mirror_task(conn, project, c)
+        ticket = holophyte.board.projection.mirror_task(conn, project, c)
         tickets.transition(conn, ticket, "blocked_on_deps")
         tickets.transition(conn, ticket, "blocked_on_operator")
         conn.close()
@@ -504,7 +504,7 @@ class RejectedPullRequestTests(MergeModeFixture):
         helpers.fake_client(self, dict(helpers.CLOSED_PULL, timelineItems={
             "nodes": [{"actor": {"login": "alice"}}]}))
         provider = StubProvider()
-        label = holophyte.board.board.lease_label(self.project)
+        label = holophyte.board.projection.lease_label(self.project)
         provider.labels["iss-131"] = [label]
         provider.closed = {"KO-131": "canceled"}
         self.main_output(provider=provider)
@@ -545,7 +545,7 @@ class FailedRunPullRequestTests(MergeModeFixture):
                          " blockedQuestion = NULL")
         H.fake_client(self, pull)
         provider = StubProvider()
-        label = holophyte.board.board.lease_label(self.project)
+        label = holophyte.board.projection.lease_label(self.project)
         provider.labels["iss-131"] = [label]
         before = self.read("SELECT id FROM interventions")
         out = io.StringIO()
@@ -678,7 +678,7 @@ class ContentWakeTests(MergeModeFixture):
     def test_two_empty_passes_raise_attention_until_real_content_arrives(self):
         from test_pullrequest import MergeModePullRequestTests as H
 
-        from holophyte.serve.serve import parked_item
+        from holophyte.serve.server import parked_item
         H.parked_with_mark(self, H.T1, 0)
         conn = store.open(self.db)
         self.addCleanup(conn.close)
@@ -894,7 +894,7 @@ class CiParkTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state(checks=checks,
                                               updated_at=updated_at)])
         self.github(park_read or self.pull(updated_at, checks))
-        with patch("holophyte.pr.pr.SLEEP", self.fail), \
+        with patch("holophyte.pr.github.SLEEP", self.fail), \
                 patch.object(sys, "stdout", io.StringIO()):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())

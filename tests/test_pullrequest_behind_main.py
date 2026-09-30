@@ -15,8 +15,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.merge_queue  # noqa: E402 - after the sys.path insert above
-import holophyte.pr.pr  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
 
@@ -70,7 +70,7 @@ class BehindMainMergeTests(unittest.TestCase):
 
         with patch.object(holophyte.pr.merge_queue, "merge_queue_required",
                           return_value=False), \
-                patch.object(holophyte.pr.pr, "merge_pull_request",
+                patch.object(holophyte.pr.github, "merge_pull_request",
                              merge_pull_request), \
                 patch("sys.stdout", io.StringIO()):
             return holophyte.pr.pullrequest._merge_pr(

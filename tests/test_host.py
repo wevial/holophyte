@@ -21,7 +21,7 @@ import holophyte.cli.cli
 import store
 from holophyte.config.config_tables import board_mode
 from holophyte.config.project import Project
-from holophyte.host.host import Host, HostError
+from holophyte.host.registry import Host, HostError
 from holophyte.host.supervisor_lock import (
     acquire_supervisor_lock,
     release_supervisor_lock,

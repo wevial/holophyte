@@ -4,7 +4,7 @@ import sys
 from contextlib import closing
 
 from holophyte.admission import project_of
-from holophyte.board.board import FILE_TICKET_PRIORITIES
+from holophyte.board.projection import FILE_TICKET_PRIORITIES
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
 from holophyte.story.story_approval import ApprovalRefused, approve
@@ -113,7 +113,7 @@ def _approve_story(args, target, board, out):
               "Linear board in store mode ([board] mode = \"store\")",
               file=out)
         raise SystemExit(1)
-    from holophyte.host.host import loop_unit_environment
+    from holophyte.host.registry import loop_unit_environment
     with loop_unit_environment(target):
         try:
             lines = approve(board, target, args.approve_story, args.revision,
@@ -130,7 +130,7 @@ def _approve_story(args, target, board, out):
 
 
 def _witness_pass(args, target, out):
-    from holophyte.host.host import loop_unit_environment
+    from holophyte.host.registry import loop_unit_environment
     with loop_unit_environment(target):
         return _witness_pass_in_unit_environment(args, target, out)
 

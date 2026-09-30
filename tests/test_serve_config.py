@@ -28,8 +28,8 @@ import holophyte.agents.agents  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
-import holophyte.serve.serve  # noqa: E402 - after the sys.path insert above
 import holophyte.serve.serve_config  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.server  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
 
 
@@ -531,7 +531,7 @@ class ConfigEditTests(ServeTestCase):
             "[serve]\nconfig_edit = true\n")
         project = holophyte.config.project.Project.locate(self.target)
         with self.assertRaises(SystemExit) as raised:
-            holophyte.serve.serve.serve(project, "127.0.0.1:0", out=io.StringIO())
+            holophyte.serve.server.serve(project, "127.0.0.1:0", out=io.StringIO())
         message = str(raised.exception)
         self.assertIn("[serve] token_file", message)
         self.assertIn("config_edit", message)
@@ -729,7 +729,7 @@ class ConfigPatchTests(ServeTestCase):
         project = holophyte.config.project.Project.locate(self.target)
         with patch.dict(sys.modules, {"tomlkit": None}):
             with self.assertRaises(SystemExit) as raised:
-                holophyte.serve.serve.serve(project, "127.0.0.1:0", out=io.StringIO())
+                holophyte.serve.server.serve(project, "127.0.0.1:0", out=io.StringIO())
         message = str(raised.exception)
         self.assertIn("tomlkit", message)
         self.assertIn("pip install --user -r requirements.txt", message)

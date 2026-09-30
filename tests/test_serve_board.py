@@ -23,7 +23,7 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.config.project import Project  # noqa: E402
-from holophyte.host.host import Host, settings  # noqa: E402
+from holophyte.host.registry import Host, settings  # noqa: E402
 from holophyte.serve.serve_host import HostServer, host_tokens  # noqa: E402
 from tests.host_fixture import HostFixture  # noqa: E402
 from tests.test_store_board import body  # noqa: E402

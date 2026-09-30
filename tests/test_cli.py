@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import holophyte.board.board
+import holophyte.board.projection
 import holophyte.cli.cli
 import holophyte.config.project
 import store
@@ -135,7 +135,7 @@ class RepointFlagTests(unittest.TestCase):
         self.assertIn("no live worker", abort())
         board.set_state.assert_called_once_with("issue-1", "Todo")
         board.unlabel_issue.assert_called_once_with(
-            "issue-1", holophyte.board.board.lease_label(self.target))
+            "issue-1", holophyte.board.projection.lease_label(self.target))
         self.assertEqual(self.conn.execute(
             "SELECT r.outcome, r.outcomeReason, t.status FROM runs r"
             " JOIN tickets t ON t.id = r.ticketId").fetchone(),

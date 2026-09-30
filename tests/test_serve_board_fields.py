@@ -18,13 +18,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import holophyte.serve.serve  # noqa: E402 - after the sys.path insert above
+import holophyte.serve.server  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.config.project import Project  # noqa: E402
-from holophyte.host.host import Host, settings  # noqa: E402
-from holophyte.serve.serve import BOARD_STATES  # noqa: E402
+from holophyte.host.registry import Host, settings  # noqa: E402
 from holophyte.serve.serve_host import HostServer, host_tokens  # noqa: E402
+from holophyte.serve.server import BOARD_STATES  # noqa: E402
 from tests.host_fixture import HostFixture  # noqa: E402
 
 NOW = 1_750_000_000_000
@@ -154,9 +154,9 @@ class BoardFieldsTests(BoardFieldsCase):
         project = Project.locate(self.paths["native"])
         project.config_path.write_text(
             NATIVE + f'[serve]\ntoken_file = "{token}"\nactions = true\n')
-        self.serve(holophyte.serve.serve.make_server(
+        self.serve(holophyte.serve.server.make_server(
             project, "127.0.0.1", 0, console_dir=self.root / "no-console",
-            token=holophyte.serve.serve.resolve_token(project, "127.0.0.1")))
+            token=holophyte.serve.server.resolve_token(project, "127.0.0.1")))
 
         body, columns = self.board("/board", token="project-token")
 

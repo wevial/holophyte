@@ -15,7 +15,7 @@ from holophyte.agents.agents import (
     probe_implementer,
     startup_routes,
 )
-from holophyte.board.board import release_lease_label
+from holophyte.board.projection import release_lease_label
 from holophyte.cli.report import migration_header, report_lines
 from holophyte.config.config_tables import loop_config, report_config
 from holophyte.host.reconcile import (

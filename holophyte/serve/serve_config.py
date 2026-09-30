@@ -1,14 +1,14 @@
 """holophyte.serve.serve_config: the daemon's `/config` routes (KO-394).
 
-Moved verbatim out of `holophyte/serve/serve.py`: `GET /config`'s
+Moved verbatim out of `holophyte/serve/server.py`: `GET /config`'s
 `read_config()` with `config_text()` and `config_values()`; `PUT
 /config`'s `write_config()` with `validate_config()` and the
 `_write_config()`/`next_backup()` write path shared by text and patch
 bodies; patch validation; and probing changes to `[agents] implementer`.
 `record_action_intervention()`, shared with the `POST /actions/...`
-routes, stays home: `holophyte.serve.serve` imports this module's handlers
+routes, stays home: `holophyte.serve.server` imports this module's handlers
 for its route table, so `_write_config()` reaches the name back through
-a deferred `from holophyte.serve.serve import`.
+a deferred `from holophyte.serve.server import`.
 """
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def config_values(text):
     Explicit values, including invalid shapes, remain visible for correction.
     Invalid TOML returns None; raw text and persisted patches stay unchanged.
     """
-    from holophyte.pr.pr import CHECK_WAIT_S
+    from holophyte.pr.github import CHECK_WAIT_S
     try:
         document = tomllib.loads(text)
     except tomllib.TOMLDecodeError:

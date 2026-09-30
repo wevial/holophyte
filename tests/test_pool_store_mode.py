@@ -19,7 +19,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import TICK, VALID_BODY, FakePool, LoopFixture  # noqa: E402
 
-import holophyte.board.board  # noqa: E402
+import holophyte.board.projection  # noqa: E402
 import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.pool  # noqa: E402
 import store  # noqa: E402
@@ -135,7 +135,7 @@ class StoreModePoolTests(LoopFixture):
 
     def test_a_board_that_cannot_list_still_leaves_the_store_queue(self):
         for n in (1, 2, 3):
-            holophyte.board.board.mirror_task(self.conn, self.project_id,
+            holophyte.board.projection.mirror_task(self.conn, self.project_id,
                                         self.board.fetch_task(f"KO-{n}"))
         self.board.broken = True
 
@@ -168,7 +168,7 @@ class StoreModePoolTests(LoopFixture):
         Spawning stops at the first, the pool drains and exits 1 with the
         board's line, whether or not a failed run stops the pool."""
         for n in (1, 2, 3):
-            holophyte.board.board.mirror_task(self.conn, self.project_id,
+            holophyte.board.projection.mirror_task(self.conn, self.project_id,
                                         self.board.fetch_task(f"KO-{n}"))
         self.board.broken = True
         down = holophyte.loop.pool.WORKER_BOARD_DOWN
@@ -185,7 +185,7 @@ class StoreModePoolTests(LoopFixture):
                 self.assertNotIn("no ready tickets", self.out)
 
     def test_a_worker_that_cannot_read_its_candidate_back_exits_board_down(self):
-        holophyte.board.board.mirror_task(self.conn, self.project_id,
+        holophyte.board.projection.mirror_task(self.conn, self.project_id,
                                     self.board.fetch_task("KO-1"))
 
         def down(issue_id):

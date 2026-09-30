@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402
 import holophyte.loop.claim  # noqa: E402
 import store
@@ -532,13 +532,16 @@ class GitignoredPathTests(unittest.TestCase):
         self.assertEqual(len(advisories), 1, problems)
 
     def test_body_problem_names_the_gitignored_path_for_the_target(self):
-        problem = holophyte.board.board.body_problem(
+        problem = holophyte.board.projection.body_problem(
             {"body": GITIGNORED_CRITERION}, self.repo)
         self.assertEqual(
             problem,
             "gitignored path in Acceptance criteria #1: artifacts/report.html")
         self.assertIsNone(
-            holophyte.board.board.body_problem({"body": TRACKED_CRITERION}, self.repo))
+            holophyte.board.projection.body_problem(
+                {"body": TRACKED_CRITERION}, self.repo
+            )
+        )
 
     def test_body_naming_only_missing_paths_is_claimable(self):
         # REL-134/135: bodies naming files only their open pull request holds.
@@ -547,13 +550,15 @@ class GitignoredPathTests(unittest.TestCase):
             "`src/lotuspod/cli.py` runs and `tests/test_counts.py` passes"
         ).replace(".venv/bin/python -m unittest test_orders_export",
                   ".venv/bin/python -m unittest tests.test_counts")
-        self.assertIsNone(holophyte.board.board.body_problem({"body": text}, self.repo))
+        self.assertIsNone(
+            holophyte.board.projection.body_problem({"body": text}, self.repo)
+        )
 
     def test_body_problem_names_a_path_outside_the_repository(self):
         text = TRACKED_CRITERION.replace("`src/lotuspod/cli.py`",
                                          "`../elsewhere/cli.py`")
         self.assertEqual(
-            holophyte.board.board.body_problem({"body": text}, self.repo),
+            holophyte.board.projection.body_problem({"body": text}, self.repo),
             "path is outside the repository in Acceptance criteria #1: "
             "../elsewhere/cli.py")
 
@@ -566,7 +571,7 @@ class GitignoredPathTests(unittest.TestCase):
         task = {"id": "KO-598", "issue_id": "iss-598", "title": "Counts",
                 "body": text, "verify": "ruff check tests/test_counts.py",
                 "criteria": ["works"], "budget_min": 5}
-        self.assertIsNotNone(holophyte.board.board.body_problem(task, self.repo))
+        self.assertIsNotNone(holophyte.board.projection.body_problem(task, self.repo))
         holo = Path(self.tmp.name) / "holo"
         target = holophyte.config.project.Project(
             path=self.repo, holo_dir=holo, store_path=holo / "store.db",
@@ -575,7 +580,7 @@ class GitignoredPathTests(unittest.TestCase):
         self.addCleanup(conn.close)
         store.init(conn)
         project = store.tickets.ensure_project(conn, "team", str(self.repo))
-        ticket = holophyte.board.board.mirror_task(conn, project, task)
+        ticket = holophyte.board.projection.mirror_task(conn, project, task)
         run = store.claim(conn, project, ticket)
         store.tickets.transition(conn, ticket, "in_flight")
         store.park(conn, run, "awaiting_merge_approval",
@@ -948,7 +953,7 @@ class SchemaVersionAdvisoryTests(unittest.TestCase):
             "python3 -m unittest discover -s tests")
         problems = tt.validate(tt.parse(body))
         self.assertEqual(len(tt.filing_refusals(problems)), 2, problems)
-        self.assertIsNone(holophyte.board.board.body_problem({"body": body}))
+        self.assertIsNone(holophyte.board.projection.body_problem({"body": body}))
 
 
 class StorySectionTests(unittest.TestCase):
@@ -1034,5 +1039,5 @@ class EvidenceTests(unittest.TestCase):
                         body=body.replace("Orders page empty", "Export dialog open"))
             self.assertEqual(store.contract_drift(
                 store.run_contract(conn, run),
-                store.contract_snapshot(*holophyte.board.board.task_contract(task))),
+                store.contract_snapshot(*holophyte.board.projection.task_contract(task))),
                 ("evidenceStates",))

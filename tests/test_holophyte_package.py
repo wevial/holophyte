@@ -134,7 +134,7 @@ DEFINED = {
         "set_phase",
         "warn_on_run",
     ],
-    _module("board.board"): [
+    _module("board.projection"): [
         "body_problem",
         "close_out_failure",
         "escalate",
@@ -243,7 +243,7 @@ DEFINED = {
         "where",
     ],
     # KO-259: the one GitHub surface, `[merge] mode = "pr"`'s push and PR.
-    _module("pr.pr"): [
+    _module("pr.github"): [
         "check_pr_route",
         "create_pull_request",
         "origin_url",
@@ -253,7 +253,7 @@ DEFINED = {
         "repo_of",
         "token_from_env",
     ],
-    # KO-426: reading a pull request's state, out of `holophyte.pr.pr`.
+    # KO-426: reading a pull request's state, out of `holophyte.pr.github`.
     _module("pr.pr_status"): [
         "PullStatus",
         "_check_reads",

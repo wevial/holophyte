@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 import review_runner
-from holophyte.isolation import isolation
+from holophyte.isolation import launcher
 
 
 @unittest.skipUnless(
@@ -29,8 +29,8 @@ class ImplementerImageTests(unittest.TestCase):
 
     def launch(self, *argv):
         with tempfile.TemporaryDirectory() as workspace:
-            route = isolation.Route("container", writable=False)
-            return isolation.launch(route, Path(workspace), {}, list(argv),
+            route = launcher.Route("container", writable=False)
+            return launcher.launch(route, Path(workspace), {}, list(argv),
                                     timeout=120)
 
     def test_claude_cli_runs_at_the_pinned_version(self):

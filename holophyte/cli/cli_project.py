@@ -1,7 +1,7 @@
 """Explicit project registration and admission, against one store at a time.
 
 `add` registers the project in its store and then in the host registry
-(`holophyte.host.host`); on a path the registry already holds whose store has
+(`holophyte.host.registry`); on a path the registry already holds whose store has
 lost its row, it writes the row back and leaves the registry alone. `remove`
 drops the registry entry, named by `[serve] name` or path, and touches no
 store; `list` prints the registry with each project's admission read from
@@ -21,7 +21,7 @@ from holophyte.admission import project_of
 from holophyte.config.config import check_config
 from holophyte.config.config_tables import board_config
 from holophyte.config.project import Project
-from holophyte.host.host import (
+from holophyte.host.registry import (
     Host,
     already_registered,
     check_new,

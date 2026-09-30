@@ -2,7 +2,7 @@ import { formatAge, formatClock, formatSpan } from "./format";
 import { agentMs } from "./runs";
 import type { AttentionItem, Run, Status } from "./types";
 
-/** The item kinds `/attention` sends today (holophyte/serve/serve.py `attention()`),
+/** The item kinds `/attention` sends today (holophyte/serve/server.py `attention()`),
  *  plus `unreachable`, which the console adds for a daemon that stopped
  *  answering (lib/hosts.ts `hostItems`). `pr_open` is a run parked on its
  *  pull request: nobody owes the factory an answer, the PR waits on a
@@ -188,7 +188,7 @@ export interface Fact {
   tone: Tone;
 }
 
-/** The `pr` a `pr_open` item carries (holophyte/serve/serve.py `parked_item()`,
+/** The `pr` a `pr_open` item carries (holophyte/serve/server.py `parked_item()`,
  *  KO-368): the pull request's number and what the reconcile last saw on
  *  it, each null for a run never polled. */
 export interface PrFacts {

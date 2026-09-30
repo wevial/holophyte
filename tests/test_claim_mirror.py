@@ -36,7 +36,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
-import holophyte.board.board  # noqa: E402 - after the sys.path insert above
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.dispatch  # noqa: E402
 import holophyte.loop.pool  # noqa: E402
@@ -62,7 +62,7 @@ class OffBoardMirrorTests(LoopFixture):
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                              str(self.target))
-            ticket = holophyte.board.board.mirror_task(conn, project, task)
+            ticket = holophyte.board.projection.mirror_task(conn, project, task)
             run_id = None
             if run:
                 run_id = store.claim(conn, project, ticket)
@@ -126,7 +126,7 @@ class OffBoardMirrorTests(LoopFixture):
         try:
             project = tickets.ensure_project(conn, StubProvider.TEAM,
                                              str(self.target))
-            ticket = holophyte.board.board.mirror_task(conn, project, held)
+            ticket = holophyte.board.projection.mirror_task(conn, project, held)
             tickets.transition(conn, ticket, "blocked_on_deps")
             conn.commit()
         finally:
@@ -152,7 +152,7 @@ class OffBoardMirrorTests(LoopFixture):
         conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        ticket = holophyte.board.board.mirror_task(conn, project_id, a_task(1))
+        ticket = holophyte.board.projection.mirror_task(conn, project_id, a_task(1))
         tickets.transition(conn, ticket, "blocked_on_deps")
         conn.commit()
 
@@ -203,7 +203,7 @@ class SentBackMirrorTests(LoopFixture):
         conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        ticket = holophyte.board.board.mirror_task(conn, project_id, task)
+        ticket = holophyte.board.projection.mirror_task(conn, project_id, task)
         run_id = store.claim(conn, project_id, ticket)
         tickets.transition(conn, ticket, "in_flight")
         if pr_url:

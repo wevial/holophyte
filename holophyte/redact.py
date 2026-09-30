@@ -45,7 +45,7 @@ SECRET_SUFFIXES = ("token", "key")
 # ticket id, so hiding it corrupts outbound titles and protects nothing.
 PUBLIC_PATHS = frozenset({("board", "key")})
 # The environment variables a credential reaches the process by:
-# `linear_provider`'s board key and `holophyte.pr.pr`'s forge tokens.
+# `linear_provider`'s board key and `holophyte.pr.github`'s forge tokens.
 ENV_SECRETS = ("LINEAR_API_KEY", "GH_TOKEN", "GITHUB_TOKEN",
                "HOLOPHYTE_MEDIA_ACCESS_KEY_ID", "HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY")
 BARE_KEY = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

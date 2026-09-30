@@ -11,7 +11,7 @@ from loop_fixture import BRANCH
 from holophyte.agents import agents
 from holophyte.babysit import thread_mentions
 from holophyte.cli import operator
-from holophyte.pr import pr
+from holophyte.pr import github
 
 # The factory's answer to an earlier ask in the same thread.
 ANSWERED = "---- Comment by reviewer ----\n\nBecause guests are keyed by name."
@@ -26,7 +26,7 @@ class AskMentionCases:
             (" Can guests rename?", "unmarked"),
         ]:
             with self.subTest(text=text):
-                thread = pr.Thread(
+                thread = github.Thread(
                     "1", "app.py", 1, "maintainer", "  @HoLoPhYtE" + text + "  ", "url"
                 )
                 result = thread_mentions.classify(thread, "holophyte")

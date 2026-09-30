@@ -501,13 +501,13 @@ def _pass_key(run_id, cmd, cwd):
 
 
 def _verify_command(project, command, cwd, timeout):
-    from holophyte.isolation import isolation
+    from holophyte.isolation import launcher
 
-    route = isolation.route_for(project) if project is not None else isolation.Route()
+    route = launcher.route_for(project) if project is not None else launcher.Route()
     argv = ['/bin/sh', '-c', command] if route.backend == 'container' else command
-    env = isolation.environment(project) if project is not None else None
+    env = launcher.environment(project) if project is not None else None
     carry = carry_directories(project) if project is not None else None
-    return isolation.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped,
+    return launcher.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped,
                             carry=carry)
 
 
