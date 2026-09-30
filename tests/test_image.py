@@ -21,11 +21,9 @@ class ImplementerImageTests(unittest.TestCase):
     def setUpClass(cls):
         if not shutil.which("docker"):
             raise unittest.SkipTest("Docker absent")
-        dockerfile = review_runner.DOCKERFILE.read_text()
         review_runner._ensure_image(
-            review_runner.IMAGE, dockerfile, candidate="working tree")
-        cls.pinned = re.search(
-            r"^ARG CLAUDE_VERSION=(\S+)$", dockerfile, re.M).group(1)
+            review_runner.IMAGE, review_runner.DOCKERFILE.read_text(),
+            candidate="working tree")
 
     def launch(self, *argv):
         with tempfile.TemporaryDirectory() as workspace:
@@ -33,11 +31,11 @@ class ImplementerImageTests(unittest.TestCase):
             return launcher.launch(route, Path(workspace), {}, list(argv),
                                     timeout=120)
 
-    def test_claude_cli_runs_at_the_pinned_version(self):
+    def test_claude_cli_runs_release_2_1_286(self):
         code, output = self.launch("claude", "--version")
 
         self.assertEqual(code, 0, output)
-        self.assertEqual(output.split()[0], self.pinned, output)
+        self.assertEqual(output.split()[0], "2.1.286", output)
 
     def test_managed_settings_default_to_bypass_permissions(self):
         code, output = self.launch(
