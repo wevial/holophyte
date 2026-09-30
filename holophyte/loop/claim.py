@@ -410,9 +410,20 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
               f" not claimable ({verdict.reason}); skipping it")
         mirror_push(conn, ticket_id, provider)
         return None
-    if not (pr or freshness.critic_admits(project, conn, project_id, provider, task)):
+    if not (pr or _critic_admits(project, conn, project_id, provider, task)):
         return None
     return ticket_id
+
+
+def _critic_admits(project, conn, project_id, provider, task):
+    try:
+        _refresh_main(project, conn=conn)
+    except InfraFailure as e:
+        freshness.WARNINGS.pop(task["id"], None)
+        print(f"[holo2] {task['id']}: main not refreshed, so the critic is"
+              f" not asked; the cut meets the failure: {e}")
+        return True
+    return freshness.critic_admits(project, conn, project_id, provider, task)
 
 
 class _Held:
