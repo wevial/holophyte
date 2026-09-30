@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""story_template: validator for a storyTemplate.md-shaped story directory.
-
-A story directory holds the story body (story.md), a witnesses directory
-with each witness file at its repository path, and a children directory.
-
-CLI: python3 ticket_template.py [--repo PATH] --story DIR  ->  exit 0 iff valid.
-"""
 import copy
 import itertools
 import posixpath
@@ -190,7 +183,6 @@ def _role(ticket):
 
 
 def parse_children(directory):
-    """Each child ticket in the story's children directory, in name order."""
     folder = Path(directory) / CHILDREN
     children = []
     for path in sorted(folder.glob("*.md")) if folder.is_dir() else ():
@@ -361,9 +353,7 @@ def _children_problems(children, story, repo):
 
 
 def validate_story(directory, repo=None):
-    """Problem lines for the story in `directory`, advisories prefixed with
-    ADVISORY_PREFIX; `repo`, when given, is checked for each witness file
-    and each child."""
+    """Problem lines, advisories prefixed with ADVISORY_PREFIX."""
     body = Path(directory) / BODY
     if not body.is_file():
         return [f"missing story body: {body}"]

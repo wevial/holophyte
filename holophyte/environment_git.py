@@ -1,4 +1,3 @@
-"""Keep the factory's filtered environment outside candidate history."""
 import stat
 import subprocess
 from pathlib import Path
@@ -12,7 +11,6 @@ def protected(target):
 
 
 def paths(target):
-    """Hide protected .env from status even if its ignore rule disappeared."""
     return ["--", ".", ":(top,exclude).env"] if protected(target) else []
 
 
@@ -31,9 +29,7 @@ def exclude_environment(wt):
 
 
 def unstage_environment(target, wt):
-    """Clear a forced staged environment even when there is no other work."""
     if protected(target):
-        # Also remove a forced, already staged environment from the index.
         sh(["git", "reset", "-q", "HEAD", "--", ".env"], wt)
 
 
@@ -43,14 +39,7 @@ def stage_work(target, wt):
 
 
 def factory_identity(wt):
-    """The `-c` pins a commit the factory makes itself in `wt` carries.
-
-    Empty when the checkout resolves both `user.name` and `user.email`, so
-    the commit is authored by the configured identity the implementer's own
-    commits carry -- a deploy platform that checks authors refuses a made-up
-    one (KO-656). The `holophyte` pins otherwise, so a target with no
-    committer configured cannot make the commit raise.
-    """
+    """Empty with a configured identity: a deploy platform refuses a made-up author."""
     configured = [subprocess.run(["git", "config", "--get", key], cwd=wt,
                                  capture_output=True, text=True).stdout.strip()
                   for key in ("user.name", "user.email")]
@@ -76,7 +65,6 @@ def refuse_environment_history(target, branch, *, action, commit=None):
 
 
 def environment_temporary_directory(wt):
-    """Recover interrupted writes only in this checkout's metadata directory."""
     git_dir = Path(sh(["git", "rev-parse", "--absolute-git-dir"], wt))
     common_dir = Path(wt) / sh(["git", "rev-parse", "--git-common-dir"], wt)
     if git_dir.resolve() == common_dir.resolve():

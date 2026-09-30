@@ -1,32 +1,3 @@
-"""Secret values in a `config.toml` text: found, redacted, put back.
-
-`GET /config` (KO-356) shows the file to a bearer-holding client with every
-secret value replaced by `REDACTED`, and `PUT /config` puts the current
-value back wherever the client sends the placeholder. A secret is the
-value of any key whose name ends in `token` or `key` -- `api_key`,
-`token`, `"api key"` -- wherever the document puts it: a bare, quoted or
-dotted key under a `[table]` or `[[array]]` header, or a pair inside an
-inline table; `token_file`, a path, is not one, nor is `[board] key`, a
-native board's ticket prefix. A table whose own name is
-secret -- `[extra.api_key]`, `api_key.value = ...`, `api_key = { ... }`
--- is a secret whole: every pair under it is redacted, whichever of the
-three ways TOML writes it.
-
-The text is walked as TOML syntax, not as lines, so a value is replaced
-whole whatever its shape: a basic or literal string, a multi-line string,
-a number, an array, an inline table. Comments beside a value stay, since
-only the value's span is touched. An array is walked
-element by element, so a pair of an inline table inside one is found
-too, and a path carries the index of every array it passes through
-(`("many", 1, "token")` for the second `[[many]]`), so `restore()` puts a
-value back by its position, not by the order the placeholders appear.
-`tomllib` parses, so it cannot say
-where a value sits in the text; `spans()` is the small scanner that can,
-and the parsed document is the oracle `redact()` checks its work against:
-a parsable text whose redaction still shows a secret is refused rather
-than served.
-"""
-
 from __future__ import annotations
 
 import builtins
@@ -36,16 +7,10 @@ import re
 import tomllib
 
 REDACTED = "[redacted]"
-# A key is a secret's when its name ends this way; matched on the key's
-# last segment (`linear.api_key` is `api_key`), so a path like
-# `token_file` is not one.
+# Matched on the key's last segment, so `token_file` is not one.
 SECRET_SUFFIXES = ("token", "key")
-# Paths whose name reads as a secret but whose value is a public
-# identifier: a native board's ticket prefix (KO-756) is printed in every
-# ticket id, so hiding it corrupts outbound titles and protects nothing.
+# A native board's ticket prefix is in every ticket id; hiding it protects nothing.
 PUBLIC_PATHS = frozenset({("board", "key")})
-# The environment variables a credential reaches the process by:
-# `linear_provider`'s board key and `holophyte.pr.github`'s forge tokens.
 ENV_SECRETS = ("LINEAR_API_KEY", "GH_TOKEN", "GITHUB_TOKEN",
                "HOLOPHYTE_MEDIA_ACCESS_KEY_ID", "HOLOPHYTE_MEDIA_SECRET_ACCESS_KEY")
 BARE_KEY = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -54,12 +19,11 @@ WHITESPACE = " \t"
 
 
 class RedactionError(Exception):
-    """`redact()` could not vouch for its output: a secret the parsed
-    document holds is still readable in the redacted text."""
+    pass
 
 
 class Scan(Exception):
-    """The scanner met text it cannot walk; carries the offset."""
+    pass
 
 
 def is_secret(key):
@@ -67,33 +31,15 @@ def is_secret(key):
 
 
 def secret_at(path):
-    """Whether the indexed `path` names a secret: its last key `is_secret()`
-    and the path is not one of the `PUBLIC_PATHS`."""
     return is_secret(path[-1]) and path not in PUBLIC_PATHS
 
 
 def under_secret(path):
-    """Whether the indexed `path` or any of its prefixes is `secret_at()`:
-    the pair itself, or a table it sits in by header, dotted key or inline
-    table -- the three ways TOML writes the same document."""
     return any(secret_at(path[:n + 1])
                for n, p in enumerate(path) if isinstance(p, str))
 
 
 def spans(text):
-    """`[(path, start, end)]` for every `key = value` pair of the TOML
-    `text` whose key's last segment `is_secret()`, `path` the tuple of key
-    segments from the enclosing header down (`("linear", "api_key")`) with
-    the index of every array on the way (`("many", 1, "token")` under the
-    second `[[many]]`, `("items", 0, "token")` inside `items = [{...}]`),
-    as `secret_leaves()` spells the same leaf; `text[start:end]` the value
-    as written. Pairs of an inline table under a secret key are not listed
-    separately: the table is the value.
-
-    Text the scanner cannot walk -- a header without its `]`, a string
-    without its closing quote -- ends the walk at that point, so a
-    malformed file yields the pairs before the fault; `redact()` says
-    whether that was enough."""
     found = []
     try:
         _walk(text, found)
@@ -106,8 +52,7 @@ def _walk(text, found):
     n = len(text)
     pos = 0
     table = ()
-    # `[[array]]` headers seen so far, by their indexed path, and how many
-    # elements each has: `[a.b]` under an `[[a]]` names the current element.
+    # `[a.b]` under an `[[a]]` names the current element.
     arrays = {}
     while pos < n:
         pos = _skip_blank(text, pos)
@@ -133,10 +78,6 @@ def _walk(text, found):
 
 
 def _header_path(segments, double, arrays):
-    """The indexed path a `[a.b]` (`[[a.b]]` when `double`) header opens:
-    each segment that names an array of tables seen so far is followed by
-    the index of its current element, the last one of a `[[...]]` header
-    first counted up as the element the header appends."""
     path = ()
     for i, segment in enumerate(segments):
         path += (segment,)
@@ -148,7 +89,6 @@ def _header_path(segments, double, arrays):
 
 
 def _pair(text, pos, prefix, found):
-    """One `key = value` starting at `pos`; the offset after the value."""
     keys, pos = _key(text, pos)
     pos = _skip_ws(text, pos)
     if pos >= len(text) or text[pos] != "=":
@@ -156,9 +96,7 @@ def _pair(text, pos, prefix, found):
     pos = _skip_ws(text, pos + 1)
     path = prefix + keys
     start = pos
-    # A pair is a secret when its own key is, or when any table on the
-    # way to it is: `[extra.api_key]`, `api_key.value = ...` and
-    # `api_key = { value = ... }` all put `value` inside a secret.
+    # `[extra.api_key]`, `api_key.value = ...` and `api_key = {...}` are all secret.
     secret = under_secret(path)
     pos = _value(text, pos, path, None if secret else found)
     if secret:
@@ -167,7 +105,6 @@ def _pair(text, pos, prefix, found):
 
 
 def _key(text, pos):
-    """A bare, quoted or dotted key at `pos`: `(segments, offset after)`."""
     segments = []
     while True:
         pos = _skip_ws(text, pos)
@@ -194,9 +131,6 @@ def _key(text, pos):
 
 
 def _value(text, pos, path, found):
-    """The value starting at `pos`; the offset after it. Pairs of an
-    inline table are recorded into `found` under `path` when it is not
-    None (the enclosing key was not itself a secret)."""
     n = len(text)
     if pos >= n:
         raise Scan(pos)
@@ -207,8 +141,7 @@ def _value(text, pos, path, found):
         return _array(text, pos + 1, path, found)
     if ch == "{":
         return _inline_table(text, pos + 1, path, found)
-    # A bare scalar -- number, boolean, date-time (which may hold a space)
-    # -- runs to the separator that ends it, trailing blanks dropped.
+    # A bare scalar runs to its separator: a date-time may hold a space.
     end = pos
     while end < n and text[end] not in ",]}#\r\n":
         end += 1
@@ -220,10 +153,6 @@ def _value(text, pos, path, found):
 
 
 def _array(text, pos, path, found):
-    """The rest of an array whose `[` sits before `pos`: the offset after
-    its `]`. Newlines and comments may sit between its values. Each
-    element is walked under `path` plus its index, so a secret pair of an
-    inline table inside the array is recorded like any other."""
     n = len(text)
     index = 0
     while True:
@@ -242,8 +171,6 @@ def _array(text, pos, path, found):
 
 
 def _inline_table(text, pos, path, found):
-    """The rest of an inline table whose `{` sits before `pos`: the offset
-    after its `}`, its pairs recorded under `path` when `found` is given."""
     n = len(text)
     while True:
         pos = _skip_ws(text, pos)
@@ -258,7 +185,6 @@ def _inline_table(text, pos, path, found):
 
 
 def _string(text, pos):
-    """A TOML string starting at `text[pos]`; the offset after it."""
     quote = text[pos]
     n = len(text)
     if text.startswith(quote * 3, pos):
@@ -309,7 +235,6 @@ def _end_of_line(text, pos):
 
 
 def _parse(fragment):
-    """The one value of a `k = ...` TOML fragment, None when it is not TOML."""
     try:
         return tomllib.loads(fragment)["k"]
     except (tomllib.TOMLDecodeError, KeyError):
@@ -317,7 +242,6 @@ def _parse(fragment):
 
 
 def _rewrite(text, replacements):
-    """`text` with each `(start, end, new)` span replaced, spans disjoint."""
     out = []
     at = 0
     for start, end, new in sorted(replacements):
@@ -329,10 +253,6 @@ def _rewrite(text, replacements):
 
 
 def secret_leaves(document):
-    """`{path: value}` for every leaf of the parsed `document` whose key
-    `is_secret()`, every array on the way indexed into the path -- an
-    array of tables, or a table inside a plain array -- as `spans()`
-    spells it."""
     leaves = {}
 
     def walk(node, prefix, under):
@@ -340,16 +260,9 @@ def secret_leaves(document):
             path = prefix + (key,)
             secret = under or secret_at(path)
             if isinstance(value, dict):
-                # A secret-named table is its pairs' business: each is a
-                # leaf below, and `redact()` accepts the placeholder at
-                # the pair or, for an inline table `spans()` replaced
-                # whole, at the ancestor.
                 walk(value, path, secret)
             elif isinstance(value, list) and any(
                     isinstance(item, (dict, list)) for item in value):
-                # `[[extra.api_key]]` and `api_key = [{...}]` parse alike;
-                # the leaves are the pairs inside, and the placeholder is
-                # accepted at the pair or at the ancestor as above.
                 walk_list(value, path, secret)
             elif secret:
                 leaves[path] = value
@@ -369,14 +282,7 @@ def secret_leaves(document):
 
 
 def redact(text):
-    """`text` with every secret value replaced by a quoted `REDACTED`.
-
-    The rewrite is checked against the parsed document when `text` parses:
-    every secret leaf of the original must read `REDACTED` in the result,
-    or `RedactionError` says which does not -- the scanner and `tomllib`
-    disagreed about the text, and the text is not served. A `text` that
-    does not parse has no oracle and gets the scanner's best walk: the
-    loop would refuse the file too, so this is the shell's case."""
+    """A parsable text whose redaction still shows a secret is refused, not served."""
     quoted = '"' + REDACTED + '"'
     redacted = _rewrite(text, [(s, e, quoted) for _, s, e in spans(text)])
     try:
@@ -388,8 +294,7 @@ def redact(text):
     except tomllib.TOMLDecodeError as bad:
         raise RedactionError(f"redaction left the file unparsable: {bad}")
     for path in secret_leaves(original):
-        # A leaf under a secret-named table (`api_key = { token = "x" }`)
-        # is gone with the table: the placeholder sits at the ancestor.
+        # A leaf under a secret-named table is gone with it: the ancestor holds it.
         if not any(result.get(path[:n]) == REDACTED
                    for n in range(len(path), 0, -1)):
             raise RedactionError(
@@ -399,7 +304,6 @@ def redact(text):
 
 
 def describe(path):
-    """`[table] key` for a path, `key` at the top, indices as `[n]`."""
     parts = [str(p) for p in path if not isinstance(p, int)]
     if len(parts) == 1:
         return parts[0]
@@ -407,15 +311,7 @@ def describe(path):
 
 
 def restore(text, current):
-    """`text` with every `REDACTED` value put back from `current`, the
-    file's present text: what a round trip through the console page sends
-    is the redacted text with edits, and a secret it never saw must come
-    back as it was, not as the placeholder. A placeholder is any TOML
-    string whose value is `REDACTED`, whatever its quoting, a comment
-    beside it left alone. A placeholder takes the current value at the
-    same indexed path, so the second `[[many]]` entry's placeholder is put
-    back from the second entry whatever was done to the first. ValueError
-    names a redacted key the current file has no value for."""
+    """A placeholder is put back by its indexed path, not by its order in the text."""
     held = {path: current[start:end] for path, start, end in spans(current)}
     missing = []
     replacements = []
@@ -433,17 +329,13 @@ def restore(text, current):
     return _rewrite(text, replacements)
 
 
-# Text that is not a document: the implementer's last words (KO-375). A
-# `name = value` pair whose name ends in a secret suffix, however the line
-# around it reads -- `key=`, `token:`, `"api_key" =`, `TOKEN=` -- is the
-# shape a credential echoed into prose takes; the value runs to the end of
-# the line, quotes included, so a string with a space inside is gone whole.
+# The value runs to the end of the line, so a string with a space is gone whole.
 PROSE_PAIR = re.compile(
     r"""(?im)(["']?[\w.-]*(?:token|key)["']?\s*[=:]\s*)(?!\s*$)[^\r\n]+""")
 
 
-# Retained for the process lifetime: a source may rotate while an earlier
-# candidate can still echo its old values. Never persist this registry.
+# Kept for the process lifetime, as a rotated source's old values can still be
+# echoed. Never persist this registry.
 _environment_values = frozenset()
 
 
@@ -468,7 +360,6 @@ def values_held(values):
 
 
 def redact_values(text):
-    """Remove source values while preserving ordinary non-environment prose."""
     for value in sorted(_environment_values, key=len, reverse=True):
         text = text.replace(value, REDACTED)
     return text
@@ -490,11 +381,6 @@ def safe_print(*args, **kwargs):
 
 
 def known_secrets(document, environ=None):
-    """The secret values the process itself holds: every `secret_leaves()`
-    value of the parsed config `document`, and the tokens `environ` carries
-    for the board and the forge. What the implementer can have echoed is
-    what it could read, and these are the only credentials the loop hands
-    it or sits beside."""
     environ = os.environ if environ is None else environ
     values = [str(v) for v in secret_leaves(document or {}).values()]
     values += [environ.get(name, "") for name in ENV_SECRETS]
@@ -502,14 +388,7 @@ def known_secrets(document, environ=None):
 
 
 def redact_prose(text, secrets=(), *, assignments=True):
-    """`text` -- prose, not TOML -- with every `secrets` value replaced by
-    `REDACTED`, and every `name = value` pair whose name `is_secret()`
-    replaced by `name = REDACTED`, whatever the line around it says.
-    `redact()`'s scanner stops at the first word that is not a key, so an
-    `api_key = "..."` after a sentence would pass it untouched; this is the
-    rule for text with no document to check against, and it errs toward
-    hiding: a `key:` label in a pasted log is redacted with the rest.
-    Outbound payloads disable assignment matching to preserve unrelated links."""
+    """Outbound payloads disable assignment matching to preserve unrelated links."""
     text = redact_values(text)
     for value in sorted(secrets, key=len, reverse=True):
         text = text.replace(value, REDACTED)
@@ -518,9 +397,4 @@ def redact_prose(text, secrets=(), *, assignments=True):
 
 
 def outbound(text, secrets=()):
-    """Redact outbound prose once, before routing or truncating its payload.
-
-    Callers with a target pass its known config secrets. Without those,
-    preserve ordinary prose exactly apart from registered environment values.
-    """
     return redact_prose(text, secrets, assignments=False)

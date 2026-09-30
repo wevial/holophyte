@@ -1,58 +1,10 @@
 #!/usr/bin/env python3
-"""ticket_template: parser/validator for ticketTemplate.md-shaped tickets.
-
-parse(text) pulls a ticket apart into fields; validate(ticket) returns a
-list of human-readable problems (empty list = valid). The checks mirror the
-rules the template itself states: required sections in order, at least one
-"- [ ]" acceptance criterion, runnable relative-path-only verify commands in
-a ``` fence, an optional "Contract checks" fence of "path: literal"
-declarations, an "Estimate: N min · Depends on: ..." line, and open questions
-reading exactly "- None". Unfilled placeholders ({{...}} or <...>) fail.
-
-Scope is capped mechanically as well: a ticket over MAX_ESTIMATE_MIN minutes,
-MAX_CRITERIA acceptance criteria, or MAX_IN_SCOPE "In scope" entries is
-rejected — scope rules kept only in prose get skipped. Every list entry
-counts toward those caps, whatever its marker ("-", "*", "+", "1."), and an
-acceptance criterion that is not a "- [ ]" checkbox is rejected on its own,
-so extra scope cannot hide behind list syntax the parser might skip. A
-"What:" line that chains deliverables, or a verify command running a bare
-"python"/"python3"/"pip" without activating a venv or using its interpreter
-path, instead yields an ADVISORY_PREFIX-marked note, which does not affect
-validity; blocking() drops advisories for callers that gate on the result.
-
-Markdown that Linear has normalized round-trips: "**What: **" for "**What:**"
-is the same structure as the plain form, any bullet marker ("-", "*", "+")
-reads the same, and a markdown link "[text](url)" -- Linear autolinks bare
-file names to "[factory.py:1](<http://factory.py:1>)" and ticket ids to
-"[KO-1](https://linear.app/...)" -- reads as its text, so those variants are
-accepted. Loose formatting beyond those equivalences still fails.
-
-Repository checks look past the body at what a reviewer could witness. A relative
-path a criterion, verify command or contract check names is asked of the
-target repository with "git check-ignore": an ignored path can never appear
-in the candidate export the reviewer sees, so it is a violation — but only
-when the caller names the repository (validate(t, repo=...), CLI --repo);
-without one repository checks are skipped. A named witness or verify path
-that resolves outside the repository is a violation, and so is a verify path
-that does not exist and is not declared new, since that command can never
-pass; such a path in prose, or a unittest module with no repository file, is
-an advisory, since a ticket names files its candidate will create. Verifying
-the blank template is always rejected. A criterion phrased
-as something only an operator or a merged main could witness
-(OPERATOR_WITNESS_PHRASES) gets an advisory, since a sentence can mention an
-operator legitimately.
-
-CLI: python3 ticket_template.py [--repo PATH] TICKET.md [...]
-     ->  exit 0 iff all valid.
-"""
 import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
 
-# Every section the template defines, in order. A bug's reproduction,
-# literal checks and visual evidence are optional; the rest are required.
 TEMPLATE_ORDER = [
     "Summary", "What / Why / How", "Reproduce", "In scope", "Out of scope",
     "Acceptance criteria", "Verify command(s)", "Contract checks", "Evidence",
@@ -61,51 +13,30 @@ TEMPLATE_ORDER = [
 ]
 OPTIONAL_SECTIONS = {"Reproduce", "Contract checks", "Evidence", "Story"}
 SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
-# Mechanical scope caps. Module-level so a future per-project config can
-# override them without touching validate().
 MAX_ESTIMATE_MIN = 90
 MAX_CRITERIA = 10
 MAX_IN_SCOPE = 6
-# Marks a validate() entry as guidance rather than a rejection.
 ADVISORY_PREFIX = "advisory: "
-# The advisories `--file-ticket` refuses (KO-708), by the stable text after
-# ADVISORY_PREFIX; the claim still takes a body carrying them.
 WHOLE_SUITE_ADVISORY = "verify command discovers the whole unit suite"
 SCHEMA_VERSION_ADVISORY = "literal schema version"
 FILING_REFUSED = tuple(ADVISORY_PREFIX + a for a in (WHOLE_SUITE_ADVISORY,
                                                      SCHEMA_VERSION_ADVISORY))
-# A literal schema version: "schema version 12", "SCHEMA_VERSION to 12",
-# "SCHEMA_VERSION = 12". It goes stale once another ticket bumps the schema
-# first; "one above main's SCHEMA_VERSION" is the house wording and passes.
+# A literal schema version goes stale once another ticket bumps it first.
 SCHEMA_VERSION_RE = re.compile(
     r"\b(?i:schema version)\s+`?\d"
     r"|\bSCHEMA_VERSION`?(?:\s+to\s+|\s*=\s*)`?\d")
-# Connectives that usually mean a "What:" line describes two deliverables.
-# Advisory only: "read and write the cache" is one deliverable, so a human
-# decides — the caps above are what actually gate.
+# Advisory only: "read and write the cache" is one deliverable.
 SCOPE_CHAINING = (" and ", ";", ", then ")
-# A bare interpreter/pip token in a verify command: not attached to a path
-# (so ".venv/bin/python" does not match) and not glued to a longer word.
-# Advisory only: stdlib-only targets legitimately run bare "python3", while
-# a project with a venv wants it activated or addressed by path first.
+# Not attached to a path, so ".venv/bin/python" does not match.
 BARE_INTERPRETER_RE = re.compile(r"(?<![\w./-])(python3?|pip)(?![\w.-])")
-# Phrases that make an acceptance criterion read as a witness the reviewer
-# cannot be: the reviewer sees a clean export of the candidate commit, not
-# main after the merge, not the writer host, not a screen. Advisory only.
+# The reviewer sees a clean export of the candidate, not main after the merge.
 OPERATOR_WITNESS_PHRASES = (
     "after the merge", "once merged", "on the writer host", "operator",
     "visual pass", "when viewed", "by hand",
 )
-# A token that looks like a relative repository path: path characters only,
-# and either a slash or a short lowercase file extension. A leading dot is a
-# path too (".cache/report.html", ".github/workflows/ci.yml"); the ignore
-# check has to see those, since dot-directories are exactly what gets
-# gitignored. Absolute paths, flags, URLs and shell globs are someone else's
-# rule or nothing at all.
+# A leading dot is a path too: dot-directories are what gets gitignored.
 PATH_TOKEN_RE = re.compile(r"^(?:\./)?[\w.][\w.\-]*(?:/[\w.\-]+)*/?$")
-# The venv interpreter path ticketTemplate.md itself prescribes for verify
-# commands. Every real repository ignores .venv, and the harness provisions
-# it, so it is never a "gitignored path" finding.
+# Every real repository ignores .venv, and the harness provisions it.
 VENV_PATH_PREFIX = ".venv/"
 FILE_EXT_RE = re.compile(r"\.[a-z][a-z0-9]{0,9}$")
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
@@ -114,32 +45,21 @@ ABBREVIATION_RE = re.compile(r"^(?:\w\.)+\w$")
 VENV_ACTIVATE_RE = re.compile(r"(?:^|[\s;&|])(?:\.|source)\s+\.venv/bin/activate\b")
 H1_RE = re.compile(r"^#\s+(.*?)\s*$")
 H2_RE = re.compile(r"^##\s+(.*?)\s*$")
-# Markdown's three bullet markers. All of them render identically, so a cap
-# that recognized only some of them would be bypassable by typing "+".
+# A cap that recognized only some markers would be bypassable by typing "+".
 BULLET = r"[-*+]"
 UNCHECKED_RE = re.compile(rf"^{BULLET}\s+\[ \]\s*(.*)$")
 CHECKED_RE = re.compile(rf"^{BULLET}\s+\[[xX]\]\s*(.*)$")
-# Any list entry, bulleted or numbered. Counting the loosest list shape --
-# everywhere a cap applies -- is what keeps entries from slipping past
-# MAX_CRITERIA or MAX_IN_SCOPE by wearing a marker the parser skipped.
 LIST_ITEM_RE = re.compile(rf"^(?:{BULLET}|\d+[.)])\s+(.*)$")
-# The bold run is a Linear serialisation detail, not a contract: it rewrites
-# "**What:**" as "**What: **" on every body patch, and an authored "What:" is
-# the same key. The key and the colon stay required.
+# Linear rewrites "**What:**" as "**What: **" on every body patch.
 BOLD_KEY_RE = re.compile(r"^(?:\*\*)?(What|Why|How):(?:[ \t]*\*\*)?\s*(.*)$")
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
 LINEAR_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}|<[^<>\n\s][^<>\n]*>")
-# A markdown link, "[text](url)" or "[text](<url>)". Linear wraps bare file
-# names and ticket ids in these on save; parse() unwraps each to its text so
-# the angle-bracketed target does not read as a placeholder and a linked
-# ticket id still matches LINEAR_ID_RE. Only the link shape is unwrapped —
-# angle-bracket text outside a link target is still a placeholder.
+# Linear wraps file names and ticket ids in links on save; only links unwrap.
 MD_LINK_RE = re.compile(r"\[([^\[\]\n]*)\]\((?:<[^<>\n]*>|[^()\s]*)\)")
 COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 FENCE_RE = re.compile(r"^```([^\n]*)$")
-# One literal contract declaration: a relative path, a colon, and the exact
-# value that must appear in that file. Literal only — no regex, no shell.
+# Literal only: no regex, no shell.
 CONTRACT_RE = re.compile(r"^(\S+?):\s*(.*)$")
 OPEN_QUESTIONS_NONE = ("- None", "* None", "+ None")
 
@@ -149,7 +69,6 @@ def _clean(s):
 
 
 def _list_items(body):
-    """Every list entry in the section, bulleted (-, *, +) or numbered."""
     out = []
     for line in body.splitlines():
         m = LIST_ITEM_RE.match(line.strip())
@@ -159,10 +78,6 @@ def _list_items(body):
 
 
 def _list_item_blocks(body):
-    """Every list entry in the section with its continuation lines, which
-    `_list_items()` drops: a wrapped line, or an indented one after a blank
-    line. A nested entry is an entry of its own; a paragraph after the list
-    belongs to no entry, and neither do its later lines."""
     out, entry, blank = [], None, False
     for line in body.splitlines():
         m = LIST_ITEM_RE.match(line.strip())
@@ -172,7 +87,7 @@ def _list_item_blocks(body):
         elif entry and line.strip() and (not blank or line[:1].isspace()):
             entry.append(line.strip())
         elif line.strip():
-            entry = None  # a paragraph after the list ends the last entry
+            entry = None
         blank = not line.strip()
     return [_clean(" ".join(lines)) for lines in out]
 
@@ -189,16 +104,7 @@ def _evidence_states(body):
 
 
 def _criteria(body):
-    """Acceptance-criteria list entries as (unchecked, checked, other,
-    checkboxes) -- the last being every "- [ ]"/"- [x]" entry in document
-    order, so a rule can name a criterion by the number the author sees.
-
-    "other" is every list entry that is not a "- [ ]"/"- [x]" checkbox — a
-    plain bullet, a numbered item. The author wrote those as criteria, so
-    dropping them would let a ticket carry more than MAX_CRITERIA and still
-    validate clean; validate() counts them toward the cap and rejects their
-    form instead.
-    """
+    """"other" entries count toward MAX_CRITERIA, so no list marker slips the cap."""
     unchecked, checked, other, boxes = [], [], [], []
     for line in body.splitlines():
         s = line.strip()
@@ -218,7 +124,6 @@ def _criteria(body):
 
 
 def _fenced_lines(body):
-    """Non-blank lines inside the section's ``` fence."""
     out, in_fence = [], False
     for line in body.splitlines():
         s = line.strip()
@@ -248,26 +153,12 @@ def _fence_advisories(t):
 
 
 def _verify_commands(body):
-    """Command lines inside the section's ``` fence.
-
-    Blank lines and the template's own annotation ("Rules:" plus its bullet
-    list) are skipped; everything else left in the fence is a command.
-    """
     return [s for s in _fenced_lines(body)
             if not s.startswith("Rules:") and not s.startswith("- ")]
 
 
 def _contract_checks(body):
-    """Literal contract declarations inside the section's ``` fence.
-
-    Each line is "relative/path: exact literal" and becomes a (path, literal)
-    pair, verbatim — no globbing, no regex, no substitution. A line without a
-    colon yields ("", line) so validate() can name the malformed declaration
-    instead of silently dropping a contract the ticket meant to enforce.
-
-    The template's trailing "Rules:" annotation and everything under it are
-    prose, not declarations, so scanning stops there.
-    """
+    """A line with no colon is ("", line), so validate() names it, not drops it."""
     checks = []
     for line in _fenced_lines(body):
         if line.startswith("Rules:"):
@@ -285,8 +176,6 @@ def _deps(raw):
 
 
 class Ticket:
-    """Parsed ticket. sections keeps raw body text keyed by heading."""
-
     def __init__(self):
         self.title = ""
         self.order = []
@@ -299,12 +188,10 @@ class Ticket:
         self.acceptance = []
         self.acceptance_done = []
         self.acceptance_other = []
-        self.acceptance_boxes = []  # checked and unchecked, document order
+        self.acceptance_boxes = []
         self.verify_commands = []
         self.contract_checks = []
         self.evidence_states = []
-        # A bug ticket's steps and where the behaviour was seen, comments
-        # dropped; "" when the section is absent or empty (KO-659).
         self.reproduce = ""
         self.notes = []
         self.estimate_min = None
@@ -313,8 +200,6 @@ class Ticket:
 
 
 def parse(text):
-    """Parse markdown text into a Ticket. Lenient: malformed input yields a
-    sparsely-filled Ticket; validate() reports what's wrong."""
     t = Ticket()
     lines = MD_LINK_RE.sub(r"\1", text).splitlines()
     first_h1 = next((i for i, ln in enumerate(lines) if H1_RE.match(ln)), None)
@@ -373,7 +258,6 @@ def _keep(t, name, body):
 
 
 def _labeled_texts(t):
-    """Every filled text field as (label, text) — placeholder scanning."""
     yield "title", t.title
     yield "Summary", t.summary
     for label, v in (("What:", t.what), ("Why:", t.why), ("How:", t.how)):
@@ -404,8 +288,6 @@ def _has_nonrelative_path(cmd):
 
 
 def _bare_interpreter(cmd):
-    """The first bare "python"/"python3"/"pip" token in `cmd` that no earlier
-    ". .venv/bin/activate" / "source .venv/bin/activate" covers, or None."""
     for m in BARE_INTERPRETER_RE.finditer(cmd):
         if not VENV_ACTIVATE_RE.search(cmd[:m.start()]):
             return m.group(1)
@@ -413,9 +295,7 @@ def _bare_interpreter(cmd):
 
 
 def contract_path_problem(path):
-    """Why `path` is unusable as a contract-check target, or None if it is a
-    plain relative repository path. Shared with the factory's verify gate so
-    the ticket-time rule and the run-time rule cannot drift apart."""
+    """Shared with the verify gate so the ticket-time and run-time rules agree."""
     if not path:
         return "declaration must read 'relative/path: expected literal'"
     if (path.startswith("/") or path.startswith("~")
@@ -427,11 +307,6 @@ def contract_path_problem(path):
 
 
 def path_candidates(text):
-    """The tokens of `text` that look like relative repository paths, in
-    order, deduplicated: a slash or a file extension, path characters only.
-    Backticks and quotes are stripped first (a path in a criterion is usually
-    a code span), markdown links read as their text, and anything absolute,
-    flag-shaped, URL-shaped or glob-shaped is left alone."""
     text = MARKDOWN_LINK_RE.sub(r"\1", text)
     seen = []
     for raw in re.split(r"[\s=]+", text):
@@ -451,9 +326,7 @@ def path_candidates(text):
 
 
 def _witnessable_texts(t):
-    """The (label, text) fields whose paths the reviewer must be able to
-    reach on the candidate branch. Checked-off criteria count too: they are
-    still part of the contract, and skipping them would shift the numbers."""
+    """Checked-off criteria count too: skipping them would shift the numbers."""
     for i, ac in enumerate(t.acceptance_boxes, 1):
         yield f"Acceptance criteria #{i}", ac
     for cmd in t.verify_commands:
@@ -463,8 +336,7 @@ def _witnessable_texts(t):
 
 
 def _gitignored(repo, token):
-    """Whether `repo` ignores `token`: True/False, or None when git could not
-    answer (exit 128: not a repository, or a path it cannot resolve)."""
+    """None when git could not answer (exit 128)."""
     r = subprocess.run(["git", "-C", str(repo), "check-ignore", "-q", "--",
                         token], capture_output=True, text=True)
     if r.returncode == 0:
@@ -475,9 +347,6 @@ def _gitignored(repo, token):
 
 
 def _gitignored_path_problems(t, repo):
-    """One problem per named relative path that `repo` gitignores. A
-    repository git cannot read yields a single advisory instead: the ticket
-    is not at fault for where the validator was run."""
     problems = []
     unchecked = False
     for label, text in _witnessable_texts(t):
@@ -494,7 +363,6 @@ def _gitignored_path_problems(t, repo):
     return problems
 
 
-# Bare prose such as version numbers and unittest module names is not a file.
 SOURCE_EXTENSIONS = {
     ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".json", ".md",
     ".toml", ".yaml", ".yml", ".txt", ".html", ".css", ".scss",
@@ -516,20 +384,14 @@ def _prose_paths(text):
 
 
 def _mask_code_spans(text):
-    """`text` with every code span blanked, so a filename's dots do not end
-    its sentence."""
     return re.sub(r"`[^`\n]+`", lambda m: " " * len(m.group()), text)
 
 
 def _sentence_before(masked, end):
-    """The part of the sentence in `masked` that runs up to `end`."""
     return re.split(r"[.!?](?:\s|$)|\n\s*(?:\n|[-*+] )", masked[:end])[-1]
 
 
 def _new_paths(t):
-    """Declarations apply across fields; 'new' must precede the code span
-    in the same sentence. Mask code spans before finding sentence boundaries
-    so a filename's dots do not end its sentence."""
     files, directories = set(), set()
     for text in t.sections.values():
         masked = _mask_code_spans(text)
@@ -556,7 +418,7 @@ def _outside(repo, path):
 
 
 def _available(repo, path, declarations):
-    # Check containment before existence or exemptions, including new files.
+    """Containment is checked before existence or exemptions, new files included."""
     if _outside(repo, path):
         return False
     files, directories = declarations
@@ -585,7 +447,6 @@ def _shell_commands(command):
 
 
 def _unittest_args(tokens):
-    """The arguments after the first `-m unittest`; None without one."""
     for i in range(len(tokens) - 1):
         if tokens[i:i + 2] == ["-m", "unittest"]:
             return tokens[i + 2:]
@@ -606,7 +467,6 @@ def _unittest_modules(tokens):
 
 
 def _discovers_whole_suite(tokens):
-    """`-m unittest discover` with no `-p`/`--pattern` narrowing it."""
     args = _unittest_args(tokens) or []
     if "discover" not in args:
         return False
@@ -615,7 +475,6 @@ def _discovers_whole_suite(tokens):
 
 
 def _suite_advisories(t):
-    """Name focused test modules; the pull request check runs the suite."""
     return [f"{ADVISORY_PREFIX}{WHOLE_SUITE_ADVISORY}; "
             f"name the focused test modules (discover -s tests -p "
             f"'test_x.py') — the full suite runs as a pull request check: "
@@ -625,7 +484,6 @@ def _suite_advisories(t):
 
 
 def _schema_version_advisories(t):
-    """Name the version relative to main's; a literal one goes stale."""
     return [f"{ADVISORY_PREFIX}{SCHEMA_VERSION_ADVISORY} in '{section}'; "
             f"say 'one above main's SCHEMA_VERSION' — another ticket may bump "
             f"the schema first: {line.strip()}"
@@ -635,9 +493,7 @@ def _schema_version_advisories(t):
 
 
 def _discover_pattern(tokens):
-    """The index of the -p pattern of a `unittest discover` command and that
-    pattern joined to its -s start directory: the pattern names a file
-    there, not at the repository root."""
+    """The pattern names a file in the -s start directory, not the repository root."""
     for i in range(len(tokens) - 2):
         if tokens[i:i + 3] != ["-m", "unittest", "discover"]:
             continue
@@ -663,8 +519,6 @@ def _discover_pattern(tokens):
 
 
 def _verify_paths(command):
-    """The paths of each shell command in `command`, a discover pattern read
-    in its start directory and every other token left as it is."""
     commands = _shell_commands(command)
     if not commands:
         return _repo_paths(command)
@@ -690,9 +544,7 @@ def _module_available(repo, module, declarations):
 
 
 def _path_problem(repo, path, declarations, label, prefix=ADVISORY_PREFIX):
-    """Escaping the repository blocks; a missing path takes `prefix`, an
-    advisory by default, since prose names files its own candidate will
-    create. A verify command passes "": it can never pass (REL-137)."""
+    """A missing path is advisory by default: prose names files a candidate creates."""
     if _outside(repo, path):
         return f"path is outside the repository in {label}: {path}"
     if not _available(repo, path, declarations):
@@ -723,8 +575,6 @@ def _repository_problems(t, repo):
 
 
 def _script_arguments(tokens):
-    """Arguments of the validator invoked as a script or Python module.
-    Interpreter options precede the target; -c does not invoke the validator."""
     args = iter(tokens)
     executable = next(args, "")
     while executable == "env" or re.match(r"^[A-Za-z_]\w*=", executable):
@@ -758,8 +608,6 @@ def _blank_template_problems(t):
 
 
 def _operator_witness_advisories(t):
-    """An advisory per acceptance criterion phrased as something only an
-    operator, a screen, or main-after-the-merge could witness."""
     out = []
     for i, ac in enumerate(t.acceptance_boxes, 1):
         low = ac.lower()
@@ -771,14 +619,7 @@ def _operator_witness_advisories(t):
 
 
 def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at a rule registry
-    """All template violations as human-readable strings.
-
-    An entry starting with ADVISORY_PREFIX is scope guidance, not a
-    violation: the ticket is valid iff blocking(validate(t)) is empty.
-
-    `repo`, when given, is the target repository the named paths are checked
-    for existence and with `git check-ignore`; without it repository checks
-    are skipped. The blank-template verify check always applies."""
+    """Valid iff blocking(validate(t)) is empty; `repo` enables repository checks."""
     p = []
     if not t.title:
         p.append("missing H1 title ('# ...' on the first heading line)")
@@ -788,8 +629,7 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
     seen_first = {}
     for idx, name in enumerate(t.order):
         seen_first.setdefault(name, idx)
-    # Compare only the template sections actually present, so an absent
-    # optional section does not open a gap in the order check.
+    # Only sections present are compared, so an absent optional one opens no gap.
     present = [n for n in TEMPLATE_ORDER if n in seen_first]
     for a, b in zip(present, present[1:]):
         if seen_first[a] >= seen_first[b]:
@@ -906,20 +746,10 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
 
 
 def blocking(problems):
-    """The entries of a validate() result that make a ticket invalid.
-
-    Advisories are guidance about scope shape, not template violations, so a
-    caller gating on validity filters them out and still shows them."""
     return [pr for pr in problems if not pr.startswith(ADVISORY_PREFIX)]
 
 
 def filing_refusals(problems):
-    """The entries of a validate() result that filing a ticket refuses.
-
-    The blocking ones plus the whole-suite and literal-schema-version
-    advisories: those are cheapest to fix before the ticket reaches the
-    queue, while the claim keeps them advisory so a body filed before
-    KO-708 is still claimed."""
     return [pr for pr in problems
             if not pr.startswith(ADVISORY_PREFIX)
             or pr.startswith(FILING_REFUSED)]
@@ -930,8 +760,6 @@ HELP = "help"
 
 
 def _parse_args(argv):
-    """`(repo, paths)` from the command line, HELP for `-h`/`--help`, or
-    None for a usage error."""
     repo, paths = None, []
     args = list(argv)
     while args:

@@ -1,28 +1,8 @@
-"""Run a ticket's Playwright capture spec for any Playwright project (KO-650).
-
-A target names this script as its `[merge] ui_capture` command, so it has no
-capture script of its own:
-
-    python3 PATH/holophyte/capture_playwright.py [--boot COMMAND]
-        [--env NAME=VALUE ...] [--dir DIR] [--config FILE] [--default SPEC]
-        OUTPUT
-
-The spec is `DIR/<HOLOPHYTE_TICKET>.capture.ts`, outside the project's test
-tree; when it is absent and the ticket lists no evidence states, `--default`
-names the spec run instead; a default outside the working directory runs from
-a temporary copy in DIR, so it resolves the project's modules. A generated
-config beside the spec imports the project's own config and points its test
-projects at that spec; the boot command runs with that config and
-`CAPTURE_OUT` set to OUTPUT, and the run fails unless an `NN-slug.png` landed.
-
-Standard library only and no `holophyte` imports: it runs by path from a
-target's worktree, where the package is not on `sys.path`.
-"""
+"""Run a ticket's Playwright capture spec; standard library only, as it runs by path."""
 import os
 import sys
 
-# Run by path, sys.path[0] is this directory, whose operator.py would shadow
-# the standard library module every later import leans on.
+# Run by path, sys.path[0] is this directory, whose modules would shadow the stdlib.
 HERE = os.path.dirname(os.path.realpath(__file__))
 if sys.path and os.path.realpath(sys.path[0] or ".") == HERE:
     del sys.path[0]
@@ -42,9 +22,8 @@ SHOT = "[0-9][0-9]-*.png"
 # Playwright reads a positional filter as a JavaScript regular expression.
 REGEX_SPECIAL = re.compile(r"[.*+?^${}()|[\]\\]")
 
-# Plain JavaScript, which a TypeScript config also accepts. The imported
-# config's relative paths would resolve against this file's directory, so a
-# helper project's `testDir` is made absolute against the project's own.
+# The imported config's relative paths resolve against this file's directory,
+# so a helper project's `testDir` is made absolute against the project's own.
 TEMPLATE = """\
 import config from {config};
 import path from 'node:path';
@@ -70,7 +49,7 @@ export default config.projects
 
 
 class Refusal(Exception):
-    """A run that cannot or did not capture; the message goes to stderr."""
+    pass
 
 
 def _arguments(argv):
@@ -118,7 +97,6 @@ def _extra_env(pairs, key):
 
 
 def _spec(directory, ticket, default, states):
-    """The ticket's own spec, else `default` for a ticket listing no states."""
     spec = Path(directory) / f"{ticket}.capture.ts"
     if spec.is_file():
         return spec
@@ -132,11 +110,7 @@ def _spec(directory, ticket, default, states):
 
 
 def _copied(spec, default, directory):
-    """A copy in `directory` of a default spec outside the working directory.
-
-    Node resolves a spec's imports upward from its own directory, so a default
-    kept beside the factory's config runs from here; None for any other spec.
-    """
+    """Node resolves a spec's imports upward from its own directory."""
     if not default or spec != Path(default):
         return None
     if Path(os.path.realpath(spec)).is_relative_to(os.path.realpath(".")):
@@ -157,7 +131,6 @@ def _copied(spec, default, directory):
 
 
 def _generated(config, directory, spec):
-    """Write the capture config into `directory`; return its absolute path."""
     relative = Path(os.path.relpath(config, directory)).as_posix()
     if not relative.startswith("../"):
         relative = "./" + relative

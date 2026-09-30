@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""The Linear board through its GraphQL API, keyed by LINEAR_API_KEY."""
 import fcntl
 import hashlib
 import json

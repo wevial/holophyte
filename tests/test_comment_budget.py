@@ -33,10 +33,10 @@ TARGET = 0.05
 TARGET_ENFORCED = False
 
 PINNED = {
-    "factory.py": 30,
+    "factory.py": 0,
 
-    "holophyte/__init__.py": 20,
-    "holophyte/admission.py": 9,
+    "holophyte/__init__.py": 1,
+    "holophyte/admission.py": 1,
 
     "holophyte/agents/__init__.py": 0,
     "holophyte/agents/agent_output.py": 0,
@@ -73,7 +73,7 @@ PINNED = {
     "holophyte/board/native_board.py": 4,
     "holophyte/board/projection.py": 15,
 
-    "holophyte/capture_playwright.py": 44,
+    "holophyte/capture_playwright.py": 16,
 
     "holophyte/cli/__init__.py": 0,
     "holophyte/cli/arguments.py": 0,
@@ -88,7 +88,7 @@ PINNED = {
     "holophyte/cli/store_import.py": 3,
     "holophyte/cli/store_verbs.py": 0,
 
-    "holophyte/commit_hygiene.py": 11,
+    "holophyte/commit_hygiene.py": 4,
 
     "holophyte/config/__init__.py": 0,
     "holophyte/config/agent_settings.py": 1,
@@ -100,10 +100,10 @@ PINNED = {
     "holophyte/config/serve_settings.py": 2,
     "holophyte/config/worktree_settings.py": 1,
 
-    "holophyte/deadline.py": 44,
-    "holophyte/environment_git.py": 14,
-    "holophyte/failure_reason.py": 5,
-    "holophyte/files.py": 93,
+    "holophyte/deadline.py": 4,
+    "holophyte/environment_git.py": 2,
+    "holophyte/failure_reason.py": 0,
+    "holophyte/files.py": 8,
 
     "holophyte/host/__init__.py": 0,
     "holophyte/host/ci_wake.py": 0,
@@ -142,7 +142,7 @@ PINNED = {
     "holophyte/loop/stop.py": 5,
     "holophyte/loop/task_worktree.py": 5,
 
-    "holophyte/media_store.py": 3,
+    "holophyte/media_store.py": 1,
 
     "holophyte/pr/__init__.py": 0,
     "holophyte/pr/github.py": 18,
@@ -155,8 +155,8 @@ PINNED = {
     "holophyte/pr/pr_status.py": 13,
     "holophyte/pr/pullrequest.py": 10,
 
-    "holophyte/questions.py": 2,
-    "holophyte/redact.py": 141,
+    "holophyte/questions.py": 1,
+    "holophyte/redact.py": 14,
 
     "holophyte/review/__init__.py": 0,
     "holophyte/review/briefs.py": 4,
@@ -186,9 +186,9 @@ PINNED = {
     "holophyte/story/story_views.py": 1,
     "holophyte/story/witness.py": 1,
 
-    "linear_provider.py": 21,
-    "provider.py": 175,
-    "review_runner.py": 116,
+    "linear_provider.py": 20,
+    "provider.py": 12,
+    "review_runner.py": 13,
 
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,
@@ -213,24 +213,11 @@ PINNED = {
     "store/working.py": 3,
     "store/writes.py": 2,
 
-    "story_template.py": 11,
-    "ticket_template.py": 197,
+    "story_template.py": 1,
+    "ticket_template.py": 24,
 }
 
 CITED = {
-    "holophyte/admission.py": 1,
-
-    "holophyte/capture_playwright.py": 1,
-
-    "holophyte/environment_git.py": 1,
-    "holophyte/files.py": 1,
-
-    "holophyte/redact.py": 3,
-
-    "provider.py": 15,
-    "review_runner.py": 2,
-
-    "ticket_template.py": 5,
 }
 
 # "path::function" to the ticket that retires its `noqa: C901`, or None.

@@ -1,4 +1,3 @@
-"""Reword unpublished commits without checking out or modifying their trees."""
 import re
 import subprocess
 
@@ -20,7 +19,6 @@ def _git(wt, *args, data=None):
 
 
 def _message(message, patterns):
-    # Keep bytes (including the encoding) intact for every retained line.
     lines = message.splitlines(keepends=True)
     kept = []
     removed = False
@@ -85,12 +83,7 @@ def _has_attribution(wt, commits, patterns):
 
 
 def strip_attribution(target, wt, branch):
-    """Atomically replace unpublished messages, preserving authors and dates.
-
-    This is a message-only rebase using Git objects: build the entire graph,
-    verify its tip tree, then compare-and-swap the branch. No checkout, index,
-    hooks or intermediate branch moves; any failure leaves the old tip intact.
-    """
+    """Reword with no checkout, index or hooks; a failure leaves the old tip intact."""
     patterns = [re.compile(p) for p in merge_config(target).strip_attribution]
     if not patterns:
         return
