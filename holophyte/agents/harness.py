@@ -49,8 +49,7 @@ class Claude(Adapter):
 
 
 class Codex(Adapter):
-    """Codex's read-only sandbox cannot start under a PrivateTmp user unit, so
-    a review's throwaway checkout is the write boundary; `resume` takes no `-C`."""
+    """The sandbox fails under PrivateTmp; a throwaway checkout bounds writes."""
     name = "codex"
     roles = frozenset({"implementer", "reviewer", "adjudicator", "critic"})
     efforts = review_runner.EFFORTS

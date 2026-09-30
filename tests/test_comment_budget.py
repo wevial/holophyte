@@ -44,7 +44,7 @@ PINNED = {
     "holophyte/agents/agent_turns.py": 1,
     "holophyte/agents/fallback.py": 4,
     "holophyte/agents/fix_session.py": 1,
-    "holophyte/agents/harness.py": 11,
+    "holophyte/agents/harness.py": 10,
     "holophyte/agents/probes.py": 2,
     "holophyte/agents/review_workspace.py": 6,
     "holophyte/agents/roles.py": 8,
