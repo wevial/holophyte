@@ -191,6 +191,14 @@ class OrchestrationConfigTests(LoopFixture):
                        + workflow)
         self.check('[agents]\nimplementer_fallback = "claude -p"\n' + workflow)
 
+    def test_workflow_accepts_a_quoted_claude_fallback(self):
+        workflow = CLAUDE + 'orchestration = "workflow"\n'
+        for fallback in ('\'"claude" -p\'',
+                         '\'"/opt/claude tools/claude" -p\''):
+            with self.subTest(fallback=fallback):
+                self.check(f'[agents]\nimplementer_fallback = {fallback}\n'
+                           + workflow)
+
 
 class OrchestrationResumeTests(LoopFixture):
     def resume(self, config):

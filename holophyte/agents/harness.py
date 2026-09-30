@@ -277,7 +277,10 @@ def check_orchestration(where, table, adapter):
 
 
 def claude_command(command):
-    words = command.split() if isinstance(command, str) else []
+    try:
+        words = shlex.split(command) if isinstance(command, str) else []
+    except ValueError:
+        return False
     return bool(words) and os.path.basename(words[0]) == "claude"
 
 
