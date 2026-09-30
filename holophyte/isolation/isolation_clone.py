@@ -209,6 +209,18 @@ def return_turn(worktree, clone, root, old, project, merge_state, carry):
                 path.unlink(missing_ok=True)
 
 
+MAIN_REFS = ("refs/remotes/origin/main", "refs/heads/main")
+
+
+def carry_main_refs(worktree, clone):
+    checked_out = git(clone, "rev-parse", "--symbolic-full-name", "HEAD")
+    present = git(worktree, "for-each-ref", "--format=%(refname)", *MAIN_REFS)
+    for ref in present.splitlines():
+        if ref != checked_out:
+            git(clone, "fetch", "--no-tags", "--no-write-fetch-head",
+                str(worktree), f"+{ref}:{ref}")
+
+
 @contextlib.contextmanager
 def turn_clone(worktree, project=None, carry=()):
     worktree = Path(worktree).resolve()
@@ -238,6 +250,7 @@ def turn_clone(worktree, project=None, carry=()):
             str(clone),
         )
         git(clone, "remote", "remove", "origin")
+        carry_main_refs(worktree, clone)
         for key, value in identity.items():
             git(clone, "config", key, value)
         index = Path(
