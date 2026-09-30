@@ -170,7 +170,8 @@ def scheduler(target, provider, knobs):
     pool = pool_handoff.restore(target)
     previous = set(pool)
     slots = iter(range(pool_handoff.next_slot(pool), sys.maxsize))
-    state = _PoolState(self_hosted(target), knobs.stop_on_failure)
+    state = _PoolState(self_hosted(target), knobs.stop_on_failure,
+                       knobs.tick_sec)
     try:
         project = store.tickets.ensure_project(conn, provider.team, target.path)
         _startup_sweep(target, conn)
@@ -196,8 +197,9 @@ def scheduler(target, provider, knobs):
                 listing = pool_handoff.listing(target, conn, project, provider)
                 if listing is not None:
                     # Live workers hold leases the claimable count leaves out.
-                    want = min(len(pool) + _claimable(conn, project, listing),
-                               knobs.workers)
+                    want = state.ceiling(
+                        len(pool), _claimable(conn, project, listing),
+                        knobs.workers)
                     while len(pool) < want:
                         slot = next(slots)
                         child = _spawn_worker(target, slot)
@@ -231,13 +233,15 @@ def scheduler(target, provider, knobs):
 
 
 class _PoolState:
-    def __init__(self, restart_after_merge, stop_on_failure):
+    def __init__(self, restart_after_merge, stop_on_failure, tick_sec):
         self.restart_after_merge = restart_after_merge
         self.stop_on_failure = stop_on_failure
+        self.tick_sec = tick_sec
         self.broken = False
         self.stopped = False
         self.board_down = False
         self.paused = False
+        self.paused_at = None
         self.restart = False
         self.restart_reason = None
         self.readable_reason = None
@@ -280,7 +284,12 @@ class _PoolState:
 
     @property
     def spawning(self):
-        return not (self.draining or self.paused)
+        return not (self.draining or self.paused
+                    and monotonic() - self.paused_at < self.tick_sec)
+
+    def ceiling(self, live, claimable, workers):
+        want = min(live + claimable, workers)
+        return min(want, live + 1) if self.paused else want
 
     def exited(self, slot, code):
         self.paused = False
@@ -294,6 +303,7 @@ class _PoolState:
         elif code == WORKER_IDLE:
             print(f"[holo2] worker {slot} found nothing to claim")
             self.paused = True
+            self.paused_at = monotonic()
         elif code == WORKER_STOP:
             print(f"[holo2] worker {slot} stopped for a human")
             self.broken = self.stopped = True
