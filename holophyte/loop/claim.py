@@ -192,6 +192,9 @@ def _resolve_merge_conflict(project, conn, run_id, branch, wt, sha, conflicts,
     return head, None
 
 
+_UNREFRESHED = {}
+
+
 def _refresh_main(project, run_id=None, conn=None):
     if "origin" not in sh(["git", "remote"], project.path).splitlines():
         return
@@ -233,6 +236,9 @@ def _refresh_main(project, run_id=None, conn=None):
 
 
 def _cut_worktree(project, conn, run_id, provider, task_id, task, branch, wt):
+    unrefreshed = _UNREFRESHED.pop(task_id, None)
+    if unrefreshed is not None:
+        raise unrefreshed
     # Recorded first: the files panel finds a working run's worktree by its branch.
     if conn is not None:
         store.set_branch(conn, run_id, branch)
@@ -416,12 +422,14 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
 
 
 def _critic_admits(project, conn, project_id, provider, task):
+    _UNREFRESHED.pop(task["id"], None)
     try:
         _refresh_main(project, conn=conn)
     except InfraFailure as e:
         freshness.WARNINGS.pop(task["id"], None)
+        _UNREFRESHED[task["id"]] = e
         print(f"[holo2] {task['id']}: main not refreshed, so the critic is"
-              f" not asked; the cut meets the failure: {e}")
+              f" not asked; the run fails at the cut: {e}")
         return True
     return freshness.critic_admits(project, conn, project_id, provider, task)
 

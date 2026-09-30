@@ -401,6 +401,19 @@ class CheckoutCritic(Critic):
         return f"FRESHNESS: UNSURE the merge adding {FIXTURE} is not here"
 
 
+class OriginBackAtLease(StubProvider):
+    """A board whose lease label lands as origin becomes reachable again:
+    the admission's fetch fails and the cut's would succeed."""
+
+    def __init__(self, restore, *tasks):
+        super().__init__(*tasks)
+        self.restore = restore
+
+    def label_issue(self, issue_id, name):
+        self.restore()
+        super().label_issue(issue_id, name)
+
+
 class ClaimRefreshTests(LoopFixture):
     """The critic reads a checkout of `main` refreshed from a real origin."""
 
@@ -484,6 +497,26 @@ class ClaimRefreshTests(LoopFixture):
 
         with patch.object(sys, "stdout", io.StringIO()):
             self.loop(provider=StubProvider(self.task),
+                      fake=FakeAgent(CheckoutCritic(self.target, seen)))
+
+        self.assertEqual(seen, [])
+        self.assertNotEqual(self.status(), [("needs_spec",)])
+        ((outcome_class, reason),) = self.read(
+            "SELECT outcomeClass, outcomeReason FROM runs")
+        self.assertEqual(outcome_class, "infra")
+        self.assertIn("git fetch origin failed", reason)
+
+    def test_a_fetch_failed_at_admission_fails_the_run_though_origin_is_back(self):
+        self.merge_on_origin()
+        self.git("remote", "set-url", "origin",
+                 str(self.target.parent / "missing.git"))
+        provider = OriginBackAtLease(
+            lambda: self.git("remote", "set-url", "origin", str(self.origin)),
+            self.task)
+        seen = []
+
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=provider,
                       fake=FakeAgent(CheckoutCritic(self.target, seen)))
 
         self.assertEqual(seen, [])
