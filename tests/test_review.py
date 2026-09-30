@@ -96,6 +96,47 @@ class NonPythonWitnessTests(unittest.TestCase):
             (note,) = missing_witnesses(references, root)
             self.assertIn('titles the modal "Rename Guest" by default', note)
 
+    def go_missing(self, source, name):
+        with tempfile.TemporaryDirectory() as tmp:
+            test = Path(tmp) / "internal/x_test.go"
+            test.parent.mkdir(parents=True)
+            test.write_text(source)
+            return missing_witnesses([("internal/x_test.go", None, name)], tmp)
+
+    STATEFUL_GO = ("package x\n\n"
+                   "func TestStatefulIMAP(t *testing.T) {\n"
+                   "\tt.Run(\"move_three_of_ten\", func(t *testing.T) {})\n"
+                   "}\n")
+
+    def test_go_subtest_is_found_by_parent_func_and_run_title(self):
+        self.assertEqual(
+            self.go_missing(self.STATEFUL_GO, "TestStatefulIMAP/move_three_of_ten"), [])
+
+    def test_go_subtest_without_its_run_or_parent_func_is_missing(self):
+        for name, absent in (("TestStatefulIMAP/absent_case", "absent_case"),
+                             ("TestOther/move_three_of_ten", "TestOther")):
+            with self.subTest(name=name):
+                (note,) = self.go_missing(self.STATEFUL_GO, name)
+                self.assertIn(f"internal/x_test.go::{name}", note)
+                self.assertIn(absent, note)
+
+    def test_go_subtest_title_with_spaces_matches_its_underscored_name(self):
+        source = self.STATEFUL_GO.replace("move_three_of_ten", "move three of ten")
+        self.assertEqual(
+            self.go_missing(source, "TestStatefulIMAP/move_three_of_ten"), [])
+
+    def test_slash_in_a_typescript_title_is_scanned_literally(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            test = Path(tmp) / "src/a.test.ts"
+            test.parent.mkdir(parents=True)
+            references = [("src/a.test.ts", None, "group/child")]
+            test.write_text("it('group/child', () => {});\n")
+            self.assertEqual(missing_witnesses(references, tmp), [])
+            test.write_text("describe('group', () => {\n"
+                            "  it('child', () => {});\n});\n")
+            (note,) = missing_witnesses(references, tmp)
+            self.assertIn('no test named "group/child"', note)
+
     def test_brief_shows_python_and_quoted_title_forms(self):
         brief = criteria_brief(["the behavior works"])
         self.assertIn("tests/file.py::TestClass::test_name", brief)
