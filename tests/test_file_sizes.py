@@ -38,8 +38,6 @@ PINNED = {
 
     "holophyte/loop/claim.py": 1001,
 
-    "holophyte/serve/server.py": 1166,
-
     "tests/test_claim.py": 1692,
 
     "tests/test_isolation.py": 1627,

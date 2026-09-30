@@ -1,47 +1,3 @@
-"""holophyte.serve.serve_host: `factory.py --serve` with no project, one daemon
-for every project in the host registry (consolidation stage 1).
-
-Each project's routes answer under `/projects/NAME/...` with the bodies
-the project daemon answers at its root, `NAME` being the project's
-`[serve] name`. The name resolves through `Host.project()` alone -- the
-registry, re-read when `host.toml` changed -- and a name outside it is 404
-before any file of that project is opened. The root answers for the host:
-`/status` lists every project (`project_summary()`) with the daemon's,
-the last sweep's and the checkout's builds and the last sweep
-(`sweep_view()`); `/attention` merges every project's items, each carrying
-its `project`, with a `sweep_stale` item when the sweep is not fresh;
-`/peers`, `/` and the console's files are open as on a project daemon.
-
-One project's failure is that project's answer, never the daemon's: a
-store stamped newer than this build (checked before every project route,
-since `store.read.open_readonly()` checks no version) is 503 and makes the
-code watch read `HEAD` at once, so a daemon whose checkout moved leaves for
-the new code; a locked or corrupt store (`sqlite3.Error`), in a read or in
-an action's write, is 503; `/status` for a store with no row for the
-project's path is 503 naming `project add` (the other routes answer, and a
-`hold` may write the row); anything else is 500 through `action_failure()`.
-At the root the same failures are the project's `error` and the others are
-listed whole. Every read waits at most `HOST_READ_WAIT_S` for a store's
-lock (`store.read.lock_wait()`), and the root reads the projects side by
-side, so a locked store costs the root one wait, not one per store and not
-the store's own thirty seconds: the drawer and the tray give up at two.
-
-Tokens (the design's Auth row): `host.toml [serve] machine_token_file` is
-the one bearer at the root and under every prefix; a project's own `[serve]
-token_file` is accepted beside it under that project's prefix alone, for
-one release. Reads beyond loopback, and every write on any bind, demand it;
-a non-loopback bind, `[serve] actions` or a project's `config_edit` without
-it is a startup error naming the key, and a project's `machine_token_file`
-is ignored, named once at start. `[serve] actions` in `host.toml` opens the
-project actions under each prefix (`restart-supervisor` retired) and, at
-the root, `POST /actions/run-sweep`, which appends its row to
-`HOLOPHYTE_HOME/host-actions.jsonl` before it asks `systemctl` for the
-sweep unit: no store owns the sweep, and the stores may be what is down.
-
-`sweep.json` is the host sweep's record; this module reads `started`,
-`ended` (epoch ms), `revision`, `pid`, `exit` and `projects`. The file's
-writer is the host sweep.
-"""
 from __future__ import annotations
 
 import json
@@ -94,27 +50,20 @@ from store.schema import SCHEMA_VERSION, SchemaNewer, _readable_from
 PROJECTS_PREFIX = "/projects/"
 MACHINE_TOKEN_KEY = "[serve] machine_token_file"
 RUN_SWEEP = "run-sweep"
+# A file, not a store: no store owns the sweep, and stores may be down.
 HOST_LEDGER = "host-actions.jsonl"
-# The per-project actions a host daemon answers: the supervisor unit is
-# retired in host mode, and `run-sweep` at the root takes its place.
 HOST_ACTIONS = ACTIONS - {"restart-supervisor"}
-# The sweep unit's `TimeoutStartSec`: a run started longer ago than this
-# with no `ended` was killed.
+# The sweep unit's `TimeoutStartSec`.
 SWEEP_TIMEOUT_SEC = 120
 SWEEP_FIELDS = ("started", "ended", "revision", "pid", "exit", "projects")
-# The sweep states `/attention` leaves alone.
 SWEEP_OK = frozenset({"fresh", "running"})
-# How long any read of the host daemon waits for one store's lock: under
-# the drawer's and the tray's two-second request limit, with room for the
-# read itself.
+# Under the drawer's and the tray's two-second request limit.
 HOST_READ_WAIT_S = 1.0
-# At most this many stores read at once for the root.
 ROOT_READERS = 8
 
 
 def check_schema(project):
-    """Raise `SchemaNewer` when `project`'s store is stamped newer than
-    this build can read -- the check `store.open()` makes, read-only."""
+    """`store.read.open_readonly()` checks no schema version."""
     path = project.store_path
     if not path.exists():
         return
@@ -130,7 +79,6 @@ def check_schema(project):
 
 
 def project_error(project, bad):
-    """One project's failure as the text its `error` carries, redacted."""
     if isinstance(bad, SchemaNewer):
         text = f"schema newer than build: {bad}"
     else:
@@ -143,9 +91,7 @@ def project_error(project, bad):
 
 
 def each_project(entries, read):
-    """`read(entry)` for every entry, side by side, in registry order: a
-    store's lock wait overlaps the others' instead of adding to them.
-    Each read waits at most `HOST_READ_WAIT_S` for its store's lock."""
+    """Side by side, so one store's lock wait overlaps the others'."""
     entries = list(entries)
     if not entries:
         return []
@@ -158,9 +104,6 @@ def each_project(entries, read):
 
 
 def missing_row(scope):
-    """The 503 body for `/status` under a prefix whose store holds no row
-    for the project's path; None when it holds one or there is no store,
-    which `status()` answers itself."""
     target = scope.project
     if not target.store_path.exists():
         return None
@@ -177,16 +120,10 @@ def missing_row(scope):
 
 
 def beat_stale_ms(knobs):
-    """A store's beat is stale past two host sweep intervals."""
     return 2 * knobs.sweep_sec * 1000
 
 
 def project_summary(entry, now, stale_ms):
-    """One registry entry as root `/status` lists it: its name, path and
-    store (null when there is none), `error`, and from the store its
-    schema version, admission, `project_row` (the store's row for this
-    path, null when it has none), supervisor beat, live runs and the
-    workers left on a previous build."""
     row = {"name": entry.name, "path": str(entry.path), "store": None,
            "error": entry.error, "host": None, "schema_version": None,
            "admission": None, "hold_note": None, "project_row": None,
@@ -234,10 +171,6 @@ def _ms(value):
 
 
 def sweep_view(home, now, sweep_sec):
-    """The last sweep as root `/status` shows it: `sweep.json`'s fields and
-    a `state`: `none` with no file, `unreadable`, `running` while a run
-    started within `SWEEP_TIMEOUT_SEC` has not ended, `killed` past it,
-    `fresh` when the last run ended within two intervals, else `stale`."""
     view = dict.fromkeys(SWEEP_FIELDS)
     view["error"] = None
     try:
@@ -262,7 +195,6 @@ def sweep_view(home, now, sweep_sec):
 
 
 def host_status(server, now=None):
-    """Root `/status`: `(200, body)`."""
     now = int(time() * 1000) if now is None else now
     knobs = server.settings
     sweep = sweep_view(server.host.home, now, knobs.sweep_sec)
@@ -281,10 +213,6 @@ def host_status(server, now=None):
 
 
 def host_attention(server, now=None):
-    """Root `/attention`: every project's items, each with its `project`,
-    after a `sweep_stale` item when the sweep is not fresh; a project that
-    cannot be read is one `project_error` item, one with no store or no
-    row for its path an item naming `project add`. `(200, body)`."""
     now = int(time() * 1000) if now is None else now
     knobs = server.settings
     sweep = sweep_view(server.host.home, now, knobs.sweep_sec)
@@ -330,8 +258,6 @@ def _project_items(entry, now, stale_ms):
 
 
 def record_host_action(home, row):
-    """Append `row` to the host ledger as one JSON line, synced to disk;
-    OSError when it cannot be."""
     handle = os.open(home / HOST_LEDGER,
                      os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
     with os.fdopen(handle, "a", encoding="utf-8") as out:
@@ -341,9 +267,6 @@ def record_host_action(home, row):
 
 
 def run_sweep(home, body, now=None):
-    """`POST /actions/run-sweep`: the ledger row, then `systemctl --user
-    start --no-block` on the sweep unit -- a oneshot's `start` would wait
-    out the run. A row that cannot be written runs nothing."""
     now = int(time() * 1000) if now is None else now
     note, author = body.get("note"), body.get("author")
     row = {"at": now, "action": "run_sweep", "unit": SWEEP_UNIT,
@@ -357,14 +280,13 @@ def run_sweep(home, body, now=None):
         return 200, {**reply, "ok": False, "recorded": None,
                      "detail": f"could not record in {home / HOST_LEDGER}"
                                f" ({bad}); nothing run"}
+    # A oneshot's blocking `start` would wait out the whole sweep.
     ok, detail = systemctl_user("start", SWEEP_UNIT, "--no-block")
     return 200, {**reply, "ok": ok, "detail": detail,
                  "recorded": str(home / HOST_LEDGER)}
 
 
 def project_token(knobs):
-    """A project's own `[serve] token_file` as a tuple of bearer values,
-    empty when it has none or the file is refused."""
     if knobs.token_file is None:
         return ()
     try:
@@ -374,17 +296,11 @@ def project_token(knobs):
 
 
 class HostHandler(StatusHandler):
-    """The project handler under `/projects/NAME/...`, a `Scope` per
-    request; the host routes at the root. Every read a request makes
-    waits at most `HOST_READ_WAIT_S` for a store's lock."""
-
     def handle_one_request(self):
         with store.read.lock_wait(HOST_READ_WAIT_S):
             super().handle_one_request()
 
     def route(self, path):
-        """`(scope, path)` for the request, scope None at the root; None
-        once answered, when the registry itself cannot be read."""
         try:
             return self.server.resolve(path)
         except HostError as bad:
@@ -468,8 +384,6 @@ class HostHandler(StatusHandler):
         return self.refused(scope) or super().act(scope, action, body)
 
     def act_failed(self, scope, action, failure):
-        # The pre-check read the store; the action's write may still find
-        # it locked, and that is the project's 503 as a read's would be.
         return self.failure(scope, ACTIONS_PREFIX + action, failure)
 
     def do_PUT(self):
@@ -494,8 +408,6 @@ class HostHandler(StatusHandler):
             return self.failure(scope, "/config", bad)
 
     def refused(self, scope):
-        """The answer for a scope no route may read: a name outside the
-        registry (404), a store this build cannot read (503); else None."""
         if scope.project is None:
             name = unquote(scope.prefix[len(PROJECTS_PREFIX):])
             return 404, {"error": "not found", "path": scope.prefix,
@@ -508,8 +420,6 @@ class HostHandler(StatusHandler):
         return None
 
     def failure(self, scope, path, bad):
-        """One project's failure as its answer: 503 for a newer schema or
-        a store SQLite cannot read, else 500 with the traceback logged."""
         name = scope.unit_name
         if isinstance(bad, (SchemaNewer, sqlite3.Error)):
             if isinstance(bad, SchemaNewer) and self.server.code_check:
@@ -521,11 +431,6 @@ class HostHandler(StatusHandler):
 
 
 class HostServer(StatusServer):
-    """A `StatusServer` for the registry: no project of its own, a `Scope`
-    built per request from the entry its prefix names. The `[serve]` and
-    `[console]` keys of `host.toml` are read once, at bind; its
-    `[[project]]` list at every request whose file changed."""
-
     action_names = HOST_ACTIONS
 
     def __init__(self, host, knobs, address, console_dir=CONSOLE_DIR,
@@ -543,18 +448,13 @@ class HostServer(StatusServer):
         self.listen(address, HostHandler, sock)
 
     def resolve(self, path):
-        """`(scope, rest)` for `/projects/NAME/rest`; `(None, path)` for any
-        other path. NAME is percent-decoded before the registry is asked,
-        as a client must encode a name holding a space; a decoded `/` names
-        no entry, since a `[serve] name` holds none. A name the registry
-        does not hold still gets a scope -- with no project, and the host's
-        tokens -- so it is 401 or 404 as any unknown route is."""
         if not path.startswith(PROJECTS_PREFIX):
             return None, path
         segment, slash, rest = path[len(PROJECTS_PREFIX):].partition("/")
         prefix = PROJECTS_PREFIX + segment
         stale_ms = beat_stale_ms(self.settings)
         entry = self.host.project(unquote(segment))
+        # An unknown name is scoped too: 401 or 404 as any unknown route.
         if entry is None:
             return Scope(None, self.read_token, self.write_token,
                          self.actions, False, None, prefix, stale_ms), \
@@ -569,9 +469,6 @@ class HostServer(StatusServer):
 
 
 def host_tokens(host, knobs, bound_host, entries):
-    """`(read, write)` bearer values for a host daemon on `bound_host`:
-    the machine token beyond loopback for reads, on every bind for writes.
-    SystemExit naming the key when something needs it and it is not set."""
     needs = []
     if not is_loopback(bound_host):
         needs.append(f"a bind beyond loopback ({bound_host})")
@@ -594,8 +491,6 @@ def host_tokens(host, knobs, bound_host, entries):
 
 
 def name_ignored(entries, knobs, out):
-    """Print, once, each entry the daemon cannot serve and each project
-    `machine_token_file` the host's replaces."""
     for entry in entries:
         if entry.error is not None:
             print(f"[holo2] {entry.path} is not served: {entry.error}",
@@ -609,9 +504,6 @@ def name_ignored(entries, knobs, out):
 
 
 def serve_host(host, address=None, out=None, interval=CODE_CHECK_SEC):
-    """`factory.py --serve [ADDRESS]`: the host daemon. It serves on the
-    socket the service manager handed over, else on `address`, else on
-    `host.toml`'s `[serve] bind`; then as `server.run()` does."""
     out = out or sys.stdout
     require_tomlkit()
     try:

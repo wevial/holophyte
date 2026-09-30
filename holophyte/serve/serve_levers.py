@@ -1,21 +1,3 @@
-"""holophyte.serve.serve_levers: the daemon's hold, release-hold, pause, resume
-(KO-609) and abort (KO-612) routes, dispatched from `do_POST()` behind the
-actions' token and `[serve] actions = true` gate.
-
-Each lever is the CLI's own store call -- `--hold`/`--release-hold`
-through `holophyte.admission.set_hold()` on the daemon's project, `--pause`
-through `store.pause()`, `--resume` through `holophyte.loop.stop.resume_paused()`,
-`--abort` through `holophyte.loop.stop.abort_run()` -- so the console and the
-shell cannot disagree about what a lever does.
-Every body carries `note`, the operator's reason, and an optional `author`
-(default `maintainer`, as `send-back` has); what the store records is
-`"{author} via the console: {note}"`, since `interventions` has no actor
-column and who pulled the lever belongs with why. A missing or blank note
-is 400 and writes nothing; a missing store is 503; a refusal from the store
-(already held, run already ended, not paused) is 200 with `ok: false` and
-the refusal in `detail`, as `requeue` answers. `paused_item()` is the
-`/attention` item for a ticket a pause parked, the one `resume` releases.
-"""
 from __future__ import annotations
 
 import store
@@ -30,8 +12,7 @@ DEFAULT_AUTHOR = "maintainer"
 
 
 def recorded_reason(body):
-    """`"{author} via the console: {note}"` from the body, or None when its
-    `note` is missing, not text or blank."""
+    """`interventions` has no actor column, so the author rides in the note."""
     note = body.get("note")
     if not isinstance(note, str) or not note.strip():
         return None
@@ -42,9 +23,6 @@ def recorded_reason(body):
 
 
 def lever(action, target, body, act):
-    """Parse the reason, open the store, run `act(conn, reason)` for its
-    `(ok, detail, extra fields)`, and answer `(http status, JSON body)`;
-    ValueError or `store.ResumeRefused` from `act` is the store's refusal."""
     reason = recorded_reason(body)
     if reason is None:
         return 400, {"error": "note must say why (non-blank text)"}
@@ -61,8 +39,6 @@ def lever(action, target, body, act):
 
 
 def admission_action(action, holding):
-    """The `hold` or `release-hold` handler: `set_hold()` on the daemon's
-    own project, the interventions row landing before `admission` moves."""
     def handler(target, body):
         def act(conn, reason):
             project = set_hold(conn, target, holding, reason)
@@ -73,9 +49,6 @@ def admission_action(action, holding):
 
 
 def pause_action(target, body):
-    """`POST /actions/pause`: `store.pause()` on the live run `run` names;
-    `stopRequested` then names the `pause` intervention carrying the reason.
-    A run already ended is `ok: false` naming its outcome."""
     run_id = body.get("run")
     if type(run_id) is not int or not 0 < run_id < 2**63:
         return 400, {"error": "run must be a positive integer"}
@@ -88,10 +61,6 @@ def pause_action(target, body):
 
 
 def resume_action(target, body):
-    """`POST /actions/resume`: `resume_paused()` on the ticket `ticket`
-    names -- `--resume`'s own helper, so the pull request's pause notice is
-    cleared as well -- walking it back to `ready`. An unknown or ambiguous
-    identifier is `ok: false` and writes nothing, as `requeue` refuses."""
     identifier = body.get("ticket")
     if not isinstance(identifier, str) or not identifier.strip():
         return 400, {"error": "ticket must name a mirrored ticket (KO-n)"}
@@ -112,12 +81,6 @@ def resume_action(target, body):
 
 
 def abort_action(target, body):
-    """`POST /actions/abort`: `abort_run()` on the run `run` names, with
-    `close` (default false) recording `abort_close` so the pull request is
-    closed too. A run whose worker is gone is ended here and its park
-    projected to the board, so a target with no `[board]` refuses before
-    anything is written, as `--abort` exits; a run already ended is
-    `ok: false` naming its outcome."""
     run_id = body.get("run")
     if type(run_id) is not int or not 0 < run_id < 2**63:
         return 400, {"error": "run must be a positive integer"}
@@ -141,9 +104,6 @@ def abort_action(target, body):
 
 
 def paused_item(ticket):
-    """The `/attention` item for a `blocked_on_operator` ticket whose latest
-    run ended `paused`: kind `paused`, its `note` the pause's reason, so a
-    console offers resume rather than an answer to a question."""
     return {"kind": "paused", "ticket": ticket.linearIdentifier,
             "ticket_url": ticket.ticketUrl, "title": ticket.title,
             "note": ticket.blockedQuestion, "run": ticket.runId,
@@ -151,8 +111,7 @@ def paused_item(ticket):
             "level": "attention"}
 
 
-# Route name -> handler(target, body); `ACTIONS` in `holophyte.serve.serve_actions`
-# names the same five.
+# `ACTIONS` in `holophyte.serve.serve_actions` names the same five.
 LEVERS = {
     "hold": admission_action("hold", True),
     "release-hold": admission_action("release-hold", False),
