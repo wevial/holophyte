@@ -148,7 +148,7 @@ class NonPythonWitnessTests(unittest.TestCase):
 class VerificationBriefTests(unittest.TestCase):
     def test_passed_verification_says_what_ran_and_where_the_suite_runs(self):
         # KO-641: the factory runs the ticket's checks, not the full suite.
-        from holophyte.loop.loop import _verify_brief
+        from holophyte.loop.review_round import _verify_brief
         for ok in (True, False):
             with self.subTest(ok=ok):
                 brief = _verify_brief("python3 -m unittest", ok, "check output")
@@ -267,7 +267,7 @@ class ScopeQuestionTests(unittest.TestCase):
                 self.assertNotIn(path, brief)
 
     def review_prompt(self, sha, criteria=()):
-        from holophyte.loop import loop
+        from holophyte.loop import review_round
 
         class Captured(Exception):
             pass
@@ -279,13 +279,15 @@ class ScopeQuestionTests(unittest.TestCase):
             raise Captured
 
         with contextlib.ExitStack() as stack:
-            stack.enter_context(patch.object(loop, "agent", side_effect=capture))
-            stack.enter_context(patch.object(loop, "set_phase"))
-            stack.enter_context(patch.object(loop, "merge_conflicts", return_value=[]))
             stack.enter_context(
-                patch.object(loop, "run_verify", return_value=(True, "ok")))
+                patch.object(review_round, "agent", side_effect=capture))
+            stack.enter_context(patch.object(review_round, "set_phase"))
+            stack.enter_context(
+                patch.object(review_round, "merge_conflicts", return_value=[]))
+            stack.enter_context(
+                patch.object(review_round, "run_verify", return_value=(True, "ok")))
             with self.assertRaises(Captured):
-                loop._review_rounds(
+                review_round._review_rounds(
                     project=Mock(config=Mock(return_value={})), conn=None,
                     run_id=602, provider=None,
                     task_id=1, branch="task", wt=self.root, beat_s=1,
@@ -313,7 +315,7 @@ class ScopeQuestionTests(unittest.TestCase):
         self.assertIn("> ## Tests\n", prompt)
 
     def test_covering_review_quotes_the_tests_section_after_the_criteria(self):
-        from holophyte.loop import loop
+        from holophyte.loop import review_round
         from holophyte.story import story_drift
 
         class Captured(Exception):
@@ -330,7 +332,8 @@ class ScopeQuestionTests(unittest.TestCase):
         sha = self.candidate("holophyte/review/review.py")
         contract = json.dumps({"acceptanceCriteria": ["the behavior works"]})
         with contextlib.ExitStack() as stack:
-            stack.enter_context(patch.object(loop, "agent", side_effect=capture))
+            stack.enter_context(
+                patch.object(review_round, "agent", side_effect=capture))
             stack.enter_context(patch.object(
                 story_drift.store, "run_contract", return_value=contract))
             with self.assertRaises(Captured):

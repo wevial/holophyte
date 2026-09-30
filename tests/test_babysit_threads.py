@@ -378,7 +378,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.fake_route(states=[self.pr_state([self.DEFECT])])
         failed = Idle(holophyte.agents.agent_output.ImplementerOutput(
             "fetch failed", 1))
-        with patch("holophyte.loop.loop.sleep") as nap:
+        with patch("holophyte.loop.implement.sleep") as nap:
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 Reply("THREAD 1: ADDRESS -- a real crash"),
                                 failed, failed, provider=self.provider())

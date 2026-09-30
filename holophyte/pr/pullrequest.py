@@ -38,7 +38,7 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
     on the candidate before the merge API is called."""
     project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
     task_id, task, branch, wt = run.task_id, run.task, run.branch, run.wt
-    from holophyte.loop.loop import _sync_branch_from_origin
+    from holophyte.loop.branch_sync import _sync_branch_from_origin
 
     url = carried.pr_url
     reviewed = carried.sha if carried.approved else None
@@ -129,7 +129,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     factory's. The budget is `PR_TEXT_BUDGET_MIN` or what is left of the
     run's box, whichever is less, and at least one minute.
     """
-    from holophyte.loop.loop import _timed
+    from holophyte.loop.implement import _timed
 
     diff = sh(["git", "diff", "main...HEAD"], cwd=wt)
     if len(diff) > PR_TEXT_DIFF_CAP:

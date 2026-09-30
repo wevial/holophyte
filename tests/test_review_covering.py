@@ -204,7 +204,7 @@ class CoveringScopeQuestionTests(unittest.TestCase):
 
     def test_scope_section_lists_unnamed_files_of_covered_range_only(self):
         from holophyte.babysit import babysitter
-        from holophyte.loop import loop
+        from holophyte.loop import review_round
 
         class Captured(Exception):
             pass
@@ -216,8 +216,9 @@ class CoveringScopeQuestionTests(unittest.TestCase):
             raise Captured
 
         with contextlib.ExitStack() as stack:
-            stack.enter_context(patch.object(loop, "agent", side_effect=capture))
-            stack.enter_context(patch.object(loop, "set_phase"))
+            stack.enter_context(
+                patch.object(review_round, "agent", side_effect=capture))
+            stack.enter_context(patch.object(review_round, "set_phase"))
             stack.enter_context(patch.object(babysitter, "_next_round", return_value=2))
             stack.enter_context(
                 patch.object(babysitter, "run_verify", return_value=(True, "ok")))

@@ -35,9 +35,11 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.agents.roles  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.adjudicate  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 
@@ -305,7 +307,9 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                          Commit("fix: default load()"))
         with no_agent_processes(), \
                 patch.dict(sys.modules, {"linear_provider": self.provider()}), \
-                patch.object(holophyte.loop.loop, "agent", fake), \
+                patch.object(holophyte.loop.implement, "agent", fake), \
+                patch.object(holophyte.loop.review_round, "agent", fake), \
+                patch.object(holophyte.loop.adjudicate, "agent", fake), \
                 patch.object(holophyte.pr.github, "SLEEP", lambda _: None), \
                 patch.dict(os.environ, {holophyte.loop.pool.WORKER_SLOT_ENV: ""}), \
                 patch.object(sys, "stdout", io.StringIO()), \

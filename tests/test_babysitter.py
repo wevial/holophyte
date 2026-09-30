@@ -35,7 +35,7 @@ from loop_fixture import (  # noqa: E402
 )
 
 import holophyte.cli.operator  # noqa: E402
-import holophyte.loop.loop  # noqa: E402
+import holophyte.loop.pipeline  # noqa: E402
 from holophyte.babysit import babysitter  # noqa: E402
 from holophyte.pr import github, pr_status  # noqa: E402
 from holophyte.pr.github import PullRequest, Thread  # noqa: E402

@@ -9,7 +9,7 @@ from time import monotonic
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import holophyte.loop.loop
+import holophyte.loop.implement
 import holophyte.pr.pullrequest
 from holophyte import deadline
 from holophyte.loop.gates import InfraFailure
@@ -142,7 +142,7 @@ class PrBodyStubTests(unittest.TestCase):
                 patch("holophyte.pr.pullrequest.sh", return_value=""),
                 patch("holophyte.babysit.babysitter.conventions", return_value=[]),
                 patch.object(
-                    holophyte.loop.loop, "_timed", return_value=(reply, timed_out)
+                    holophyte.loop.implement, "_timed", return_value=(reply, timed_out)
                 ),
             ):
                 title, body = holophyte.pr.pullrequest._written_pr_text(

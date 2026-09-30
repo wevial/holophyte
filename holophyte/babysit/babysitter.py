@@ -274,7 +274,7 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
                        ticket=""):
     """Merge and push main; unresolved conflicts get one turn, then park."""
     from holophyte.loop.claim import merge_conflicts
-    from holophyte.loop.loop import _timed
+    from holophyte.loop.implement import _timed
     from holophyte.loop.merge_gate import _is_ancestor, _merge_ref, merge_conflict_goal
     from holophyte.pr.pullrequest import _park_on_pr
     with heartbeat_while(conn, run_id, beat_s):
@@ -604,7 +604,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=(), fix_note=None, budget_min=None, *, fix_context=""):
     """Verify and review; allow one fix past the cap, then park on rejection."""
-    from holophyte.loop.loop import _verify_brief, agent, set_phase
+    from holophyte.loop.review_round import _verify_brief, agent, set_phase
     from holophyte.pr.pullrequest import _park_on_pr, refresh_pr_text
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
@@ -847,7 +847,7 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     Resolve declines only for configured bots or `[bot]` logins. Other declines
     park open. Human ADDRESSes under act are answered but stay open; other
     human verdicts park without a reply."""
-    from holophyte.loop.loop import agent
+    from holophyte.loop.review_round import agent
     from holophyte.pr.pullrequest import _park_human, _park_on_pr
     merge = merge_config(project)
     record_step(conn, run_id, "threads")
@@ -1008,11 +1008,8 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
                  resume_step=None, no_commit_why=None, reviewed=None):
-    from holophyte.loop.loop import (
-        _candidate_drift,
-        _record_implementer_output,
-        _transport_timed,
-    )
+    from holophyte.loop.branch_sync import _candidate_drift
+    from holophyte.loop.implement import _record_implementer_output, _transport_timed
     from holophyte.pr.pullrequest import _park_on_pr
     from holophyte.redact import known_secrets, outbound, redact_prose
     if resume_step is None:

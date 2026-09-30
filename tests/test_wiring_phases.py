@@ -26,7 +26,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.adjudicate  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
@@ -134,7 +136,9 @@ class RunPhaseTests(unittest.TestCase):
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
-            with patch.object(holophyte.loop.loop, "agent", fake_agent):
+            with patch.object(holophyte.loop.implement, "agent", fake_agent), \
+                    patch.object(holophyte.loop.review_round, "agent", fake_agent), \
+                    patch.object(holophyte.loop.adjudicate, "agent", fake_agent):
                 holophyte.cli.operator.main(self.project, provider)
         return provider
 
@@ -261,7 +265,9 @@ class RunPhaseTests(unittest.TestCase):
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": ["Given the thing, when it runs, then it works"]})
         with patch.dict(sys.modules, {"linear_provider": provider}):
-            with patch.object(holophyte.loop.loop, "agent", boom):
+            with patch.object(holophyte.loop.implement, "agent", boom), \
+                    patch.object(holophyte.loop.review_round, "agent", boom), \
+                    patch.object(holophyte.loop.adjudicate, "agent", boom):
                 rc = holophyte.cli.operator.main(self.project, provider)
 
         # Contained, not propagated — and the run row still says the work

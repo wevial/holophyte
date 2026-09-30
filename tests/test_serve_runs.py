@@ -22,7 +22,7 @@ from pool_restart_cases import PreviousBuildCases  # noqa: E402
 from serve_fixture import MERGE_SHA, MIN, SEC, ServeTestCase  # noqa: E402
 
 import holophyte.cli.report  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
 import holophyte.serve.serve_runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -47,7 +47,7 @@ class LivePullRequestTests(MergeModeFixture):
                 target, str(run_id)))
             return url
 
-        with patch.object(holophyte.loop.loop, "_push_and_open", open_and_observe):
+        with patch.object(holophyte.loop.pipeline, "_push_and_open", open_and_observe):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
 

@@ -313,11 +313,11 @@ def parse_freshness(output):
 
 
 def ask_critic(conn, project, task):
-    import holophyte.loop.loop
+    import holophyte.loop.review_round
     from holophyte.agents.review_workspace import critic_workspace
     goal = critic_brief(conn, project, task)
     with critic_workspace(project) as checkout:
-        return str(holophyte.loop.loop.agent(project, "critic", goal, checkout,
+        return str(holophyte.loop.review_round.agent(project, "critic", goal, checkout,
                                         timeout=CRITIC_TIMEOUT))
 
 

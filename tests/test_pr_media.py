@@ -105,7 +105,7 @@ class MediaTests(unittest.TestCase):
     def open(self, private=False, error=None, ticket=""):
         with (
             patch(
-                "holophyte.loop.loop._timed",
+                "holophyte.loop.implement._timed",
                 return_value=("TITLE: A screen\nDescription.", False),
             ),
             patch("holophyte.pr.pr_media.repo_is_private", return_value=private,
@@ -341,7 +341,7 @@ class MediaTests(unittest.TestCase):
             self.assertIn(line, prompt)
 
     def test_capture_brief_names_directory_and_flow_requirement(self):
-        from holophyte.loop.loop import _capture_brief
+        from holophyte.loop.implement import _capture_brief
 
         body = "## Evidence\n\nDialog open\nName saved\n"
         brief = _capture_brief(self.target, body, "KO-7")

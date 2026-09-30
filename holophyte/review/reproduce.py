@@ -87,14 +87,14 @@ class Reproduction:
 
 def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
                ticket, body, verify_cmd, budget_min):
-    from holophyte.loop import loop
+    from holophyte.loop import implement
 
     if not verify_cmd or "Reproduce" not in ticket_template.parse(body).order:
         return None
     budget = min(FIRST_MAX, max(FIRST_MIN, budget_min / 3))
-    loop._check_run_cap(target, conn, run_id, budget, start_sha)
+    implement._check_run_cap(target, conn, run_id, budget, start_sha)
     try:
-        loop._timed(
+        implement._timed(
             target, conn, run_id, beat_s, wt, budget,
             "Reproduce the defect this ticket reports; do not fix it:\n\n"
             f"{ticket}\n\nThe ticket's verify commands:\n\n{verify_cmd}\n\n"
@@ -143,7 +143,7 @@ def routed(resume):
 
 
 def review_rounds(*args, resume=None):
-    from holophyte.loop import loop
+    import holophyte.loop.review_round as loop
 
     frame, pending = Frame(*args), resume or {}
     if "handed_on" in pending:

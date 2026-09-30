@@ -42,10 +42,12 @@ import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.checks  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.adjudicate  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.merge_gate  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.review.findings  # noqa: E402 - after the sys.path insert above
 import linear_provider  # noqa: E402 - after the sys.path insert above
@@ -82,7 +84,7 @@ class GateConflictRequeueTests(LoopFixture):
             store.set_branch(conn, run_id, branch)
             # The conflict goes to the implementer first now (KO-404);
             # this fake leaves it unresolved, so the park is as before.
-            with patch.object(holophyte.loop.loop, "agent", FakeAgent(Idle())):
+            with patch.object(holophyte.loop.implement, "agent", FakeAgent(Idle())):
                 with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
                     holophyte.loop.merge_gate._sync_main_into_branch(
                         self.project, conn, run_id, provider, "KO-131", branch,
@@ -533,7 +535,9 @@ class WorkerTests(LoopFixture):
         out = io.StringIO()
         with no_agent_processes(), \
                 patch.dict(sys.modules, {"linear_provider": provider}), \
-                patch.object(holophyte.loop.loop, "agent", fake), \
+                patch.object(holophyte.loop.implement, "agent", fake), \
+                patch.object(holophyte.loop.review_round, "agent", fake), \
+                patch.object(holophyte.loop.adjudicate, "agent", fake), \
                 patch.dict(os.environ, {holophyte.loop.pool.WORKER_SLOT_ENV: "2"}), \
                 patch.object(sys, "stdout", out):
             rc = holophyte.loop.pool.worker(self.project, provider)
@@ -713,7 +717,7 @@ class SweptHeartbeatTests(unittest.TestCase):
             fired.set()
 
         with self.assertRaises(holophyte.loop.runs.RunSwept) as caught:
-            with holophyte.loop.loop.heartbeat_while(self.conn, self.run, 0.05,
+            with holophyte.loop.runs.heartbeat_while(self.conn, self.run, 0.05,
                                                 on_swept=on_swept):
                 other = store.open(self.path)
                 try:
@@ -737,7 +741,7 @@ class SweptHeartbeatTests(unittest.TestCase):
         reason = "swept by the supervisor in phase working: time_box (99 min)"
         calls = []
         with self.assertRaises(holophyte.loop.runs.RunSwept) as caught:
-            with holophyte.loop.loop.heartbeat_while(self.conn, self.run, 60,
+            with holophyte.loop.runs.heartbeat_while(self.conn, self.run, 60,
                                                 on_swept=calls.append):
                 other = store.open(self.path)
                 try:
@@ -750,7 +754,7 @@ class SweptHeartbeatTests(unittest.TestCase):
 
     def test_a_live_run_raises_nothing_and_calls_nothing(self):
         calls = []
-        with holophyte.loop.loop.heartbeat_while(self.conn, self.run, 0.05,
+        with holophyte.loop.runs.heartbeat_while(self.conn, self.run, 0.05,
                                             on_swept=calls.append):
             time.sleep(0.2)
         self.assertEqual(calls, [])

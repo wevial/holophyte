@@ -98,7 +98,7 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
     project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
     task_id, issue_id, task = run.task_id, run.issue_id, run.task
     branch, wt, started, budget_min = run.branch, run.wt, run.started, run.budget_min
-    from holophyte.loop.loop import _candidate_drift
+    from holophyte.loop.branch_sync import _candidate_drift
     # The branch is recorded first, as `_cut_worktree()` records it: the
     # worktree stands from the run's first moment, and the files panel reads
     # `runs.branch` to find it whichever way the resume goes (KO-304).

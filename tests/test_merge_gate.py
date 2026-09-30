@@ -56,8 +56,8 @@ import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.dispatch  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.merge_gate  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.review.findings  # noqa: E402 - after the sys.path insert above
 import holophyte.serve.server  # noqa: E402 - after the sys.path insert above

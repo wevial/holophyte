@@ -187,7 +187,7 @@ DEFINED = {
         "supervisor_lock_path",
         "supervisor_running",
     ],
-    _module("loop.loop"): ["run_task"],
+    _module("loop.pipeline"): ["run_task"],
     # KO-390: the operator commands and the entry point, out of `holophyte.loop.loop`.
     _module("cli.operator"): ["main", "report", "self_hosted"],
     # KO-389: the claim and the worktree cut, out of `holophyte.loop.loop`.
@@ -337,7 +337,7 @@ class MediaStartupTests(unittest.TestCase):
 class MovedNamesTests(unittest.TestCase):
 
     def test_landing_is_owned_by_run(self):
-        self.assertFalse(hasattr(_module("loop.loop"), "_land"))
+        self.assertFalse(hasattr(_module("loop.pipeline"), "_land"))
 
 
     def test_each_moved_name_is_defined_in_its_new_module(self):

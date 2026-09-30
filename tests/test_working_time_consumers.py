@@ -7,7 +7,7 @@ from holophyte.babysit import babysitter
 from holophyte.babysit.check_fix import CheckFix
 from holophyte.cli import report
 from holophyte.host import supervisor
-from holophyte.loop import loop
+from holophyte.loop import implement, pipeline
 from holophyte.pr import github
 from holophyte.serve import serve_runs, server
 from store.working import settle_work, working
@@ -49,13 +49,13 @@ class WorkingConsumers(SweepTestCase):
                 now = T0 + 2 * MINUTE
                 settle_work(self.conn, run, now=now)
                 self.heartbeat_at(run, now)
-                with patch.object(loop, "time", return_value=now / 1000):
-                    loop._check_run_cap(self.project, self.conn, run, 10, "abc")
+                with patch.object(implement, "time", return_value=now / 1000):
+                    implement._check_run_cap(self.project, self.conn, run, 10, "abc")
         for wait in (0, 200 * MINUTE):
             now = T0 + 2 * MINUTE + wait
             self.heartbeat_at(run, now)
-            with patch.object(loop, "time", return_value=now / 1000):
-                loop._check_run_cap(self.project, self.conn, run, 10, "abc")
+            with patch.object(implement, "time", return_value=now / 1000):
+                implement._check_run_cap(self.project, self.conn, run, 10, "abc")
             self.assertFalse(supervisor.sweep(self.project, self.conn, now).trips)
         # A hung call is visible while its context is still open.
         with patch("store.working.time", return_value=T0 / 1000):
@@ -64,9 +64,10 @@ class WorkingConsumers(SweepTestCase):
                 self.heartbeat_at(run, now)
                 trips = supervisor.sweep(self.project, self.conn, now).trips
                 self.assertEqual(trips[0].condition, supervisor.TIME_BOX)
-                with patch.object(loop, "time", return_value=now / 1000):
-                    with self.assertRaisesRegex(loop.RunFailure, "out of time"):
-                        loop._check_run_cap(self.project, self.conn, run, 10, "abc")
+                with patch.object(implement, "time", return_value=now / 1000):
+                    with self.assertRaisesRegex(implement.RunFailure, "out of time"):
+                        implement._check_run_cap(self.project, self.conn, run, 10,
+                                                 "abc")
             # Settlement can invalidate previously observed in-flight evidence.
             self.assertFalse(supervisor.still_tripped(self.project, self.conn,
                                                       trips[0]))
@@ -97,8 +98,8 @@ class WorkingConsumers(SweepTestCase):
             now = start + 2 * MINUTE
             self.heartbeat_at(run, now)
             self.assertFalse(supervisor.sweep(self.project, self.conn, now).trips)
-            with patch.object(loop, "time", return_value=now / 1000):
-                loop._check_run_cap(self.project, self.conn, run, 10, "abc")
+            with patch.object(implement, "time", return_value=now / 1000):
+                implement._check_run_cap(self.project, self.conn, run, 10, "abc")
             with working(self.conn, run):
                 now = start + 25 * MINUTE
                 self.heartbeat_at(run, now)
@@ -108,9 +109,10 @@ class WorkingConsumers(SweepTestCase):
                 with patch("store.working.time", return_value=now / 1000):
                     self.assertTrue(
                         supervisor.still_tripped(self.project, self.conn, trip))
-                with patch.object(loop, "time", return_value=now / 1000):
-                    with self.assertRaisesRegex(loop.RunFailure, "out of time"):
-                        loop._check_run_cap(self.project, self.conn, run, 10, "abc")
+                with patch.object(implement, "time", return_value=now / 1000):
+                    with self.assertRaisesRegex(implement.RunFailure, "out of time"):
+                        implement._check_run_cap(self.project, self.conn, run, 10,
+                                                 "abc")
 
     def test_run_answers_split_agent_from_verify_time(self):
         run = self.a_run(budget_min=10)
@@ -193,10 +195,10 @@ class WorkingConsumers(SweepTestCase):
                 patch.object(babysitter, "CheckFix", lambda: CheckFix(reran=True)),
                 patch(
                     "holophyte.pr.pullrequest._park_on_pr",
-                    side_effect=loop.MergeParked("parked"),
+                    side_effect=pipeline.MergeParked("parked"),
                 ) as park,
             ):
-                with self.assertRaises(loop.MergeParked):
+                with self.assertRaises(pipeline.MergeParked):
                     babysitter._babysit(
                         self.project,
                         None,

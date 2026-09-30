@@ -38,7 +38,10 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.adjudicate  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 from holophyte.loop.gates import MergeParked  # noqa: E402 - after the sys.path insert
 from holophyte.loop.stop import command  # noqa: E402 - after the sys.path insert above
@@ -290,9 +293,11 @@ class StorelessTests(LoopFixture):
     def test_a_storeless_run_parks_by_raising_merge_parked(self):
         fake = FakeAgent(Declare("test the modal"), REPRODUCED)
         with no_agent_processes(), \
-                patch.object(holophyte.loop.loop, "agent", fake), \
+                patch.object(holophyte.loop.implement, "agent", fake), \
+                patch.object(holophyte.loop.review_round, "agent", fake), \
+                patch.object(holophyte.loop.adjudicate, "agent", fake), \
                 self.assertRaises(MergeParked) as parked:
-            holophyte.loop.loop.run_task(self.project, a_task(),
+            holophyte.loop.pipeline.run_task(self.project, a_task(),
                                     provider=StubProvider(a_task()))
 
         head = self.git("rev-parse", BRANCH).strip()

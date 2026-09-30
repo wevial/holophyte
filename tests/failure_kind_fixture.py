@@ -31,7 +31,8 @@ class FailureKindCases:
 
     def test_merge_lock_kind_survives_dispatch(self):
         reason = 'merge lock held by run 9; waited 240s'
-        with patch('holophyte.loop.loop.run_task', side_effect=MergeLockHeld(reason)):
+        with patch('holophyte.loop.pipeline.run_task',
+                   side_effect=MergeLockHeld(reason)):
             self.loop()
         self.assertEqual(self.read('SELECT failureKind, outcomeReason FROM runs'),
                          [('merge_lock', reason)])

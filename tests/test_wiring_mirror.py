@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from tests.phase_fixture import merged_task  # noqa: E402 - after sys.path setup
@@ -137,7 +137,7 @@ class MirrorPushTests(unittest.TestCase):
     def loop(self, merged=True, provider=None):
         """Run the loop over one task, with the run itself stubbed out."""
         provider = provider or StubProvider(a_task())
-        with patch.object(holophyte.loop.loop, "run_task",
+        with patch.object(holophyte.loop.pipeline, "run_task",
                           side_effect=merged_task if merged else lambda *a: False):
             holophyte.cli.operator.main(self.project, provider)
         return provider
@@ -155,7 +155,7 @@ class MirrorPushTests(unittest.TestCase):
             return merged_task(target, task, conn, run_id, provider)
 
         provider = StubProvider(a_task())
-        with patch.object(holophyte.loop.loop, "run_task", spy):
+        with patch.object(holophyte.loop.pipeline, "run_task", spy):
             holophyte.cli.operator.main(self.project, provider)
 
         self.assertEqual(seen["states"], [(ISSUE_UUID, "In Progress")])
@@ -214,7 +214,7 @@ class MirrorPushTests(unittest.TestCase):
         runs = self.read("SELECT id FROM runs")
 
         provider = StubProvider(a_task())
-        with patch.object(holophyte.loop.loop, "run_task") as run_task, \
+        with patch.object(holophyte.loop.pipeline, "run_task") as run_task, \
                 patch("builtins.print") as printed:
             holophyte.cli.operator.main(self.project, provider)
 
@@ -236,7 +236,7 @@ class MirrorPushTests(unittest.TestCase):
         question with a yes the store would not give."""
         self.loop(merged=True, provider=StubProvider(a_task(), fail=True))
 
-        with patch.object(holophyte.loop.loop, "run_task"), \
+        with patch.object(holophyte.loop.pipeline, "run_task"), \
                 patch.object(store.tickets, "pickable",
                              return_value=store.tickets.Pickability(True, None)):
             holophyte.cli.operator.main(self.project, StubProvider(a_task()))

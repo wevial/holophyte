@@ -247,7 +247,7 @@ class BaselineTests(LoopFixture):
 
 class BaselineBriefTests(unittest.TestCase):
     def test_baseline_only_success_and_failure_are_visible_to_reviewer(self):
-        from holophyte.loop.loop import _verify_brief
+        from holophyte.loop.review_round import _verify_brief
         with tempfile.TemporaryDirectory() as wt:
             target = type("Project", (), {"config": lambda self: {
                 "verify": {"always": ["echo baseline-detail"]}}})()

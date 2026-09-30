@@ -179,16 +179,25 @@ Each module, one line:
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
   project's checkout under a timeout: what `/runs/N/files` answers.
-- `holophyte/loop/loop.py` — the loop: `run_task`'s stages.
+- `holophyte/loop/pipeline.py` — `run_task`: a claimed run through its stages in
+  order, from the worktree to the merge or the pull request.
+- `holophyte/loop/implement.py` — the implement stage and the timed agent turn
+  under its scaled budget, the run cap and the transport retry.
+- `holophyte/loop/review_round.py` — the review rounds: verify, review and a fix
+  turn per round, up to the cap the candidate's size earns.
+- `holophyte/loop/adjudicate.py` — the terminal adjudication once the review
+  rounds are spent.
+- `holophyte/loop/branch_sync.py` — the branch fast-forwarded to origin's copy,
+  and the worktree held to the candidate a park recorded.
 - `holophyte/agents/harness.py` — harness adapters: a table-form `[agents]` role's
   turn argv, session id and resume argv, and the `[harnesses]` binary paths.
 - `holophyte/agents/fix_session.py` — review fix-session arms, resume argv and fresh retry.
 - `holophyte/agents/session_arms.py` — shared run-number assignment for session experiments.
 - `holophyte/review/review_session.py` — reviewer session-file capture and resume requests.
-- `holophyte/loop/dispatch.py` — the dispatcher out of `holophyte/loop/loop.py`
+- `holophyte/loop/dispatch.py` — the dispatcher out of the loop module
   (KO-412): one claim run under its crash containment and close-out,
   the startup sweep and the queue mirror.
-- `holophyte/loop/merge_gate.py` — the merge gate out of `holophyte/loop/loop.py`
+- `holophyte/loop/merge_gate.py` — the merge gate out of the loop module
   (KO-424): `main` merged into the branch, the pre-merge verify and the
   drift check under the merge lock, the park for a human's approval, the
   approved candidate's resumed run, and the `--no-ff` merge onto main.

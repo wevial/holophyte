@@ -8,7 +8,8 @@ from loop_fixture import VALID_BODY, StubProvider, a_task
 
 import holophyte.agents.probes as probes
 import holophyte.agents.roles as roles
-import holophyte.loop.loop as loop
+import holophyte.loop.implement as implement
+import holophyte.loop.review_round as review_round
 
 
 class FixSessionCases:
@@ -39,19 +40,20 @@ class FixSessionCases:
                 return reviewer(target, role, goal, cwd, **kwargs)
             return roles.agent(target, role, goal, cwd, **kwargs)
 
-        real_cap = loop._check_run_cap
+        real_cap = implement._check_run_cap
         checks = []
 
         def budget(*args):
             checks.append(True)
             if cap_retry and len(checks) == 3:
-                with patch.object(loop, 'effective_work', return_value=100000000):
+                with patch.object(implement, 'effective_work', return_value=100000000):
                     return real_cap(*args)
             return real_cap(*args)
 
         with patch.object(roles, 'run_capped', runner), \
                 patch.object(probes, 'run_capped', runner), \
-                patch.object(loop, '_check_run_cap', budget):
+                patch.object(implement, '_check_run_cap', budget), \
+                patch.object(review_round, '_check_run_cap', budget):
             task = dict(a_task(), body=VALID_BODY)
             self.loop(fake=dispatch, provider=StubProvider(task))
         events = [json.loads(p) for (p,) in self.read(

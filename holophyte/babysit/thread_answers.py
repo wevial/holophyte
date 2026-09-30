@@ -20,7 +20,7 @@ LINE_SUFFIX_RE = re.compile(r":(\d+)(?:[-\u2013](\d+))?$")
 def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
                 beat_s, pull, threads, ticket, reviewed):
     from holophyte.babysit import babysitter
-    from holophyte.loop.loop import agent, sh
+    from holophyte.loop.review_round import agent, sh
     from holophyte.pr.pullrequest import _park_on_pr
     threads = tuple(thread_mentions.triaged(threads, ticket, target.config()))
     asks = tuple(t for t in threads if not maintainer_notes.is_note(t)

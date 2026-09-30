@@ -221,7 +221,7 @@ def reuse_leftover(project, wt, branch, conn=None, run_id=None,
     (`_candidate_drift()`), and a fast-forward would move the branch onto
     unreviewed commits. Targets without `origin` skip this step.
     """
-    from holophyte.loop.loop import _sync_branch_from_origin
+    from holophyte.loop.branch_sync import _sync_branch_from_origin
     sh(["git", "worktree", "prune"], project.path)
     r = subprocess.run(["git", "worktree", "list", "--porcelain"],
                        cwd=project.path, capture_output=True, text=True)
@@ -365,7 +365,7 @@ def _resolve_merge_conflict(project, conn, run_id, branch, wt, sha, conflicts,
     the gate's verify reads the worktree, so the sha it goes on to must
     be the merge of the candidate it claimed.
     """
-    from holophyte.loop.loop import _timed
+    from holophyte.loop.implement import _timed
     from holophyte.loop.merge_gate import _is_ancestor
 
     paths = ", ".join(conflicts)

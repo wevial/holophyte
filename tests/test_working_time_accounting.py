@@ -9,7 +9,15 @@ import store.read
 from holophyte.agents import agent_output, review_workspace, roles
 from holophyte.babysit import babysitter
 from holophyte.host import supervisor
-from holophyte.loop import claim, gates, loop, merge_gate
+from holophyte.loop import (
+    adjudicate,
+    branch_sync,
+    claim,
+    gates,
+    implement,
+    merge_gate,
+    review_round,
+)
 from holophyte.pr import github, pullrequest
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase, no_network
 
@@ -81,7 +89,8 @@ class WorkingTimeTests(SweepTestCase):
                              lambda _: nullcontext(self.target)), \
                 patch('holophyte.loop.runs.heartbeat_while',
                       lambda *a, **k: nullcontext()), \
-                patch.object(loop, 'heartbeat_while', lambda *a, **k: nullcontext()):
+                patch.object(implement, 'heartbeat_while',
+                             lambda *a, **k: nullcontext()):
             for failure in (None, subprocess.TimeoutExpired('script', 1),
                             RuntimeError('route failed')):
                 for path in ('initial', 'fix', 'conflict', 'PR-text',
@@ -99,7 +108,7 @@ class WorkingTimeTests(SweepTestCase):
                                              base_sha='base', candidate_sha='sha',
                                              conn=self.conn, run_id=run)
                             else:
-                                loop._timed(self.project, self.conn, run, 100,
+                                implement._timed(self.project, self.conn, run, 100,
                                             self.target, 1, path)
                         except (RuntimeError, subprocess.TimeoutExpired):
                             if failure is None:
@@ -229,7 +238,8 @@ class WorkingTimeTests(SweepTestCase):
                                              return_value=['script']))
             stack.enter_context(patch.object(roles, 'publish_review_refs'))
             stack.enter_context(patch.object(roles, 'check_review_refs'))
-            for module in (loop, babysitter, merge_gate, claim, pullrequest):
+            for module in (implement, review_round, adjudicate, babysitter,
+                           merge_gate, claim, pullrequest):
                 for name, result in (('sh', 'after'),
                                      ('main_merge_base', 'after'),
                                      ('ledger', None),
@@ -246,8 +256,9 @@ class WorkingTimeTests(SweepTestCase):
             stack.enter_context(patch('holophyte.loop.runs.heartbeat_while',
                                      lambda *a, **k: nullcontext()))
             for module, name, result in (
-                    (loop, '_check_run_cap', None),
-                    (loop, '_candidate_drift', ''),
+                    (implement, '_check_run_cap', None),
+                    (review_round, '_check_run_cap', None),
+                    (branch_sync, '_candidate_drift', ''),
                     (merge_gate, '_is_ancestor', True),
                     (merge_gate, 'merge_drift', ((), None)),
                     (babysitter, '_decline_threads', ()),
@@ -255,14 +266,14 @@ class WorkingTimeTests(SweepTestCase):
                 stack.enter_context(patch.object(module, name, return_value=result))
             stack.enter_context(patch.object(pullrequest, 'monotonic', return_value=0))
             scenarios = (
-                (loop._implement, 'working', ['done'], 1),
-                (loop._review_rounds, 'working',
+                (implement._implement, 'working', ['done'], 1),
+                (review_round._review_rounds, 'working',
                  ['done', 'VERDICT: REQUEST_CHANGES', 'fixed'], 3),
                 (claim._resolve_merge_conflict, 'merge_gate', ['fixed'], 1),
                 (pullrequest._written_pr_text, 'merge_gate',
                  ['TITLE: change\nDescription'], 1),
                 (merge_gate._merge_gate, 'merge_gate', ['done'], 1),
-                (loop._terminal_adjudication, 'addressing',
+                (adjudicate._terminal_adjudication, 'addressing',
                  ['done', 'VERDICT: PASS'], 2),
                 (babysitter._answer_threads, 'merge_gate',
                  ['THREAD 1: DECLINE: not a blocker'], 1),
@@ -284,14 +295,14 @@ class WorkingTimeTests(SweepTestCase):
                         self.snapshot(run).workingMs, (len(calls) - before) * 10)
                     self.assertFalse(responses)
             # The real retry loop and PR pending/quiet loops advance wall time.
-            stack.enter_context(patch.object(loop, 'sleep', nap))
-            stack.enter_context(patch.object(loop, 'retry_clock',
+            stack.enter_context(patch.object(implement, 'sleep', nap))
+            stack.enter_context(patch.object(implement, 'retry_clock',
                                              lambda: now[0] / 1000))
             with patch.object(agent_output, 'transport_failure', return_value=None):
                 # loop imported this function; script just its diagnosis.
-                with patch.object(loop, 'transport_failure',
+                with patch.object(implement, 'transport_failure',
                                   side_effect=['ECONNRESET', None]):
-                    loop._transport_timed(self.project, self.conn, run, 100,
+                    implement._transport_timed(self.project, self.conn, run, 100,
                                           self.target, 25, 'retry')
             stack.enter_context(patch.object(github, 'SLEEP', nap))
             pending = github.PrState((), 'pending', 'after')

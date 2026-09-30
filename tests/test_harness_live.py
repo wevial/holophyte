@@ -31,7 +31,7 @@ from pathlib import Path
 import holophyte.agents.fix_session
 import holophyte.agents.roles
 import holophyte.config.project
-import holophyte.loop.loop
+import holophyte.loop.implement
 import holophyte.review.freshness
 import store
 from holophyte.agents import harness
@@ -209,7 +209,7 @@ class LiveImplementerTests(unittest.TestCase):
                                          acceptance_criteria=["implement"],
                                          verification_commands=["true"])
             run = store.claim(conn, project, ticket)
-            output, timed_out = holophyte.loop.loop._timed(
+            output, timed_out = holophyte.loop.implement._timed(
                 target, conn, run, 60, repo, TURN_TIMEOUT / 60,
                 "Write the text ok to a new file note.txt in the current "
                 f"directory. Also remember this word: {word}, but do not write "

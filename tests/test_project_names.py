@@ -142,7 +142,11 @@ class ProjectNamesTest(unittest.TestCase):
     def test_the_run_modules_spell_the_project_project(self):
         self.assert_no_old_names(
             "holophyte/loop/run.py",
-            "holophyte/loop/loop.py",
+            "holophyte/loop/pipeline.py",
+            "holophyte/loop/implement.py",
+            "holophyte/loop/review_round.py",
+            "holophyte/loop/adjudicate.py",
+            "holophyte/loop/branch_sync.py",
             "holophyte/loop/claim.py",
             "holophyte/loop/gates.py",
             "holophyte/loop/merge_gate.py",

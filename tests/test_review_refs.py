@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import review_runner
 from holophyte.agents import review_workspace, roles
-from holophyte.loop import dispatch, loop
+from holophyte.loop import adjudicate, dispatch, pipeline, review_round
 from holophyte.loop.dispatch import MergeParked
 from holophyte.loop.gates import InfraFailure, RunFailure
 from holophyte.pr.github import Thread
@@ -103,7 +103,7 @@ class ReviewRefsTests(unittest.TestCase):
                 review_workspace.publish_review_refs(
                     self.other, self.base, self.second, run_id=341
                 )
-                task = stack.enter_context(patch.object(loop, "run_task"))
+                task = stack.enter_context(patch.object(pipeline, "run_task"))
                 if outcome == "merged":
                     task.return_value = self.first
                 else:
@@ -165,20 +165,22 @@ class ReviewRefsTests(unittest.TestCase):
             contracts=(),
         )
         with contextlib.ExitStack() as stack:
-            stack.enter_context(patch.object(loop, "agent", side_effect=capture))
-            stack.enter_context(patch.object(loop, "set_phase"))
-            stack.enter_context(patch.object(loop, "merge_conflicts", return_value=[]))
+            for module in (review_round, adjudicate):
+                stack.enter_context(patch.object(module, "agent", side_effect=capture))
+                stack.enter_context(patch.object(module, "set_phase"))
+            stack.enter_context(
+                patch.object(review_round, "merge_conflicts", return_value=[]))
             stack.enter_context(patch.object(babysitter, "_next_round", return_value=1))
-            for module in (loop, babysitter):
+            for module in (review_round, adjudicate, babysitter):
                 stack.enter_context(
                     patch.object(module, "run_verify", return_value=(True, "ok"))
                 )
             with self.assertRaises(Captured):
-                loop._review_rounds(
+                review_round._review_rounds(
                     **common, base_sha=self.base, criteria=(), budget_min=10, cap=1
                 )
             with self.assertRaises(Captured):
-                loop._terminal_adjudication(
+                adjudicate._terminal_adjudication(
                     **common, base_sha=self.base, task={}, cap=1
                 )
             with self.assertRaises(Captured):
