@@ -111,6 +111,21 @@ class ImplementerCrashTests(LoopFixture):
         self.assertEqual(self.git("show", f"{BRANCH}:second-edit.txt"),
                          "second edit\n")
 
+    def test_a_crash_printing_a_transport_signature_is_still_a_crash(self):
+        noisy = 'echo "fetch failed"\n' + CRASH
+        self.run_loop(EDIT + noisy, noisy)
+
+        self.assertEqual(self.turns_started(), 2)
+        self.assertEqual(len(self.crash_events()), 2)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM runEvents"
+                                   " WHERE kind = 'transport_retry'"), [(0,)])
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertTrue(reason.startswith("implementer crashed twice"), reason)
+        self.assertEqual(self.git("log", f"main..{BRANCH}", "--format=%s")
+                         .splitlines(), [WIP])
+        self.assertEqual(self.git("show", f"{BRANCH}:crashed-edit.txt"),
+                         "crash-time edit\n")
+
     def test_an_ordinary_nonzero_exit_is_not_retried_and_is_discarded(self):
         self.run_loop(EDIT + "echo giving up\nexit 1\n")
 

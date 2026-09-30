@@ -123,7 +123,7 @@ def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal,
         out, timed_out = _timed(project, conn, run_id, beat_s, wt,
                                 remaining, goal, argv=argv)
         signature = transport_failure(getattr(out, "exit_code", 0), out)
-        if timed_out or signature is None:
+        if timed_out or signature is None or _killed_by_signal(out, timed_out):
             return out, timed_out
         _record_implementer_output(conn, run_id, out,
                                    known_secrets(project.config()))
