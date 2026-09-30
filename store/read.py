@@ -1,4 +1,3 @@
-"""Typed, read-only queries over the durable store."""
 from __future__ import annotations
 
 import json
@@ -9,22 +8,39 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import store.schema
+from store.run_reads import (  # noqa: F401
+    SQLITE_INT64_MAX,
+    SQLITE_INT64_MIN,
+    ApprovedCandidate,
+    EndedRun,
+    FailedAttempt,
+    LiveRun,
+    MergedRun,
+    RecentFailedRun,
+    RunSnapshot,
+    Toil,
+    approved_candidate,
+    babysit_note,
+    ended_runs,
+    failed_attempts_since,
+    finished_runs,
+    last_independent_verdict,
+    latest_human_intervention_at,
+    live_runs,
+    merged_runs,
+    newest_run_id,
+    recent_failed_runs,
+    run_snapshot,
+    stranded_runs,
+    toil_since,
+)
 
-# The lock wait `lock_wait()` set in this context; None is the store's own.
 _lock_wait = ContextVar("read_lock_wait", default=None)
 
 
 @contextmanager
 def lock_wait(seconds):
-    """Within the block, `open_readonly()` waits at most `seconds` for a
-    lock instead of `store.schema.BUSY_TIMEOUT_S`.
-
-    A host daemon answers for several stores inside one client's request
-    limit, so one store held locked must be that project's error within
-    it, not thirty seconds of every answer. The wait is per context: a
-    thread that enters the block changes no other thread's reads, and the
-    writable opener is untouched -- a writer still queues for the lock.
-    """
+    """Per context: no other thread's reads change, and a writer still queues."""
     token = _lock_wait.set(seconds)
     try:
         yield
@@ -33,58 +49,29 @@ def lock_wait(seconds):
 
 
 def open_readonly(path) -> sqlite3.Connection:
-    """Open the store at `path` read-only and return the connection.
-
-    A `mode=ro` URI open: the file is never created, and any write through
-    the connection fails with `sqlite3.OperationalError` rather than taking
-    the write lock. WAL-safe -- a read-only connection to a WAL store reads
-    the last committed snapshot while the loop keeps writing, which is why
-    report, sweep, FINDINGS and serve paths open through here instead of
-    through the writable opener.
-
-    `row_factory` is left unset on purpose: the functions below build their
-    rows themselves, column by column, so the tuple shape is the contract.
-
-    Waits `store.schema.BUSY_TIMEOUT_S` for a lock, the same as the writable
-    opener, so a reader is not the one that dies when a checkpoint or a
-    long write holds the file -- unless `lock_wait()` bounds it.
-    """
+    """`row_factory` stays unset: each read's tuple shape is its contract."""
     uri = Path(path).resolve().as_uri() + "?mode=ro"
     wait = _lock_wait.get()
     return sqlite3.connect(uri, uri=True, timeout=(
         store.schema.BUSY_TIMEOUT_S if wait is None else wait))
 
 
-# --- tickets -----------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class Ticket:
-    """The `tickets` columns the loop reads back about one ticket."""
-
     id: int
     linearIssueId: str
     linearIdentifier: str
     status: str
     activeRunId: int | None
     lastRunId: int | None
-    # What a `blocked_on_operator` ticket asks; None otherwise. The admit
-    # step's skip line reads it to say why the ticket is parked (KO-345).
     blockedQuestion: str | None = None
     boardState: str | None = None
-    # A store-mode push waiting on the host sweep (KO-740): the state it
-    # wants, the state observed when it was queued, and when; None when none.
     pushState: str | None = None
     pushFrom: str | None = None
     pushAt: int | None = None
 
 
 def ticket_by_id(conn, ticket_id):
-    """The ticket row for `ticket_id`, or None when there is no such ticket.
-
-    One read for `store_status`, `warn`, `mirror_push` and `escalate`: each
-    wanted a different two or three of these columns off the same row.
-    """
     row = conn.execute(
         "SELECT id, linearIssueId, linearIdentifier, status,"
         " activeRunId, lastRunId, blockedQuestion, boardState,"
@@ -100,25 +87,11 @@ def ticket_by_id(conn, ticket_id):
 
 @dataclass(frozen=True)
 class BlockedTicket:
-    """One ticket parked `blocked_on_operator`, with the question it asks.
-
-    `runId` is the run parked for it (`tickets.lastRunId`: `park()` and
-    `release()` both move the pointer there) and `askedMs` when the question
-    was asked: the newest `redirect` intervention on that run, else the
-    run's `lastHeartbeat` for a ticket parked by a module that recorded no
-    redirect. Both are None only for a ticket that was parked with no run
-    behind it at all. `prSeenChecks`, `prSeenReview`, `prSeenThreads` and
-    `prSeenTitle` are what the reconcile last saw of the run's pull
-    request (`runs.prSeen*`, KO-368, KO-622), None for a run never polled
-    or with no run. `title` is the ticket's own title.
-    """
-
     id: int
     linearIdentifier: str
     blockedQuestion: str | None
     runId: int | None = None
     askedMs: int | None = None
-    # The pull request the parked run opened (`runs.prUrl`), None when none.
     prUrl: str | None = None
     parkKind: str | None = None
     prSeenChecks: str | None = None
@@ -128,17 +101,10 @@ class BlockedTicket:
     title: str | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
-    # How the parked ticket's latest run ended (`runs.outcome`): `paused`
-    # for an operator's pause (KO-609), None while the run is live.
     outcome: str | None = None
 
 
 def blocked_tickets(conn, project_id=None):
-    """Tickets parked `blocked_on_operator`, oldest first, optionally scoped.
-
-    `/attention` uses the question, run, URL and asked time to render the
-    waiting ticket. Reconcile uses the same rows' prUrl for GitHub (KO-359).
-    """
     where, params = "t.status = 'blocked_on_operator'", ()
     if project_id is not None:
         where += " AND t.projectId = ?"
@@ -164,17 +130,6 @@ def blocked_tickets(conn, project_id=None):
 
 @dataclass(frozen=True)
 class OpenTicket:
-    """One ticket in an open (non-terminal) status, with what it waits on.
-
-    `waitsOn` is the ticket's `dependsOn` list resolved to identifiers
-    through the same table, holding only the dependencies still open; a
-    Linear issue id the store has never mirrored is kept as-is, since the
-    store cannot name what it has not seen. `activeRunId` is the live run's
-    id, None when the ticket is not being worked. `boardColumn`, `priority`,
-    `labels` (decoded from JSON) and `revision` are the board-owned fields
-    a board's editor reads (KO-755); `revision` is 0 when none is recorded.
-    """
-
     id: int
     linearIdentifier: str
     title: str
@@ -192,12 +147,6 @@ class OpenTicket:
 
 
 def open_tickets(conn, project_id=None):
-    """Open tickets ordered by identifier, optionally scoped to a project.
-
-    Used by `/board` and startup reconcile (KO-329). Resolve dependsOn's
-    Linear issue ids to mirrored identifiers, omit closed dependencies,
-    and preserve unknown ids. The caller groups the mirrored columns.
-    """
     scope = "" if project_id is None else " AND projectId = ?"
     params = () if project_id is None else (project_id,)
     rows = conn.execute(
@@ -206,8 +155,6 @@ def open_tickets(conn, project_id=None):
         " boardColumn, priority, labels, revision"
         " FROM tickets WHERE status NOT IN ('merged', 'abandoned')"
         + scope + " ORDER BY linearIdentifier", params).fetchall()
-    # The closed ids are read too, so a dependency on a merged ticket is
-    # told apart from one the store has never seen.
     mirrored = {row[1]: row[2] for row in rows}
     closed = {row[0] for row in conn.execute(
         "SELECT linearIssueId FROM tickets"
@@ -226,13 +173,6 @@ def open_tickets(conn, project_id=None):
 
 @dataclass(frozen=True)
 class MirroredTicket:
-    """One ticket as the store mirrors it, body included: what `/tickets/KO-n`
-    answers. `activeRunId` is the live run's id, None when none is working
-    it; the two lists are decoded from their JSON columns. `revision` is the
-    ticket's current revision (0 when none is recorded); `claimedRevision`
-    and `claimedSnapshot` are the live run's `runs.revision` and
-    `ticketSnapshot`, None without a live run (KO-737)."""
-
     id: int
     linearIdentifier: str
     title: str
@@ -250,14 +190,6 @@ class MirroredTicket:
 
 
 def ticket_by_identifier(conn, identifier):
-    """The mirrored ticket named `identifier` (e.g. "KO-328"), or None when
-    the store has never mirrored one by that name.
-
-    The `serve` daemon's `/tickets/KO-n` read (KO-328): the store's mirror
-    and nothing more, so the body is the one the loop last read at claim,
-    not whatever Linear holds now. Any status, terminal ones included -- a
-    merged ticket's contract is still worth reading.
-    """
     row = conn.execute(
         "SELECT t.id, t.linearIdentifier, t.title, t.status, t.body,"
         " t.acceptanceCriteria, t.verificationCommands, t.timeBoxMs,"
@@ -279,9 +211,6 @@ def ticket_by_identifier(conn, identifier):
 
 @dataclass(frozen=True)
 class TicketRevision:
-    """One recorded version of a ticket's board-owned fields (KO-736);
-    `labels` is decoded from its JSON column, `column` is `boardColumn`."""
-
     revision: int
     at: int
     author: str
@@ -293,7 +222,6 @@ class TicketRevision:
 
 
 def ticket_revisions(conn, ticket_id):
-    """Ticket `ticket_id`'s recorded revisions, newest first (KO-737)."""
     return [TicketRevision(revision=row[0], at=row[1], author=row[2],
                            title=row[3], body=row[4], priority=row[5],
                            labels=tuple(json.loads(row[6])), column=row[7])
@@ -303,12 +231,8 @@ def ticket_revisions(conn, ticket_id):
                 " ORDER BY revision DESC", (ticket_id,))]
 
 
-
 @dataclass(frozen=True)
 class PendingNote:
-    """One store-mode note the board has yet to accept (KO-747), with its
-    ticket's board id `issueId` and `identifier` to post it on."""
-
     id: int
     ticketId: int
     issueId: str
@@ -318,8 +242,6 @@ class PendingNote:
 
 
 def pending_notes(conn, project_id):
-    """Project `project_id`'s notes with no `postedAt`, oldest first; a
-    ticket the board was last seen without (`goneSince` set) is left out."""
     return [PendingNote(*row) for row in conn.execute(
         "SELECT n.id, n.ticketId, t.linearIssueId, t.linearIdentifier, n.at,"
         " n.text FROM ticketNotes n JOIN tickets t ON t.id = n.ticketId"
@@ -329,9 +251,6 @@ def pending_notes(conn, project_id):
 
 @dataclass(frozen=True)
 class TicketNote:
-    """One note on a ticket and its post's outcome (KO-747): `postedAt` is
-    when the board accepted it, `postError` why the last post failed."""
-
     id: int
     at: int
     author: str
@@ -342,456 +261,13 @@ class TicketNote:
 
 
 def ticket_notes(conn, ticket_id):
-    """Ticket `ticket_id`'s notes, oldest first, for `/tickets/KO-n`."""
     return [TicketNote(*row) for row in conn.execute(
         "SELECT id, at, author, kind, text, postedAt, postError"
         " FROM ticketNotes WHERE ticketId = ? ORDER BY at, id", (ticket_id,))]
 
-# --- runs --------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class RunSnapshot:
-    """Where one run stands right now: the columns the sweep re-checks,
-    plus the claim-time clock and box the loop's run-cap check reads."""
-
-    id: int
-    ticketId: int
-    phase: str
-    lastHeartbeat: int
-    endedAt: int | None
-    startedAt: int
-    timeBoxMs: int | None
-    reviewRoundCount: int = 0
-    reviewRoundCap: int | None = None
-    workingMs: int | None = None
-    workStartedAt: int | None = None
-    # The verify part of workingMs and its open span (KO-635).
-    verifyMs: int | None = None
-    verifyStartedAt: int | None = None
-
-
-def run_snapshot(conn, run_id):
-    """Read the run's clocks and budget evidence under the caller's lock.
-    Count recorded rounds, since runs.reviewRoundCount is stamped at close-out."""
-    row = conn.execute(
-        "SELECT id, ticketId, phase, lastHeartbeat, endedAt, startedAt,"
-        " timeBoxMs, workingMs, workStartedAt, (SELECT COUNT(*) FROM reviewRounds"
-        " WHERE runId = runs.id AND verdict != 'error'),"
-        " reviewRoundCap, verifyMs, verifyStartedAt FROM runs WHERE id = ?",
-        (run_id,)).fetchone()
-    if row is None:
-        return None
-    return RunSnapshot(id=row[0], ticketId=row[1], phase=row[2],
-                       lastHeartbeat=row[3], endedAt=row[4], startedAt=row[5],
-                       timeBoxMs=row[6], workingMs=row[7], workStartedAt=row[8],
-                       reviewRoundCount=row[9], reviewRoundCap=row[10],
-                       verifyMs=row[11], verifyStartedAt=row[12])
-
-
-@dataclass(frozen=True)
-class LiveRun:
-    """One unended run in a sweepable phase, with its ticket's label and
-    title and the review rounds it has recorded so far."""
-
-    id: int
-    linearIdentifier: str
-    title: str
-    phase: str
-    lastHeartbeat: int
-    startedAt: int
-    timeBoxMs: int | None
-    host: str | None
-    # Counted off the run's own `reviewRounds` rows, as `store.release()`
-    # stamps `runs.reviewRoundCount` at close-out: on a live run the column
-    # is still 0, and the rows are the count it will be stamped with.
-    reviewRoundCount: int
-    # The review-round cap the loop gave the run (`set_review_round_cap()`);
-    # None until the loop measures the candidate, or on a row from before the
-    # column. The sweep bounds its per-turn time box with it (KO-340).
-    reviewRoundCap: int | None
-    # The pull request the run opened (`runs.prUrl`), None when none.
-    prUrl: str | None = None
-    workingMs: int | None = None
-    workStartedAt: int | None = None
-    # The verify part of workingMs and its open span (KO-635).
-    verifyMs: int | None = None
-    verifyStartedAt: int | None = None
-    ticketUrl: str | None = None
-    boardState: str | None = None
-
-
-@dataclass(frozen=True)
-class ApprovedCandidate:
-    """The prior run an approval released, the sha it was parked on, and
-    the pull request `[merge] mode = "pr"` opened for it (None when the park
-    opened none)."""
-
-    run_id: int
-    sha: str | None
-    pr_url: str | None = None
-    # Whether the release was an approval -- the human's "merge" -- rather
-    # than `--babysit`'s "look at the pull request again". Only the PR
-    # path reads it: a local candidate the operator released is merged.
-    approved: bool = True
-    # The sha the last independent judgement covered when the run parked:
-    # the reviewer's approval or an operator's release. Under `mode = "pr"`
-    # a fix round or a rejected fix leaves `sha` past it; None when the
-    # park recorded none (a store older than the column).
-    approved_sha: str | None = None
-    paused: bool = False
-
-
-def approved_candidate(conn, ticket_id, run_id):
-    """The latest prior run released to the gate and its explicit approval."""
-    row = conn.execute(
-        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha, approvedAt, outcome"
-        " FROM runs"
-        " WHERE ticketId = ? AND id <> ?"
-        " ORDER BY attempt DESC LIMIT 1", (ticket_id, run_id)).fetchone()
-    if row is None or row[1] not in ("merge_gate", "merging"):
-        return None
-    return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
-                             approved=row[5] is not None,
-                             approved_sha=row[4], paused=row[6] == "paused")
-
-
-def last_independent_verdict(conn, ticket_id):
-    """Latest non-GitHub verdict and the approval SHA preserved by its run.
-
-    Rounds have no SHA column: approvedSha is the durable review coverage,
-    while candidateSha may have moved beyond it before the run parked.
-    Missing coverage requires another review even when the verdict passed.
-    """
-    return conn.execute(
-        "SELECT rr.verdict, r.approvedSha"
-        " FROM reviewRounds rr JOIN runs r ON r.id = rr.runId"
-        " WHERE r.ticketId = ? AND rr.reviewerModel NOT GLOB 'github:*'"
-        " ORDER BY r.attempt DESC, rr.round DESC LIMIT 1",
-        (ticket_id,)).fetchone()
-
-
-def babysit_note(conn, run_id):
-    """Read the newest babysit intervention's note from its paired event."""
-    row = conn.execute(
-        "SELECT e.summary FROM interventions i JOIN runEvents e"
-        " ON e.runId = i.runId AND e.at = i.at AND e.kind = 'intervention'"
-        " AND e.summary LIKE i.source || ' babysit: %'"
-        " WHERE i.runId = ? AND i.action = 'babysit'"
-        " ORDER BY i.id DESC, e.seq DESC LIMIT 1", (run_id,)).fetchone()
-    return row[0].partition(" babysit: ")[2] if row else ""
-
-
-def live_runs(conn, phases):
-    """Every run with no `endedAt` whose phase is in `phases`, oldest id first.
-
-    `phases` is the caller's policy -- the sweep passes its
-    `SWEEPABLE_PHASES` -- so this module states no opinion about which live
-    runs are worth watching.
-    """
-    phases = tuple(phases)
-    rows = conn.execute(
-        "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.lastHeartbeat,"
-        " r.startedAt, r.timeBoxMs, r.host,"
-        " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id"
-        " AND rr.verdict != 'error'),"
-        " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt, t.url, t.boardState,"
-        " r.verifyMs, r.verifyStartedAt"
-        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE r.endedAt IS NULL"
-        f"   AND r.phase IN ({', '.join('?' * len(phases))})"
-        " ORDER BY r.id", phases).fetchall()
-    return [LiveRun(id=row[0], linearIdentifier=row[1], title=row[2],
-                    phase=row[3], lastHeartbeat=row[4], startedAt=row[5],
-                    timeBoxMs=row[6], host=row[7], reviewRoundCount=row[8],
-                    reviewRoundCap=row[9], prUrl=row[10],
-                    workingMs=row[11], workStartedAt=row[12], ticketUrl=row[13],
-                    boardState=row[14], verifyMs=row[15],
-                    verifyStartedAt=row[16])
-            for row in rows]
-
-
-@dataclass(frozen=True)
-class EndedRun:
-    """One run that ended, joined to its ticket's label.
-
-    The union of what `--report` and the FINDINGS renderer each read off the
-    same rows: the timing columns for the estimate-vs-actual table, the
-    outcome columns for the rendered entry.
-    """
-
-    id: int
-    linearIdentifier: str
-    startedAt: int
-    endedAt: int
-    timeBoxMs: int | None
-    reviewRoundCount: int
-    outcome: str | None
-    outcomeReason: str | None
-    branch: str | None
-    host: str | None
-    # The merge commit on main, full sha; None unless the run merged under a
-    # module that wrote the column.
-    mergeSha: str | None
-    workingMs: int | None = None
-    workStartedAt: int | None = None
-    # The verify part of workingMs and its open span (KO-635).
-    verifyMs: int | None = None
-    verifyStartedAt: int | None = None
-
-
-def newest_run_id(conn):
-    """The id of the newest run the store holds, or None when it holds none.
-
-    The `serve` daemon's anchor for a host action's ledger note (KO-348):
-    the store's ledger is keyed by run, so a supervisor restart or a loop
-    launch asked for over HTTP is written against the newest run rather
-    than left unrecorded.
-    """
-    row = conn.execute("SELECT MAX(id) FROM runs").fetchone()
-    return row[0] if row is not None else None
-
-
-def ended_runs(conn):
-    """Every run with an `endedAt`, ordered by when it ended, then by id."""
-    rows = conn.execute(
-        "SELECT r.id, t.linearIdentifier, r.startedAt, r.endedAt, r.timeBoxMs,"
-        " r.reviewRoundCount, r.outcome, r.outcomeReason, r.branch, r.host,"
-        " r.mergeSha, r.workingMs, r.workStartedAt, r.verifyMs, r.verifyStartedAt"
-        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE r.endedAt IS NOT NULL"
-        " ORDER BY r.endedAt, r.id").fetchall()
-    return [EndedRun(id=row[0], linearIdentifier=row[1], startedAt=row[2],
-                     endedAt=row[3], timeBoxMs=row[4], reviewRoundCount=row[5],
-                     outcome=row[6], outcomeReason=row[7], branch=row[8],
-                     host=row[9], mergeSha=row[10],
-                     workingMs=row[11], workStartedAt=row[12],
-                     verifyMs=row[13], verifyStartedAt=row[14])
-            for row in rows]
-
-
-@dataclass(frozen=True)
-class Toil:
-    """Human interventions and merged runs since one instant (KO-705)."""
-
-    # Action to count, most frequent first, ties by name.
-    by_action: dict
-    merged: int
-
-
-def toil_since(conn, since_ms):
-    """Human interventions at or after `since_ms`, by action, and the runs
-    merged in the same window. A project-level row (no `runId`, such as a
-    `hold`) counts: it is human work on the project all the same. A read-only
-    daemon may open a store its writer has not migrated, with no
-    `interventions` table yet: no interventions, then."""
-    rows = conn.execute(
-        'SELECT "action", COUNT(*) FROM interventions'
-        " WHERE source = 'human' AND at >= ?"
-        ' GROUP BY "action" ORDER BY COUNT(*) DESC, "action"',
-        (since_ms,)).fetchall() if conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE name = 'interventions'"
-        ).fetchone() else []
-    merged = conn.execute(
-        "SELECT COUNT(*) FROM runs WHERE outcome = 'merged' AND endedAt >= ?",
-        (since_ms,)).fetchone()[0]
-    return Toil(by_action=dict(rows), merged=merged)
-
-
-@dataclass(frozen=True)
-class MergedRun:
-    """One finished run, joined to its ticket, with its findings counted: what
-    `/shipped` draws a row from."""
-
-    id: int
-    linearIdentifier: str
-    title: str
-    startedAt: int
-    endedAt: int
-    timeBoxMs: int | None
-    reviewRoundCount: int
-    # The count of findings over the run's review rounds, summed in SQL
-    # (`json_array_length(findings)`) so a page never loads the rounds.
-    findingCount: int
-    host: str | None
-    mergeSha: str | None
-    # The pull request the run merged through (`runs.prUrl`), None when none.
-    prUrl: str | None = None
-    outcome: str | None = None
-    outcomeReason: str | None = None
-    workingMs: int | None = None
-    workStartedAt: int | None = None
-    # The verify part of workingMs and its open span (KO-635).
-    verifyMs: int | None = None
-    verifyStartedAt: int | None = None
-    ticketUrl: str | None = None
-
-
-# The range of a SQLite INTEGER, and so of any run id a cursor can name.
-SQLITE_INT64_MIN = -(2 ** 63)
-SQLITE_INT64_MAX = 2 ** 63 - 1
-
-
-def merged_runs(conn, limit, before=None):
-    """The merged subset of `finished_runs()`, with the same paging."""
-    return finished_runs(conn, limit, before, outcomes=("merged",))
-
-
-def finished_runs(conn, limit, before=None, outcomes=None):
-    """Read up to `limit` finished runs, optionally filtered by outcomes.
-
-    Newest ends first, ties by descending id. `before` names an exclusive
-    (endedAt, id) cursor; a nonexistent or out-of-range id yields no rows."""
-    if (before is not None
-            and not SQLITE_INT64_MIN <= before <= SQLITE_INT64_MAX):
-        # Past what an INTEGER column can hold, so no run has it; binding
-        # it would raise OverflowError rather than answer the empty page.
-        return []
-    where = "r.endedAt IS NOT NULL"
-    params = []
-    if outcomes is not None:
-        where += f" AND r.outcome IN ({', '.join('?' for _ in outcomes)})"
-        params.extend(outcomes)
-    if before is not None:
-        where += (" AND (r.endedAt, r.id) < (SELECT endedAt, id FROM runs"
-                  " WHERE id = ? AND endedAt IS NOT NULL)")
-        params.append(before)
-    rows = conn.execute(
-        "SELECT r.id, t.linearIdentifier, t.title, r.startedAt, r.endedAt,"
-        " r.timeBoxMs, r.reviewRoundCount,"
-        " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
-        "    FROM reviewRounds rr WHERE rr.runId = r.id),"
-        " r.host, r.mergeSha, r.prUrl, r.outcome, r.outcomeReason,"
-        " r.workingMs, r.workStartedAt, t.url, r.verifyMs, r.verifyStartedAt"
-        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        f" WHERE {where}"
-        " ORDER BY r.endedAt DESC, r.id DESC LIMIT ?",
-        (*params, limit)).fetchall()
-    return [MergedRun(id=row[0], linearIdentifier=row[1], title=row[2],
-                      startedAt=row[3], endedAt=row[4], timeBoxMs=row[5],
-                      reviewRoundCount=row[6], findingCount=row[7],
-                      host=row[8], mergeSha=row[9], prUrl=row[10],
-                      outcome=row[11], outcomeReason=row[12],
-                      workingMs=row[13], workStartedAt=row[14], ticketUrl=row[15],
-                      verifyMs=row[16], verifyStartedAt=row[17])
-            for row in rows]
-
-
-@dataclass(frozen=True)
-class FailedAttempt:
-    """One failed run of a ticket, by lifetime attempt number."""
-
-    attempt: int
-    outcomeReason: str | None
-
-
-def latest_human_intervention_at(conn, ticket_id):
-    """When a human last intervened on any run of `ticket_id`; 0 if never."""
-    (at,) = conn.execute(
-        "SELECT COALESCE(MAX(i.at), 0) FROM interventions i"
-        " JOIN runs r ON r.id = i.runId"
-        " WHERE r.ticketId = ? AND i.source = 'human'",
-        (ticket_id,)).fetchone()
-    return at
-
-
-def failed_attempts_since(conn, ticket_id, since):
-    """The failed `work` runs of `ticket_id` that ended after `since`.
-
-    Ordered by attempt. A run a human closed out by hand (an
-    `interventions` row with `source = 'human'` and `action = 'close_out'`)
-    is left out by identity, whatever its `endedAt` -- see
-    `failure_history()` in `factory.py` for why.
-    """
-    rows = conn.execute(
-        "SELECT attempt, outcomeReason FROM runs r"
-        " WHERE ticketId = ? AND outcome = 'failed' AND endedAt > ?"
-        " AND outcomeClass = 'work'"
-        " AND NOT EXISTS (SELECT 1 FROM interventions i"
-        "                 WHERE i.runId = r.id AND i.source = 'human'"
-        "                 AND i.\"action\" = 'close_out')"
-        " ORDER BY attempt", (ticket_id, since)).fetchall()
-    return [FailedAttempt(attempt=row[0], outcomeReason=row[1]) for row in rows]
-
-
-@dataclass(frozen=True)
-class RecentFailedRun:
-    """One run that ended `failed`, with where its ticket stands now.
-
-    `lastRunId` and `activeRunId` let attention readers exclude failures
-    superseded by a newer attempt, independently of `ticketStatus`.
-    `attempt` is `runs.attempt`, 1-based, so a client can say "strike 2 of
-    3" without counting failures it has not seen.
-    """
-
-    id: int
-    linearIdentifier: str
-    outcomeReason: str | None
-    endedAt: int
-    ticketStatus: str
-    lastRunId: int | None
-    activeRunId: int | None
-    attempt: int = 0
-    # The pull request the run opened before failing (`runs.prUrl`), None
-    # when none.
-    prUrl: str | None = None
-    ticketUrl: str | None = None
-    boardState: str | None = None
-
-
-def recent_failed_runs(conn, since_ms):
-    """Every run that ended `failed` after `since_ms`, oldest end first.
-
-    The window is the caller's policy -- `/attention` passes its own -- so
-    this module states no opinion about how long a failure stays news.
-    """
-    rows = conn.execute(
-        "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
-        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url, t.boardState"
-        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE r.outcome = 'failed' AND r.endedAt > ?"
-        " ORDER BY r.endedAt, r.id", (since_ms,)).fetchall()
-    return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
-                            outcomeReason=row[2], endedAt=row[3],
-                            ticketStatus=row[4], attempt=row[5],
-                            prUrl=row[6], lastRunId=row[7], activeRunId=row[8],
-                            ticketUrl=row[9], boardState=row[10])
-            for row in rows]
-
-
-def stranded_runs(conn):
-    """Every failed run that strands its ticket, oldest end first: the
-    ticket's last run, the ticket `in_flight` with no active run.
-
-    No window: a failure leaves its ticket in flight for a human on
-    purpose, and nothing but a human moves it on, however long ago it ended.
-    """
-    rows = conn.execute(
-        "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
-        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url, t.boardState"
-        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE t.status = 'in_flight' AND t.activeRunId IS NULL"
-        " AND r.id = t.lastRunId AND r.outcome = 'failed'"
-        " ORDER BY r.endedAt, r.id").fetchall()
-    return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
-                            outcomeReason=row[2], endedAt=row[3],
-                            ticketStatus=row[4], attempt=row[5],
-                            prUrl=row[6], lastRunId=row[7], activeRunId=row[8],
-                            ticketUrl=row[9], boardState=row[10])
-            for row in rows]
-
-
-# --- reviewRounds ------------------------------------------------------------
-
 
 @dataclass(frozen=True)
 class ReviewRound:
-    """One review round with its ticket's label, as the FINDINGS entry reads it.
-
-    `verificationResults` and `findings` are the store's JSON documents,
-    uncoded: the renderer decides how to treat one that does not decode.
-    """
-
     id: int
     linearIdentifier: str
     round: int
@@ -804,12 +280,7 @@ class ReviewRound:
 
 
 def review_rounds(conn):
-    """Every review round the store holds, in no particular order.
-
-    The FINDINGS renderer sorts entries itself, defensively, because a stamp
-    column can hold something that is not a time; so the order here is
-    whatever SQLite returns and the caller must not lean on it.
-    """
+    """In no particular order: the caller sorts and must not lean on SQLite's."""
     rows = conn.execute(
         "SELECT rr.id, t.linearIdentifier, rr.round, rr.verdict,"
         " rr.reviewerModel, rr.verificationResults, rr.findings,"
@@ -825,18 +296,11 @@ def review_rounds(conn):
 
 @dataclass(frozen=True)
 class EndedRound:
-    """One finished review round of a run: its number and its findings JSON."""
-
     round: int
     findings: str
 
 
 def newest_ended_rounds(conn, run_id):
-    """The two newest rounds of `run_id` with an `endedAt`, newest first.
-
-    The pair the stuck-review measure compares; fewer than two come back when
-    the run has not been reviewed twice yet.
-    """
     rows = conn.execute(
         "SELECT round, findings FROM reviewRounds"
         " WHERE runId = ? AND endedAt IS NOT NULL"
@@ -846,8 +310,6 @@ def newest_ended_rounds(conn, run_id):
 
 @dataclass(frozen=True)
 class RunDetail:
-    """One run in full, joined to its ticket: what `/runs/N` answers."""
-
     id: int
     linearIdentifier: str
     title: str
@@ -861,14 +323,10 @@ class RunDetail:
     branch: str | None
     host: str | None
     mergeSha: str | None
-    # The review-round cap the loop gave the run; None on a run recorded
-    # before the column existed, which `/runs/N` answers with the constant.
     reviewRoundCap: int | None
-    # The pull request the run opened (`runs.prUrl`), None when none.
     prUrl: str | None = None
     workingMs: int | None = None
     workStartedAt: int | None = None
-    # The verify part of workingMs and its open span (KO-635).
     verifyMs: int | None = None
     verifyStartedAt: int | None = None
     ticketUrl: str | None = None
@@ -877,7 +335,6 @@ class RunDetail:
 
 
 def run_detail(conn, run_id):
-    """The run row for `run_id` with its ticket's label and title, or None."""
     row = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.attempt,"
         " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
@@ -900,9 +357,6 @@ def run_detail(conn, run_id):
 
 @dataclass(frozen=True)
 class RunRound:
-    """One review round of a run, as the run detail lists it: `findings` is
-    the store's JSON document, undecoded, as on `ReviewRound`."""
-
     round: int
     startedAt: int
     endedAt: int | None
@@ -912,8 +366,6 @@ class RunRound:
 
 
 def rounds_of(conn, run_id):
-    """Every review round of `run_id`, oldest first; `[]` for a run with none
-    or no such run."""
     rows = conn.execute(
         "SELECT round, startedAt, endedAt, verdict, reviewerModel, findings"
         " FROM reviewRounds WHERE runId = ? ORDER BY round", (run_id,)).fetchall()
@@ -924,20 +376,12 @@ def rounds_of(conn, run_id):
 
 @dataclass(frozen=True)
 class NarrativeEvent:
-    """One `narrative`-level row of a run's event stream."""
-
     at: int
     kind: str
     summary: str
 
 
 def narrative_events(conn, run_id, detail_kinds=()):
-    """The `narrative` events of `run_id` in `seq` order, oldest first; the
-    `detail` rows and their payloads are left out, except that a `detail`
-    row whose kind is in `detail_kinds` is answered by its summary, in its
-    place in the stream: a kind the store keeps at `detail` for its payload
-    but whose summary is part of the run's story (KO-375's
-    `implementer_output`)."""
     marks = ", ".join("?" for _ in detail_kinds)
     rows = conn.execute(
         "SELECT at, kind, summary FROM runEvents"
@@ -949,20 +393,8 @@ def narrative_events(conn, run_id, detail_kinds=()):
             for row in rows]
 
 
-# --- ledger ------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class LedgerEntry:
-    """One entry of a run's narrative, as `store.record_ledger()` wrote it.
-
-    An `intervention` entry also says what the operator's step cleared and
-    how long that had waited (KO-308): `cleared` is `"question"` or
-    `"failed"` and `waitedMs` the wait in milliseconds, both None when
-    nothing was waiting -- `_cleared_by()` is the rule. Other kinds carry
-    None for both.
-    """
-
     id: int
     runId: int
     ticketId: int
@@ -974,11 +406,6 @@ class LedgerEntry:
     waitedMs: int | None = None
 
 
-# The two marks a ledger entry's own run offers for what an operator's step
-# cleared: the ask (its newest `redirect` intervention strictly before the
-# entry) and the failure (its `endedAt`, when set and strictly before the
-# entry). Selected alongside the entry so the rule is one function over two
-# values rather than a second read per row.
 _LEDGER_MARKS = (
     " (SELECT MAX(i.at) FROM interventions i"
     "  WHERE i.runId = ledger.runId AND i.\"action\" = 'redirect'"
@@ -988,39 +415,24 @@ _LEDGER_MARKS = (
 
 
 def _cleared_by(kind, at, asked, ended):
-    """What an `intervention` entry at `at` cleared and how long it waited.
-
-    The rule KO-308 fixes, in words `docs/reference/http.md` repeats: of
-    the run's newest `redirect` strictly before the entry (`asked`) and its
-    `endedAt` when strictly before the entry (`ended`), the newer mark wins
-    -- `("question", at - asked)` or `("failed", at - ended)`; with neither
-    mark, `(None, None)`. A `redirect` entry never pairs with itself, since
-    its own row is not strictly before it. Entries of other kinds answer
-    `(None, None)` too: only an operator's step clears anything.
-    """
+    """The rule docs/reference/http.md states; the two change together."""
     if kind != "intervention":
         return None, None
     if asked is None and ended is None:
         return None, None
-    # Compare the timestamps alone: a tuple `max` would break an equal-
-    # timestamp tie on the name, and "question" sorts above "failed".
+    # Timestamps alone: a tuple `max` would break a tie on the name.
     if ended is None or (asked is not None and asked > ended):
         return "question", at - asked
     return "failed", at - ended
 
 
 def _ledger_entry(cls, row, **owner):
-    """Build a ledger entry of `cls` from a row selected with `_LEDGER_MARKS`
-    appended; `owner` is the third column under the name `cls` gives it."""
     cleared, waited = _cleared_by(row[4], row[3], row[7], row[8])
     return cls(id=row[0], runId=row[1], at=row[3], kind=row[4], text=row[5],
                source=row[6], cleared=cleared, waitedMs=waited, **owner)
 
 
 def ledger(conn, run_id):
-    """Every ledger entry of `run_id`, oldest first; `[]` for a run with none
-    or no such run. Two entries written in the same millisecond keep the
-    order they were written in."""
     rows = conn.execute(
         "SELECT ledger.id, ledger.runId, ledger.ticketId, ledger.at,"
         " ledger.kind, ledger.text, ledger.source," + _LEDGER_MARKS +
@@ -1031,9 +443,6 @@ def ledger(conn, run_id):
 
 @dataclass(frozen=True)
 class LedgerWindowEntry:
-    """One ledger entry across runs, with its ticket's identifier for the
-    console: the `/ledger` window (design note 9) and a ticket's thread."""
-
     id: int
     runId: int
     ticket: str
@@ -1047,9 +456,6 @@ class LedgerWindowEntry:
 
 def ledger_since(conn, since, kind=None, ticket=None, limit=200,
                  hide_launch_backoff=False):
-    """Ledger entries at or after `since` (epoch ms) across every run,
-    newest first; filter by kind/ticket, cap by limit, ties by reverse id.
-    """
     where = ["ledger.at >= ?"]
     if hide_launch_backoff:
         where.append(
@@ -1077,20 +483,14 @@ def ledger_since(conn, since, kind=None, ticket=None, limit=200,
             for row in rows]
 
 
-# --- sweepStrikes ------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class Strike:
-    """The sweep's tally on file for one run under suspicion."""
-
     runId: int
     strikes: int
     lastSeen: int
 
 
 def strike(conn, run_id):
-    """The `sweepStrikes` row for `run_id`, or None when it is not suspected."""
     row = conn.execute(
         "SELECT runId, strikes, lastSeen FROM sweepStrikes WHERE runId = ?",
         (run_id,)).fetchone()
@@ -1099,13 +499,8 @@ def strike(conn, run_id):
     return Strike(runId=row[0], strikes=row[1], lastSeen=row[2])
 
 
-# --- supervisorHeartbeats ----------------------------------------------------
-
-
 @dataclass(frozen=True)
 class SupervisorBeat:
-    """The newest supervisor heartbeat: the one watcher that could be alive."""
-
     pid: int
     startedAt: int
     lastBeat: int
@@ -1114,13 +509,6 @@ class SupervisorBeat:
 
 
 def supervisor_beat(conn):
-    """The heartbeat row with the most recent `lastBeat`, or None if none.
-
-    The SELECT `store.latest_supervisor_heartbeat()` makes, as a row type
-    rather than a tuple: the `serve` daemon reads the supervisor's state
-    through here so it imports nothing from `store` itself. `host` is None
-    for a beat written before the column existed.
-    """
     row = conn.execute(
         "SELECT pid, startedAt, lastBeat, passes, host"
         " FROM supervisorHeartbeats"
@@ -1132,24 +520,7 @@ def supervisor_beat(conn):
 
 
 def ready_tickets(conn, project_id=None):
-    """The `(ticket id, run id)` pairs a loop is owed for: every ticket the
-    mirror holds `ready` with no live run. `project_id` narrows it to one
-    project's tickets.
-
-    The supervisor's sweep reads this at the end of every pass (KO-409):
-    `ready` is the one status the requeue, babysit and filing paths all
-    write, so a ticket is owed a loop however it arrived -- this pass's
-    send-back, an operator's `--requeue` or `--babysit`, a ticket filed
-    while the loop was down. The run id is the ticket's newest
-    (`tickets.lastRunId`), None for a ticket no run has claimed yet: the
-    start's record is written on it where there is one. History subtracts
-    nothing -- a `launch_loop` row on the newest run records a start
-    `systemctl` took, and a ticket still `ready` with no loop live after
-    one means the loop it raised never claimed: owed again at the next
-    pass's one start. What keeps a running loop from a second start is
-    liveness -- the heartbeat and the lease turn the sweep reads -- not
-    the record; a ticket a loop claimed is `in_flight` and owed nothing.
-    """
+    """History subtracts nothing: liveness, not a record, stops a second start."""
     where = "t.status = 'ready' AND t.activeRunId IS NULL"
     params = ()
     if project_id is not None:
@@ -1162,11 +533,6 @@ def ready_tickets(conn, project_id=None):
 
 @dataclass(frozen=True)
 class ClaimableTicket:
-    """One row of a store-mode project's ready queue (Phase 3 stage 3):
-    everything the claim builds its task from, in one read. `labels` and
-    the two contract lists are decoded from their JSON columns; `revision`
-    is the ticket's current one, the revision its admission is judged at."""
-
     id: int
     linearIssueId: str
     linearIdentifier: str
@@ -1184,8 +550,6 @@ class ClaimableTicket:
     verificationCommands: tuple[str, ...] = ()
 
 
-# `[loop] order`'s two sorts: identifier string order, as the board's own
-# claim sorted, and Linear priority with none (0 or NULL) last.
 _CLAIM_ORDER = {
     "identifier": "linearIdentifier",
     "priority": "CASE WHEN priority BETWEEN 1 AND 4 THEN priority ELSE 5 END,"
@@ -1194,15 +558,6 @@ _CLAIM_ORDER = {
 
 
 def claimable(conn, project_id, order="identifier"):
-    """The store's ready queue for `project_id`, ordered by `order`
-    (`"identifier"` or `"priority"`): every ticket `ready` in column
-    `ready`, under no live run, not gone from the board, and pickable.
-
-    Pickability is `store.tickets.pickable_tickets()`'s, asked of the same
-    rows, so the specced and dependency clauses cannot drift from the
-    claim's own. A row whose column is NULL -- never observed by a
-    store-mode sync -- is not claimable.
-    """
     import store.tickets
     rows = conn.execute(
         "SELECT id, linearIssueId, linearIdentifier, revision, title, body,"

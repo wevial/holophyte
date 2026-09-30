@@ -323,6 +323,7 @@ The store is its own package:
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
   connection (`open`/`init`/`transaction`), re-exported from the package.
+- `store/ddl.py` — the table and index DDL the schema module creates.
 - `store/project_paths.py` — canonical project identity reads that require operator
   repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3
@@ -357,6 +358,7 @@ The store is its own package:
   pull request metadata, outcome reasons and board ask timestamps.
 - `store/read.py` — typed read views over the store: one query, one row
   type, no SQL elsewhere.
+- `store/run_reads.py` — the typed reads of runs, re-exported by `store/read.py`.
 
 At the root:
 
