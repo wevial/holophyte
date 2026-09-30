@@ -1,16 +1,3 @@
-"""holophyte.host.sweep_report: the sweep's report lines (KO-396).
-
-Moved verbatim out of `holophyte/host/supervisor.py`: the merge lock's line
-(`merge_lock_lines()`), the `SWEEP_HEADERS` table columns and the
-`SWEEP_HINT` a printed table is followed by, `sweep_lines()` and its halves
-`restart_lines()` and `run_lines()` with the `_runs()` counting helper,
-`sweep_report()` as `--sweep`'s whole body, and the `review containers`
-section (`review_container_lines()`). `sweep_report()` reaches `sweep()`
-back in `holophyte.host.supervisor` through a deferred import, so the import
-runs one way: the sweep module names this module's renderers for the lines
-it prints -- `merge_lock_lines()` inside `sweep()`'s transaction and
-`sweep_lines()` on a loud `supervise_pass()`.
-"""
 import sys
 from pathlib import Path
 from time import time
@@ -26,17 +13,6 @@ from holophyte.loop.gates import (
 
 
 def merge_lock_lines(target, conn, act=False):
-    """The merge lock's line, if there is a lock: held, stale, or removed.
-
-    The gate takes `gates.merge_lock()` for the span of a merge and gives it
-    back on every way out, so a lock still on disk names either a gate in
-    progress or a run that died holding it. The run it names decides which:
-    live (no `endedAt`) and the lock is reported as held; ended, or unknown
-    to the store, and it is stale -- a bare sweep says so, an acting sweep
-    removes it, and the line names the run either way. A lock that names no
-    run (a storeless `run_task()` wrote it, or it is half-written) cannot be
-    judged and is left alone, said so.
-    """
     path = merge_lock_path(target)
     holder = read_merge_lock(path)
     if holder is None:
@@ -53,10 +29,7 @@ def merge_lock_lines(target, conn, act=False):
     if not act:
         return [f"stale merge lock: run {run_id} {why};"
                 " --sweep --act removes it"]
-    # Removal must not race a gate's acquisition or another sweep: the
-    # helper judges and unlinks under the same arbiter the gate creates
-    # under, and takes the lock's flock first (refused while the creating
-    # process lives). A live lock is left where it is, and the line says so.
+    # Judged and unlinked under the gate's own arbiter: never races an acquisition.
     outcome = remove_dead_merge_lock(path)
     if outcome == "removed":
         return [f"removed stale merge lock: run {run_id} {why}"]
@@ -69,49 +42,21 @@ def merge_lock_lines(target, conn, act=False):
 SWEEP_HEADERS = ("ticket", "run", "phase", "condition", "evidence", "host")
 
 
-# Printed under a table with trips in it wherever the reader is an operator
-# who did not ask for a sweep (startup, a refused claim): the table says what
-# is wrong, this says what to type. `{project}` is filled at the print site so
-# the line is copy-pasteable for a non-default project.
 SWEEP_HINT = ("[holo2] tripped runs are failed by"
               " `factory.py {project} --sweep --act`;"
               " a bare --sweep re-checks first")
 
 
 def _runs(n):
-    """`n` runs, counted in English -- the summary line reads as a sentence."""
     return "1 run" if n == 1 else f"{n} runs"
 
 
 def sweep_lines(result, target=None):
-    """The sweep as lines: a header, one line per trip, a summary.
-
-    A clean sweep prints what it checked rather than nothing. Empty output is
-    ambiguous -- it reads the same as a crashed supervisor, a mistyped target
-    or a store with no runs in it -- so the quiet case is an assertion an
-    operator can act on, and the three quiet cases say which one they are.
-
-    An acting sweep adds one outcome line per trip and a summary that counts
-    the failed apart from the declined. Both come from `Outcome`, which is
-    what `act_on_trip()` actually did, and never from the `acted` flag the
-    sweep was called with: a re-check that stood down because the run had
-    finished is reported as exactly that, naming the status it found, and
-    the words "failed and leases released" are printed only for a run whose
-    failure was written. A read-only sweep has no outcomes and prints as it
-    always has.
-
-    A restart the loop did not come back from is printed first, one line per
-    restart naming the sha and how long ago the exec was: it is not about a
-    run, so it sits above the run table, and it is printed above the quiet
-    lines too, because "no runs in flight" is exactly what a loop that died
-    in its exec leaves behind.
-    """
     return (restart_lines(result) + list(result.locks)
             + run_lines(result, target))
 
 
 def restart_lines(result):
-    """One line per self-merge re-exec the loop did not come back from."""
     return [f"loop did not return after re-exec from {sha}:"
             f" no claim, heartbeat or exit note in the {age / 60000:.1f} min"
             " since the exec"
@@ -119,16 +64,10 @@ def restart_lines(result):
 
 
 def run_lines(result, target=None):
-    """`sweep_lines()` less the restart lines: the per-run report.
-
-    `target` supplies the `[report] host_label` the host column shows in
-    place of the hostname; without one the column is the hostname itself.
-    """
     if not result.swept:
         return ["no runs in flight, nothing to sweep"]
     if not result.trips:
-        # A first-strike sighting must not read as health: "none tripped"
-        # plus the watched lines is the honest quiet case.
+        # A first-strike sighting must not read as health.
         if result.watched:
             return [f"{_runs(result.swept)} swept, none tripped",
                     *result.watched]
@@ -163,38 +102,12 @@ def run_lines(result, target=None):
 
 
 def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None):
-    """Print the target store's tripped runs, failing them when `act`.
-
-    `--sweep`'s whole body, and a sibling of `report()` in what it refuses to
-    do: no ticket is claimed and no worktree is cut, so it is safe to run
-    against the store of a loop that is still working -- the case it exists
-    for. Unlike `report()` it does write, to exactly one table: the strike
-    tally `sweep()` keeps, without which "two consecutive sweeps" could not
-    span two invocations.
-
-    `act` is what `--act` adds, and it adds it to nothing else: a pass that
-    trips no run writes exactly what a read-only pass writes, so acting costs
-    nothing on the sweeps that find everything healthy. A pass that does trip
-    something fails those runs, and only then is a provider needed -- and only
-    if a ticket has reached its escalation threshold.
-
-    The table is printed after the acting rather than before it, so it is a
-    record of what happened rather than a promise: a best-effort push that
-    warns on its way past appears above the summary claiming the runs were
-    failed, not below it.
-
-    A target with no store has no runs to sweep and is reported rather than
-    created, the way `--report` answers the same mistake.
-
-    The `review containers` section comes first, so the run summary stays
-    the last line: it asks Docker rather than the store, and a reviewer
-    leaked by a loop that died is the one thing here the store cannot see.
-    """
     from holophyte.host.supervisor import sweep
     out = out or sys.stdout
     if conn is None and not target.store_path.exists():
         print(f"[holo2] no store at {target.store_path}", file=out)
         return
+    # Containers first, so the run summary stays the last line.
     print("\n".join(review_container_lines(act)), file=out)
     owned = conn is None
     conn = conn if conn is not None else store.open(target.store_path, migrate=act)
@@ -217,7 +130,6 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
 
 
 def debris_lines(target, conn):
-    """Final tickets' factory checkout paths, reported only, even with --act."""
     from holophyte.config.project import worktree_path
 
     rows = conn.execute(
@@ -238,16 +150,6 @@ def debris_lines(target, conn):
 
 
 def review_container_lines(act=False):
-    """The `review containers` section: strays listed, and removed when `act`.
-
-    A review container is removed by the loop that started it, on exit or on
-    a stop signal; one still running after its scratch directory is gone
-    belongs to a loop that died some other way (SIGKILL, a host reset) and
-    holds two CPUs, 2 GB and a Codex session until something removes it. A
-    container whose scratch directory still exists is a live review and is
-    never touched. Without a `docker` to ask, the section says the check was
-    skipped rather than claiming a clean host.
-    """
     try:
         strays = review_runner.stray_containers()
     except review_runner.ReviewBoundaryError as e:
