@@ -173,7 +173,7 @@ PINNED = {
 
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,
-    "store/board.py": 87,
+    "store/board.py": 7,
     "store/ddl.py": 5,
     "store/enums.py": 7,
     "store/failure_kinds.py": 1,
@@ -190,7 +190,7 @@ PINNED = {
     "store/run_reads.py": 8,
     "store/schema.py": 24,
     "store/stories.py": 2,
-    "store/tickets.py": 249,
+    "store/tickets.py": 14,
     "store/working.py": 3,
     "store/writes.py": 2,
 
@@ -257,9 +257,6 @@ CITED = {
 
     "provider.py": 15,
     "review_runner.py": 2,
-
-    "store/board.py": 3,
-    "store/tickets.py": 6,
 
     "ticket_template.py": 5,
 }

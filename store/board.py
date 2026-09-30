@@ -1,19 +1,4 @@
-"""store.board: filing, editing, moving and canceling a ticket on a board
-the store owns.
-
-A native board is the store itself, so filing and editing a ticket are
-store writes (KO-750). `file_ticket()` numbers a ticket `KEY-n` from
-`projects.ticketSeq`; `edit_ticket()` replaces its body at the revision it
-was read at. Both validate as `--file-ticket` does (`ticket_problems()`),
-resolve `Depends on:` to the project's own tickets, and write the row
-through `mirror_ticket()`, so the status routing and revision rules are
-the mirror's.
-
-`move_ticket()` and `cancel_ticket()` change the column at the revision it
-was read at, each with a note carrying the person's words (KO-753); a
-cancel is the one board event that reaches a live run. `resolve_dependencies()`
-ends a dependency wait once every dependency has merged.
-"""
+"""store.board: filing, editing, moving and canceling a native board's tickets."""
 from __future__ import annotations
 
 import json
@@ -30,15 +15,11 @@ from .stories import abandon_story, story
 from .tickets import mirror_ticket, transition, walk_ticket
 from .writes import set_board_state
 
-# The board state each native column reads as, as a Linear board's would.
 _BOARD_STATES = {"backlog": "Backlog", "ready": "Ready", "canceled": "Canceled"}
 
 
 class FilingRefused(ValueError):
-    """A ticket was not filed or edited, and nothing was written.
-
-    `problems` lists every reason, the first of them the message.
-    """
+    """A ticket was not filed or edited, and nothing was written."""
 
     def __init__(self, problems):
         self.problems = list(problems)
@@ -46,14 +27,11 @@ class FilingRefused(ValueError):
 
 
 def ticket_problems(text, repo):
-    """What filing refuses in `text`, checked against `repo`: the blocking
-    template violations plus the advisories `filing_refusals()` names,
-    then an Evidence section `repo`'s config cannot capture."""
     ticket = ticket_template.parse(text)
     problems = ticket_template.filing_refusals(
         ticket_template.validate(ticket, repo=repo))
     if repo:
-        # Deferred, as `task_contract()` is: holophyte imports this module.
+        # Deferred: holophyte imports this module.
         from holophyte.config.project import Project
         from holophyte.pr.pr_media import evidence_problems
         problems += evidence_problems(Project.locate(repo, adopt=False),
@@ -63,19 +41,7 @@ def ticket_problems(text, repo):
 
 def file_ticket(conn, project_id, key, text, column="ready", priority=None,
                 author="cli", now=None):
-    """File `text` as project `project_id`'s next ticket; answer `KEY-n`.
-
-    The number is `projects.ticketSeq` plus one, bumped in the insert's own
-    `BEGIN IMMEDIATE`, so two filers never share one and a refused filing
-    uses none. The ticket's board id is its identifier, and its first
-    revision is authored `author`.
-
-    A body with problems (`ticket_problems()`) is refused unless `column`
-    is `backlog`, where it is saved as a draft with its contract withheld,
-    so it lands `needs_spec`. A `Depends on:` naming a ticket the project
-    does not hold is refused; one naming an unmerged ticket parks a `ready`
-    ticket at `blocked_on_deps`. A refusal raises `FilingRefused`.
-    """
+    """File `text` as the next `KEY-n`; a refused filing uses no number."""
     if now is None:
         now = int(time.time() * 1000)
     problems = ticket_problems(text, _repo_path(conn, project_id))
@@ -101,13 +67,6 @@ def file_ticket(conn, project_id, key, text, column="ready", priority=None,
 
 def edit_ticket(conn, project_id, identifier, text, expected_revision,
                 author="cli", priority=None, labels=None, now=None):
-    """Replace ticket `identifier`'s body with `text`; answer its revision.
-
-    `expected_revision` is the revision the editor read. When the ticket
-    has moved past it, `RevisionMoved` is raised with `current` set and
-    nothing is written. The body is judged as `file_ticket()` judges it,
-    by the ticket's column; `priority` and `labels`, None, keep the row's.
-    """
     if now is None:
         now = int(time.time() * 1000)
     problems = ticket_problems(text, _repo_path(conn, project_id))
@@ -136,16 +95,7 @@ def edit_ticket(conn, project_id, identifier, text, expected_revision,
 
 def move_ticket(conn, project_id, identifier, column, expected_revision,
                 author="cli", note=None, now=None):
-    """Move ticket `identifier` to column `column`, `ready` or `backlog`;
-    answer its new revision.
-
-    Refused at a stale `expected_revision` as `edit_ticket()` refuses one,
-    and with `FilingRefused` for a canceled or closed ticket, a ticket
-    already in `column`, or a move to `ready` of a body `ticket_problems()`
-    refuses, so a draft stays in Backlog. The column and its board state
-    are recorded as a revision authored `author`, with a `move` note
-    reading `note`. A live run on a ticket moved to Backlog continues.
-    """
+    """A live run on a ticket moved to Backlog continues."""
     if column not in ("ready", "backlog"):
         raise ValueError(f"a ticket moves to ready or backlog, not {column!r}")
     if now is None:
@@ -169,17 +119,7 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
 
 def cancel_ticket(conn, project_id, identifier, expected_revision, note,
                   author="cli", now=None):
-    """Cancel ticket `identifier`; answer its new revision.
-
-    Refused as `move_ticket()` refuses. The column `canceled` and board
-    state `Canceled` are recorded as a revision authored `author`, with a
-    `cancel` note reading `note`, and in the same transaction the ticket's
-    work is stopped as a Linear cancel stops it (KO-660, KO-741): a live
-    run gets `abort()` from source `human`, trigger `manual`, and its
-    worker ends it `abandoned` at its next safe point; a ticket
-    `blocked_on_operator` is left for the reconcile's `_close_canceled()`
-    to finish, parked run first; any other ticket is walked `abandoned`.
-    """
+    """Cancel as a board does; the reconcile closes a `blocked_on_operator` ticket."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -199,16 +139,7 @@ def cancel_ticket(conn, project_id, identifier, expected_revision, note,
 
 
 def resolve_dependencies(conn, project_id):
-    """Walk each of the project's `blocked_on_deps` tickets whose
-    dependencies have all merged back to `ready`; answer their identifiers.
-
-    A dependency is merged as `pickable()` judges one: a sibling of the
-    same project at status `merged`; one the project does not hold keeps
-    the ticket waiting. A wait with no dependencies, parked by the board
-    rather than by one, stays, and so does a draft whose contract is
-    withheld (no acceptance criteria or verify commands), which `ready`
-    must never hold.
-    """
+    """A wait with no dependencies, or a draft's, stays blocked."""
     with _transaction(conn):
         rows = conn.execute(
             "SELECT id, linearIdentifier, linearIssueId, status, dependsOn,"
@@ -231,9 +162,6 @@ def resolve_dependencies(conn, project_id):
 
 
 def _open_ticket(conn, project_id, identifier, expected_revision):
-    """Ticket `identifier`'s id, status, live run and body, inside the
-    caller's transaction, when it is at `expected_revision` and still open
-    on the board; `RevisionMoved` or `FilingRefused` otherwise."""
     row = conn.execute(
         "SELECT id, revision, boardColumn, status, activeRunId, body"
         " FROM tickets WHERE projectId = ? AND linearIdentifier = ?",
@@ -251,8 +179,6 @@ def _open_ticket(conn, project_id, identifier, expected_revision):
 
 
 def _record_column(conn, ticket_id, column, kind, text, author, now):
-    """Set the ticket's column and board state, record them as its next
-    revision and write a `kind` note keyed on it; answer the revision."""
     set_board_state(conn, ticket_id, _BOARD_STATES[column], column)
     revision = record_board_fields(conn, ticket_id, author, now)
     record_note(conn, ticket_id, kind, text, f"{kind}:{revision}",
@@ -269,8 +195,6 @@ def _repo_path(conn, project_id):
 
 
 def _dependencies(conn, project_id, text, self_id=None):
-    """`text`'s `Depends on:` as the project's board ids, and whether any
-    of them is unmerged; `FilingRefused` names each one it does not hold."""
     named = ticket_template.parse(text).depends_on or []
     rows = {identifier: (issue_id, status) for identifier, issue_id, status in
             conn.execute("SELECT linearIdentifier, linearIssueId, status"
@@ -286,8 +210,6 @@ def _dependencies(conn, project_id, text, self_id=None):
 
 def _write(conn, project_id, issue_id, identifier, text, specced, author,
            now, **fields):
-    """Write `text` as the ticket's row through `mirror_ticket()`, its
-    contract withheld when it is not `specced`."""
     from holophyte.board.projection import task_contract
     from provider import parse_body
     task = parse_body(identifier, text)
@@ -303,8 +225,6 @@ def _write(conn, project_id, issue_id, identifier, text, specced, author,
 
 
 def _park(conn, ticket_id, waiting):
-    """Move a `ready` ticket that waits on an unmerged one to
-    `blocked_on_deps`."""
     (status,) = conn.execute("SELECT status FROM tickets WHERE id = ?",
                              (ticket_id,)).fetchone()
     if waiting and status == "ready":
