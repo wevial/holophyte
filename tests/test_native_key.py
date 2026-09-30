@@ -84,7 +84,7 @@ class NativeKeyTest(HostFixture):
     def test_loop_start_refuses_a_key_a_linear_store_holds(self):
         self.linear("linear", "NAT-2")
         native = self.native("native", "NAT")
-        with patch("holophyte.cli.cli.main", return_value=0) as main, \
+        with patch("holophyte.cli.entry.main", return_value=0) as main, \
                 self.assertRaises(SystemExit) as refused:
             self.cli(str(native))
         self.assertIn("NAT", str(refused.exception.code).replace(

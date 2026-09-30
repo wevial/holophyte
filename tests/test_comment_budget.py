@@ -71,13 +71,17 @@ PINNED = {
     "holophyte/capture_playwright.py": 44,
 
     "holophyte/cli/__init__.py": 0,
-    "holophyte/cli/cli.py": 232,
-    "holophyte/cli/cli_project.py": 25,
-    "holophyte/cli/cli_story.py": 1,
-    "holophyte/cli/operator.py": 140,
-    "holophyte/cli/report.py": 54,
-    "holophyte/cli/status.py": 75,
-    "holophyte/cli/store_import.py": 40,
+    "holophyte/cli/arguments.py": 0,
+    "holophyte/cli/board_verbs.py": 0,
+    "holophyte/cli/cli_project.py": 0,
+    "holophyte/cli/cli_story.py": 0,
+    "holophyte/cli/entry.py": 2,
+    "holophyte/cli/host_modes.py": 2,
+    "holophyte/cli/operator.py": 4,
+    "holophyte/cli/report.py": 1,
+    "holophyte/cli/status.py": 4,
+    "holophyte/cli/store_import.py": 3,
+    "holophyte/cli/store_verbs.py": 0,
 
     "holophyte/commit_hygiene.py": 11,
 
@@ -215,12 +219,6 @@ CITED = {
     "holophyte/babysit/thread_mentions.py": 1,
 
     "holophyte/capture_playwright.py": 1,
-
-    "holophyte/cli/cli.py": 5,
-    "holophyte/cli/operator.py": 5,
-    "holophyte/cli/report.py": 1,
-    "holophyte/cli/status.py": 1,
-    "holophyte/cli/store_import.py": 1,
 
     "holophyte/environment_git.py": 1,
     "holophyte/files.py": 1,

@@ -14,7 +14,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.board.projection
-import holophyte.cli.cli
+import holophyte.cli.entry
+import holophyte.cli.host_modes
 import holophyte.config.project
 import store.tickets
 from holophyte.board.board_diff import board_diff
@@ -100,13 +101,13 @@ class BoardDiffTests(unittest.TestCase):
         self.target.config_path.write_text('[board]\nteam = "KO"\n'
                                            'project_id = "project-1"\n')
         out = io.StringIO()
-        with patch.object(holophyte.cli.cli, "board_for",
+        with patch.object(holophyte.cli.entry, "board_for",
                           lambda target: self.board), \
-                patch.object(holophyte.cli.cli, "main") as loop, \
-                patch.object(holophyte.cli.cli, "supervise") as supervisor, \
-                patch.object(holophyte.cli.cli, "start_supervisor") as spawn, \
+                patch.object(holophyte.cli.entry, "main") as loop, \
+                patch.object(holophyte.cli.host_modes, "supervise") as supervisor, \
+                patch.object(holophyte.cli.entry, "start_supervisor") as spawn, \
                 contextlib.redirect_stdout(out):
-            status = holophyte.cli.cli.cli([str(self.repo), "--board-diff"])
+            status = holophyte.cli.entry.cli([str(self.repo), "--board-diff"])
         self.assertEqual(status, 1)
         self.assertIn("[holo2] board diff: 1 difference", out.getvalue())
         loop.assert_not_called()
@@ -123,10 +124,10 @@ class BoardDiffTests(unittest.TestCase):
         before = {p.name: p.read_bytes() for p in self.root.iterdir()
                   if p.is_file()}
         out = io.StringIO()
-        with patch.object(holophyte.cli.cli, "board_for",
+        with patch.object(holophyte.cli.entry, "board_for",
                           lambda target: self.board), \
                 contextlib.redirect_stdout(out):
-            holophyte.cli.cli.cli([str(repo), "--board-diff"])
+            holophyte.cli.entry.cli([str(repo), "--board-diff"])
         self.assertEqual({p.name: p.read_bytes() for p in self.root.iterdir()
                           if p.is_file()}, before)
         self.assertFalse(

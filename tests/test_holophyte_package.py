@@ -200,7 +200,7 @@ DEFINED = {
         "_skip_held", "conflict_brief", "merge_conflicts", "reuse_leftover",
         "run_worktree_setup", "skip_line", "timeout_report",
     ],
-    _module("cli.cli"): ["cli"],
+    _module("cli.entry"): ["cli"],
     # KO-385: the pull-request stage, split out of `holophyte.loop.loop`.
     _module("pr.pullrequest"): [
         "_landed_pr",
@@ -363,7 +363,7 @@ class MovedNamesTests(unittest.TestCase):
             and (inspect.isfunction(value) or inspect.isclass(value))
             and value.__module__ == entry.__name__)
         self.assertEqual(own, [])
-        self.assertIs(entry.cli, _module("cli.cli").cli)
+        self.assertIs(entry.cli, _module("cli.entry").cli)
 
 
 class ProjectTypeTests(unittest.TestCase):

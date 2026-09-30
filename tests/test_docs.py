@@ -5,7 +5,7 @@ hold the split to its contract: every heading the README used to carry is
 in exactly one doc, `docs/development.md` names the tree that exists and no
 other, every relative link in the README and the docs resolves to a file and
 an anchor that exist, and the README's usage block names every mode
-`holophyte/cli/cli.py` registers.
+`holophyte/cli/arguments.py` registers.
 
 Run: python3 -m unittest discover -s tests -p 'test_docs*' -v
 """
@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 
 README = ROOT / "README.md"
 DOCS = ROOT / "docs"
@@ -70,7 +70,7 @@ def parser_option_strings():
     with unittest.mock.patch.object(
             argparse.ArgumentParser, "parse_args", capture):
         with self_exit():
-            holophyte.cli.cli.cli([])
+            holophyte.cli.entry.cli([])
     (parser,) = seen
     return sorted(opt for action in parser._actions
                   for opt in action.option_strings

@@ -14,7 +14,7 @@ package modules, `store`, `store.read`, `review_runner`, `provider` and the
 standard library; nothing from `factory`.
 
 Seventh and last slice of the phase-2 module split; moved verbatim from
-`factory.py`, which is now the entry point that imports `holophyte.cli.cli`.
+`factory.py`, which is now the entry point that imports `holophyte.cli.entry`.
 """
 import json
 import subprocess

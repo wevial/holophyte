@@ -8,7 +8,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli.cli
+import holophyte.cli.entry
+import holophyte.cli.operator
 import store
 import store.tickets
 from holophyte.babysit import maintainer_notes
@@ -52,7 +53,7 @@ class BabysitCliFixture:
         out = io.StringIO()
         with contextlib.redirect_stdout(out), \
                 patch("getpass.getuser", return_value="operator"):
-            holophyte.cli.cli.cli([str(self.repo), "--babysit", "KO-1", *args])
+            holophyte.cli.entry.cli([str(self.repo), "--babysit", "KO-1", *args])
         return out.getvalue().strip()
 
     def pending(self):
@@ -82,7 +83,7 @@ class BabysitCliTests(BabysitCliFixture, unittest.TestCase):
         self.assert_another_look()
 
     def test_explicit_default_only_requests_another_look(self):
-        self.assert_another_look("--note", holophyte.cli.cli.BABYSIT_DEFAULT_NOTE)
+        self.assert_another_look("--note", holophyte.cli.operator.BABYSIT_DEFAULT_NOTE)
 
     def assert_another_look(self, *args):
         out = self.cli(*args)

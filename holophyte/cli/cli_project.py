@@ -1,16 +1,3 @@
-"""Explicit project registration and admission, against one store at a time.
-
-`add` registers the project in its store and then in the host registry
-(`holophyte.host.registry`); on a path the registry already holds whose store has
-lost its row, it writes the row back and leaves the registry alone. `remove`
-drops the registry entry, named by `[serve] name` or path, and touches no
-store; `list` prints the registry with each project's admission read from
-its own store, or, with `--store`, that one store's rows.
-
-The registry holds paths only, and the host reads each project's own store,
-so `add --store` naming any other database registers in that store alone,
-as before the registry, and leaves `host.toml` untouched.
-"""
 import argparse
 import subprocess
 from pathlib import Path
@@ -83,9 +70,6 @@ def _run(args, target):
     finally:
         conn.close()
     if entry is not None:
-        # The repair `project add` on a registered path is: its store lost
-        # the row (deleted or recreated after registration), which the
-        # daemon and the sweep name this command for.
         print(f"[holo2] {target.path} is already registered in {host.path};"
               " wrote its missing store row, host.toml unchanged")
     elif host is not None:
@@ -98,8 +82,6 @@ def _run(args, target):
 
 
 def _host_add(args, target):
-    """Whether this is an `add` the host registry can record: one against
-    the project's own store, the only store the registry can find again."""
     return args.command == "add" and (
         args.store is None
         or args.store.resolve() == target.store_path.resolve())
@@ -122,10 +104,6 @@ def _validate(target):
 
 
 def _list_host(host):
-    """One line per registry entry: name, path, admission and hold note
-    from the project's own store, read-only; `-` where it has none. A
-    project whose config or store cannot be read is listed with its
-    `error=` and the others still are; the exit is then 1."""
     failed = False
     for entry in host.projects():
         admission = note = "-"
@@ -144,9 +122,6 @@ def _list_host(host):
 
 
 def _admission(entry):
-    """`(admission, holdNote)` from the entry's own store, None when it has
-    no store or no row for the entry's path. The row is found as the
-    daemon, the sweep and `--status` find it, by canonical path."""
     if not entry.target.store_path.exists():
         return None
     conn = store.read.open_readonly(entry.target.store_path)

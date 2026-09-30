@@ -21,7 +21,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli.cli
+import holophyte.cli.arguments
+import holophyte.cli.entry
 import holophyte.cli.report
 import holophyte.config.project
 import holophyte.serve.serve_runs
@@ -85,7 +86,7 @@ class ApproveCliTests(unittest.TestCase):
     def cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            holophyte.cli.cli.cli([str(self.repo), *args])
+            holophyte.cli.entry.cli([str(self.repo), *args])
         return out.getvalue(), err.getvalue()
 
     def interventions(self):
@@ -257,7 +258,7 @@ class ApproveCliTests(unittest.TestCase):
             "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
             " 'intervention'", (self.run,)).fetchone()
         self.assertEqual(
-            summary, f"human approve: {holophyte.cli.cli.APPROVE_DEFAULT_NOTE}")
+            summary, f"human approve: {holophyte.cli.arguments.APPROVE_DEFAULT_NOTE}")
 
     def test_a_ticket_not_parked_is_refused_naming_its_state(self):
         """Ready with no run, in flight with a live run, merged: each exits

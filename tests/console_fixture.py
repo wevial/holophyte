@@ -73,7 +73,7 @@ def _register(home):
     """A git repository `home/demo` with a native board, registered as
     `project add` registers it, its hostname shown as `HOST_LABEL`; its
     path."""
-    import holophyte.cli.cli
+    import holophyte.cli.entry
     from holophyte.config.project import Project
 
     path = home / NAME
@@ -85,7 +85,7 @@ def _register(home):
         f'[serve]\nname = "{NAME}"\n'
         f'[report]\nhost_label = "{HOST_LABEL}"\n')
     with open(os.devnull, "w") as quiet, patch.object(sys, "stdout", quiet):
-        code = holophyte.cli.cli.cli(["project", "add", str(path)])
+        code = holophyte.cli.entry.cli(["project", "add", str(path)])
     if code:
         raise RuntimeError(f"project add {path} exited {code}")
     return path

@@ -1,4 +1,3 @@
-"""`--file-story`, `--approve-story`, `--witness-pass` and `--decide`."""
 import re
 import sys
 from contextlib import closing

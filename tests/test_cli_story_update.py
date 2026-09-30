@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 from story_fixture import child_body, write_children, write_story  # noqa: E402
 
-import holophyte.cli.cli  # noqa: E402
+import holophyte.cli.entry  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.stories  # noqa: E402
@@ -56,7 +56,7 @@ class StoryUpdateCliTests(ConfigTestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             try:
-                status = holophyte.cli.cli.cli([str(self.target), *args]) or 0
+                status = holophyte.cli.entry.cli([str(self.target), *args]) or 0
             except SystemExit as exited:
                 status = exited.code
         return status, out.getvalue().splitlines()
