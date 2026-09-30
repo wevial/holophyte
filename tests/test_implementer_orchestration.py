@@ -4,16 +4,18 @@ config refusals, the run event and the unchanged resume command line.
 Run: python3 -m unittest discover -s tests -p 'test_implementer_orchestration.py'
 """
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.agents.probes
+import holophyte.agents.roles
 import holophyte.board.projection
 import holophyte.config.checks
 import store
 import store.tickets
 from holophyte.agents.fix_session import resume_argv
 from holophyte.loop.runs import open_store
-from tests.fake_agent import APPROVE, Commit
+from tests.fake_agent import APPROVE, Commit, FakeAgent
 from tests.loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task
 
 SUBAGENT_PHRASES = (
@@ -111,6 +113,39 @@ class OrchestrationBriefTests(LoopFixture):
         goal = self.implement_goal(CODEX, ticket_line("workflow"))
         self.assert_subagents_brief(goal)
         self.assertNotIn(WORKFLOW_OPT_IN, goal)
+        self.assertEqual(self.events(), [{"mode": "subagents",
+                                          "requested": "workflow",
+                                          "source": "ticket"}])
+
+    def test_ticket_workflow_beside_a_codex_fallback_reaches_neither_route(self):
+        self.configure(CLAUDE + '[agents]\nimplementer_fallback = "codex exec"\n')
+        implement_calls = []
+
+        def runner(cmd, cwd, timeout, **kwargs):
+            if "ready" in cmd[-1]:
+                return 0, "ready"
+            implement_calls.append(cmd)
+            if cmd[0] == "claude":
+                return 0, "You've hit your limit"
+            Commit("the thing", path="app.txt").play(Path(cwd), 1)
+            return 0, "done"
+
+        reviewer = FakeAgent(APPROVE)
+
+        def dispatch(target, role, goal, cwd, **kwargs):
+            if role != "implement":
+                return reviewer(target, role, goal, cwd, **kwargs)
+            return holophyte.agents.roles.agent(target, role, goal, cwd,
+                                                **kwargs)
+
+        with patch.object(holophyte.agents.roles, "run_capped", runner), \
+                patch.object(holophyte.agents.probes, "run_capped", runner):
+            self.loop(fake=dispatch, provider=StubProvider(
+                dict(a_task(), body=ticket_line("workflow"))))
+        self.assertEqual([cmd[0] for cmd in implement_calls], ["claude", "codex"])
+        for cmd in implement_calls:
+            self.assert_subagents_brief(cmd[-1])
+            self.assertNotIn("Workflow tool", cmd[-1])
         self.assertEqual(self.events(), [{"mode": "subagents",
                                           "requested": "workflow",
                                           "source": "ticket"}])

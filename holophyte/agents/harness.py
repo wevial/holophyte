@@ -296,13 +296,16 @@ def check_fallback_orchestration(where, agents):
 def implementer_orchestrations(target, command):
     if command is not None:
         return frozenset({"subagents"})
-    active = seat(target, "implement")
-    if active is not None:
-        return active.adapter.orchestrations
     from holophyte.config.reader import config_table
-    if config_table(target, "agents").get("implementer") is not None:
-        return frozenset({"subagents"})
-    return Claude.orchestrations
+    agents = config_table(target, "agents")
+    active = seat(target, "implement")
+    modes = (active.adapter.orchestrations if active is not None
+             else frozenset({"subagents"}) if agents.get("implementer")
+             else Claude.orchestrations)
+    fallback = agents.get("implementer_fallback")
+    if fallback is not None and not claude_command(fallback):
+        return modes - {"workflow"}
+    return modes
 
 
 def check_paths(where, paths):

@@ -225,7 +225,8 @@ refuses it beside an `implementer_fallback` that is not a `claude` command,
 since an outage switch reuses the brief. A ticket's `Orchestration: MODE`
 line in "Estimate & dependencies" overrides the key. A mode the active route
 cannot run is lowered: `"workflow"` runs as `"subagents"` on a Codex, Devin or
-command-string route. Every implement turn records an `orchestration` run
+command-string route, and beside an `implementer_fallback` that is not a
+`claude` command. Every implement turn records an `orchestration` run
 event with the `mode` the brief carried, the `requested` mode and its
 `source` (`ticket`, `project` or `default`). The key never reaches the
 harness command line, and the turn's time budget is unchanged.
