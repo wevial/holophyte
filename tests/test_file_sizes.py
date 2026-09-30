@@ -37,14 +37,6 @@ PINNED = {
     "holophyte/babysit/babysitter.py": 1107,
 
     "holophyte/loop/claim.py": 1001,
-
-    "tests/test_claim.py": 1692,
-
-    "tests/test_isolation.py": 1627,
-
-    "tests/test_pullrequest.py": 1615,
-
-    "tests/test_store_schema.py": 1621,
 }
 
 
