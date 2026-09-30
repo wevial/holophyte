@@ -196,8 +196,9 @@ DEFINED = {
         "_cut_worktree", "_lease_on_board", "_park_unlisted", "_refresh_main",
         "_refuse_claim", "_resolve_merge_conflict", "_setup_worktree",
         "_skip_held", "conflict_brief", "merge_conflicts", "reuse_leftover",
-        "run_worktree_setup", "skip_line", "timeout_report",
+        "skip_line",
     ],
+    _module("loop.task_worktree"): ["run_worktree_setup", "timeout_report"],
     _module("cli.entry"): ["cli"],
     # KO-385: the pull-request stage, split out of `holophyte.loop.loop`.
     _module("pr.pullrequest"): [

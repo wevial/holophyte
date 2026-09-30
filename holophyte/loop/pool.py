@@ -1,9 +1,4 @@
-"""Worker pool: the scheduler mirrors and reconciles; children claim one task.
-
-The pool drains for schema moves its workers cannot read; ordinary
-self-merges and additive moves preserve children.
-SPAWN and WAIT are the process seams; worker exit codes report outcomes.
-"""
+"""Worker pool: the scheduler mirrors and reconciles; children claim one task."""
 import os
 import subprocess
 import sys
@@ -23,40 +18,22 @@ from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
 from holophyte.review.findings import commit_findings, findings_off, refresh_findings
 
-# --- the pool (KO-343) -------------------------------------------------------
-#
-# A worker's exit status is its one word back to the scheduler. `0` is a
-# merge, as a clean process exit should be; `1` a failed run, the status the
-# serial loop exits with on one and the one an uncaught exception exits a
-# Python process with. The other three are the scheduler's alone.
 WORKER_MERGED = 0
 WORKER_FAILED = 1
-WORKER_PARKED = 2   # parked awaiting merge approval: not a failure
-WORKER_IDLE = 3     # nothing left to claim
-WORKER_STOP = 4     # the claim said stop for a human (`_claim_run()`)
-# A store-mode claim could not read its ticket back from the board: not a
-# failed run and not an empty queue -- the pool stops as for a failed listing.
+WORKER_PARKED = 2
+WORKER_IDLE = 3
+WORKER_STOP = 4
 WORKER_BOARD_DOWN = 5
-# The variable a worker reads its slot number from, for the `[holo2 wN]`
-# prefix: the children share the scheduler's stdout.
 WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
-# Set to 1 when the scheduler's startup critic probe failed: a worker does
-# not probe the critic again, and keeps the critic off for its life.
 CRITIC_DOWN_ENV = "HOLOPHYTE_CRITIC_DOWN"
-# The seams the scheduler spawns and reaps through, so a test patches these
-# and never `subprocess.Popen` or `os.wait` for the whole process.
 SPAWN = subprocess.Popen
 
 
-# How often the timed wait looks for an exited child, in seconds.
 WAIT_POLL_S = 0.5
 
 
 def _wait_any(children, timeout):
-    """Wait for a child exit, returning (pid, code), or (None, None) on timeout.
-    Retain each Popen until reaped and set its returncode so Popen's cleanup
-    cannot reap a child behind the scheduler's back. A deadline uses WNOHANG
-    polling; None uses blocking os.wait()."""
+    """Each Popen is kept and given its returncode, so its cleanup never reaps."""
     if timeout is None:
         pid, status = os.wait()
     else:
@@ -75,13 +52,11 @@ def _wait_any(children, timeout):
 
 
 WAIT = _wait_any
-# A worker runs no sweep of its own -- the scheduler swept once, and a
-# second sweep would count one silence twice.
+# A second sweep in a worker would count one silence twice.
 NOTHING_SEEN = Sweep(0, (), False, (), ())
 
 
 def worker(target, provider):
-    """Worker processes own and probe their fallback routes independently."""
     from holophyte.agents.agent_routes import reset, routes
     from holophyte.agents.fallback import startup_routes
     from holophyte.config.config_tables import AGENT_FALLBACK_KEYS
@@ -89,8 +64,6 @@ def worker(target, provider):
 
     slot = os.environ.get(WORKER_SLOT_ENV)
     if slot:
-        # Both streams: a traceback or a verify line's stderr lands in the
-        # same shared log, attributable to this worker only by the prefix.
         sys.stdout = _PrefixedOut(sys.stdout, f"[holo2 w{slot}]")
         sys.stderr = _PrefixedOut(sys.stderr, f"[holo2 w{slot}]")
     banner()
@@ -109,8 +82,6 @@ def worker(target, provider):
 
 
 def _worker(target, provider):
-    """Claim and dispatch one ticket, then return its worker exit status.
-    The scheduler mirrors, reconciles and re-execs; this child owns one run."""
     from holophyte.loop.claim import _claim_next
     from holophyte.loop.claim_store import BOARD_DOWN
     from holophyte.loop.dispatch import PARKED, _dispatch
@@ -124,7 +95,6 @@ def _worker(target, provider):
         task, ticket_id, run_id = _claim_next(target, conn, project, provider,
                                               knobs.order, set(), NOTHING_SEEN)
         if task is BOARD_DOWN:
-            # Not an empty queue and not a failed run: the scheduler stops.
             return WORKER_BOARD_DOWN
         if not task:
             print("[holo2] nothing left to claim; worker done.")
@@ -147,23 +117,7 @@ def _worker(target, provider):
 
 
 def _render_findings_locked(target, conn, run_id, task, commit=None):
-    """A worker's rendering of FINDINGS.md, under the merge lock: the
-    regeneration, and for a merged run its commit with `commit`'s message.
-
-    The serial loop writes the window (and commits a merged run's) after
-    its gate has let the lock go, which costs nothing when it is the only
-    process in the checkout. A worker is not: a sibling can be merging in
-    the same checkout at that moment, and a write to FINDINGS.md beside
-    its merge dirties the checkout it is merging in, while a `git add`/
-    `git commit` beside it is an index-lock failure for one of them (the
-    review of KO-343, both rounds). So the write, and the commit when
-    there is one, are one held span, the same lock the gate takes; a
-    failed run's close-out passes `refresh=False` and renders here
-    instead. A lock that cannot be had within the gate's wait leaves the
-    window unrendered and says so: the next close-out in this checkout
-    renders these rows with its own. A target with the file off has no
-    write and no commit to serialise, so it does not wait on the lock.
-    """
+    """Under the merge lock: a sibling may be merging in the same checkout."""
     if findings_off(target):
         return
     try:
@@ -177,20 +131,11 @@ def _render_findings_locked(target, conn, run_id, task, commit=None):
 
 
 class _PrefixedOut:
-    """A text stream that starts every line with `prefix`, folding the
-    factory's own `[holo2]` tag into it: `[holo2] run failed` from worker
-    2 reads `[holo2 w2] run failed`; any other line is prefixed whole.
-    Writes pass through as they come, so the stream's line buffering
-    still lands each line when it is said.
-    """
-
     def __init__(self, stream, prefix):
         self.stream = stream
         self.prefix = prefix
         self.at_line_start = True
-        # Whitespace written at a line start with no newline yet, like
-        # `traceback`'s indent: held until the line shows what it is, so
-        # the prefix lands before it.
+        # Line-start whitespace waits for the line, so the prefix lands before it.
         self.held = ""
 
     def write(self, text):
@@ -216,19 +161,6 @@ class _PrefixedOut:
 
 
 def scheduler(target, provider, knobs):
-    """`[loop] workers > 1`: keep up to `knobs.workers` `--worker` children
-    running, one per claimable ticket, until the queue is empty.
-
-    Mirror and refill on exits or partial-pool deadlines (`tick_sec`, KO-353).
-    A full pool waits on exits. Failure under `stop_on_failure`
-    drains and stops; only a schema move that is not additive drains
-    before re-exec.
-    An idle worker pauses spawning until the next exit recounts: a sibling
-    may have claimed ahead of it. Return zero for an empty, drained queue,
-    nonzero for a broken worker process, a human stop, or an unavailable
-    board with no live workers -- a failed listing, or in store mode a
-    worker that could not read its ticket back (`WORKER_BOARD_DOWN`), which
-    stops spawning and drains. Ticket run failures do not make it nonzero."""
     from holophyte.cli.operator import _reexec, self_hosted
     from holophyte.loop.claim import _park_unlisted
     from holophyte.loop.claim_store import announce, store_mode
@@ -253,10 +185,7 @@ def scheduler(target, provider, knobs):
                 pool_handoff.save(target, pool)
                 _reexec(target, conn, project, state.reason,
                         prepared_sha=state.prepared_sha, can_ff=state.can_ff)
-                return  # only a test's EXEC returns
-            # Every tick, timer or exit: a pull request merged on GitHub
-            # since the last one ships its parked run (KO-359). The first
-            # tick asked at startup, before the mirror was repaired.
+                return
             admission.reconcile_tick(target, conn, project, provider, first_tick)
             first_tick = False
             held = admission.held_line(conn, project)
@@ -267,12 +196,7 @@ def scheduler(target, provider, knobs):
             if state.spawning and not held:
                 listing = pool_handoff.listing(target, conn, project, provider)
                 if listing is not None:
-                    # The claimable count leaves out the tickets the live
-                    # workers hold -- a claim is a lease -- so the pool the
-                    # queue can fill is the workers running plus what is
-                    # still free to take, capped at the ceiling. Counting
-                    # only the free tickets against the live pool never
-                    # refilled a pool after its first exit.
+                    # Live workers hold leases the claimable count leaves out.
                     want = min(len(pool) + _claimable(conn, project, listing),
                                knobs.workers)
                     while len(pool) < want:
@@ -287,16 +211,11 @@ def scheduler(target, provider, knobs):
                           " stopping. relaunch once the board answers")
                     return 1
                 if state.restart and not state.stopped:
-                    # A stop takes priority: restarting would spawn again.
-                    # The operator decides when to relaunch.
                     _reexec(target, conn, project, state.reason,
                             prepared_sha=state.prepared_sha, can_ff=state.can_ff)
-                    return  # only a test's EXEC returns
+                    return
                 store.record_loop_return(conn, project)
                 if listing is not None and not store_mode(target):
-                    # The claim's empty-pass reconcile (KO-425) on this
-                    # tick's own listing -- no second board ask. A
-                    # store-mode queue is the store's own: nothing parks.
                     _park_unlisted(conn, project,
                                    [task["id"] for task in listing])
                 print("[holo2] Linear has no ready tickets. done.")
@@ -304,7 +223,7 @@ def scheduler(target, provider, knobs):
             timeout = None if len(pool) >= knobs.workers else knobs.tick_sec
             pid, code = WAIT({pid: child for pid, (_, child) in pool.items()},
                              timeout)
-            if pid in pool:  # else the supervisor, another child, or a tick
+            if pid in pool:
                 state.exited(pool.pop(pid)[0], code)
                 previous.discard(pid)
                 pool_handoff.save(target, pool, previous)
@@ -313,10 +232,6 @@ def scheduler(target, provider, knobs):
 
 
 class _PoolState:
-    """Exit outcomes: failures may stop, idle pauses, self-merges restart.
-    A stop takes priority over any pending restart. `broken` means a worker
-    stopped for a human or exited by signal/unknown code, not a failed run."""
-
     def __init__(self, restart_after_merge, stop_on_failure):
         self.restart_after_merge = restart_after_merge
         self.stop_on_failure = stop_on_failure
@@ -325,16 +240,13 @@ class _PoolState:
         self.board_down = False
         self.paused = False
         self.restart = False
-        self.restart_reason = None   # a store move this build cannot open: drain
-        self.readable_reason = None  # one it can: hand the pool off
+        self.restart_reason = None
+        self.readable_reason = None
         self.unfollowable = False
         self.prepared_sha = None
         self.can_ff = None
 
     def check_schema(self, target):
-        """A migration stops spawning. One `open()` refuses drains; one this
-        build reads takes the self-merge hand-off path, unless this checkout
-        already failed to fast-forward onto it."""
         from holophyte.cli.operator import _schema_move
 
         if not self.spawning:
@@ -353,11 +265,7 @@ class _PoolState:
         return self.restart_reason or self.readable_reason
 
     def may_reexec(self, target):
-        """Whether a prepared restart may exec now. For a readable store move,
-        only once the checkout has fast-forwarded: otherwise -- a failed
-        fetch, or a diverged main -- the code on disk is this build, which
-        would find the same moved store and restart again. That restart is
-        dropped and spawning resumes on this build."""
+        """Unless main fast-forwarded, the disk build would find the move again."""
         if not self.readable_reason or (
                 self.can_ff and pool_handoff._ff_main(target)):
             return True
@@ -376,7 +284,6 @@ class _PoolState:
         return not (self.draining or self.paused)
 
     def exited(self, slot, code):
-        """Read worker `slot`'s exit `code`; one printed line each."""
         self.paused = False
         if code == WORKER_MERGED:
             print(f"[holo2] worker {slot} merged its ticket")
@@ -404,30 +311,11 @@ class _PoolState:
 
 
 def _claimable(conn, project, listing):
-    """How many of the board's ready `listing` a worker could claim now:
-    the store's own pickability -- mirrored `ready`, under no live run's
-    lease, specced, and every dependency merged -- asked of the rows
-    `_mirror_queue()` just refreshed. The store's word, not the board's:
-    a ticket a failed run left `in_flight`, one parked on the operator, one
-    whose body the validator refused or one waiting on a sibling all sit in
-    the board's ready column, and a worker spawned for one of them would
-    only refuse it (the review of KO-343 found the dependency clause
-    missing here: a worker spawned for a ticket `pickable()` then refused).
-    One store read for the tick, as the ticket asks: `pickable_tickets()`
-    fetches the project's rows once and answers §2 for all of them in
-    memory (the review's second round counted seven selects for five
-    tickets when this asked `pickable()` one ticket at a time)."""
     verdicts = store.tickets.pickable_tickets(conn, project)
     return sum(1 for task in listing if verdicts.get(task["id"]))
 
 
 def _spawn_worker(target, slot):
-    """Start `factory.py TARGET --worker` as slot `slot`, sharing this
-    process's stdout and stderr so one `tee` captures the whole pool;
-    return the `Popen`, which the caller holds until `WAIT()` reports it
-    (see `_wait_any()`). The command line is the scheduler's own,
-    `--worker` appended, so the interpreter flags the operator launched
-    with (`-u` above all) reach the child too."""
     from holophyte.agents.agent_routes import routes
 
     program, argv = reexec_command()

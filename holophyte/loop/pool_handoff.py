@@ -29,8 +29,7 @@ def restore(target):
     data = read(target)
     if data.get("parent") != os.getpid():
         return {}
-    # exec preserves both pid and child ownership, including exited children
-    # awaiting waitpid. Do not probe/reap them here and lose their exit status.
+    # Exec keeps pid and children: probing here would reap an exit status.
     return {w["pid"]: (w["slot"], SimpleNamespace(pid=w["pid"], returncode=None))
             for w in data.get("workers", [])}
 
@@ -39,18 +38,11 @@ def next_slot(pool):
     return max((slot for slot, _ in pool.values()), default=0) + 1
 
 
-# The arriving schema's two literals the restart decision reads.
 SCHEMA_LITERALS = ("SCHEMA_VERSION", "READABLE_FROM")
 
 
 def fetched_schema(target):
-    """Read the arriving `(SCHEMA_VERSION, READABLE_FROM)` without importing
-    or migrating its store.
-
-    Each is a literal, or for `READABLE_FROM` the name of the other; one
-    that is missing or unreadable is None, which conservatively keeps the
-    existing drain.
-    """
+    """Read without importing the arriving store; an unreadable one keeps the drain."""
     from holophyte.cli.operator import sh
 
     found = {}
@@ -67,7 +59,7 @@ def fetched_schema(target):
 
 
 def _literal(value, found):
-    if isinstance(value, ast.Name):  # `READABLE_FROM = SCHEMA_VERSION`
+    if isinstance(value, ast.Name):
         return found.get(value.id)
     try:
         return ast.literal_eval(value)
@@ -76,7 +68,6 @@ def _literal(value, found):
 
 
 def prepare_restart(state, target, pool):
-    """Fetch once and defer checkout movement until any schema drain ends."""
     from holophyte.cli.operator import sh
 
     if not state.restart or state.stopped or state.restart_reason:
@@ -89,12 +80,6 @@ def prepare_restart(state, target, pool):
 
 
 def listing(target, conn, project, provider):
-    """The tick's queue: the board's ready listing, mirrored. In store mode
-    (Phase 3 stage 3) it is the store's `claimable()` queue after a sync
-    throttled to `[loop] tick_sec`, so a board that could not be listed
-    still leaves the pool the queue the store holds; None when the Linear
-    budget is low, or when the listing failed and the store holds no
-    queue, which the scheduler reports as the board's failure."""
     from holophyte.config.config_tables import loop_config
     from holophyte.host.supervisor import linear_budget_low
     from holophyte.loop.claim_store import FAILED, store_mode, sync_board
@@ -114,7 +99,6 @@ def listing(target, conn, project, provider):
 
 
 def workers_on_previous_build(target):
-    """Inherited workers still owned by the running scheduler."""
     data = read(target)
     if not data.get("parent"):
         return 0
@@ -139,8 +123,7 @@ def _prepare_reexec(target, worker_pids):
     if not can_ff:
         return False, False
     version, floor = fetched_schema(target)
-    # Additive: the live workers of this build can still open the store the
-    # arriving build migrates, so they are handed to it rather than drained.
+    # Additive: this build's live workers can still open the migrated store.
     additive = (isinstance(version, int) and isinstance(floor, int)
                 and version > SCHEMA_VERSION >= floor)
     schema_moves = version != SCHEMA_VERSION and not additive
@@ -161,7 +144,6 @@ def _prepare_reexec(target, worker_pids):
 
 
 def _fetch_main(target):
-    """Fetch even with live workers or a checkout that cannot fast-forward."""
     from holophyte.cli.operator import sh
 
     try:
@@ -179,9 +161,7 @@ def _fetch_main(target):
 
 
 def _ff_main(target):
-    """Best effort: a diverged checkout still executes the disk build.
-
-    Returns whether the checkout now holds origin/main."""
+    """Best effort: a diverged checkout still executes the disk build."""
     from holophyte.cli.operator import sh
 
     try:
