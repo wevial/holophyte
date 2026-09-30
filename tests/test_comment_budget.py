@@ -93,14 +93,14 @@ PINNED = {
     "holophyte/files.py": 93,
 
     "holophyte/host/__init__.py": 0,
-    "holophyte/host/ci_wake.py": 1,
-    "holophyte/host/reconcile.py": 230,
-    "holophyte/host/registry.py": 102,
-    "holophyte/host/startup.py": 5,
-    "holophyte/host/supervisor.py": 430,
-    "holophyte/host/supervisor_lock.py": 108,
-    "holophyte/host/sweep_host.py": 131,
-    "holophyte/host/sweep_report.py": 101,
+    "holophyte/host/ci_wake.py": 0,
+    "holophyte/host/reconcile.py": 13,
+    "holophyte/host/registry.py": 8,
+    "holophyte/host/startup.py": 0,
+    "holophyte/host/supervisor.py": 19,
+    "holophyte/host/supervisor_lock.py": 9,
+    "holophyte/host/sweep_host.py": 10,
+    "holophyte/host/sweep_report.py": 3,
 
     "holophyte/isolation/__init__.py": 0,
     "holophyte/isolation/isolation_clone.py": 8,
@@ -224,13 +224,6 @@ CITED = {
 
     "holophyte/environment_git.py": 1,
     "holophyte/files.py": 1,
-
-    "holophyte/host/reconcile.py": 15,
-    "holophyte/host/registry.py": 1,
-    "holophyte/host/supervisor.py": 16,
-    "holophyte/host/supervisor_lock.py": 1,
-    "holophyte/host/sweep_host.py": 2,
-    "holophyte/host/sweep_report.py": 1,
 
     "holophyte/loop/claim.py": 20,
     "holophyte/loop/claim_store.py": 3,

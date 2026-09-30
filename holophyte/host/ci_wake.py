@@ -1,4 +1,3 @@
-"""When a run parked `ci` goes back to a worker, or to a human instead."""
 from time import time
 
 import store
