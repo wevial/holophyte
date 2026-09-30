@@ -1,22 +1,3 @@
-"""The merge gate: the landing the loop's stages end on.
-
-`_merge_gate()` is the `merge_gate` phase -- `main` merged into the branch
-(`_sync_main_into_branch()`, with a conflict handed to the implementer
-first and otherwise parked on `GATE_CONFLICT_QUESTION`), the pre-merge
-verify, the drift check -- run under `_gate_lock()`, the loop's take on
-`merge_lock()`, in local mode; in pull-request mode the lock covers the
-push-and-open alone (KO-644). `_park_for_approval()` stops a verified
-candidate for a human under `[merge] approve = "human"`;
-`_resume_at_merge_gate()` is the run that carries the approved candidate
-back through the gate; `_merge()` is the `--no-ff` merge onto main and its
-one self-resolved conflict. In store mode the gate reads the board once
-more (KO-746): a cancel ends the run `abandoned` as an abort, and drift
-requeues the ticket strike-free (`DriftRequeued`).
-`_run_stages()` in `holophyte.loop.loop` and `land()` in `holophyte.loop.run` call in;
-back-references into the loop are deferred imports inside function bodies.
-
-Moved verbatim from `holophyte.loop.loop` (KO-424, design note 0015).
-"""
 import contextlib
 import subprocess
 from dataclasses import replace
@@ -47,61 +28,16 @@ from holophyte.story.story_drift import advance_generation, review_refresh, shar
 
 
 class DriftRequeued(store.RunEnded):
-    """The merge gate ended its own run `abandoned` and requeued the ticket
-    because the store-mode board's ticket drifted from the claimed one."""
+    pass
 
 
 def _resume_at_merge_gate(run, carried, verify_cmd,
                           contracts, body, criteria=(),
                           issue_url=None):
-    """The approved candidate's run: the preserved worktree, the pre-merge
-    verify against the main of today, the merge. No implementer, no reviewer.
-
-    Under `[merge] mode = "pr"` nothing here lands on main either. A
-    candidate the park already opened as a pull request (`carried.pr_url`)
-    goes back to the babysitter before the worktree is touched -- the PR is
-    the thing the answer is about, and the candidate on it may have moved
-    past the park's sha by fix rounds, so the local drift check below does
-    not apply: the branch as it stands is what the PR holds. The release
-    says what the answer was: `--approve` is the human's "merge", so a PR
-    that is green and quiet merges through the API whatever `[merge]
-    approve` says; `--babysit` is "look again", and such a PR parks for
-    the human under `approve = "human"` as it did before. A candidate
-    parked with no PR (parked under `mode = "local"` before the mode
-    changed) goes through the gate below and then leaves the machine as a
-    fresh run's would, pushed and opened -- but only on an approval. The
-    gate below merges, so a candidate carried here with `carried.approved`
-    False (the intervention `store.babysit()` writes as the newest on its
-    run, which it refuses to write on a PR-less run but a hand-written
-    store row could) is not taken through it: the run fails naming the
-    release, the tree untouched, and a human answers with `--approve`.
-
-    An approval is of one sha: the candidate the reviewer approved and the
-    pre-merge verify passed, recorded by the park as `runs.candidateSha`.
-    So before anything readies the worktree it is held to that sha -- a
-    clean tree, HEAD and the branch both on it. Anything else (a commit
-    slipped in since the park, uncommitted edits) is not the approved
-    candidate, and merging it here would land unreviewed work with the
-    implementer and reviewer both skipped; the run fails naming both shas,
-    the tree untouched -- no WIP rescue commit, nothing deleted -- for a
-    human to look at. Only then does `reuse_leftover()` ready the worktree
-    as after a failed run -- main merged in when it moved on, so the
-    verify below is against current main -- but without the origin sync:
-    the approval is of the recorded sha, and a fast-forward to a remote
-    ahead would put commits no review saw under the merge below. A
-    candidate that turns out to
-    hold nothing beyond main is refused too: an approval is of commits, and
-    a branch with none is not what the operator signed off on. The walk is
-    `claimed -> merge_gate` directly, the one edge §4 draws for this path,
-    with the carried run named on the stream.
-    """
     project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
     task_id, issue_id, task = run.task_id, run.issue_id, run.task
     branch, wt, started, budget_min = run.branch, run.wt, run.started, run.budget_min
     from holophyte.loop.branch_sync import _candidate_drift
-    # The branch is recorded first, as `_cut_worktree()` records it: the
-    # worktree stands from the run's first moment, and the files panel reads
-    # `runs.branch` to find it whichever way the resume goes (KO-304).
     store.set_branch(conn, run_id, branch)
     merge = merge_config(project)
     if merge.mode == "pr" and carried.pr_url is not None:
@@ -126,6 +62,7 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
                " again.", provider)
         raise RunFailure(f"approved candidate on {branch} is not what was"
                          f" approved: {why}")
+    # No origin sync: the approval is of the recorded sha, not of a remote ahead.
     ok, why = reuse_leftover(project, wt, branch, conn=conn, run_id=run_id,
                              provider=provider, task_id=task_id,
                              sync_origin=False)
@@ -144,7 +81,6 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
                " beyond main; nothing to merge.", provider)
         raise RunFailure(f"approved candidate on {branch} holds nothing"
                          " beyond main; nothing to merge")
-    # Only reached with a store: a direct call carries no candidate.
     store.record_event(conn, run_id, "approved_candidate",
                        f"resuming run {carried.run_id}'s approved candidate"
                        f" {branch} at {sha[:12]} at the merge gate;"
@@ -153,14 +89,10 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
           f" from run {carried.run_id}; skipping to the merge gate")
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
     ticket = f"{task}\n\n{body}" if body else task
-    # Under `mode = "pr"` the lock covers the push-and-open alone, as in
-    # `_run_stages()` (KO-644).
     if merge.mode == "pr":
         ok, sha = _merge_gate(project, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,
                               contracts, ticket, budget_min, sync_main=False)
-        # An approved `not_reproduced` park lands tests only; the PR says
-        # so first, whatever the ticket's title reports (KO-658).
         title, text = _prepare_pr(project, conn, run_id, task_id, task, branch,
                                   body, beat_s, wt, started, budget_min,
                                   issue_url,
@@ -187,10 +119,6 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
 
 @contextlib.contextmanager
 def _gate_lock(project, conn, run_id, provider, task_id, branch, sha, beat_s):
-    """`merge_lock()` as the loop takes it: the run heartbeats through the
-    wait, and a wait that runs out parks the ticket naming the holder before
-    the `MergeLockHeld` ends the run (an infra failure: no strike spent,
-    branch and worktree untouched)."""
     try:
         with project.locks.merge(conn, run_id, beat_s):
             yield
@@ -203,10 +131,6 @@ def _gate_lock(project, conn, run_id, provider, task_id, branch, sha, beat_s):
 
 def _park_at_gate(conn, run_id, provider, task_id, branch, sha, question,
                   ledger_text, park_kind="question"):
-    """A gate refusal that is a person's to answer: the ticket goes
-    `blocked_on_operator` asking `question`, the ledger records why, and
-    the caller raises the failure that leaves branch and worktree in place.
-    The run itself ends the way every refused merge ends."""
     if conn is not None and run_id is not None:
         ticket_id = store.read.run_snapshot(conn, run_id).ticketId
         if not block_ticket(conn, ticket_id, provider, question, park_kind=park_kind):
@@ -217,16 +141,7 @@ def _park_at_gate(conn, run_id, provider, task_id, branch, sha, question,
 
 
 def _unwind_merge(wt, sha):
-    """Take `wt` back to `sha` with no merge in progress after the gate's
-    resolution turn failed to leave a committed, clean merge.
-
-    `git merge --abort` is the first try; it refuses when the turn left a
-    staged resolution it would have to drop, and it has nothing to abort
-    when the turn committed the merge itself. Either way the owed state
-    is the same -- the branch at its pre-merge sha, merge state gone --
-    and a hard reset to `sha` is that directly: what is preserved is the
-    branch's committed work, never the tree the turn left behind.
-    """
+    """`merge --abort` refuses a staged resolution; the reset to `sha` does not."""
     subprocess.run(["git", "merge", "--abort"], cwd=wt,
                    capture_output=True, text=True)
     if (subprocess.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
@@ -238,24 +153,12 @@ def _unwind_merge(wt, sha):
 
 
 def _is_ancestor(cwd, a, b):
-    """Whether commit `a` is an ancestor of `b` in `cwd`'s repository."""
     return subprocess.run(["git", "merge-base", "--is-ancestor", a, b],
                           cwd=cwd, capture_output=True).returncode == 0
 
 
 def _merge_ref(wt, ref):
-    """`git merge --no-edit REF` into the branch `wt` has checked out;
-    `(status, detail)`.
-
-    `"ancestor"` -- `ref` is already merged in, nothing ran, detail is
-    HEAD's sha. `"merged"` -- the merge committed, detail is its sha.
-    `"conflicted"` -- the merge stopped: detail is the sorted unmerged
-    paths it stopped on, empty when git failed the merge without naming
-    any, and `wt` is left mid-merge for the caller -- handed to the
-    implementer first at the merge gate (`_sync_main_into_branch()`),
-    resolved by an implementer turn on a conflicting pull request
-    (`_merge_origin_main()`).
-    """
+    """`ancestor`, `merged`, or `conflicted` with `wt` left mid-merge."""
     head = sh(["git", "rev-parse", "HEAD"], wt)
     if _is_ancestor(wt, ref, "HEAD"):
         return "ancestor", head
@@ -272,25 +175,6 @@ def _merge_ref(wt, ref):
 
 def _sync_main_into_branch(project, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, ticket, budget_min, ref="main"):
-    """Merge `ref` into the branch in its worktree, so the gate verifies
-    and merges the candidate as it will sit on today's `main`. `ref` is
-    `main` at the local gate; the babysit pass's own call for a
-    conflicting pull request is `_merge_origin_main()`, which wants
-    `origin/main` and a different conflict disposition. Returns the
-    branch's sha afterwards: unchanged when `ref` is already an ancestor.
-
-    A conflict goes to the implementer first (KO-404): the same
-    resolution turn the claim path runs on a leftover mid-merge worktree
-    (KO-355), in this worktree, against the run's budget like a fix
-    round. When the turn leaves the merge committed over a clean tree the
-    gate's verify runs on the merged sha; when it does not the merge is
-    undone (`_unwind_merge()`: `merge --abort`, or a reset to `sha` when
-    the turn's leftovers refuse it), the branch left at `sha`, and the
-    run parks with the conflicting paths in the question as before. (The
-    `--no-ff` merge's own FINDINGS.md
-    self-resolution is not repeated here: nothing on the branch writes
-    FINDINGS.md any more, so a conflict there is a real one.)
-    """
     status, detail = _merge_ref(wt, ref)
     if status == "ancestor":
         return sha
@@ -333,10 +217,6 @@ def _sync_main_into_branch(project, conn, run_id, provider, task_id, branch,
 
 
 def merge_conflict_goal(branch, pull, conflicts):
-    """The implementer turn's goal for a pull request's merge that stopped
-    on `conflicts`: resolve and commit the in-progress merge, nothing
-    else. The hand-off KO-355 gave a preserved branch's mid-merge
-    worktree, run here on the PR GitHub reported conflicting."""
     return (f"The worktree is mid-merge. Merging main into {branch} -- the"
             f" branch pull request {pull.url} is open on, which GitHub"
             f" reports conflicting -- stopped on conflicts in:"
@@ -350,12 +230,6 @@ def merge_conflict_goal(branch, pull, conflicts):
 def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
                 beat_s, sha, verify_cmd, contracts, ticket, budget_min,
                 sync_main=True):
-    """The `merge_gate` phase: `main` merged into the branch (unless
-    `sync_main` is off -- PR mode, where the merge is the remote's), the
-    pre-merge verify on the result, then the drift check. Returns the
-    verify's `ok`, for the merged ledger line, and the branch's sha as the
-    gate leaves it. In local mode the caller holds the merge lock; in PR
-    mode it runs unlocked, as the babysitter's does."""
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
     reviewed, shared = sha, None
     if sync_main:
@@ -382,14 +256,7 @@ def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
         review_refresh(project, conn, run_id, provider, task_id, branch, wt,
                        reviewed, sha, beat_s, ticket, verify_cmd, out, shared)
 
-    # The other half of the gate, and the one a mechanical verify cannot ask:
-    # this candidate was implemented, reviewed and verified against the ticket
-    # as it stood at the claim, so a body edited since then means the work
-    # answers a contract that no longer exists. Merging it would land code
-    # nobody approved against the ticket as it now reads, and the honest
-    # answer is the one every other refusal at this gate gives — leave the
-    # branch and its worktree for a human. A store-mode board is asked
-    # first whether the ticket was canceled, and its drift is requeued.
+    # A body edited since the claim is a contract this candidate never answered.
     store_mode = getattr(provider, "store_mode", False) is True
     if store_mode:
         _end_if_canceled(conn, run_id, provider, task_id)
@@ -416,9 +283,7 @@ def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
 
 
 def _end_if_canceled(conn, run_id, provider, task_id):
-    """End the run `abandoned` through the abort path, branch kept, when the
-    board answers `task_id` canceled; a raise or any other answer (gone
-    included) is no evidence, and the gate goes on."""
+    """A raise or any answer but canceled is no evidence; the gate goes on."""
     if conn is None or run_id is None:
         return
     try:
@@ -436,11 +301,6 @@ def _end_if_canceled(conn, run_id, provider, task_id):
 
 
 def _requeue_drift(conn, run_id, provider, task_id, live, drift, branch, sha):
-    """Record the live ticket as the current revision, then in one
-    transaction a `requeue` intervention, the run ended `abandoned` with
-    the candidate and the ticket walked to `ready` -- no strike -- and
-    unwind with `DriftRequeued`; the next run works the current revision
-    from the preserved branch."""
     fields = ", ".join(drift)
     ticket_id = store.read.run_snapshot(conn, run_id).ticketId
     (project_id,) = conn.execute("SELECT projectId FROM tickets WHERE id = ?",
@@ -465,25 +325,9 @@ def _requeue_drift(conn, run_id, provider, task_id, live, drift, branch, sha):
 
 
 def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
-    """`[merge] approve = "human"`: stop an approved, verified candidate at
-    the gate for a person to say "merge".
-
-    Three writes, in the order a reader of the store needs them: the ticket
-    goes `blocked_on_operator` asking `merge?`, which is what `/attention`
-    shows; `store.park()` moves the run to `awaiting_merge_approval` and
-    gives the lease back in one transaction, leaving the run open -- no
-    `endedAt`, no outcome, because nothing failed and nothing merged; the
-    ledger names the branch and the candidate sha the answer is about. Then
-    `MergeParked` unwinds `run_task()` so the branch and worktree are left in
-    place exactly as after a refused merge. Nothing touches main.
-    """
-    # The ticket row the run was claimed on, read off the run: the frame
-    # carries the board's issue id, and the status move keys on the store's.
     ticket_id = store.read.run_snapshot(conn, run_id).ticketId
     if not block_ticket(conn, ticket_id, provider, "merge?"):
-        # The store did not take the move (warned on the run): the run still
-        # parks, so an unmirrored ticket cannot make the loop merge what the
-        # operator asked to sign off on.
+        # Parks anyway: an unmirrored ticket must not make the loop merge.
         print(f"[holo2] {task_id} could not be moved to blocked_on_operator;"
               " parking the run anyway")
     store.park(conn, run_id, "awaiting_merge_approval",
@@ -502,21 +346,13 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
 
 
 def _merge(project, conn, run_id, provider, task_id, task, branch, wt, sha):
-    """The `merging` phase: the `--no-ff` merge of `branch` into main, its
-    one self-resolved conflict, and the post-merge cleanup. Returns the full
-    sha of the merge commit main now sits on."""
     from holophyte.commit_hygiene import strip_attribution
 
     strip_attribution(project, wt, branch)
     sha = sh(["git", "rev-parse", branch], wt)
     checked = refuse_environment_history(project, branch, action="merge")
-    # Commit a FINDINGS.md window left dirty by an earlier failed run before
-    # merging. Normally a no-op: runs no longer write this file mid-flight.
     commit_findings(project, f"FINDINGS: {task_id} review records")
 
-    # `squashing` is skipped, not faked: this merge is --no-ff and rewrites
-    # no history, so the run goes merging -> done and the phase §4 puts
-    # between them names an activity that never happens here.
     set_phase(conn, run_id, "merging", f"--no-ff merge of {branch} into main")
     mr = subprocess.run(["git", "merge", "--no-ff", checked, "-m",
                          f"Merge {branch}: {task}"], cwd=project.path,
@@ -524,11 +360,7 @@ def _merge(project, conn, run_id, provider, task_id, task, branch, wt, sha):
     if mr.returncode != 0:
         _resolve_no_ff_conflict(project, conn, run_id, provider, task_id,
                                 branch, sha)
-    # The merge has landed: main's HEAD is the merge commit, read now before
-    # the cleanup below and before anything else moves main. The branch
-    # holds nothing main does not, so the worktree's stray untracked files
-    # are not preserved work — and a cleanup refusal must not re-classify
-    # merged work as a failed run.
+    # Merged: a cleanup refusal below must not make this a failed run.
     merge_sha = sh(["git", "rev-parse", "HEAD"], project.path)
     advance_generation(conn, run_id)
     try:
@@ -541,30 +373,18 @@ def _merge(project, conn, run_id, provider, task_id, task, branch, wt, sha):
 
 def _resolve_no_ff_conflict(project, conn, run_id, provider, task_id, branch,
                             sha):
-    """A failed `--no-ff` merge: resolve it if FINDINGS.md alone conflicted,
-    otherwise abort it and fail the run with main restored."""
-    # What conflicted is the index's answer, not the merge output's: a
-    # substring search over stdout+stderr also matches a conflict in
-    # `docs/FINDINGS.md-notes.md`, or one whose message merely mentions
-    # the file, and would then "resolve" a conflict nobody looked at.
+    # The index, not the output: a grep would match a mention of the file.
     conflicted = sorted(
         p for p in subprocess.run(
             ["git", "diff", "--name-only", "--diff-filter=U"], cwd=project.path,
             capture_output=True, text=True).stdout.splitlines() if p.strip())
     if conflicted == ["FINDINGS.md"]:
-        # conflict limited to FINDINGS.md — prefer the branch side (fuller log)
         subprocess.run(["git", "checkout", "--theirs", "FINDINGS.md"],
                        cwd=project.path, capture_output=True, text=True)
         sh(["git", "add", "FINDINGS.md"], project.path)
         sh(["git", "commit", "--no-edit"], project.path)
         return
-    # Anything else is a human's merge to make. An `assert` here was
-    # both stripped under `python -O` and, when it did fire, left main
-    # sitting on a half-applied merge with an unresolved index while
-    # the run died mid-frame. Abort first, so main is the integration
-    # point it was before the attempt, and fail the run through the
-    # same close-out every other refusal at this gate uses — branch
-    # and worktree preserved.
+    # Abort before failing, so main is left as it was before the attempt.
     subprocess.run(["git", "merge", "--abort"], cwd=project.path,
                    capture_output=True, text=True)
     dirty = subprocess.run(["git", "status", "--porcelain"], cwd=project.path,
@@ -573,8 +393,6 @@ def _resolve_no_ff_conflict(project, conn, run_id, provider, task_id, branch,
     why = (f"merge of {branch} into main conflicted on: {paths};"
            f" branch and worktree preserved")
     if dirty:
-        # The abort did not restore main: say so in the reason rather
-        # than let the next run discover it.
         why += (" — main is NOT clean after the abort: "
                 + " ".join(dirty.split()))
     print(f"[holo2] {why}")
@@ -585,7 +403,4 @@ def _resolve_no_ff_conflict(project, conn, run_id, provider, task_id, branch,
     raise RunFailure(why)
 
 
-# The question the merge gate parks a ticket on when merging `main` into the
-# branch conflicts (KO-342); the skip line names the way back, `--requeue`
-# (KO-365), rather than reading the question out.
 GATE_CONFLICT_QUESTION = "merge conflict with main on: "

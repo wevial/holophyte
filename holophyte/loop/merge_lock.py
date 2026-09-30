@@ -1,4 +1,3 @@
-"""Bounded, heartbeat-aware waiting for a healthy merge gate holder (KO-496)."""
 import contextlib
 import json
 from time import monotonic, time
@@ -14,7 +13,6 @@ from holophyte.pr.github import CHECK_POLL_S
 @contextlib.contextmanager
 def live_merge_lock(target, conn, run_id, beat_s, operation="gate",
                     wait_phase="merge_gate"):
-    """Keep acquisition alive in the caller's phase; close its event before work."""
     with contextlib.ExitStack() as stack:
         with heartbeat_while(conn, run_id, beat_s):
             with _live_lock_wait(target, conn, run_id, wait_phase) as extend:
@@ -25,7 +23,6 @@ def live_merge_lock(target, conn, run_id, beat_s, operation="gate",
 
 @contextlib.contextmanager
 def _live_lock_wait(target, conn, run_id, wait_phase):
-    """One paired event for an extended acquisition, closed before the work."""
     started, since = monotonic(), time()
     waiting = {}
     ceiling = merge_config(target).check_wait_sec + 300

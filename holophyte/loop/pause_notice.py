@@ -1,10 +1,4 @@
-"""A paused run's pull request says so: the `holophyte:paused` label and one
-comment naming who paused it, why, and how to resume (KO-608).
-
-Both run after the pause or resume has committed; a GitHub failure is
-recorded on the run as a `pause_notice` event and printed, never undone
-into the store.
-"""
+"""A GitHub failure is recorded on the run, never undone into the store."""
 import json
 from urllib.parse import quote
 
@@ -20,8 +14,6 @@ KIND = "pause_notice"
 
 
 def body(identifier, who, note, boundary):
-    """The comment: the factory's header, who paused the run and why, where
-    it stopped, and the two ways back."""
     return (f"{COMMENT_HEADER.format(model='holophyte')}\n\n"
             f"**Paused.** The factory has stopped working on this pull request:"
             f" {who} paused {identifier} at its `{boundary}` boundary.\n\n"
@@ -32,8 +24,6 @@ def body(identifier, who, note, boundary):
 
 
 def mark(target, conn, run_id, boundary):
-    """Label the paused run's pull request and post the notice; record the
-    comment id for `unmark()`."""
     identifier, pr_url, source, note = conn.execute(
         "SELECT t.linearIdentifier, r.prUrl, i.source, i.guidance FROM runs r"
         " JOIN tickets t ON t.id = r.ticketId"
@@ -56,7 +46,6 @@ def mark(target, conn, run_id, boundary):
 
 
 def unmark(target, conn, run_id):
-    """Delete the paused run's notice comment and remove its label."""
     (pr_url,) = conn.execute("SELECT prUrl FROM runs WHERE id = ?",
                              (run_id,)).fetchone()
     pull = _pull(conn, run_id, pr_url)
@@ -76,8 +65,6 @@ def unmark(target, conn, run_id):
 
 
 def _pull(conn, run_id, pr_url):
-    """The run's pull request, or None: no URL is no notice, an unreadable
-    one is a recorded failure."""
     if not pr_url:
         return None
     pull = parse_pr_url(pr_url)
@@ -87,7 +74,6 @@ def _pull(conn, run_id, pr_url):
 
 
 def _attempt(conn, run_id, step, call):
-    """`call()`'s answer, or None with the failure recorded and printed."""
     try:
         return call()
     except InfraFailure as refused:
