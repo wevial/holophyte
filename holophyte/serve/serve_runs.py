@@ -1,4 +1,3 @@
-"""Run, shipped and ledger HTTP reads, including project startup outages."""
 from __future__ import annotations
 
 import json
@@ -21,11 +20,8 @@ from holophyte.loop.runs import MAX_ROUNDS
 from store.operator_notes import round_notes
 from store.working import agent_work, effective_work, verify_work
 
-# Accepted origins: https://HOST/OWNER/REPO and git@HOST:OWNER/REPO(.git).
-# Other origins carry no link. Each segment must be one
-# plain path segment: a `?`, `#`, `@`, `:` or whitespace in it would ride
-# into the link as a query, fragment or credential, so it disqualifies the
-# remote rather than being copied through.
+# A `?`, `#`, `@`, `:` or space would ride into the link as a query,
+# fragment or credential.
 SEGMENT = r"[^/?#@:\s]+"
 REMOTE_SHAPES = (
     re.compile(rf"^https://(?P<host>{SEGMENT})/(?P<owner>{SEGMENT})/"
@@ -33,32 +29,18 @@ REMOTE_SHAPES = (
     re.compile(rf"^git@(?P<host>{SEGMENT}):(?P<owner>{SEGMENT})/"
                rf"(?P<repo>{SEGMENT}?)(?:\.git)?/?$"),
 )
-# `/runs/N` and `/runs/N/files`: one run by id. The id is captured as typed
-# so a non-integer is 400 rather than the static-file 404; both routes parse
-# it through `parse_run_id()`.
+# Captured as typed, so a non-integer id is 400, not the static-file 404.
 RUN_PATH = re.compile(r"^/runs/([^/]+)$")
 RUN_FILES_PATH = re.compile(r"^/runs/([^/]+)/files$")
 RUN_LEDGER_PATH = re.compile(r"^/runs/([^/]+)/ledger$")
-# The captured id is an integer when it is an optionally signed run of
-# digits; anything else is 400. Integers no run can have (negative, or past
-# SQLite's INTEGER range) are 404 like any other absent id.
+# What `int()` accepts, less its leniencies: whitespace and underscores.
 RUN_ID = re.compile(r"^([+-]?)0*(\d+)$")
 SQLITE_MAX_INT = 2**63 - 1
-# Any integer of more significant digits than this is past SQLite's range,
-# so it is judged on its length, before `int()` -- which refuses strings
-# past Python's digit limit -- ever sees it.
+# Checked before `int()`, which refuses a string past Python's digit limit.
 SQLITE_MAX_DIGITS = len(str(SQLITE_MAX_INT))
 
 
 def parse_run_id(text):
-    """The `/runs/N` id as an int, or `None` when it names no possible run.
-
-    Leading zeros are normalized away so `/runs/007` is run 7. A negative
-    id, or one with more significant digits than SQLite's INTEGER holds,
-    is `None`: the length check comes first so a path of thousands of
-    digits is a 404, not a `ValueError` from `int()` past Python's limit.
-    Raises ValueError when `text` is not an integer at all.
-    """
     match = RUN_ID.match(text)
     if match is None:
         raise ValueError(f"run id must be an integer, got {text!r}")
@@ -70,27 +52,16 @@ def parse_run_id(text):
 
 
 def no_store(project):
-    """The 503 body for a target whose store does not exist yet."""
     return {"error": "no store",
             "detail": f"{project.path} has no store yet; nothing has run"
                       " against it on this host",
             "project": str(project.path)}
 
 
-# An optional sign and digits: what `int()` accepts minus its leniencies
-# (whitespace, underscores), so a cursor is exactly what the client typed.
 INTEGER = re.compile(r"-?[0-9]+")
 
 
 def parse_limit(query, default=None, cap=None):
-    """`?limit=N` as a positive int, `default` when absent; ValueError
-    otherwise. A limit past `cap` is answered as `cap`, not refused: a
-    client asking for more than a page is a client asking for a page.
-
-    The shape is the report's: a dashboard asks for the newest few rows,
-    and `limit=0` or `limit=abc` is a client bug to be told about, not a
-    request for nothing.
-    """
     values = parse_qs(query, keep_blank_values=True).get("limit")
     if values is None:
         return default
@@ -102,12 +73,6 @@ def parse_limit(query, default=None, cap=None):
 
 
 def parse_since(query):
-    """`?since=MS` as an int; ValueError when absent or not an integer.
-
-    `since` is required: a window over the whole ledger with no start is
-    the whole table, which is not a page. Any integer parses; a `since`
-    in the future is an empty window, not a 400.
-    """
     values = parse_qs(query, keep_blank_values=True).get("since")
     if values is None:
         raise ValueError("since is required (epoch milliseconds)")
@@ -119,8 +84,6 @@ def parse_since(query):
 
 
 def parse_filter(query, name, allowed=None):
-    """`?name=VALUE` as its text, None when absent; ValueError when
-    `allowed` is given and the value is not one of them."""
     values = parse_qs(query, keep_blank_values=True).get(name)
     if values is None:
         return None
@@ -132,12 +95,6 @@ def parse_filter(query, name, allowed=None):
 
 
 def parse_before(query):
-    """`?before=ID` as an int, None when absent; ValueError otherwise.
-
-    Any integer parses, sign and size included: whether a run has that id
-    is the view's question, and an id no run has is an empty page, not a
-    400. Only a non-integer is a client bug to be told about.
-    """
     values = parse_qs(query, keep_blank_values=True).get("before")
     if values is None:
         return None
@@ -148,19 +105,10 @@ def parse_before(query):
 
 
 def json_host(project, host):
-    """`host_label()` for JSON: null, not the table's `?`, for a row older
-    than the host column, label or not."""
     return None if host is None else host_label(project, host)
 
 
 def origin_web_url(project):
-    """`https://HOST/OWNER/REPO` for the target's `origin`, or None.
-
-    Read once per request from `git remote get-url origin` in the target's
-    checkout and normalized from either of `REMOTE_SHAPES`; no `origin`, a
-    remote of another shape, or any git failure is None, so the rows it
-    feeds carry no link rather than a bad one.
-    """
     try:
         code, out = git(project.path, "remote", "get-url", "origin")
     except (subprocess.TimeoutExpired, OSError):
@@ -175,14 +123,7 @@ def origin_web_url(project):
 
 
 def commit_url(project, sha, origin):
-    """`ORIGIN/commit/SHA` when `sha` is an ancestor of `origin/main` in the
-    target's checkout, else None.
-
-    A local merge never pushed, one rewritten on the way up, or a sha the
-    checkout does not hold would link to a page that does not exist, so the
-    ancestry check gates the link; `origin/main` absent (a fresh clone) or
-    git failing for any reason is the same None, never an error.
-    """
+    """A sha not on `origin/main` would link to a page that does not exist."""
     if not sha or not origin:
         return None
     try:
@@ -194,13 +135,6 @@ def commit_url(project, sha, origin):
 
 
 def runs(project, query=""):
-    """The `/runs` answer: `--report` rows as JSON, oldest first, with a limit.
-    Add ticket_url, ended_ms, merge_sha and wall_min to the report fields.
-    `agent_min` and `verify_min` split `actual_min`; `verify_min` is null for
-    a run recorded before the split.
-    URLs and merge SHAs are null for older mirrors/runs without them.
-    Host labels match `/status`; a missing recorded host stays null.
-    """
     try:
         limit = parse_limit(query)
     except ValueError as bad:
@@ -235,27 +169,6 @@ SHIPPED_CAP = 200
 
 
 def shipped(project, query=""):
-    """The `/shipped` answer: finished runs newest end first, one page.
-
-    The console's Shipped view is the merge ledger scrolling back over
-    older days, and the Board's "shipped today" is its first page; `/runs`
-    is the terminal's table, oldest first, and stays that. Each row is the
-    run's `id`, `ticket`, `title`, `rounds`, `findings` (the count over its
-    review rounds), `started_ms`, `ended_ms`, `actual_min`, `estimate_min`,
-    `working_ms`, `agent_ms` and `verify_ms` (its two parts, `verify_ms`
-    null for a run recorded before the split), `wall_min`,
-    `merge_sha`, `commit_url` (the merge commit's page on `origin` when the
-    sha has reached `origin/main`, `commit_url()`), `pr_url` (the pull
-    request the run merged through, `runs.prUrl`, null when none) and
-    `host`, `outcome` and `outcome_reason` (at most 400 characters).
-    `outcome=merged` is the default; `outcome=all` includes every ended run.
-    `limit`
-    defaults to `SHIPPED_LIMIT` and is capped at `SHIPPED_CAP`;
-    `before=RUN_ID` answers the rows that ended before that run (ties by
-    id), and `next_before` is the id to pass back for the next page, null
-    on the last. A bad `limit`, `before` or `outcome` is 400
-    naming it; a `before` no run has is an empty page.
-    """
     try:
         limit = parse_limit(query, default=SHIPPED_LIMIT, cap=SHIPPED_CAP)
         before = parse_before(query)
@@ -303,22 +216,13 @@ def shipped(project, query=""):
 
 
 def locate_run(project, text):
-    """The run `/runs/N`-style path segment `text` names, for the routes
-    under it: `(None, RunDetail)` when there is one, else `(status, body)`
-    -- the 400, 503 and 404 the routes share, so each states them once.
-
-    `text` that is not an integer is 400. An integer no run can have
-    (negative, or past SQLite's 64-bit INTEGER) is 404 without asking the
-    store, which would raise OverflowError binding it; `run` then echoes
-    the path as typed, since the id may be too long to be a JSON number.
-    An integer with no run is 404 carrying `run` as a number.
-    """
     try:
         run_id = parse_run_id(text)
     except ValueError as error:
         return (400, {"error": str(error)}), None
     if not project.store_path.exists():
         return (503, no_store(project)), None
+    # Binding an id past SQLite's INTEGER would raise OverflowError.
     if run_id is None:
         return (404, {"error": "no such run", "run": text}), None
     conn = store.read.open_readonly(project.store_path)
@@ -332,18 +236,6 @@ def locate_run(project, text):
 
 
 def run_detail(project, run_id, now=None):
-    """Return `/runs/N`: run clocks, review rounds and narrative events.
-
-    Effective working_ms includes active work through `now`, split into
-    agent_ms (what the box judges) and verify_ms; verify_started_ms is set only
-    while the open span is a verify. elapsed_ms is wall time, frozen at
-    endedAt. The scaled time box matches `/status`. Live runs carry heartbeat
-    age (null after completion) and the recorded review cap;
-    old rows use MAX_ROUNDS. locate_run supplies invalid/missing 400/404/503s.
-    Rounds include the private operator notes they consumed.
-    Rounds and events are oldest first; include implementer_output summaries
-    for refusals and no-commit crashes, and operator_note_consumed timestamps
-    for fix starts, keeping full payloads in the store."""
     now = int(time() * 1000) if now is None else now
     failed, run = locate_run(project, run_id)
     if failed is not None:
@@ -359,8 +251,6 @@ def run_detail(project, run_id, now=None):
         conn.close()
     merge = merge_config(project)
     live = run.endedAt is None
-    # `time_box_ms` is the box the run was counted against -- the estimate
-    # scaled by `[agents] budget_scale` -- matching the box `/status` serves.
     scale = budget_scale(project)
     clock = run.endedAt if not live else now
     return 200, {
@@ -383,8 +273,6 @@ def run_detail(project, run_id, now=None):
                 "pr_url": run.prUrl, "work_started_ms": run.workStartedAt,
                 "verify_started_ms": run.verifyStartedAt,
                 "approved_at": run.approvedAt, "approved_by": run.approvedBy,
-                # The cap the loop gave this run; a run recorded before the
-                # store carried one answers the constant.
                 "max_rounds": run.reviewRoundCap or MAX_ROUNDS},
         "rounds": [{"round": r.round, "started_ms": r.startedAt,
                     "ended_ms": r.endedAt, "verdict": r.verdict,
@@ -401,7 +289,6 @@ def run_detail(project, run_id, now=None):
 
 
 def split_instructions(findings, bot_logins=MERGE_KEYS["bot_authors"]):
-    """Normalize legacy instructions once at the read boundary, without writes."""
     result = {"findings": [], "instructions": []}
     marker = " -- MENTIONED: ADDRESS: "
     for finding in findings:
@@ -438,17 +325,6 @@ def split_instructions(findings, bot_logins=MERGE_KEYS["bot_authors"]):
 
 
 def run_ledger(project, run_id):
-    """The `/runs/N/ledger` answer: `(http status, JSON-able body)`.
-
-    The run's narrative as the store holds it (design note 9): `entries`
-    oldest first, each its `at` in epoch milliseconds, `kind` (one of
-    `store.LEDGER_KINDS`), `text` and `source` (`loop` or `operator`), with
-    `run_id` and the run's `ticket`. An `intervention` entry also carries
-    `cleared` and `waited_ms` (`ledger_entry()`). A merged run with no rows
-    answers an empty list. `run_id` parses as on `/runs/N`
-    (`locate_run()`): a non-integer is 400, an integer with no run is 404
-    carrying `run`.
-    """
     failed, run = locate_run(project, run_id)
     if failed is not None:
         return failed
@@ -464,13 +340,6 @@ def run_ledger(project, run_id):
 
 
 def ledger_entry(entry, head):
-    """One ledger entry as both ledger endpoints spell it: `head`'s
-    fields first, then `at`, `kind`, `source` and `text`, and on an
-    `intervention` entry `cleared` and `waited_ms` (KO-308) -- what the
-    operator's step cleared (`question` or `failed`) and how long that had
-    waited, both null when nothing was waiting. The store's rule
-    (`store.read._cleared_by()`) decides; the wire only names the fields.
-    """
     body = {**head, "at": entry.at, "kind": entry.kind,
             "source": entry.source, "text": entry.text}
     if entry.kind == "intervention":
@@ -484,13 +353,6 @@ LEDGER_CAP = 1000
 
 
 def ledger(project, query):
-    """The `/ledger` answer: `(http status, JSON-able body)`.
-
-    Read entries since the required epoch-ms cursor, narrowed by kind/ticket
-    and capped by limit. The Now window also carries ongoing project outages,
-    even across midnight, and suppresses their repeated launch interventions.
-    Invalid query parameters return 400; absent stores return 503.
-    """
     try:
         since = parse_since(query)
         kind = parse_filter(query, "kind", allowed=store.LEDGER_KINDS)
@@ -520,9 +382,7 @@ def ledger(project, query):
     }
 
 
-
 def migration_rows(conn, since, limit, project_path):
-    """Store-wide evidence has no ticket or run to join to the ledger."""
     from holophyte.cli.report import migration_line
 
     if "note" not in {r[1] for r in conn.execute("PRAGMA table_info(interventions)")}:
@@ -541,7 +401,6 @@ def migration_rows(conn, since, limit, project_path):
 
 
 def route_down_rows(conn):
-    """One ongoing outage per project, including one begun before midnight."""
     from store import launch_backoff
 
     rows = []
@@ -560,13 +419,6 @@ def route_down_rows(conn):
 
 
 def run_files(project, run_id):
-    """Return paths changed by a run, with status and line counts.
-
-    Live runs use their worktree against main's merge base, including
-    uncommitted and untracked files. Ended runs use the merge commit or
-    surviving branch. Paths are sorted and capped at files.MAX_FILES.
-    Invalid/missing runs return 400/404; missing stores return 503, absent
-    ranges 409, and a Git timeout 504."""
     failed, run = locate_run(project, run_id)
     if failed is not None:
         return failed
@@ -596,8 +448,6 @@ def run_files(project, run_id):
 
 
 def active_routes(project):
-    """Current commands per seat; primary seats carry no fallback marker.
-    The critic is advice with no route to fall back to, so it is not one."""
     from holophyte.agents.agent_routes import active_fallbacks, safe_command
     from holophyte.config.config import AGENT_CONFIG_KEYS
 
@@ -615,7 +465,6 @@ RUN_TRANSCRIPT_PATH = re.compile(r"^/runs/([^/]+/turns/[^/]+)/transcript$")
 
 
 def run_turns(project, text):
-    """Ordered turn telemetry remains readable even when transcripts are off."""
     from holophyte.agents.transcripts import turns
     from holophyte.redact import known_secrets, outbound
     failed, run = locate_run(project, text)
@@ -633,7 +482,6 @@ def run_turns(project, text):
 
 
 def run_transcript(project, segment):
-    """Render a turn's session within the opt-in roots, with outbound redaction."""
     from holophyte.agents.transcripts import locate, render
     from holophyte.config.config import serve_config
     from holophyte.redact import known_secrets, outbound

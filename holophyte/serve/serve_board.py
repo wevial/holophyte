@@ -1,25 +1,3 @@
-"""The host daemon's native board writes (KO-758, KO-763): the gate every
-one passes, `PUT /projects/NAME/tickets/ID`, the revision-checked edit,
-and `POST /projects/NAME/tickets`, `.../tickets/ID/move` and
-`.../tickets/ID/cancel`, which file, move and cancel a ticket.
-
-A board write is a stronger power than a read, so the gate is its own:
-exactly the machine token (`HostServer.write_token`) on every bind,
-loopback included -- a project's own token, accepted for reads, never
-carries it -- else 401; host `[serve] actions` on and the project's
-`[board] kind = "native"`, else 404, as an unknown route; `If-Match`
-naming the revision the edit was read at, a non-negative integer, else
-428 (filing has no `If-Match`: a new ticket has no revision); a JSON
-object body, else 400. The author is recorded as `console`, never taken
-from the body.
-
-The edit is `store.board.edit_ticket()`: 200 with the new revision, 409
-with `current` when the ticket has moved past `If-Match`, 422 with the
-blocking problems and nothing written; a file, move or cancel answers
-the same way through `file_ticket()`, `move_ticket()` and
-`cancel_ticket()`, a filing 201. A store failure is the project's 503 or
-500, as an action's is. A project daemon has none of these routes.
-"""
 from __future__ import annotations
 
 from contextlib import closing
@@ -35,16 +13,13 @@ from holophyte.serve.server import authorized
 
 TICKETS = "/tickets"
 TICKETS_PREFIX = TICKETS + "/"
-# The columns a console filing or move puts a ticket in.
 COLUMNS = ("ready", "backlog")
-# What the board records as a console write's author.
 AUTHOR = "console"
 # Linear's priorities, 0 for none, which a native ticket keeps.
 PRIORITIES = range(5)
 
 
 def ticket_path(path):
-    """The identifier `path` edits, `/tickets/ID`; None for any other."""
     if not path.startswith(TICKETS_PREFIX):
         return None
     identifier = unquote(path[len(TICKETS_PREFIX):])
@@ -54,9 +29,6 @@ def ticket_path(path):
 
 
 def post_path(path):
-    """`(verb, identifier)` for a `POST` board path: `("file", None)` for
-    `/tickets`, `("move", ID)` or `("cancel", ID)` for `/tickets/ID/VERB`;
-    None for any other."""
     if path == TICKETS:
         return "file", None
     identifier, _, verb = path.rpartition("/")
@@ -67,7 +39,6 @@ def post_path(path):
 
 
 def revision_read(header):
-    """`If-Match` as the revision it names; None when it names none."""
     text = (header or "").strip()
     if not (text.isascii() and text.isdecimal()):
         return None
@@ -75,8 +46,6 @@ def revision_read(header):
 
 
 def edit_fields(body):
-    """The edit's `(text, priority, labels)` from the request body;
-    ValueError naming the first field that is not what it must be."""
     text = body.get("body")
     if not isinstance(text, str) or not text.strip():
         raise ValueError("body must carry the ticket's text as `body`")
@@ -93,14 +62,11 @@ def edit_fields(body):
 
 
 def file_fields(body):
-    """The filing's `(text, column, priority)` from the request body;
-    ValueError naming the first field that is not what it must be."""
     text, priority, _ = edit_fields({**body, "labels": None})
     return text, column_field(body.get("column", "ready")), priority
 
 
 def move_fields(body):
-    """The move's `(column, note)` from the request body; ValueError."""
     note = body.get("note")
     if note is not None and not isinstance(note, str):
         raise ValueError("note must be a string")
@@ -108,7 +74,6 @@ def move_fields(body):
 
 
 def cancel_fields(body):
-    """The cancel's `(note,)` from the request body; ValueError."""
     note = body.get("note")
     if not isinstance(note, str) or not note.strip():
         raise ValueError("a cancel must carry the reason as `note`")
@@ -122,9 +87,7 @@ def column_field(column):
 
 
 def gate(handler, scope, path):
-    """None when the write may go on, else the `(status, body)` it gets.
-    Nothing here opens a store: a route that does not exist is 404 however
-    its project's store reads."""
+    """Only the machine token writes, on every bind; no store is opened."""
     server = handler.server
     if server.write_token is None or not authorized(
             handler.headers.get("Authorization"), server.write_token):
@@ -137,15 +100,12 @@ def gate(handler, scope, path):
 
 
 def put_ticket(handler, scope, path, identifier):
-    """`PUT /tickets/ID` under a project prefix: the gate, then the edit."""
     write(handler, scope, path, edit_fields,
           lambda project, expected, *fields: edit(
               project, identifier, expected, *fields))
 
 
 def post_ticket(handler, scope, path, verb, identifier):
-    """`POST /tickets`, `/tickets/ID/move` or `/tickets/ID/cancel` under a
-    project prefix: the gate, then the filing, move or cancel."""
     if verb == "file":
         return write(handler, scope, path, file_fields,
                      lambda project, _, *fields: new_ticket(project, *fields),
@@ -158,9 +118,6 @@ def post_ticket(handler, scope, path, verb, identifier):
 
 
 def write(handler, scope, path, parse, act, revisioned=True):
-    """One board write in the gate's order: the gate, `If-Match` when
-    `revisioned`, the body through `parse`, the scope's store check, then
-    `act(project, expected, *fields)`, whose `(status, body)` is answered."""
     try:
         answer = gate(handler, scope, path)
         if answer is not None:
@@ -185,8 +142,6 @@ def write(handler, scope, path, parse, act, revisioned=True):
 
 
 def on_store(project, act):
-    """`act(conn, project_id)` on `project`'s store, its `(status, body)`;
-    a moved revision is 409 with `current`, a refusal 422 with `problems`."""
     if not project.store_path.exists():
         return 503, no_store(project)
     team = board_config(project).team
@@ -201,7 +156,6 @@ def on_store(project, act):
 
 
 def edit(project, identifier, expected, text, priority, labels):
-    """`edit_ticket()` on `project`'s store as the console: `(status, body)`."""
     def act(conn, project_id):
         revision = store.board.edit_ticket(
             conn, project_id, identifier, text, expected, author=AUTHOR,
@@ -211,8 +165,6 @@ def edit(project, identifier, expected, text, priority, labels):
 
 
 def new_ticket(project, text, column, priority):
-    """`file_ticket()` under the board's `prefix` as the console: 201 with
-    the new ticket at revision 1."""
     key = board_config(project).prefix
 
     def act(conn, project_id):
@@ -224,7 +176,6 @@ def new_ticket(project, text, column, priority):
 
 
 def move(project, identifier, expected, column, note):
-    """`move_ticket()` as the console: 200 with the new revision."""
     def act(conn, project_id):
         revision = store.board.move_ticket(
             conn, project_id, identifier, column, expected, author=AUTHOR,
@@ -234,11 +185,9 @@ def move(project, identifier, expected, column, note):
 
 
 def cancel(project, identifier, expected, note):
-    """`cancel_ticket()` as the console: 200 with the new revision and
-    `run`, the live run the cancel asked to abort, None when none. The run
-    is read in the cancel's own transaction, so it is the one aborted."""
     def act(conn, project_id):
         with store.transaction(conn):
+            # Read in the cancel's transaction: the run it aborts.
             row = conn.execute(
                 "SELECT activeRunId FROM tickets WHERE projectId = ?"
                 " AND linearIdentifier = ?", (project_id, identifier)
