@@ -34,13 +34,6 @@ OVER = {}
 # only goes down; a file brought to or under its ceiling leaves the table.
 # Lower a pin when it sits more than 150 lines above its file's count.
 PINNED = {
-    "tests/test_claim.py": 1692,
-
-    "tests/test_isolation.py": 1627,
-
-    "tests/test_pullrequest.py": 1615,
-
-    "tests/test_store_schema.py": 1621,
 }
 
 
