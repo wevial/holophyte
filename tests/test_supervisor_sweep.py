@@ -29,7 +29,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 import holophyte.config.checks  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
@@ -975,7 +975,7 @@ class SweepModeTests(SweepTestCase):
         silent no-op, or a loop that claims a ticket."""
         with patch.object(sys, "stderr", io.StringIO()) as complaint:
             with self.assertRaises(SystemExit):
-                holophyte.cli.cli.cli(["--act", str(self.target)])
+                holophyte.cli.entry.cli(["--act", str(self.target)])
 
         self.assertIn("--act", complaint.getvalue())
 
@@ -983,7 +983,7 @@ class SweepModeTests(SweepTestCase):
         out = io.StringIO()
 
         with no_network(), patch.object(sys, "stdout", out):
-            holophyte.cli.cli.cli(["--sweep", str(self.root / "elsewhere")])
+            holophyte.cli.entry.cli(["--sweep", str(self.root / "elsewhere")])
 
         self.assertIn("no store at", out.getvalue())
         self.assertFalse(

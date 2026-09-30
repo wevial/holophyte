@@ -1,4 +1,3 @@
-"""Operator commands and startup: probe before claim, record route failures."""
 import getpass
 import json
 import os
@@ -43,16 +42,14 @@ from store.gap_layers import record_gap_layer
 
 BABYSIT_DEFAULT_NOTE = "sent back to the babysitter"
 
-EXEC = os.execv  # Replace after a self-merge; tests observe through this seam.
+EXEC = os.execv
 
 
 def self_hosted(target):
-    """Whether the target is the factory checkout, requiring exec after merge."""
     return Path(__file__).resolve().parents[2] == target.path.resolve()
 
 
 def main(target, provider):
-    """Probe before claiming, then run serially or schedule worker children."""
     banner(target)
     reset(target)
     try:
@@ -69,7 +66,6 @@ def main(target, provider):
 
 
 def _record_startup_probe(target, provider, probe):
-    """Record failure or clear an outage when startup succeeds."""
     from time import time
 
     from store import launch_backoff
@@ -89,49 +85,34 @@ def _record_startup_probe(target, provider, probe):
 
 
 def _serial(target, provider, knobs):
-    """Claim and dispatch serially; `worker()` runs the same phases once."""
     from holophyte.loop.dispatch import PARKED, SWEPT, _dispatch, _startup_sweep
     from holophyte.story.witness import witness_step
 
     restart_after_merge = self_hosted(target)
     stop_on_failure = knobs.stop_on_failure
     order = knobs.order
-    # Preserve a nonzero exit when continuing past failures.
     failed = False
     conn = open_store(target)
     try:
-        # The team name keys the project until the provider resolves its id.
         project = store.tickets.ensure_project(conn, provider.team, target.path)
         seen = _startup_sweep(target, conn)
         announce(target)
         _reconcile_at_startup(target, conn, project, provider)
-        # Refused tickets remain on the board's ready list. Remember them so
-        # a blocked head-of-queue ticket cannot starve the tickets behind it.
+        # Refused tickets stay listed; skipping them keeps the queue moving.
         skip = set()
         first_pass = True
         while True:
-            # A move `open()` reads needs no restart here: only the pool
-            # re-executes for one, to hand its workers to the new build.
             moved = _schema_move(target)
             if moved and not moved.readable:
                 _reexec(target, conn, project, moved.reason)
                 return
             witness_step(target, conn, project)
-            # Before the claim: a pull request a person merged since the
-            # last pass ships its parked run here (KO-359). The first pass
-            # asked at startup, before the mirror was repaired.
             if not first_pass:
-                # A ticket sent back to the babysitter for new review
-                # activity (KO-362) may be one this pass parked and put in
-                # `skip`; it is ready again, and this pass claims it.
                 skip -= _reconcile_pull_requests(target, conn, project,
                                                  provider)
             first_pass = False
             _read_board(target, conn, project, provider, knobs)
-            # The claim spends the mirror's listing. Check its budget after
-            # mirroring: that request (including a caught 429) may have pushed
-            # the budget below its tenth. Stop before a refused claim; the
-            # supervisor waits for the reset before restarting (KO-434).
+            # After the mirror: its listing may have spent the budget.
             if linear_budget_low():
                 store.record_loop_return(conn, project)
                 print("[holo2] the ready listing waits for the budget's"
@@ -145,19 +126,11 @@ def _serial(target, provider, knobs):
                 return
             merged = _dispatch(target, conn, run_id, provider, task, ticket_id)
             if merged is PARKED:
-                # An approved candidate waiting for a person: not a failure,
-                # so neither the stop nor the exit status is spent on it.
-                # Its ticket is `blocked_on_operator`, which the claim path
-                # refuses, so skipping it is only cheaper than refusing it.
                 skip.add(task["id"])
                 print(f"[holo2] {task['id']} parked awaiting merge approval;"
                       " continuing to the next ready ticket")
                 continue
             if merged is SWEPT:
-                # The sweep closed the run out and the loop honoured it by
-                # stopping the turn; the ticket's mirror says what the sweep
-                # left it saying, so it is not offered again this pass, and
-                # a failure the sweep already counted is not counted twice.
                 skip.add(task["id"])
                 outcome = conn.execute("SELECT outcome FROM runs WHERE id = ?",
                                        (run_id,)).fetchone()[0]
@@ -165,18 +138,8 @@ def _serial(target, provider, knobs):
                       " to the next ready ticket")
                 continue
             if not merged:
-                # The regenerated window stays uncommitted, like the preserved
-                # branch it describes: a human closes both out. Nonzero so the
-                # shell — and anything supervising it — sees the failure.
                 if stop_on_failure or routes(target).failed:
-                    return 1  # stop on first failure; ticket stays In Progress
-                # `[loop] stop_on_failure = false`: the run is closed out
-                # exactly as above, and the loop goes on to the next ready
-                # ticket. The failed one is skipped for the rest of this
-                # pass -- its mirror is `in_flight`, so the claim path would
-                # refuse it anyway, but not offering it again is cheaper than
-                # refusing it and the print is one line about the failure
-                # rather than two.
+                    return 1
                 failed = True
                 skip.add(task["id"])
                 print(f"[holo2] {task['id']} failed; continuing to the next"
@@ -185,20 +148,13 @@ def _serial(target, provider, knobs):
             commit_findings(target,
                             f"Complete task {task['id']}: {task['title']}")
             if restart_after_merge:
-                # Terminal run, released lease: restart with the merged code.
                 _reexec(target, conn, project)
-                return  # only a test's EXEC returns
+                return
     finally:
         conn.close()
 
 
 def _queue_ended(conn, project, task, failed):
-    """The serial loop's exit when the claim found nothing: the exit note,
-    in the store before it is on the terminal -- a loop that was re-exec'd
-    and found nothing to claim ends here without ever heartbeating, and
-    this is what tells the sweep the restart came back -- then the line and
-    the status. A store-mode board that could not be read back at the claim
-    (`BOARD_DOWN`) is not a drained queue: it says so and exits nonzero."""
     store.record_loop_return(conn, project)
     if task is BOARD_DOWN:
         print("[holo2] the board could not be read back at the claim;"
@@ -209,9 +165,6 @@ def _queue_ended(conn, project, task, failed):
 
 
 def _read_board(target, conn, project, provider, knobs):
-    """The pass's board read before its claim: the ready listing mirrored
-    (`_mirror_queue()`), or in store mode one sync a `tick_sec`, the claim
-    reading the store's queue (Phase 3 stage 3)."""
     from holophyte.loop.dispatch import _mirror_queue
 
     if store_mode(target):
@@ -228,14 +181,10 @@ def _schema_reason(moved):
 
 class SchemaMove(NamedTuple):
     reason: str
-    readable: bool  # `open()` accepts the moved store on this build
+    readable: bool
 
 
 def _schema_move(target):
-    """Probe at the pass boundary before claiming or spawning more work.
-
-    A `SchemaMove` for a store above this build's version, whether `open()`
-    refuses it or reads it from its migrate note's floor; None otherwise."""
     try:
         conn = store.open(target.store_path)
     except store.SchemaNewer as moved:
@@ -252,7 +201,6 @@ def _schema_move(target):
 
 def _reexec(target, conn, project, reason=None, *, prepared_sha=None,
             can_ff=None, worker_pids=()):
-    """Update and exec; a schema move with workers asks the caller to drain."""
     from holophyte.loop.pool_handoff import factory_checkout
 
     sha = prepared_sha or sh(["git", "rev-parse", "--short", "HEAD"],
@@ -272,23 +220,6 @@ def _reexec(target, conn, project, reason=None, *, prepared_sha=None,
 
 
 def report(target, conn=None, out=None, now=None):
-    """Print the target store's estimate-vs-actual table. Returns nothing.
-
-    `--report`'s whole body: it reads rows and prints them, so no ticket is
-    claimed, no worktree is cut and no provider is imported -- which is what
-    makes it safe to run against the store of a loop that is still working.
-
-    An older store is refused until the loop or serve daemon migrates it.
-    A target with no store at all is not created for the sake of an empty
-    table; it is reported.
-
-    Below the table, one line naming the `[report] findings` mode, so an
-    operator can see whether this target has opted into rendering
-    FINDINGS.md at close-out (`repo`) or not (`none`), then one on the target's
-    supervisor -- see `supervisor_liveness_line()`, always last. `now` is
-    the clock the heartbeat's age is taken against, injectable so a test
-    can place a beat in time.
-    """
     out = out or sys.stdout
     if conn is None and not target.store_path.exists():
         print(f"[holo2] no store at {target.store_path}", file=out)
@@ -307,25 +238,6 @@ def report(target, conn=None, out=None, now=None):
 
 
 def requeue(target, identifier, note, out=None, provider=None):
-    """Put the failed ticket `identifier` back in the queue. Returns nothing.
-
-    `--requeue`'s whole body, and off every other mode's write path: it opens
-    the store, does `store.requeue()`'s one transaction, prints the requeued
-    line and exits. The identifier is the Linear one (`KO-n`), resolved in
-    this target's store; an identifier the store has not mirrored, or one it
-    holds more than once, is a `SystemExit` naming it, as is every refusal
-    `store.requeue()` makes -- and in all of those nothing is written. A
-    target with no store has nothing to requeue and says so the same way.
-
-    With a `provider`, the board lease label comes off too (KO-351): this
-    writer's `holo:HOST`, taken off before the store's transaction makes
-    the ticket claimable, and only while the store names no other live run
-    on the ticket, so a claim that follows finds its own label untouched
-    whatever the order of the two. Best-effort: the
-    failed run's close-out should already have removed it, and a board that
-    was down then gets one more chance here; one still down leaves a label
-    this writer's next claim treats as stale.
-    """
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
@@ -335,9 +247,6 @@ def requeue(target, identifier, note, out=None, provider=None):
             run_id, pr_url = failed_run
             release_lease_label(target, conn, ticket_id, provider, run_id)
             if pr_url:
-                # The console's row keeps its link while the ticket waits:
-                # the branch is still open as a pull request, and the next
-                # run adopts it rather than opening a second (KO-407).
                 note = (f"{note}\n\nThe failed run's branch is still open"
                         f" as {pr_url}")
         try:
@@ -350,13 +259,7 @@ def requeue(target, identifier, note, out=None, provider=None):
 
 
 def _requeue_candidate(conn, ticket_id):
-    """The failed run `store.requeue()` would requeue `ticket_id` after, or
-    None when it would refuse: a read of the same rows, made first so the
-    run's lease label can come off while the ticket is still `in_flight`.
-    `store.requeue()` re-reaches the verdict inside its own transaction.
-    Returns `(run_id, pr_url)` -- the pull request the failed run left open
-    (`runs.prUrl`, None when it opened none) rides along so the requeue
-    note can name it."""
+    """Read first, so the lease label comes off while the ticket is in_flight."""
     ticket = store.read.ticket_by_id(conn, ticket_id)
     if ticket is None or ticket.activeRunId is not None \
             or ticket.lastRunId is None \
@@ -373,19 +276,6 @@ def _requeue_candidate(conn, ticket_id):
     return None
 
 def approve(target, identifier, note, out=None):
-    """Release the ticket `identifier` parked for merge approval. Returns
-    nothing.
-
-    `--approve`'s whole body, `--requeue`'s twin: it opens the store, does
-    `store.approve()`'s one transaction -- the `approve` intervention row
-    carrying `note`, the parked run ended with its resume point at the merge
-    gate, the ticket walked to `ready` -- prints what it did and exits. The
-    loop's next claim of the ticket takes the preserved candidate straight to
-    the merge gate. Every refusal `store.approve()` makes is a `SystemExit`
-    naming the ticket's state, and nothing is written then; an identifier the
-    store has not mirrored, or a target with no store, is refused the same
-    way.
-    """
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
@@ -403,8 +293,6 @@ def approve(target, identifier, note, out=None):
 
 
 def babysit_ticket(target, identifier, note, out=None):
-    """Release parked PRs with instructions or rechecks; refuse as SystemExit.
-    """
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
@@ -428,20 +316,6 @@ def babysit_ticket(target, identifier, note, out=None):
 
 
 def repoint(target, identifier, sha, note, out=None):
-    """Move the ticket `identifier`'s parked candidate to `sha`. Returns
-    nothing.
-
-    `--repoint`'s whole body, `--approve`'s sibling for the rebuilt-branch
-    case: it opens the store, does `store.repoint()`'s one transaction --
-    the `repoint` intervention row carrying `note`, the narrative event
-    naming both shas, `candidateSha` moved -- prints the old and new shas
-    and exits. The branch itself is the operator's git work, done before
-    this; the merge gate the next approval resumes into holds the branch to
-    the new sha exactly as it held it to the old. Every refusal
-    `store.repoint()` makes is a `SystemExit` naming the ticket and the
-    reason, and nothing is written then; an identifier the store has not
-    mirrored, or a target with no store, is refused the same way.
-    """
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
@@ -458,9 +332,6 @@ def repoint(target, identifier, sha, note, out=None):
 
 
 def close_ticket(target, identifier, landed, note=None, out=None, provider=None):
-    """Record an external landing after a terminal, unsuccessful factory run.
-    Preserve the outcome; validate and walk atomically, then project to the board.
-    """
     out = sys.stdout if out is None else out
     conn = _operator_store(target)
     message = f"Closed: change landed at {landed}; no factory merge occurred."
@@ -501,15 +372,12 @@ def gap_layer(target, identifier, layer, note, carried_by=None,
 
 
 def _operator_store(target):
-    """Open the operator's store, refusing a missing store without creating it."""
     if not target.store_path.exists():
         raise SystemExit(f"[holo2] no store at {target.store_path}")
     return open_store(target)
 
 
 def _ticket_by_identifier(target, conn, identifier):
-    """The store's ticket id for the Linear identifier `KO-n`, or the exit
-    for one the store has not mirrored or holds more than once."""
     rows = conn.execute(
         "SELECT id FROM tickets WHERE linearIdentifier = ?",
         (identifier,)).fetchall()

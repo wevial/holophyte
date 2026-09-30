@@ -20,7 +20,7 @@ from test_story_close import (  # noqa: E402
     witness,
 )
 
-import holophyte.cli.cli  # noqa: E402
+import holophyte.cli.entry  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.story import story_claim  # noqa: E402
@@ -37,7 +37,7 @@ class DecideFixture(StoryCloseFixture):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             try:
-                status = holophyte.cli.cli.cli([str(self.target), *args]) or 0
+                status = holophyte.cli.entry.cli([str(self.target), *args]) or 0
             except SystemExit as exited:
                 status = exited.code
         return status, out.getvalue()

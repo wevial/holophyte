@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli.cli
+import holophyte.cli.entry
 import store
 from holophyte.config.project import Project
 from holophyte.host.registry import Host
@@ -82,7 +82,7 @@ class HostFixture(unittest.TestCase):
     def cli(self, *args):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            code = holophyte.cli.cli.cli(list(args))
+            code = holophyte.cli.entry.cli(list(args))
         return code, out.getvalue()
 
     def registered(self):

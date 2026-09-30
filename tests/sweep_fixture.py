@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
-import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.host.sweep_report  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -131,7 +131,8 @@ class SweepTestCase(unittest.TestCase):
         cannot arrange, so `time` is what `at` replaces -- the seam the sweep
         itself takes as a parameter.
         """
-        holophyte.cli.cli.eager_import()  # Resolve the build before hiding git on PATH.
+        # Resolve the build before hiding git on PATH.
+        holophyte.cli.entry.eager_import()
         out = io.StringIO()
         # No `docker` either: the review-container check asks the host's
         # daemon, and these tests are about the store.
@@ -145,7 +146,7 @@ class SweepTestCase(unittest.TestCase):
                 patch.object(sys, "stdout", out),
                 patch.object(holophyte.host.sweep_report, "time", lambda: at / 1000),
             ):
-                holophyte.cli.cli.cli(["--sweep", *flags, str(self.target)])
+                holophyte.cli.entry.cli(["--sweep", *flags, str(self.target)])
         return out.getvalue().splitlines()
 
     def strikes(self, run_id):

@@ -102,7 +102,8 @@ class ProjectWordTests(unittest.TestCase):
     def test_the_scan_sees_the_literals_it_guards(self):
         # Zero sources or zero literals would pass the check above vacuously.
         cli = [
-            text for line, text in literal_text(ROOT / "holophyte" / "cli" / "cli.py")
+            text for line, text
+            in literal_text(ROOT / "holophyte" / "cli" / "arguments.py")
         ]
         self.assertIn("repository the loop works in", " ".join(cli))
         self.assertTrue(all(path.exists() for path in SOURCES))

@@ -22,7 +22,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.board.projection
-import holophyte.cli.cli
+import holophyte.cli.entry
 import holophyte.config.project
 import holophyte.loop.stop
 import linear_provider
@@ -102,8 +102,8 @@ class RequeueCliTests(unittest.TestCase):
         # records the call instead of reaching for the network.
         self.board = StubBoard.instance = None
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
-                patch.object(holophyte.cli.cli, "board_for", stub_board_for):
-            holophyte.cli.cli.cli([str(self.repo), *args])
+                patch.object(holophyte.cli.entry, "board_for", stub_board_for):
+            holophyte.cli.entry.cli([str(self.repo), *args])
         self.board = StubBoard.instance
         return out.getvalue(), err.getvalue()
 

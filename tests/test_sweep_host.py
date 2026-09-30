@@ -27,7 +27,7 @@ from host_fixture import REPO, HostFixture  # noqa: E402
 from loop_fixture import StubProvider  # noqa: E402
 from phase_fixture import advance_phase  # noqa: E402
 
-import holophyte.cli.cli  # noqa: E402
+import holophyte.cli.host_modes  # noqa: E402
 import holophyte.host.supervisor_lock as supervisor_lock  # noqa: E402
 import holophyte.host.sweep_host as sweep_host  # noqa: E402
 import store  # noqa: E402
@@ -852,12 +852,12 @@ class RegisteredProjectTests(HostSweepFixture):
     def test_the_loop_spawns_nothing_for_a_registered_project(self):
         spawned = []
         loose = self.repo("loose")
-        with patch.object(holophyte.cli.cli, "SPAWN",
+        with patch.object(holophyte.cli.host_modes, "SPAWN",
                           lambda argv, **_: spawned.append(argv) or
                           type("Child", (), {"pid": 1})()):
             out = io.StringIO()
-            holophyte.cli.cli.start_supervisor(self.target("alpha"), out=out)
-            holophyte.cli.cli.start_supervisor(Project.locate(loose), out=out)
+            holophyte.cli.host_modes.start_supervisor(self.target("alpha"), out=out)
+            holophyte.cli.host_modes.start_supervisor(Project.locate(loose), out=out)
 
         self.assertIn(f"the host sweep watches {self.paths['alpha']}",
                       out.getvalue())
@@ -874,7 +874,7 @@ class RegisteredProjectTests(HostSweepFixture):
         self.assertEqual(self.started_loops, [])
 
     def test_a_hand_supervise_of_a_registered_project_is_refused(self):
-        with patch.object(holophyte.cli.cli, "supervise",
+        with patch.object(holophyte.cli.host_modes, "supervise",
                           lambda *a: self.fail("supervised a registered"
                                                " project")), \
                 self.assertRaises(SystemExit) as refused:

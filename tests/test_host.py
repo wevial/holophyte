@@ -17,7 +17,7 @@ import time
 import unittest
 from pathlib import Path
 
-import holophyte.cli.cli
+import holophyte.cli.entry
 import store
 from holophyte.config.config_tables import board_mode
 from holophyte.config.project import Project
@@ -281,7 +281,7 @@ class HostStatusTests(HostFixture):
             with self.subTest(argv=argv), \
                     contextlib.redirect_stderr(io.StringIO()), \
                     self.assertRaises(SystemExit) as raised:
-                holophyte.cli.cli.cli(argv)
+                holophyte.cli.entry.cli(argv)
             self.assertEqual(raised.exception.code, 2)
 
 

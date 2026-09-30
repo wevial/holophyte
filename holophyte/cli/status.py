@@ -1,26 +1,3 @@
-"""holophyte.cli.status: `--status`, what the factory is doing right now (KO-596).
-
-`snapshot()` answers the plain question in one dict: the store's projects
-and their admission, the live runs and their phase, the parked tickets and
-what they ask, the tickets a failed run left in flight with no run, how
-many tickets the claim would take, the schema version, and who holds the
-supervisor and merge locks. `render()` is the same as a few lines of text;
-`status_report()` is `--status`'s whole body, `--json` printing the dict
-instead. The keys are snake_case and stable: the JSON is the wire shape a
-later `doctor` and the shadow seat read.
-
-Reads only. The store is opened through `store.read.open_readonly()` and
-queried with the reads the sweep, `/status` and `/attention` already make
-(`live_runs()` over `SWEEPABLE_PHASES`, `blocked_tickets()`,
-`stranded_runs()`, and `ready_tickets()` in mirror mode or the store's
-queue, `claimable()`, in store mode); the locks are read with
-`read_supervisor_lock()` and `read_merge_lock()` and judged, never removed.
-Nothing here calls Linear or GitHub.
-
-With no project, `host_status_report()` is the host form: the registry
-(`holophyte.host.registry`), the build, the home's sweep lock and `sweep.json`, and
-each registered project's snapshot, one project's failure its own `error`.
-"""
 import json
 import sys
 from time import time
@@ -39,14 +16,6 @@ from holophyte.story.story_views import story_facts, story_lines
 
 
 def snapshot(target, conn, now=None):
-    """The target's state as a plain, JSON-able dict; `now` is epoch ms.
-
-    `heartbeat_age_s` is whole seconds since `runs.lastHeartbeat`, reported
-    and not judged: whether that is stale is the sweep's rule. A lock is
-    null when there is no lock file; a lock whose holder can be judged
-    carries `stale` -- a supervisor pid the kernel no longer knows, a merge
-    lock naming a run that has ended or is not in the store.
-    """
     now = int(time() * 1000) if now is None else now
     projects = conn.execute(
         "SELECT repoPath, admission, holdNote FROM projects ORDER BY id")
@@ -74,11 +43,6 @@ def snapshot(target, conn, now=None):
 
 
 def _ready(target, conn):
-    """How many tickets the claim would take, branched as the sweep's
-    `owed()` is but with no board sync: the store's queue, `claimable()`,
-    summed over its projects in store mode, where a `ready` ticket shelved
-    in the backlog column is not claimed; `ready_tickets()` in mirror mode,
-    whose rows no store-mode sync ever gave a column."""
     if not store_mode(target):
         return len(store.read.ready_tickets(conn))
     return sum(len(store.read.claimable(conn, project))
@@ -86,12 +50,6 @@ def _ready(target, conn):
 
 
 def _supervisor_holder(path):
-    """`{"pid", "stale"}` for the supervisor lock at `path`, None with no
-    lock file: a project's, or the host sweep's in the home.
-
-    A file that names no pid is reported with a null pid and a null
-    `stale`: a lock, but not one whose holder can be judged.
-    """
     if not path.exists():
         return None
     holder = read_supervisor_lock(path)
@@ -101,8 +59,6 @@ def _supervisor_holder(path):
 
 
 def _merge_holder(target, conn):
-    """`{"run", "stale"}` for the merge lock, None with no lock file; the
-    run judged as `merge_lock_lines()` judges it, by its `endedAt`."""
     holder = read_merge_lock(merge_lock_path(target))
     if holder is None:
         return None
@@ -114,7 +70,6 @@ def _merge_holder(target, conn):
 
 
 def _lock_line(name, holder, key):
-    """One lock as a line: free, held by whom, or stale."""
     if holder is None:
         return f"{name} lock: free"
     if holder[key] is None:
@@ -124,7 +79,6 @@ def _lock_line(name, holder, key):
 
 
 def render(snap):
-    """The snapshot as the lines `--status` prints."""
     lines = [f"project {snap['target']} (schema {snap['schema_version']})"]
     for project in snap["projects"]:
         note = f": {project['hold_note']}" if project["hold_note"] else ""
@@ -138,8 +92,7 @@ def render(snap):
                      f" {parked['question'] or '(no question)'}")
     lines.extend(story_lines(snap["stories"]))
     for stranded in snap["stranded"]:
-        # A reason is free text; its line breaks are escaped so one ticket
-        # stays one line. The JSON keeps the reason as stored.
+        # One ticket stays one line; the JSON keeps the reason as stored.
         reason = "\\n".join((stranded["reason"] or "").splitlines())
         lines.append(f"stranded {stranded['ticket']} run {stranded['run']}:"
                      f" {reason or '(no reason)'}")
@@ -150,12 +103,7 @@ def render(snap):
 
 
 def status_report(target, as_json=False, out=None, now=None):
-    """`--status`'s body: print the snapshot as text, or as one JSON object.
-
-    A target with no store is reported rather than created, as `--sweep`
-    and `--report` answer the same mistake; the exit is non-zero so a
-    script reading the JSON is not handed an empty line as an answer.
-    """
+    """A missing store exits non-zero so a JSON reader gets no empty answer."""
     out = out or sys.stdout
     if not target.store_path.exists():
         print(f"[holo2] no store at {target.store_path}", file=out)
@@ -169,17 +117,11 @@ def status_report(target, as_json=False, out=None, now=None):
     return 0
 
 
-# The host form: `factory.py --status` with no project reads the registry,
-# the home's sweep lock and `sweep.json`, then each registered project's
-# store as the project form does. One project's missing store, bad config
-# or unreadable file is that project's `error`, never the report.
 HOME_LOCK = "supervisor.lock"
 SWEEP_STATE = "sweep.json"
 
 
 def load_sweep_state(home):
-    """`sweep.json` as written, None when absent; OSError or ValueError
-    when it cannot be read or parsed."""
     try:
         return json.loads((home / SWEEP_STATE).read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -187,7 +129,6 @@ def load_sweep_state(home):
 
 
 def read_sweep_state(home):
-    """`sweep.json` as written, None when absent, `{"error"}` unreadable."""
     try:
         return load_sweep_state(home)
     except (OSError, ValueError) as bad:
@@ -195,15 +136,10 @@ def read_sweep_state(home):
 
 
 def _host_project(entry, now):
-    """One registry entry as `{"name", "path", "store", "error"}`."""
     row = {"name": entry.name, "path": str(entry.path), "store": None,
            "error": entry.error}
     if entry.error:
         return row
-    # The project boundary: whatever reading this one project raises -- a
-    # locked or corrupt store, an unreadable lock file, a `[board]` table
-    # `board_mode()` refuses with `SystemExit` -- is its `error`, and the
-    # report goes on to the next.
     try:
         if not entry.target.store_path.exists():
             row["error"] = f"no store at {entry.target.store_path}"
@@ -213,15 +149,13 @@ def _host_project(entry, now):
             row["store"] = snapshot(entry.target, conn, now)
         finally:
             conn.close()
+    # Whatever one project raises is its error; the report goes on.
     except (Exception, SystemExit) as bad:
         row["error"] = f"{type(bad).__name__}: {bad}"
     return row
 
 
 def host_snapshot(host, now=None):
-    """The host's state as one JSON-able dict: the build this checkout is
-    at and the one the last sweep ran, the home lock, `sweep.json`, and
-    every registered project's snapshot or error."""
     sweep = read_sweep_state(host.home)
     return {
         "home": str(host.home),
@@ -235,9 +169,6 @@ def host_snapshot(host, now=None):
 
 
 def render_host(snap):
-    """The host snapshot as the lines `--status` prints; a project's lines
-    are what the last host sweep run said of it, then its project-form
-    lines, each prefixed with `[NAME]`."""
     build = snap["build"]
     sweep = snap["sweep"]
     lines = [f"host {snap['home']}: {len(snap['projects'])} projects in"
@@ -266,9 +197,7 @@ def render_host(snap):
 
 
 def host_status_report(host, as_json=False, out=None, now=None):
-    """`--status` with no project: exit 1 when there is no registry or any
-    project could not be read, so a script is not handed a partial answer
-    as a whole one."""
+    """Exit 1 on any unreadable project, so a partial answer is not a whole."""
     out = out or sys.stdout
     if not host.path.exists():
         print(f"[holo2] no host registry at {host.path}; `factory.py project"

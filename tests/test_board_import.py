@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
@@ -191,7 +191,7 @@ class NativeRefusalTests(unittest.TestCase):
         with patch.object(linear_provider, "_gql", asked), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 self.assertRaises(SystemExit) as raised:
-            holophyte.cli.cli.cli(["--board-import", str(repo)])
+            holophyte.cli.entry.cli(["--board-import", str(repo)])
 
         self.assertIsInstance(raised.exception.code, str)  # exits 1
         self.assertIn("[board] kind", raised.exception.code)

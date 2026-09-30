@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # `-m unittest tests.<name>` resolves the sibling fixtures as discovery does.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 import holophyte.config.config_tables  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.serve.server  # noqa: E402 - after the sys.path insert above
@@ -148,7 +148,7 @@ class TokenTests(ServeTestCase):
         self.seed()
         with contextlib.redirect_stdout(io.StringIO()), \
                 self.assertRaises(SystemExit) as raised:
-            holophyte.cli.cli.cli([str(self.target), "--serve", "0.0.0.0:0"])
+            holophyte.cli.entry.cli([str(self.target), "--serve", "0.0.0.0:0"])
         self.assertIn("[serve] token_file", str(raised.exception))
 
     def test_status_is_401_without_the_token_and_200_with_it(self):
@@ -1182,7 +1182,7 @@ class CliTests(ServeTestCase):
                 stderr = io.StringIO()
                 with contextlib.redirect_stderr(stderr), \
                         self.assertRaises(SystemExit) as raised:
-                    holophyte.cli.cli.cli([str(self.target), *argv])
+                    holophyte.cli.entry.cli([str(self.target), *argv])
                 self.assertEqual(raised.exception.code, 2)
                 self.assertIn("PORT|HOST:PORT", stderr.getvalue())
                 self.assertFalse(self.db.exists())
@@ -1213,7 +1213,7 @@ class CliTests(ServeTestCase):
         try:
             with contextlib.redirect_stdout(out), \
                     contextlib.redirect_stderr(io.StringIO()):
-                code = holophyte.cli.cli.cli([str(self.target), "--serve", address])
+                code = holophyte.cli.entry.cli([str(self.target), "--serve", address])
         except SystemExit as refused:
             raise self.failureException(str(refused)) from None
         finally:

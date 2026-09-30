@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
 from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 
-import holophyte.cli.cli  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
 from holophyte.loop.stop import stop_if_requested  # noqa: E402
@@ -125,7 +125,7 @@ class LeverTests(ServeTestCase):
         err = io.StringIO()
         with contextlib.redirect_stderr(err), \
                 self.assertRaises(SystemExit) as raised:
-            holophyte.cli.cli.cli([str(self.target), "--resume", "KO-7"])
+            holophyte.cli.entry.cli([str(self.target), "--resume", "KO-7"])
         self.assertNotEqual(raised.exception.code, 0)
         self.assertIn("--note", err.getvalue())
 

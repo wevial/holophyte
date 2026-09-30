@@ -23,7 +23,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import holophyte.cli.cli
+import holophyte.cli.entry
 import holophyte.config.checks
 import holophyte.config.project
 import linear_provider
@@ -182,7 +182,7 @@ class FileTicketCliTests(unittest.TestCase):
         out = io.StringIO()
         with patch.object(linear_provider, "_gql", linear), \
                 contextlib.redirect_stdout(out):
-            status = holophyte.cli.cli.cli(
+            status = holophyte.cli.entry.cli(
                 [str(self.repo), "--file-ticket", str(self.ticket), *args])
         return status, out.getvalue()
 
@@ -321,7 +321,7 @@ class FileTicketCliTests(unittest.TestCase):
         err = io.StringIO()
         with self.assertRaises(SystemExit) as raised, \
                 contextlib.redirect_stderr(err):
-            holophyte.cli.cli.cli([str(self.repo), "--priority", "high"])
+            holophyte.cli.entry.cli([str(self.repo), "--priority", "high"])
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("--file-ticket", err.getvalue())
 
@@ -453,7 +453,7 @@ class FileTicketCliTests(unittest.TestCase):
         err = io.StringIO()
         with self.assertRaises(SystemExit) as raised, \
                 contextlib.redirect_stderr(err):
-            holophyte.cli.cli.cli([str(self.repo), "--update", "KO-7000"])
+            holophyte.cli.entry.cli([str(self.repo), "--update", "KO-7000"])
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("--update", err.getvalue())
         self.assertIn("--file-ticket", err.getvalue())

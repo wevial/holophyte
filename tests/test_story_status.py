@@ -10,7 +10,7 @@ import json
 import sys
 from unittest.mock import patch
 
-import holophyte.cli.cli
+import holophyte.cli.entry
 import holophyte.cli.status
 import store.board
 from store.stories import (
@@ -56,13 +56,13 @@ class StoryStatusTests(SweepTestCase):
                               red_kind="assert" if verdict == "red" else None)
 
     def status(self, *flags, at=T0 + 2 * 24 * HOUR + 5 * HOUR):
-        holophyte.cli.cli.eager_import()
+        holophyte.cli.entry.eager_import()
         out = io.StringIO()
         with patch.dict(sys.modules,
                         {"linear_provider": Tripwire("linear_provider")}), \
                 no_network(), patch.object(sys, "stdout", out), \
                 patch.object(holophyte.cli.status, "time", lambda: at / 1000):
-            code = holophyte.cli.cli.cli([str(self.target), "--status", *flags])
+            code = holophyte.cli.entry.cli([str(self.target), "--status", *flags])
         self.assertEqual(code, 0)
         return out.getvalue()
 

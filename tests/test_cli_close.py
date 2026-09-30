@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import holophyte.cli.cli
+import holophyte.cli.entry
 import store
 import store.tickets
 from holophyte.board.projection import lease_label
@@ -44,9 +44,9 @@ class CloseFlagTests(unittest.TestCase):
 
     def cli(self, *args):
         out = io.StringIO()
-        with patch("holophyte.cli.cli.board_for", return_value=self.board), \
+        with patch("holophyte.cli.entry.board_for", return_value=self.board), \
                 contextlib.redirect_stdout(out):
-            holophyte.cli.cli.cli([str(self.repo), *args])
+            holophyte.cli.entry.cli([str(self.repo), *args])
         return out.getvalue()
 
     def end(self, outcome="rejected"):

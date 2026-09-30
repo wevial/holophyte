@@ -1,12 +1,3 @@
-"""The dry run of folding another target's store into this one (KO-595).
-
-`plan()` reads two stores and says, per table the schema declares, what an
-import of the source into the destination would move: how many rows, which
-ids, the offset a remap would add to them, and a sha256 of the rows, so the
-later apply step can be checked against rows in and rows out. `render()` is
-that plan as text, and `dry_run()` is `--import-store PATH --dry-run`'s whole
-body: both stores open read-only and nothing is written to either.
-"""
 from __future__ import annotations
 
 import contextlib
@@ -20,28 +11,18 @@ from pathlib import Path
 import store.read
 import store.schema
 
-# `CREATE TABLE IF NOT EXISTS name (` ... `)` in the schema's DDL, the body
-# up to the closing parenthesis at the start of a line.
 _TABLE = re.compile(r"CREATE TABLE IF NOT EXISTS (\w+) \((.*?)\n\)", re.S)
-# A surrogate `id` key, the one column a remap offsets. `sweepStrikes` is
-# keyed by `runId`, a foreign key, which moves with foreign-key rewiring
-# rather than with an offset of its own.
+# The one column a remap offsets; a foreign key moves with its rewiring.
 _ID_COLUMN = re.compile(r"^\s*id\s+INTEGER PRIMARY KEY\b", re.M)
 
 
 def schema_tables():
-    """`(table, id column or None)` for each table `store/schema.py` creates,
-    in the order it creates them."""
-    # `interventions` is declared apart from SCHEMA so its rebuild shares
-    # the DDL; it is a table of the schema all the same.
     ddl = store.schema.SCHEMA + store.schema._INTERVENTIONS_DDL
     return [(name, "id" if _ID_COLUMN.search(body) else None)
             for name, body in _TABLE.findall(ddl)]
 
 
 class VersionMismatch(SystemExit):
-    """The two stores are at different schema versions; nothing is planned."""
-
     def __init__(self, source, dest):
         self.source, self.dest = source, dest
         super().__init__(
@@ -52,20 +33,18 @@ class VersionMismatch(SystemExit):
 
 @dataclass(frozen=True)
 class TablePlan:
-    """What an import would do with one table of the source."""
-
     table: str
     rows: int
     min_id: int | None
     max_id: int | None
-    next_id: int | None  # the destination's next id; None without an id
-    offset: int | None   # added to each source id; None without an id
+    next_id: int | None
+    offset: int | None
     sha256: str
 
 
 @dataclass(frozen=True)
 class Plan:
-    source: str   # the source store's file, as its connection names it
+    source: str
     version: int
     tables: list[TablePlan]
 
@@ -75,10 +54,7 @@ def schema_version(conn):
 
 
 def checksum(conn, table, id_column):
-    """sha256 over the table's rows as JSON with sorted keys, one per line.
-
-    In id order, or in the order of their JSON where there is no id, so the
-    same rows in two files hash the same whatever order they were written."""
+    """Rows in a fixed order, so the same rows hash the same in any file."""
     cursor = conn.execute(f'SELECT * FROM "{table}"'
                           + (f' ORDER BY "{id_column}"' if id_column else ""))
     columns = [d[0] for d in cursor.description]
@@ -99,8 +75,6 @@ def _table_plan(source_conn, dest_conn, table, id_column):
         min_id, max_id = source_conn.execute(
             f'SELECT MIN("{id_column}"), MAX("{id_column}") FROM "{table}"'
         ).fetchone()
-        # SQLite's next rowid for an INTEGER PRIMARY KEY is one past the
-        # largest, so source id n lands at n + the destination's largest.
         offset = dest_conn.execute(
             f'SELECT COALESCE(MAX("{id_column}"), 0) FROM "{table}"'
         ).fetchone()[0]
@@ -111,9 +85,7 @@ def _table_plan(source_conn, dest_conn, table, id_column):
 
 @contextlib.contextmanager
 def _snapshot(conn):
-    """Hold one read transaction on `conn` for the block, so every query in
-    it reads the same committed snapshot while a writer keeps committing.
-    A transaction the caller already holds is theirs, and left open."""
+    """A transaction the caller already holds is theirs, and left open."""
     if conn.in_transaction:
         yield
         return
@@ -125,12 +97,6 @@ def _snapshot(conn):
 
 
 def plan(source_conn, dest_conn):
-    """The `Plan` for importing `source_conn`'s store into `dest_conn`'s.
-
-    Reads only, each store in one snapshot from its version check to its
-    last checksum, so a count and its checksum describe the same rows.
-    Refuses with `VersionMismatch` when the two stores' schema versions
-    differ, before reading a table."""
     with _snapshot(source_conn), _snapshot(dest_conn):
         return _plan(source_conn, dest_conn)
 
@@ -147,7 +113,6 @@ def _plan(source_conn, dest_conn):
 
 
 def render(plan):
-    """The plan as lines: one per table, then the source and its version."""
     lines = []
     for t in plan.tables:
         if t.offset is None:
@@ -163,7 +128,6 @@ def render(plan):
 
 
 def dry_run(target, source_path, out=None):
-    """`--import-store PATH --dry-run`: print the plan and write nothing."""
     out = out or sys.stdout
     source_path = Path(source_path)
     for path, role in ((source_path, "source"),
