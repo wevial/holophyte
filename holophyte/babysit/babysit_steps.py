@@ -1,4 +1,3 @@
-"""Narrative PR steps, deduplicated across polling and babysit passes."""
 import store
 
 STEPS = frozenset({"checks", "quiet", "threads", "fix", "conflict_merge",

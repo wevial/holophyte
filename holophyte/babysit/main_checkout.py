@@ -1,4 +1,3 @@
-"""The detached main checkout the babysitter's main-side verify runs in."""
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
