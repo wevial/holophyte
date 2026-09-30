@@ -148,6 +148,38 @@ def criteria_brief(criteria):
             "the verdict line.\n\n")
 
 
+REFUTED_OPEN = "REFUTED FINDINGS (non-blocking)"
+
+
+REFUTED_CLOSE = "END REFUTED FINDINGS"
+
+
+def verified_brief(mode):
+    if mode != "verified":
+        return ""
+    return ("Review the candidate from three angles: correctness against the "
+            "ticket and its acceptance criteria; the tests and how well they "
+            "witness each criterion; and scope and regressions, meaning "
+            "changes the ticket did not ask for and behavior they could "
+            "break.\n"
+            "Then have an independent verifier check each finding against "
+            "the code, with a reproduction or a concrete failing scenario. "
+            "Where your tools can start subagents, give each angle its own "
+            "subagent, and give each finding a fresh verifier subagent that "
+            "is given the finding and the code but not the reasoning behind "
+            "the finding. Without subagents, verify each finding yourself in "
+            "a separate pass that starts from the code, not from your earlier "
+            "reasoning. A reproduction leaves the checkout as it found it.\n"
+            "Report only confirmed findings as findings, listed as usual. "
+            "Put each refuted finding, with the reason it did not hold, "
+            "before the CRITERION lines, between a line reading exactly\n"
+            f"{REFUTED_OPEN}\n"
+            "and a line reading exactly\n"
+            f"{REFUTED_CLOSE}\n"
+            "Refuted findings are notes, not blockers. With nothing confirmed "
+            "and every criterion met, the verdict is APPROVE.\n\n")
+
+
 _FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 
 

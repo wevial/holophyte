@@ -9,6 +9,7 @@ from holophyte import failure_reason
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
+from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import loop_config
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import (
@@ -34,8 +35,13 @@ from holophyte.review.briefs import (
     scope_brief,
     scope_files,
     tests_brief,
+    verified_brief,
 )
-from holophyte.review.reply_parsing import _review_reply, criteria_findings
+from holophyte.review.reply_parsing import (
+    _review_reply,
+    criteria_findings,
+    without_refuted,
+)
 
 
 def _verify_brief(verify_cmd, ok, out):
@@ -74,11 +80,19 @@ def _review_cap(project, conn, run_id, provider, task_id, wt):
     return cap
 
 
+def _record_mode(conn, run_id, mode, rnd):
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "review_mode", f"review mode: {mode}",
+                           level="detail",
+                           payload=json.dumps({"mode": mode, "round": rnd}))
+
+
 def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
                    budget_min, cap, resume=None):
     """Verify, review and fix up to `cap` rounds; return sha, round, approval."""
     pending = resume or {}
+    mode = review_mode(project)
     rnd = pending.get("rnd", 1) - 1
     for rnd in range(pending.get("rnd", 1), cap + 1):
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
@@ -112,6 +126,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         else:
             round_started = int(time() * 1000)
             scope = scope_files(wt, ticket, base_sha, sha)
+            _record_mode(conn, run_id, mode, rnd)
             with heartbeat_while(conn, run_id, beat_s):
                 verdict, decision, first_reply = _review_reply(project,
                     f"You are a READ-ONLY code reviewer. Review commit {sha} using "
@@ -123,6 +138,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f"{ticket}\n\n"
                     + _verify_brief(verify_cmd, ok, out)
                     + criteria_brief(criteria)
+                    + verified_brief(mode)
                     + tests_brief(wt)
                     + scope_brief(wt, ticket, base_sha, sha)
                     + evidence_brief(project, wt, task_id,
@@ -174,8 +190,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
         from holophyte.agents.fix_session import fix_turn
         fixes, timed_out = fix_turn(
-            project, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
-            timed=_timed, check_cap=_check_run_cap)
+            project, conn, run_id, beat_s, wt, budget_min, ticket,
+            without_refuted(verdict), sha, timed=_timed, check_cap=_check_run_cap)
         boundary(conn, run_id, "verifying", rnd=rnd + 1)
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: REQUEST_CHANGES -> fix round\n"

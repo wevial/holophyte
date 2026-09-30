@@ -10,6 +10,7 @@ from holophyte.config.agent_settings import (
     budget_scale,
     fallback_entries,
     implementer_session,
+    review_mode,
     review_route,
 )
 from holophyte.config.config_tables import (
@@ -64,6 +65,7 @@ def check_config(project):
     board_alias_notice(project)
     harness.check_target(project)
     budget_scale(project)
+    review_mode(project)
     implementer_session(project)
     from holophyte.agents.fix_session import resume_template
     resume_template(project)

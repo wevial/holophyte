@@ -11,6 +11,7 @@ from holophyte.config.reader import (
     REVIEW_EFFORTS,
     REVIEW_FALLBACK_KEYS,
     REVIEW_MODEL,
+    REVIEW_MODES,
     REVIEW_ROUTE_KEYS,
     config_table,
 )
@@ -113,3 +114,12 @@ def budget_scale(project):
             f"[holo2] {project.config_path}: [agents] budget_scale must be a "
             f"number from {low} to {high}, got {value!r}")
     return value
+
+
+def review_mode(project):
+    value = config_table(project, "agents").get("review_mode", REVIEW_MODES[0])
+    if isinstance(value, str) and value in REVIEW_MODES:
+        return value
+    raise SystemExit(
+        f"[holo2] {project.config_path}: [agents] review_mode must be one of "
+        f"{', '.join(REVIEW_MODES)}, got {value!r}")
