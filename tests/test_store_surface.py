@@ -20,6 +20,7 @@ import store.board
 import store.gap_layers
 import store.operate
 import store.read
+import store.run_reads
 import store.schema
 import store.stories
 import store.tickets
@@ -157,36 +158,21 @@ EXPECTED_SCHEMA = [
 # a read that fetches the same row with a different column subset is not a
 # new function but a wider row type.
 EXPECTED_READ = [
-    # KO-258: the loop's claim path asks whether the ticket's newest prior
-    # run left an approved candidate to take to the merge gate.
-    "approved_candidate",
-    "last_independent_verdict",
-    "babysit_note",  # KO-462: the resumed implementer reads the operator note.
     # KO-245: the `serve` daemon's `/attention` reads.
     "blocked_tickets",
     # Phase 3 stage 3: the store's ready queue.
     "claimable",
-    "ended_runs",
-    "failed_attempts_since",
-    # KO-435: pages of ended runs of any outcome for `/shipped`.
-    "finished_runs",
-    "latest_human_intervention_at",
     # KO-250: a run's ledger entries, oldest first.
     "ledger",
     # KO-278: the `serve` daemon's `/ledger` window across runs.
     "ledger_since",
-    "live_runs",
     # Consolidation stage 1: the host daemon's bound on one store's lock
     # wait, so a locked store is its project's error inside a client's
     # request limit. Not a read; the context `open_readonly()` reads in.
     "lock_wait",
-    # KO-274: the `serve` daemon's `/shipped` page of merged runs.
-    "merged_runs",
     # KO-269: the `serve` daemon's `/runs/N` reads.
     "narrative_events",
     "newest_ended_rounds",
-    # KO-348: the `serve` daemon's anchor for an action's ledger note.
-    "newest_run_id",
     # KO-280: the `serve` daemon's `/board` read of the open tickets.
     "open_tickets",
     "open_readonly",
@@ -195,14 +181,9 @@ EXPECTED_READ = [
     # KO-409: the supervisor's read of the ready tickets owed a loop,
     # however they became ready.
     "ready_tickets",
-    "recent_failed_runs",
     "review_rounds",
     "rounds_of",
     "run_detail",
-    "run_snapshot",
-    # HOLO-7: failed runs that strand their ticket in flight, for
-    # `/attention` and `--status` whatever their age.
-    "stranded_runs",
     "strike",
     # KO-218: the `serve` daemon's supervisor read, so it needs nothing from
     # `store` itself.
@@ -215,9 +196,6 @@ EXPECTED_READ = [
     "ticket_revisions",
     # KO-747: a ticket's notes, oldest first, for `/tickets/KO-n`.
     "ticket_notes",
-    # KO-705: human interventions per merged run, for `--report` and
-    # `/status`.
-    "toil_since",
 ]
 
 AGENTS_MD = Path(__file__).resolve().parent.parent / "AGENTS.md"
@@ -289,6 +267,20 @@ class StoreSurfaceTests(unittest.TestCase):
                                  (store.working, ["agent_work", "effective_work",
                                                   "settle_work", "verify_work",
                                                   "working"]),
+                                 # The run reads `store.read` re-exports.
+                                 (store.run_reads, ["approved_candidate",
+                                                    "babysit_note",
+                                                    "ended_runs",
+                                                    "failed_attempts_since",
+                                                    "finished_runs",
+                                                    "last_independent_verdict",
+                                                    "latest_human_intervention_at",
+                                                    "live_runs", "merged_runs",
+                                                    "newest_run_id",
+                                                    "recent_failed_runs",
+                                                    "run_snapshot",
+                                                    "stranded_runs",
+                                                    "toil_since"]),
                                  # The gap layer record's writer and count;
                                  # HOLO-66: `gap_finder_counts`, by finder.
                                  (store.gap_layers, ["gap_finder_counts",
