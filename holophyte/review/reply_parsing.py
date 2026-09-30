@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 import review_runner
-from holophyte.review.briefs import _changed_files
+from holophyte.review.briefs import REFUTED_CLOSE, REFUTED_OPEN, _changed_files
 
 # A CSI opens with ESC-[ or with the single C1 byte \x9b.
 ANSI_CSI_RE = re.compile(r"(?:\x1b\[|\x9b)[0-9;?]*[ -/]*[@-~]")
@@ -116,8 +116,18 @@ def finding_blocks(text):
     return blocks
 
 
+REFUTED_SECTION_RE = re.compile(
+    rf"^[ \t]*{re.escape(REFUTED_OPEN)}[ \t\r]*$.*?"
+    rf"^[ \t]*{re.escape(REFUTED_CLOSE)}[ \t\r]*$\n?", re.M | re.S)
+
+
+def without_refuted(reply):
+    return REFUTED_SECTION_RE.sub("", reply)
+
+
 def parse_findings(reply):
     findings = []
+    reply = without_refuted(reply)
     # CRITERION and SCOPE lines cite paths but are accounts, not complaints.
     accounts = SCOPE_LINE_RE.sub("", CRITERION_LINE_RE.sub("", reply))
     for block in finding_blocks(accounts):

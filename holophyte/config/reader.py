@@ -64,7 +64,7 @@ KNOWN_KEYS = {
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",
-                  "implementer_resume"}),
+                  "implementer_resume", "review_mode"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry", "env_source", "env_allow"}),
 }
@@ -82,6 +82,7 @@ KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
 
 BUDGET_SCALE = 1.0
 BUDGET_SCALE_RANGE = (1.0, 3.0)
+REVIEW_MODES = ("single", "verified")
 
 
 def config_table(project, name):
