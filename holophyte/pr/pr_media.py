@@ -1,4 +1,3 @@
-"""Capture user-facing candidates and publish their review artifacts."""
 import base64
 import fnmatch
 import hashlib
@@ -197,7 +196,6 @@ def _signal_group(process, sig):
 
 
 def _push(wt, output, files, task_id):
-    """An empty index and commit-tree make one root commit, without a local branch."""
     with tempfile.TemporaryDirectory() as tmp:
         stage = Path(tmp) / 'media'
         sh(['git', 'worktree', 'add', '--detach', str(stage)], cwd=wt)

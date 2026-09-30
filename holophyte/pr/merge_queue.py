@@ -1,4 +1,3 @@
-"""Landing a pull request through `main`'s merge queue, which a REST merge skips."""
 from time import monotonic
 from urllib.parse import quote
 

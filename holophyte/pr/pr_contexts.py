@@ -1,4 +1,3 @@
-"""Commit statuses from the head rollup, normalised beside check runs."""
 from holophyte.loop.gates import InfraFailure
 
 CONTEXTS_FIELDS = """

@@ -1,4 +1,3 @@
-"""A red check's one fix turn per babysit: the brief and the turn."""
 from dataclasses import dataclass
 from time import monotonic
 

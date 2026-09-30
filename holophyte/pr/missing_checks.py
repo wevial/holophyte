@@ -1,4 +1,3 @@
-"""Required checks that never report on a pull request's head."""
 import subprocess
 
 import store

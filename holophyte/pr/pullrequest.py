@@ -181,7 +181,7 @@ def _without_changes(text):
 
 def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
                     beat_s, wt, budget_min, pull, answered, *, sha=None):
-    """One bounded writing turn after approval; refusal never overwrites prose."""
+    """A refused turn never overwrites the existing prose."""
     if sha and pr_activity.latest(conn, run_id, "pr_text_sha") == sha:
         return
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"

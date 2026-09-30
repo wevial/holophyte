@@ -1,4 +1,3 @@
-"""Structured PR findings and read-only compatibility for old round rows."""
 import re
 
 from holophyte.babysit.thread_mentions import bot_author

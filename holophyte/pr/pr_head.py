@@ -1,4 +1,3 @@
-"""Guard the babysitter's candidate against a foreign pull request head."""
 from dataclasses import replace
 
 import store

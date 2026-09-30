@@ -1,4 +1,3 @@
-"""PR babysitting: adjudicate threads, verify fixes, and wait for a safe merge."""
 import json
 import subprocess
 from dataclasses import replace

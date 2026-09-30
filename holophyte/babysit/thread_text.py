@@ -1,4 +1,3 @@
-"""The babysitter's thread text: conventions, briefs, replies and parsers."""
 import re
 
 from holophyte.agents.review_workspace import review_refs

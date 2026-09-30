@@ -1,4 +1,3 @@
-"""Route advisory review-bot threads before PR fix rounds."""
 from dataclasses import replace
 
 import store

@@ -1,4 +1,3 @@
-"""The loop's one GitHub surface: `gh` on PATH, else the REST and GraphQL APIs."""
 import json
 import os
 import re

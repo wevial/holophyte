@@ -1,4 +1,3 @@
-"""Reading a pull request's state."""
 import contextlib
 import re
 from dataclasses import dataclass
@@ -232,7 +231,7 @@ def _reopened(target, thread):
 
 
 def _check_reads(target, pull, sha):
-    """Read runs and required contexts; unreadable REST data stays pending."""
+    """Unreadable REST data stays pending."""
     runs = required = None
     if sha:
         with contextlib.suppress(InfraFailure):
@@ -318,7 +317,6 @@ def _required_contexts(rules):
 
 
 def fold_checks(rollup, runs, required):
-    """Red wins; unfinished or missing required contexts are pending."""
     state = CHECK_STATES.get(rollup, "failure")
     if state == "failure":
         return state

@@ -1,5 +1,3 @@
-"""Explicit pull request instructions addressed to the factory."""
-
 import os
 import re
 from dataclasses import replace

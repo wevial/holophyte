@@ -1,4 +1,3 @@
-"""Human instructions in the pull request's paged issue comments."""
 import re
 
 from holophyte.babysit.thread_mentions import REFUSAL, classify, refuse, refused

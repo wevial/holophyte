@@ -1,4 +1,3 @@
-"""A review comment as plain text for a parked question."""
 import re
 from html.parser import HTMLParser
 

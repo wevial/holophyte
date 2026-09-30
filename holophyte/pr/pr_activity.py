@@ -1,4 +1,3 @@
-"""Authored PR activity and event-backed guards for parked candidates."""
 import json
 import re
 

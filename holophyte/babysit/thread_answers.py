@@ -1,4 +1,3 @@
-"""Read-only mention answers and attributed thread replies."""
 import re
 from urllib.parse import quote
 

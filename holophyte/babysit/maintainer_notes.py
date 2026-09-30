@@ -1,4 +1,3 @@
-"""Adapt private store instructions to the babysitter's addressed threads."""
 import re
 from dataclasses import replace
 
