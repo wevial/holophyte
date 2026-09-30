@@ -1,6 +1,7 @@
 """Implementer boundaries exercised at the process launch seam."""
 
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -9,10 +10,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from go_race_cases import GoRaceCases
+
 from holophyte.agents import agents
 
 
-class IsolationTests(unittest.TestCase):
+class IsolationTests(GoRaceCases, unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -532,8 +535,6 @@ class IsolationTests(unittest.TestCase):
                 self.assertEqual(list(outside.iterdir()), [])
 
     def test_copy_back_refuses_a_linked_carry_parent_and_keeps_the_install(self):
-        import shutil
-
         from holophyte.isolation import launcher
         from holophyte.loop.gates import InfraFailure
 
@@ -1106,7 +1107,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_launch_creates_a_temporary_directory(self):
-        import shutil
         import uuid
 
         from holophyte.isolation import launcher
@@ -1134,7 +1134,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_launch_runs_a_script_from_tmpdir(self):
-        import shutil
         import uuid
 
         from holophyte.isolation import launcher
@@ -1244,8 +1243,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_codex_implementer_runs_the_host_release_read_only(self):
-        import shutil
-
         from holophyte.isolation import launcher
 
         if not shutil.which("docker"):
@@ -1270,8 +1267,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_session_files_persist_per_task_worktree(self):
-        import shutil
-
         from holophyte.isolation import launcher
         from holophyte.isolation.isolation_git import git
 
@@ -1304,8 +1299,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_tool_caches_persist_per_project(self):
-        import shutil
-
         from holophyte.config.project import state_dir
         from holophyte.isolation import launcher
         from holophyte.isolation.isolation_git import git
@@ -1357,8 +1350,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_implementer_turn_has_no_capture_runner(self):
-        import shutil
-
         import review_runner
         from holophyte.isolation import launcher
 
@@ -1380,7 +1371,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_capture_modules_pass_with_the_checkout_at_the_workspace(self):
-        import shutil
         import uuid
 
         import review_runner
@@ -1412,8 +1402,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_file_credential_is_a_writable_private_copy(self):
-        import shutil
-
         from holophyte.config.project import state_dir
         from holophyte.isolation import launcher
 
@@ -1447,8 +1435,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_file_credential_below_the_session_keeps_its_state(self):
-        import shutil
-
         from holophyte.isolation import launcher
 
         if not shutil.which("docker"):
@@ -1477,8 +1463,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_launch_writes_carry_directories_in_the_worktree(self):
-        import shutil
-
         from holophyte.isolation import launcher
 
         if not shutil.which("docker"):
@@ -1505,8 +1489,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_container_commit(self):
-        import shutil
-
         from holophyte.isolation import launcher
         from holophyte.isolation.isolation_git import git
 
@@ -1543,8 +1525,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_launch_leaves_other_repositories_their_own_identity(self):
-        import shutil
-
         from holophyte.isolation import launcher
         from holophyte.isolation.isolation_git import git
 
@@ -1571,7 +1551,6 @@ class IsolationTests(unittest.TestCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_claude_fix_round_resumes_the_session_its_turn_opened(self):
-        import shutil
         import uuid
 
         import store

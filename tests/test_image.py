@@ -27,10 +27,8 @@ class ImplementerImageTests(unittest.TestCase):
         cls.pinned = re.search(
             r"^ARG CLAUDE_VERSION=(\S+)$", dockerfile, re.M).group(1)
 
-    def launch(self, *argv, files=None):
+    def launch(self, *argv):
         with tempfile.TemporaryDirectory() as workspace:
-            for name, text in (files or {}).items():
-                (Path(workspace) / name).write_text(text)
             route = launcher.Route("container", writable=False)
             return launcher.launch(route, Path(workspace), {}, list(argv),
                                     timeout=120)
@@ -94,36 +92,3 @@ class ImplementerImageTests(unittest.TestCase):
 
         self.assertEqual(code, 0, output)
         self.assertIn(f"<p>{marker}</p>", output)
-
-    def test_go_test_race_passes_with_two_goroutines(self):
-        test = (
-            "package race\n\n"
-            'import (\n\t"sync"\n\t"testing"\n)\n\n'
-            "func TestTwoGoroutines(t *testing.T) {\n"
-            "\tvar mu sync.Mutex\n"
-            "\tvar wg sync.WaitGroup\n"
-            "\ttotal := 0\n"
-            "\tfor i := 0; i < 2; i++ {\n"
-            "\t\twg.Add(1)\n"
-            "\t\tgo func() {\n"
-            "\t\t\tdefer wg.Done()\n"
-            "\t\t\tmu.Lock()\n"
-            "\t\t\ttotal++\n"
-            "\t\t\tmu.Unlock()\n"
-            "\t\t}()\n"
-            "\t}\n"
-            "\twg.Wait()\n"
-            "\tif total != 2 {\n"
-            '\t\tt.Fatalf("total = %d", total)\n'
-            "\t}\n"
-            "}\n"
-        )
-        code, output = self.launch(
-            "sh", "-c",
-            "export GOPATH=/tmp/go GOCACHE=/tmp/go-build GOTMPDIR=/tmp"
-            " && cd /workspace && go test -race -count=1 ./...",
-            files={"go.mod": "module example.com/race\n\ngo 1.26\n",
-                   "race_test.go": test})
-
-        self.assertEqual(code, 0, output)
-        self.assertIn("ok  \texample.com/race", output)
