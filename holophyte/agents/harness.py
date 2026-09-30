@@ -8,9 +8,26 @@ import uuid
 from dataclasses import dataclass
 
 import review_runner
+from ticket_template import ORCHESTRATION_MODES
 
 TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic")
 TABLE_KEYS = ("harness", "model", "effort")
+IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
+
+SUBAGENTS_BRIEF = (
+    "\n\nYou may orchestrate subagents for this ticket. Independent pieces "
+    "of it (for example one per module) may go to subagents you start with "
+    "your own tools. The subagents edit files in this worktree but do not "
+    "commit, branch, push or open worktrees; you integrate their work and "
+    "commit it on this one branch. Before handing in, have an independent "
+    "subagent review the whole change against the acceptance criteria.")
+WORKFLOW_BRIEF = SUBAGENTS_BRIEF + (
+    "\n\nThe maintainer has opted this ticket in to a Claude Code "
+    "multi-agent workflow: you may run one with the Workflow tool, under "
+    "the same rules. If the Workflow tool is unavailable, orchestrate "
+    "subagents instead.")
+ORCHESTRATION_BRIEFS = {"off": "", "subagents": SUBAGENTS_BRIEF,
+                        "workflow": WORKFLOW_BRIEF}
 
 
 class Adapter:
@@ -18,6 +35,7 @@ class Adapter:
     refuses = frozenset()
     efforts = None
     resumes = True
+    orchestrations = frozenset()
 
     @property
     def binary(self):
@@ -30,6 +48,7 @@ class Adapter:
 class Claude(Adapter):
     name = "claude"
     roles = frozenset({"implementer", "critic"})
+    orchestrations = frozenset({"subagents", "workflow"})
 
     def turn(self, binary, options, role):
         return [binary, "-p", "--session-id", str(uuid.uuid4()),
@@ -53,6 +72,7 @@ class Codex(Adapter):
     name = "codex"
     roles = frozenset({"implementer", "reviewer", "adjudicator", "critic"})
     efforts = review_runner.EFFORTS
+    orchestrations = frozenset({"subagents"})
     BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
     IMPLEMENTER = ["--dangerously-bypass-approvals-and-sandbox",
                    "--skip-git-repo-check"]
@@ -98,6 +118,7 @@ class Devin(Adapter):
     roles = frozenset({"implementer", "reviewer", "adjudicator"})
     requires = frozenset({"model"})
     refuses = frozenset({"effort"})
+    orchestrations = frozenset({"subagents"})
     LIST_TIMEOUT = 60
 
     # Print mode fails in a directory Devin has never trusted.
@@ -200,11 +221,12 @@ def parse_role(where, key, table):
         raise SystemExit(
             f"{where}: [agents.{key}]: only {', '.join(TABLE_ROLES)} may be a "
             f"table; write [agents] {key} as a command string")
+    accepted = IMPLEMENTER_KEYS if key == "implementer" else TABLE_KEYS
     for option in table:
-        if option not in TABLE_KEYS:
+        if option not in accepted:
             raise SystemExit(
                 f"{where}: [agents.{key}] {option}: unknown key; "
-                f"[agents.{key}] accepts: {', '.join(TABLE_KEYS)}")
+                f"[agents.{key}] accepts: {', '.join(accepted)}")
     name = table.get("harness")
     adapter = ADAPTERS.get(name) if isinstance(name, str) else None
     if adapter is None:
@@ -236,7 +258,51 @@ def parse_role(where, key, table):
         raise SystemExit(
             f"{where}: [agents.{key}] effort must be one of "
             f"{', '.join(adapter.efforts)}, got {effort!r}")
+    check_orchestration(where, table, adapter)
     return adapter
+
+
+def check_orchestration(where, table, adapter):
+    mode = table.get("orchestration", "off")
+    if mode not in ORCHESTRATION_MODES:
+        raise SystemExit(
+            f"{where}: [agents.implementer] orchestration must be one of "
+            f"{', '.join(ORCHESTRATION_MODES)}, got {mode!r}")
+    if mode != "off" and mode not in adapter.orchestrations:
+        raise SystemExit(
+            f"{where}: [agents.implementer] orchestration: harness "
+            f"{adapter.name!r} supports "
+            f"{', '.join(['off', *sorted(adapter.orchestrations)])}, "
+            f"not {mode!r}")
+
+
+def claude_command(command):
+    words = command.split() if isinstance(command, str) else []
+    return bool(words) and os.path.basename(words[0]) == "claude"
+
+
+def check_fallback_orchestration(where, agents):
+    table = agents.get("implementer")
+    fallback = agents.get("implementer_fallback")
+    if (isinstance(table, dict) and table.get("orchestration") == "workflow"
+            and fallback is not None and not claude_command(fallback)):
+        raise SystemExit(
+            f"{where}: [agents.implementer] orchestration = \"workflow\" "
+            f"beside a non-Claude [agents] implementer_fallback: an outage "
+            f"switch reuses the brief -- use \"subagents\" or a Claude "
+            f"implementer_fallback")
+
+
+def implementer_orchestrations(target, command):
+    if command is not None:
+        return frozenset({"subagents"})
+    active = seat(target, "implement")
+    if active is not None:
+        return active.adapter.orchestrations
+    from holophyte.config.reader import config_table
+    if config_table(target, "agents").get("implementer") is not None:
+        return frozenset({"subagents"})
+    return Claude.orchestrations
 
 
 def check_paths(where, paths):
@@ -259,6 +325,7 @@ def check_target(target):
     for role in AGENT_CONFIG_KEYS:
         seat(target, role)
         seat(target, role, fallback=True)
+    check_fallback_orchestration(where, config_table(target, "agents"))
     if seat(target, "implement") is None:
         return
     for key in ("implementer_session", "implementer_resume"):

@@ -121,6 +121,11 @@ Estimate: N min · Depends on: <ticket IDs or "none">
 > gates via triage: the ticket stays in Backlog until resolved, then moves to
 > Todo. Keep this line in sync with the relations for human readers.
 
+<!-- Optional, beside the estimate: `Orchestration: off`, `Orchestration:
+subagents` or `Orchestration: workflow` overrides the project's
+`[agents.implementer] orchestration` for this ticket's implement turn. Leave
+the line out to use the project's setting. -->
+
 ## Open questions
 
 - None  <!-- must read exactly this before the ticket enters the pickable queue -->
