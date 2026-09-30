@@ -15,8 +15,8 @@ from holophyte.admission import project_of
 from holophyte.admission import state as admission_state
 from holophyte.cli.report import host_label
 from holophyte.cli.status import load_sweep_state
-from holophyte.config.config import serve_config
 from holophyte.config.config_tables import sweep_config
+from holophyte.config.serve_settings import serve_config
 from holophyte.host.registry import HostError, settings
 from holophyte.host.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.loop.pool_handoff import workers_on_previous_build

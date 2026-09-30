@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import store
-from holophyte.config.config import carry_directories, setup_commands
+from holophyte.config.worktree_settings import carry_directories, setup_commands
 from holophyte.loop.claim import run_worktree_setup
 from holophyte.loop.gates import sh
 from holophyte.loop.runs import heartbeat_while

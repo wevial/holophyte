@@ -24,7 +24,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli.cli
-import holophyte.config.config
+import holophyte.config.checks
 import holophyte.config.project
 import linear_provider
 import ticket_template

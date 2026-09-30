@@ -14,7 +14,7 @@ top-level `[harnesses]` table names an absolute path for it.
 Validation reads each adapter's `roles`, `requires` and `refuses` and
 never names a harness or a role itself, so letting a harness serve
 another role is an addition to its set plus that role's argv.
-`holophyte.config.config` imports this module at load, so the target readers below
+`holophyte.config.reader` imports this module at load, so the target readers below
 (`check_target()`, `seat()`, `agent_session()`) import its tables inside the
 call.
 """
@@ -74,8 +74,8 @@ class Claude(Adapter):
     @staticmethod
     def route(options):
         # The implementer defaults live with the other role pins in
-        # `holophyte.config.config`, which imports this module.
-        from holophyte.config.config import IMPL_EFFORT, IMPL_MODEL
+        # `holophyte.config.reader`, which imports this module.
+        from holophyte.config.reader import IMPL_EFFORT, IMPL_MODEL
         return ["--model", options.get("model", IMPL_MODEL),
                 "--effort", options.get("effort", IMPL_EFFORT)]
 
@@ -97,7 +97,7 @@ class Codex(Adapter):
     """
     name = "codex"
     roles = frozenset({"implementer", "reviewer", "adjudicator", "critic"})
-    # `REVIEW_EFFORTS`, read at its source: `holophyte.config.config` imports this
+    # `REVIEW_EFFORTS`, read at its source: `holophyte.config.reader` imports this
     # module at load.
     efforts = review_runner.EFFORTS
     BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
@@ -135,7 +135,7 @@ class Codex(Adapter):
 
     @staticmethod
     def route(options):
-        from holophyte.config.config import REVIEW_EFFORT, REVIEW_MODEL
+        from holophyte.config.reader import REVIEW_EFFORT, REVIEW_MODEL
         effort = options.get("effort", REVIEW_EFFORT)
         return ["-m", options.get("model", REVIEW_MODEL),
                 "-c", f"model_reasoning_effort={effort}"]
@@ -385,7 +385,7 @@ def check_target(target):
     session and builds the resume, and a second answer to the same question
     would be one the factory ignores.
     """
-    from holophyte.config.config import AGENT_CONFIG_KEYS, config_table
+    from holophyte.config.reader import AGENT_CONFIG_KEYS, config_table
     where = f"[holo2] {target.config_path}"
     check_paths(where, config_table(target, "harnesses"))
     for role in AGENT_CONFIG_KEYS:
@@ -409,7 +409,7 @@ def seat(target, role, *, fallback=False):
     supplies it. Review roles run on the host either way, so they keep the
     `[harnesses]` path.
     """
-    from holophyte.config.config import AGENT_CONFIG_KEYS, config_table
+    from holophyte.config.reader import AGENT_CONFIG_KEYS, config_table
     key = AGENT_CONFIG_KEYS[role] + ("_fallback" if fallback else "")
     table = config_table(target, "agents").get(key)
     where = f"[holo2] {target.config_path}"
@@ -438,7 +438,7 @@ def critic_table(where, table):
             f"write it as the [agents.critic] table")
     if table.get("harness", "codex") != "codex":
         return table
-    from holophyte.config.config import CRITIC_EFFORT, CRITIC_MODEL
+    from holophyte.config.reader import CRITIC_EFFORT, CRITIC_MODEL
     return {"harness": "codex", "model": CRITIC_MODEL,
             "effort": CRITIC_EFFORT, **table}
 

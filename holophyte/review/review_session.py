@@ -4,7 +4,7 @@ import json
 import store
 from holophyte.agents.harness import seat as harness_seat
 from holophyte.agents.session_arms import select_arm
-from holophyte.config.config import loop_config
+from holophyte.config.config_tables import loop_config
 
 
 def record_session(scratch, conn, run_id, role, route, round_number):

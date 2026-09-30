@@ -19,8 +19,8 @@ from urllib.parse import quote
 import review_runner
 import ticket_template
 from holophyte import media_store, redact
-from holophyte.config.config import capture_environment, carry_directories
 from holophyte.config.config_tables import merge_config
+from holophyte.config.worktree_settings import capture_environment, carry_directories
 from holophyte.isolation import launcher
 from holophyte.loop.gates import InfraFailure, sh
 from holophyte.pr import github

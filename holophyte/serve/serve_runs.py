@@ -11,7 +11,7 @@ import store.read
 from holophyte.babysit.thread_findings import normalize_thread
 from holophyte.babysit.thread_mentions import bot_author
 from holophyte.cli.report import ended_rows, host_label
-from holophyte.config.config import budget_scale
+from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import MERGE_KEYS, merge_config
 from holophyte.config.project import worktree_path
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
@@ -449,7 +449,7 @@ def run_files(project, run_id):
 
 def active_routes(project):
     from holophyte.agents.agent_routes import active_fallbacks, safe_command
-    from holophyte.config.config import AGENT_CONFIG_KEYS
+    from holophyte.config.reader import AGENT_CONFIG_KEYS
 
     fallback = active_fallbacks(project)
     table = {key: safe_command(project, value)
@@ -483,7 +483,7 @@ def run_turns(project, text):
 
 def run_transcript(project, segment):
     from holophyte.agents.transcripts import locate, render
-    from holophyte.config.config import serve_config
+    from holophyte.config.serve_settings import serve_config
     from holophyte.redact import known_secrets, outbound
     roots = serve_config(project).transcripts
     missing = (404, {"error": "transcript unavailable"})

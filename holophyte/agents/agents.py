@@ -28,20 +28,22 @@ from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.agent_turns import recorded_turn
 from holophyte.agents.harness import agent_session, critic_seat, route_text
 from holophyte.agents.harness import seat as harness_seat
-from holophyte.config.config import (
+from holophyte.config.agent_settings import (
+    agent_command,
+    budget_scale,
+    fallback_entries,
+    review_route,
+)
+from holophyte.config.config_tables import sweep_config
+from holophyte.config.reader import (
     AGENT_CONFIG_KEYS,
     DEFAULT_IMPLEMENTER,
     IMPL_EFFORT,
     IMPL_MODEL,
     IMPL_TIMEOUT,
-    agent_command,
-    budget_scale,
-    carry_directories,
-    fallback_entries,
     review_profile,
-    review_route,
-    sweep_config,
 )
+from holophyte.config.worktree_settings import carry_directories
 from holophyte.isolation import launcher
 from holophyte.loop.gates import GroupKill, InfraFailure, run_capped, sh
 from holophyte.redact import known_secrets, outbound
@@ -356,7 +358,7 @@ def record_session(project, conn, run_id, role, output, cwd=None,
     turn kills it too; a command string's is read with the
     `implementer_session` regex."""
     import store
-    from holophyte.config.config import implementer_session
+    from holophyte.config.agent_settings import implementer_session
 
     if role != "implement" or conn is None or run_id is None:
         return

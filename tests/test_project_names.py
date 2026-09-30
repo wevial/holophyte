@@ -167,7 +167,10 @@ class ProjectNamesTest(unittest.TestCase):
 
     def test_the_config_and_agent_modules_spell_the_project_project(self):
         self.assert_no_old_names(
-            "holophyte/config/config.py", "holophyte/config/config_tables.py",
+            "holophyte/config/reader.py", "holophyte/config/checks.py",
+            "holophyte/config/agent_settings.py",
+            "holophyte/config/worktree_settings.py",
+            "holophyte/config/serve_settings.py", "holophyte/config/config_tables.py",
             "holophyte/agents/agents.py", "holophyte/agents/agent_routes.py",
             "holophyte/agents/agent_turns.py", "holophyte/isolation/launcher.py",
             "holophyte/isolation/isolation_clone.py", "holophyte/pr/pr_media.py")

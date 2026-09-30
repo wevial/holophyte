@@ -133,7 +133,7 @@ class FixSessionCases:
 
 class FixSessionConfigCases:
     def test_fix_session_startup_validation(self):
-        import holophyte.config.config as config
+        import holophyte.config.checks as checks
         for setting, key in (("[agents]\nimplementer_resume = 'cli resume'",
                               'implementer_resume'),
                              ("[agents]\nimplementer_resume = 4", 'implementer_resume'),
@@ -143,7 +143,7 @@ class FixSessionConfigCases:
             with self.subTest(setting=setting):
                 self.locate(setting)
                 with self.assertRaisesRegex(SystemExit, key):
-                    config.check_document(self.project)
+                    checks.check_document(self.project)
         self.locate('[agents]\nimplementer_resume = "cli resume {session}"\n'
                     '[loop]\nfix_session = "alternate"\n')
-        config.check_document(self.project)
+        checks.check_document(self.project)

@@ -82,10 +82,14 @@ PINNED = {
     "holophyte/commit_hygiene.py": 11,
 
     "holophyte/config/__init__.py": 0,
-    "holophyte/config/config.py": 318,
-    "holophyte/config/config_tables.py": 294,
-    "holophyte/config/locks.py": 15,
-    "holophyte/config/project.py": 124,
+    "holophyte/config/agent_settings.py": 1,
+    "holophyte/config/checks.py": 2,
+    "holophyte/config/config_tables.py": 4,
+    "holophyte/config/locks.py": 1,
+    "holophyte/config/project.py": 6,
+    "holophyte/config/reader.py": 3,
+    "holophyte/config/serve_settings.py": 2,
+    "holophyte/config/worktree_settings.py": 1,
 
     "holophyte/deadline.py": 44,
     "holophyte/environment_git.py": 14,
@@ -217,11 +221,6 @@ CITED = {
     "holophyte/cli/report.py": 1,
     "holophyte/cli/status.py": 1,
     "holophyte/cli/store_import.py": 1,
-
-    "holophyte/config/config.py": 6,
-    "holophyte/config/config_tables.py": 21,
-    "holophyte/config/locks.py": 1,
-    "holophyte/config/project.py": 2,
 
     "holophyte/environment_git.py": 1,
     "holophyte/files.py": 1,

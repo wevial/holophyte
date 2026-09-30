@@ -24,7 +24,7 @@ import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.board.native_board import NativeBoard  # noqa: E402
-from holophyte.config.config import check_config_keys  # noqa: E402
+from holophyte.config.checks import check_config_keys  # noqa: E402
 from holophyte.config.config_tables import story_config  # noqa: E402
 from holophyte.loop.claim_store import claim_from_store  # noqa: E402
 from holophyte.loop.pool import NOTHING_SEEN  # noqa: E402

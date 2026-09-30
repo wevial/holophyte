@@ -3,7 +3,7 @@ import stat
 import subprocess
 from pathlib import Path
 
-from holophyte.config.config import config_table
+from holophyte.config.reader import config_table
 from holophyte.loop.gates import InfraFailure, sh
 
 

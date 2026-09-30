@@ -21,7 +21,7 @@ every file; this page lists what each seam promises.
 | **`board`** | `holophyte/board/projection.py` | Linear as a notice board: mirror a ticket into the store with its contract snapshot, push status, detect drift at merge, escalate a twice-failed ticket, file and update tickets from files. |
 | **`reexec`** | `holophyte/loop/reexec.py` | Replace the process with the same command line, through an `EXEC` seam tests can intercept, shared by the loop and the project daemon; and `systemctl --user` on the deploy units (the loop's, the sweep's), shared by the supervisor and the daemon's actions. |
 | **`host`** | `holophyte/host/registry.py` | The host registry, `host.toml`: the projects the host daemon serves and the host sweep watches, by path, re-read when it changes; written by `project add` and `project remove` alone. A route name resolves through `Host.project()` alone. Opens no store. |
-| **`config`** | `holophyte/config/config.py`, `holophyte/config/config_tables.py` | Every `config.toml` table as a typed value with defaults, validated at startup; unknown keys are startup errors. |
+| **`config`** | `holophyte/config/reader.py`, `holophyte/config/checks.py`, `holophyte/config/agent_settings.py`, `holophyte/config/worktree_settings.py`, `holophyte/config/serve_settings.py`, `holophyte/config/config_tables.py` | Every `config.toml` table as a typed value with defaults, validated at startup; unknown keys are startup errors. |
 
 ## What depends on what
 
@@ -87,7 +87,7 @@ Three rules hold the graph in this shape: `serve` reads through
 `store.read`, and its action endpoints (`serve_actions`) write only through
 the store API (`store.record_intervention()`, `store.requeue()`,
 `store.operator_notes.send_back()`);
-`holophyte.config.config` never imports `factory` or the loop (no cycles); and
+`holophyte.config` never imports `factory` or the loop (no cycles); and
 nothing outside `store/` writes SQL. The host forms sit on top of the
 project ones: `serve_host` is `serve`'s handler under a `/projects/NAME`
 prefix, one `Project` per registry entry, and `sweep_host` runs the
