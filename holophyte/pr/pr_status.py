@@ -1,4 +1,4 @@
-"""Reading a pull request's state, out of `holophyte.pr.github` (KO-426)."""
+"""Reading a pull request's state."""
 import contextlib
 import re
 from dataclasses import dataclass
@@ -23,36 +23,21 @@ from holophyte.pr.github import (
 from holophyte.pr.pr_activity import ACTIVITY_FIELDS, HEADER, activities
 from holophyte.pr.pr_contexts import CONTEXTS_FIELDS, status_contexts_of
 
-# The shape of a pull request URL, `gh pr create`'s and the API's alike; the
-# host is kept so an Enterprise PR is answered on its own API.
+# The host is kept so an Enterprise PR is answered on its own API.
 PR_URL_RE = re.compile(r"^https://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)/?$")
-# What `statusCheckRollup.state` says, folded to the three answers the
-# babysitter acts on. A PR with no checks (`null`) reads as green as far
-# as the rollup goes: `fold_checks()` reads the head's check runs and the
-# branch's required contexts beside it, since seconds after a PR opens
-# the rollup already says success while the rest are still queued.
+# Seconds after a PR opens the rollup already says success while the rest
+# queue: `fold_checks()` reads the runs and required contexts beside it.
 CHECK_STATES = {None: "success", "SUCCESS": "success",
                 "PENDING": "pending", "EXPECTED": "pending"}
-# A check run's `conclusion` that is red; `neutral`, `skipped`, `success`
-# and the rest are not.
 RED_CONCLUSIONS = {"failure", "timed_out", "cancelled", "action_required",
                    "startup_failure", "error"}
-# The app whose check runs are Actions jobs, with a log to read.
 ACTIONS_APP = "github-actions"
-# An Actions job's link, `https://HOST/OWNER/NAME/actions/runs/RUN/job/JOB`.
 WORKFLOW_RUN_RE = re.compile(r"/actions/runs/(\d+)/job/\d+")
-# Page size for the check-runs and rollup-context reads.
 CHECK_RUNS_PAGE = 100
-# GitHub's refusal of a branch's rules or protection on a plan that cannot
-# have them (a private repository on GitHub Free): no rules, not unknown.
+# Refused on a plan that cannot have rules (private, GitHub Free): no rules.
 PLAN_GATED = "Upgrade to GitHub Pro or make this repository public"
 
-# One page of threads per call; `$after` walks the rest, so a PR with more
-# than `THREADS_PAGE` open threads is read to the end before the
-# babysitter decides it has nothing open.
 THREADS_PAGE = 100
-# One page of a thread's comments in the state query; a longer thread is
-# read to its last page (`THREAD_COMMENTS_QUERY`) before it is judged.
 COMMENTS_PAGE = 50
 STATE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $after: String,
@@ -97,9 +82,7 @@ query($thread: ID!, $after: String) {
 }""" % COMMENTS_PAGE
 
 
-# The parked PR read includes authored activity, lifecycle and attention facts.
-# Creation/submission times distinguish new content from description edits or
-# bot edits. Overflow activity pages are read before returning (KO-563).
+# Creation/submission times, not updatedAt: edits are not new content.
 PULL_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
@@ -121,11 +104,6 @@ query($owner: String!, $name: String!, $number: Int!) {
 
 @dataclass(frozen=True)
 class PullStatus:
-    """PR lifecycle, activity, checks, review and rate-limit facts.
-
-    Missing activity and budget fields remain None.
-    """
-
     merged: bool
     closed: bool
     closed_by: str | None = None
@@ -143,14 +121,6 @@ class PullStatus:
 
 
 def pull_status(target, pull):
-    """One GraphQL read of the pull request's `state`, `merged`,
-    `mergeable`, `mergeCommit`, `mergedBy`, `updatedAt`, `title`,
-    review-thread count, authored content, `reviewDecision` and head
-    checks rollup, with the token's `rateLimit` (`PULL_QUERY`): the loop's
-    reconcile of a run parked on its PR asks this once per pass. GitHub
-    answering without the pull request is `InfraFailure`, as every read
-    here is; an answer without the activity, fact or budget fields is one
-    without them (None), not an error."""
     data = graphql(target, pull, PULL_QUERY,
                    {"owner": pull.owner, "name": pull.name,
                     "number": pull.number})
@@ -195,11 +165,7 @@ def pull_status(target, pull):
 
 
 def _head_checks(node):
-    """The pull request node's head `statusCheckRollup.state` as "success",
-    "pending" or "failure"; None when the head carries no rollup or the
-    answer did not include the commit. Absent is absent here, not
-    "pending": `fold_checks()` reads a missing rollup as green only
-    beside the check runs and required contexts it does not have."""
+    """Absent is absent, not "pending"."""
     commits = node.get("commits")
     nodes = commits.get("nodes") if isinstance(commits, dict) else None
     head = nodes[-1] if isinstance(nodes, list) and nodes else None
@@ -213,8 +179,6 @@ def _head_checks(node):
 
 
 def parse_pr_url(url):
-    """The `PullRequest` a PR URL names, or None for a URL of another shape:
-    a parked run whose `prUrl` this cannot read has nothing to babysit."""
     m = PR_URL_RE.match((url or "").strip())
     if m is None:
         return None
@@ -224,10 +188,6 @@ def parse_pr_url(url):
 
 
 def pr_state(target, pull):
-    """One read of the pull request: its unresolved review threads (and
-    resolved ones a new mention reopened, `_reopened()`), the head
-    commit's check rollup, its `mergeable` answer, its `updatedAt`,
-    and whether it is already merged or closed."""
     first_page = node = _pull_request_page(target, pull, None)
     threads = []
     while True:
@@ -263,9 +223,7 @@ def pr_state(target, pull):
 
 
 def _reopened(target, thread):
-    """A resolved thread still speaks to the factory when its latest
-    comment is not the factory's own and mentions it from an authorised
-    account: resolving after an answer does not end the conversation."""
+    """Resolving after an answer does not end the conversation."""
     if HEADER.match(thread.comments[-1].body):
         return False
     merge = merge_config(target)
@@ -287,8 +245,6 @@ def _check_reads(target, pull, sha):
 
 
 def main_rules(target, pull):
-    """The rules answer for `main`; `[]` where GitHub refuses it because
-    the repository's plan cannot have rules. Any other failure raises."""
     try:
         return rest(target, pull, "GET",
                     f"repos/{pull.owner}/{pull.name}/rules/branches/main")
@@ -299,10 +255,7 @@ def main_rules(target, pull):
 
 
 def _protected_contexts(target, pull):
-    """The contexts main's branch protection rule requires, beside the
-    rulesets' (KO-652): read off the branch itself, which a token that may
-    read the repository may read. No answer, or one without them, is no
-    requirement known."""
+    """Read off the branch, which a token that may read the repository may read."""
     try:
         branch = rest(target, pull, "GET",
                       f"repos/{pull.owner}/{pull.name}/branches/main")
@@ -316,7 +269,6 @@ def _protected_contexts(target, pull):
 
 
 def _check_runs_of(target, pull, sha):
-    """Every check run of `sha`, paged to `total_count`; None if incomplete."""
     base = (f"repos/{pull.owner}/{pull.name}/commits/{sha}"
             f"/check-runs?per_page={CHECK_RUNS_PAGE}")
     runs, page = [], 1
@@ -342,10 +294,7 @@ def _check_runs_of(target, pull, sha):
 
 
 def _required_contexts(rules):
-    """The contexts every `required_status_checks` rule names, or None for
-    an answer that is not the rules list or a rule the babysitter cannot
-    read: a required check it cannot make out is not one that reported,
-    so None folds to pending, never green."""
+    """A required check it cannot make out folds to pending, never green."""
     if not isinstance(rules, list):
         return None
     contexts = []
@@ -369,14 +318,7 @@ def _required_contexts(rules):
 
 
 def fold_checks(rollup, runs, required):
-    """The head's checks as one of "success", "pending" or "failure".
-
-    `rollup` is `statusCheckRollup.state`; `runs` the head commit's check
-    runs and normalised statuses (`name`, `status`, `conclusion`);
-    `required` names the contexts main requires. Unreadable data is pending.
-    Red wins; otherwise unfinished or missing required contexts are pending.
-    Green means every run completed without red and every requirement reported.
-    No rules and no runs is green, as the rollup alone said."""
+    """Red wins; unfinished or missing required contexts are pending."""
     state = CHECK_STATES.get(rollup, "failure")
     if state == "failure":
         return state
@@ -401,8 +343,6 @@ def fold_checks(rollup, runs, required):
 
 
 def _comments_of(target, pull, node):
-    """Every comment of thread `node`, oldest first: the page the state
-    query carried, then each further page by the thread's id."""
     page = node.get("comments") or {}
     comments = _comment_nodes(page)
     info = page.get("pageInfo") or {}
@@ -421,9 +361,6 @@ AUTHOR_KINDS = {"User": "user", "Bot": "bot"}
 
 
 def _comment_nodes(page):
-    """The `Comment`s of one comments page, in the order GitHub gave. The
-    author's `__typename` is read as `"user"` or `"bot"`; any other type,
-    or no author (a deleted account), is `"unknown"`."""
     comments = []
     for c in (page.get("nodes") or ()):
         if not isinstance(c, dict):
@@ -437,8 +374,6 @@ def _comment_nodes(page):
 
 
 def _pull_request_page(target, pull, after, comments_after=None):
-    """The `pullRequest` node of one `STATE_QUERY` read, its threads the
-    page after cursor `after` (None for the first)."""
     data = graphql(target, pull, STATE_QUERY,
                    {"owner": pull.owner, "name": pull.name,
                     "number": pull.number, "after": after,
@@ -452,8 +387,6 @@ def _pull_request_page(target, pull, after, comments_after=None):
 
 
 def _iso_ms(text):
-    """`text`, GitHub's ISO 8601 `updatedAt`, as epoch milliseconds; None
-    for anything else (a naive stamp is read as UTC)."""
     try:
         parsed = datetime.fromisoformat(text)
     except (TypeError, ValueError):
@@ -464,8 +397,6 @@ def _iso_ms(text):
 
 
 def _state_of(node, threads, runs, required):
-    """`PrState` from the first page's node, every page's threads, and the
-    two check reads (`_check_reads()`) folded beside the rollup."""
     commits = ((node.get("commits") or {}).get("nodes") or ())
     rollup = None
     if commits and isinstance(commits[-1], dict):
@@ -495,12 +426,6 @@ def _state_of(node, threads, runs, required):
 
 @dataclass(frozen=True)
 class FailedCheck:
-    """A check run on the head commit whose conclusion is red. `job_id` is
-    the GitHub Actions job whose log `github.job_log()` reads; None for a check
-    run another app made or a commit status, which have no such log.
-    `workflow_run_id` is the Actions workflow run in `url`
-    (`.../actions/runs/RUN/job/JOB`), None for a URL without one."""
-
     name: str
     conclusion: str
     url: str
@@ -509,7 +434,6 @@ class FailedCheck:
 
 
 def _failed_checks(runs):
-    """A `FailedCheck` for each red row of `runs`."""
     return tuple(FailedCheck(name=r.get("name") or "",
                              conclusion=r["conclusion"],
                              url=r.get("html_url") or "", job_id=_job_id(r),
@@ -519,10 +443,7 @@ def _failed_checks(runs):
 
 
 def _missing_checks(runs, required):
-    """The contexts `required` names that nothing on the head reported --
-    no check run and no status, or only GitHub's "expected" placeholder
-    (KO-652). Either read unreadable is none known missing: a check the
-    babysitter cannot see is not one it can call absent."""
+    """A check the babysitter cannot see is not one it can call absent."""
     if runs is None or required is None:
         return ()
     reported = {r.get("name") for r in runs if isinstance(r, dict)
@@ -531,8 +452,6 @@ def _missing_checks(runs, required):
 
 
 def _job_id(run):
-    """A GitHub Actions check run's `id`, which is its job's; None for any
-    other app's run and for a commit status."""
     app = run.get("app")
     if not isinstance(app, dict) or app.get("slug") != ACTIONS_APP:
         return None
@@ -541,13 +460,11 @@ def _job_id(run):
 
 
 def _workflow_run_id(run):
-    """The workflow run in a check run's `html_url`; None without one."""
     match = WORKFLOW_RUN_RE.search(run.get("html_url") or "")
     return int(match[1]) if match else None
 
 
 def _closed_by(node):
-    """The latest closure's actor; deleted accounts remain unknown."""
     events = (node.get("timelineItems") or {}).get("nodes") or []
     return ((events[-1].get("actor") or {}).get("login")
             if events else None)

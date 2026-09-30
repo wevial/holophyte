@@ -34,8 +34,6 @@ OVER = {}
 # only goes down; a file brought to or under its ceiling leaves the table.
 # Lower a pin when it sits more than 150 lines above its file's count.
 PINNED = {
-    "holophyte/babysit/babysitter.py": 1107,
-
     "holophyte/loop/claim.py": 1001,
 
     "tests/test_claim.py": 1692,

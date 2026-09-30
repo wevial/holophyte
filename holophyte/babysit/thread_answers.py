@@ -59,7 +59,6 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
 
 
 def ask_prompt(pull, ticket, thread):
-    """The adjudicator's read-only brief for one question on the pull request."""
     from holophyte.babysit import babysitter
     quote = "\n".join(f"> {line}" for line in babysitter.conversation(thread)
                       .splitlines()) or "> (empty)"
@@ -75,9 +74,7 @@ def ask_prompt(pull, ticket, thread):
 
 
 def github_links(text, repo_url, sha):
-    """Markdown links into the reviewer's mount, pointed at the candidate on
-    GitHub: the adjudicator cites its own checkout, which no reader can open.
-    Link text and links to anything else are left as written."""
+    """The adjudicator cites its own mount, which no reader can open."""
     def rewrite(m):
         target = m.group(1)
         prefix = next((p for p in reply_parsing.WORKSPACE_PREFIXES
@@ -111,7 +108,6 @@ def previous_park_reason(conn, run_id, branch):
 
 
 def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=None):
-    """Reply and optionally resolve a review thread; record each landed call."""
     from holophyte.babysit import babysitter
     secrets = known_secrets(target.config())
     body = outbound(body, secrets)

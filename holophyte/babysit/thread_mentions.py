@@ -60,10 +60,6 @@ def _mention(handle):
 
 
 def acknowledge(target, conn, run_id, pull, threads, merge):
-    """React EYES once to the latest comment of each thread that mentions
-    `merge.mention_handle` (KO-679). One the route's account already reacted
-    to, or a bot's (`bot_author()`), is left alone; a refused reaction is a
-    run event, never fatal."""
     handle = merge.mention_handle
     bots = (*merge.bot_authors, *merge.bot_logins)
     pattern = _mention(handle)
@@ -94,7 +90,6 @@ def instruction(thread):
 
 
 def bot_author(author, bot_logins, author_kind=""):
-    """Share bot identity rules between stored requests and legacy reads."""
     return (
         author_kind == "bot"
         or author.lower().endswith("[bot]")

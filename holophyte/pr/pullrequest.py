@@ -19,23 +19,7 @@ from holophyte.redact import safe_print as print
 
 
 def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
-    """The resumed run of a candidate open as a pull request: the babysitter
-    again, from the branch as it stands, with the release's answer
-    (`carried.approved`) deciding what a green, quiet PR does.
-
-    What the babysitter may merge without another review is not the branch
-    as it stands but the sha an independent judgement covered: the
-    operator approves the parked sha; babysit reads the ticket's
-    latest independent verdict and its run's `approvedSha`. GitHub rounds
-    never approve a candidate; a rejection or missing coverage requires
-    another review even if the carried approval metadata says otherwise.
-    A branch at any other sha is reviewed again before the merge
-    API is called; that is `_babysit()`'s `reviewed`.
-
-    The park's verify was a process ago, so the
-    babysitter is told no sha is verified (`verified=None`) and runs the
-    merge gate -- the ticket's verify commands, then the drift check --
-    on the candidate before the merge API is called."""
+    """Only the sha an independent judgement covered merges without review."""
     project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
     task_id, task, branch, wt = run.task_id, run.task, run.branch, run.wt
     from holophyte.loop.branch_sync import _sync_branch_from_origin
@@ -81,25 +65,15 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
     return run_state.land(run, True)
 
 
-# The most of `git diff main...HEAD` a written-PR turn is shown, in
-# characters; past it the diff is cut and the prompt says so (KO-336).
 PR_TEXT_DIFF_CAP = 60_000
-# The wall clock a written-PR turn gets, in minutes, unless less of the
-# run's box is left: a description, not an implementation.
 PR_TEXT_BUDGET_MIN = 5
-# Where a repository keeps its pull request template, in the order the
-# first present wins (KO-430). GitHub fills a web-UI PR's body from the
-# file; the factory opens through the API, so the written turn has to be
-# handed the file itself.
+# The factory opens through the API, so the turn is handed the template.
 PR_TEMPLATE_FILES = (".github/pull_request_template.md",
                      ".github/PULL_REQUEST_TEMPLATE.md",
                      "PULL_REQUEST_TEMPLATE.md")
 
 
 def _pr_template(wt):
-    """The task worktree's pull request template, capped like a
-    conventions file with the same note when cut; empty when the
-    repository has none."""
     for name in PR_TEMPLATE_FILES:
         path = wt / name
         if path.is_file():
@@ -113,22 +87,7 @@ def _pr_template(wt):
 
 def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
                      beat_s, wt, started, budget_min, issue_url, *, refresh=None):
-    """One writer turn explains the candidate in a PR title and body.
-    Return `(title, body)`, using a Summary stub when the reply is unusable
-    or the turn runs out of time, with one printed line saying so. A refresh
-    returns None on refusal so its caller keeps the existing body.
-
-    The turn is given the diff against `main` (capped at `PR_TEXT_DIFF_CAP`,
-    with a note when cut), the ticket, the repository's `AGENTS.md` and
-    `CLAUDE.md` when the worktree root has them, the repository's pull
-    request template when it has one (`_pr_template()`), with the
-    instruction to fill its sections, and the target's `pr_style`
-    instructions; it answers with a line `TITLE: ...` and the body after it.
-    The body carries `Linear: KO-n` and the issue URL as its last line, and
-    no FINDINGS entry: the description is the repository's, the entry is the
-    factory's. The budget is `PR_TEXT_BUDGET_MIN` or what is left of the
-    run's box, whichever is less, and at least one minute.
-    """
+    """A refresh returns None on refusal, so its caller keeps the body."""
     from holophyte.loop.implement import _timed
 
     diff = sh(["git", "diff", "main...HEAD"], cwd=wt)
@@ -212,7 +171,6 @@ CHANGES_HEADING = "## Changes since first review"
 
 
 def _without_changes(text):
-    """Separate the maintained history from the description's other sections."""
     match = re.search(r"^## Changes since first review\s*\n(.*?)(?=^## |\Z)",
                       text, re.MULTILINE | re.DOTALL)
     if match is None:
@@ -223,9 +181,7 @@ def _without_changes(text):
 
 def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
                     beat_s, wt, budget_min, pull, answered, *, sha=None):
-    """One bounded writing turn after approval; refusal never overwrites prose.
-    A fix round whose change touches `[merge] ui_paths` since the sha the
-    Evidence names also replaces the Evidence (`pr_media.refresh()`)."""
+    """One bounded writing turn after approval; refusal never overwrites prose."""
     if sha and pr_activity.latest(conn, run_id, "pr_text_sha") == sha:
         return
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
@@ -254,8 +210,6 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
 
 def _refreshed_prose(project, conn, run_id, task_id, task, branch, ticket,
                      beat_s, wt, budget_min, own, answered):
-    """The rewritten description with its maintained history, or None when
-    the writing turn is refused."""
     written = _written_pr_text(
         project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
         monotonic(), budget_min or PR_TEXT_BUDGET_MIN, None,
@@ -279,12 +233,6 @@ def _refreshed_prose(project, conn, run_id, task_id, task, branch, ticket,
 
 def _prepare_pr(project, conn, run_id, task_id, task, branch, body, beat_s,
                 wt, started, budget_min, issue_url=None, lead=None):
-    """`[merge] mode = "pr"`, the half of opening the pull request that
-    needs no lock: capture the evidence and write the PR text, falling back
-    to a stub on failure. `lead`, when given, is the loop's own first line
-    of the body, ahead of the written text (KO-658). Returns the
-    `(title, text)` `_push_and_open()` opens the pull request with
-    (KO-644)."""
     with heartbeat_while(conn, run_id, beat_s):
         evidence = pr_media.prepare(
             project, wt, task_id,
@@ -299,24 +247,7 @@ def _prepare_pr(project, conn, run_id, task_id, task, branch, body, beat_s,
 
 
 def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
-    """`[merge] mode = "pr"`: push the approved candidate and open its pull
-    request with `title` and `text`; return the PR's URL. The caller holds
-    the merge lock: the push runs in the target checkout, whose refs a
-    claim's fetch moves under the same lock.
-
-    `git push origin BRANCH`, then the PR, so a PR never names a branch the
-    remote does not hold. Either refusing is `InfraFailure` out of
-    `holophyte.pr.github`: the route gave out, not the ticket, so no strike is
-    spent and the branch and worktree stay exactly as after a refused
-    merge. Nothing touches main.
-
-    Adopt an existing PR on this branch, then babysit as usual (KO-407).
-
-    Remote calls run under `heartbeat_while()`: a slow push is not a dead
-    loop to sweep before its URL is recorded (KO-259 review round 1).
-    """
-    # Still the `merge_gate` phase: the push and the create are the mode's
-    # way out of the gate, named on the stream rather than as a phase move.
+    """The caller holds the merge lock a claim's fetch of these refs takes."""
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "pull_request",
                            f"pushing {branch} to {github.REMOTE} and opening its"
@@ -325,9 +256,7 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
     with heartbeat_while(conn, run_id, beat_s):
         github.push_branch(project, branch)
         print(f"[holo2] pushed {branch} to {github.REMOTE}")
-        # A branch already open as a pull request is adopted, not opened
-        # again: `gh pr create` refuses with one still open, which is how
-        # a requeued run used to fail after doing everything right.
+        # `gh pr create` refuses a branch already open as a PR: adopt it.
         url = github.open_pull_request(project, branch)
         if url is None:
             url = github.create_pull_request(project, branch, title, text)
@@ -342,17 +271,13 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
                 conn, run_id, "pull_request",
                 f"adopted the branch's open pull request: {url}"
                 if adopted else f"pull request open: {url}")
-            # The PR is the run's `prUrl` from this moment, not only
-            # from a later park: a run that merges without parking
-            # still names it on its row, whether opened or adopted.
+            # The PR is the run's `prUrl` from now, even for a run that never parks.
             store.set_pull_request(conn, run_id, url)
     return url
 
 
 def _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
                 human, listed, reviewed):
-    """Park the run on the threads the pass found `HUMAN`, each quoted in
-    the ticket's question, with `listed` as the open threads."""
     quoted = "\n\n".join(babysitter.quoted(t) for _, t, _ in human)
     _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                 "a thread needs a human's answer; nothing was posted on"
@@ -361,8 +286,6 @@ def _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
 
 def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
               pull, reviewed=None, retry_conflicts=False):
-    """Merge the pinned candidate (main's tip in it if `require_up_to_date`); return
-    its merge sha. Park on refusal; a retrying babysit gets 405 or behind raised."""
     set_phase(conn, run_id, "merging", f"merging {pull.url} through the"
               " pull request API")
     behind = None
@@ -384,7 +307,7 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
     except merge_queue.QueueLeft as left:
         removed = merge_queue.red_group(project, conn, run_id, pull, left)
         if removed is not None:
-            raise removed from None  # The babysit's check fix turn's.
+            raise removed from None
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     str(left), (), reviewed=reviewed)
     except github.MergeRefused as refused:
@@ -395,9 +318,7 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
                     f"GitHub refused the merge: {refused}", (),
                     reviewed=reviewed)
     print(f"[holo2] merged {pull.url} as {merge_sha[:12]}")
-    # Local main is not moved: the factory never pushes it, and pulling it
-    # here would make the writer host's checkout the loop's business. The
-    # worktree and the local branch hold nothing the PR does not.
+    # Local main is not moved: the factory never pushes it.
     try:
         sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
         sh(["git", "branch", "-D", branch], project.path)
@@ -407,7 +328,6 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
 
 
 def _behind_main(wt, sha):
-    """Why `sha` may not land yet: the fetched main's tip is not in it."""
     ref = f"{github.REMOTE}/{github.BASE}"
     try:
         fetched = subprocess.run(
@@ -438,8 +358,6 @@ def _behind_main(wt, sha):
 
 def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,
                started, budget_min, rnd):
-    """The merged ledger line for a candidate that landed through its pull
-    request; returns the merge sha, which is what the close-out stamps."""
     actual_min = (monotonic() - started) / 60
     ledger(conn, run_id, task_id, "merge",
            f"MERGED through {url} as {merge_sha} (branch {branch} deleted"
@@ -452,19 +370,7 @@ def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,
 
 def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                 why, threads, reviewed=None, park_kind="pull_request"):
-    """Park the run on its pull request: the ticket asks `PR open: URL`
-    with `why` and the open `threads` listed, `store.park()` writes
-    `runs.prUrl`, `runs.candidateSha` and -- `reviewed`, the sha the last
-    independent judgement covered, when there is one -- `runs.approvedSha`
-    with the phase move, the ledger carries the same, and `MergeParked`
-    unwinds the run with branch and worktree left standing. The operator's
-    ways on are `--approve KO-n` (merge it) and `--babysit KO-n` (look
-    again, which merges at `reviewed` alone and reviews anything else) --
-    and the supervisor's content-based wake rule. The park reads the PR after
-    this pass's writes and records its mark, checks and review decision.
-    Delayed updatedAt bumps alone cannot trigger another pass (KO-563).
-    A failed read records no mark; reconcile initializes it without waking.
-    """
+    """Delayed updatedAt bumps alone cannot trigger another pass."""
     from holophyte.babysit.babysit_steps import record_step
     record_step(conn, run_id, "parked")
     short = sha[:12] if sha else "an unrecorded sha"

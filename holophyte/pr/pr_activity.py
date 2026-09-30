@@ -1,4 +1,4 @@
-"""Authored PR activity and event-backed guards for parked candidates (KO-563)."""
+"""Authored PR activity and event-backed guards for parked candidates."""
 import json
 import re
 
@@ -66,7 +66,6 @@ def _item(field, item, viewer):
 
 
 def activities(target, pull, node, viewer, read, rate=None):
-    """Collect content and update rate with the last overflow response."""
     def budgeted_read(*args):
         data = read(*args)
         if rate is not None and isinstance(data.get('rateLimit'), dict):
@@ -102,7 +101,6 @@ def latest(conn, run_id, kind):
 
 
 def record_pass(conn, run_id, status):
-    """Count supervisor wakes whose advertised content disappeared before park."""
     previous = conn.execute(
         'SELECT r.id FROM runs r JOIN runs current ON current.id = ? '
         'WHERE r.ticketId = current.ticketId AND r.prUrl = current.prUrl '
@@ -156,8 +154,7 @@ def arrived(conn, run_id, status, seen_at):
     result = [item for item in status.activity
               if (item[2] not in seen if item[0] == 'commit' and seen is not None
                   else item[1] > seen_at)]
-    # Older parks have no identity snapshot: establish it without treating
-    # their historical commits as new activity.
+    # Older parks have no snapshot: establish one without waking on history.
     if seen is None and not result:
         record_commits(conn, run_id, status)
     return result

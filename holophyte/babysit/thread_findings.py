@@ -11,7 +11,6 @@ AUTHOR = re.compile(r"^- (.*?) @([^:]+):")
 
 
 def headline(text):
-    """Extract a short visible headline from a bot's unadjudicated comment."""
     text = re.sub(r"<!--.*?-->|<!--", "", text, flags=re.S)
     text = re.sub(r"<details\b[^>]*>.*?</details\s*>|<details\b[^>]*>",
                   "", text, flags=re.S | re.I)
@@ -35,7 +34,6 @@ def bounded_raw(text):
 
 
 def thread_finding(thread, verdict, legacy, bot_logins):
-    """Keep the original parser's fingerprint keys, never its comment blob."""
     action, summary = verdict
     author = thread.comments[-1] if thread.classification == "MENTIONED" else thread
     is_bot = bot_author(author.author, bot_logins, author.author_kind)
@@ -52,7 +50,6 @@ def thread_finding(thread, verdict, legacy, bot_logins):
 
 
 def normalize_thread(finding, bot_logins):
-    """Decode the final factory marker; leave ordinary reviewer prose alone."""
     if finding.get("summary") is not None or finding.get("kind") == "instruction":
         return finding
     message = finding.get("message", "")

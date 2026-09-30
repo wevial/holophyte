@@ -1,14 +1,4 @@
-"""Landing a pull request through `main`'s merge queue (KO-712).
-
-When the rules for `main` hold a `merge_queue` rule, the REST merge is
-refused or bypasses the queue, so two pull requests green against an older
-`main` could land one after the other and leave it red. The babysitter adds
-the pull request to the queue instead and waits there the way it waits for
-checks: the queue's merge commit is the run's merge sha, and a removal or a
-wait past `[merge] check_wait_sec` is `QueueLeft`, which parks the run --
-unless the merge group the queue last tested it on went red (KO-714): that
-is `QueueRemoved`, which gets the babysit's one check fix turn.
-"""
+"""Landing a pull request through `main`'s merge queue, which a REST merge skips."""
 from time import monotonic
 from urllib.parse import quote
 
@@ -35,25 +25,18 @@ query($owner: String!, $name: String!, $number: Int!) {
 }"""
 
 
-# A merge group's workflow run with one of these conclusions failed it.
 GROUP_RED = ("failure", "cancelled")
-# Workflow runs per page of the Actions runs read, GitHub's most.
+# GitHub's largest page.
 RUNS_PAGE = 100
 
 
 class QueueLeft(Exception):
-    """The pull request left the queue unmerged, or outstayed the wait;
-    `since` is GitHub's `enqueuedAt` for a removal, None otherwise."""
-
     def __init__(self, why, since=None):
         super().__init__(why)
         self.since = since
 
 
 class QueueRemoved(Exception):
-    """The queue removed the pull request with the Actions checks `failed`
-    (`pr_status.FailedCheck`s) red on its merge-group commit `group`."""
-
     def __init__(self, failed, group):
         super().__init__(f"checks {', '.join(c.name for c in failed)} failed"
                          f" on merge group {group}")
@@ -61,12 +44,7 @@ class QueueRemoved(Exception):
 
 
 def red_merge_group(target, pull, since):
-    """The merge-group commit the queue last tested the pull request on if
-    a workflow run there failed or was cancelled, else None. It is read off
-    the Actions runs of event `merge_group` on a `gh-readonly-queue/<base>/
-    pr-<number>-` branch created since `since`, the enqueue's `enqueuedAt`:
-    their head sha is the merge-group commit. `mergeQueueEntry.headCommit`
-    is not read: GitHub names it only "the head commit for this entry"."""
+    """`mergeQueueEntry.headCommit` is not read: GitHub leaves it undefined."""
     since_ms = pr_status._iso_ms(since)
     if since_ms is None:
         return None
@@ -84,9 +62,7 @@ def red_merge_group(target, pull, since):
 
 
 def group_runs(target, pull, since, since_ms):
-    """The repository's `merge_group` workflow runs created since `since`,
-    paged newest first until a page runs short or reaches back past it: the
-    other pull requests' queue runs can fill any number of pages first."""
+    """Other pull requests' queue runs can fill any number of pages first."""
     base = (f"repos/{pull.repo}/actions/runs?event=merge_group&created="
             f"{quote('>=' + since, safe='')}&per_page={RUNS_PAGE}")
     runs, page = [], 1
@@ -104,10 +80,6 @@ def group_runs(target, pull, since, since_ms):
 
 
 def red_group(target, conn, run_id, pull, left):
-    """`QueueRemoved` for a removal `left` whose merge group went red with
-    red checks there, every one an Actions job; None when it parks
-    instead: no red merge group found, no red check on it, or one without
-    a job log."""
     if left.since is None:
         return None
     try:
@@ -127,7 +99,6 @@ def red_group(target, conn, run_id, pull, left):
 
 
 def merge_queue_required(target, pull):
-    """Whether the rules answer for `main` holds a `merge_queue` rule."""
     rules = pr_status.main_rules(target, pull)
     return isinstance(rules, list) and any(
         isinstance(rule, dict) and rule.get("type") == "merge_queue"
@@ -135,9 +106,6 @@ def merge_queue_required(target, pull):
 
 
 def enqueue_pull_request(target, pull, sha):
-    """Add the pull request to the queue pinned to head `sha`; GitHub's
-    `enqueuedAt` for it, None unnamed. GitHub's refusal (an `errors`
-    answer) is `MergeRefused`, as a REST merge's is."""
     node = github.rest(target, pull, "GET",
                    f"repos/{pull.repo}/pulls/{pull.number}")["node_id"]
     try:
@@ -152,8 +120,6 @@ def enqueue_pull_request(target, pull, sha):
 
 
 def land_through_queue(target, conn, run_id, pull, sha):
-    """Enqueue at `sha`, then read the queue every `github.CHECK_POLL_S` until
-    the queue merges it; return the queue's merge commit."""
     since = enqueue_pull_request(target, pull, sha)
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "merge_queue",
@@ -186,7 +152,6 @@ def land_through_queue(target, conn, run_id, pull, sha):
 def verified_merge(project, conn, run_id, provider, task_id, issue_id, branch,
                    wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
                    contracts, ticket, budget_min, retry_conflicts):
-    """Gate a changed candidate before attempting the PR merge."""
     from holophyte.loop.merge_gate import _merge_gate
     from holophyte.pr.pullrequest import _merge_pr
     if sha != verified:

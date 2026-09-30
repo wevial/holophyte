@@ -23,7 +23,6 @@ def _reply_quote(comment):
 
 
 def conversation_threads(target, pull, node, read_page):
-    """Yield only human mentions; conversation summaries are not findings."""
     comments = []
     while True:
         page = node.get("comments") or {}

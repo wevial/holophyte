@@ -1,16 +1,10 @@
-"""A review comment as plain text for a parked question (KO-717).
-
-Review bots write for GitHub's renderer: a linked `img` badge, HTML around
-the finding, and a `details` block repeating it as a fix prompt. A
-maintainer reading the question in the console wants the finding alone.
-"""
+"""A review comment as plain text for a parked question."""
 import re
 from html.parser import HTMLParser
 
 QUOTE_CHARS = 600
 QUOTE_MARKER_RE = re.compile(r"^[ \t]*(?:>[ \t]?)+", re.MULTILINE)
 BLANK_RUN_RE = re.compile(r"\n[ \t]*(?:\n[ \t]*)+\n")
-# Tags HTML displays on a line of their own; their text keeps that boundary.
 BLOCK_TAGS = frozenset((
     "address", "article", "aside", "blockquote", "br", "dd", "div", "dl",
     "dt", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5",
@@ -19,10 +13,6 @@ BLOCK_TAGS = frozenset((
 
 
 class _Text(HTMLParser):
-    """Collects text: an `img` as its `alt`, a line break or block tag as a
-    line boundary, other tags dropped for their text, and each `details`
-    block, however nested, dropped whole."""
-
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.parts = []
@@ -50,8 +40,6 @@ class _Text(HTMLParser):
 
 
 def readable(text, limit=QUOTE_CHARS):
-    """`text` without markup, `details` blocks or quote markers, blank runs
-    collapsed, cut to `limit` characters ending in "…"."""
     parser = _Text()
     parser.feed(text or "")
     parser.close()

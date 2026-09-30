@@ -224,6 +224,8 @@ DEFINED = {
         "_review_fix",
         "_settled_state",
         "_verdicts_by_kind",
+    ],
+    _module("babysit.thread_text"): [
         "addressed_reply",
         "adjudication_brief",
         "conversation",

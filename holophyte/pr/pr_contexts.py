@@ -19,7 +19,6 @@ query($owner: String!, $name: String!, $sha: String!, $contextsAfter: String) {
 
 
 def status_contexts_of(target, pull, node, graphql):
-    """Normalise the rollup's commit statuses beside the REST check runs."""
     commits = (node.get("commits") or {}).get("nodes") or []
     rollup = ((commits[-1].get("commit") or {}).get("statusCheckRollup")
               if commits else None) or {}

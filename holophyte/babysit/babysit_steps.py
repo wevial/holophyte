@@ -6,7 +6,6 @@ STEPS = frozenset({"checks", "quiet", "threads", "fix", "conflict_merge",
 
 
 def record_step(conn, run_id, step):
-    """Record entry before work starts, once per change of step."""
     if step not in STEPS:
         raise ValueError(f"unknown babysit step: {step}")
     if conn is None or run_id is None:

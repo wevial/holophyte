@@ -26,7 +26,7 @@ def _just_pushed_state(target, conn, run_id, provider, task_id, branch,
         store.record_event(conn, run_id, "pull_request",
                            f"pull request head settled to {sha} after"
                            f" {reads} reads")
-    # KO-491: the park suffix counts re-reads; the settled event counts all reads.
+    # The park suffix counts re-reads; the settled event counts all reads.
     if state.head_sha != sha:
         _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                      pull, state, reviewed, head_rereads=reads - 1)
@@ -57,7 +57,6 @@ def _stale_head(target, conn, run_id, branch, sha, state):
 
 def _pr_terminal(target, conn, run_id, provider, task_id, branch, sha,
                  pull, state, reviewed, head_rereads=None):
-    """Handle a terminal PR or park a head that differs from the candidate."""
     from holophyte.pr.pullrequest import _park_on_pr
     if state.merged:
         print(f"[holo2] {pull.url} is already merged as"

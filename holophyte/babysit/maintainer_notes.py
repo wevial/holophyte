@@ -25,21 +25,12 @@ def amended_ticket(conn, run_id, ticket, url):
                             f"by {n['author']}:\n{n['note']}" for n in amendments)
 
 
-# The findings a requeued attempt is shown, in total characters (KO-718).
 FINDINGS_CAP = 1500
 REQUEUE_PREFIX = "human requeue: "
 
 
 def requeue_context(conn, run_id):
-    """The implement turn's opening after a requeue (KO-718), or "".
-
-    The ticket's run before `run_id`, when it ended `failed` and carries a
-    `requeue` intervention: the operator's note (read back from the event
-    `record_intervention()` wrote, the only place it is kept), then the
-    findings of its last review round unless that round passed, their
-    messages capped at `FINDINGS_CAP` characters in total. A findings row
-    that does not decode to a list is skipped, so the note still arrives.
-    """
+    """The note is read back from `record_intervention()`'s event, its only copy."""
     if conn is None or run_id is None:
         return ""
     prev = conn.execute(
@@ -99,7 +90,6 @@ def start_fix(conn, run_id, addressed):
 
 
 def cite_commits(wt, sha, fixed, addressed, sh):
-    """Ensure the final fix commit carries references even if the agent omits them."""
     refs = [f"operator_note event {event_id(t)}" for _, t, _ in addressed if is_note(t)]
     if not refs:
         return fixed
