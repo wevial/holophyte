@@ -22,7 +22,7 @@ import holophyte.agents.review_workspace
 import holophyte.agents.roles
 import holophyte.config.checks
 import holophyte.config.project
-import holophyte.loop.loop
+import holophyte.loop.implement
 import holophyte.loop.runs
 import store
 
@@ -115,7 +115,7 @@ class ClaudeTableTests(unittest.TestCase):
                                       text=True).strip()
         holophyte.agents.fix_session.fix_turn(
             self.target, self.conn, self.run, 60, self.repo, 1, "the ticket",
-            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop.loop._timed,
+            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop.implement._timed,
             check_cap=lambda *args: None)
         _, resumed = self.received()
         self.assertEqual(resumed[:-1], ["-p", "--resume", first[2], "--model",
@@ -432,7 +432,7 @@ class CodexImplementerTests(ClaudeTableTests):
         self.addCleanup(env.stop)
 
     def implement(self, goal, budget_min=1):
-        return holophyte.loop.loop._timed(self.target, self.conn, self.run, 60,
+        return holophyte.loop.implement._timed(self.target, self.conn, self.run, 60,
                                      self.repo, budget_min, goal)
 
     def test_implement_turn_runs_the_adapter_argv_and_records_its_session(self):
@@ -455,7 +455,7 @@ class CodexImplementerTests(ClaudeTableTests):
                                       text=True).strip()
         holophyte.agents.fix_session.fix_turn(
             self.target, self.conn, self.run, 60, self.repo, 1, "the ticket",
-            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop.loop._timed,
+            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop.implement._timed,
             check_cap=lambda *args: None)
         _, resumed = self.received()
         self.assertEqual(resumed[:-1], ["exec", "resume", SESSION,
@@ -510,7 +510,7 @@ class DevinImplementerTests(ClaudeTableTests):
         fake.chmod(0o755)
 
     def implement(self, goal, budget_min=1):
-        return holophyte.loop.loop._timed(self.target, self.conn, self.run, 60,
+        return holophyte.loop.implement._timed(self.target, self.conn, self.run, 60,
                                      self.repo, budget_min, goal)
 
     def assert_turn_then_list(self, goal):
@@ -574,7 +574,7 @@ class DevinImplementerTests(ClaudeTableTests):
         with patch.dict(os.environ, {"FAKE_LIST_STALLS": "1"}), \
                 patch.object(holophyte.agents.roles, "run_capped", run_capped), \
                 self.assertRaises(holophyte.loop.runs.RunSwept):
-            holophyte.loop.loop._timed(self.target, self.conn, self.run, 0.05,
+            holophyte.loop.implement._timed(self.target, self.conn, self.run, 0.05,
                                   self.repo, 1, "implement the thing")
         self.assertLess(time.monotonic() - began, 20)
         self.assert_turn_then_list("implement the thing")
@@ -586,7 +586,7 @@ class DevinImplementerTests(ClaudeTableTests):
                                       text=True).strip()
         holophyte.agents.fix_session.fix_turn(
             self.target, self.conn, self.run, 60, self.repo, 1, "the ticket",
-            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop.loop._timed,
+            "REQUEST_CHANGES: a finding", sha, timed=holophyte.loop.implement._timed,
             check_cap=lambda *args: None)
         _, _, resumed, _ = self.received()
         self.assertEqual(resumed["argv"][:-1], [*DEVIN_IMPLEMENTER, "-r",
@@ -652,7 +652,7 @@ class ContainerImplementerTests(unittest.TestCase):
         fake = Path(os.environ["PATH"].split(os.pathsep)[0]) / "devin"
         fake.write_text(f"#!{sys.executable}\n{FAKE_DEVIN_IMPLEMENTER}")
         fake.chmod(0o755)
-        self.launch_turn(lambda: holophyte.loop.loop._timed(
+        self.launch_turn(lambda: holophyte.loop.implement._timed(
             self.target, self.conn, self.run, 60, self.repo, 1,
             "implement the thing"))
         self.assertFalse(self.calls.exists())

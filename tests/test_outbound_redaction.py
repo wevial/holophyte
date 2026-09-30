@@ -14,7 +14,7 @@ from holophyte import redact
 from holophyte.agents import roles
 from holophyte.board import projection
 from holophyte.config.project import Project
-from holophyte.loop import gates, loop
+from holophyte.loop import gates, review_round
 from holophyte.pr import github
 
 SENTINEL = "outbound-sentinel-542"
@@ -48,7 +48,8 @@ class OutboundRedactionTests(unittest.TestCase):
             ok, output = gates.run_verify(command, self.root)
         self.assertTrue(ok)
         self.assertIn(SENTINEL, output)
-        goal = "Judge this candidate.\n" + loop._verify_brief(command, ok, output)
+        goal = ("Judge this candidate.\n"
+                + review_round._verify_brief(command, ok, output))
         fake = self.root / "agent.py"
         fake.write_text("import json, sys\nprint(json.dumps(sys.argv[-1]))\n")
         for enabled in (False, True, "config"):

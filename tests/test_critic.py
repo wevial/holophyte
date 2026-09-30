@@ -31,8 +31,8 @@ import holophyte.agents.harness  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.probes  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.review.freshness  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -239,7 +239,7 @@ class CriticClaimTests(LoopFixture):
         project_id = tickets.ensure_project(conn, provider.team, self.target)
         fake = FakeAgent(Critic(), Critic())
 
-        with patch.object(holophyte.loop.loop, "agent", fake), \
+        with patch.object(holophyte.loop.review_round, "agent", fake), \
                 patch.object(sys, "stdout", io.StringIO()):
             admitted = [holophyte.loop.claim._admit_ticket(
                 self.project, conn, project_id, provider, task,
@@ -313,7 +313,7 @@ class CriticClaimTests(LoopFixture):
         conn = holophyte.loop.runs.open_store(self.project)
         self.addCleanup(conn.close)
         project_id = tickets.ensure_project(conn, provider.team, self.target)
-        with patch.object(holophyte.loop.loop, "agent", fake), \
+        with patch.object(holophyte.loop.review_round, "agent", fake), \
                 patch.object(sys, "stdout", io.StringIO()):
             admitted = holophyte.loop.claim._admit_ticket(
                 self.project, conn, project_id, provider, task, SEEN)

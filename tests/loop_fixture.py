@@ -31,8 +31,11 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.host.reconcile  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.adjudicate  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
 # from `factory`'s slug rule: an expectation computed by the code under test
@@ -231,7 +234,9 @@ class LoopFixture(unittest.TestCase):
         self.last_fake = fake
         with no_agent_processes() as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
-                with patch.object(holophyte.loop.loop, "agent", fake):
+                with patch.object(holophyte.loop.implement, "agent", fake), \
+                        patch.object(holophyte.loop.review_round, "agent", fake), \
+                        patch.object(holophyte.loop.adjudicate, "agent", fake):
                     self.rc = holophyte.cli.operator.main(self.project, provider)
         return fake, guard
 

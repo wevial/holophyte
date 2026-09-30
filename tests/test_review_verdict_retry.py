@@ -8,7 +8,7 @@ from unittest.mock import patch
 from fake_agent import APPROVE, REQUEST_CHANGES, Reply  # noqa: E402
 
 import holophyte.host.supervisor
-import holophyte.loop.loop
+import holophyte.loop.review_round
 import holophyte.loop.runs
 import review_runner
 import store
@@ -76,7 +76,7 @@ class ReviewVerdictRetryTests(LoopFixture):
 
                 with patch.object(review_runner, "run_review",
                                   side_effect=runner) as run:
-                    reply, actual, evidence = holophyte.loop.loop._review_reply(
+                    reply, actual, evidence = holophyte.loop.review_round._review_reply(
                         self.project, "Review this candidate.", self.target,
                         self.base, self.base, None, None)
                 self.assertEqual(run.call_count, 2)

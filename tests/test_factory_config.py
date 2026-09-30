@@ -30,7 +30,7 @@ import holophyte.host.supervisor
 import holophyte.host.supervisor_lock
 import holophyte.loop.claim
 import holophyte.loop.gates
-import holophyte.loop.loop
+import holophyte.loop.pipeline
 import holophyte.loop.runs
 import holophyte.redact
 import review_runner

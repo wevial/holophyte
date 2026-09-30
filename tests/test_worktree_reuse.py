@@ -22,7 +22,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
 
 
 class ReuseFixture(unittest.TestCase):

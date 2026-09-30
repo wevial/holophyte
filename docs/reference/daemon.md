@@ -251,7 +251,7 @@ fix turns retain the failure and recovery path.
 The loop records one `detail`-level runEvent of kind `implementer_output`:
 its summary is the last non-empty line of the implementer's final message
 and its payload the message's last 4000 characters
-(`OUTPUT_TAIL` in `holophyte/loop/loop.py`), passed through the prose redactor
+(`OUTPUT_TAIL` in `holophyte/loop/implement.py`), passed through the prose redactor
 (`redact_prose()` in `holophyte/redact.py`): every credential the config
 and the environment hold, and every `name = value` pair with a secret's
 name wherever it sits in the text, read `[redacted]`. It sits beside the

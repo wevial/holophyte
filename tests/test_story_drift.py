@@ -22,8 +22,10 @@ from fake_agent import (  # noqa: E402
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
-import holophyte.loop.loop  # noqa: E402
+import holophyte.loop.adjudicate  # noqa: E402
+import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.merge_gate  # noqa: E402
+import holophyte.loop.review_round  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
@@ -127,7 +129,9 @@ class StoryDriftTests(LoopFixture):
 
         out = io.StringIO()
         with no_agent_processes(), patch.object(sys, "stdout", out), \
-                patch.object(holophyte.loop.loop, "agent", agent), \
+                patch.object(holophyte.loop.implement, "agent", agent), \
+                patch.object(holophyte.loop.review_round, "agent", agent), \
+                patch.object(holophyte.loop.adjudicate, "agent", agent), \
                 patch("holophyte.review.freshness.critic_admits",
                       return_value=True):
             holophyte.cli.operator.main(self.project, self.board)

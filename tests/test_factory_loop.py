@@ -60,8 +60,9 @@ import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.merge_gate  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -179,16 +180,16 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         self.addCleanup(conn.close)
         run_id = self.read("SELECT id FROM runs")[0][0]
         # The writer may use the implementer CLI but remains out of scope.
-        with (patch.object(holophyte.loop.loop, "heartbeat_while",
+        with (patch.object(holophyte.loop.implement, "heartbeat_while",
                            return_value=contextlib.nullcontext()),
-              patch.object(holophyte.loop.loop, "agent",
+              patch.object(holophyte.loop.implement, "agent",
                            return_value="session id: excluded")):
-            holophyte.loop.loop._timed(self.project, conn, run_id, 1, self.target, 1,
-                                  "write", role="write")
+            holophyte.loop.implement._timed(self.project, conn, run_id, 1,
+                                            self.target, 1, "write", role="write")
             self.configure("[agents]\nimplementer_isolation = 'container'\n"
                            "implementer_session = 'session id: ([a-z-]+)'\n")
-            holophyte.loop.loop._timed(self.project, conn, run_id, 1, self.target, 1,
-                                  "implement")
+            holophyte.loop.implement._timed(self.project, conn, run_id, 1,
+                                            self.target, 1, "implement")
 
         self.assertEqual(self.read("SELECT providerSessionId FROM runs"), [(None,)])
         self.assertEqual(self.read(
@@ -853,7 +854,7 @@ class RunCapTests(LoopFixture):
         is the store's, not a simulated one. Once: later rounds' `reviewing`
         transitions pass through untouched.
         """
-        real = holophyte.loop.loop.set_phase
+        real = holophyte.loop.review_round.set_phase
         done = []
 
         def watching(conn, run_id, phase, note=None):
@@ -865,7 +866,7 @@ class RunCapTests(LoopFixture):
                         " WHERE id = ?", (int(minutes * 60 * 1000), run_id))
             return real(conn, run_id, phase, note)
 
-        return patch.object(holophyte.loop.loop, "set_phase", watching)
+        return patch.object(holophyte.loop.review_round, "set_phase", watching)
 
     def test_a_fix_turn_the_cap_has_no_room_for_is_refused(self):
         """Refuse a fix turn that cannot fit within the run's remaining cap."""
@@ -960,7 +961,7 @@ class GateConflictImplementerTests(LoopFixture):
         seen = self.target.parent / "verify-ran-on.txt"
         fake = FakeAgent(Commit("merge main into the branch",
                                 path="README.md", body="merged\n"))
-        with patch.object(holophyte.loop.loop, "agent", fake):
+        with patch.object(holophyte.loop.implement, "agent", fake):
             ok, merged = holophyte.loop.merge_gate._merge_gate(
                 self.project, conn, run_id, provider, "KO-131", "iss-131",
                 branch, wt, 60, sha,
@@ -1007,7 +1008,7 @@ class GateConflictImplementerTests(LoopFixture):
                 (cwd / "README.md").write_text("edited again\n")
                 return "staged the resolution, then kept editing it"
 
-        with patch.object(holophyte.loop.loop, "agent",
+        with patch.object(holophyte.loop.implement, "agent",
                           FakeAgent(StageThenReEdit())):
             with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
                 holophyte.loop.merge_gate._sync_main_into_branch(
@@ -1046,7 +1047,7 @@ class GateConflictImplementerTests(LoopFixture):
         fake = FakeAgent(CommitMergeLeavingEdits(
             "merge main into the branch", path="README.md",
             body="merged\n"))
-        with patch.object(holophyte.loop.loop, "agent", fake):
+        with patch.object(holophyte.loop.implement, "agent", fake):
             with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
                 holophyte.loop.merge_gate._sync_main_into_branch(
                     self.project, conn, run_id, provider, "KO-131", branch,
@@ -1088,7 +1089,7 @@ class GateConflictImplementerTests(LoopFixture):
                                check=True, capture_output=True)
                 return "aborted the merge and reset the branch to main"
 
-        with patch.object(holophyte.loop.loop, "agent",
+        with patch.object(holophyte.loop.implement, "agent",
                           FakeAgent(AbortThenResetToMain())):
             with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
                 holophyte.loop.merge_gate._sync_main_into_branch(
@@ -1126,7 +1127,7 @@ class GateConflictImplementerTests(LoopFixture):
         fake = FakeAgent(CommitMergeThenTimeout(
             "merge main into the branch", path="README.md",
             body="merged\n"))
-        with patch.object(holophyte.loop.loop, "agent", fake):
+        with patch.object(holophyte.loop.implement, "agent", fake):
             with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
                 holophyte.loop.merge_gate._sync_main_into_branch(
                     self.project, conn, run_id, provider, "KO-131", branch,
@@ -1172,7 +1173,7 @@ class GateConflictImplementerTests(LoopFixture):
         tickets.transition(conn, ticket, "in_flight")
         store.set_branch(conn, run_id, branch)
         fake = FakeAgent()  # no steps: any turn asked for is a ScriptError
-        with patch.object(holophyte.loop.loop, "agent", fake):
+        with patch.object(holophyte.loop.implement, "agent", fake):
             merged = holophyte.loop.merge_gate._sync_main_into_branch(
                 self.project, conn, run_id, StubProvider(a_task()), "KO-131",
                 branch, wt, sha, 60, "add a thing", 5)
@@ -1203,8 +1204,8 @@ class TransportRetryTests(LoopFixture):
             nonlocal elapsed
             elapsed += seconds
 
-        with patch.object(holophyte.loop.loop, "sleep", side_effect=wait) as nap, \
-                patch.object(holophyte.loop.loop, "retry_clock",
+        with patch.object(holophyte.loop.implement, "sleep", side_effect=wait) as nap, \
+                patch.object(holophyte.loop.implement, "retry_clock",
                              side_effect=lambda: time.monotonic() + elapsed):
             fake, _ = self.loop(self.failed_turn("FETCH FAILED"),
                                 Commit("recovered"), APPROVE)
@@ -1219,7 +1220,7 @@ class TransportRetryTests(LoopFixture):
         self.assertLessEqual(fake.turns[1].timeout, fake.turns[0].timeout - 30)
 
     def test_two_transport_failures_preserve_branch_without_a_strike(self):
-        with patch.object(holophyte.loop.loop, "sleep"):
+        with patch.object(holophyte.loop.implement, "sleep"):
             fake, _ = self.loop(self.failed_turn("ECONNRESET"),
                                 self.failed_turn("ECONNRESET"))
         self.assertEqual(fake.roles, ["implement", "implement"])
@@ -1243,7 +1244,7 @@ class TransportRetryTests(LoopFixture):
                     conn = store.open(str(self.db))
                     self.addCleanup(conn.close)
                     tickets.walk_ticket(conn, 1, "ready")
-                with patch.object(holophyte.loop.loop, "sleep") as nap:
+                with patch.object(holophyte.loop.implement, "sleep") as nap:
                     fake, _ = self.loop(self.failed_turn(message, code))
                 nap.assert_not_called()
                 self.assertEqual(fake.roles, ["implement"])
@@ -1264,13 +1265,13 @@ class NoCommitOutputTests(LoopFixture):
         """Wrap the loop's `sh` so the moment the worktree is removed, the
         store is read for the event: the order witness."""
         seen = []
-        real = holophyte.loop.loop.sh
+        real = holophyte.loop.implement.sh
 
         def sh(args, cwd=None):
             if args[:3] == ["git", "worktree", "remove"]:
                 seen.append(self.events())
             return real(args, cwd)
-        patcher = patch.object(holophyte.loop.loop, "sh", sh)
+        patcher = patch.object(holophyte.loop.implement, "sh", sh)
         patcher.start()
         self.addCleanup(patcher.stop)
         return seen
@@ -1350,7 +1351,7 @@ class NoCommitOutputTests(LoopFixture):
         self.assertIn("the token_file path is /run/secrets/x", payload)
 
     def test_the_payload_keeps_only_the_last_characters_up_to_the_constant(self):
-        cap = holophyte.loop.loop.OUTPUT_TAIL
+        cap = holophyte.loop.implement.OUTPUT_TAIL
         head = "first line\n"
         message = head + "x" * cap
 

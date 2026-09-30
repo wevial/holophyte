@@ -20,8 +20,11 @@ import holophyte.agents.fallback  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.probes  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.roles  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.adjudicate  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.loop  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import holophyte.redact  # noqa: E402 - after the sys.path insert above
 import holophyte.review.reply_parsing  # noqa: E402 - after the sys.path insert above
 import review_runner  # noqa: E402 - after the sys.path insert above
@@ -155,7 +158,7 @@ class AgentTurnEventTests(unittest.TestCase):
                 self.configure(implementer=command + " -m implement-model",
                                **({"writer": writer} if refused else {}))
                 holophyte.agents.roles.routes(self.target).writer_failed = refused
-                output, timed_out = holophyte.loop.loop._timed(
+                output, timed_out = holophyte.loop.implement._timed(
                     self.target, self.conn, self.run, 60, self.repo, 1,
                     "write the PR", role="write")
                 self.assertEqual(output, "draft written")
@@ -625,9 +628,11 @@ class ReviewLoopTests(unittest.TestCase):
             self.git("commit", "-q", "-m", f"work {n}", cwd=cwd)
             return f"committed work {n}"
 
-        with patch.object(holophyte.loop.loop, "agent", fake_agent):
+        with patch.object(holophyte.loop.implement, "agent", fake_agent), \
+                patch.object(holophyte.loop.review_round, "agent", fake_agent), \
+                patch.object(holophyte.loop.adjudicate, "agent", fake_agent):
             try:
-                return holophyte.loop.loop.run_task(self.project, {
+                return holophyte.loop.pipeline.run_task(self.project, {
                     "id": "KO-116", "title": "add a thing",
                     "verify": "echo ok", "budget_min": budget_min,
                     "contracts": [], **task,
@@ -751,7 +756,8 @@ class ReviewLoopTests(unittest.TestCase):
     def test_close_out_records_actual_duration_estimate_and_rounds(self):
         # Claim at t=100 s, close-out 42.7 s later: 0.711 min, reported to one
         # decimal, against a 20 min estimate and a single review round.
-        with patch.object(holophyte.loop.loop, "monotonic", side_effect=[100.0, 142.7]):
+        with patch.object(holophyte.loop.pipeline, "monotonic",
+                          side_effect=[100.0, 142.7]):
             merged = self.run_task("VERDICT: APPROVE", budget_min=20)
 
         self.assertTrue(merged)

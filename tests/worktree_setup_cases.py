@@ -14,6 +14,7 @@ from loop_fixture import BRANCH, StubProvider, a_task
 
 import holophyte.environment_git
 import holophyte.loop.claim
+import holophyte.loop.implement
 import holophyte.loop.merge_gate
 import holophyte.redact
 import store
@@ -213,15 +214,15 @@ class WorktreeSetupCases:
                         wt, "rev-parse", "--git-path", "index.lock").strip())
                     lock.touch()
                     with (
-                        patch.object(holophyte.loop.loop, "_check_run_cap"),
+                        patch.object(holophyte.loop.implement, "_check_run_cap"),
                         patch.object(
-                            holophyte.loop.loop,
+                            holophyte.loop.implement,
                             "_transport_timed",
                             return_value=("", True),
                         ),
                     ):
                         with self.assertRaises(holophyte.loop.gates.RunFailure):
-                            holophyte.loop.loop._implement(
+                            holophyte.loop.implement._implement(
                                 self.project, None, None, "KO-131", "task", branch,
                                 wt, False, 1, self.base, "ticket", "", 5)
                 self.assertEqual(_git(wt, "ls-files", "--", ".env"), "")

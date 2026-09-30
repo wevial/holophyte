@@ -1,6 +1,6 @@
 """A scripted stand-in for the loop's agent turns — zero real agent calls.
 
-`holophyte.loop.loop.run_task()` reaches the outside world at exactly one point: the
+`holophyte.loop.pipeline.run_task()` reaches the outside world at exactly one point: the
 module-level `agent(target, role, goal, cwd, ...)` call it makes for every implement,
 review and adjudicate turn. Everything else the loop does — cutting the
 worktree, the verify gate, the fix commits, the `--no-ff` merge — is real git
@@ -213,7 +213,8 @@ class FakeAgent:
     """A drop-in for `holophyte.agents.roles.agent` that replays `script`, one step per
     turn.
 
-    Patch it over the real callable — `patch.object(holophyte.loop.loop, "agent", fake)`
+    Patch it over the real callable —
+    `patch.object(holophyte.loop.implement, "agent", fake)`
     — and the loop runs unchanged with no agent process anywhere in it. The
     effective seats it dispatched are kept in order, so a test can assert the flow
     the loop actually walked rather than the flow the script hoped for.
@@ -287,7 +288,8 @@ class SpawnGuard:
 def no_agent_processes(guard=None):
     """Fail the test if anything under it spawns a real agent process.
 
-    The independent oracle for "zero API calls": patching `holophyte.loop.loop.agent` is
+    The independent oracle for "zero API calls": patching
+    `holophyte.loop.implement.agent` is
     what the test *does*, and asserting on the same patch would only restate
     it. This watches the process boundary underneath instead, so an agent
     reached by any other path — a review route the fake never covered, a

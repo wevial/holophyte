@@ -82,7 +82,7 @@ class BabysitClaimTests(MergeModeFixture):
 
     def test_fresh_claim_has_no_pull_request_or_candidate(self):
         observed = []
-        cut = holophyte.loop.loop._cut_worktree
+        cut = holophyte.loop.pipeline._cut_worktree
 
         def observe_claim(target, conn, run_id, *args):
             observed.append(self.read(
@@ -90,7 +90,7 @@ class BabysitClaimTests(MergeModeFixture):
                 f" WHERE id = {run_id}"))
             return cut(target, conn, run_id, *args)
 
-        with patch.object(holophyte.loop.loop, "_cut_worktree", observe_claim):
+        with patch.object(holophyte.loop.pipeline, "_cut_worktree", observe_claim):
             self.loop(Commit("fresh candidate"), APPROVE)
         self.assertEqual(observed, [[(None, None, "claimed")]])
 
@@ -383,7 +383,7 @@ class LeftoverWorktreeTests(LoopFixture):
         def reuse(*args, **kwargs):
             self.assertEqual(wt.stat().st_ino, original)
             return cut(*args, **kwargs)
-        with patch.object(holophyte.loop.loop, "_cut_worktree", side_effect=reuse):
+        with patch.object(holophyte.loop.pipeline, "_cut_worktree", side_effect=reuse):
             self.loop(APPROVE)
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("paused",), ("merged",)])

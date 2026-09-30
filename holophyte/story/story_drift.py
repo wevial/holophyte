@@ -70,8 +70,8 @@ def review_refresh(project, conn, run_id, provider, task_id, branch, wt,
                    reviewed, sha, beat_s, ticket, verify_cmd, out, shared):
     """One covering review of `reviewed` refreshed to `sha`; else a park."""
     from holophyte.babysit.babysitter import _next_round
-    from holophyte.loop.loop import _verify_brief, agent
     from holophyte.loop.merge_gate import _park_at_gate
+    from holophyte.loop.review_round import _verify_brief, agent
 
     snapshot = json.loads(store.run_contract(conn, run_id) or "{}")
     criteria = snapshot.get("acceptanceCriteria") or []

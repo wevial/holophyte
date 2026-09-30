@@ -231,7 +231,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
     caller: a worker does it under the merge lock
     (`_render_findings_locked()`), where the file is not written beside a
     sibling's merge."""
-    from holophyte.loop.loop import run_task
+    from holophyte.loop.pipeline import run_task
 
     merged = False
     reason = None

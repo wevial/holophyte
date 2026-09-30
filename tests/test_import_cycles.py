@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CEILINGS = {
-    "loop/loop": 1,
+    "loop/review_round": 1,
     "babysit/babysitter": 26,
     "loop/claim": 6,
     "loop/merge_gate": 2,
