@@ -142,3 +142,24 @@ def move_ahead_additively(path, **floor):
             " VALUES ('factory', 'manual', 'migrate', ?, 0)", (note,))
         conn.execute(f"PRAGMA user_version = {newer}")
     conn.close()
+
+
+# `interventions` exactly as schema version 4 shipped it: 'requeue' in the
+# action CHECK, 'approve' not yet. Kept verbatim so the migration test is
+# that a real version-4 store is carried to 5 with its rows intact.
+VERSION_4_INTERVENTIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS interventions (
+    id        INTEGER PRIMARY KEY,
+    runId     INTEGER NOT NULL REFERENCES runs (id),
+    source    TEXT    NOT NULL CHECK (source IN ('supervisor', 'human')),
+    "trigger" TEXT    NOT NULL
+        CHECK ("trigger" IN ('time_box', 'off_criteria', 'looping',
+                             'review_stuck', 'linear_cancelled', 'manual')),
+    "action"  TEXT    NOT NULL
+        CHECK ("action" IN ('redirect', 'kill', 'extend_time_box', 'resume',
+                            'close_out', 'requeue')),
+    question  TEXT,
+    guidance  TEXT,
+    at        INTEGER NOT NULL
+);
+"""

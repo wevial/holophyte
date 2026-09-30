@@ -493,8 +493,8 @@ class QueueMirrorTests(LoopFixture):
 
 class RejectedPullRequestTests(MergeModeFixture):
     def test_closed_parked_pr_is_rejected_without_a_strike(self):
-        import test_pullrequest
-        helpers = test_pullrequest.MergeModePullRequestTests
+        import test_pullrequest_parked
+        helpers = test_pullrequest_parked.ParkedPullRequestTests
         helpers.parked_on_pr(self)
         branch, sha = self.read("SELECT branch, candidateSha FROM runs")[0]
         conn = store.open(self.db)
@@ -531,7 +531,7 @@ class FailedRunPullRequestTests(MergeModeFixture):
     the landing `--close` would record."""
 
     def failed_with_pr(self, pull):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_on_pr(self)
         conn = store.open(self.db)
         self.addCleanup(conn.close)
@@ -556,7 +556,7 @@ class FailedRunPullRequestTests(MergeModeFixture):
         return provider, before, out.getvalue()
 
     def test_merged_pull_request_closes_the_ticket_out(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         merged = dict(H.MERGED_PULL, mergedBy={"login": "maintainer"})
         provider, before, out = self.failed_with_pr(merged)
         self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
@@ -585,21 +585,21 @@ class FailedRunPullRequestTests(MergeModeFixture):
         self.assertEqual(provider.states, [])
 
     def test_open_pull_request_changes_nothing(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         self.assert_unchanged(H.OPEN_PULL)
 
     def test_pull_request_closed_unmerged_changes_nothing(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         self.assert_unchanged(H.CLOSED_PULL)
 
 
 class ContentWakeTests(MergeModeFixture):
     def parked_on_pr(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_on_pr(self)
 
     def test_timestamp_only_bump_refreshes_facts_without_intervention(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_with_mark(self, H.T1, 3)
         old = {'id': 'old', 'createdAt': H.T1, 'submittedAt': H.T1,
                'author': {'login': 'person'}, 'body': 'Already seen'}
@@ -628,7 +628,7 @@ class ContentWakeTests(MergeModeFixture):
                            'success', 'approved')])
 
     def test_only_new_authored_content_wakes_once(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_with_mark(self, H.T1, 3)
         cases = [({}, False),
                  ({'comments': {'nodes': [{'id': 'own', 'createdAt': H.T2,
@@ -676,7 +676,7 @@ class ContentWakeTests(MergeModeFixture):
                 conn.commit()
 
     def test_two_empty_passes_raise_attention_until_real_content_arrives(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
 
         from holophyte.serve.server import parked_item
         H.parked_with_mark(self, H.T1, 0)
@@ -718,7 +718,7 @@ class ContentWakeTests(MergeModeFixture):
                                    "kind = 'pr_empty_wakes' ORDER BY id")[-1], ('0',))
 
     def test_newly_pushed_old_commit_wakes_once_after_a_real_park_read(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
 
         from holophyte.host import reconcile
         from holophyte.pr import pr_status
@@ -750,7 +750,7 @@ class ContentWakeTests(MergeModeFixture):
                 wake.assert_not_called()
 
     def test_overflow_budget_prevents_dispatch_for_connections_and_replies(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
 
         from holophyte.host import reconcile
         from holophyte.pr import pr_status
@@ -797,7 +797,7 @@ class CanceledParkedPullRequestTests(MergeModeFixture):
     newest run holds a pull request; a Done one is still GitHub's."""
 
     def parked_on_pr(self):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_on_pr(self)
         return H
 
@@ -901,11 +901,11 @@ class CiParkTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])
 
     def pull(self, at, checks):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         return H.open_pull(H, at, 0, checks=checks)
 
     def github(self, *answers):
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         return H.fake_client(self, *answers)
 
     def age(self):
@@ -962,7 +962,7 @@ class CiParkTests(MergeModeFixture):
         self.reconcile(pending)
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])
 
-        from test_pullrequest import MergeModePullRequestTests as H
+        from test_pullrequest_parked import ParkedPullRequestTests as H
         self.reconcile(H.open_pull(H, self.OLD, 1, checks="PENDING"),
                        later_s=1801)
 
