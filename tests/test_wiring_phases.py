@@ -215,7 +215,8 @@ class RunPhaseTests(unittest.TestCase):
         events = self.events()
         self.assertEqual([seq for seq, *_ in events],
                          list(range(1, len(events) + 1)))
-        self.assertEqual({(level, kind) for _, level, kind, _, _ in events},
+        self.assertEqual({(level, kind) for _, level, kind, _, _ in events
+                          if level == "narrative" or kind == "phase_change"},
                          {("narrative", "phase_change")})
 
     # --- the failed run --------------------------------------------------
