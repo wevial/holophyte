@@ -101,8 +101,8 @@ ENV PATH=/opt/ruff/bin:$PATH
 # the release's manifest.json, and a mismatch fails the build. The managed
 # settings make bypass the default permission mode: an implementer turn has no
 # one to ask, and the container is its boundary.
-ARG CLAUDE_VERSION=2.1.284
-ARG CLAUDE_SHA256=5cd90aabd83f8a15136c35aa37bb1d92b348993573316643dc3fe4e04afbf88f
+ARG CLAUDE_VERSION=2.1.286
+ARG CLAUDE_SHA256=fe503f65c6289d59c23e5b21ae44f03583f997dd33a2cbfc75ab4f96fb8fc73f
 RUN set -eu \
     && curl -fsSL -o /tmp/claude \
         "https://downloads.claude.ai/claude-code-releases/${CLAUDE_VERSION}/linux-x64/claude" \
