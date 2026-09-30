@@ -546,7 +546,7 @@ MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
 
 def merge_config(project):
     """Validate merge settings at startup; refusals name the config and key."""
-    from holophyte.pr.github import CHECK_WAIT_S  # Deferred: pr also reads config.
+    from holophyte.pr.github import CHECK_WAIT_S  # Deferred: github also reads config.
     table = project.config().get("merge", {})
     if not isinstance(table, dict):
         raise SystemExit(

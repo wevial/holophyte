@@ -653,7 +653,8 @@ class WorkerTests(LoopFixture):
         with (
             patch.object(holophyte.loop.pool, "refresh_findings", render_under_lock),
             patch.object(holophyte.board.projection, "refresh_findings",
-        render_under_lock),):
+                         render_under_lock),
+        ):
             rc, _ = self.worker(Refuse(), provider=provider)
 
         self.assertEqual(rc, holophyte.loop.pool.WORKER_FAILED)

@@ -113,10 +113,9 @@ class MediaTests(unittest.TestCase):
             patch("holophyte.pr.pullrequest.ledger") as ledger,
             patch("holophyte.pr.github.open_pull_request", return_value=None),
             patch("holophyte.pr.github.create_pull_request",
-            return_value="url") as create, patch(
-                "holophyte.pr.github.origin_url",
-                return_value="https://github.com/example/repo.git",
-            ),
+                  return_value="url") as create,
+            patch("holophyte.pr.github.origin_url",
+                  return_value="https://github.com/example/repo.git"),
         ):
             title, text = pullrequest._prepare_pr(
                 self.target,
