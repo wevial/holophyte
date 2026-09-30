@@ -4,7 +4,9 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        gcc \
         git \
+        libc6-dev \
         python3 \
         python3-pip \
         python3-venv \
@@ -59,7 +61,8 @@ RUN set -eu \
 # downloads page; a mismatch fails the build. GOTOOLCHAIN=local makes a module
 # asking for another toolchain fail loudly instead of downloading one, and
 # every Go cache lives under the writable reviewer home because root is
-# mounted read-only.
+# mounted read-only. cgo is on, with gcc installed above, because `go test
+# -race` needs it.
 ARG GO_TARBALL=go1.26.6.linux-amd64.tar.gz
 ARG GO_SHA256=708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89
 RUN set -eu \
@@ -70,6 +73,7 @@ RUN set -eu \
     && rm /tmp/go.linux-amd64.tar.gz
 ENV PATH=/usr/local/go/bin:$PATH \
     GOTOOLCHAIN=local \
+    CGO_ENABLED=1 \
     GOPATH=/home/reviewer/go \
     GOMODCACHE=/home/reviewer/go/pkg/mod \
     GOCACHE=/home/reviewer/.cache/go-build \

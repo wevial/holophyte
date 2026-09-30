@@ -661,15 +661,21 @@ class CandidateImageTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v9_and_nothing_still_names_an_older_tag(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v9")
-        stale = [
-            path
-            for pattern in ("*.py", "holophyte/**/*.py", "store/*.py", "docs/**/*.md")
-            for path in ROOT.glob(pattern)
-            if re.search(r"ubuntu24\.04-v[1-8]\b", path.read_text())
-        ]
-        self.assertEqual(stale, [])
+    def test_image_tag_is_v10_and_every_tracked_reference_names_it(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v10")
+        tracked = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
+        ).stdout.decode().split("\0")
+        references = {
+            (path, tag.decode())
+            for path in filter(None, tracked)
+            if (ROOT / path).is_file()
+            for tag in re.findall(rb"ubuntu24\.04-v\d+", (ROOT / path).read_bytes())
+        }
+        self.assertIn(("review_runner.py", "ubuntu24.04-v10"), references)
+        self.assertIn(("docs/reviewing.md", "ubuntu24.04-v10"), references)
+        self.assertEqual(
+            {ref for ref in references if ref[1] != "ubuntu24.04-v10"}, set())
 
     def test_dockerfile_installs_pinned_checksummed_bun_on_path(self):
         text = self.DOCKERFILE.read_text()
