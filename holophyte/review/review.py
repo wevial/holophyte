@@ -425,9 +425,11 @@ def _import_witnesses(references, root):
 def _scan_witness(file, cls, name):
     """The original literal-definition check, used when import is unavailable.
 
-    A test file that is not Python is only scanned for the name as written:
-    titles live in call arguments no definition pattern could cover.
+    Other test files are scanned for the name as written, a Go `Parent/child`
+    for its parent func and each level's `.Run` title, as `go test` names it.
     """
+    if file.suffix == ".go" and "/" in name:
+        return _scan_go_subtest(file.read_text(errors="replace"), name)
     if file.suffix != ".py":
         return (None if name in file.read_text(errors="replace")
                 else f'no test named "{name}"')
@@ -439,6 +441,16 @@ def _scan_witness(file, cls, name):
     if found is None:
         return f"no class {cls}"
     return None if found else f"no def {name} in class {cls}"
+
+
+def _scan_go_subtest(text, name):
+    parent, *children = name.split("/")
+    if not re.search(rf"\bfunc {re.escape(parent)}\(", text):
+        return f"no func {parent}"
+    runs = {re.sub(r"\s", "_", title) for title in
+            re.findall(r'\.Run\("((?:[^"\\\n]|\\.)*)"', text)}
+    absent = [child for child in children if re.sub(r"\s", "_", child) not in runs]
+    return f'no .Run("{absent[0]}") for {parent}' if absent else None
 
 
 def missing_witnesses(references, root):
