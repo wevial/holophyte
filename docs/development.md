@@ -224,6 +224,10 @@ Each module, one line:
   and board label, then `_cut_worktree`/`reuse_leftover`,
   `run_worktree_setup` under `_setup_worktree`, and the mid-merge
   hand-off (`merge_conflicts`, `conflict_brief`, `_resolve_merge_conflict`).
+- `holophyte/loop/task_worktree.py` — a task worktree's own files and
+  lifecycle: the `.env` (`write_worktree_environment`), the capture
+  `.gitignore`, the `[worktree] setup` runner (`run_worktree_setup`) and
+  `retire_worktree` for a finished checkout.
 - `holophyte/loop/claim_store.py` — the store-mode claim (Phase 3 stage 3):
   `store_mode()`, the one predicate; `claim_from_store()` takes the first
   `store.read.claimable()` row, admits it at its revision, reads that one

@@ -1,22 +1,3 @@
-"""holophyte.loop.claim_store: a store-mode project claims from the store
-(Phase 3 stage 3).
-
-In `[board] mode = "store"` the store owns the queue: `claim_from_store()`
-takes the first `store.read.claimable()` row, admits it at its revision R
-with `_admit_ticket()` unchanged, reads that one issue back from the board
-(`_confirm_on_board()`), mirrors what it heard, and claims only while the
-ticket is still at R -- `store.claim(expected_revision=R)` asserts it
-under the claim's own transaction. A revision that moved since admission
-admits the ticket again, at most `READMIT_LIMIT` times an ask. A board
-that cannot be asked claims nothing (KO-351). `store_mode()` is the one
-predicate every store-mode branch of the claim, the scheduler and the
-sweep is gated on; mirror mode never reaches this module.
-
-The board is read once a pass, not once an ask: `sync_board()` mirrors
-the ready listing into the store, throttled on the project's
-`boardAskedAt`, and the scheduler counts `claimable()` rather than the
-listing (`pool_handoff.listing()`).
-"""
 from time import time
 
 import store
@@ -35,61 +16,34 @@ from holophyte.review import freshness
 from holophyte.review.freshness import skip_labelled_stale
 from holophyte.story import story_claim
 
-# How often one ask admits a candidate again after its revision moved
-# before skipping it: a board edited faster than admission runs must not
-# hold the loop on one ticket.
+# A board edited faster than admission runs must not hold the loop on one ticket.
 READMIT_LIMIT = 2
 
-# `_candidate()`'s answers besides a claim: skip the candidate, admit it
-# again at its new revision, or end the ask with nothing claimed.
 SKIP, READMIT, STOP = "skip", "readmit", "stop"
 
 
 class _BoardDown:
-    """`claim_from_store()`'s task when the board could not be read back:
-    falsy, as an empty queue is, and its own object, so the loop can say
-    the board failed rather than that the queue drained."""
-
     def __bool__(self):
         return False
 
 
 BOARD_DOWN = _BoardDown()
 
-# What `sync_board()` answers: the board was not asked (throttled, held or
-# the Linear budget low), its listing was mirrored, or it could not be.
 NOT_ASKED, SYNCED, FAILED = "not asked", "synced", "failed"
 
 
 def store_mode(target):
-    """Whether `target`'s board is in store mode: `[board] mode = "store"`."""
-    # `provider.store_mode` (queued pushes, notes, the listing) must match
-    # this: `board_for()` sets it from the same `board_mode(target)`.
+    # `board_for()` sets `provider.store_mode` from the same `board_mode()`.
     return board_mode(target).mode == "store"
 
 
 def announce(target):
-    """The loop's one startup line in store mode; nothing in mirror mode."""
     if store_mode(target):
         print("[holo2] board mode store: claims come from the store's queue")
 
 
 def sync_board(target, conn, project, provider, now=None,
                min_interval_ms=None):
-    """One store-mode board sync: the ready listing mirrored into the store
-    (`dispatch._mirror_queue()`, blockers included), unless the project's
-    board was asked within `min_interval_ms` -- the loop's `tick_sec`, the
-    sweep's `board_ask_sec` -- on the shared `boardAskedAt` stamp, which is
-    written before the ask as `board_ready()` writes it. A held project or
-    a low Linear budget is not asked and not stamped. Answers `NOT_ASKED`,
-    `SYNCED`, or `FAILED` when the listing could not be mirrored.
-    `states()` stays the host sweep's (`observe_board()`); the claim reads
-    its candidate back on its own.
-
-    A native board (KO-762) is the store, so nothing is listed or asked:
-    every sync walks the project's finished dependency waits back to
-    `ready` (`store.board.resolve_dependencies()`) and answers `SYNCED`.
-    """
     from holophyte.admission import held_line
     from holophyte.host.supervisor import linear_budget_low
     from holophyte.loop.dispatch import _mirror_queue
@@ -114,10 +68,6 @@ def sync_board(target, conn, project, provider, now=None,
 
 
 def superseded(conn, ticket_id, task):
-    """Whether `task`, built from the store at `store_revision`, was judged
-    on a revision the ticket has since left (Phase 3 stage 3): a refusal of
-    it writes nothing to the board, and the claim admits the ticket again.
-    False for any other task."""
     at = task.get("store_revision")
     if at is None:
         return False
@@ -127,15 +77,6 @@ def superseded(conn, ticket_id, task):
 
 
 def task_of(row):
-    """The task a `ClaimableTicket` is admitted as: the stored body parsed
-    as a board parses it, with the stored board fields over it and
-    `store_revision` naming the revision it was read at.
-
-    The contract lists are the row's own, the ones the claim freezes. A
-    stored body that is empty is a board that sent none (a real board's
-    empty description is never `ready`), so it is not judged, as
-    `body_problems()` does not judge a task without a body.
-    """
     from provider import parse_body
     task = parse_body(row.linearIdentifier, row.body)
     commands = row.verificationCommands
@@ -153,14 +94,6 @@ def task_of(row):
 
 
 def claim_from_store(target, conn, project_id, provider, order, skip, seen):
-    """`_claim_next()` in store mode: the same `(task, ticket_id, run_id)`
-    answer, the task being the board's own read of the claimed issue.
-
-    Candidates come from the store's queue in `order`, never from a board
-    listing, so an empty queue parks nothing (`_park_unlisted()` is not
-    reached). A refused candidate is added to `skip`. A board that could
-    not be asked answers `BOARD_DOWN` as the task.
-    """
     from holophyte.admission import held_line
     readmitted = {}
     if not held_line(conn, project_id) and _read_back_waiting(
@@ -192,14 +125,11 @@ def claim_from_store(target, conn, project_id, provider, order, skip, seen):
 
 
 def _candidate(target, conn, project_id, provider, row, seen):
-    """Admit `row` at its revision, read it back from the board and claim
-    it there; the claim's answer, or `SKIP`, `READMIT` or `STOP`."""
     from holophyte.loop.claim import HELD, _admit_ticket, _claim_run, claimed_run
     ticket_id = _admit_ticket(target, conn, project_id, provider, task_of(row),
                               seen)
     if ticket_id is None:
-        # A refusal judged on a revision the board has since replaced is
-        # not the ticket's (its board writes were dropped): judge it again.
+        # A refusal on a revision the board has since replaced is not the ticket's.
         return READMIT if _revision(conn, row.id) != row.revision else SKIP
     live, verdict = _confirm_on_board(target, conn, project_id, provider, row)
     if live is None:
@@ -222,25 +152,10 @@ def _candidate(target, conn, project_id, provider, row, seen):
 
 
 def _confirm_on_board(target, conn, project_id, provider, row):
-    """Read the admitted candidate back from the board, one issue, and
-    mirror what it holds now; answer `(live, None)` to go on to the claim,
-    or `(None, SKIP)` or `(None, STOP)`.
-
-    A raise is no evidence and ends the ask: nothing is claimed while the
-    board is unreachable. Gone and completed are skipped, the sweep's and
-    `_reconcile_mirror()`'s to settle; so is an issue labelled `stale` or
-    leased by another writer, which only the live labels show (the stored
-    labels are the board-owned ones). Any other answer is mirrored with its
-    column (the stale skip's mirror too), which writes the next revision
-    when a board-owned field moved; the story gate then judges that row. A
-    read-back naming open blockers (`blocked_by`, KO-748) mirrors them as
-    `dependsOn`, walks the row to `blocked_on_deps` and, past the gate, is
-    skipped; one without the key (the file board) leaves `dependsOn` alone.
-    """
     identifier = row.linearIdentifier
     try:
         live = provider.fetch_task(row.linearIssueId)
-    except Exception as e:  # noqa: BLE001 - no evidence, no claim
+    except Exception as e:
         print(f"[holo2] {identifier} could not be read back from the board"
               f" ({e}); nothing is claimed while the board is unreachable")
         return None, STOP
@@ -295,8 +210,6 @@ def _revision(conn, ticket_id):
 
 
 def _readmit(conn, row, readmitted, skip):
-    """Count one readmission of `row`, and skip it past `READMIT_LIMIT`;
-    one line either way, naming both revisions."""
     identifier = row.linearIdentifier
     readmitted[identifier] = readmitted.get(identifier, 0) + 1
     now = _revision(conn, row.id)
