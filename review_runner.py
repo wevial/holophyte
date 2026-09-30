@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Sequence
 
 ROOT = Path(__file__).resolve().parent
-IMAGE = "holophyte-reviewer:ubuntu24.04-v10"
+IMAGE = "holophyte-reviewer:ubuntu24.04-v11"
 MODEL = "gpt-6-astra"
 EFFORT = "high"
 EFFORTS = ("low", "medium", "high", "xhigh")
