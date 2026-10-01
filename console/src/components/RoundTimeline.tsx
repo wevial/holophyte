@@ -32,6 +32,7 @@ export function RoundTimeline({
   segments,
   run,
   now,
+  caption,
 }: {
   segments: Segment[];
   /** The run the segments came from: `ended_ms` decides "done" (a closed
@@ -41,6 +42,8 @@ export function RoundTimeline({
   run: Pick<TimelineRun, "started_ms" | "ended_ms" | "phase" | "pr_url">;
   /** The caller's clock; a parked phase's wait ages by it. */
   now: number;
+  /** Names the run the bar draws when its card shows more than one. */
+  caption?: string;
 }) {
   const [active, setActive] = useState<number | null>(null);
   const spent = segments.reduce((sum, segment) => sum + segment.width, 0);
@@ -69,6 +72,7 @@ export function RoundTimeline({
   const hovered = active == null ? undefined : segments[active];
   return (
     <div data-timeline className="relative">
+      {caption && <p data-timeline-caption className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{caption}</p>}
       <ol aria-label="Round timeline" className="flex" style={{ gap: `${GAP_PX}px` }}>
         {segments.map((segment, index) => (
           <li

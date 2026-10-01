@@ -28,5 +28,29 @@
   },
   "rounds": [],
   "findings": [],
-  "events": []
+  "events": [],
+  "chain": {
+    "started_ms": 1750000000000,
+    "elapsed_ms": 0,
+    "working_ms": 0,
+    "agent_ms": 0,
+    "verify_ms": 0,
+    "runs": [
+      {
+        "id": 1,
+        "attempt": 1,
+        "outcome": null,
+        "phase": "claimed",
+        "started_ms": 1750000000000,
+        "ended_ms": null,
+        "elapsed_ms": 0,
+        "working_ms": 0,
+        "agent_ms": 0,
+        "verify_ms": 0,
+        "max_rounds": 2,
+        "turn_count": 0,
+        "rounds": []
+      }
+    ]
+  }
 }

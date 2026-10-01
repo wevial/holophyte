@@ -3,14 +3,14 @@ import { useState } from "react";
 import { useRunDetail } from "../hooks/useRunDetail";
 import { useRunFiles, type RunFilesState } from "../hooks/useRunFiles";
 import { useRunLedger } from "../hooks/useRunLedger";
-import { useRunTurns, type RunTurnsBody } from "../hooks/useRunTurns";
+import { useRunTurns, type ChainTurns } from "../hooks/useRunTurns";
 import { FATE_LABEL, findingsHistory, openFindings, severityCounts, type Fate, type RoundHistory } from "../lib/findings";
 import { formatClock, formatSettled, formatSpan } from "../lib/format";
 import { routeText } from "../lib/routes";
 import type { LedgerRow } from "../lib/ledger";
 import type { Fetch } from "../lib/poll";
 import { phaseLabel, roundLabel } from "../lib/runs";
-import { agentMs, verifyMs } from "../lib/runs";
+import { agentMs, chainNote, verifyMs } from "../lib/runs";
 import { buildTimeline } from "../lib/timeline";
 import type { Round, RunDetailBody } from "../lib/types";
 import { ActionButton } from "./ActionButton";
@@ -25,13 +25,27 @@ import { ReasonAction } from "./ReasonAction";
 import type { RowDaemon } from "./RowActions";
 import { PrLink, Sha } from "./ShippedTable";
 
-/** Count independent reviews against their cap; other rounds have no review budget. */
+const NOT_A_REVIEWER = /^(github|mechanical):/;
+
+/** Count independent reviews against their cap; other rounds have no review
+ *  budget. Each run of the chain is counted by its own reviewer, the model
+ *  of its first round no bot or mechanical step ran, and its cap counts only
+ *  when it had a review. A babysitter's covering reviews may run past the
+ *  summed cap, which then reads as the reviews done. */
 export function roundLine(body: RunDetailBody): string {
-  const reviewer = body.run.reviewer_model ?? body.rounds[0]?.reviewer_model;
-  const reviews = body.rounds.filter(
-    round => round.reviewer_model === reviewer && round.verdict !== "error").length;
-  const other = body.rounds.length - reviews;
-  const max = body.run.max_rounds ?? reviews;
+  const runs = body.chain?.runs ?? [{ rounds: body.rounds, max_rounds: body.run.max_rounds }];
+  let reviews = 0;
+  let other = 0;
+  let cap = 0;
+  for (const run of runs) {
+    const reviewer = run.rounds.find(round => !NOT_A_REVIEWER.test(round.reviewer_model ?? ""));
+    const own = reviewer == null ? 0 : run.rounds.filter(
+      round => round.reviewer_model === reviewer.reviewer_model && round.verdict !== "error").length;
+    reviews += own;
+    other += run.rounds.length - own;
+    if (own > 0) cap += run.max_rounds ?? own;
+  }
+  const max = reviews > 0 ? Math.max(cap, reviews) : body.run.max_rounds ?? 0;
   return `Review ${reviews} of ${max}${other ? ` · ${other} other rounds` : ""} · ${phaseLabel(body.run.phase, body.run.pr_url)}`;
 }
 
@@ -42,7 +56,7 @@ type Seat = { seat: string; routes: string };
 /** The run's implementer and reviewer: per seat, the harness and model of
  *  each route its turns used ("Claude · Opus"), a seat it never used left
  *  out. */
-function seatRoutes(turns: RunTurnsBody["turns"]): Seat[] {
+function seatRoutes(turns: ChainTurns[number]["turns"]): Seat[] {
   return SEATS.flatMap(([role, seat]) => {
     const labels = new Set(turns.filter((turn) => turn.role === role).map((turn) => turn.label));
     const routes = [...labels].map((label) => (label == null ? "label unknown" : routeText(label)));
@@ -62,8 +76,9 @@ function SeatChip({ seat, routes }: Seat) {
 
 /** The expanded run's card: header line, round timeline, the newest
  *  round's open findings and the run log from `/runs/N`, the files touched
- *  from `/runs/N/files`, and the turns from `/runs/N/turns`, whose models
- *  the header names per seat; each read on expand and again each poll. Given
+ *  from `/runs/N/files`, and the turns of each run in its chain from
+ *  `/runs/ID/turns`, whose models the header names per seat; each read on
+ *  expand and again each poll. Given
  *  its `daemon`, a live run has Abort in the footer, Abort and close too
  *  when it has a pull request, and Pause when it has no `stopRequested`. */
 export function RunDetail({
@@ -90,7 +105,8 @@ export function RunDetail({
 }) {
   const { detail, error, loading } = useRunDetail(base, id, polls, deps);
   const files = useRunFiles(base, id, polls, deps);
-  const turns = useRunTurns(base, id, polls, deps);
+  const chain = detail?.chain?.runs ?? [];
+  const turns = useRunTurns(base, detail ? id : null, chain.length > 1 ? chain.map((run) => run.id) : [id], polls, deps);
   // The ledger is only read for a finished run's findings history; a live
   // run fetches none.
   const ledger = useRunLedger(base, detail?.run.ended_ms != null ? id : null, polls, deps);
@@ -102,9 +118,9 @@ export function RunDetail({
           {error}
         </p>
       )}
-      {detail && <Card body={detail} files={files} ledger={ledger} seats={seatRoutes(turns.body?.turns ?? [])}
+      {detail && <Card body={detail} files={files} ledger={ledger} seats={seatRoutes((turns.body ?? []).flatMap((group) => group.turns))}
         now={now} sinceMs={sinceMs} daemon={daemon} pauseDaemon={stopRequested ? undefined : daemon} />}
-      {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} turns={turns} deps={deps} />}
+      {detail && <RunTurns key={`${base}/${id}`} base={base} id={id} chain={chain} turns={turns} deps={deps} />}
     </div>
   );
 }
@@ -128,15 +144,18 @@ function Card({
   daemon?: RowDaemon;
   pauseDaemon?: RowDaemon;
 }) {
-  const { run } = body;
+  const { run, chain } = body;
   const rounds = [...body.rounds].sort((a, b) => a.started_ms - b.started_ms);
   // The card's clock: the daemon's at the last poll plus the local drift
   // since. A finished run's figures measure against its end instead, so a
   // live run keeps counting between polls and a finished one stays put —
   // and reads at settled granularity, its seconds done counting too.
   const tickingNow = now + sinceMs;
-  const work = agentMs(run, run.ended_ms == null ? sinceMs : 0);
-  const verify = verifyMs(run, run.ended_ms == null ? sinceMs : 0);
+  const clocks = chain ? { ...run, agent_ms: chain.agent_ms, working_ms: chain.working_ms, verify_ms: chain.verify_ms } : run;
+  const started = chain?.started_ms ?? run.started_ms;
+  const earlier = chain?.runs.slice(0, -1) ?? [];
+  const work = agentMs(clocks, run.ended_ms == null ? sinceMs : 0);
+  const verify = verifyMs(clocks, run.ended_ms == null ? sinceMs : 0);
   const remaining = work == null || run.time_box_ms == null ? null : run.time_box_ms - work;
   const over = remaining != null && remaining < 0;
   const finished = run.ended_ms != null;
@@ -160,7 +179,7 @@ function Card({
           className={`ml-auto font-mono text-[12px] ${over ? "font-semibold text-bad" : "text-muted"}`}
         >
           {run.time_box_ms == null ? "working box unknown" : remaining == null ? "working n/a" : over ? `${boxFigure(-remaining)} over the working box` : `${boxFigure(remaining)} left in working box`}
-          {" · wall "}{boxFigure((run.ended_ms ?? tickingNow) - run.started_ms)}
+          {" · wall "}{boxFigure((run.ended_ms ?? tickingNow) - started)}{chainNote(chain?.runs.length)}
         </span>
         <span data-clocks className="font-mono text-[12px] text-muted">
           agent {work == null ? "n/a" : boxFigure(work)} · verify {verify == null ? "n/a" : boxFigure(verify)}
@@ -174,9 +193,11 @@ function Card({
       <div className="mt-3 grid grid-cols-[1fr_280px] gap-7">
         <div className="min-w-0">
           <RoundTimeline
-            segments={buildTimeline({ ...run, rounds, events: body.events }, tickingNow)}
+            segments={buildTimeline({ ...run, rounds, events: body.events,
+              round_offset: earlier.reduce((sum, entry) => sum + entry.rounds.length, 0) }, tickingNow)}
             run={run}
             now={tickingNow}
+            caption={earlier.length > 0 ? `Run ${run.id}` : undefined}
           />
           {rounds.flatMap((round, index) => (round.operator_notes ?? []).map((note) => (
             <OperatorNoteCard key={note.event_id} note={note} ordinal={index + 1}

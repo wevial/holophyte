@@ -253,7 +253,22 @@ opened, so its last path segment is the PR number.
  "events": [
   {"at": 1788450461675, "kind": "phase_change", "summary": "claimed"},
   {"at": 1788450941675, "kind": "review", "summary": "round 1 asked for changes"}
- ]}
+ ],
+ "chain": {"started_ms": 1788449861675, "elapsed_ms": 1800000, "working_ms": 1212000,
+           "agent_ms": 1140000, "verify_ms": 72000,
+           "runs": [
+  {"id": 50, "attempt": 1, "outcome": "abandoned", "phase": "done",
+   "started_ms": 1788449861675, "ended_ms": 1788450161675, "elapsed_ms": 300000,
+   "working_ms": 300000, "agent_ms": 300000, "verify_ms": 0, "max_rounds": 2,
+   "turn_count": 3,
+   "rounds": [{"round": 1, "verdict": "pass", "reviewer_model": "reviewer-model"}]},
+  {"id": 52, "attempt": 2, "outcome": "merged", "phase": "done",
+   "started_ms": 1788450461675, "ended_ms": 1788451661675, "elapsed_ms": 1200000,
+   "working_ms": 912000, "agent_ms": 840000, "verify_ms": 72000, "max_rounds": 2,
+   "turn_count": 4,
+   "rounds": [{"round": 1, "verdict": "changes_requested", "reviewer_model": "reviewer-model"},
+              {"round": 2, "verdict": "pass", "reviewer_model": "reviewer-model"}]}
+ ]}}
 ```
 
 One run in full, by id: what the console shows when a run is expanded.
@@ -302,6 +317,20 @@ long) is 404 with `run` echoing the path segment as typed. `host` passes
 through `[report] host_label`. `commit_url` and `pr_url` are as
 `/shipped` carries them: the merge commit's page on `origin` and the
 pull request the run opened, each null when there is none.
+
+`chain` is the ticket's chain of runs up to run N, as `/shipped` defines
+it: every run of the ticket after its last merged run before N, through
+N. `run`, `rounds`, `events` and `findings` describe run N alone.
+`chain`'s `started_ms` is the first run's start and `elapsed_ms` runs from
+it to run N's end (or to `now` while N is live); `working_ms`, `agent_ms`
+and `verify_ms` are summed over the chain's runs, each null only when no
+run of the chain had its work measured. `chain.runs` lists the runs
+oldest first, run N last, each with its own `id`, `attempt`, `outcome`
+(null while live), `phase`, `started_ms`, `ended_ms`, its clocks as `run`
+carries them, `max_rounds`, `turn_count` (the turns `/runs/ID/turns`
+lists) and `rounds`, each round's `round`, `verdict` and
+`reviewer_model`. A run with no earlier run in its chain has a chain of
+itself alone, whose clocks equal `run`'s.
 
 ## `GET /runs/N/files`
 

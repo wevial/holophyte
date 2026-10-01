@@ -112,6 +112,19 @@ export const roundSchema = z.looseObject({
   operator_notes: z.array(operatorNoteSchema).optional(),
 });
 export const runEventSchema = z.looseObject({ at: z.number(), kind: z.string(), summary: z.string() });
+const chainClocks = {
+  started_ms: z.number(), elapsed_ms: z.number(), working_ms: z.number().nullable(),
+  agent_ms: z.number().nullable(), verify_ms: z.number().nullable(),
+};
+// The ticket's runs up to this one, oldest first; a daemon before it serves none.
+export const runChainSchema = z.looseObject({
+  ...chainClocks,
+  runs: z.array(z.looseObject({
+    ...chainClocks, id: z.number(), attempt: z.number(), outcome: z.string().nullable(),
+    phase: z.string(), ended_ms: z.number().nullable(), max_rounds: z.number(), turn_count: z.number(),
+    rounds: z.array(z.looseObject({ round: z.number(), verdict: z.string(), reviewer_model: z.string().nullable() })),
+  })),
+});
 export const runDetailSchema = z.looseObject({
   run: z.looseObject({
     id: z.number(), ticket: z.string(), ticket_url: z.string().nullable().optional(),
@@ -129,4 +142,5 @@ export const runDetailSchema = z.looseObject({
   }),
   findings: z.array(z.looseObject({ tone: z.literal("advisory"), message: z.string() })).optional(),
   rounds: z.array(roundSchema), events: z.array(runEventSchema),
+  chain: runChainSchema.optional(),
 });
