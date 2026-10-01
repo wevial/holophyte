@@ -12,6 +12,7 @@ from .enums import RESUMABLE_WORK_PHASES, RUN_PHASE_TRANSITIONS  # noqa: F401
 from .enums import RunPhase as _Phase
 from .schema import _transaction
 from .tickets import walk_ticket
+from .writes import _bounded_reason
 
 TERMINAL_PHASES = {
     "paused": "paused",
@@ -54,6 +55,7 @@ def release(conn, run_id, outcome, reason=None, now=None,
         # Ended already: a second ending would overwrite its outcome and resumePhase.
         if ended_at is not None and phase in ENDED_PHASES:
             return
+        reason = _bounded_reason(conn, run_id, reason, now)
         stopped_in = set_phase(conn, run_id, TERMINAL_PHASES[outcome],
                                note=f"run ended, outcome {outcome}", now=now)
         # The last moment the phase a failed run left is still known.

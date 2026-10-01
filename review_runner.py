@@ -89,6 +89,7 @@ def _run(
             f"{result.stdout}{result.stderr}".strip()
         )
         error.returncode = result.returncode
+        error.output = f"{result.stdout}{result.stderr}"
         raise error
     return result
 

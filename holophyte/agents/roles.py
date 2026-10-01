@@ -139,12 +139,9 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         try:
             output = launch()
         except InfraFailure as failure:
-            boundary = isinstance(failure.__cause__,
-                                  review_runner.ReviewBoundaryError)
-            if (boundary and argv is None
-                    and container_fallback_profile(project, role)):
-                if not activate_fallback(project, role, str(failure), conn,
-                                         run_id):
+            reason = argv is None and route_down(project, role, failure)
+            if reason:
+                if not activate_fallback(project, role, reason, conn, run_id):
                     raise
                 return launch()
             if unreadable_output(role, failure) is None:
@@ -156,6 +153,17 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 and activate_fallback(project, role, reason, conn, run_id)):
             return launch()
         return output
+
+
+def route_down(project, role, failure):
+    reason = outage_reason(agent_route(project, role),
+                           getattr(failure, "output", ""))
+    if reason:
+        return reason
+    if (isinstance(failure.__cause__, review_runner.ReviewBoundaryError)
+            and container_fallback_profile(project, role)):
+        return str(failure)
+    return None
 
 
 def unreadable_output(role, failure):
@@ -224,8 +232,10 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                     ), review_profile(model, effort))
             except review_runner.ReviewBoundaryError as e:
                 # The candidate was never judged: the failure is the factory's.
-                raise InfraFailure(f"reviewer route failed for {role}:"
-                                   f" {e}", "review_route") from e
+                failure = InfraFailure(f"reviewer route failed for {role}:"
+                                       f" {e}", "review_route")
+                failure.output = getattr(e, "output", "")
+                raise failure from e
         cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role != "implement":
