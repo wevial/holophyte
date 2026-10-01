@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from holophyte.loop.gates import run_capped
+from holophyte.pr.github import REMOTE
 
 GIT_TIMEOUT = 30
 MAX_FILES = 200
@@ -61,10 +62,8 @@ def run_range(repo, branch, merge_sha):
     if branch:
         head = resolve(repo, f"refs/heads/{branch}",
                        f"branch {branch} no longer exists in the repository")
-        code, out = git(repo, "merge-base", f"refs/heads/{MAIN}", head)
-        if code != 0:
-            raise RangeError(f"branch {branch} shares no history with {MAIN}")
-        return out.strip(), head
+        return main_base(repo, head,
+                         f"branch {branch} shares no history with {MAIN}"), head
     raise RangeError("the run recorded neither a branch nor a merge commit")
 
 
@@ -73,10 +72,21 @@ def worktree_range(worktree):
     if code != 0:
         raise RangeError(f"worktree {worktree} has no HEAD")
     head = out.strip()
-    code, out = git(worktree, "merge-base", f"refs/heads/{MAIN}", head)
+    return main_base(worktree, head,
+                     f"worktree {worktree} shares no history with {MAIN}"), head
+
+
+def main_base(repo, head, missing):
+    mains = [f"refs/heads/{MAIN}"]
+    remote_main = f"refs/remotes/{REMOTE}/{MAIN}"
+    code, _ = git(repo, "rev-parse", "--verify", "--quiet",
+                  f"{remote_main}^{{commit}}")
+    if code == 0:
+        mains.append(remote_main)
+    code, out = git(repo, "merge-base", head, *mains)
     if code != 0:
-        raise RangeError(f"worktree {worktree} shares no history with {MAIN}")
-    return out.strip(), head
+        raise RangeError(missing)
+    return out.strip()
 
 
 def untracked_files(worktree, timeout=GIT_TIMEOUT):
