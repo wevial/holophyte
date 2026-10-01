@@ -19,21 +19,26 @@ const RUN: TimelineRun = {
 const minutes = (segment: { from: number; to: number }) => (segment.to - segment.from) / MINUTE;
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
-test("at T+20m: implement 8m, review 4m, fix 4m, review 4m running, widths summing to 20/30", () => {
+test("at T+20m: implement 8m, review 4m, fix 4m, review 4m running, widths their shares of the 20m spent", () => {
   const out = buildTimeline(RUN, T + 20 * MINUTE);
   expect(out.map((segment) => segment.kind)).toEqual(["implement", "review", "fix", "review"]);
   expect(out.map(minutes)).toEqual([8, 4, 4, 4]);
   expect(out.map((segment) => segment.running)).toEqual([false, false, false, true]);
   expect(out[3]!.label).toBe("reviewing");
-  expect(sum(out.map((segment) => segment.width))).toBeCloseTo(20 / 30, 10);
-  expect(out[0]!.width).toBeCloseTo(8 / 30, 10);
+  expect(out.map((segment) => segment.width)).toEqual([0.4, 0.2, 0.2, 0.2]);
 });
 
-test("at T+40m the widths scale to fill the bar and the box is 10m 00s over", () => {
-  const out = buildTimeline(RUN, T + 40 * MINUTE);
-  expect(out.map(minutes)).toEqual([8, 4, 4, 24]);
-  expect(sum(out.map((segment) => segment.width))).toBeCloseTo(1, 10);
-  expect(out[0]!.width).toBeCloseTo(8 / 40, 10);
+test("as a live run's clock advances its running segment's share grows and the others shrink, still summing to 1", () => {
+  const early = buildTimeline(RUN, T + 20 * MINUTE).map((segment) => segment.width);
+  const late = buildTimeline(RUN, T + 40 * MINUTE).map((segment) => segment.width);
+  expect(late[3]!).toBeCloseTo(24 / 40, 10);
+  expect(late[3]!).toBeGreaterThan(early[3]!);
+  for (const index of [0, 1, 2]) expect(late[index]!).toBeLessThan(early[index]!);
+  expect(sum(early)).toBeCloseTo(1, 10);
+  expect(sum(late)).toBeCloseTo(1, 10);
+});
+
+test("the box is 10m 00s left at T+20m and 10m 00s over at T+40m", () => {
   expect(boxRemaining(RUN, T + 40 * MINUTE)).toBe(-10 * MINUTE);
   expect(boxRemaining(RUN, T + 20 * MINUTE)).toBe(10 * MINUTE);
 });
@@ -105,7 +110,7 @@ test("phase events without recorded rounds preserve segments without inventing r
   ]);
   expect(out.map(seconds)).toEqual([185, 68, 141, 479, 69, 193, 331, 70, 134, 253, 70, 131, 71, 1]);
   expect(out.every((segment) => !segment.running)).toBe(true);
-  // 2196 s is past the 30 m box, so widths are each duration over the run.
+  // The segments cover the run's 2196 s, so widths are each duration over it.
   expect(out[2]!.width).toBeCloseTo(141 / 2196, 10);
   expect(sum(out.map((segment) => segment.width))).toBeCloseTo(1, 10);
 });
@@ -137,7 +142,7 @@ test("a live run mid-review is implement, verify and a running review of 200 s t
     ["verify", 68, false],
     ["review", 200, true],
   ]);
-  expect(out[2]!.width).toBeCloseTo(200 / (30 * 60), 10);
+  expect(out[2]!.width).toBeCloseTo(200 / 453, 10);
 });
 
 test("a run with no phase_change events falls back to the rounds derivation", () => {

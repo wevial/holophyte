@@ -148,7 +148,7 @@ test("the newest round's findings are cards pilled must, must, should, nit with 
   expect(box.getAttribute("data-box")).toBe("left");
   const timeline = screen.getByRole("list", { name: "Round timeline" });
   const items = Array.from(timeline.children) as HTMLElement[];
-  expect(items.map((item) => item.getAttribute("data-segment"))).toEqual(["implement", "review", "fix", "review", "remaining"]);
+  expect(items.map((item) => item.getAttribute("data-segment"))).toEqual(["implement", "review", "fix", "review"]);
   expect(items[3]!.getAttribute("data-running")).toBe("true");
   expect(items[3]!.querySelector(".segment-running")).toBeTruthy();
   expect(items[0]!.querySelector(".segment-running")).toBeNull();
@@ -404,8 +404,8 @@ test("a finished run's done figure is its whole span, not the stretch the segmen
 });
 
 test("a run that ended before any segment opened still reads done with the run's span", async () => {
-  // claimed -> failed maps to no segment kind, so the bar is an empty
-  // track: the done line comes from the run, not the segments.
+  // claimed -> failed maps to no segment kind, so the bar is empty: the
+  // done line comes from the run, not the segments.
   const failed: RunDetailBody = {
     ...DETAIL,
     run: { ...DETAIL.run, phase: "failed", ended_ms: T + MINUTE, outcome: "failed" },
@@ -414,7 +414,7 @@ test("a run that ended before any segment opened still reads done with the run's
   };
   await mount(failed, T + MINUTE);
   const bar = screen.getByRole("list", { name: "Round timeline" });
-  expect(Array.from(bar.children).map((item) => item.getAttribute("data-segment"))).toEqual(["remaining"]);
+  expect(Array.from(bar.children).map((item) => item.getAttribute("data-segment"))).toEqual([]);
   expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("done · 1m 00s");
 });
 

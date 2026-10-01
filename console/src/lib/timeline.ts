@@ -16,8 +16,7 @@ export interface Segment {
   round?: number;
   /** The trailing segment of a live run: it ends at `now` and keeps growing. */
   running: boolean;
-  /** Share of the bar, 0..1: the duration over the time box, or over the
-   *  whole run once that is longer than the box. */
+  /** Share of the bar, 0..1: the duration over the segments' total. */
   width: number;
 }
 
@@ -94,12 +93,10 @@ export function roundNumber(summary: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-/** Widths as each duration over `time_box_ms`; a run past its box scales
- *  them so the sum is 1. */
-function size(out: Segment[], run: TimelineRun, end: number): Segment[] {
-  const total = end - run.started_ms;
-  const scale = run.time_box_ms != null && run.time_box_ms > 0 ? Math.max(run.time_box_ms, total) : total;
-  for (const segment of out) segment.width = scale > 0 ? (segment.to - segment.from) / scale : 0;
+/** Widths as each duration over the segments' total, so they sum to 1. */
+function size(out: Segment[]): Segment[] {
+  const total = out.reduce((sum, segment) => sum + segment.to - segment.from, 0);
+  for (const segment of out) segment.width = total > 0 ? (segment.to - segment.from) / total : 0;
   return out;
 }
 
@@ -171,8 +168,7 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
     const last: Segment = { ...open, to: Math.max(open.from, end), running: live, width: 0 };
     if (live || last.to > last.from) push(last);
   }
-  const reach = Math.max(end, out.length ? out[out.length - 1]!.to : end);
-  return size(out, run, reach);
+  return size(out);
 }
 
 /** The running segment's kind: an open round is under review; otherwise
@@ -220,15 +216,13 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
   const label = running ? phaseLabel(run.phase) : LABELS[kind];
   const round = kind === "review" ? openIndex + 1 + offset : kind === "fix" && rounds.length > 0 ? rounds.length + offset : undefined;
   out.push({ kind, label, from: cursor, to: Math.max(cursor, end), round, running, width: 0 });
-  return size(out, run, Math.max(end, cursor));
+  return size(out);
 }
 
 /**
- * The run's phases in order, sized against its time box. With
- * `phase_change` events the segments follow them as they happen; without
- * any, the finished `rounds` split the bar as before. Widths are each
- * duration over `time_box_ms`; a run past its box scales them so the sum
- * is 1.
+ * The run's phases in order, each sized by its share of the time they
+ * cover. With `phase_change` events the segments follow them as they
+ * happen; without any, the finished `rounds` split the bar as before.
  */
 export function buildTimeline(run: TimelineRun, now: number): Segment[] {
   const changes = (run.events ?? [])
