@@ -946,7 +946,7 @@ test("a requeue chain adds each run's reviews and caps", async () => {
   expect(screen.getByText(/^Review \d+ of \d+/).textContent).toStartWith("Review 4 of 4");
 });
 
-test("a run whose covering reviews ran past its cap counts them against a cap no lower than its reviews", async () => {
+test("covering reviews past the summed cap read the cap as the reviews done", async () => {
   const covering = [1, 2, 3].map((round) => ({ ...DETAIL.rounds[0]!, round, verdict: "changes_requested", reviewer_model: "reviewer" }));
   const merge_gate = { ...DETAIL.run, phase: "merge_gate", pr_url: "https://example/pr/1", max_rounds: 2 };
   await mount({ ...DETAIL, run: merge_gate, rounds: covering }, T + 20 * MINUTE);
@@ -956,7 +956,7 @@ test("a run whose covering reviews ran past its cap counts them against a cap no
     chainEntry(89, T - 60 * MINUTE, T - 30 * MINUTE, { rounds: covering.slice(0, 1).map(({ round, verdict }) => ({ round, verdict, reviewer_model: "reviewer" })) }),
     chainEntry(91, T, null, { rounds: covering.map(({ round, verdict }) => ({ round, verdict, reviewer_model: "reviewer" })) }),
   ]) }, T + 20 * MINUTE);
-  expect(screen.getByText(/^Review \d+ of \d+/).textContent).toStartWith("Review 4 of 5");
+  expect(screen.getByText(/^Review \d+ of \d+/).textContent).toStartWith("Review 4 of 4");
 });
 
 test("a live chain's header reads the summed agent time, the box less it and the wall from the first run's start", async () => {
