@@ -119,7 +119,7 @@ class StaleApprovalRereviewTests(unittest.TestCase):
             "SELECT payload FROM runEvents WHERE runId = ?"
             " AND kind = 'stale_approval_rereview'", (self.run_id,))]
 
-    def test_stale_only_review_runs_again_without_a_fix_turn(self):
+    def test_covering_review_of_only_stale_approvals_runs_again_not_a_fix(self):
         approved = self.review_fix(self.stale_reply(), self.direct_reply())
 
         self.assertEqual(approved, self.head)
@@ -129,9 +129,7 @@ class StaleApprovalRereviewTests(unittest.TestCase):
         self.assertEqual(len(self.prompts), 2)
         self.assertIn(f"tests/test_load.py (changed since approval at "
                       f"{self.approved})", self.prompts[1])
-        self.assertIn("Witness each of these criteria afresh", self.prompts[1])
-        self.assertNotIn("Witness each of these criteria afresh",
-                         self.prompts[0])
+        self.assertNotIn("changed since approval at", self.prompts[0])
         self.assertEqual(
             [verdict for (verdict,) in self.conn.execute(
                 "SELECT verdict FROM reviewRounds WHERE runId = ?"

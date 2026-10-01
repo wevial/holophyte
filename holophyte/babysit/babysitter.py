@@ -469,8 +469,7 @@ def _stale_again(branch, sha, stale):
         first = stale[0]["message"].splitlines()[0]
         raise RunFailure(
             f"the review again at {sha[:12]} still cites a stale approval:"
-            f" {first}; branch {branch} preserved at {sha[:12]}",
-            "fix_no_progress")
+            f" {first}; branch {branch} preserved at {sha[:12]}")
 
 
 def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
