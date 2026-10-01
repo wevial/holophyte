@@ -143,7 +143,7 @@ test("measured and historical rows each show one labelled clock bar in equal-hei
   expect(within(wallCell).getByText("wall").className).toBe(labelClass);
   expect(within(wallCell).queryByText(/^wall .+/)).toBeNull();
   expect(within(workingCell).getByTitle("working time against the box").contains(within(workingCell).getByRole("progressbar"))).toBe(true);
-  expect(within(wallCell).getByTitle("wall time against the box (run predates the working clock)").contains(within(wallCell).getByRole("progressbar"))).toBe(true);
+  expect(within(wallCell).getByTitle("wall time against the box (run predates the working clock): first claim to final end, CI waits and parks included").contains(within(wallCell).getByRole("progressbar"))).toBe(true);
   expect(workingCell.className).toContain("min-h-[52px]");
   expect(wallCell.className).toBe(workingCell.className);
 });
