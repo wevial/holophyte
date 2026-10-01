@@ -1,13 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
+import type { ReactElement } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { RoundTimeline } from "../src/components/RoundTimeline";
-import type { Segment } from "../src/lib/timeline";
+import { GAP_PX, RoundTimeline } from "../src/components/RoundTimeline";
+import { buildTimeline, type Segment, type TimelineRun } from "../src/lib/timeline";
 
 const MINUTE = 60_000;
 const T = 1_756_900_000_000;
 
-/** A 4%-of-the-bar implement segment, then a review that has run 20 m and
- *  is still going. */
+/** A 4%-of-the-bar implement segment, then a review that has run 28m 48s
+ *  and is still going. */
 const SEGMENTS: Segment[] = [
   { kind: "implement", label: "implement", from: T, to: T + 1.2 * MINUTE, running: false, width: 0.04 },
   {
@@ -15,40 +16,116 @@ const SEGMENTS: Segment[] = [
     label: "review 1",
     round: 1,
     from: T + 1.2 * MINUTE,
-    to: T + 21.2 * MINUTE,
+    to: T + 30 * MINUTE,
     running: true,
-    width: 20 / 30,
+    width: 0.96,
   },
 ];
 
-/** happy-dom lays nothing out, so resolve the component's `calc(A% - Bpx)`
- *  width against the fixture's container width the way the browser would. */
-const resolvePx = (calc: string, containerPx: number): number => {
-  const match = /^calc\(([\d.]+)% - ([\d.]+)px\)$/.exec(calc);
-  if (!match) throw new Error(`not a share width: ${calc}`);
-  return (Number(match[1]) / 100) * containerPx - Number(match[2]);
+/** happy-dom lays nothing out, so resolve the component's `calc(A% ± Bpx)`
+ *  or `Npx` length against the container width the way the browser would. */
+const resolvePx = (css: string, containerPx: number): number => {
+  if (/^-?[\d.]+px$/.test(css)) return Number.parseFloat(css);
+  const match = /^calc\(([\d.]+)% ([-+]) ([\d.]+)px\)$/.exec(css);
+  if (!match) throw new Error(`not a bar length: ${css}`);
+  return (Number(match[1]) / 100) * containerPx + (match[2] === "-" ? -1 : 1) * Number(match[3]);
 };
 
-/** The live run SEGMENTS came from: 21.2 minutes in and still reviewing. */
+/** The live run SEGMENTS came from: 30 minutes in and still reviewing. */
 const LIVE = { started_ms: T, ended_ms: null, phase: "reviewing" };
 
 const bar = () => screen.getByRole("list", { name: "Round timeline" });
 const segment = (index: number) => bar().querySelectorAll("li")[index] as HTMLElement;
 
+/** Renders with every element measuring `containerPx` wide, as the bar
+ *  would in a container that width, and returns each item's resolved px. */
+function drawnAt(containerPx: number, element: ReactElement): number[] {
+  const saved = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => containerPx });
+  try {
+    render(element);
+  } finally {
+    if (saved) Object.defineProperty(HTMLElement.prototype, "clientWidth", saved);
+    else delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientWidth;
+  }
+  return (Array.from(bar().querySelectorAll("li")) as HTMLElement[]).map((item) => resolvePx(item.style.width, containerPx));
+}
+
+/** A run of the given phase changes, `[seconds from start, summary]`, with a 90-minute box. */
+const runOf = (changes: [number, string][], ended_ms: number | null, phase: string): TimelineRun => ({
+  started_ms: T,
+  ended_ms,
+  time_box_ms: 90 * MINUTE,
+  phase,
+  rounds: [],
+  events: changes.map(([s, summary]) => ({ at: T + s * 1000, kind: "phase_change", summary })),
+});
+
 afterEach(cleanup);
 
-test("the bar keeps its proportional widths, remainder and running pulse; the status line names the running phase", () => {
-  render(<RoundTimeline segments={SEGMENTS} run={LIVE} now={T + 21.2 * MINUTE} />);
-  const items = Array.from(bar().querySelectorAll("li")) as HTMLElement[];
-  expect(items.map((item) => item.getAttribute("data-segment"))).toEqual(["implement", "review", "remaining"]);
-  expect(Math.round(resolvePx(items[0]!.style.width, 1000))).toBe(40);
-  expect(Math.round(resolvePx(items[1]!.style.width, 1000))).toBe(Math.round((20 / 30) * 1000 - 4));
-  expect(items[1]!.getAttribute("data-running")).toBe("true");
-  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("Review · Round 1 · 20m 00s");
+test("a run with one finished implement segment fills the whole bar with it and draws no remaining item", () => {
+  const run = runOf([[0, "claimed -> working: KO-1"], [120, "working -> failed: gave up"]], T + 2 * MINUTE, "failed");
+  const widths = drawnAt(1000, <RoundTimeline segments={buildTimeline(run, T + 2 * MINUTE)} run={run} now={T + 2 * MINUTE} />);
+  expect(Array.from(bar().querySelectorAll("li")).map((item) => item.getAttribute("data-segment"))).toEqual(["implement"]);
+  expect(widths[0]).toBeCloseTo(1000, 6);
+});
+
+test("7 minutes implementing and a running 3-minute review draw 70% and 30% of the bar after its one gap", () => {
+  const run = runOf([[0, "claimed -> working: KO-1"], [420, "working -> reviewing: review"]], null, "reviewing");
+  const now = T + 10 * MINUTE;
+  const widths = drawnAt(1000, <RoundTimeline segments={buildTimeline(run, now)} run={run} now={now} />);
+  expect(widths[0]).toBeCloseTo(0.7 * (1000 - GAP_PX), 6);
+  expect(widths[1]).toBeCloseTo(0.3 * (1000 - GAP_PX), 6);
+  expect(segment(1).getAttribute("data-running")).toBe("true");
+  expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("review · 3m 00s");
+});
+
+test("phases of 2 s and 12 s beside 50 minutes keep a 6 px minimum while the bar still sums to its width", () => {
+  const run = runOf(
+    [[0, "claimed -> working: KO-1"], [3000, "working -> verifying: verify"], [3002, "verifying -> merging: merge"], [3014, "merging -> done: merged"]],
+    T + 3014_000,
+    "done",
+  );
+  const widths = drawnAt(1000, <RoundTimeline segments={buildTimeline(run, T + 3014_000)} run={run} now={T + 3014_000} />);
+  expect(widths[1]).toBeGreaterThanOrEqual(6);
+  expect(widths[2]).toBeGreaterThanOrEqual(6);
+  expect(widths.reduce((sum, px) => sum + px, 0) + (widths.length - 1) * GAP_PX).toBeCloseTo(1000, 6);
+});
+
+test("a widened short segment's tooltip centres on where it draws, past the widened segments before it", () => {
+  const changes: [number, string][] = [[0, "claimed -> verifying: verify"]];
+  for (let index = 1; index < 10; index++) {
+    changes.push([2 * index, index % 2 ? "verifying -> reviewing: review" : "reviewing -> verifying: verify"]);
+  }
+  changes.push([20, "reviewing -> working: rework"], [20 + 3000, "working -> done: merged"]);
+  const run = runOf(changes, T + 3020_000, "done");
+  const widths = drawnAt(1000, <RoundTimeline segments={buildTimeline(run, T + 3020_000)} run={run} now={T + 3020_000} />);
+  expect(widths).toHaveLength(11);
+  const tenth = widths.slice(0, 9).reduce((sum, px) => sum + px + GAP_PX, 0) + widths[9]! / 2;
+  fireEvent.focusIn(segment(9));
+  const tooltip = document.querySelector("[data-segment-tooltip]") as HTMLElement;
+  expect(resolvePx(tooltip.style.left, 1000)).toBeCloseTo(tenth, 6);
+});
+
+test("40 equal segments in a 320 px bar too narrow for their minimums still fit it, the last tooltip centred on the last segment", () => {
+  const changes: [number, string][] = [[0, "claimed -> verifying: verify"]];
+  for (let index = 1; index < 40; index++) {
+    changes.push([60 * index, index % 2 ? "verifying -> reviewing: review" : "reviewing -> verifying: verify"]);
+  }
+  changes.push([2400, "reviewing -> done: merged"]);
+  const run = runOf(changes, T + 2400_000, "done");
+  const widths = drawnAt(320, <RoundTimeline segments={buildTimeline(run, T + 2400_000)} run={run} now={T + 2400_000} />);
+  expect(widths).toHaveLength(40);
+  const gap = Number.parseFloat(bar().style.gap);
+  expect(widths.every((px) => px > 0)).toBe(true);
+  expect(widths.reduce((sum, px) => sum + px, 0) + 39 * gap).toBeCloseTo(320, 3);
+  fireEvent.focusIn(segment(39));
+  const tooltip = document.querySelector("[data-segment-tooltip]") as HTMLElement;
+  expect(resolvePx(tooltip.style.left, 320)).toBeCloseTo(320 - widths[39]! / 2, 3);
 });
 
 test("each segment is a focusable img naming itself; hovering it floats the long name and duration, leaving hides it", () => {
-  render(<RoundTimeline segments={SEGMENTS} run={LIVE} now={T + 21.2 * MINUTE} />);
+  render(<RoundTimeline segments={SEGMENTS} run={LIVE} now={T + 30 * MINUTE} />);
   const first = segment(0);
   expect(first.getAttribute("role")).toBe("img");
   expect(first.getAttribute("tabindex")).toBe("0");
@@ -59,13 +136,14 @@ test("each segment is a focusable img naming itself; hovering it floats the long
   fireEvent.mouseOver(first);
   const tooltip = document.querySelector("[data-segment-tooltip]")!;
   expect(tooltip.textContent).toBe("Implementation · 1m 12s");
-  // The tooltip sits above the bar, centred on the segment's share of it.
-  expect(tooltip.getAttribute("style")).toContain("left: 2%");
+  // The tooltip sits above the bar, centred on the segment.
+  const left = (tooltip as HTMLElement).style.left;
+  expect(resolvePx(left, 1000)).toBeCloseTo(resolvePx(first.style.width, 1000) / 2, 6);
   fireEvent.mouseOut(first);
   expect(document.querySelector("[data-segment-tooltip]")).toBeNull();
 
   fireEvent.focusIn(segment(1));
-  expect(document.querySelector("[data-segment-tooltip]")!.textContent).toBe("Review · Round 1 · 20m 00s");
+  expect(document.querySelector("[data-segment-tooltip]")!.textContent).toBe("Review · Round 1 · 28m 48s");
   fireEvent.focusOut(segment(1));
   expect(document.querySelector("[data-segment-tooltip]")).toBeNull();
 });
