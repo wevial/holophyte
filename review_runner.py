@@ -45,8 +45,14 @@ REVIEW_VERDICTS = ("APPROVE", "REQUEST_CHANGES")
 ADJUDICATION_VERDICTS = ("PASS", "FAIL")
 
 
+EVIDENCE_LINE = 300
+EVIDENCE_TAIL = 2048
+
+
 class ReviewBoundaryError(RuntimeError):
-    pass
+    line = None
+    tail = None
+    exit_status = None
 
 
 @dataclass(frozen=True)
@@ -306,7 +312,10 @@ def parse_codex_output(
         try:
             event = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise ReviewBoundaryError("Codex emitted invalid JSONL") from exc
+            error = ReviewBoundaryError("Codex emitted invalid JSONL")
+            error.line = "".join(ch for ch in line if ch.isprintable())[
+                :EVIDENCE_LINE]
+            raise error from exc
         if event.get("type") != "item.completed":
             continue
         item = event.get("item", {})
@@ -485,7 +494,12 @@ def run_review(
                 raise ReviewBoundaryError("staged candidate changed during review")
         if "PREFLIGHT_OK" not in result.stderr:
             raise ReviewBoundaryError("review preflight did not complete")
-        message, _ = parse_codex_output(result.stdout, verdicts)
+        try:
+            message, _ = parse_codex_output(result.stdout, verdicts)
+        except ReviewBoundaryError as error:
+            error.tail = result.stdout[-EVIDENCE_TAIL:]
+            error.exit_status = result.returncode
+            raise
         return message
 
 
