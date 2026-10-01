@@ -20,13 +20,19 @@ export const GAP_PX = 3;
 /** The narrowest a segment draws, so it stays hoverable and focusable. */
 const MIN_SEGMENT_PX = 6;
 
-const width = (share: number, gapsPx: number) =>
-  `calc(${Math.max(0, share * 100)}% - ${Math.max(0, share) * gapsPx}px)`;
+/** A length of the bar as `pct`% of its width plus `px` pixels. */
+interface Length {
+  pct: number;
+  px: number;
+}
 
-/** Each segment's CSS width in a bar `barPx` wide: a share that would draw
+const css = ({ pct, px }: Length) =>
+  pct === 0 ? `${px}px` : `calc(${pct}% ${px < 0 ? "-" : "+"} ${Math.abs(px)}px)`;
+
+/** Each segment's width in a bar `barPx` wide: a share that would draw
  *  under the minimum takes the minimum and the rest split what is left by
  *  share. An unmeasured bar draws plain shares. */
-function fitWidths(shares: number[], barPx: number, gapsPx: number): string[] {
+function fitWidths(shares: number[], barPx: number, gapsPx: number): Length[] {
   const pinned = new Set<number>();
   for (let grew = barPx > 0; grew; ) {
     const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
@@ -40,7 +46,22 @@ function fitWidths(shares: number[], barPx: number, gapsPx: number): string[] {
   }
   const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
   const reserved = gapsPx + pinned.size * MIN_SEGMENT_PX;
-  return shares.map((share, index) => (pinned.has(index) ? `${MIN_SEGMENT_PX}px` : width(free > 0 ? share / free : 0, reserved)));
+  return shares.map((share, index) => {
+    if (pinned.has(index)) return { pct: 0, px: MIN_SEGMENT_PX };
+    const part = free > 0 ? Math.max(0, share / free) : 0;
+    return { pct: part * 100, px: -part * reserved };
+  });
+}
+
+/** Each segment's centre along the bar, past the widths and gaps before it. */
+function centres(widths: Length[]): Length[] {
+  const out: Length[] = [];
+  let start: Length = { pct: 0, px: 0 };
+  for (const { pct, px } of widths) {
+    out.push({ pct: start.pct + pct / 2, px: start.px + px / 2 });
+    start = { pct: start.pct + pct, px: start.px + px + GAP_PX };
+  }
+  return out;
 }
 
 const shortLabel = (segment: Segment) =>
@@ -83,12 +104,7 @@ export function RoundTimeline({
   }, []);
   const gapsPx = Math.max(0, segments.length - 1) * GAP_PX;
   const widths = fitWidths(segments.map((segment) => segment.width), barPx, gapsPx);
-  const starts: number[] = [];
-  let cursor = 0;
-  for (const segment of segments) {
-    starts.push(cursor);
-    cursor += segment.width;
-  }
+  const middles = centres(widths);
   const totals = new Map<SegmentKind, number>();
   for (const segment of segments) {
     totals.set(segment.kind, (totals.get(segment.kind) ?? 0) + segment.to - segment.from);
@@ -120,7 +136,7 @@ export function RoundTimeline({
             onFocus={() => setActive(index)}
             onBlur={() => setActive(null)}
             className="min-w-0 shrink-0"
-            style={{ width: widths[index] }}
+            style={{ width: css(widths[index]!) }}
           >
             <span
               aria-hidden="true"
@@ -137,7 +153,7 @@ export function RoundTimeline({
           data-segment-tooltip
           role="tooltip"
           className="pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-button border border-line bg-rail px-2 py-[3px] font-mono text-[11px] text-rail-fg shadow-card"
-          style={{ left: `${(starts[active!]! + hovered.width / 2) * 100}%`, bottom: "calc(100% + 4px)" }}
+          style={{ left: css(middles[active!]!), bottom: "calc(100% + 4px)" }}
         >
           {description(hovered)}
         </div>

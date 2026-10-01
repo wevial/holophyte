@@ -454,7 +454,7 @@ test("a segment floats its long name and duration on hover and on focus, hides o
   expect(tooltip()).toBeNull();
   fireEvent.mouseOver(items[0]!);
   expect(tooltip()!.textContent).toBe("Implementation · 20m 00s · claimed -> working: KO-232");
-  expect((tooltip() as HTMLElement).style.left).toBe("25%");
+  expect((tooltip() as HTMLElement).style.left).toBe("calc(25% - 1.5px)");
   fireEvent.mouseOut(items[0]!);
   expect(tooltip()).toBeNull();
   fireEvent.focusIn(items[1]!);

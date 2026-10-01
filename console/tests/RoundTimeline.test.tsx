@@ -22,13 +22,13 @@ const SEGMENTS: Segment[] = [
   },
 ];
 
-/** happy-dom lays nothing out, so resolve the component's `calc(A% - Bpx)`
- *  or `Npx` width against the container width the way the browser would. */
+/** happy-dom lays nothing out, so resolve the component's `calc(A% ± Bpx)`
+ *  or `Npx` length against the container width the way the browser would. */
 const resolvePx = (css: string, containerPx: number): number => {
-  if (/^[\d.]+px$/.test(css)) return Number.parseFloat(css);
-  const match = /^calc\(([\d.]+)% - ([\d.]+)px\)$/.exec(css);
-  if (!match) throw new Error(`not a share width: ${css}`);
-  return (Number(match[1]) / 100) * containerPx - Number(match[2]);
+  if (/^-?[\d.]+px$/.test(css)) return Number.parseFloat(css);
+  const match = /^calc\(([\d.]+)% ([-+]) ([\d.]+)px\)$/.exec(css);
+  if (!match) throw new Error(`not a bar length: ${css}`);
+  return (Number(match[1]) / 100) * containerPx + (match[2] === "-" ? -1 : 1) * Number(match[3]);
 };
 
 /** The live run SEGMENTS came from: 30 minutes in and still reviewing. */
@@ -92,6 +92,21 @@ test("phases of 2 s and 12 s beside 50 minutes keep a 6 px minimum while the bar
   expect(widths.reduce((sum, px) => sum + px, 0) + (widths.length - 1) * GAP_PX).toBeCloseTo(1000, 6);
 });
 
+test("a widened short segment's tooltip centres on where it draws, past the widened segments before it", () => {
+  const changes: [number, string][] = [[0, "claimed -> verifying: verify"]];
+  for (let index = 1; index < 10; index++) {
+    changes.push([2 * index, index % 2 ? "verifying -> reviewing: review" : "reviewing -> verifying: verify"]);
+  }
+  changes.push([20, "reviewing -> working: rework"], [20 + 3000, "working -> done: merged"]);
+  const run = runOf(changes, T + 3020_000, "done");
+  const widths = drawnAt(1000, <RoundTimeline segments={buildTimeline(run, T + 3020_000)} run={run} now={T + 3020_000} />);
+  expect(widths).toHaveLength(11);
+  const tenth = widths.slice(0, 9).reduce((sum, px) => sum + px + GAP_PX, 0) + widths[9]! / 2;
+  fireEvent.focusIn(segment(9));
+  const tooltip = document.querySelector("[data-segment-tooltip]") as HTMLElement;
+  expect(resolvePx(tooltip.style.left, 1000)).toBeCloseTo(tenth, 6);
+});
+
 test("each segment is a focusable img naming itself; hovering it floats the long name and duration, leaving hides it", () => {
   render(<RoundTimeline segments={SEGMENTS} run={LIVE} now={T + 30 * MINUTE} />);
   const first = segment(0);
@@ -104,8 +119,9 @@ test("each segment is a focusable img naming itself; hovering it floats the long
   fireEvent.mouseOver(first);
   const tooltip = document.querySelector("[data-segment-tooltip]")!;
   expect(tooltip.textContent).toBe("Implementation · 1m 12s");
-  // The tooltip sits above the bar, centred on the segment's share of it.
-  expect(tooltip.getAttribute("style")).toContain("left: 2%");
+  // The tooltip sits above the bar, centred on the segment.
+  const left = (tooltip as HTMLElement).style.left;
+  expect(resolvePx(left, 1000)).toBeCloseTo(resolvePx(first.style.width, 1000) / 2, 6);
   fireEvent.mouseOut(first);
   expect(document.querySelector("[data-segment-tooltip]")).toBeNull();
 
