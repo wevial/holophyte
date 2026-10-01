@@ -1,5 +1,5 @@
-"""A covering review whose only open findings say a cited approval went stale
-is reviewed again at the same head instead of going to a fix turn."""
+"""A review round or covering review whose only open findings say a cited
+approval went stale is reviewed again at the same head, not sent to a fix."""
 import json
 import os
 import subprocess
@@ -43,6 +43,7 @@ class StaleApprovalRereviewTests(unittest.TestCase):
                      ("commit", "--allow-empty", "-qm", "base"),
                      ("checkout", "-qb", "task")):
             self.git(*args)
+        self.base = self.git("rev-parse", "HEAD")
         self.approved = self.commit({
             "holophyte/load.py": "def load():\n    return {}\n",
             "tests/test_load.py": "def test_missing():\n    pass\n\n\n"
@@ -91,20 +92,34 @@ class StaleApprovalRereviewTests(unittest.TestCase):
                 "CRITERION 2: met — tests/test_load.py::test_broken\n"
                 "VERDICT: APPROVE")
 
-    def review_fix(self, *replies):
+    def agents(self, replies):
         replies = list(replies)
 
         def reviewer(target, role, goal, *args, **kwargs):
             self.prompts.append(goal)
             return replies.pop(0)
 
-        def implementer(target, conn, run_id, beat_s, wt, budget_min, goal):
+        def implementer(target, conn, run_id, beat_s, wt, budget_min, goal,
+                        **kwargs):
             self.fix_turns.append(goal)
             return "No change: the criterion needs a fresh review.", False
 
-        with (patch.object(holophyte.loop.review_round, "agent", reviewer),
-              patch.object(holophyte.loop.implement, "_transport_timed",
-                           implementer),
+        return (patch.object(holophyte.loop.review_round, "agent", reviewer),
+                patch.object(holophyte.loop.review_round, "_timed", implementer),
+                patch.object(holophyte.loop.implement, "_transport_timed",
+                             implementer))
+
+    def review_rounds(self, *replies, cap=2):
+        reviewer, fixer, babysit_fixer = self.agents(replies)
+        with reviewer, fixer, babysit_fixer:
+            return holophyte.loop.review_round._review_rounds(
+                self.project, self.conn, self.run_id, None, "KO-1", "task",
+                self.root, 30, self.base, self.head, TICKET, "true", (),
+                CRITERIA, 10, cap)
+
+    def review_fix(self, *replies, fix_note="repair the pin"):
+        reviewer, fixer, babysit_fixer = self.agents(replies)
+        with (reviewer, fixer, babysit_fixer,
               patch.object(holophyte.pr.pullrequest, "refresh_pr_text"),
               patch.object(holophyte.pr.pullrequest, "_park_on_pr",
                            side_effect=Parked)):
@@ -112,12 +127,49 @@ class StaleApprovalRereviewTests(unittest.TestCase):
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
                 self.root, self.head, self.approved, 30,
                 SimpleNamespace(url="https://example.test/pull/1"), TICKET,
-                "true", (), CRITERIA, fix_note="repair the pin", budget_min=10)
+                "true", (), CRITERIA, fix_note=fix_note, budget_min=10)
 
     def rereview_events(self):
         return [json.loads(payload) for (payload,) in self.conn.execute(
             "SELECT payload FROM runEvents WHERE runId = ?"
             " AND kind = 'stale_approval_rereview'", (self.run_id,))]
+
+    def round_verdicts(self):
+        return [verdict for (verdict,) in self.conn.execute(
+            "SELECT verdict FROM reviewRounds WHERE runId = ?"
+            " ORDER BY round", (self.run_id,))]
+
+    def test_review_round_of_only_stale_approvals_runs_again_not_a_fix(self):
+        result = self.review_rounds(self.stale_reply(), self.direct_reply())
+
+        self.assertEqual(result, (self.head, 2, True))
+        self.assertEqual(self.fix_turns, [])
+        (event,) = self.rereview_events()
+        self.assertEqual(event["sha"], self.head)
+        self.assertNotIn("changed since approval at", self.prompts[0])
+        self.assertIn(f"tests/test_load.py (changed since approval at "
+                      f"{self.approved})", self.prompts[1])
+        self.assertEqual(self.round_verdicts(), ["changes_requested", "pass"])
+
+    def test_second_stale_only_review_round_fails_naming_it(self):
+        with self.assertRaises(RunFailure) as failed:
+            self.review_rounds(self.stale_reply(), self.stale_reply(), cap=3)
+
+        self.assertEqual(self.fix_turns, [])
+        self.assertEqual(len(self.prompts), 2)
+        self.assertEqual(len(self.rereview_events()), 1)
+        reason = str(failed.exception)
+        self.assertIn(f"changed since approval at {self.approved}", reason)
+        self.assertNotIn("(none recorded)", reason)
+
+    def test_review_round_with_a_stale_and_an_ordinary_finding_gets_a_fix(self):
+        with self.assertRaises(RunFailure) as failed:
+            self.review_rounds(self.stale_reply("unwitnessed — no test"))
+
+        self.assertEqual(len(self.prompts), 1)
+        self.assertEqual(len(self.fix_turns), 1)
+        self.assertEqual(self.rereview_events(), [])
+        self.assertIn("fix round made no progress", str(failed.exception))
 
     def test_covering_review_of_only_stale_approvals_runs_again_not_a_fix(self):
         approved = self.review_fix(self.stale_reply(), self.direct_reply())
@@ -130,15 +182,12 @@ class StaleApprovalRereviewTests(unittest.TestCase):
         self.assertIn(f"tests/test_load.py (changed since approval at "
                       f"{self.approved})", self.prompts[1])
         self.assertNotIn("changed since approval at", self.prompts[0])
-        self.assertEqual(
-            [verdict for (verdict,) in self.conn.execute(
-                "SELECT verdict FROM reviewRounds WHERE runId = ?"
-                " ORDER BY round", (self.run_id,))],
-            ["changes_requested", "pass"])
+        self.assertEqual(self.round_verdicts(), ["changes_requested", "pass"])
 
-    def test_second_stale_only_review_at_the_same_head_fails_naming_it(self):
+    def test_second_stale_only_covering_review_fails_without_a_note(self):
         with self.assertRaises(RunFailure) as failed:
-            self.review_fix(self.stale_reply(), self.stale_reply())
+            self.review_fix(self.stale_reply(), self.stale_reply(),
+                            fix_note=None)
 
         self.assertEqual(self.fix_turns, [])
         self.assertEqual(len(self.prompts), 2)

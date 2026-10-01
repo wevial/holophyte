@@ -34,14 +34,18 @@ from holophyte.review.briefs import (
     evidence_brief,
     scope_brief,
     scope_files,
+    stale_approval_brief,
     tests_brief,
     verified_brief,
 )
 from holophyte.review.reply_parsing import (
     _review_reply,
+    cited_approval,
     criteria_findings,
+    stale_approvals,
     without_refuted,
 )
+from holophyte.review.stale_approval import stale_again, stale_rereview
 
 
 def _verify_brief(verify_cmd, ok, out):
@@ -87,6 +91,60 @@ def _record_mode(conn, run_id, mode, rnd):
                            payload=json.dumps({"mode": mode, "round": rnd}))
 
 
+def _review(project, conn, run_id, task_id, wt, beat_s, base_sha, sha, ticket,
+            verify_cmd, criteria, mode, rnd, ok, out, stale=()):
+    round_started = int(time() * 1000)
+    scope = scope_files(wt, ticket, base_sha, sha)
+    _record_mode(conn, run_id, mode, rnd)
+    with heartbeat_while(conn, run_id, beat_s):
+        verdict, decision, first_reply = _review_reply(project,
+            f"You are a READ-ONLY code reviewer. Review commit {sha} using "
+            f"{review_refs(run_id)[0]} as the frozen base and "
+            f"{review_refs(run_id)[1]} as the candidate "
+            "in this repo against the ticket below. The ticket is the "
+            "contract, acceptance criteria included: a candidate that "
+            "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
+            f"{ticket}\n\n"
+            + _verify_brief(verify_cmd, ok, out)
+            + criteria_brief(criteria)
+            + stale_approval_brief(stale)
+            + verified_brief(mode)
+            + tests_brief(wt)
+            + scope_brief(wt, ticket, base_sha, sha)
+            + evidence_brief(project, wt, task_id,
+                             ticket_template.parse(ticket).evidence_states)
+            + "Do not modify anything. End your reply with exactly one "
+            "line:\n"
+            "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
+            "If REQUEST_CHANGES, list only concrete blockers.", wt,
+            base_sha, sha, conn, run_id, run_agent=agent, review_round=rnd)
+    approved = cited_approval(verdict, wt, sha)
+    record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
+                 ok, out,
+                 started_at=round_started, criteria=criteria, root=wt,
+                 prior_reply=first_reply, approved_range=approved, scope=scope)
+    if decision == "MALFORMED":
+        reason = "reviewer returned no verdict line twice"
+        print(f"[holo2] round {rnd}: {reason}")
+        raise InfraFailure(f"{reason}; candidate preserved at {sha}",
+                           "review_route")
+
+    unwitnessed = criteria_findings(verdict, criteria, wt,
+                                    approved_range=approved, scope=scope)
+    if unwitnessed:
+        print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
+              "witnessed; treating as REQUEST_CHANGES")
+    return verdict, decision, unwitnessed
+
+
+def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,
+              pending, ok, out):
+    if pending.get("stale"):
+        stale_again(branch, sha, stale)
+    stale_rereview(conn, run_id, provider, task_id, sha, rnd, stale)
+    return {"phase": "reviewing", "ok": ok, "out": out, "stale": stale}
+
+
 def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
                    budget_min, cap, resume=None):
@@ -119,49 +177,16 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             else:
                 print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
 
-        boundary(conn, run_id, "reviewing", rnd=rnd, ok=ok, out=str(out))
+        boundary(conn, run_id, "reviewing", rnd=rnd, ok=ok, out=str(out),
+                 **({"stale": pending["stale"]} if "stale" in pending else {}))
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
         if pending.get("phase") == "addressing":
             verdict = pending["verdict"]
         else:
-            round_started = int(time() * 1000)
-            scope = scope_files(wt, ticket, base_sha, sha)
-            _record_mode(conn, run_id, mode, rnd)
-            with heartbeat_while(conn, run_id, beat_s):
-                verdict, decision, first_reply = _review_reply(project,
-                    f"You are a READ-ONLY code reviewer. Review commit {sha} using "
-                    f"{review_refs(run_id)[0]} as the frozen base and "
-                    f"{review_refs(run_id)[1]} as the candidate "
-                    "in this repo against the ticket below. The ticket is the "
-                    "contract, acceptance criteria included: a candidate that "
-                    "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
-                    f"{ticket}\n\n"
-                    + _verify_brief(verify_cmd, ok, out)
-                    + criteria_brief(criteria)
-                    + verified_brief(mode)
-                    + tests_brief(wt)
-                    + scope_brief(wt, ticket, base_sha, sha)
-                    + evidence_brief(project, wt, task_id,
-                                     ticket_template.parse(ticket).evidence_states)
-                    + "Do not modify anything. End your reply with exactly one "
-                    "line:\n"
-                    "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-                    "If REQUEST_CHANGES, list only concrete blockers.", wt,
-                    base_sha, sha, conn, run_id, run_agent=agent, review_round=rnd)
-            record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
-                         ok, out,
-                         started_at=round_started, criteria=criteria, root=wt,
-                         prior_reply=first_reply, scope=scope)
-            if decision == "MALFORMED":
-                reason = "reviewer returned no verdict line twice"
-                print(f"[holo2] round {rnd}: {reason}")
-                raise InfraFailure(f"{reason}; candidate preserved at {sha}",
-                                   "review_route")
-
-            unwitnessed = criteria_findings(verdict, criteria, wt, scope=scope)
-            if unwitnessed:
-                print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
-                      "witnessed; treating as REQUEST_CHANGES")
+            verdict, decision, unwitnessed = _review(
+                project, conn, run_id, task_id, wt, beat_s, base_sha, sha,
+                ticket, verify_cmd, criteria, mode, rnd, ok, out,
+                pending.get("stale", ()))
             if ok and not unwitnessed and decision == "APPROVE":
                 stop_if_requested(conn, run_id, "merge_gate")
                 ledger(conn, run_id, task_id, "round",
@@ -182,6 +207,11 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     out, verify_cmd, f"{head} and the review approved, so no "
                     f"fix round was run; branch {branch} preserved at "
                     f"{sha[:12]}"))
+            stale = stale_approvals(decision, unwitnessed) if ok else []
+            if stale:
+                pending = _rereview(conn, run_id, provider, task_id, branch,
+                                    sha, rnd, stale, pending, ok, out)
+                continue
 
         _check_run_cap(project, conn, run_id, budget_min, sha)
         boundary(conn, run_id, "addressing", rnd=rnd, ok=ok,

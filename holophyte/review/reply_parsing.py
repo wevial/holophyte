@@ -354,10 +354,21 @@ def _defines_in_class(lines, cls, name):
     return False if seen else None
 
 
+APPROVAL_RE = re.compile(r"\bapproval\s+at\s+([0-9a-f]{7,40})\b", re.I)
+
+
+def cited_approval(reply, root, sha):
+    cited = {subprocess.run(
+        ["git", "rev-parse", "--verify", "-q", f"{value}^{{commit}}"],
+        cwd=root, capture_output=True, text=True).stdout.strip()
+        for value in APPROVAL_RE.findall(reply)}
+    return (cited.pop(), sha) if len(cited) == 1 and "" not in cited else None
+
+
 def _approval_problems(note, references, approved_range):
     if not approved_range or not re.search(r"\bapproval\s+at\b", note, re.I):
         return None
-    hashes = re.findall(r"\bapproval\s+at\s+([0-9a-f]{7,40})\b", note, re.I)
+    hashes = APPROVAL_RE.findall(note)
     if not any(approved_range[0].lower().startswith(value.lower())
                for value in hashes):
         return ["prior approval must name the approved sha"]
