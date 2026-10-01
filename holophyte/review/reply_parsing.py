@@ -278,7 +278,8 @@ def _scan_witness(file, cls, name):
     if file.suffix == ".go" and "/" in name:
         return _scan_go_subtest(file.read_text(errors="replace"), name)
     if file.suffix != ".py":
-        return (None if name in file.read_text(errors="replace")
+        text = file.read_text(errors="replace")
+        return (None if any(spelling in text for spelling in _quoted_spellings(name))
                 else f'no test named "{name}"')
     lines = file.read_text(errors="replace").splitlines()
     if cls is None:
@@ -288,6 +289,11 @@ def _scan_witness(file, cls, name):
     if found is None:
         return f"no class {cls}"
     return None if found else f"no def {name} in class {cls}"
+
+
+def _quoted_spellings(name):
+    doubled = name.replace("\\", "\\\\")
+    return [name, *(doubled.replace(quote, "\\" + quote) for quote in "\"'`")]
 
 
 def _scan_go_subtest(text, name):
