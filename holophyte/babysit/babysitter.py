@@ -292,6 +292,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             sha, pushed_state = fix_checks_or_park(
                 replace(run, sha=sha), beat_s, pull, state, ticket, verify_cmd,
                 contracts, pass_no, reviewed, check_fix)
+            pull = replace(pull, awaited=check_fix.awaited)
             continue
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")

@@ -66,6 +66,7 @@ class PullRequest:
     name: str
     number: int
     url: str
+    awaited: tuple = ()
 
     @property
     def repo(self):
@@ -123,6 +124,7 @@ class PrState:
     pending_contexts: tuple = ()
     failed_checks: tuple = ()
     missing_checks: tuple = ()
+    awaiting: tuple = ()
 
 
 def origin_url(target):

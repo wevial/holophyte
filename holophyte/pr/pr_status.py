@@ -218,7 +218,7 @@ def pr_state(target, pull):
             runs += status_contexts_of(target, pull, first_page, graphql)
         except InfraFailure:
             runs = None
-    return _state_of(first_page, threads, runs, required)
+    return _state_of(first_page, threads, runs, required, pull.awaited)
 
 
 def _reopened(target, thread):
@@ -394,13 +394,14 @@ def _iso_ms(text):
     return int(parsed.timestamp() * 1000)
 
 
-def _state_of(node, threads, runs, required):
+def _state_of(node, threads, runs, required, awaited=()):
     commits = ((node.get("commits") or {}).get("nodes") or ())
     rollup = None
     if commits and isinstance(commits[-1], dict):
         rollup = ((commits[-1].get("commit") or {})
                   .get("statusCheckRollup") or {}).get("state")
-    checks = fold_checks(rollup, runs, required)
+    checks = fold_checks(rollup, runs, None if required is None
+                         else required + list(awaited))
     merge = node.get("mergeCommit") or {}
     mergeable = node.get("mergeable")
     return PrState(threads=tuple(threads), checks=checks,
@@ -419,7 +420,8 @@ def _state_of(node, threads, runs, required):
                                           and r.get("name")
                                           and r.get("status") != "completed"),
                    failed_checks=_failed_checks(runs),
-                   missing_checks=_missing_checks(runs, required))
+                   missing_checks=_missing_checks(runs, required),
+                   awaiting=_awaiting(runs, awaited))
 
 
 @dataclass(frozen=True)
@@ -447,6 +449,13 @@ def _missing_checks(runs, required):
     reported = {r.get("name") for r in runs if isinstance(r, dict)
                 and r.get("conclusion") != "expected"}
     return tuple(c for c in dict.fromkeys(required) if c not in reported)
+
+
+def _awaiting(runs, awaited):
+    completed = {r.get("name") for r in (runs or ()) if isinstance(r, dict)
+                 and r.get("status") == "completed"}
+    return tuple(name for name in awaited
+                 if runs is None or name not in completed)
 
 
 def _job_id(run):
