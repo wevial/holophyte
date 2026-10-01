@@ -52,7 +52,8 @@ those writing routes. A project with no store answers 503.
      "title": "The sweep frees a silent lease", "phase": "working",
      "started_ms": 1788450461675, "heartbeat_age_ms": 71989, "elapsed_ms": 72816,
      "working_ms": 61200, "work_started_ms": 1788450511675,
-     "agent_ms": 61200, "verify_ms": 0, "verify_started_ms": null,
+     "agent_ms": 61200, "verify_ms": 0, "run_count": 1,
+     "verify_started_ms": null,
      "time_box_ms": 1500000, "round": 0, "strikes": 0, "host": "writer-1",
      "stop_requested": null, "stop_action": null}
   ]
@@ -62,19 +63,26 @@ those writing routes. A project with no store answers 503.
 `runs` lists every live run in a sweepable phase. Ages are computed by the
 daemon against its own `now`, so a client compares one number to
 `thresholds.heartbeat_stale_ms` and never has to agree with the writer
-host about the time. `started_ms` is the run's start as epoch
-milliseconds; `round` is the review rounds recorded so far; `strikes` is
+host about the time. A row reports its ticket's chain of runs: every
+run of the ticket up to the live one since the ticket's last merged run,
+so a run sent back to the babysitter, parked on CI, paused or failed and
+requeued counts toward the live one. `run_count` is the number of runs in
+the chain, 1 for a first attempt. `started_ms` is the chain's first run's
+start as epoch milliseconds; `round` is the review rounds the live run
+has recorded so far; `strikes` is
 the sweep's tally for the run, 0 when it is not under suspicion.
 `ticket_url` is the ticket's page on the board (`tickets.url`), null when
 the store has none. `elapsed_ms` is wall time since `started_ms`.
-`working_ms` is the work the run has recorded plus, while a span of work
-is open, the time since that span began, null for a run whose work was
-never measured; `work_started_ms` is when the open span began, as epoch
+`working_ms` is the work the chain has recorded plus, while the live run's
+span of work is open, the time since that span began, null when no run of
+the chain had its work measured; `agent_ms` and `verify_ms` are summed over
+the chain the same way; `work_started_ms` is when the open span began, as epoch
 milliseconds, and null while no span is open,
 so a client interpolates work between polls only from `work_started_ms`
 and never from `elapsed_ms`. `agent_ms` is the part of `working_ms` the
-time box is judged against and `verify_ms` the rest, the time spent in the
-ticket's verify commands; `agent_ms` is null when `working_ms` is, and
+time box is read against and `verify_ms` the rest, the time spent in the
+ticket's verify commands (the supervisor's trip still judges the live
+run's own agent time, not the chain's); `agent_ms` is null when `working_ms` is, and
 `verify_ms` is null for a run recorded before the split, whose work all
 counts as `agent_ms`; `verify_started_ms` is set only while the open span is a
 verify, else null. `time_box_ms` is the box the run is counted
@@ -141,8 +149,10 @@ non-positive or non-integer limit is 400.
 ```json
 {"rows": [
   {"id": 312, "ticket": "KO-241", "title": "Run detail: files touched",
-   "rounds": 1, "findings": 2, "started_ms": 1788478449000,
-   "ended_ms": 1788478953000, "actual_min": 8.4, "estimate_min": 10.0,
+   "rounds": 1, "findings": 2, "started_ms": 1788478203000,
+   "ended_ms": 1788478953000, "actual_min": 8.4, "working_ms": 504000,
+   "agent_ms": 432000, "verify_ms": 72000, "wall_min": 12.5,
+   "run_count": 2, "turn_count": 3, "estimate_min": 10.0,
    "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
    "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
    "pr_url": "https://github.com/example/repo/pull/2170",
@@ -151,13 +161,28 @@ non-positive or non-integer limit is 400.
 ```
 
 Finished runs, newest end first, ordered by `ended_ms` descending then
-`id` descending. `outcome=merged` (the default) returns only merged runs;
-`outcome=all` returns every ended run. Each row includes `outcome` and
+`id` descending. A row is the run that closed its ticket's chain of runs:
+a run that merged, or the newest run of its ticket. A run that later runs
+of its ticket continue (sent back to the babysitter, parked on CI, paused,
+or failed and requeued) has no row of its own; its figures count in the
+row of the run that closed the chain. The chain runs from the run after
+the ticket's last earlier merged run through the closing run.
+`id`, `ended_ms`, `outcome`, `outcome_reason`, `merge_sha`, `pr_url` and
+`host` are the closing run's. `started_ms` is the chain's first run's
+start, and `wall_min` the minutes from it to `ended_ms`, CI waits and
+parks included. `working_ms`, `agent_ms`, `verify_ms` and `actual_min`
+(`working_ms` in minutes) are summed over the chain's runs, each null only
+when no run of the chain had its work measured; `rounds` is summed over
+the chain's runs. `run_count` is the number of runs in
+the chain and `turn_count` the number of agent turns `/runs/N/turns`
+lists, summed over them. `outcome=merged` (the default) returns only merged runs;
+`outcome=all` returns every run that closed its chain, whatever its
+outcome. Each row includes `outcome` and
 `outcome_reason` (the stored reason cut at 400 characters, null when absent).
 Any other `outcome` is 400 naming the parameter and its value. The console's
 Shipped view scrolls back over it grouped by day; the Board's "shipped
 today" is its first page. `findings` is the count of findings over the
-run's review rounds. `limit` defaults to 50 and is capped at 200; the
+chain's review rounds. `limit` defaults to 50 and is capped at 200; the
 body echoes the limit applied. `before=RUN_ID` answers the rows that
 ended before that run's end (ties broken by id), so a client pages by
 passing `next_before` back; `next_before` is the last row's id while

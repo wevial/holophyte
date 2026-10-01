@@ -263,8 +263,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                                 "file_ticket", "move_ticket",
                                                 "resolve_dependencies",
                                                 "ticket_problems"]),
-                                 # KO-457: persisted work boundaries and live read.
-                                 (store.working, ["agent_work", "effective_work",
+                                 # KO-457: persisted work boundaries and live read;
+                                 # HOLO-109: `chain_work`, a clock summed over a chain.
+                                 (store.working, ["agent_work", "chain_work",
+                                                  "effective_work",
                                                   "settle_work", "verify_work",
                                                   "working"]),
                                  # The run reads `store.read` re-exports.
@@ -278,6 +280,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "live_runs", "merged_runs",
                                                     "newest_run_id",
                                                     "recent_failed_runs",
+                                                    # HOLO-109: a run's chain
+                                                    # of its ticket's runs.
+                                                    "run_chains",
                                                     "run_snapshot",
                                                     "stranded_runs",
                                                     "toil_since"]),

@@ -124,7 +124,7 @@ class CommitUrlTests(ServeTestCase):
             set(by_sha[self.local]),
             {"id", "ticket", "ticket_url", "title", "rounds", "findings", "started_ms",
              "ended_ms", "actual_min", "working_ms", "agent_ms", "verify_ms",
-             "wall_min",
+             "wall_min", "run_count", "turn_count",
              "estimate_min", "merge_sha",
              "commit_url", "pr_url", "host", "outcome", "outcome_reason"})
 

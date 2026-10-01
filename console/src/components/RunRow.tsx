@@ -3,7 +3,7 @@ import { useRunDetail } from "../hooks/useRunDetail";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import type { ReactNode } from "react";
 import { isStale } from "../lib/derive";
-import { agentMs, boxClock, mergeLockNote } from "../lib/runs";
+import { agentMs, boxClock, chainNote, mergeLockNote } from "../lib/runs";
 import { formatDuration, formatSpan } from "../lib/format";
 import type { Run } from "../lib/types";
 import { PhasePill } from "./PhasePill";
@@ -73,7 +73,7 @@ export function RunRow({
           <PhasePill note={mergeLockNote(prDetail?.events)} phase={run.phase} pr_url={run.pr_url ?? prDetail?.run.pr_url} />
         </span>
         <span><TimeBoxBar label={boxClock(run)} elapsedMs={agentMs(run, sinceMs)} boxMs={run.time_box_ms} />
-          <span className="font-mono text-[12px] text-muted">wall {formatDuration(run.elapsed_ms + sinceMs)}</span></span>
+          <span className="font-mono text-[12px] text-muted" title="wall: first claim to now, CI waits and parks included">wall {formatDuration(run.elapsed_ms + sinceMs)}{chainNote(run.run_count)}</span></span>
         <span
           data-heartbeat={stale ? "stale" : "live"}
           className={`font-mono text-[12px] ${stale ? "font-semibold text-bad" : "text-ok-text"}`}

@@ -37,6 +37,13 @@ def verify_work(run, now=None):
     return run.verifyMs + _open_verify(run, now)
 
 
+def chain_work(clock, runs, now=None):
+    spans = [clock(run, now if run.endedAt is None else run.endedAt)
+             for run in runs]
+    spans = [span for span in spans if span is not None]
+    return sum(spans) if spans else None
+
+
 def settle_work(conn, run_id, now=None):
     now = int(time() * 1000) if now is None else now
     with transaction(conn):

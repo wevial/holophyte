@@ -17,6 +17,7 @@ export const runSchema = z.looseObject({
   verify_started_ms: z.number().nullable().optional(),
   time_box_ms: z.number().nullable(), host: z.string().nullable(), title: z.string().nullable().optional(),
   started_ms: z.number().optional(), round: z.number().optional(), strikes: z.number().optional(),
+  run_count: z.number().optional(),
 });
 
 // One window of the daemon's operator interventions per merged run;
