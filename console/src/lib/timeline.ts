@@ -32,6 +32,8 @@ export interface TimelineRun {
   pr_url?: string | null;
   rounds: { round?: number; started_ms: number; ended_ms: number | null }[];
   events?: RunEvent[];
+  /** Rounds the earlier runs of its chain recorded; this run's ordinals follow them. */
+  round_offset?: number;
 }
 
 const LABELS: Record<SegmentKind, string> = {
@@ -155,7 +157,7 @@ function fromEvents(run: TimelineRun, changes: RunEvent[], now: number): Segment
       // A named review may start before its row is recorded. Only unnamed
       // events can fall back to the rounds present at that time.
       const ordinal = named == null ? rounds.filter((entry) => entry.started_ms <= change.at).length : recorded + 1;
-      round = ordinal || undefined;
+      round = ordinal ? ordinal + (run.round_offset ?? 0) : undefined;
     }
     open = { kind, label, from: change.at, round, reason: change.summary };
   }
@@ -193,9 +195,10 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
   const end = run.ended_ms ?? now;
   const running = run.ended_ms == null;
   const rounds = [...run.rounds].sort((a, b) => a.started_ms - b.started_ms);
+  const offset = run.round_offset ?? 0;
   const out: Segment[] = [];
   const push = (kind: SegmentKind, from: number, to: number, round?: number) => {
-    if (to > from) out.push({ kind, label: LABELS[kind], from, to, round, running: false, width: 0 });
+    if (to > from) out.push({ kind, label: LABELS[kind], from, to, round: round == null ? round : round + offset, running: false, width: 0 });
   };
 
   let cursor = run.started_ms;
@@ -215,7 +218,7 @@ function fromRounds(run: TimelineRun, now: number): Segment[] {
 
   const kind = runningKind(run, openRound);
   const label = running ? phaseLabel(run.phase) : LABELS[kind];
-  const round = kind === "review" ? openIndex + 1 : kind === "fix" && rounds.length > 0 ? rounds.length : undefined;
+  const round = kind === "review" ? openIndex + 1 + offset : kind === "fix" && rounds.length > 0 ? rounds.length + offset : undefined;
   out.push({ kind, label, from: cursor, to: Math.max(cursor, end), round, running, width: 0 });
   return size(out, run, Math.max(end, cursor));
 }

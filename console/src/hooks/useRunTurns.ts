@@ -18,9 +18,14 @@ export const transcriptSchema = z.object({ entries: z.array(z.object({
   text: z.string(),
 }).strict()) }).strict();
 
-export function useRunTurns(base: string, id: number, polls: number, deps?: { fetch: Fetch }) {
+export type ChainTurns = { id: number; turns: RunTurnsBody["turns"] }[];
+
+/** The turns of each run in `runIds`, one `/runs/ID/turns` per run, keyed
+ *  by run `id`; a null `id` fetches nothing. */
+export function useRunTurns(base: string, id: number | null, runIds: number[], polls: number, deps?: { fetch: Fetch }) {
   return useRunResource(base, id, polls,
-    (base, id, fetch) => fetchJson(fetch, `${base}/runs/${id}/turns`, turnsSchema), deps);
+    (base, _id, fetch) => Promise.all(runIds.map(async (run) =>
+      ({ id: run, turns: (await fetchJson(fetch, `${base}/runs/${run}/turns`, turnsSchema)).turns }))), deps);
 }
 
 export function useTurnTranscript(base: string, runId: number, turnId: number | null, deps?: { fetch: Fetch }) {

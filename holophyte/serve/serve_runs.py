@@ -268,22 +268,19 @@ def run_detail(project, run_id, now=None):
         events = store.read.narrative_events(
             conn, run.id,
             detail_kinds=("implementer_output", "operator_note_consumed"))
+        chain = chain_detail(conn, run.id, now)
     finally:
         conn.close()
     merge = merge_config(project)
     live = run.endedAt is None
     scale = budget_scale(project)
-    clock = run.endedAt if not live else now
     return 200, {
         "run": {"id": run.id, "ticket": run.linearIdentifier,
                 "ticket_url": run.ticketUrl,
                 "title": run.title, "phase": run.phase,
                 "attempt": run.attempt, "started_ms": run.startedAt,
                 "ended_ms": run.endedAt, "outcome": run.outcome,
-                "elapsed_ms": clock - run.startedAt,
-                "working_ms": effective_work(run, clock),
-                "agent_ms": agent_work(run, clock),
-                "verify_ms": verify_work(run, clock),
+                **run_clocks(run, now),
                 "time_box_ms": (int(run.timeBoxMs * scale)
                                 if run.timeBoxMs else run.timeBoxMs),
                 "branch": run.branch, "host": json_host(project, run.host),
@@ -306,7 +303,38 @@ def run_detail(project, run_id, now=None):
                      for e in events if e.kind == "bot_finding"],
         "events": [{"at": e.at, "kind": e.kind, "summary": e.summary}
                    for e in events],
+        "chain": chain,
     }
+
+
+def run_clocks(run, now):
+    clock = now if run.endedAt is None else run.endedAt
+    return {"elapsed_ms": clock - run.startedAt,
+            "working_ms": effective_work(run, clock),
+            "agent_ms": agent_work(run, clock),
+            "verify_ms": verify_work(run, clock)}
+
+
+def chain_detail(conn, run_id, now):
+    from holophyte.agents.transcripts import turns
+    runs = [store.read.run_detail(conn, link.id)
+            for link in store.read.run_chains(conn, [run_id])[run_id]]
+    end = now if runs[-1].endedAt is None else runs[-1].endedAt
+    return {"started_ms": runs[0].startedAt,
+            "elapsed_ms": end - runs[0].startedAt,
+            "working_ms": chain_work(effective_work, runs, now),
+            "agent_ms": chain_work(agent_work, runs, now),
+            "verify_ms": chain_work(verify_work, runs, now),
+            "runs": [{"id": run.id, "attempt": run.attempt,
+                      "outcome": run.outcome, "phase": run.phase,
+                      "started_ms": run.startedAt, "ended_ms": run.endedAt,
+                      **run_clocks(run, now),
+                      "max_rounds": run.reviewRoundCap or MAX_ROUNDS,
+                      "turn_count": len(turns(turn_events(conn, run.id))),
+                      "rounds": [{"round": r.round, "verdict": r.verdict,
+                                  "reviewer_model": r.reviewerModel}
+                                 for r in store.read.rounds_of(conn, run.id)]}
+                     for run in runs]}
 
 
 def split_instructions(findings, bot_logins=MERGE_KEYS["bot_authors"]):

@@ -883,3 +883,92 @@ test("the header shows the implementer and reviewer the run's turns used as chip
   expect(chips(unreviewed)).toEqual(["Implementer Claude · Opus"]);
   expect(unreviewed.textContent).not.toContain("Reviewer");
 });
+
+type ChainEntry = NonNullable<RunDetailBody["chain"]>["runs"][number];
+
+/** A chain run as `/runs/N` lists it: ended at `ended_ms`, or live when null. */
+const chainEntry = (id: number, started_ms: number, ended_ms: number | null, fields: Partial<ChainEntry> = {}): ChainEntry => ({
+  id, attempt: 1, outcome: ended_ms == null ? null : "abandoned", phase: ended_ms == null ? "reviewing" : "done",
+  started_ms, ended_ms, elapsed_ms: (ended_ms ?? T + 40 * MINUTE) - started_ms,
+  working_ms: 0, agent_ms: 0, verify_ms: 0, max_rounds: 2, turn_count: 0, rounds: [], ...fields,
+});
+
+const chainOf = (runs: ChainEntry[]): NonNullable<RunDetailBody["chain"]> => ({
+  started_ms: runs[0]!.started_ms, elapsed_ms: 0, working_ms: 0, agent_ms: 0, verify_ms: 0, runs,
+});
+
+/** A HOLO-108-shaped chain: run 89 recorded seven turns, run 90 none, then run 91 merged. */
+async function mountSentBackChain(requested: string[]) {
+  const merged = { ...DETAIL, run: { ...DETAIL.run, phase: "done", outcome: "merged", ended_ms: T + 30 * MINUTE } };
+  const body = { ...merged, chain: chainOf([
+    chainEntry(89, T - 60 * MINUTE, T - 55 * MINUTE, { turn_count: 7 }),
+    chainEntry(90, T - 10 * MINUTE, T - 5 * MINUTE),
+    chainEntry(91, T, T + 30 * MINUTE, { outcome: "merged" }),
+  ]) };
+  const turn = (id: number) => ({ id, role: "implement", label: null, route: "primary", seconds: 60, session_id: `session-${id}` });
+  const fetch: Fetch = async (url) => {
+    requested.push(url);
+    if (url.endsWith("/runs/89/turns")) return Response.json({ turns: [1, 2, 3, 4, 5, 6, 7].map(turn) });
+    if (url.endsWith("/runs/90/turns")) return Response.json({ turns: [] });
+    if (url.endsWith("/transcript")) return Response.json({ entries: [{ speaker: "user", text: "Run 89's turn." }] });
+    return answering(body)(url);
+  };
+  render(<RunDetail base={BASE} id={91} now={T + 30 * MINUTE} polls={1} deps={{ fetch }} />);
+  return within(await screen.findByRole("region", { name: "Turns" }));
+}
+
+test("Turns lists each chain run's turns under a header naming its run, outcome and wall", async () => {
+  const turns = await mountSentBackChain([]);
+  await turns.findByRole("region", { name: "run 89 turns" });
+  const groups = [89, 90, 91].map((id) => turns.getByRole("region", { name: `run ${id} turns` }));
+  expect(groups.map((group) => group.querySelector("h4")!.textContent)).toEqual([
+    "Run 89 · abandoned · wall 5m", "Run 90 · abandoned · wall 5m", "Run 91 · merged · wall 30m",
+  ]);
+  expect(groups.map((group) => within(group).queryAllByRole("listitem").length)).toEqual([7, 0, 0]);
+  expect(groups.map((group) => within(group).queryByText("No recorded turns.") != null)).toEqual([false, true, true]);
+});
+
+test("a chain run's transcript opens through that run's id", async () => {
+  const requested: string[] = [];
+  const turns = await mountSentBackChain(requested);
+  const first = await turns.findByRole("region", { name: "run 89 turns" });
+  fireEvent.click(within(first).getAllByRole("link", { name: "Open transcript" })[0]!);
+  await screen.findByText("Run 89's turn.");
+  expect(requested.filter((url) => url.endsWith("/transcript"))).toEqual([`${BASE}/runs/89/turns/1/transcript`]);
+});
+
+test("a requeue chain adds each run's reviews and caps", async () => {
+  const reviews = (n: number) => [1, 2].map((round) => ({ round, verdict: "changes_requested", reviewer_model: `reviewer-${n}` }));
+  await mount({ ...DETAIL, chain: chainOf([
+    chainEntry(89, T - 60 * MINUTE, T - 30 * MINUTE, { outcome: "failed", rounds: reviews(1) }),
+    chainEntry(91, T, null, { rounds: reviews(2) }),
+  ]) }, T + 20 * MINUTE);
+  expect(screen.getByText(/^Review \d+ of \d+/).textContent).toStartWith("Review 4 of 4");
+});
+
+test("a live chain's header reads the summed agent time, the box less it and the wall from the first run's start", async () => {
+  const live = { ...DETAIL.run, started_ms: T + 30 * MINUTE, time_box_ms: 60 * MINUTE,
+    working_ms: 0, agent_ms: 0, verify_ms: 0, work_started_ms: null };
+  await mount({ ...DETAIL, run: live, chain: { ...chainOf([
+    chainEntry(89, T, T + 20 * MINUTE, { working_ms: 5 * MINUTE, agent_ms: 5 * MINUTE }),
+    chainEntry(91, T + 30 * MINUTE, null),
+  ]), working_ms: 5 * MINUTE, agent_ms: 5 * MINUTE } }, T + 40 * MINUTE);
+  expect(document.querySelector("[data-box]")!.textContent).toBe("55m 00s left in working box · wall 40m 00s · 2 runs");
+  expect(document.querySelector("[data-clocks]")!.textContent).toBe("agent 5m 00s · verify 0s");
+});
+
+test("a continued run's timeline is captioned with its run and numbers its rounds after the chain's earlier ones", async () => {
+  const earlier = [1, 2, 3].map((round) => ({ round, verdict: "changes_requested", reviewer_model: "codex-astra-high" }));
+  const own = ["github:ci", "github:ci", "github:ci", "mechanical:main-refresh"].map((reviewer_model, i) => ({
+    ...DETAIL.rounds[0]!, round: i + 1, reviewer_model,
+    started_ms: T + (4 * i + 2) * MINUTE, ended_ms: T + (4 * i + 4) * MINUTE,
+  }));
+  await mount({ ...DETAIL, rounds: own, chain: chainOf([
+    chainEntry(89, T - 60 * MINUTE, T - 30 * MINUTE, { rounds: earlier, max_rounds: 3 }),
+    chainEntry(91, T, null, { rounds: own.map(({ round, verdict, reviewer_model }) => ({ round, verdict, reviewer_model: reviewer_model! })) }),
+  ]) }, T + 20 * MINUTE);
+  expect(document.querySelector("[data-timeline-caption]")!.textContent).toBe("Run 91");
+  const reviews = within(screen.getByRole("list", { name: "Round timeline" }))
+    .getAllByRole("img").filter((segment) => segment.getAttribute("data-segment") === "review");
+  expect(reviews[0]!.getAttribute("aria-label")).toBe("Review · Round 4 2m 00s");
+});
