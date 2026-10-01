@@ -30,7 +30,8 @@ const NOT_A_REVIEWER = /^(github|mechanical):/;
 /** Count independent reviews against their cap; other rounds have no review
  *  budget. Each run of the chain is counted by its own reviewer, the model
  *  of its first round no bot or mechanical step ran, and its cap counts only
- *  when it had a review. */
+ *  when it had a review. A babysitter's covering reviews may run past the
+ *  cap, which then reads as the reviews done. */
 export function roundLine(body: RunDetailBody): string {
   const runs = body.chain?.runs ?? [{ rounds: body.rounds, max_rounds: body.run.max_rounds }];
   let reviews = 0;
@@ -42,7 +43,7 @@ export function roundLine(body: RunDetailBody): string {
       round => round.reviewer_model === reviewer.reviewer_model && round.verdict !== "error").length;
     reviews += own;
     other += run.rounds.length - own;
-    if (own > 0) cap += run.max_rounds ?? own;
+    if (own > 0) cap += Math.max(run.max_rounds ?? own, own);
   }
   const max = reviews > 0 ? cap : body.run.max_rounds ?? 0;
   return `Review ${reviews} of ${max}${other ? ` · ${other} other rounds` : ""} · ${phaseLabel(body.run.phase, body.run.pr_url)}`;

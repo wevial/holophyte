@@ -920,7 +920,7 @@ async function mountSentBackChain(requested: string[]) {
 test("Turns lists each chain run's turns under a header naming its run, outcome and wall", async () => {
   const turns = await mountSentBackChain([]);
   await turns.findByRole("region", { name: "run 89 turns" });
-  const groups = [89, 90, 91].map((id) => turns.getByRole("region", { name: `run ${id} turns` }));
+  const groups = turns.getAllByRole("region", { name: /^run \d+ turns$/ });
   expect(groups.map((group) => group.querySelector("h4")!.textContent)).toEqual([
     "Run 89 · abandoned · wall 5m", "Run 90 · abandoned · wall 5m", "Run 91 · merged · wall 30m",
   ]);
@@ -944,6 +944,19 @@ test("a requeue chain adds each run's reviews and caps", async () => {
     chainEntry(91, T, null, { rounds: reviews(2) }),
   ]) }, T + 20 * MINUTE);
   expect(screen.getByText(/^Review \d+ of \d+/).textContent).toStartWith("Review 4 of 4");
+});
+
+test("a run whose covering reviews ran past its cap counts them against a cap no lower than its reviews", async () => {
+  const covering = [1, 2, 3].map((round) => ({ ...DETAIL.rounds[0]!, round, verdict: "changes_requested", reviewer_model: "reviewer" }));
+  const merge_gate = { ...DETAIL.run, phase: "merge_gate", pr_url: "https://example/pr/1", max_rounds: 2 };
+  await mount({ ...DETAIL, run: merge_gate, rounds: covering }, T + 20 * MINUTE);
+  expect(screen.getByText(/^Review \d+ of \d+/).textContent).toStartWith("Review 3 of 3");
+  cleanup();
+  await mount({ ...DETAIL, run: merge_gate, rounds: covering, chain: chainOf([
+    chainEntry(89, T - 60 * MINUTE, T - 30 * MINUTE, { rounds: covering.slice(0, 1).map(({ round, verdict }) => ({ round, verdict, reviewer_model: "reviewer" })) }),
+    chainEntry(91, T, null, { rounds: covering.map(({ round, verdict }) => ({ round, verdict, reviewer_model: "reviewer" })) }),
+  ]) }, T + 20 * MINUTE);
+  expect(screen.getByText(/^Review \d+ of \d+/).textContent).toStartWith("Review 4 of 5");
 });
 
 test("a live chain's header reads the summed agent time, the box less it and the wall from the first run's start", async () => {
