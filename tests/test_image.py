@@ -101,10 +101,10 @@ class ReviewerCodexTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not shutil.which("docker"):
-            raise unittest.SkipTest("Docker absent")
+            raise AssertionError("HOLOPHYTE_TEST_DOCKER=1 but docker is not on PATH")
         cls.codex = shutil.which("codex")
         if not cls.codex:
-            raise unittest.SkipTest("Codex absent")
+            raise AssertionError("HOLOPHYTE_TEST_DOCKER=1 but codex is not on PATH")
         review_runner._ensure_image(
             review_runner.IMAGE, review_runner.DOCKERFILE.read_text(),
             candidate="working tree")
