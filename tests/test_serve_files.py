@@ -144,6 +144,63 @@ class PendingRunFilesTests(ServeTestCase):
             "run": self.run})
 
 
+class RemoteMainMergedFilesTests(ServeTestCase):
+    """The base accounts for `origin/main`: main's commits merged into the
+    branch from the remote, while the local main lags, are not listed."""
+
+    BRANCH = "task/ko-7-ticket-7"
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(["git", *GIT_IDENTITY, *args],
+                              cwd=cwd or self.target, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def setUp(self):
+        super().setUp()
+        origin = self.root / "origin.git"
+        self.git("init", "-q", "--bare", "-b", "main", str(origin))
+        self.git("init", "-q", "-b", "main")
+        (self.target / "base.txt").write_text("base\n")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "base")
+        self.git("remote", "add", "origin", str(origin))
+        self.git("push", "-q", "origin", "main")
+        self.seed()
+        self.project = holophyte.config.project.Project.locate(self.target)
+        self.wt = holophyte.config.project.worktree_path(self.project, self.BRANCH)
+        self.git("worktree", "add", "-q", "--detach", str(self.wt), "main")
+        self.git("checkout", "-q", "-b", self.BRANCH, cwd=self.wt)
+        (self.wt / "own.txt").write_text("own\n")
+        self.git("add", "own.txt", cwd=self.wt)
+        self.git("commit", "-q", "-m", "own", cwd=self.wt)
+        other = self.root / "other"
+        self.git("clone", "-q", str(origin), str(other), cwd=self.root)
+        (other / "other.txt").write_text("other\n")
+        self.git("add", "other.txt", cwd=other)
+        self.git("commit", "-q", "-m", "other", cwd=other)
+        self.git("push", "-q", "origin", "main", cwd=other)
+        self.git("fetch", "-q", "origin")
+        self.git("merge", "-q", "--no-edit", "origin/main", cwd=self.wt)
+        with store.open(str(self.db)) as conn:
+            store.set_branch(conn, self.run, self.BRANCH)
+        self.start()
+
+    def listed(self):
+        code, _headers, body = self.request("GET", f"/runs/{self.run}/files")
+        self.assertEqual(code, 200, body)
+        return [f["path"] for f in body["files"]]
+
+    def test_live_worktree_lists_only_the_branch_own_path(self):
+        self.assertNotEqual(self.git("rev-parse", "refs/heads/main"),
+                            self.git("rev-parse", "refs/remotes/origin/main"))
+        self.assertEqual(self.listed(), ["own.txt"])
+
+    def test_kept_branch_without_worktree_lists_only_its_own_path(self):
+        shutil.rmtree(self.wt)
+        self.git("worktree", "prune")
+        self.assertEqual(self.listed(), ["own.txt"])
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()

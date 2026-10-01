@@ -320,23 +320,28 @@ pull request the run opened, each null when there is none.
 The files a run touched, read from git: what the console's "files
 touched" panel shows under a run. The store holds only the run's branch,
 recorded the moment the loop cuts its worktree, and, once it landed, its
-merge commit; the daemon resolves those to a commit range and runs
-`git diff --numstat` and `git diff --name-status` over it, each under a
+merge commit; the daemon resolves those to a commit range and runs `git
+diff --numstat` and `git diff --name-status` over it, each under a
 timeout, so the answer is what git says today, not a snapshot. For a
-merged run (a recorded `merge_sha`) the range is the merge commit's first
-parent to the merge commit in the project's checkout: exactly what the
-`--no-ff` landing added to main, whether or not the branch still exists.
-For a live run, one whose branch still has its worktree beside the
-project, the diff is taken inside that worktree from the merge base of
-`main` and its HEAD to the working tree: commits and uncommitted edits
-together, untracked files listed as added, so the panel fills in as the
-implementer works, and a worktree with nothing changed yet answers an
-empty `files` with 200. For a run whose branch survives without a
-worktree it is the merge base of `main` and the branch to the branch head
-in the checkout: what the branch has that main does not, unaffected by
-what main gained since. `base` and `head` are the full shas the range
-resolved to; for a live run `head` is the worktree's HEAD, and the edits
-beyond it are in the counts.
+merged run (a recorded `merge_sha`) the range is the merge commit's
+first parent to the merge commit in the project's checkout: exactly what
+the `--no-ff` landing added to main, whether or not the branch still
+exists. For a live run, one whose branch still has its worktree beside
+the project, the diff is taken inside that worktree from the merge base
+of its HEAD with the newer of `main` and `origin/main` to the working
+tree: commits and uncommitted edits together, untracked files listed as
+added, so the panel fills in as the implementer works, and a worktree
+with nothing changed yet answers an empty `files` with 200. For a run
+whose branch survives without a worktree it is the merge base of the
+branch with the newer of `main` and `origin/main` to the branch head in
+the checkout: what the branch has that main does not, unaffected by what
+main gained since, and not crediting the run with main's commits merged
+into the branch from `origin/main` before the local `main` caught up.
+With no `origin/main` in the repository the base is the merge base with
+`main` alone. The daemon fetches nothing; it reads only the refs already
+there. `base` and `head` are the full shas the range resolved to; for a
+live run `head` is the worktree's HEAD, and the edits beyond it are in
+the counts.
 
 `files` is sorted by path. `status` is `A` (added), `M` (modified), `D`
 (deleted) or `R` (renamed, listed under the new path); a binary file
