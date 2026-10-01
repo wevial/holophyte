@@ -14,6 +14,7 @@ from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture, StubProvider, a_task  # noqa: E402
 
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 
 RERUN = "repos/example/repo/actions/runs/77/rerun-failed-jobs"
 JOB = "https://github.com/example/repo/actions/runs/77/job/"
@@ -107,11 +108,18 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
                                 provider=self.provider())
         return fake
 
-    def test_a_rerun_never_listed_waits_out_check_wait_sec_and_does_not_merge(self):
+    def test_a_rerun_never_listed_reads_pending_and_parks_unmerged(self):
         self.red_check(self.UNLISTED, rollup=None,
                        config="check_wait_sec = 60\nmissing_check_sec = 30\n")
+        folded, real = [], holophyte.pr.pr_status.pr_state
+        def pr_state(target, pull):
+            state = real(target, pull)
+            folded.extend([state.checks] if self.reruns() else [])
+            return state
+        self.enterContext(patch.object(holophyte.pr.pr_status, "pr_state", pr_state))
         self.loop_on_a_nap_clock()
         self.assertEqual(len(self.reruns()), 1)
+        self.assertEqual(folded, ["pending"] * 3)
         self.assertEqual(sum(self.naps), 60)
         self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
