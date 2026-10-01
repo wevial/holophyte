@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { formatSpan, formatTotal } from "../lib/format";
 import { phaseLabel } from "../lib/runs";
 import { segmentName, type Segment, type SegmentKind, type TimelineRun } from "../lib/timeline";
@@ -13,12 +13,65 @@ const FILLS: Record<SegmentKind, string> = {
   parked: "bg-warn",
 };
 
-/** Gap between bar items, in px; each item gives up its share of the
- *  gaps so that items plus gaps sum to exactly the bar's width. */
+/** Gap between bar items, in px, before `spacing` shrinks it for a bar too
+ *  narrow to hold every segment at its minimum. */
 export const GAP_PX = 3;
 
-const width = (share: number, gapsPx: number) =>
-  `calc(${Math.max(0, share * 100)}% - ${Math.max(0, share) * gapsPx}px)`;
+/** The narrowest a segment draws, so it stays hoverable and focusable. */
+const MIN_SEGMENT_PX = 6;
+
+/** A length of the bar as `pct`% of its width plus `px` pixels. */
+interface Length {
+  pct: number;
+  px: number;
+}
+
+const css = ({ pct, px }: Length) =>
+  pct === 0 ? `${px}px` : `calc(${pct}% ${px < 0 ? "-" : "+"} ${Math.abs(px)}px)`;
+
+/** The minimum segment width and the gap for `count` segments in a bar
+ *  `barPx` wide, shrunk together when every segment at the minimum plus the
+ *  gaps would overflow the bar. */
+function spacing(count: number, barPx: number): { minPx: number; gapPx: number } {
+  const needed = count * MIN_SEGMENT_PX + Math.max(0, count - 1) * GAP_PX;
+  const scale = barPx > 0 && needed > barPx ? barPx / needed : 1;
+  return { minPx: MIN_SEGMENT_PX * scale, gapPx: GAP_PX * scale };
+}
+
+/** Each segment's width in a bar `barPx` wide: a share that would draw
+ *  under `minPx` takes it and the rest split what is left by share. An
+ *  unmeasured bar draws plain shares. */
+function fitWidths(shares: number[], barPx: number, gapsPx: number, minPx: number): Length[] {
+  const pinned = new Set<number>();
+  for (let grew = barPx > 0; grew; ) {
+    const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
+    const room = barPx - gapsPx - pinned.size * minPx;
+    grew = false;
+    shares.forEach((share, index) => {
+      if (pinned.has(index) || (free > 0 && (share / free) * room >= minPx)) return;
+      pinned.add(index);
+      grew = true;
+    });
+  }
+  const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
+  const reserved = gapsPx + pinned.size * minPx;
+  return shares.map((share, index) => {
+    if (pinned.has(index)) return { pct: 0, px: minPx };
+    const part = free > 0 ? Math.max(0, share / free) : 0;
+    return { pct: part * 100, px: -part * reserved };
+  });
+}
+
+/** Each segment's centre along the bar, past the widths and gaps before it. */
+function centres(widths: Length[], gapPx: number): Length[] {
+  const out: Length[] = [];
+  let start: Length = { pct: 0, px: 0 };
+  for (const { pct, px } of widths) {
+    out.push({ pct: start.pct + pct / 2, px: start.px + px / 2 });
+    start = { pct: start.pct + pct, px: start.px + px + gapPx };
+  }
+  return out;
+}
 
 const shortLabel = (segment: Segment) =>
   segment.round != null ? segmentName(segment) : segment.kind === "fix" && segment.reason !== "fix" ? segment.label.replace(/^fix/, "rework") : segment.label;
@@ -26,8 +79,8 @@ const shortLabel = (segment: Segment) =>
 const description = (segment: Segment) =>
   `${segmentName(segment)} · ${formatTotal(segment.to - segment.from)}${segment.reason ? ` · ${segment.reason}` : ""}`;
 
-/** Proportional segments with share-based labels, reason tooltips and totals.
- * The remainder is unused time in the box; a running segment pulses. */
+/** Segments filling the bar by their share of the time spent, with
+ * share-based labels, reason tooltips and totals; a running segment pulses. */
 export function RoundTimeline({
   segments,
   run,
@@ -46,16 +99,22 @@ export function RoundTimeline({
   caption?: string;
 }) {
   const [active, setActive] = useState<number | null>(null);
-  const spent = segments.reduce((sum, segment) => sum + segment.width, 0);
-  const remainder = Math.max(0, 1 - spent);
-  const items = segments.length + (remainder > 0 ? 1 : 0);
-  const gapsPx = Math.max(0, items - 1) * GAP_PX;
-  const starts: number[] = [];
-  let cursor = 0;
-  for (const segment of segments) {
-    starts.push(cursor);
-    cursor += segment.width;
-  }
+  const [barPx, setBarPx] = useState(0);
+  const barRef = useRef<HTMLOListElement>(null);
+  useLayoutEffect(() => {
+    const element = barRef.current;
+    if (!element) return;
+    const measure = () => setBarPx(element.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const { minPx, gapPx } = spacing(segments.length, barPx);
+  const gapsPx = Math.max(0, segments.length - 1) * gapPx;
+  const widths = fitWidths(segments.map((segment) => segment.width), barPx, gapsPx, minPx);
+  const middles = centres(widths, gapPx);
   const totals = new Map<SegmentKind, number>();
   for (const segment of segments) {
     totals.set(segment.kind, (totals.get(segment.kind) ?? 0) + segment.to - segment.from);
@@ -73,7 +132,7 @@ export function RoundTimeline({
   return (
     <div data-timeline className="relative">
       {caption && <p data-timeline-caption className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{caption}</p>}
-      <ol aria-label="Round timeline" className="flex" style={{ gap: `${GAP_PX}px` }}>
+      <ol ref={barRef} aria-label="Round timeline" className="flex" style={{ gap: `${gapPx}px` }}>
         {segments.map((segment, index) => (
           <li
             key={index}
@@ -87,7 +146,7 @@ export function RoundTimeline({
             onFocus={() => setActive(index)}
             onBlur={() => setActive(null)}
             className="min-w-0 shrink-0"
-            style={{ width: width(segment.width, gapsPx) }}
+            style={{ width: css(widths[index]!) }}
           >
             <span
               aria-hidden="true"
@@ -98,18 +157,13 @@ export function RoundTimeline({
             </span>
           </li>
         ))}
-        {remainder > 0 && (
-          <li aria-hidden="true" data-segment="remaining" className="min-w-0 shrink-0" style={{ width: width(remainder, gapsPx) }}>
-            <span className="block h-[22px] rounded-[6px] bg-well" />
-          </li>
-        )}
       </ol>
       {hovered && (
         <div
           data-segment-tooltip
           role="tooltip"
           className="pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-button border border-line bg-rail px-2 py-[3px] font-mono text-[11px] text-rail-fg shadow-card"
-          style={{ left: `${(starts[active!]! + hovered.width / 2) * 100}%`, bottom: "calc(100% + 4px)" }}
+          style={{ left: css(middles[active!]!), bottom: "calc(100% + 4px)" }}
         >
           {description(hovered)}
         </div>
