@@ -18,7 +18,7 @@ from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.loop.pool_handoff import workers_on_previous_build  # noqa: F401
 from holophyte.loop.runs import MAX_ROUNDS
 from store.operator_notes import round_notes
-from store.working import agent_work, effective_work, verify_work
+from store.working import agent_work, chain_work, effective_work, verify_work
 
 # A `?`, `#`, `@`, `:` or space would ride into the link as a query,
 # fragment or credential.
@@ -183,23 +183,21 @@ def shipped(project, query=""):
         runs = store.read.finished_runs(
             conn, limit + 1, before,
             outcomes=None if outcome == "all" else ("merged",))
+        more = len(runs) > limit
+        runs = runs[:limit]
+        chains = store.read.run_chains(conn, [run.id for run in runs])
+        turn_counts = {run.id: chain_turns(conn, chains[run.id])
+                       for run in runs}
     finally:
         conn.close()
-    more = len(runs) > limit
-    runs = runs[:limit]
     origin = origin_web_url(project)
     return 200, {
         "rows": [{"id": run.id, "ticket": run.linearIdentifier,
-                  "ticket_url": run.ticketUrl,
-                  "title": run.title, "rounds": run.reviewRoundCount,
-                  "findings": run.findingCount,
-                  "started_ms": run.startedAt, "ended_ms": run.endedAt,
-                  "actual_min": (effective_work(run, run.endedAt) / 60000
-                                 if run.workingMs is not None else None),
-                  "working_ms": effective_work(run, run.endedAt),
-                  "agent_ms": agent_work(run, run.endedAt),
-                  "verify_ms": verify_work(run, run.endedAt),
-                  "wall_min": (run.endedAt - run.startedAt) / 60000,
+                  "ticket_url": run.ticketUrl, "title": run.title,
+                  **chain_figures(chains[run.id]),
+                  "ended_ms": run.endedAt,
+                  "wall_min": (run.endedAt - chains[run.id][0].startedAt) / 60000,
+                  "turn_count": turn_counts[run.id],
                   "estimate_min": (run.timeBoxMs / 60000
                                    if run.timeBoxMs else None),
                   "merge_sha": run.mergeSha,
@@ -213,6 +211,29 @@ def shipped(project, query=""):
         "next_before": runs[-1].id if more else None,
         "limit": limit,
     }
+
+
+def chain_figures(chain, now=None):
+    working = chain_work(effective_work, chain, now)
+    return {"rounds": sum(run.reviewRoundCount for run in chain),
+            "findings": sum(run.findingCount for run in chain),
+            "started_ms": chain[0].startedAt,
+            "actual_min": working / 60000 if working is not None else None,
+            "working_ms": working,
+            "agent_ms": chain_work(agent_work, chain, now),
+            "verify_ms": chain_work(verify_work, chain, now),
+            "run_count": len(chain)}
+
+
+def chain_turns(conn, chain):
+    from holophyte.agents.transcripts import turns
+    return sum(len(turns(turn_events(conn, run.id))) for run in chain)
+
+
+def turn_events(conn, run_id):
+    return conn.execute(
+        "SELECT seq, kind, payload FROM runEvents WHERE runId=? "
+        "AND kind IN ('agent_turn', 'agent_session') ORDER BY seq", (run_id,))
 
 
 def locate_run(project, text):
@@ -472,10 +493,7 @@ def run_turns(project, text):
         return failed
     conn = store.read.open_readonly(project.store_path)
     try:
-        rows = conn.execute(
-            "SELECT seq, kind, payload FROM runEvents WHERE runId=? "
-            "AND kind IN ('agent_turn', 'agent_session') ORDER BY seq", (run.id,))
-        body = json.dumps({"turns": turns(rows)})
+        body = json.dumps({"turns": turns(turn_events(conn, run.id))})
         return 200, json.loads(outbound(body, known_secrets(project.config())))
     finally:
         conn.close()

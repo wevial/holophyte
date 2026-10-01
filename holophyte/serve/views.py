@@ -14,7 +14,7 @@ from holophyte.host.supervisor import SWEEPABLE_PHASES
 from holophyte.pr.pr_status import PR_URL_RE
 from holophyte.serve.serve_levers import paused_item
 from holophyte.serve.serve_runs import json_host, no_store
-from store.working import agent_work, effective_work, verify_work
+from store.working import agent_work, chain_work, effective_work, verify_work
 
 # A failure that strands its ticket in flight stays past it: only the
 # operator will move that ticket.
@@ -29,6 +29,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
     conn = store.read.open_readonly(project.store_path)
     try:
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
+        chains = store.read.run_chains(conn, [run.id for run in runs])
         from holophyte.loop.stop import pending_requests
         stops = pending_requests(conn)
         strikes = {run.id: store.read.strike(conn, run.id) for run in runs}
@@ -69,13 +70,14 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                   "phase": run.phase,
                   "stop_requested": stops.get(run.id, (None, None))[1],
                   "stop_action": stops.get(run.id, (None, None))[0],
-                  "started_ms": run.startedAt,
+                  "started_ms": chains[run.id][0].startedAt,
                   "heartbeat_age_ms": now - run.lastHeartbeat,
-                  "elapsed_ms": now - run.startedAt,
-                  "working_ms": effective_work(run, now),
+                  "elapsed_ms": now - chains[run.id][0].startedAt,
+                  "working_ms": chain_work(effective_work, chains[run.id], now),
                   "work_started_ms": run.workStartedAt,
-                  "agent_ms": agent_work(run, now),
-                  "verify_ms": verify_work(run, now),
+                  "agent_ms": chain_work(agent_work, chains[run.id], now),
+                  "verify_ms": chain_work(verify_work, chains[run.id], now),
+                  "run_count": len(chains[run.id]),
                   "verify_started_ms": run.verifyStartedAt,
                   "time_box_ms": (int(run.timeBoxMs * scale)
                                   if run.timeBoxMs else run.timeBoxMs),

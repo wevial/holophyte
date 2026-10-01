@@ -55,7 +55,12 @@ export interface ShippedRow {
   /** The two parts of `working_ms`; absent on a daemon older than them. */
   agent_ms?: number | null;
   verify_ms?: number | null;
+  /** First claim to final end of the ticket's chain of runs. */
   wall_min?: number;
+  /** The chain's runs and the agent turns summed over them; absent on a
+   *  daemon that reports only the closing run. */
+  run_count?: number;
+  turn_count?: number;
   estimate_min: number | null;
   merge_sha: string | null;
   /** The merge commit's page on the repository's origin when the sha has

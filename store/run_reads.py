@@ -224,7 +224,8 @@ def finished_runs(conn, limit, before=None, outcomes=None):
             and not SQLITE_INT64_MIN <= before <= SQLITE_INT64_MAX):
         # No run has such an id, and binding it would raise OverflowError.
         return []
-    where = "r.endedAt IS NOT NULL"
+    where = ("r.endedAt IS NOT NULL AND (r.outcome = 'merged' OR r.id ="
+             " (SELECT MAX(x.id) FROM runs x WHERE x.ticketId = r.ticketId))")
     params = []
     if outcomes is not None:
         where += f" AND r.outcome IN ({', '.join('?' for _ in outcomes)})"
@@ -252,6 +253,42 @@ def finished_runs(conn, limit, before=None, outcomes=None):
                       workingMs=row[13], workStartedAt=row[14], ticketUrl=row[15],
                       verifyMs=row[16], verifyStartedAt=row[17])
             for row in rows]
+
+
+@dataclass(frozen=True)
+class ChainRun:
+    id: int
+    startedAt: int
+    endedAt: int | None
+    reviewRoundCount: int
+    findingCount: int
+    workingMs: int | None = None
+    workStartedAt: int | None = None
+    verifyMs: int | None = None
+    verifyStartedAt: int | None = None
+
+
+def run_chains(conn, run_ids):
+    run_ids = tuple(run_ids)
+    if not run_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT c.id, r.id, r.startedAt, r.endedAt,"
+        " CASE WHEN r.endedAt IS NULL THEN (SELECT COUNT(*) FROM reviewRounds rr"
+        "   WHERE rr.runId = r.id AND rr.verdict != 'error')"
+        " ELSE r.reviewRoundCount END,"
+        " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
+        "    FROM reviewRounds rr WHERE rr.runId = r.id),"
+        " r.workingMs, r.workStartedAt, r.verifyMs, r.verifyStartedAt"
+        " FROM runs c JOIN runs r ON r.ticketId = c.ticketId AND r.id <= c.id"
+        " AND NOT EXISTS (SELECT 1 FROM runs m WHERE m.ticketId = c.ticketId"
+        "   AND m.outcome = 'merged' AND m.id >= r.id AND m.id < c.id)"
+        f" WHERE c.id IN ({', '.join('?' * len(run_ids))})"
+        " ORDER BY c.id, r.id", run_ids).fetchall()
+    chains = {}
+    for row in rows:
+        chains.setdefault(row[0], []).append(ChainRun(*row[1:]))
+    return chains
 
 
 @dataclass(frozen=True)

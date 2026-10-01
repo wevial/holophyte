@@ -17,10 +17,12 @@ import {
   withinDays,
   type DayGroup,
 } from "../lib/shipped";
+import { chainNote } from "../lib/runs";
 import type { ShippedRow } from "../lib/types";
 import { PhasePill } from "./PhasePill";
 import { RunDetail } from "./RunDetail";
 
+const WALL_SPAN = "first claim to final end, CI waits and parks included";
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** Nine columns: the chevron, then the eight the headers name. */
@@ -152,11 +154,11 @@ function Row({
         <span className="font-mono text-[13px] text-body">{row.rounds}</span>
         <span className="font-mono text-[13px] text-body">{row.findings}</span>
         <span className="flex min-h-[52px] flex-col">
-          <span className="flex flex-col" title={agent ? "agent time against the box" : measured ? "working time against the box" : "wall time against the box (run predates the working clock)"}>
-            <span className="font-mono text-[11px] text-muted">{agent ? "agent" : measured ? "working" : "wall"}</span>
+          <span className="flex flex-col" title={agent ? "agent time against the box" : measured ? "working time against the box" : `wall time against the box (run predates the working clock): ${WALL_SPAN}`}>
+            <span className="font-mono text-[11px] text-muted">{agent ? "agent" : measured ? "working" : "wall"}{measured ? "" : chainNote(row.run_count)}</span>
             <ActualVsBox actualMin={agent ? row.agent_ms! / 60_000 : measured ? (row.actual_min ?? row.working_ms! / 60_000) : wallMin} estimateMin={row.estimate_min} />
           </span>
-          {measured && <span className="font-mono text-[11px] text-muted">wall {formatDuration(wallMin * 60_000)}</span>}
+          {measured && <span className="font-mono text-[11px] text-muted" title={`wall: ${WALL_SPAN}`}>wall {formatDuration(wallMin * 60_000)}{chainNote(row.run_count)}</span>}
         </span>
         <span onClick={(event) => event.stopPropagation()} className="flex items-baseline">
           {row.pr_url ? <PrLink url={row.pr_url} title={row.merge_sha} /> : <Sha row={row} />}

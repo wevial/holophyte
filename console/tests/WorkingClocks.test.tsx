@@ -58,6 +58,42 @@ test("working and wall clocks: Shipped measured and historical durations", () =>
   expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
 });
 
+test("chain wall: a Shipped row counts its runs beside the wall only when there are several", () => {
+  const row: ShippedRow = {
+    id: 1, ticket: "KO-458", title: "clocks", rounds: 1, findings: 0,
+    started_ms: 0, ended_ms: 3_120_000, actual_min: 4, working_ms: 240_000,
+    wall_min: 52, estimate_min: 10, merge_sha: null, commit_url: null,
+    host: "writer", project: "factory", run_count: 3,
+  };
+  const view = render(<ShippedTable rows={[row]} now={3_120_000} />);
+  expect(screen.getByText("wall 52m 0s · 3 runs")).toBeTruthy();
+  view.rerender(<ShippedTable rows={[{ ...row, run_count: 1 }]} now={3_120_000} />);
+  expect(screen.getByText("wall 52m 0s")).toBeTruthy();
+  view.rerender(<ShippedTable rows={[{ ...row, run_count: undefined }]} now={3_120_000} />);
+  expect(screen.getByText("wall 52m 0s")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("runs");
+});
+
+test("chain wall: a measured or historical Shipped wall's tooltip names its span", () => {
+  const row: ShippedRow = {
+    id: 1, ticket: "KO-458", title: "clocks", rounds: 1, findings: 0,
+    started_ms: 0, ended_ms: 3_120_000, actual_min: 4, working_ms: 240_000,
+    wall_min: 52, estimate_min: 10, merge_sha: null, commit_url: null,
+    host: "writer", project: "factory", run_count: 3,
+  };
+  const span = "first claim to final end, CI waits and parks included";
+  const view = render(<ShippedTable rows={[row]} now={3_120_000} />);
+  expect(screen.getByText("wall 52m 0s · 3 runs").getAttribute("title")).toContain(span);
+  view.rerender(<ShippedTable rows={[{ ...row, actual_min: null, working_ms: null, agent_ms: null }]} now={3_120_000} />);
+  const wall = screen.getByText("wall · 3 runs");
+  expect(wall.closest("[title]")?.getAttribute("title")).toContain(span);
+});
+
+test("chain wall: a live run counts its runs beside the wall", () => {
+  render(<RunRow {...props} run={{ ...run, run_count: 2 }} />);
+  expect(screen.getByText("wall 20m 0s · 2 runs")).toBeTruthy();
+});
+
 test("working and wall clocks: Board budget agrees with the run row", () => {
   const card = { key: "1", ticket: "KO-458", title: "clocks", project: "factory", status: "in_flight", run, strikesMax: 2 } as BoardCard;
   render(<TicketCard card={card} />);

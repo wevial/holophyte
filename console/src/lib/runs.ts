@@ -148,6 +148,12 @@ export function boxClock(run: { agent_ms?: number | null }): "agent" | "working"
   return run.agent_ms == null ? "working" : "agent";
 }
 
+/** The suffix a wall reading carries when its ticket's chain spans more
+ *  than one run; empty for a single run or a daemon that does not say. */
+export function chainNote(runCount?: number | null): string {
+  return runCount != null && runCount > 1 ? ` · ${runCount} runs` : "";
+}
+
 /** One-based ordinal among this run's recorded review rounds. */
 export function roundLabel(ordinal: number, cap?: number): string {
   return `Round ${ordinal}${cap == null ? "" : ` of ${cap}`}`;
