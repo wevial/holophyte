@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -90,3 +91,47 @@ class ImplementerImageTests(unittest.TestCase):
 
         self.assertEqual(code, 0, output)
         self.assertIn(f"<p>{marker}</p>", output)
+
+
+@unittest.skipUnless(
+    os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+    "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+)
+class ReviewerCodexTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("docker"):
+            raise unittest.SkipTest("Docker absent")
+        cls.codex = shutil.which("codex")
+        if not cls.codex:
+            raise unittest.SkipTest("Codex absent")
+        review_runner._ensure_image(
+            review_runner.IMAGE, review_runner.DOCKERFILE.read_text(),
+            candidate="working tree")
+
+    def run_codex(self, *argv):
+        """Codex in the reviewer's container, with the review's own mounts."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            auth = root / "auth.json"
+            auth.write_text("{}")
+            home, toolchain = review_runner._prepare_runtime(
+                root / "runtime", auth, Path(self.codex))
+            (root / "candidate").mkdir()
+            command = review_runner.container_command(
+                image=review_runner.IMAGE, workspace=root / "candidate",
+                reviewer_home=home, toolchain=toolchain,
+                name=f"holophyte-review-codex-{os.getpid()}", prompt="unused",
+                uid=os.getuid(), gid=os.getgid())
+            image = command.index(review_runner.IMAGE)
+            return subprocess.run(
+                [*command[:image + 1], "/opt/codex/bin/codex", *argv],
+                capture_output=True, text=True, timeout=120)
+
+    def test_pinned_codex_accepts_disabling_multi_agent(self):
+        result = self.run_codex("exec", "--disable", "multi_agent", "--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        result = self.run_codex("--disable", "multi_agent", "features", "list")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stdout, r"(?m)^multi_agent\s+\S+\s+false\s*$")
