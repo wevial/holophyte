@@ -29,37 +29,46 @@ interface Length {
 const css = ({ pct, px }: Length) =>
   pct === 0 ? `${px}px` : `calc(${pct}% ${px < 0 ? "-" : "+"} ${Math.abs(px)}px)`;
 
+/** The minimum segment width and the gap for `count` segments in a bar
+ *  `barPx` wide, shrunk together when every segment at the minimum plus the
+ *  gaps would overflow the bar. */
+function spacing(count: number, barPx: number): { minPx: number; gapPx: number } {
+  const needed = count * MIN_SEGMENT_PX + Math.max(0, count - 1) * GAP_PX;
+  const scale = barPx > 0 && needed > barPx ? barPx / needed : 1;
+  return { minPx: MIN_SEGMENT_PX * scale, gapPx: GAP_PX * scale };
+}
+
 /** Each segment's width in a bar `barPx` wide: a share that would draw
- *  under the minimum takes the minimum and the rest split what is left by
- *  share. An unmeasured bar draws plain shares. */
-function fitWidths(shares: number[], barPx: number, gapsPx: number): Length[] {
+ *  under `minPx` takes it and the rest split what is left by share. An
+ *  unmeasured bar draws plain shares. */
+function fitWidths(shares: number[], barPx: number, gapsPx: number, minPx: number): Length[] {
   const pinned = new Set<number>();
   for (let grew = barPx > 0; grew; ) {
     const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
-    const room = barPx - gapsPx - pinned.size * MIN_SEGMENT_PX;
+    const room = barPx - gapsPx - pinned.size * minPx;
     grew = false;
     shares.forEach((share, index) => {
-      if (pinned.has(index) || (free > 0 && (share / free) * room >= MIN_SEGMENT_PX)) return;
+      if (pinned.has(index) || (free > 0 && (share / free) * room >= minPx)) return;
       pinned.add(index);
       grew = true;
     });
   }
   const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
-  const reserved = gapsPx + pinned.size * MIN_SEGMENT_PX;
+  const reserved = gapsPx + pinned.size * minPx;
   return shares.map((share, index) => {
-    if (pinned.has(index)) return { pct: 0, px: MIN_SEGMENT_PX };
+    if (pinned.has(index)) return { pct: 0, px: minPx };
     const part = free > 0 ? Math.max(0, share / free) : 0;
     return { pct: part * 100, px: -part * reserved };
   });
 }
 
 /** Each segment's centre along the bar, past the widths and gaps before it. */
-function centres(widths: Length[]): Length[] {
+function centres(widths: Length[], gapPx: number): Length[] {
   const out: Length[] = [];
   let start: Length = { pct: 0, px: 0 };
   for (const { pct, px } of widths) {
     out.push({ pct: start.pct + pct / 2, px: start.px + px / 2 });
-    start = { pct: start.pct + pct, px: start.px + px + GAP_PX };
+    start = { pct: start.pct + pct, px: start.px + px + gapPx };
   }
   return out;
 }
@@ -102,9 +111,10 @@ export function RoundTimeline({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const gapsPx = Math.max(0, segments.length - 1) * GAP_PX;
-  const widths = fitWidths(segments.map((segment) => segment.width), barPx, gapsPx);
-  const middles = centres(widths);
+  const { minPx, gapPx } = spacing(segments.length, barPx);
+  const gapsPx = Math.max(0, segments.length - 1) * gapPx;
+  const widths = fitWidths(segments.map((segment) => segment.width), barPx, gapsPx, minPx);
+  const middles = centres(widths, gapPx);
   const totals = new Map<SegmentKind, number>();
   for (const segment of segments) {
     totals.set(segment.kind, (totals.get(segment.kind) ?? 0) + segment.to - segment.from);
@@ -122,7 +132,7 @@ export function RoundTimeline({
   return (
     <div data-timeline className="relative">
       {caption && <p data-timeline-caption className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{caption}</p>}
-      <ol ref={barRef} aria-label="Round timeline" className="flex" style={{ gap: `${GAP_PX}px` }}>
+      <ol ref={barRef} aria-label="Round timeline" className="flex" style={{ gap: `${gapPx}px` }}>
         {segments.map((segment, index) => (
           <li
             key={index}

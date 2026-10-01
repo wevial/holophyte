@@ -107,6 +107,23 @@ test("a widened short segment's tooltip centres on where it draws, past the wide
   expect(resolvePx(tooltip.style.left, 1000)).toBeCloseTo(tenth, 6);
 });
 
+test("40 equal segments in a 320 px bar too narrow for their minimums still fit it, the last tooltip centred on the last segment", () => {
+  const changes: [number, string][] = [[0, "claimed -> verifying: verify"]];
+  for (let index = 1; index < 40; index++) {
+    changes.push([60 * index, index % 2 ? "verifying -> reviewing: review" : "reviewing -> verifying: verify"]);
+  }
+  changes.push([2400, "reviewing -> done: merged"]);
+  const run = runOf(changes, T + 2400_000, "done");
+  const widths = drawnAt(320, <RoundTimeline segments={buildTimeline(run, T + 2400_000)} run={run} now={T + 2400_000} />);
+  expect(widths).toHaveLength(40);
+  const gap = Number.parseFloat(bar().style.gap);
+  expect(widths.every((px) => px > 0)).toBe(true);
+  expect(widths.reduce((sum, px) => sum + px, 0) + 39 * gap).toBeCloseTo(320, 3);
+  fireEvent.focusIn(segment(39));
+  const tooltip = document.querySelector("[data-segment-tooltip]") as HTMLElement;
+  expect(resolvePx(tooltip.style.left, 320)).toBeCloseTo(320 - widths[39]! / 2, 3);
+});
+
 test("each segment is a focusable img naming itself; hovering it floats the long name and duration, leaving hides it", () => {
   render(<RoundTimeline segments={SEGMENTS} run={LIVE} now={T + 30 * MINUTE} />);
   const first = segment(0);
