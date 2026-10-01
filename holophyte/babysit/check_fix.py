@@ -6,7 +6,7 @@ from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while, warn_on_run
 from holophyte.loop.stop import stop_if_requested
-from holophyte.pr import github
+from holophyte.pr import github, pr_status
 from holophyte.pr.pr_head import _just_pushed_state
 from holophyte.redact import safe_print as print
 
@@ -17,7 +17,7 @@ LOG_TAIL_LINES = 80
 class CheckFix:
     reran: bool = False
     fixed: bool = False
-    required: tuple = ()
+    awaited: tuple = ()
 
 
 def rerun_failed_jobs(target, pull, workflow_run_id):
@@ -52,9 +52,9 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     if group is None and not check_fix.reran and all(
             check.workflow_run_id for check in state.failed_checks):
         check_fix.reran = True
-        check_fix.required = tuple(dict.fromkeys(
+        check_fix.awaited = tuple(dict.fromkeys(
             check.name for check in state.failed_checks))
-        pull = replace(pull, required=check_fix.required)
+        pull = replace(pull, awaited=check_fix.awaited)
         state = _rerun_and_settle(run, beat_s, pull, state, reviewed)
         if not _red(state, run.sha):
             return run.sha, state
@@ -129,13 +129,15 @@ def _rerun_result(run, beat_s, pull, reviewed, names, rerun_jobs):
     wait = merge_config(run.project).check_wait_sec
     deadline = monotonic() + wait
     while True:
-        state = _settled_or_park(run.project, run.conn, run.run_id, beat_s,
-                                 pull, None, run.provider, run.task_id,
-                                 run.branch, run.sha, reviewed,
-                                 deadline=deadline)
-        stale = {check.job_id for check in state.failed_checks} & rerun_jobs
-        if not (_red(state, run.sha) and stale):
-            return state
+        with heartbeat_while(run.conn, run.run_id, beat_s):
+            state = pr_status.pr_state(run.project, pull)
+        if not _unreported(state, run.sha, rerun_jobs):
+            state = _settled_or_park(run.project, run.conn, run.run_id, beat_s,
+                                     pull, state, run.provider, run.task_id,
+                                     run.branch, run.sha, reviewed,
+                                     deadline=deadline)
+            if not _unreported(state, run.sha, rerun_jobs):
+                return state
         remaining = deadline - monotonic()
         if remaining <= 0:
             _park_on_pr(run.project, run.conn, run.run_id, run.provider,
@@ -147,7 +149,16 @@ def _rerun_result(run, beat_s, pull, reviewed, names, rerun_jobs):
             github.SLEEP(min(github.CHECK_POLL_S, remaining))
 
 
+def _unreported(state, sha, rerun_jobs):
+    stale = {check.job_id for check in state.failed_checks} & rerun_jobs
+    return _open(state, sha) and bool(
+        state.awaiting or (state.checks == "failure" and stale))
+
+
 def _red(state, sha):
-    return (state.checks == "failure" and not state.threads
-            and not state.merged and not state.closed
+    return state.checks == "failure" and _open(state, sha)
+
+
+def _open(state, sha):
+    return (not state.threads and not state.merged and not state.closed
             and state.mergeable != "CONFLICTING" and state.head_sha == sha)

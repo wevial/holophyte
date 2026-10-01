@@ -99,18 +99,25 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertIn("the rerun of unit did not report within 60s",
                       self.question())
 
-    def test_a_rerun_not_yet_listed_reads_pending_and_does_not_merge(self):
-        self.red_check(self.UNLISTED, rollup=None, config="check_wait_sec = 60\n")
+    def loop_on_a_nap_clock(self):
         clock = {"side_effect": lambda: sum(self.naps)}
         with patch("holophyte.babysit.babysitter.monotonic", **clock), \
                 patch("holophyte.babysit.check_fix.monotonic", **clock):
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                                 provider=self.provider())
+        return fake
+
+    def test_a_rerun_never_listed_waits_out_check_wait_sec_and_does_not_merge(self):
+        self.red_check(self.UNLISTED, rollup=None,
+                       config="check_wait_sec = 60\nmissing_check_sec = 30\n")
+        self.loop_on_a_nap_clock()
         self.assertEqual(len(self.reruns()), 1)
+        self.assertEqual(sum(self.naps), 60)
         self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("awaiting_merge_approval", None)])
-        self.assertIn("pending checks exceeded 60s", self.question())
+        self.assertIn("the rerun of unit did not report within 60s",
+                      self.question())
 
     def test_a_rerun_listed_red_after_an_unlisted_read_gets_the_fix_turn(self):
         self.red_check(self.UNLISTED, self.RERUN_RED, rollup=None,
@@ -125,11 +132,11 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual([v["sha"] for kind, v in self.api_calls()
                           if kind == "merge"], [fixed])
 
-    def test_a_rerun_listed_green_after_an_unlisted_read_merges(self):
-        self.red_check(self.UNLISTED, self.GREEN, rollup=None)
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                            provider=self.provider())
-        self.assertEqual(self.naps, [holophyte.pr.github.CHECK_POLL_S])
+    def test_a_rerun_listed_green_after_missing_check_sec_unlisted_merges(self):
+        self.red_check(self.UNLISTED, self.UNLISTED, self.GREEN, rollup=None,
+                       config="check_wait_sec = 120\nmissing_check_sec = 30\n")
+        fake = self.loop_on_a_nap_clock()
+        self.assertEqual(sum(self.naps), 60)
         self.assert_merged_without_a_fix_turn(fake)
 
     def test_a_check_still_red_after_its_rerun_gets_the_fix_turn(self):
