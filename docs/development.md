@@ -208,6 +208,9 @@ Each module, one line:
 - `holophyte/review/reproduce.py` — a reported defect the implementer could not
   reproduce (KO-657): the `OUTCOME: NOT_REPRODUCED` declaration, the
   evidence check in place of round 1, and the `not_reproduced` park.
+- `holophyte/review/skipped_tests.py` — the candidate's added test ids and
+  the runner summaries that show none of them ran on the base, with the
+  skip reasons and the fix-round brief asking for a runnable reproduction.
 - `holophyte/loop/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
 - `holophyte/config/locks.py` — the `Locks` protocol a `Project` carries as

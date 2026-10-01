@@ -15,7 +15,9 @@ from holophyte.loop.gates import MergeParked, RunFailure, run_verify, sh, with_b
 from holophyte.loop.runs import heartbeat_while, record_round, set_phase
 from holophyte.loop.stop import boundary, keep_route
 from holophyte.redact import safe_print as print
+from holophyte.review import skipped_tests
 from holophyte.review.reply_parsing import raw_finding
+from store.working import working
 
 DECLARATION = "OUTCOME: NOT_REPRODUCED"
 
@@ -149,6 +151,7 @@ def review_rounds(*args, resume=None):
     if "handed_on" in pending:
         return _hand_on(loop, frame, pending, pending["handed_on"])
     keep_route(frame.conn, frame.run_id, unreproduced=True)
+    headline = "not-reproduced evidence check FAIL"
     if pending.get("phase") == "addressing":
         ok, out = _verified(frame, 1, pending)
         set_phase(frame.conn, frame.run_id, "reviewing",
@@ -160,12 +163,19 @@ def review_rounds(*args, resume=None):
         ok, out = _verified(frame, 1, pending)
         if not ok:
             return _set_aside(loop, frame, 1, out)
-        reply, decision, started = _check(loop, frame, 1, ok, out)
-        _record(frame, 1, reply, decision, ok, out, started)
-        if decision == "PASS":
-            _park(frame)
-        reasons = _reasons(reply)
-    fixes, head = _fix(loop, frame, reasons, ok, out)
+        skipped = _skipped(frame, out)
+        if skipped:
+            headline = "new tests skipped on the base"
+            set_phase(frame.conn, frame.run_id, "reviewing",
+                      f"round 1: {headline}, no evidence check")
+            reasons = skipped_tests.brief(skipped)
+        else:
+            reply, decision, started = _check(loop, frame, 1, ok, out)
+            _record(frame, 1, reply, decision, ok, out, started)
+            if decision == "PASS":
+                _park(frame)
+            reasons = _reasons(reply)
+    fixes, head = _fix(loop, frame, reasons, ok, out, headline)
     return _second(loop, replace(frame, sha=head),
                    {"declared": declared(fixes)})
 
@@ -176,6 +186,9 @@ def _second(loop, frame, pending):
     ok, out = _verified(frame, 2, pending)
     if not ok:
         return _set_aside(loop, frame, 2, out)
+    if _skipped(frame, out):
+        return _hand_on(loop, frame, {"phase": "reviewing", "rnd": 2, "ok": ok,
+                                      "out": out})
     reply, decision, started = _check(loop, frame, 2, ok, out)
     if decision == "PASS":
         _record(frame, 2, reply, decision, ok, out, started)
@@ -227,6 +240,34 @@ def _set_aside(loop, frame, rnd, out):
                                   "ok": False, "out": out})
 
 
+def _skipped(frame, out):
+    rows = getattr(out, "results", None)
+    output = str(out) if rows is None else "\n".join(
+        row["output"] for row in rows if row["source"] == "ticket")
+    if not skipped_tests.skip_counts(output):
+        output = _rerun(frame, frame.verify_cmd)
+    added = skipped_tests.added_tests(frame.wt, frame.base_sha, frame.sha)
+    skipped = skipped_tests.skipped_on_base(
+        output, added, lambda command: _rerun(frame, command))
+    if not skipped:
+        return None
+    summary = ("the candidate's new tests were skipped where the evidence "
+               f"check runs: {', '.join(test for test, _ in skipped)}")
+    print(f"[holo2] {summary}")
+    if frame.conn is not None and frame.run_id is not None:
+        store.record_event(frame.conn, frame.run_id, "reproduce_skipped",
+                           summary, level="detail", payload=json.dumps(
+                               {"skipped": [{"test": test, "reason": reason}
+                                            for test, reason in skipped]}))
+    return skipped
+
+
+def _rerun(frame, command):
+    with working(frame.conn, frame.run_id, verify=True), \
+            heartbeat_while(frame.conn, frame.run_id, frame.beat_s):
+        return str(run_verify(command, frame.wt, project=frame.target)[1])
+
+
 def _check(loop, frame, rnd, ok, out):
     boundary(frame.conn, frame.run_id, "reviewing", rnd=rnd, ok=ok,
              out=str(out), declared=True)
@@ -276,7 +317,7 @@ def _record(frame, rnd, reply, decision, ok, out, started):
                  structured_findings=findings)
 
 
-def _fix(loop, frame, reasons, ok, out):
+def _fix(loop, frame, reasons, ok, out, headline):
     from holophyte.agents.fix_session import fix_turn
 
     loop._check_run_cap(frame.target, frame.conn, frame.run_id,
@@ -292,7 +333,7 @@ def _fix(loop, frame, reasons, ok, out):
     boundary(frame.conn, frame.run_id, "verifying", rnd=2,
              declared=declared(fixes))
     ledger(frame.conn, frame.run_id, frame.task_id, "round",
-           "Round 1: not-reproduced evidence check FAIL -> fix round\n"
+           f"Round 1: {headline} -> fix round\n"
            f"Evidence check:\n{reasons}\n\nImplementer response:\n{fixes}",
            frame.provider)
     head = sh(["git", "rev-parse", "HEAD"], cwd=frame.wt)
