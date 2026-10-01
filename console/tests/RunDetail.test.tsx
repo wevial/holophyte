@@ -897,7 +897,7 @@ const chainOf = (runs: ChainEntry[]): NonNullable<RunDetailBody["chain"]> => ({
   started_ms: runs[0]!.started_ms, elapsed_ms: 0, working_ms: 0, agent_ms: 0, verify_ms: 0, runs,
 });
 
-/** A HOLO-108-shaped chain: run 89 recorded seven turns, run 90 none, then run 91 merged. */
+/** A chain sent back twice: run 89 recorded seven turns, run 90 none, then run 91 merged. */
 async function mountSentBackChain(requested: string[]) {
   const merged = { ...DETAIL, run: { ...DETAIL.run, phase: "done", outcome: "merged", ended_ms: T + 30 * MINUTE } };
   const body = { ...merged, chain: chainOf([
