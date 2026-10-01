@@ -760,6 +760,25 @@ test("header excludes failed independent reviews from the review budget", async 
   expect(screen.getByText("Review 1 of 2 · 2 other rounds · reviewing")).toBeTruthy();
 });
 
+test("header counts each chain run's reviews by its own reviewer against the summed caps", async () => {
+  const roundsOf = (models: string[]) => models.map((reviewer_model, i) => ({
+    ...DETAIL.rounds[0]!, round: i + 1, verdict: "changes_requested", reviewer_model,
+  }));
+  const earlier = roundsOf(["codex-astra-high", "codex-astra-high", "codex-astra-high"]);
+  const own = roundsOf(["github:ci", "github:ci", "github:ci", "mechanical:main-refresh"]);
+  const chainRun = (id: number, rounds: typeof own, max_rounds: number) => ({
+    id, attempt: 1, outcome: null, phase: "reviewing", started_ms: T, ended_ms: null,
+    elapsed_ms: 0, working_ms: 0, agent_ms: 0, verify_ms: 0, max_rounds, turn_count: 0,
+    rounds: rounds.map(({ round, verdict, reviewer_model }) => ({ round, verdict, reviewer_model })),
+  });
+  await mount({
+    ...DETAIL, run: { ...DETAIL.run, max_rounds: 2 }, rounds: own,
+    chain: { started_ms: T, elapsed_ms: 0, working_ms: 0, agent_ms: 0, verify_ms: 0,
+      runs: [chainRun(89, earlier, 3), chainRun(91, own, 2)] },
+  }, T + 20 * MINUTE);
+  expect(screen.getByText(/^Review \d+ of \d+/).textContent).toStartWith("Review 3 of 3 · 4 other rounds");
+});
+
 test("finding summaries identify declined reasons and leave other verdicts unchanged", () => {
   for (const verdict of ["DECLINE", "ADDRESS", "FOLLOW_UP"]) {
     const { container, unmount } = render(<FindingCard finding={{ message: "original",
