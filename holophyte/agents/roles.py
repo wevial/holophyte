@@ -1,3 +1,4 @@
+import json
 import os
 import shlex
 import subprocess
@@ -128,22 +129,53 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                       session=requested_role == "implement")
 
         def launch():
-            return recorded_turn(project, requested_role, role, conn, run_id,
-                                 lambda: _agent(project, role, goal, cwd, **kwargs))
+            try:
+                return recorded_turn(
+                    project, requested_role, role, conn, run_id,
+                    lambda: _agent(project, role, goal, cwd, **kwargs))
+            except InfraFailure as failure:
+                record_review_boundary(conn, run_id, role, failure)
+                raise
         try:
             output = launch()
         except InfraFailure as failure:
-            if not (isinstance(failure.__cause__, review_runner.ReviewBoundaryError)
-                    and argv is None and container_fallback_profile(project, role)
-                    and activate_fallback(project, role, str(failure), conn, run_id)):
+            boundary = isinstance(failure.__cause__,
+                                  review_runner.ReviewBoundaryError)
+            if (boundary and argv is None
+                    and container_fallback_profile(project, role)):
+                if not activate_fallback(project, role, str(failure), conn,
+                                         run_id):
+                    raise
+                return launch()
+            if unreadable_output(role, failure) is None:
                 raise
-            return launch()
+            output = launch()
         command = getattr(output, "command", agent_route(project, role))
         reason = outage_reason(command, output)
         if (argv is None and reason
                 and activate_fallback(project, role, reason, conn, run_id)):
             return launch()
         return output
+
+
+def unreadable_output(role, failure):
+    cause = failure.__cause__
+    if (role == "review" and isinstance(cause, review_runner.ReviewBoundaryError)
+            and cause.line is not None):
+        return cause
+    return None
+
+
+def record_review_boundary(conn, run_id, role, failure):
+    error = unreadable_output(role, failure)
+    if error is None or conn is None or run_id is None:
+        return
+    import store
+    store.record_event(conn, run_id, "review_boundary",
+                       f"{role} turn output unreadable: {error}", level="detail",
+                       payload=json.dumps({"role": role, "line": error.line,
+                                           "tail": error.tail,
+                                           "exit_status": error.exit_status}))
 
 
 def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
