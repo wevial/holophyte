@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import monotonic
 
 import store
@@ -17,6 +17,7 @@ LOG_TAIL_LINES = 80
 class CheckFix:
     reran: bool = False
     fixed: bool = False
+    required: tuple = ()
 
 
 def rerun_failed_jobs(target, pull, workflow_run_id):
@@ -51,6 +52,9 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     if group is None and not check_fix.reran and all(
             check.workflow_run_id for check in state.failed_checks):
         check_fix.reran = True
+        check_fix.required = tuple(dict.fromkeys(
+            check.name for check in state.failed_checks))
+        pull = replace(pull, required=check_fix.required)
         state = _rerun_and_settle(run, beat_s, pull, state, reviewed)
         if not _red(state, run.sha):
             return run.sha, state

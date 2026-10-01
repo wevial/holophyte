@@ -392,7 +392,8 @@ class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
         reads = []
         def check_runs(target, pull, sha):
             reads.append(sha)
-            return [self.UNIT] if len(reads) == 1 else []
+            return ([self.UNIT] if len(reads) == 1
+                    else [dict(self.UNIT, id=43, conclusion="success")])
         self.enterContext(patch("holophyte.pr.pr_status._check_runs_of", check_runs))
         naps = []
         with patch.object(holophyte.pr.github, "SLEEP", naps.append):

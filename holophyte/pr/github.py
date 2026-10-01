@@ -66,6 +66,7 @@ class PullRequest:
     name: str
     number: int
     url: str
+    required: tuple = ()
 
     @property
     def repo(self):

@@ -239,7 +239,7 @@ def _check_reads(target, pull, sha):
     with contextlib.suppress(InfraFailure):
         required = _required_contexts(main_rules(target, pull))
     if required is not None:
-        required += _protected_contexts(target, pull)
+        required += _protected_contexts(target, pull) + list(pull.required)
     return runs, required
 
 
