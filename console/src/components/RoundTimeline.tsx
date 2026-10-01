@@ -13,8 +13,8 @@ const FILLS: Record<SegmentKind, string> = {
   parked: "bg-warn",
 };
 
-/** Gap between bar items, in px; each item gives up its share of the
- *  gaps so that items plus gaps sum to exactly the bar's width. */
+/** Gap between bar items, in px, before `spacing` shrinks it for a bar too
+ *  narrow to hold every segment at its minimum. */
 export const GAP_PX = 3;
 
 /** The narrowest a segment draws, so it stays hoverable and focusable. */
