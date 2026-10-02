@@ -58,7 +58,7 @@ class TargetLocksTests(unittest.TestCase):
                         store_path=located.store_path,
                         config_path=located.config_path,
                         worktrees=located.worktrees, locks=fake)
-        holophyte.loop.claim._refresh_main(target, run_id=42)
+        holophyte.loop.claim.refresh_main(target, run_id=42)
         self.assertEqual(fake.calls, [(42, "fetch before the cut", "working")])
         self.assertFalse(merge_lock_path(target).exists())
         self.assertFalse(target.holo_dir.exists())

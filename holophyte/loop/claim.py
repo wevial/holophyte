@@ -29,7 +29,7 @@ from holophyte.board.projection import (
     release_lease_label,
     store_status,
 )
-from holophyte.config.config_tables import sweep_config
+from holophyte.config.config_tables import merge_config, sweep_config
 from holophyte.config.project import worktree_path
 from holophyte.config.worktree_settings import branch_prefix
 from holophyte.environment_git import (
@@ -195,7 +195,7 @@ def _resolve_merge_conflict(project, conn, run_id, branch, wt, sha, conflicts,
 _UNREFRESHED = {}
 
 
-def _refresh_main(project, run_id=None, conn=None):
+def refresh_main(project, run_id=None, conn=None, before="the cut"):
     if "origin" not in sh(["git", "remote"], project.path).splitlines():
         return
 
@@ -205,11 +205,12 @@ def _refresh_main(project, run_id=None, conn=None):
 
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
     with project.locks.merge(conn, run_id, beat_s,
-                            operation="fetch before the cut", wait_phase="working"):
+                            operation=f"fetch before {before}",
+                            wait_phase="working"):
         fr = subprocess.run(["git", "fetch", "origin"], cwd=project.path,
                             capture_output=True, text=True)
         if fr.returncode != 0:
-            raise InfraFailure("git fetch origin failed before the cut:"
+            raise InfraFailure(f"git fetch origin failed before {before}:"
                                f" {fr.stderr.strip() or fr.stdout.strip()}")
         if subprocess.run(["git", "rev-parse", "--verify", "-q", "origin/main"],
                           cwd=project.path, capture_output=True).returncode != 0:
@@ -233,6 +234,17 @@ def _refresh_main(project, run_id=None, conn=None):
                        " other, so no branch was cut -- a person reconciles"
                        " the checkout with origin before this ticket is run"
                        " again")
+
+
+def refresh_before_filing(project, out):
+    if merge_config(project).mode != "pr":
+        return
+    try:
+        refresh_main(project, before="filing")
+    except (InfraFailure, RuntimeError) as failed:
+        reason = " ".join(str(failed).split())
+        print("[holo2] warning: main not brought up to date with origin,"
+              f" validating against the checkout as it is: {reason}", file=out)
 
 
 def _cut_worktree(project, conn, run_id, provider, task_id, task, branch, wt):
@@ -263,7 +275,7 @@ def _cut_worktree(project, conn, run_id, provider, task_id, task, branch, wt):
                f"FAILED to cut a fresh worktree for: {task}\n"
                f"{why}\nNothing was deleted.", provider)
         raise RunFailure(f"cannot cut a fresh worktree: {why}")
-    _refresh_main(project, run_id, conn)
+    refresh_main(project, run_id, conn)
     sh(["git", "worktree", "add", "--detach", str(wt), "main"], project.path)
     sh(["git", "checkout", "-b", branch], cwd=wt)
     return True
@@ -424,7 +436,7 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
 def _critic_admits(project, conn, project_id, provider, task):
     _UNREFRESHED.pop(task["id"], None)
     try:
-        _refresh_main(project, conn=conn)
+        refresh_main(project, conn=conn)
     except InfraFailure as e:
         freshness.WARNINGS.pop(task["id"], None)
         _UNREFRESHED[task["id"]] = e
