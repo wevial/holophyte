@@ -286,7 +286,8 @@ exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
     ]
     for mount in mounts:
         command.extend(["--volume", mount])
-    tier = [] if service_tier is None else [f'service_tier="{service_tier}"']
+    tier = [] if service_tier is None else [
+        f"service_tier={json.dumps(service_tier, ensure_ascii=False)}"]
     return command + [image, "/bin/sh", "-eu", "-c", preflight, "review", prompt,
                       model, f'model_reasoning_effort="{effort}"', *tier]
 

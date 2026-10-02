@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -155,12 +156,15 @@ class ReviewServiceTierTests(unittest.TestCase):
     def test_a_tier_with_quotes_and_metacharacters_reaches_codex_as_one_argument(
             self):
         mark = self.root / "shell-ran"
-        tier = f'fast" $(touch {mark}) `touch {mark}`; touch {mark} * \'x'
+        tier = (f'fast" # $(touch {mark}) `touch {mark}`; touch {mark} * \'x'
+                ' \\ \u00e9')
         self.configure(f"review_service_tier = {json.dumps(tier)}\n")
 
         argv = self.codex_argv()
 
-        self.assertIn(f'service_tier="{tier}"', argv)
+        override, = [arg for arg in argv if arg.startswith("service_tier=")]
+        self.assertEqual(argv[argv.index(override) - 1], "-c")
+        self.assertEqual(tomllib.loads(override), {"service_tier": tier})
         self.assertEqual(argv[-1], GOAL)
         self.assertFalse(mark.exists())
 
