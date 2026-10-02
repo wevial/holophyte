@@ -486,8 +486,10 @@ def serve(project, address, out=None, interval=CODE_CHECK_SEC):
                adopted=sock is not None)
 
 
-def run(server, description, out, interval, adopted=False):
-    watch = server.code_check = CodeWatch(interval, out, factory_revision)
+def run(server, description, out, interval, adopted=False, watch=None):
+    if watch is None:
+        watch = CodeWatch(interval, out, factory_revision)
+    server.code_check = watch
 
     # Raise, not `shutdown()`: that waits on the thread the signal interrupted.
     def on_signal(signum, _frame):

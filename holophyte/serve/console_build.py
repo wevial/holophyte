@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import ctypes
+import errno
 import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 STAMP = "source-tree"
 STEP_TIMEOUT_SEC = 300
 TAIL_LINES = 20
+# `AT_FDCWD` and `RENAME_EXCHANGE` from Linux's <fcntl.h>, `RENAME_SWAP`
+# from macOS's <stdio.h>.
+AT_FDCWD = -100
+RENAME_EXCHANGE = 2
+RENAME_SWAP = 2
 
 
 def bun_build(outdir):
@@ -63,35 +71,47 @@ def build_failure(commands, sources, timeout):
     return None
 
 
-def swap_in(staging, dist):
-    staging.chmod(0o755)
-    retired = Path(tempfile.mkdtemp(prefix=".dist-old-", dir=dist.parent))
-    previous = retired / dist.name
+def exchange(first, second):
+    libc = ctypes.CDLL(None, use_errno=True)
+    paths = os.fsencode(first), os.fsencode(second)
     try:
-        if dist.is_dir():
-            dist.rename(previous)
-        try:
-            staging.rename(dist)
-        except OSError:
-            if previous.is_dir() and not dist.exists():
-                previous.rename(dist)
-            raise
-    finally:
-        shutil.rmtree(retired, ignore_errors=True)
+        if sys.platform.startswith("linux"):
+            done = libc.renameat2(AT_FDCWD, paths[0], AT_FDCWD, paths[1],
+                                  RENAME_EXCHANGE)
+        elif sys.platform == "darwin":
+            done = libc.renamex_np(paths[0], paths[1], RENAME_SWAP)
+        else:
+            done, code = -1, errno.ENOSYS
+    except AttributeError:
+        done, code = -1, errno.ENOSYS
+    else:
+        code = ctypes.get_errno()
+    if done != 0:
+        raise OSError(code, f"exchanging {first} and {second}: "
+                            f"{os.strerror(code)}")
 
 
-def build_and_swap(sources, dist, commands, timeout):
+def build_and_swap(sources, dist, tree):
     staging = Path(tempfile.mkdtemp(prefix=".dist-", dir=sources))
     try:
-        failure = build_failure(commands(staging), sources, timeout)
-        if failure is None:
-            swap_in(staging, dist)
-        return failure
+        failure = build_failure(bun_build(staging), sources, STEP_TIMEOUT_SEC)
+        if failure is not None:
+            return failure
+        stamped = built_tree(staging)
+        if stamped != tree:
+            return (f"the build is stamped {stamped}, not the tree {tree} it"
+                    " started from", "")
+        staging.chmod(0o755)
+        if dist.is_dir():
+            exchange(staging, dist)
+        else:
+            staging.rename(dist)
+        return None
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
 
-def refresh_console(out, dist, commands=bun_build, timeout=STEP_TIMEOUT_SEC):
+def refresh_console(out, dist):
     dist = Path(dist)
     sources = dist.parent
     if not (sources / "package.json").is_file():
@@ -105,7 +125,7 @@ def refresh_console(out, dist, commands=bun_build, timeout=STEP_TIMEOUT_SEC):
     print(f"[holo2] console {was}, its sources are {tree}: building",
           file=out, flush=True)
     try:
-        failure = build_and_swap(sources, dist, commands, timeout)
+        failure = build_and_swap(sources, dist, tree)
     except OSError as bad:
         failure = f"staging the build failed: {bad}", ""
     if failure is not None:

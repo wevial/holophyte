@@ -5,9 +5,10 @@ import tailwind from "bun-plugin-tailwind";
 const here = new URL("./", import.meta.url).pathname;
 const publicDir = `${here}public/`;
 
-// Holds the git tree id of `console/` the bundle was built from; the host
-// daemon compares it with `HEAD:console` at startup and rebuilds on a
-// mismatch. Outside a git checkout there is no tree id and no stamp.
+// Holds the git tree id of `console/` the bundle was built from, read
+// before bundling and refused if it moved by the end; the host daemon
+// compares it with `HEAD:console` at startup and rebuilds on a mismatch.
+// Outside a git checkout there is no tree id and no stamp.
 export const STAMP = "source-tree";
 
 function sourceTree(): string | null {
@@ -45,6 +46,7 @@ function keepPublic(files: Set<string>): Bun.BunPlugin {
 // callers can report or inspect them; throws with the bundler's logs on
 // failure.
 export async function buildConsole(outdir: string = `${here}dist/`): Promise<string[]> {
+  const tree = sourceTree();
   const files = await publicFiles();
   const result = await Bun.build({
     entrypoints: [`${here}index.html`],
@@ -57,7 +59,10 @@ export async function buildConsole(outdir: string = `${here}dist/`): Promise<str
     throw new Error(result.logs.map((log) => String(log)).join("\n"));
   }
   await cp(publicDir, outdir, { recursive: true });
-  const tree = sourceTree();
+  const after = sourceTree();
+  if (after !== tree) {
+    throw new Error(`console/ moved from tree ${tree} to ${after} during the build; not stamped`);
+  }
   if (tree) await writeFile(`${outdir}${STAMP}`, `${tree}\n`);
   return [
     ...result.outputs.map((artifact) => artifact.path.slice(outdir.length)),
