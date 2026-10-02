@@ -37,9 +37,10 @@ def subcommand(argv):
 class GitError(subprocess.CalledProcessError):
     def __str__(self):
         text = "".join(
-            char if char.isprintable() else " " for char in (self.stderr or "")
+            char if char.isprintable() else " "
+            for char in (self.stderr or "")[-STDERR_TAIL:]
         )
-        tail = " ".join(text.split())[-STDERR_TAIL:]
+        tail = " ".join(text.split())
         return (
             f"git {subcommand(self.cmd)} exited with status {self.returncode}: "
             f"{tail or '(no stderr)'}"

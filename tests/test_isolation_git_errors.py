@@ -29,7 +29,8 @@ class IsolationGitErrorTests(unittest.TestCase):
         script = self.root / "noisy.sh"
         script.write_text(
             "printf 'HEAD-MARKER' >&2\n"
-            "head -c 9965 /dev/zero | tr '\\000' x >&2\n"
+            "head -c 9065 /dev/zero | tr '\\000' ' ' >&2\n"
+            "head -c 900 /dev/zero | tr '\\000' x >&2\n"
             "printf 'esc\\033tab\\there\\nTAIL-MARKER' >&2\n"
             "exit 3\n"
         )
@@ -37,12 +38,12 @@ class IsolationGitErrorTests(unittest.TestCase):
             git(self.repo, "-c", f"alias.noisy=!sh {script}", "noisy")
         self.assertEqual(len(caught.exception.stderr), 10000)
         message = str(caught.exception)
-        prefix = "git noisy exited with status 3: "
-        self.assertTrue(message.startswith(prefix), message)
-        tail = message[len(prefix):]
-        self.assertLessEqual(len(tail), 1000)
-        self.assertTrue(tail.endswith("xxesc tab here TAIL-MARKER"), tail[-40:])
-        self.assertNotIn("HEAD-MARKER", message)
+        self.assertEqual(
+            message,
+            "git noisy exited with status 3: "
+            + "x" * 900
+            + "esc tab here TAIL-MARKER",
+        )
         self.assertFalse(
             [char for char in message if ord(char) < 32 or ord(char) == 127]
         )
