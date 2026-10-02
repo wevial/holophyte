@@ -65,7 +65,7 @@ class StartupCheckTests(unittest.TestCase):
     def check(self, script):
         path = self.root / "build.py"
         path.write_text(script)
-        refresh_console(self.out, sources=self.sources,
+        refresh_console(self.out, self.dist,
                         commands=lambda outdir: (
                             (sys.executable, str(path), str(outdir),
                              str(self.runs)),))

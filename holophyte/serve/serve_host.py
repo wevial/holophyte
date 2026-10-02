@@ -526,7 +526,7 @@ def serve_host(host, address=None, out=None, interval=CODE_CHECK_SEC):
         raise SystemExit(f"[holo2] {host.path}: [serve] bind: {bad}") from None
     read, write = host_tokens(host, knobs, bound_host, entries)
     name_ignored(entries, knobs, out)
-    refresh_console(out)
+    refresh_console(out, CONSOLE_DIR)
     server = HostServer(host, knobs, (bound_host, port), read_token=read,
                         write_token=write, sock=sock)
     guard = "open" if read is None else "behind the machine token"
