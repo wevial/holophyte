@@ -117,7 +117,7 @@ class FilingRefreshTests(ConfigTestCase):
         self.assertIn("[holo2] filed NAT-1", printed)
         self.assertFalse((self.target / MERGED).exists())
 
-    def test_a_direct_mode_project_files_without_fetching(self):
+    def test_a_direct_mode_project_validates_its_checkout_without_fetching(self):
         self.clone(NATIVE)
         before = git(self.target, "rev-parse", "origin/main")
 
