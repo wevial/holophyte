@@ -1,9 +1,11 @@
 """KO-639: the per-module parallel runner and the `unit` workflow that runs it."""
 import os
+import signal
 import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -45,6 +47,70 @@ class ClaimsHome(unittest.TestCase):
         self.assertFalse(marker.exists(), "another module shared this home")
         marker.write_text("claimed")
 """
+
+SLEEPS_AFTER_OUTPUT = """
+import sys
+import time
+import unittest
+
+class Sleeps(unittest.TestCase):
+    def test_sleeps(self):
+        for n in range(1, 61):
+            print(f"progress line {n}", file=sys.stderr, flush=True)
+        time.sleep(30)
+"""
+
+HANGS_WITH_A_CHILD = """
+import os
+import subprocess
+import sys
+import time
+import unittest
+from pathlib import Path
+
+class HangsWithAChild(unittest.TestCase):
+    def test_hangs(self):
+        child = subprocess.Popen([sys.executable, "-c",
+                                  "import time; time.sleep(60)"])
+        Path({record!r}).write_text(f"{{os.getpgid(0)}} {{child.pid}}")
+        time.sleep(60)
+"""
+
+
+def live_members(pgid):
+    """Pids in process group `pgid` that are running (not zombies), from /proc."""
+    members = []
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            fields = stat.read_text().rpartition(")")[2].split()
+        except OSError:
+            continue
+        if int(fields[2]) == pgid and fields[0] != "Z":
+            members.append(int(stat.parent.name))
+    return members
+
+
+def block_scalars(text, *path):
+    """The `key: value` scalars directly under the block mapping at `path` in
+    YAML `text`, read by indentation: requirements.txt ships no YAML parser,
+    so this reads only block mappings, skipping sequence items under them.
+    Lines under a key that has a value of its own are not its mapping."""
+    found, stack = {}, []
+    for raw in text.splitlines():
+        line = "" if raw.lstrip().startswith("#") else raw.split(" #")[0]
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        content = line.strip()
+        if content.startswith("-") or ":" not in content:
+            continue
+        key, _, value = content.partition(":")
+        if [k for _, k in stack] == list(path) and value.strip():
+            found[key] = value.strip()
+        stack.append((indent, None if value.strip() else key))
+    return found
 
 
 class RunModulesTests(unittest.TestCase):
@@ -135,6 +201,46 @@ class RunModulesTests(unittest.TestCase):
         self.assertIn("tests/test_typo*.py: matches no", done.stdout)
         self.assertEqual(self.module_lines(done), {}, done.stdout)
 
+    def test_hung_module_is_killed_at_its_timeout_named_and_its_tail_shown(self):
+        started = time.monotonic()
+        done = self.run_over({"test_sleeps.py": SLEEPS_AFTER_OUTPUT,
+                              "test_good.py": PASSING},
+                             "--jobs", "2", "--module-timeout", "2")
+        self.assertLess(time.monotonic() - started, 15, done.stdout)
+        self.assertNotEqual(done.returncode, 0, done.stdout)
+        lines = self.module_lines(done)
+        self.assertTrue(lines["test_sleeps.py"].endswith(
+            "FAILED (timed out after 2 s)"), done.stdout)
+        self.assertTrue(lines["test_good.py"].endswith("ok"), done.stdout)
+        report = done.stdout[done.stdout.index("===== test_sleeps.py"):]
+        shown = report.splitlines()
+        self.assertIn("progress line 60", shown)
+        self.assertIn("progress line 21", shown)
+        self.assertNotIn("progress line 20", shown)
+
+    @unittest.skipUnless(Path("/proc/self/stat").exists(), "reads /proc")
+    def test_timed_out_module_leaves_no_process_of_its_group_running(self):
+        record = self.root / "group"
+        done = self.run_over(
+            {"test_hangs.py": HANGS_WITH_A_CHILD.format(record=str(record))},
+            "--module-timeout", "5")
+        self.assertIn("FAILED (timed out after 5 s)", done.stdout)
+        pgid, child = (int(n) for n in record.read_text().split())
+        self.addCleanup(self.kill_survivors, pgid)
+        self.assertNotEqual(pgid, os.getpgid(0))
+        deadline = time.monotonic() + 5
+        while live_members(pgid) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.assertEqual(live_members(pgid), [], f"child {child} survived")
+
+    @staticmethod
+    def kill_survivors(pgid):
+        for pid in live_members(pgid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
 
 class UnitWorkflowTests(unittest.TestCase):
     def test_unit_job_runs_the_runner_on_pull_requests_merge_groups_and_main(self):
@@ -149,6 +255,12 @@ class UnitWorkflowTests(unittest.TestCase):
         self.assertIn('python-version: "3.14"', jobs)
         self.assertIn("pip install -r requirements.txt", jobs)
         self.assertIn("python3 tests/run_modules.py", jobs)
+
+    def test_unit_job_is_capped_at_thirty_minutes(self):
+        unit = block_scalars(WORKFLOW.read_text(), "jobs", "unit")
+        self.assertEqual(unit.get("runs-on"), "ubuntu-latest", unit)
+        self.assertRegex(unit["timeout-minutes"], r"^[0-9]+$")
+        self.assertLessEqual(int(unit["timeout-minutes"]), 30)
 
 
 if __name__ == "__main__":
