@@ -4,6 +4,7 @@ from contextlib import closing
 
 from holophyte.admission import project_of
 from holophyte.board.projection import FILE_TICKET_PRIORITIES
+from holophyte.loop.claim import refresh_before_filing
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
 from holophyte.story.story_approval import ApprovalRefused, approve
@@ -191,6 +192,7 @@ def _file_story(args, target, board, out):
               "board in store mode ([board] mode = \"store\")", file=out)
         raise SystemExit(1)
     priority = FILE_TICKET_PRIORITIES[args.priority] if args.priority else None
+    refresh_before_filing(target, out)
     try:
         if args.update is not None:
             lines = update_story(board, target, args.file_story, args.update,
