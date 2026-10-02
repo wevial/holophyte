@@ -86,6 +86,13 @@ func TestPlain(t *testing.T) {
 }
 """
 
+IN_COMMENTS = COMPUTED_RUN % '"mark_read" // "archive_mail"' + """
+func TestPlain(t *testing.T) {
+	/* t.Run(tool, ...) for "archive_mail" */
+	t.Run("uses-mailbox", func(t *testing.T) {})
+}
+"""
+
 NESTED_TABLES = """package triage
 
 import "testing"
@@ -136,6 +143,10 @@ class GoTableSubtestWitnessTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(missing_in(self.root, source, name), [])
 
+    def test_table_literal_after_a_slashed_literal_is_found(self):
+        source = COMPUTED_RUN % '"https://mail", "archive_mail" // archived'
+        self.assertEqual(missing_in(self.root, source, "TestTriage/archive_mail"), [])
+
     def test_segment_not_held_whole_in_a_computing_parent_is_missing(self):
         cases = {
             "nowhere in the file": (COMPUTED_RUN % '"mark_read"', "TestTriage"),
@@ -143,6 +154,9 @@ class GoTableSubtestWitnessTests(unittest.TestCase):
             "only inside a longer literal":
                 (COMPUTED_RUN % '"archive_mail_all"', "TestTriage"),
             "in a parent with only literal titles": (LITERAL_ONLY, "TestPlain"),
+            "only in a line comment": (IN_COMMENTS, "TestTriage"),
+            "only in a block comment beside a computed run":
+                (IN_COMMENTS, "TestPlain"),
         }
         for case, (source, parent) in cases.items():
             with self.subTest(case=case):
