@@ -251,8 +251,7 @@ def _set_aside(loop, frame, rnd, out):
 
 def _skipped(frame):
     added = skipped_tests.added_tests(frame.wt, frame.base_sha, frame.sha)
-    probe = added and skipped_tests.probe_command(
-        frame.verify_cmd, [name for _, name in added])
+    probe = added and skipped_tests.probe_command(frame.verify_cmd)
     skipped = probe and skipped_tests.skipped_on_base(_probe(frame, probe),
                                                       added)
     if not skipped:

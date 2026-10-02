@@ -4,7 +4,7 @@ A bug ticket's candidate whose new tests all skip where the check runs goes
 to a fix round asking for a runnable reproduction; one whose tests run is
 judged as before. Verify is real unittest in a temporary repository whose
 base ignores `__pycache__/`, as a real one does, and already has a running
-test whose name contains the new tests' name, so a `-k` filter selects it too.
+test whose name contains the new tests' name.
 Run: python3 -m unittest discover -s tests -p 'test_reproduce_skipped.py' -v
 """
 from __future__ import annotations
@@ -84,6 +84,26 @@ import pytest
 def test_rename_keeps_the_name():
     assert os.path.exists("app.txt")
 """
+SAME_NAME_GATED = EXISTING + f"""
+import os
+
+
+@unittest.skipUnless(os.environ.get("REPRO_GATE_UNDER_TEST") == "1",
+                     "{REASON}")
+class Renamed(unittest.TestCase):
+    def test_rename_keeps_the_name_on_the_base(self):
+        self.assertTrue(open("app.txt").read())
+"""
+MIXIN_PASSES = EXISTING + """
+
+class _Renames:
+    def test_rename_keeps_the_name(self):
+        self.assertTrue(open("README.md").read())
+
+
+class Renaming(_Renames, unittest.TestCase):
+    pass
+"""
 FIX = Commit("fix the modal", path="app.txt", body="fixed\n")
 CHECKED = Reply("The new test renames a guest the way the ticket reports;"
                 " only tests changed.\nVERDICT: PASS")
@@ -125,7 +145,7 @@ class ReproduceSkippedTests(LoopFixture):
                       fake.turns[1].goal)
         self.assertIn(REASON, fake.turns[1].goal)
         self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
-            {"test": "tests/test_modal.py::test_rename_keeps_the_name",
+            {"test": "tests/test_modal.py::Modal::test_rename_keeps_the_name",
              "reason": REASON}]}])
         self.assertEqual(self.events("not_reproduced"), [])
         self.assertEqual(self.read("SELECT parkKind FROM runs"), [(None,)])
@@ -135,9 +155,10 @@ class ReproduceSkippedTests(LoopFixture):
 
         self.assertEqual(fake.roles, ["implement", "implement", "review"])
         self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
-            {"test": "tests/test_modal.py::test_rename_keeps_the_name",
+            {"test": "tests/test_modal.py::Modal::test_rename_keeps_the_name",
              "reason": REASON},
-            {"test": "tests/test_modal.py::test_rename_twice_keeps_the_name",
+            {"test":
+             "tests/test_modal.py::Modal::test_rename_twice_keeps_the_name",
              "reason": REASON}]}])
         self.assertEqual(self.events("not_reproduced"), [])
 
@@ -146,7 +167,7 @@ class ReproduceSkippedTests(LoopFixture):
 
         self.assertEqual(fake.roles, ["implement", "implement", "review"])
         self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
-            {"test": "tests/test_modal.py::test_rename_keeps_the_name",
+            {"test": "tests/test_modal.py::Modal::test_rename_keeps_the_name",
              "reason": REASON}]}])
 
     def test_new_tests_the_verify_never_collects_get_a_fix_round(self):
@@ -157,9 +178,39 @@ class ReproduceSkippedTests(LoopFixture):
         ((skipped,),) = [event["skipped"]
                          for event in self.events("reproduce_skipped")]
         self.assertEqual(skipped["test"],
-                         "tests/modal_check.py::test_rename_keeps_the_name")
+                         "tests/modal_check.py::Modal::test_rename_keeps_the_name")
         self.assertIn("not collected", skipped["reason"])
         self.assertEqual(self.events("not_reproduced"), [])
+
+    def test_a_new_test_the_verify_s_own_k_filter_excludes_is_not_collected(self):
+        fake = self.run_bug(reproducing(FAILS), FIX, APPROVE,
+                            verify=f"{VERIFY} -k on_the_base")
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        ((skipped,),) = [event["skipped"]
+                         for event in self.events("reproduce_skipped")]
+        self.assertIn("not collected", skipped["reason"])
+
+    def test_a_quiet_verify_still_shows_which_new_tests_skipped(self):
+        fake = self.run_bug(
+            reproducing(GATED), FIX, APPROVE,
+            verify="python3 -m unittest discover -q -s tests -p 'test_*.py'")
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
+            {"test": "tests/test_modal.py::Modal::test_rename_keeps_the_name",
+             "reason": REASON}]}])
+
+    def test_a_skipped_new_test_named_like_a_passing_one_is_still_skipped(self):
+        fake = self.run_bug(
+            reproducing(SAME_NAME_GATED, path="tests/test_existing.py"),
+            FIX, APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
+            {"test": "tests/test_existing.py::Renamed::"
+                     "test_rename_keeps_the_name_on_the_base",
+             "reason": REASON}]}])
 
     @unittest.skipIf(subprocess.run(["python3", "-c", "import pytest"],
                                     capture_output=True).returncode,
@@ -172,6 +223,28 @@ class ReproduceSkippedTests(LoopFixture):
         self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
             {"test": "tests/test_modal.py::test_rename_keeps_the_name",
              "reason": REASON}]}])
+
+    def test_a_module_skipped_at_import_under_a_package_names_its_reason(self):
+        (self.target / "tests" / "__init__.py").write_text("")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "tests as a package")
+        fake = self.run_bug(reproducing(IMPORT_GATED), FIX, APPROVE,
+                            verify="python3 -m unittest discover -s tests -t ."
+                                   " -p 'test_*.py'")
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
+            {"test": "tests/test_modal.py::Modal::test_rename_keeps_the_name",
+             "reason": REASON}]}])
+
+    def test_a_new_mixin_test_that_runs_and_passes_on_the_base_still_parks(self):
+        fake = self.run_bug(
+            reproducing(MIXIN_PASSES, path="tests/test_existing.py"), CHECKED)
+
+        self.assertEqual(fake.roles, ["implement", "adjudicate"])
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("not_reproduced",)])
+        self.assertEqual(self.events("reproduce_skipped"), [])
 
     def test_a_redeclared_fix_whose_tests_skip_again_is_reviewed_not_parked(self):
         fake = self.run_bug(reproducing(GATED),
