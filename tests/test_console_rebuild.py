@@ -14,15 +14,12 @@ import signal
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from time import monotonic, sleep
 from unittest.mock import patch
 
-from holophyte.host.registry import Host
 from holophyte.serve.console_build import refresh_console
-from holophyte.serve.serve_host import serve_host
 from tests.host_fixture import HostFixture, git
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -59,6 +56,35 @@ SOURCES_MOVE = f"""\
 Path("src/app.ts").write_text("v3\\n")
 subprocess.run({COMMIT!r}.split(), check=True)
 """ + NEW_BUILD
+
+DAEMON_DEADLINE_SEC = 30
+# The host daemon on this console and factory checkout; `exec` only reports.
+DAEMON = """\
+import subprocess
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from holophyte.host.registry import Host
+from holophyte.serve.serve_host import serve_host
+dist, factory, interval = Path(sys.argv[1]), sys.argv[2], float(sys.argv[3])
+def revision():
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=factory,
+                          capture_output=True, text=True).stdout.strip()
+def report_exec(program, argv):
+    print("[test] exec", flush=True)
+with patch("holophyte.serve.serve_host.CONSOLE_DIR", dist), \\
+        patch("holophyte.serve.serve_host.factory_revision", revision), \\
+        patch("holophyte.serve.server.EXEC", report_exec):
+    sys.exit(serve_host(Host.locate(), "127.0.0.1:0", sys.stdout, interval))
+"""
+
+
+def kill_group(process):
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    process.wait()
 
 
 class ConsoleCase(HostFixture):
@@ -140,46 +166,38 @@ class StartupCheckTests(ConsoleCase):
 class DaemonStartupTests(ConsoleCase):
     def setUp(self):
         super().setUp()
-        previous = signal.signal(signal.SIGTERM, lambda *_: None)
-        self.addCleanup(signal.signal, signal.SIGTERM, previous)
         self.factory = self.root / "factory"
         self.factory.mkdir()
         git(self.factory, "init", "-q")
         git(self.factory, "commit", "-q", "--allow-empty", "-m", "A")
-        self.enterContext(patch("holophyte.serve.serve_host.CONSOLE_DIR",
-                                self.dist))
-        self.enterContext(patch(
-            "holophyte.serve.serve_host.factory_revision",
-            lambda: git(self.factory, "rev-parse", "HEAD")))
-        self.reexec = self.enterContext(
-            patch("holophyte.serve.server.reexec_self"))
 
     def serve(self, on_serving=None, interval=0.1):
-        """Run the host daemon here, stopping it with SIGTERM once
-        `on_serving(port)` returns, or after 20s if it has not exited."""
-        done = threading.Event()
-
-        def drive():
-            deadline = monotonic() + 20
-            if on_serving is None:
-                done.wait(20)
-            else:
-                found = None
-                while found is None and monotonic() < deadline:
-                    found = SERVING.search(self.out.getvalue())
-                    sleep(0.05)
-                if found is not None:
-                    on_serving(int(found.group(1)))
-            if not done.is_set():
-                os.kill(os.getpid(), signal.SIGTERM)
-        driver = threading.Thread(target=drive)
-        driver.start()
-        try:
-            return serve_host(Host.locate(), "127.0.0.1:0", self.out,
-                              interval=interval)
-        finally:
-            done.set()
-            driver.join()
+        """Run the host daemon in a child process, stopping it with SIGTERM
+        once `on_serving(port)` returns; a daemon still running after
+        DAEMON_DEADLINE_SEC, or exiting other than 0, fails the test."""
+        log_path = self.root / "daemon.log"
+        with log_path.open("w") as log:
+            daemon = subprocess.Popen(
+                [sys.executable, "-u", "-c", DAEMON, str(self.dist),
+                 str(self.factory), str(interval)],
+                cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log,
+                stderr=subprocess.STDOUT, start_new_session=True)
+        self.addCleanup(kill_group, daemon)
+        deadline = monotonic() + DAEMON_DEADLINE_SEC
+        served = on_serving is None
+        while daemon.poll() is None and monotonic() < deadline:
+            found = SERVING.search(log_path.read_text())
+            if not served and found is not None:
+                served = True
+                on_serving(int(found.group(1)))
+                daemon.terminate()
+            sleep(0.05)
+        if daemon.poll() is None:
+            kill_group(daemon)
+            self.fail(f"the daemon was still running after"
+                      f" {DAEMON_DEADLINE_SEC}s:\n{log_path.read_text()}")
+        self.out.write(log_path.read_text())
+        self.assertEqual(daemon.returncode, 0, self.out.getvalue())
 
     def test_a_failed_build_leaves_the_daemon_serving_the_previous_console(self):
         self.change_sources()
@@ -194,7 +212,7 @@ class DaemonStartupTests(ConsoleCase):
                 pages.append((response.status, response.read()))
             finally:
                 conn.close()
-        self.assertEqual(self.serve(fetch, interval=60), 0)
+        self.serve(fetch, interval=60)
         self.assertEqual(pages, [(200, b"old")])
         self.assert_old_build_kept()
         log = self.out.getvalue()
@@ -212,9 +230,10 @@ class DaemonStartupTests(ConsoleCase):
         moved = git(self.factory, "rev-parse", "HEAD")
         self.assertNotEqual(moved, started)
         self.assertEqual((self.dist / "index.html").read_text(), "new")
-        self.reexec.assert_called_once()
-        self.assertIn(f"moved from {started} to {moved}",
-                      self.reexec.call_args.args[0])
+        log = self.out.getvalue()
+        self.assertEqual(log.splitlines().count("[test] exec"), 1)
+        self.assertIn(f"moved from {started} to {moved}; serve re-executing",
+                      log)
 
 
 @unittest.skipUnless(shutil.which("bun"),
