@@ -160,8 +160,9 @@ class RepeatedPassTests(unittest.TestCase):
 
     def test_a_failure_is_not_recorded(self):
         cmd = self.cmd + "; exit 1"
-        self.assertFalse(self.verify(cmd=cmd)[0])
-        self.assertFalse(self.verify(cmd=cmd)[0])
+        for _ in range(2):
+            self.assertFalse(holophyte.loop.gates.run_verify(
+                cmd, self.wt, run_id=7, rerun=False)[0])
         self.assertEqual(self.runs(), 2)
 
 
@@ -329,7 +330,8 @@ class IsolatedVerifyTests(unittest.TestCase):
               patch.dict(os.environ, HOST_SECRET='private'),
               patch.object(launcher, 'run_capped',
                            side_effect=filesystem_runner) as run):
-            ok, out = gates.run_verify(command, self.wt, project=self.target)
+            ok, out = gates.run_verify(command, self.wt, project=self.target,
+                                       rerun=False)
             self.assertFalse(ok)
             ok, recorded = gates.with_baseline(self.target, self.wt, command, ok, out)
             self.assertIn('No such file', recorded.results[0]['output'])
@@ -353,9 +355,10 @@ class IsolatedVerifyTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('started', out)
         self.assertIn('timed out', out.lower())
-        argv = run.call_args.args[0]
-        remove.assert_called_once_with(argv[argv.index('--name') + 1],
-                                       env={'PATH': os.defpath})
+        names = [call.args[0][call.args[0].index('--name') + 1]
+                 for call in run.call_args_list]
+        self.assertEqual(remove.call_args_list,
+                         [((name,), {'env': {'PATH': os.defpath}}) for name in names])
 
     def test_none_preserves_runner_call(self):
         from holophyte.loop import gates

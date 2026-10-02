@@ -126,7 +126,7 @@ def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
         return None
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, conn=conn, run_id=run_id,
-                             project=target)
+                             project=target, rerun=False)
     if ok:
         print(f"[holo2] verify passes at the reproduce commit {head[:12]}")
         return Reproduction(head)

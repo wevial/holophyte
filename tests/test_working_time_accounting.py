@@ -67,12 +67,13 @@ class WorkingTimeTests(SweepTestCase):
         run = self.a_run()
         now = [T0]
         total = 0
+        opened = [T0]
 
         def route(*args, **kwargs):
-            start = now[0]
-            self.assertEqual(self.snapshot(run).workStartedAt, start)
+            self.assertEqual(self.snapshot(run).workStartedAt, opened[0])
             now[0] += 37
-            self.assertEqual(effective_work(self.snapshot(run), now[0]), total + 37)
+            self.assertEqual(effective_work(self.snapshot(run), now[0]),
+                             total + now[0] - opened[0])
             store.heartbeat(self.conn, run, now=now[0])
             if failure:
                 raise failure
@@ -97,6 +98,7 @@ class WorkingTimeTests(SweepTestCase):
                              'verify-initial', 'verify-final', 'verify-PR-fix',
                              'review', 'adjudicate', 'PR-thread-adjudicate'):
                     with self.subTest(path=path, failure=type(failure).__name__):
+                        opened[0] = now[0]
                         try:
                             if path.startswith('verify'):
                                 gates.run_verify('echo done', self.target,
@@ -113,7 +115,7 @@ class WorkingTimeTests(SweepTestCase):
                         except (RuntimeError, subprocess.TimeoutExpired):
                             if failure is None:
                                 raise
-                        total += 37
+                        total += now[0] - opened[0]
                         self.assertEqual(self.snapshot(run).workingMs, total)
                         self.assertIsNone(self.snapshot(run).workStartedAt)
                         # Polling/quiet/retry gaps and their heartbeats are idle.
