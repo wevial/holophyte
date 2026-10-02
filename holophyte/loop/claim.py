@@ -243,7 +243,7 @@ def refresh_before_filing(project, out):
         refresh_main(project, before="filing")
     except (InfraFailure, RuntimeError) as failed:
         reason = " ".join(str(failed).split())
-        print("[holo2] warning: main not\n brought up to date with origin,"
+        print("[holo2] warning: main not brought up to date with origin,"
               f" validating against the checkout as it is: {reason}", file=out)
 
 
