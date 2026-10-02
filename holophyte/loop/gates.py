@@ -361,7 +361,7 @@ def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None
     with working(conn, run_id, verify=True):
         ok, out = _run_verify(cmd, cwd, contracts, timeout, project=project,
                               run_id=run_id)
-        if ok or not rerun or not failed_by_exit(out):
+        if ok or not rerun or not failed_to_finish(out):
             return ok, out
         again_ok, again = _run_verify(cmd, cwd, contracts, timeout,
                                       project=project, run_id=run_id)
@@ -374,9 +374,9 @@ def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None
         out.results, failure=out.failure)
 
 
-def failed_by_exit(out):
+def failed_to_finish(out):
     failure = getattr(out, "failure", None)
-    return bool(failure) and failure["exit_status"] not in (0, None)
+    return bool(failure) and failure["exit_status"] != 0
 
 
 def record_flaky(conn, run_id, report):

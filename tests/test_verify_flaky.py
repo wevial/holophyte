@@ -119,6 +119,30 @@ class VerifyRerunTests(unittest.TestCase):
         self.assertIn("attempt 2", prompts[0])
         self.assertEqual(self.flaky_events(), [])
 
+    def test_a_timeout_that_passes_on_its_rerun_is_flaky(self):
+        marker = self.root / "marker"
+        ok, out = run_verify(f"test -e {marker} || {{ touch {marker}; sleep 30; }}",
+                             self.repo, timeout=1, conn=self.conn,
+                             run_id=self.run_id)
+
+        self.assertTrue(ok, out)
+        (report,) = self.flaky_events()
+        self.assertTrue(gates.verify_timed_out(report), report)
+
+    def test_a_verify_that_times_out_twice_fails_with_both_reports(self):
+        counter = self.root / "count"
+        ok, out = run_verify(f"echo run >> {counter};"
+                             f" echo \"attempt $(wc -l < {counter})\"; sleep 30",
+                             self.repo, timeout=1, conn=self.conn,
+                             run_id=self.run_id)
+
+        self.assertFalse(ok)
+        self.assertTrue(gates.verify_timed_out(out), out)
+        self.assertEqual(counter.read_text().count("run"), 2)
+        self.assertIn("attempt 1", out)
+        self.assertIn("attempt 2", out)
+        self.assertEqual(self.flaky_events(), [])
+
     def test_a_passing_verify_runs_exactly_once(self):
         counter = self.root / "count"
         ok, _ = run_verify(counting_command(counter, 0), self.repo,

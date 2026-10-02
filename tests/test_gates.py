@@ -355,9 +355,10 @@ class IsolatedVerifyTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('started', out)
         self.assertIn('timed out', out.lower())
-        argv = run.call_args.args[0]
-        remove.assert_called_once_with(argv[argv.index('--name') + 1],
-                                       env={'PATH': os.defpath})
+        names = [call.args[0][call.args[0].index('--name') + 1]
+                 for call in run.call_args_list]
+        self.assertEqual(remove.call_args_list,
+                         [((name,), {'env': {'PATH': os.defpath}}) for name in names])
 
     def test_none_preserves_runner_call(self):
         from holophyte.loop import gates
