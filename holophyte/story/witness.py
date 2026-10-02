@@ -26,6 +26,10 @@ from store.stories import OPEN_STATES, record_witness_result, story, witness_led
 UNITTEST_SUMMARY = re.compile(r"^FAILED \(([^)]*)\)\s*$", re.MULTILINE)
 PYTEST_SUMMARY = re.compile(r"^(FAILED|ERROR) ([^(\s].*)$", re.MULTILINE)
 PYTEST_NODE = re.compile(r"[^\s\[]+(?:\[.*?\])?(?: - (.*))?")
+GO_RESULT = re.compile(r"^(ok|FAIL)[ \t]+\S.*$", re.MULTILINE)
+GO_TEST_FAILED = re.compile(r"^[ \t]*--- FAIL:", re.MULTILINE)
+GO_EXCEPTION = re.compile(r"^(?:panic: |WARNING: DATA RACE[ \t]*$)", re.MULTILINE)
+GO_UNBUILT = re.compile(r"\[(?:build|setup) failed\]")
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 NO_COLOR = "export NO_COLOR=1 PYTHON_COLORS=0\n"
 LOG_TAIL_BYTES = 64 * 1024
@@ -58,8 +62,19 @@ def red_kind(output):
         for counts in UNITTEST_SUMMARY.findall(output)] + [
         status == "FAILED" and _pytest_message(rest).startswith(
             ("AssertionError", "assert "))
-        for status, rest in PYTEST_SUMMARY.findall(output)]
+        for status, rest in PYTEST_SUMMARY.findall(output)] + _go_asserts(output)
     return "assert" if asserts and all(asserts) else "exception"
+
+
+def _go_asserts(output):
+    asserts, start = [], 0
+    for result in GO_RESULT.finditer(output):
+        block, start = output[start:result.end()], result.end()
+        if result.group(1) == "FAIL":
+            asserts.append(bool(GO_TEST_FAILED.search(block))
+                           and not GO_UNBUILT.search(result.group())
+                           and not GO_EXCEPTION.search(block))
+    return asserts
 
 
 def _pytest_message(rest):
