@@ -170,9 +170,9 @@ def review_rounds(*args, resume=None):
         return _second(loop, frame, pending)
     else:
         ok, out = _verified(frame, 1, pending)
-        if not ok:
+        skipped = _skipped(frame) if _counted(ok, out) else None
+        if not ok and not skipped:
             return _set_aside(loop, frame, 1, out)
-        skipped = _skipped(frame)
         if skipped:
             headline = "new tests skipped on the base"
             set_phase(frame.conn, frame.run_id, "reviewing",
@@ -195,6 +195,9 @@ def _second(loop, frame, pending):
     ok, out = _verified(frame, 2, pending)
     if not ok:
         return _set_aside(loop, frame, 2, out)
+    if _skipped(frame):
+        return _hand_on(loop, frame, {"phase": "reviewing", "rnd": 2, "ok": ok,
+                                      "out": out})
     reply, decision, started = _check(loop, frame, 2, ok, out)
     if decision == "PASS":
         _record(frame, 2, reply, decision, ok, out, started)
@@ -244,6 +247,10 @@ def _set_aside(loop, frame, rnd, out):
            f" failed; round {rnd} is an ordinary review", str(out))
     return _hand_on(loop, frame, {"phase": "reviewing", "rnd": rnd,
                                   "ok": False, "out": out})
+
+
+def _counted(ok, out):
+    return ok or (getattr(out, "failure", None) or {}).get("exit_status") == 0
 
 
 def _skipped(frame):

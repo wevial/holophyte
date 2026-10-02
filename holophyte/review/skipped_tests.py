@@ -194,10 +194,16 @@ def _same_file(path, other):
     return f"/{path}".endswith(f"/{other}") or f"/{other}".endswith(f"/{path}")
 
 
+def _fixture_skips(mine, cls, fixture):
+    return [result for result in mine
+            if result[1:3] == (cls, fixture) and result.skipped]
+
+
 def _fixture_reason(test, mine, output):
-    for fixture in ((test.cls, CLASS_FIXTURE), (None, MODULE_FIXTURE)):
-        reason = next((result.reason for result in mine
-                       if result[1:3] == fixture and result.skipped), None)
+    for cls, fixture in ((test.cls, CLASS_FIXTURE), (None, MODULE_FIXTURE)):
+        reason = next((result.reason for result in
+                       _fixture_skips(mine, cls, fixture) if result.reason),
+                      None)
         if reason:
             return reason
     return next((reason for where, reason in PYTEST_SKIP.findall(output)
@@ -214,8 +220,9 @@ def skipped_on_base(output, added):
         module = _module(test.path)
         mine = [result for result in results if _in_module(module, result)]
         own = [result for result in mine
-               if result[1:3] == (test.cls, test.name)] or [
-            result for result in mine if result.name == test.name]
+               if result[1:3] == (test.cls, test.name)]
+        if not own and not _fixture_skips(mine, test.cls, CLASS_FIXTURE):
+            own = [result for result in mine if result.name == test.name]
         if any(not result.skipped for result in own):
             return None
         found.append((test.id(), next(

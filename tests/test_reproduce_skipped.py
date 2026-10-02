@@ -18,10 +18,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
-from fake_agent import APPROVE, Commit, Reply  # noqa: E402 - after the sys.path insert
+from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402 - after sys.path
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
 from test_reproduce_first import BUG_BODY  # noqa: E402 - after the sys.path insert
 
+DECLARED = "OUTCOME: NOT_REPRODUCED"
 VERIFY = "python3 -m unittest discover -s tests -p 'test_*.py'"
 REASON = "the container isn't available: set REPRO_GATE_UNDER_TEST=1"
 EXISTING = """import unittest
@@ -93,6 +94,16 @@ class Renamed(unittest.TestCase):
     def test_rename_keeps_the_name_on_the_base(self):
         self.assertTrue(open("app.txt").read())
 """
+CLASS_FIXTURE_GATED = EXISTING + f"""
+
+class Renamed(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        raise unittest.SkipTest("{REASON}")
+
+    def test_rename_keeps_the_name_on_the_base(self):
+        self.assertTrue(open("app.txt").read())
+"""
 MIXIN_PASSES = EXISTING + """
 
 class _Renames:
@@ -110,6 +121,12 @@ CHECKED = Reply("The new test renames a guest the way the ticket reports;"
 
 def reproducing(body, path="tests/test_modal.py"):
     return Commit("test: reproduce the modal", path=path, body=body)
+
+
+class Declare(Commit):
+
+    def play(self, cwd, turn):
+        return f"{super().play(cwd, turn)}\nIt passes on main.\n{DECLARED}"
 
 
 class ReproduceSkippedTests(LoopFixture):
@@ -163,6 +180,23 @@ class ReproduceSkippedTests(LoopFixture):
             {"test": "tests/test_modal.py::Modal::test_rename_keeps_the_name",
              "reason": REASON}]}])
 
+    def test_a_verify_that_runs_only_the_skipped_module_gets_a_fix_round(self):
+        fake = self.run_bug(
+            Idle(),
+            Declare("test the modal", path="tests/test_modal.py",
+                    body=MODULE_GATED),
+            Commit("reproduce without the gate", path="tests/test_modal.py",
+                   body=PASSES),
+            APPROVE, verify="python3 -m unittest discover -s tests"
+                            " -p 'test_modal.py'")
+
+        self.assertEqual(fake.roles,
+                         ["implement", "implement", "implement", "review"])
+        self.assertIn("add a reproducing test that runs without that gate",
+                      fake.turns[2].goal)
+        self.assertEqual(len(self.events("reproduce_skipped")), 1)
+        self.assertEqual(self.events("not_reproduced"), [])
+
     def test_new_tests_the_verify_never_collects_get_a_fix_round(self):
         fake = self.run_bug(reproducing(FAILS, path="tests/modal_check.py"),
                             FIX, APPROVE)
@@ -197,6 +231,17 @@ class ReproduceSkippedTests(LoopFixture):
     def test_a_skipped_new_test_named_like_a_passing_one_is_still_skipped(self):
         fake = self.run_bug(
             reproducing(SAME_NAME_GATED, path="tests/test_existing.py"),
+            FIX, APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
+            {"test": "tests/test_existing.py::Renamed::"
+                     "test_rename_keeps_the_name_on_the_base",
+             "reason": REASON}]}])
+
+    def test_a_class_skipped_in_set_up_class_is_not_masked_by_a_namesake(self):
+        fake = self.run_bug(
+            reproducing(CLASS_FIXTURE_GATED, path="tests/test_existing.py"),
             FIX, APPROVE)
 
         self.assertEqual(fake.roles, ["implement", "implement", "review"])
@@ -270,6 +315,17 @@ class ReproduceSkippedTests(LoopFixture):
         self.assertEqual(self.read("SELECT parkKind FROM runs"),
                          [("not_reproduced",)])
         self.assertEqual(self.events("reproduce_skipped"), [])
+
+    def test_a_redeclared_fix_whose_tests_skip_again_is_reviewed_not_parked(self):
+        fake = self.run_bug(reproducing(GATED),
+                            Declare("test the modal again",
+                                    path="tests/test_modal_again.py",
+                                    body=GATED),
+                            APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(len(self.events("reproduce_skipped")), 2)
+        self.assertEqual(self.events("not_reproduced"), [])
 
     def test_new_tests_that_run_and_pass_on_the_base_still_park(self):
         fake = self.run_bug(reproducing(PASSES), CHECKED)
