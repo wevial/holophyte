@@ -125,6 +125,8 @@ class ReviewTimeoutLoopTests(LoopFixture):
         self.assertEqual(self.crashes(), [])
         self.assertEqual(self.review_turns(),
                          [("primary", True), ("primary", False)])
+        timed_out = next(p for p in self.payloads("agent_turn") if p["timed_out"])
+        self.assertIn("partial reasoning\n", timed_out["tail"])
         ((verdict,),) = self.read("SELECT verdict FROM reviewRounds")
         self.assertEqual(verdict, "pass")
 

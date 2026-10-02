@@ -70,6 +70,8 @@ def recorded_turn(project, role, routed_role, conn, run_id, launch):
         cause = exc.__cause__ or exc
         payload["exit_status"] = getattr(cause, "returncode", None)
         payload["timed_out"] = isinstance(cause, subprocess.TimeoutExpired)
+        if payload["timed_out"] and hasattr(exc, "tail"):
+            payload["tail"] = exc.tail
         raise
     finally:
         payload["seconds"] = monotonic() - started
