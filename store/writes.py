@@ -62,9 +62,26 @@ def set_pull_request(conn, run_id, url, candidate_sha=None):
                          (url, candidate_sha, run_id))
 
 
+REASON_HEAD = 1000
+REASON_TAIL = 900
+
+
+def _bounded_reason(conn, run_id, reason, now):
+    if reason is None or len(reason) <= REASON_HEAD + REASON_TAIL + 100:
+        return reason
+    from . import _append_event
+
+    _append_event(conn, run_id, "detail", "outcome_reason",
+                  "the run's whole outcome reason", now, payload=reason)
+    cut = len(reason) - REASON_HEAD - REASON_TAIL
+    return (f"{reason[:REASON_HEAD]}\n[... {cut} characters cut; the run's"
+            f" outcome_reason event keeps them ...]\n{reason[-REASON_TAIL:]}")
+
+
 def set_outcome_reason(conn, run_id, reason):
     """Set the reason on a live run; `release()` sets it as it ends one."""
     with _transaction(conn):
+        reason = _bounded_reason(conn, run_id, reason, int(time.time() * 1000))
         conn.execute("UPDATE runs SET outcomeReason = ? WHERE id = ?",
                      (reason, run_id))
 
