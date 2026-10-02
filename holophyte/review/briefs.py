@@ -148,6 +148,18 @@ def criteria_brief(criteria):
             "the verdict line.\n\n")
 
 
+def stale_approval_brief(stale):
+    if not stale:
+        return ""
+    listed = "\n".join(f"- {finding['message'].splitlines()[0]}"
+                       for finding in stale)
+    return ("The previous review of this same commit cited prior approvals "
+            "that no longer stand, because test files they name changed "
+            f"since:\n{listed}\nWitness each of these criteria afresh at this "
+            "commit: name the test that shows it, and do not cite an approval "
+            "for it.\n\n")
+
+
 REFUTED_OPEN = "REFUTED FINDINGS (non-blocking)"
 
 

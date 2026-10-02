@@ -85,6 +85,9 @@ Each module, one line:
   reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
   witness checks and a verdict.
+- `holophyte/review/stale_approval.py` — a review left only stale cited
+  approvals: the `stale_approval_rereview` event, and the failure when the
+  review again at that head still cites one.
 - `holophyte/review/findings.py` — `FINDINGS.md` as a bounded window over the
   store's rows.
 - `holophyte/cli/report.py` — `--report`: estimate vs actual per finished run
@@ -211,6 +214,11 @@ Each module, one line:
 - `holophyte/review/reproduce.py` — a reported defect the implementer could not
   reproduce (KO-657): the `OUTCOME: NOT_REPRODUCED` declaration, the
   evidence check in place of round 1, and the `not_reproduced` park.
+- `holophyte/review/skipped_tests.py` — the candidate's added test ids by
+  module, class and name, the verify commands rerun verbosely with their own
+  selection (unittest or pytest), which added tests were skipped or never
+  collected and why, and the fix-round brief asking for a runnable
+  reproduction.
 - `holophyte/loop/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
 - `holophyte/config/locks.py` — the `Locks` protocol a `Project` carries as

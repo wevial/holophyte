@@ -64,13 +64,16 @@ from holophyte.review.briefs import (
     main_merge_base,
     scope_brief,
     scope_files,
+    stale_approval_brief,
     tests_brief,
 )
 from holophyte.review.reply_parsing import (
     _review_reply,
     criteria_findings,
     parse_findings,
+    stale_approvals,
 )
+from holophyte.review.stale_approval import stale_again, stale_rereview
 
 
 def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
@@ -387,10 +390,70 @@ def _fix_answers(conn, run_id, rnd, fix_note):
     return "\n".join(lines)
 
 
+def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
+                     reviewed, beat_s, pull, ticket, verify_cmd, criteria, ok,
+                     out, stale=()):
+    from holophyte.loop.review_round import _verify_brief, agent, set_phase
+    from holophyte.pr.pullrequest import _park_on_pr
+    set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
+    record_step(conn, run_id, "covering_review")
+    base_sha = main_merge_base(wt, sha)
+    rnd = _next_round(conn, run_id)
+    round_started = int(time() * 1000)
+    # Only what the covered range changes, less what a merged `main` alone
+    # brought, is put to the scope question.
+    covered = reviewed or base_sha
+    scope = scope_files(wt, ticket, covered, sha, candidate_only=True)
+    with heartbeat_while(conn, run_id, beat_s):
+        verdict, decision, first_reply = _review_reply(project,
+            f"You are a READ-ONLY code reviewer. Review commit {sha} using "
+            f"{review_refs(run_id)[0]} as the frozen base and {review_refs(run_id)[1]} "
+            "as the candidate in this repo against the ticket below. The "
+            + covering_scope(wt, reviewed, sha, pull.url)
+            + "The ticket is "
+            "the contract, acceptance criteria included: a candidate that "
+            "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
+            f"{ticket}\n\n"
+            + _verify_brief(verify_cmd, ok, out)
+            + criteria_brief(criteria)
+            + stale_approval_brief(stale)
+            + tests_brief(wt)
+            + scope_brief(wt, ticket, covered, sha, candidate_only=True)
+            + evidence_brief(project, wt, task_id,
+                                 ticket_template.parse(ticket).evidence_states)
+            + "Do not modify anything. End your reply with exactly one "
+            "line:\n"
+            "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
+            "If REQUEST_CHANGES, list only concrete blockers.", wt,
+            base_sha, sha, conn, run_id, run_agent=agent)
+    record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
+                 ok, out, started_at=round_started, criteria=criteria,
+                 root=wt, prior_reply=first_reply,
+                 approved_range=(reviewed, sha) if reviewed else None,
+                 scope=scope)
+    stop_if_requested(conn, run_id, "merge_gate")
+    if decision == "MALFORMED":
+        reason = "the reviewer gave no verdict after one reminder"
+        if conn is not None and run_id is not None:
+            store.record_event(conn, run_id, "route_failure", reason)
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
+                    pull, reason, ())
+    # A criterion not met or unwitnessed blocks whatever the verdict says.
+    unwitnessed = criteria_findings(
+        verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None,
+        scope=scope)
+    if unwitnessed:
+        print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
+              "witnessed by the review of the fix; treating as "
+              "REQUEST_CHANGES")
+        verdict += "\n\n" + "\n".join(f["message"] for f in unwitnessed)
+    return verdict, decision, unwitnessed, rnd
+
+
 def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=(), fix_note=None, budget_min=None, *, fix_context=""):
-    from holophyte.loop.review_round import _verify_brief, agent, set_phase
+    from holophyte.loop.review_round import set_phase
     from holophyte.pr.pullrequest import _park_on_pr, refresh_pr_text
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
@@ -430,57 +493,14 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                     " says merge on the candidate as it stands"
                     " ([merge] approve = \"human\")", (),
                     reviewed=reviewed)
-    set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
-    record_step(conn, run_id, "covering_review")
-    base_sha = main_merge_base(wt, sha)
-    rnd = _next_round(conn, run_id)
-    round_started = int(time() * 1000)
-    # Only what the covered range changes, less what a merged `main` alone
-    # brought, is put to the scope question.
-    covered = reviewed or base_sha
-    scope = scope_files(wt, ticket, covered, sha, candidate_only=True)
-    with heartbeat_while(conn, run_id, beat_s):
-        verdict, decision, first_reply = _review_reply(project,
-            f"You are a READ-ONLY code reviewer. Review commit {sha} using "
-            f"{review_refs(run_id)[0]} as the frozen base and {review_refs(run_id)[1]} "
-            "as the candidate in this repo against the ticket below. The "
-            + covering_scope(wt, reviewed, sha, pull.url)
-            + "The ticket is "
-            "the contract, acceptance criteria included: a candidate that "
-            "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
-            f"{ticket}\n\n"
-            + _verify_brief(verify_cmd, ok, out)
-            + criteria_brief(criteria)
-            + tests_brief(wt)
-            + scope_brief(wt, ticket, covered, sha, candidate_only=True)
-            + evidence_brief(project, wt, task_id,
-                                 ticket_template.parse(ticket).evidence_states)
-            + "Do not modify anything. End your reply with exactly one "
-            "line:\n"
-            "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-            "If REQUEST_CHANGES, list only concrete blockers.", wt,
-            base_sha, sha, conn, run_id, run_agent=agent)
-    record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
-                 ok, out, started_at=round_started, criteria=criteria,
-                 root=wt, prior_reply=first_reply,
-                 approved_range=(reviewed, sha) if reviewed else None,
-                 scope=scope)
-    stop_if_requested(conn, run_id, "merge_gate")
-    if decision == "MALFORMED":
-        reason = "the reviewer gave no verdict after one reminder"
-        if conn is not None and run_id is not None:
-            store.record_event(conn, run_id, "route_failure", reason)
-        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
-                    pull, reason, ())
-    # A criterion not met or unwitnessed blocks whatever the verdict says.
-    unwitnessed = criteria_findings(
-        verdict, criteria, wt, approved_range=(reviewed, sha) if reviewed else None,
-        scope=scope)
-    if unwitnessed:
-        print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
-              "witnessed by the review of the fix; treating as "
-              "REQUEST_CHANGES")
-        verdict += "\n\n" + "\n".join(f["message"] for f in unwitnessed)
+    review = (project, conn, run_id, provider, task_id, branch, wt, sha,
+              reviewed, beat_s, pull, ticket, verify_cmd, criteria, ok, out)
+    verdict, decision, unwitnessed, rnd = _covering_review(*review)
+    stale = stale_approvals(decision, unwitnessed)
+    if stale:
+        stale_rereview(conn, run_id, provider, task_id, sha, rnd, stale)
+        verdict, decision, unwitnessed, rnd = _covering_review(*review, stale)
+        stale = stale_approvals(decision, unwitnessed)
     recovered = _fix_answers(conn, run_id, rnd, fix_note)
     answered = "\n".join(part for part in (fix_context, recovered) if part)
     if not unwitnessed and decision == "APPROVE":
@@ -490,7 +510,8 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
         print(f"[holo2] the fix at {sha[:12]} is approved")
         if not answered:
             answered = sh(["git", "log", "--format=%s",
-                           f"{reviewed or base_sha}..{sha}"], cwd=wt)
+                           f"{reviewed or main_merge_base(wt, sha)}..{sha}"],
+                          cwd=wt)
         refresh_pr_text(project, conn, run_id, task_id, ticket.splitlines()[0],
                         branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
         return sha
@@ -498,6 +519,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
            f"Round {rnd}: REQUEST_CHANGES on the fix at {sha} on"
            f" {pull.url}; not merged\nReviewer findings:\n{verdict}",
            provider)
+    stale_again(branch, sha, stale)
     if fix_note is not None and (unwitnessed or
             decision == "REQUEST_CHANGES"):
         goal = (f"Fix the pre-merge review findings on {pull.url}. The ticket"

@@ -1,4 +1,5 @@
 import json
+import subprocess
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from time import time
@@ -10,12 +11,22 @@ import ticket_template
 from holophyte import failure_reason
 from holophyte.agents.review_workspace import review_refs
 from holophyte.board.projection import block_ticket, ledger
+from holophyte.config.reader import VERIFY_TIMEOUT
 from holophyte.environment_git import paths, unstage_environment
-from holophyte.loop.gates import MergeParked, RunFailure, run_verify, sh, with_baseline
+from holophyte.loop.gates import (
+    MergeParked,
+    RunFailure,
+    _verify_command,
+    run_verify,
+    sh,
+    with_baseline,
+)
 from holophyte.loop.runs import heartbeat_while, record_round, set_phase
 from holophyte.loop.stop import boundary, keep_route
 from holophyte.redact import safe_print as print
+from holophyte.review import skipped_tests
 from holophyte.review.reply_parsing import raw_finding
+from store.working import working
 
 DECLARATION = "OUTCOME: NOT_REPRODUCED"
 
@@ -149,6 +160,7 @@ def review_rounds(*args, resume=None):
     if "handed_on" in pending:
         return _hand_on(loop, frame, pending, pending["handed_on"])
     keep_route(frame.conn, frame.run_id, unreproduced=True)
+    headline = "not-reproduced evidence check FAIL"
     if pending.get("phase") == "addressing":
         ok, out = _verified(frame, 1, pending)
         set_phase(frame.conn, frame.run_id, "reviewing",
@@ -158,14 +170,21 @@ def review_rounds(*args, resume=None):
         return _second(loop, frame, pending)
     else:
         ok, out = _verified(frame, 1, pending)
-        if not ok:
+        skipped = _skipped(frame) if _counted(ok, out) else None
+        if not ok and not skipped:
             return _set_aside(loop, frame, 1, out)
-        reply, decision, started = _check(loop, frame, 1, ok, out)
-        _record(frame, 1, reply, decision, ok, out, started)
-        if decision == "PASS":
-            _park(frame)
-        reasons = _reasons(reply)
-    fixes, head = _fix(loop, frame, reasons, ok, out)
+        if skipped:
+            headline = "new tests skipped on the base"
+            set_phase(frame.conn, frame.run_id, "reviewing",
+                      f"round 1: {headline}, no evidence check")
+            reasons = skipped_tests.brief(skipped)
+        else:
+            reply, decision, started = _check(loop, frame, 1, ok, out)
+            _record(frame, 1, reply, decision, ok, out, started)
+            if decision == "PASS":
+                _park(frame)
+            reasons = _reasons(reply)
+    fixes, head = _fix(loop, frame, reasons, ok, out, headline)
     return _second(loop, replace(frame, sha=head),
                    {"declared": declared(fixes)})
 
@@ -176,6 +195,9 @@ def _second(loop, frame, pending):
     ok, out = _verified(frame, 2, pending)
     if not ok:
         return _set_aside(loop, frame, 2, out)
+    if _skipped(frame):
+        return _hand_on(loop, frame, {"phase": "reviewing", "rnd": 2, "ok": ok,
+                                      "out": out})
     reply, decision, started = _check(loop, frame, 2, ok, out)
     if decision == "PASS":
         _record(frame, 2, reply, decision, ok, out, started)
@@ -227,6 +249,39 @@ def _set_aside(loop, frame, rnd, out):
                                   "ok": False, "out": out})
 
 
+def _counted(ok, out):
+    return ok or skipped_tests.ran_nothing(getattr(out, "failure", None))
+
+
+def _skipped(frame):
+    source = skipped_tests.Source(frame.wt, frame.sha)
+    added = skipped_tests.added_tests(source, frame.base_sha)
+    probe = added and skipped_tests.probe_command(frame.verify_cmd)
+    skipped = probe and skipped_tests.skipped_on_base(_probe(frame, probe),
+                                                      added, source)
+    if not skipped:
+        return None
+    summary = ("the candidate's new tests did not run where the evidence "
+               f"check runs: {', '.join(test for test, _ in skipped)}")
+    print(f"[holo2] {summary}")
+    if frame.conn is not None and frame.run_id is not None:
+        store.record_event(frame.conn, frame.run_id, "reproduce_skipped",
+                           summary, level="detail", payload=json.dumps(
+                               {"skipped": [{"test": test, "reason": reason}
+                                            for test, reason in skipped]}))
+    return skipped
+
+
+def _probe(frame, command):
+    with working(frame.conn, frame.run_id, verify=True), \
+            heartbeat_while(frame.conn, frame.run_id, frame.beat_s):
+        try:
+            return _verify_command(frame.target, command, frame.wt,
+                                   VERIFY_TIMEOUT)[1] or ""
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+
+
 def _check(loop, frame, rnd, ok, out):
     boundary(frame.conn, frame.run_id, "reviewing", rnd=rnd, ok=ok,
              out=str(out), declared=True)
@@ -276,7 +331,7 @@ def _record(frame, rnd, reply, decision, ok, out, started):
                  structured_findings=findings)
 
 
-def _fix(loop, frame, reasons, ok, out):
+def _fix(loop, frame, reasons, ok, out, headline):
     from holophyte.agents.fix_session import fix_turn
 
     loop._check_run_cap(frame.target, frame.conn, frame.run_id,
@@ -292,7 +347,7 @@ def _fix(loop, frame, reasons, ok, out):
     boundary(frame.conn, frame.run_id, "verifying", rnd=2,
              declared=declared(fixes))
     ledger(frame.conn, frame.run_id, frame.task_id, "round",
-           "Round 1: not-reproduced evidence check FAIL -> fix round\n"
+           f"Round 1: {headline} -> fix round\n"
            f"Evidence check:\n{reasons}\n\nImplementer response:\n{fixes}",
            frame.provider)
     head = sh(["git", "rev-parse", "HEAD"], cwd=frame.wt)
