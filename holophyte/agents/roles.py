@@ -143,9 +143,9 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         except InfraFailure as failure:
             reason = argv is None and route_down(project, role, failure)
             if reason and activate_fallback(project, role, reason, conn, run_id):
-                return launch()
+                return second_attempt(launch, failure)
             if timed_out(failure):
-                output = retry_timed_out(launch, failure)
+                output = second_attempt(launch, failure)
             elif reason or unreadable_output(role, failure) is None:
                 raise
             else:
@@ -173,11 +173,11 @@ def timed_out(failure):
     return isinstance(failure.__cause__, subprocess.TimeoutExpired)
 
 
-def retry_timed_out(launch, failure):
+def second_attempt(launch, failure):
     try:
         return launch()
     except InfraFailure as again:
-        if not timed_out(again):
+        if not (timed_out(failure) and timed_out(again)):
             raise
         raise InfraFailure(f"{failure} (twice)", "review_route") from again
 

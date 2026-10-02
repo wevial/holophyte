@@ -154,6 +154,16 @@ class ReviewTimeoutLoopTests(LoopFixture):
         self.assertEqual(self.review_turns(),
                          [("primary", True), ("primary", True)])
 
+    def test_a_timeout_on_the_fallback_after_failover_fails_as_twice(self):
+        self.configure(PAIRS)
+        self.review("SLEEP", "SLEEP")
+        ((outcome, reason),) = self.read("SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("review timed out after 3s (twice)", reason)
+        self.assertEqual(self.dispatched(), ["gpt-6-astra", "gpt-5.6-sol"])
+        self.assertEqual(self.review_turns(),
+                         [("primary", True), ("fallback", True)])
+
 
 if __name__ == "__main__":
     import unittest
