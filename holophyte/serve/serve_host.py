@@ -22,6 +22,7 @@ from holophyte.host.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.loop.pool_handoff import workers_on_previous_build
 from holophyte.loop.reexec import SWEEP_UNIT, systemctl_user
 from holophyte.redact import known_secrets, outbound
+from holophyte.serve.console_build import refresh_console
 from holophyte.serve.serve_actions import (
     ACTIONS,
     ACTIONS_PREFIX,
@@ -29,7 +30,7 @@ from holophyte.serve.serve_actions import (
 )
 from holophyte.serve.serve_board import post_path, post_ticket, put_ticket, ticket_path
 from holophyte.serve.serve_config import require_tomlkit
-from holophyte.serve.serve_watch import CODE_CHECK_SEC, adopted_socket
+from holophyte.serve.serve_watch import CODE_CHECK_SEC, CodeWatch, adopted_socket
 from holophyte.serve.server import (
     CONSOLE_DIR,
     Scope,
@@ -525,9 +526,12 @@ def serve_host(host, address=None, out=None, interval=CODE_CHECK_SEC):
         raise SystemExit(f"[holo2] {host.path}: [serve] bind: {bad}") from None
     read, write = host_tokens(host, knobs, bound_host, entries)
     name_ignored(entries, knobs, out)
-    server = HostServer(host, knobs, (bound_host, port), read_token=read,
-                        write_token=write, sock=sock)
+    watch = CodeWatch(interval, out, factory_revision)
+    refresh_console(out, CONSOLE_DIR)
+    server = HostServer(host, knobs, (bound_host, port), CONSOLE_DIR,
+                        read_token=read, write_token=write, sock=sock)
     guard = "open" if read is None else "behind the machine token"
     mode = "with actions" if server.actions else "without actions"
     return run(server, f"{mode} for {len(entries)} projects in {host.path},"
-                       f" {guard}", out, interval, adopted=sock is not None)
+                       f" {guard}", out, interval, adopted=sock is not None,
+               watch=watch)

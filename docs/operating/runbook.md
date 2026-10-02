@@ -36,8 +36,11 @@ tmux new-session -d -s holo-loop  "cd /path/to/holophyte && python3 -u factory.p
 The loop idle-exits when the board is empty and stops after a failed run,
 so relaunching it is routine. The sweep runs every minute from the
 checkout's `HEAD`, and the daemon leaves for the new code on its own after
-a self-merge; neither is restarted by hand. After each loop merge the
-operator pushes `main` by hand; the factory never pushes.
+a self-merge; neither is restarted by hand. The console rebuilds itself:
+the host daemon builds `console/dist` at startup when its stamp is not the
+checkout's `console/` tree, and keeps the old build if that fails. After
+each loop merge the operator pushes `main` by hand; the factory never
+pushes.
 
 ## Recipes
 
