@@ -296,14 +296,29 @@ def _quoted_spellings(name):
     return [name, *(doubled.replace(quote, "\\" + quote) for quote in "\"'`")]
 
 
+_GO_STRING = r'"((?:[^"\\\n]|\\.)*)"'
+
+
 def _scan_go_subtest(text, name):
     parent, *children = name.split("/")
     if not re.search(rf"\bfunc {re.escape(parent)}\(", text):
         return f"no func {parent}"
     runs = {re.sub(r"\s", "_", title) for title in
-            re.findall(r'\.Run\("((?:[^"\\\n]|\\.)*)"', text)}
+            re.findall(r"\.Run\(" + _GO_STRING, text)}
+    runs |= _go_table_titles(text, parent)
     absent = [child for child in children if re.sub(r"\s", "_", child) not in runs]
     return f'no .Run("{absent[0]}") for {parent}' if absent else None
+
+
+def _go_table_titles(text, parent):
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines)
+                 if re.search(rf"\bfunc {re.escape(parent)}\(", line))
+    end = next((i for i in range(start + 1, len(lines)) if lines[i] == "}"), len(lines))
+    body = "\n".join(lines[start:end + 1])
+    if not re.search(r'\.Run\((?!\s*")', body):
+        return set()
+    return {re.sub(r"\s", "_", literal) for literal in re.findall(_GO_STRING, body)}
 
 
 def missing_witnesses(references, root):
