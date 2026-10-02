@@ -43,6 +43,8 @@ from holophyte.isolation import launcher
 from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
 from holophyte.redact import known_secrets, outbound
 
+REVIEW_TIMEOUT = 1800
+
 
 def agent_route(project, role):
     role = effective_role(project, role)
@@ -140,13 +142,14 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             output = launch()
         except InfraFailure as failure:
             reason = argv is None and route_down(project, role, failure)
-            if reason:
-                if not activate_fallback(project, role, reason, conn, run_id):
-                    raise
-                return launch()
-            if unreadable_output(role, failure) is None:
+            if reason and activate_fallback(project, role, reason, conn, run_id):
+                return second_attempt(launch, failure)
+            if timed_out(failure):
+                output = second_attempt(launch, failure)
+            elif reason or unreadable_output(role, failure) is None:
                 raise
-            output = launch()
+            else:
+                output = launch()
         command = getattr(output, "command", agent_route(project, role))
         reason = outage_reason(command, output)
         if (argv is None and reason
@@ -164,6 +167,22 @@ def route_down(project, role, failure):
             and container_fallback_profile(project, role)):
         return str(failure)
     return None
+
+
+def timed_out(failure):
+    return isinstance(failure.__cause__, subprocess.TimeoutExpired)
+
+
+def second_attempt(launch, failure):
+    try:
+        output = launch()
+    except InfraFailure as again:
+        if not (timed_out(failure) and timed_out(again)):
+            raise
+        raise InfraFailure(f"{failure} (twice)", "review_route") from again
+    if timed_out(failure) and getattr(output, "timed_out", False):
+        raise InfraFailure(f"{failure} (twice)", "review_route")
+    return output
 
 
 def unreadable_output(role, failure):
@@ -184,6 +203,47 @@ def record_review_boundary(conn, run_id, role, failure):
                        payload=json.dumps({"role": role, "line": error.line,
                                            "tail": error.tail,
                                            "exit_status": error.exit_status}))
+
+
+def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
+                     run_id, switched):
+    from holophyte.loop.runs import heartbeat_while
+    model, effort = review_route(project, fallback=switched)
+    profile = review_profile(model, effort)
+    # A kill ends the container's client; the runner removes the container.
+    kill = GroupKill()
+    beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+    try:
+        with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
+            return AgentOutput(review_runner.run_review(
+                repo=Path(cwd),
+                run_id=run_id,
+                base_sha=base_sha,
+                candidate_sha=candidate_sha,
+                prompt=goal,
+                model=model,
+                effort=effort,
+                profile=profile,
+                timeout=REVIEW_TIMEOUT,
+                verdicts=None,
+                carry=carry_directories(project),
+                on_start=kill.arm,
+            ), profile)
+    except review_runner.ReviewBoundaryError as e:
+        # The candidate was never judged: the failure is the factory's.
+        failure = InfraFailure(f"reviewer route failed for {role}:"
+                               f" {e}", "review_route")
+        failure.output = getattr(e, "output", "")
+        raise failure from e
+    except subprocess.TimeoutExpired as e:
+        if role != "review":
+            raise
+        failure = InfraFailure(
+            f"review timed out after {REVIEW_TIMEOUT}s", "review_route")
+        failure.output = AgentOutput(str(failure), profile, timed_out=True)
+        failure.tail = f"{e.output or ''}{e.stderr or ''}"[
+            -review_runner.EVIDENCE_TAIL:]
+        raise failure from e
 
 
 def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
@@ -209,33 +269,8 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                         DEFAULT_IMPLEMENTER)
     if cmd is None:
         if role != "implement":
-            from holophyte.loop.runs import heartbeat_while
-            model, effort = review_route(project, fallback=switched)
-            # A kill ends the container's client; the runner removes the container.
-            kill = GroupKill()
-            beat_s = sweep_config(project).heartbeat_stale_ms / 2000
-            try:
-                with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-                    return AgentOutput(review_runner.run_review(
-                        repo=Path(cwd),
-                        run_id=run_id,
-                        base_sha=base_sha,
-                        candidate_sha=candidate_sha,
-                        prompt=goal,
-                        model=model,
-                        effort=effort,
-                        profile=review_profile(model, effort),
-                        timeout=1800,
-                        verdicts=None,
-                        carry=carry_directories(project),
-                        on_start=kill.arm,
-                    ), review_profile(model, effort))
-            except review_runner.ReviewBoundaryError as e:
-                # The candidate was never judged: the failure is the factory's.
-                failure = InfraFailure(f"reviewer route failed for {role}:"
-                                       f" {e}", "review_route")
-                failure.output = getattr(e, "output", "")
-                raise failure from e
+            return container_review(project, role, goal, cwd, base_sha,
+                                    candidate_sha, conn, run_id, switched)
         cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role != "implement":
@@ -246,7 +281,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         from holophyte.review.review_session import prepare_environment, record_session
 
         beat_s = sweep_config(project).heartbeat_stale_ms / 2000
-        cap = 1800 if timeout is None else min(timeout, 1800)
+        cap = REVIEW_TIMEOUT if timeout is None else min(timeout, REVIEW_TIMEOUT)
         kill = GroupKill()
         try:
             with review_scratch(cwd) as scratch:
