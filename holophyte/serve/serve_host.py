@@ -22,6 +22,7 @@ from holophyte.host.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.loop.pool_handoff import workers_on_previous_build
 from holophyte.loop.reexec import SWEEP_UNIT, systemctl_user
 from holophyte.redact import known_secrets, outbound
+from holophyte.serve.console_build import refresh_console
 from holophyte.serve.serve_actions import (
     ACTIONS,
     ACTIONS_PREFIX,
@@ -525,6 +526,7 @@ def serve_host(host, address=None, out=None, interval=CODE_CHECK_SEC):
         raise SystemExit(f"[holo2] {host.path}: [serve] bind: {bad}") from None
     read, write = host_tokens(host, knobs, bound_host, entries)
     name_ignored(entries, knobs, out)
+    refresh_console(out)
     server = HostServer(host, knobs, (bound_host, port), read_token=read,
                         write_token=write, sock=sock)
     guard = "open" if read is None else "behind the machine token"

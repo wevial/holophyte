@@ -167,6 +167,9 @@ Each module, one line:
   in-flight request count (KO-648): what re-executes it between requests
   once the factory checkout's `HEAD` moves, or, on a socket the service
   manager handed over (`adopted_socket()`), what makes it drain and exit.
+- `holophyte/serve/console_build.py` — the host daemon's startup console
+  build: `console/dist/source-tree` against `HEAD:console`, a rebuild into
+  a staging directory swapped in on success, the old build kept on failure.
 - `holophyte/serve/serve_host.py` — `--serve` with no project: one daemon for
   every project in `host.toml`, each under `/projects/NAME`, the root's
   `/status` and `/attention` for the host, the machine token, one
