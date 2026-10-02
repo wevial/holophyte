@@ -66,11 +66,10 @@ def recorded_turn(project, role, routed_role, conn, run_id, launch):
         payload.update(exit_status=getattr(output, "exit_code", 0),
                        timed_out=getattr(output, "timed_out", False))
         return output
-    except subprocess.TimeoutExpired:
-        payload["timed_out"] = True
-        raise
     except Exception as exc:
-        payload["exit_status"] = getattr(exc.__cause__ or exc, "returncode", None)
+        cause = exc.__cause__ or exc
+        payload["exit_status"] = getattr(cause, "returncode", None)
+        payload["timed_out"] = isinstance(cause, subprocess.TimeoutExpired)
         raise
     finally:
         payload["seconds"] = monotonic() - started

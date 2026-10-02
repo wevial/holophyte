@@ -77,9 +77,9 @@ def _run(
             on_start(proc)
             try:
                 stdout, stderr = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as expired:
                 proc.kill()
-                proc.communicate()
+                expired.output, expired.stderr = proc.communicate()
                 raise
         result = subprocess.CompletedProcess(list(args), proc.returncode,
                                              stdout, stderr)
