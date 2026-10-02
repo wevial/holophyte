@@ -237,6 +237,23 @@ class ReproduceSkippedTests(LoopFixture):
             {"test": "tests/test_modal.py::Modal::test_rename_keeps_the_name",
              "reason": REASON}]}])
 
+    def test_a_skipped_new_test_is_not_masked_by_its_namesake_elsewhere(self):
+        for package in ("tests", "other"):
+            (self.target / package).mkdir(exist_ok=True)
+            (self.target / package / "__init__.py").write_text("")
+        (self.target / "other" / "test_modal.py").write_text(PASSES)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "a namesake that passes")
+        each = "python3 -m unittest discover -s {} -t . -p 'test_*.py'"
+        fake = self.run_bug(reproducing(GATED), FIX, APPROVE,
+                            verify=f"{each.format('tests')}\n"
+                                   f"{each.format('other')}")
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
+            {"test": "tests/test_modal.py::Modal::test_rename_keeps_the_name",
+             "reason": REASON}]}])
+
     def test_a_new_mixin_test_that_runs_and_passes_on_the_base_still_parks(self):
         fake = self.run_bug(
             reproducing(MIXIN_PASSES, path="tests/test_existing.py"), CHECKED)

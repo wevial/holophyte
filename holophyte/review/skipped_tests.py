@@ -35,7 +35,7 @@ class Test(NamedTuple):
 
 
 class Result(NamedTuple):
-    stem: str
+    module: str
     cls: object
     name: str
     skipped: bool
@@ -100,22 +100,32 @@ def _reason(status):
         return status.removeprefix("skipped ")
 
 
+def _module(path):
+    return ".".join(PurePosixPath(path).with_suffix("").parts)
+
+
+def _in_module(module, result):
+    return f".{module}".endswith(f".{result.module}")
+
+
 def _unittest_result(name, dotted, status):
     parts, skipped = dotted.split("."), status.startswith("skipped ")
     reason = _reason(status) if skipped else None
-    if name == MODULE_FIXTURE or parts[:3] == MODULE_SKIPPED:
-        return Result(parts[-1], None, MODULE_FIXTURE, skipped, reason)
+    if parts[:3] == MODULE_SKIPPED:
+        return Result(name, None, MODULE_FIXTURE, skipped, reason)
+    if name == MODULE_FIXTURE:
+        return Result(dotted, None, MODULE_FIXTURE, skipped, reason)
     if name == CLASS_FIXTURE:
-        return Result(parts[-2], parts[-1], CLASS_FIXTURE, skipped, reason)
-    return Result(parts[-3] if len(parts) > 2 else "", parts[-2], name,
-                  skipped, reason)
+        return Result(".".join(parts[:-1]), parts[-1], CLASS_FIXTURE,
+                      skipped, reason)
+    return Result(".".join(parts[:-2]), parts[-2], name, skipped, reason)
 
 
 def _results(output):
     results = [_unittest_result(*found)
                for found in UNITTEST_RESULT.findall(output)]
     for path, cls, name, status, reason in PYTEST_RESULT.findall(output):
-        results.append(Result(PurePosixPath(path).stem,
+        results.append(Result(_module(path),
                               cls.split("::")[-1] if cls else None, name,
                               status == "SKIPPED", reason or None))
     return results
@@ -135,12 +145,10 @@ def _same_file(path, other):
     return f"/{path}".endswith(f"/{other}") or f"/{other}".endswith(f"/{path}")
 
 
-def _fixture_reason(test, results, output):
-    stem = PurePosixPath(test.path).stem
-    for fixture in ((stem, test.cls, CLASS_FIXTURE),
-                    (stem, None, MODULE_FIXTURE)):
-        reason = next((result.reason for result in results
-                       if result[:3] == fixture and result.skipped), None)
+def _fixture_reason(test, mine, output):
+    for fixture in ((test.cls, CLASS_FIXTURE), (None, MODULE_FIXTURE)):
+        reason = next((result.reason for result in mine
+                       if result[1:3] == fixture and result.skipped), None)
         if reason:
             return reason
     return next((reason for where, reason in PYTEST_SKIP.findall(output)
@@ -154,16 +162,16 @@ def skipped_on_base(output, added):
     results = _results(output)
     found = []
     for test in added:
-        stem = PurePosixPath(test.path).stem
-        own = [result for result in results
-               if result[:3] == (stem, test.cls, test.name)] or [
-            result for result in results
-            if (result.stem, result.name) == (stem, test.name)]
+        module = _module(test.path)
+        mine = [result for result in results if _in_module(module, result)]
+        own = [result for result in mine
+               if result[1:3] == (test.cls, test.name)] or [
+            result for result in mine if result.name == test.name]
         if any(not result.skipped for result in own):
             return None
         found.append((test.id(), next(
             (result.reason for result in own if result.reason), None)
-            or _fixture_reason(test, results, output) or NOT_COLLECTED))
+            or _fixture_reason(test, mine, output) or NOT_COLLECTED))
     return found
 
 
