@@ -195,9 +195,6 @@ def _second(loop, frame, pending):
     ok, out = _verified(frame, 2, pending)
     if not ok:
         return _set_aside(loop, frame, 2, out)
-    if _skipped(frame):
-        return _hand_on(loop, frame, {"phase": "reviewing", "rnd": 2, "ok": ok,
-                                      "out": out})
     reply, decision, started = _check(loop, frame, 2, ok, out)
     if decision == "PASS":
         _record(frame, 2, reply, decision, ok, out, started)

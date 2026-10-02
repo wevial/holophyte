@@ -1,5 +1,7 @@
 import ast
+import posixpath
 import re
+import shlex
 from pathlib import PurePosixPath
 from typing import NamedTuple
 
@@ -23,6 +25,14 @@ MODULE_SKIPPED = ["unittest", "loader", "ModuleSkipped"]
 HUNK = re.compile(r"^@@ -\S+ \+(\d+)")
 ADDED_TEST = re.compile(r"^\+\s*(?:async\s+)?def (test\w*)\(")
 NOT_COLLECTED = "not collected by the verify commands"
+ROOT_MARK = "holophyte-probe-root:"
+ROOT_LINE = re.compile(rf"^{ROOT_MARK}(\S*)$", re.M)
+CHDIR = re.compile(r"(?<![\w-])(?:cd|pushd|popd)(?![\w-])")
+PLAIN_ROOT = re.compile(r"[A-Za-z_]\w*(?:/[A-Za-z_]\w*)*")
+DISCOVER_VALUED = {"-s": "start", "--start-directory": "start",
+                   "-t": "top", "--top-level-directory": "top",
+                   "-p": None, "--pattern": None, "-k": None,
+                   "--durations": None}
 
 
 class Test(NamedTuple):
@@ -79,13 +89,45 @@ def _verbose(clause, run, flags):
     return clause, bool(matches)
 
 
+def _discover_root(args):
+    found, positional, words = {}, [], iter(args)
+    for word in words:
+        flag, equals, value = word.partition("=")
+        if flag in DISCOVER_VALUED:
+            value = value if equals else next(words, "")
+            found[DISCOVER_VALUED[flag] or flag] = value
+        elif word[:2] in ("-s", "-t") and len(word) > 2:
+            found[DISCOVER_VALUED[word[:2]]] = word[2:]
+        elif not word.startswith("-"):
+            positional.append(word)
+    start = found.get("start") or (positional[:1] or ["."])[0]
+    return found.get("top") or (positional[2:3] or [start])[0]
+
+
+def _root_prefix(clause, moved):
+    match, *more = UNITTEST_RUN.finditer(clause)
+    if moved or more or not match.group().endswith("discover"):
+        return ""
+    end = ARGS_END.search(clause, match.end()).start()
+    try:
+        root = posixpath.normpath(_discover_root(
+            shlex.split(clause[match.end():end])))
+    except ValueError:
+        return ""
+    return root.replace("/", ".") if PLAIN_ROOT.fullmatch(root) else ""
+
+
 def probe_command(verify_cmd):
-    clauses, probed = [], False
+    clauses, probed, moved = [], False, False
     for line in (verify_cmd or "").splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         for clause in split_and_clauses(line) or [line]:
+            moved = moved or bool(CHDIR.search(clause))
             if not INSTALL.search(clause):
+                if UNITTEST_RUN.search(clause):
+                    root = f"{ROOT_MARK}{_root_prefix(clause, moved)}"
+                    clauses.append(f"echo {shlex.quote(root)}")
                 clause, units = _verbose(clause, UNITTEST_RUN, " -v")
                 clause, pytests = _verbose(clause, PYTEST_RUN, " -vv -rs")
                 probed = probed or units or pytests
@@ -121,9 +163,16 @@ def _unittest_result(name, dotted, status):
     return Result(".".join(parts[:-2]), parts[-2], name, skipped, reason)
 
 
+def _rooted(result, prefix):
+    return result._replace(module=f"{prefix}.{result.module}") if prefix else result
+
+
 def _results(output):
-    results = [_unittest_result(*found)
-               for found in UNITTEST_RESULT.findall(output)]
+    segments = ROOT_LINE.split(output)
+    results = [_rooted(_unittest_result(*found), prefix)
+               for prefix, segment in zip(["", *segments[1::2]],
+                                          segments[::2])
+               for found in UNITTEST_RESULT.findall(segment)]
     for path, cls, name, status, reason in PYTEST_RESULT.findall(output):
         results.append(Result(_module(path),
                               cls.split("::")[-1] if cls else None, name,
