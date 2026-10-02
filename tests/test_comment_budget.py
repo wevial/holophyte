@@ -166,6 +166,7 @@ PINNED = {
     "holophyte/review/reproduce.py": 1,
     "holophyte/review/skipped_tests.py": 0,
     "holophyte/review/review_session.py": 2,
+    "holophyte/review/stale_approval.py": 0,
 
     "holophyte/serve/__init__.py": 0,
     "holophyte/serve/serve_actions.py": 4,

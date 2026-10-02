@@ -195,7 +195,9 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
 
         fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- crash"), TwoFixes(),
-                            PriorApproval(), Idle(""), provider=self.provider())
+                            PriorApproval(),
+                            PriorApproval() if touch_test else Idle(""),
+                            provider=self.provider())
         covering = [t for t in fake.turns if t.role == "review"][-1]
         approved, candidate = [sha for _, sha in self.pushed()]
         for text in (approved, candidate, f"{approved}..{candidate}",
