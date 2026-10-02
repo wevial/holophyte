@@ -28,6 +28,7 @@ from holophyte.config.agent_settings import (
     agent_command,
     budget_scale,
     review_route,
+    review_tier,
 )
 from holophyte.config.config_tables import sweep_config
 from holophyte.config.reader import (
@@ -209,13 +210,14 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                      run_id, switched):
     from holophyte.loop.runs import heartbeat_while
     model, effort = review_route(project, fallback=switched)
+    tier = review_tier(project, fallback=switched)
     profile = review_profile(model, effort)
     # A kill ends the container's client; the runner removes the container.
     kill = GroupKill()
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-            return AgentOutput(review_runner.run_review(
+            output = AgentOutput(review_runner.run_review(
                 repo=Path(cwd),
                 run_id=run_id,
                 base_sha=base_sha,
@@ -228,12 +230,16 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 verdicts=None,
                 carry=carry_directories(project),
                 on_start=kill.arm,
+                service_tier=tier,
             ), profile)
+        output.service_tier = tier
+        return output
     except review_runner.ReviewBoundaryError as e:
         # The candidate was never judged: the failure is the factory's.
         failure = InfraFailure(f"reviewer route failed for {role}:"
                                f" {e}", "review_route")
         failure.output = getattr(e, "output", "")
+        failure.service_tier = tier
         raise failure from e
     except subprocess.TimeoutExpired as e:
         if role != "review":
@@ -241,6 +247,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         failure = InfraFailure(
             f"review timed out after {REVIEW_TIMEOUT}s", "review_route")
         failure.output = AgentOutput(str(failure), profile, timed_out=True)
+        failure.service_tier = tier
         failure.tail = f"{e.output or ''}{e.stderr or ''}"[
             -review_runner.EVIDENCE_TAIL:]
         raise failure from e
