@@ -250,14 +250,15 @@ def _set_aside(loop, frame, rnd, out):
 
 
 def _counted(ok, out):
-    return ok or (getattr(out, "failure", None) or {}).get("exit_status") == 0
+    return ok or skipped_tests.ran_nothing(getattr(out, "failure", None))
 
 
 def _skipped(frame):
-    added = skipped_tests.added_tests(frame.wt, frame.base_sha, frame.sha)
+    source = skipped_tests.Source(frame.wt, frame.sha)
+    added = skipped_tests.added_tests(source, frame.base_sha)
     probe = added and skipped_tests.probe_command(frame.verify_cmd)
     skipped = probe and skipped_tests.skipped_on_base(_probe(frame, probe),
-                                                      added)
+                                                      added, source)
     if not skipped:
         return None
     summary = ("the candidate's new tests did not run where the evidence "

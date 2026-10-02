@@ -104,6 +104,35 @@ class Renamed(unittest.TestCase):
     def test_rename_keeps_the_name_on_the_base(self):
         self.assertTrue(open("app.txt").read())
 """
+PYTEST_MODULE_GATED = f"""import os
+
+import pytest
+
+if os.environ.get("REPRO_GATE_UNDER_TEST") != "1":
+    pytest.skip("{REASON}", allow_module_level=True)
+
+
+def test_rename_keeps_the_name():
+    assert os.path.exists("app.txt")
+"""
+SAME_NAME_FAILS = EXISTING + """
+
+class Renamed(unittest.TestCase):
+    def test_rename_keeps_the_name_on_the_base(self):
+        self.assertTrue(open("app.txt").read())
+"""
+SHARED_MIXIN = """class Renames:
+    def test_rename_keeps_the_name(self):
+        assert open("README.md").read()
+"""
+MIXIN_USER = """import unittest
+
+from support import Renames
+
+
+class Renaming(Renames, unittest.TestCase):
+    pass
+"""
 MIXIN_PASSES = EXISTING + """
 
 class _Renames:
@@ -197,6 +226,22 @@ class ReproduceSkippedTests(LoopFixture):
         self.assertEqual(len(self.events("reproduce_skipped")), 1)
         self.assertEqual(self.events("not_reproduced"), [])
 
+    def test_a_verify_whose_filter_runs_no_test_at_all_gets_a_fix_round(self):
+        fake = self.run_bug(
+            Idle(),
+            Declare("test the modal", path="tests/test_modal.py", body=FAILS),
+            Commit("reproduce where the filter runs", path="tests/test_modal.py",
+                   body=EXISTING),
+            APPROVE, verify="python3 -m unittest discover -s tests"
+                            " -p 'test_modal.py' -k on_the_base")
+
+        self.assertEqual(fake.roles,
+                         ["implement", "implement", "implement", "review"])
+        ((skipped,),) = [event["skipped"]
+                         for event in self.events("reproduce_skipped")]
+        self.assertIn("not collected", skipped["reason"])
+        self.assertEqual(self.events("not_reproduced"), [])
+
     def test_new_tests_the_verify_never_collects_get_a_fix_round(self):
         fake = self.run_bug(reproducing(FAILS, path="tests/modal_check.py"),
                             FIX, APPROVE)
@@ -216,6 +261,18 @@ class ReproduceSkippedTests(LoopFixture):
         self.assertEqual(fake.roles, ["implement", "implement", "review"])
         ((skipped,),) = [event["skipped"]
                          for event in self.events("reproduce_skipped")]
+        self.assertIn("not collected", skipped["reason"])
+
+    def test_a_k_filter_excluding_a_new_test_is_not_masked_by_a_namesake(self):
+        fake = self.run_bug(
+            reproducing(SAME_NAME_FAILS, path="tests/test_existing.py"),
+            FIX, APPROVE, verify=f"{VERIFY} -k Existing")
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        ((skipped,),) = [event["skipped"]
+                         for event in self.events("reproduce_skipped")]
+        self.assertEqual(skipped["test"], "tests/test_existing.py::Renamed::"
+                                          "test_rename_keeps_the_name_on_the_base")
         self.assertIn("not collected", skipped["reason"])
 
     def test_a_quiet_verify_still_shows_which_new_tests_skipped(self):
@@ -258,6 +315,26 @@ class ReproduceSkippedTests(LoopFixture):
                             verify="python3 -m pytest -q tests")
 
         self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
+            {"test": "tests/test_modal.py::test_rename_keeps_the_name",
+             "reason": REASON}]}])
+
+    @unittest.skipIf(subprocess.run(["python3", "-c", "import pytest"],
+                                    capture_output=True).returncode,
+                     "pytest is not installed for python3")
+    def test_a_pytest_module_skip_that_collects_nothing_gets_a_fix_round(self):
+        fake = self.run_bug(
+            Idle(),
+            Declare("test the modal", path="tests/test_modal.py",
+                    body=PYTEST_MODULE_GATED),
+            Commit("reproduce without the gate", path="tests/test_modal.py",
+                   body=PASSES),
+            APPROVE, verify="python3 -m pytest -q tests/test_modal.py")
+
+        self.assertEqual(fake.roles,
+                         ["implement", "implement", "implement", "review"])
+        self.assertIn("add a reproducing test that runs without that gate",
+                      fake.turns[2].goal)
         self.assertEqual(self.events("reproduce_skipped"), [{"skipped": [
             {"test": "tests/test_modal.py::test_rename_keeps_the_name",
              "reason": REASON}]}])
@@ -310,6 +387,28 @@ class ReproduceSkippedTests(LoopFixture):
     def test_a_new_mixin_test_that_runs_and_passes_on_the_base_still_parks(self):
         fake = self.run_bug(
             reproducing(MIXIN_PASSES, path="tests/test_existing.py"), CHECKED)
+
+        self.assertEqual(fake.roles, ["implement", "adjudicate"])
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("not_reproduced",)])
+        self.assertEqual(self.events("reproduce_skipped"), [])
+
+    def test_a_new_mixin_test_run_from_another_module_still_parks(self):
+        (self.target / "tests" / "support.py").write_text("class Renames:\n"
+                                                          "    pass\n")
+        (self.target / "tests" / "test_renaming.py").write_text(MIXIN_USER)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "a mixin another module runs")
+        fake = self.run_bug(
+            reproducing(SHARED_MIXIN, path="tests/support.py"), CHECKED)
+
+        self.assertEqual(fake.roles, ["implement", "adjudicate"])
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("not_reproduced",)])
+        self.assertEqual(self.events("reproduce_skipped"), [])
+
+    def test_a_new_test_in_a_file_opening_with_blank_lines_still_parks(self):
+        fake = self.run_bug(reproducing(f"\n\n{PASSES}"), CHECKED)
 
         self.assertEqual(fake.roles, ["implement", "adjudicate"])
         self.assertEqual(self.read("SELECT parkKind FROM runs"),

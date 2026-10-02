@@ -2,6 +2,7 @@ import ast
 import posixpath
 import re
 import shlex
+import subprocess
 from pathlib import PurePosixPath
 from typing import NamedTuple
 
@@ -25,6 +26,7 @@ MODULE_SKIPPED = ["unittest", "loader", "ModuleSkipped"]
 HUNK = re.compile(r"^@@ -\S+ \+(\d+)")
 ADDED_TEST = re.compile(r"^\+\s*(?:async\s+)?def (test\w*)\(")
 NOT_COLLECTED = "not collected by the verify commands"
+NO_TESTS_RAN = 5
 ROOT_MARK = "holophyte-probe-root:"
 ROOT_LINE = re.compile(rf"^{ROOT_MARK}(\S*)$", re.M)
 CHDIR = re.compile(r"(?<![\w-])(?:cd|pushd|popd)(?![\w-])")
@@ -39,9 +41,10 @@ class Test(NamedTuple):
     path: str
     cls: object
     name: str
+    line: int = 0
 
     def id(self):
-        return "::".join(part for part in self if part)
+        return "::".join(part for part in self[:3] if part)
 
 
 class Result(NamedTuple):
@@ -52,32 +55,73 @@ class Result(NamedTuple):
     reason: object
 
 
-def added_tests(wt, base, sha):
-    diff = sh(["git", "diff", "--unified=0", f"{base}...{sha}", "--", "*.py"],
-              cwd=wt)
+class Source:
+
+    def __init__(self, wt, sha):
+        self.wt, self.sha, self.trees = wt, sha, {}
+        self.modules = {path: _module(path) for path in sh(
+            ["git", "ls-tree", "-r", "--name-only", sha], cwd=wt).splitlines()
+            if path.endswith(".py")}
+
+    def tree(self, path):
+        if path not in self.trees:
+            blob = subprocess.run(["git", "show", f"{self.sha}:{path}"],
+                                  cwd=self.wt, capture_output=True)
+            try:
+                self.trees[path] = (ast.parse(blob.stdout)
+                                    if blob.returncode == 0 else None)
+            except (SyntaxError, ValueError):
+                self.trees[path] = None
+        return self.trees[path]
+
+
+def added_tests(source, base):
+    diff = subprocess.run(["git", "diff", "--unified=0", f"{base}...{source.sha}",
+                           "--", "*.py"], cwd=source.wt, capture_output=True,
+                          text=True, errors="replace").stdout
     tests, path, line = [], None, 0
     for text in diff.splitlines():
         if text.startswith("+++ "):
-            path = text[6:] if text.startswith("+++ b/") else None
+            path = text[6:].rstrip("\t") if text.startswith("+++ b/") else None
         elif hunk := HUNK.match(text):
             line = int(hunk.group(1))
         elif text.startswith("+") and path:
             if match := ADDED_TEST.match(text):
-                tests.append((path, line, match.group(1)))
+                tests.append(Test(path, _holder(source.tree(path), line),
+                                  match.group(1), line))
             line += 1
-    return [Test(path, _class_at(wt, sha, path, line), name)
-            for path, line, name in tests]
+    return tests
 
 
-def _class_at(wt, sha, path, line):
-    try:
-        tree = ast.parse(sh(["git", "show", f"{sha}:{path}"], cwd=wt))
-    except SyntaxError:
-        return None
-    return next((node.name for node in ast.walk(tree)
-                 if isinstance(node, ast.ClassDef)
-                 and any(getattr(child, "lineno", None) == line
-                         for child in node.body)), None)
+def _holder(tree, line):
+    classes = [node for node in (ast.walk(tree) if tree else ())
+               if isinstance(node, ast.ClassDef)
+               and node.lineno < line <= node.end_lineno]
+    return max(classes, key=lambda node: node.lineno).name if classes else None
+
+
+def _own_defs(tree, cls, name):
+    holders = [tree] if cls is None else [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and node.name == cls]
+    return [[child.lineno for child in holder.body
+             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+             and child.name == name] for holder in holders]
+
+
+def _elsewhere(ran, test, source):
+    found = False
+    for path, module in source.modules.items():
+        if not _in_module(module, ran):
+            continue
+        tree = source.tree(path)
+        if tree is None:
+            return False
+        for lines in _own_defs(tree, ran.cls, ran.name):
+            if not lines or (path == test.path and test.line in lines):
+                return False
+            found = True
+    return found
 
 
 def _verbose(clause, run, flags):
@@ -160,6 +204,8 @@ def _unittest_result(name, dotted, status):
     if name == CLASS_FIXTURE:
         return Result(".".join(parts[:-1]), parts[-1], CLASS_FIXTURE,
                       skipped, reason)
+    if parts[-1] != name:
+        parts.append(name)
     return Result(".".join(parts[:-2]), parts[-2], name, skipped, reason)
 
 
@@ -210,7 +256,7 @@ def _fixture_reason(test, mine, output):
                  if _same_file(test.path, where)), None)
 
 
-def skipped_on_base(output, added):
+def skipped_on_base(output, added, source):
     summarised = UNITTEST_SUMMARY.search(output) or PYTEST_SUMMARY.search(output)
     if not summarised or _ran_unseen(output):
         return None
@@ -219,16 +265,25 @@ def skipped_on_base(output, added):
     for test in added:
         module = _module(test.path)
         mine = [result for result in results if _in_module(module, result)]
-        own = [result for result in mine
-               if result[1:3] == (test.cls, test.name)]
-        if not own and not _fixture_skips(mine, test.cls, CLASS_FIXTURE):
-            own = [result for result in mine if result.name == test.name]
+        named = {result[:3]: result for result in results
+                 if result.name == test.name}
+        apart = {key for key, result in named.items()
+                 if _elsewhere(result, test, source)}
+        own = [result for result in results if result.name == test.name
+               and result[:3] not in apart]
         if any(not result.skipped for result in own):
             return None
         found.append((test.id(), next(
             (result.reason for result in own if result.reason), None)
             or _fixture_reason(test, mine, output) or NOT_COLLECTED))
     return found
+
+
+def ran_nothing(failure):
+    status = (failure or {}).get("exit_status")
+    command = (failure or {}).get("command") or ""
+    return status == 0 or (status == NO_TESTS_RAN and bool(
+        PYTEST_RUN.search(command) or UNITTEST_RUN.search(command)))
 
 
 def brief(skipped):
