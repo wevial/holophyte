@@ -51,6 +51,7 @@ AGENT_CONFIG_KEYS = {
 
 REVIEW_ROUTE_KEYS = ("review_model", "review_effort")
 REVIEW_FALLBACK_KEYS = ("review_fallback_model", "review_fallback_effort")
+REVIEW_TIER_KEYS = ("review_service_tier", "review_fallback_service_tier")
 
 DEFAULT_IMPLEMENTER = "claude"
 DEFAULT_REVIEWER = "docker"
@@ -60,7 +61,7 @@ DOCKER_PROBE_TIMEOUT = 5
 KNOWN_KEYS = {
     "verify": frozenset({"always", "before_merge", "timeout_sec"}),
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
-              | frozenset(REVIEW_FALLBACK_KEYS)
+              | frozenset(REVIEW_FALLBACK_KEYS) | frozenset(REVIEW_TIER_KEYS)
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",

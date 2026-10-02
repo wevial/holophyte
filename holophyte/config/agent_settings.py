@@ -13,6 +13,7 @@ from holophyte.config.reader import (
     REVIEW_MODEL,
     REVIEW_MODES,
     REVIEW_ROUTE_KEYS,
+    REVIEW_TIER_KEYS,
     config_table,
 )
 
@@ -75,7 +76,7 @@ def fallback_entries(project, role):
 
 def review_route(project, *, fallback=False):
     agents = config_table(project, "agents")
-    for key in (*REVIEW_ROUTE_KEYS, *REVIEW_FALLBACK_KEYS):
+    for key in (*REVIEW_ROUTE_KEYS, *REVIEW_FALLBACK_KEYS, *REVIEW_TIER_KEYS):
         if key in agents and "reviewer" in agents:
             raise SystemExit(
                 f"[holo2] {project.config_path}: [agents] {key} beside [agents] "
@@ -87,6 +88,12 @@ def review_route(project, *, fallback=False):
         raise SystemExit(
             f"[holo2] {project.config_path}: [agents] {present[0]} needs "
             f"[agents] {missing} beside it")
+    if REVIEW_TIER_KEYS[1] in agents and not present:
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] {REVIEW_TIER_KEYS[1]} needs "
+            f"[agents] {REVIEW_FALLBACK_KEYS[0]} beside it")
+    for route in (False, True):
+        review_tier(project, fallback=route)
     if fallback and not present:
         return None
     model_key, effort_key = REVIEW_FALLBACK_KEYS if fallback else REVIEW_ROUTE_KEYS
@@ -101,6 +108,16 @@ def review_route(project, *, fallback=False):
             f"[holo2] {project.config_path}: [agents] {effort_key} must be one of "
             f"{', '.join(REVIEW_EFFORTS)}, got {effort!r}")
     return model, effort
+
+
+def review_tier(project, *, fallback=False):
+    key = REVIEW_TIER_KEYS[fallback]
+    tier = config_table(project, "agents").get(key)
+    if tier is not None and (not isinstance(tier, str) or not tier.strip()):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] {key} must be a "
+            f"non-empty Codex service tier, got {tier!r}")
+    return tier
 
 
 def budget_scale(project):

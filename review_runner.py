@@ -241,8 +241,9 @@ def container_command(
     model: str = MODEL,
     effort: str = EFFORT,
     run_id: int | None = None,
+    service_tier: str | None = None,
 ) -> list[str]:
-    """Prompt, model and effort are positional arguments, never interpolated."""
+    """Prompt, model, effort and tier are positional arguments, never interpolated."""
     from holophyte.agents.review_workspace import review_refs
 
     mounts = [
@@ -267,7 +268,7 @@ test ! -e /var/run/docker.sock
 echo "PREFLIGHT_OK candidate=$actual" >&2
 cp -a /workspace /home/reviewer/candidate
 exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
-  -m "$2" -c "$3" \
+  -m "$2" -c "$3" ${4+-c "$4"} \
   -s danger-full-access --ephemeral --disable multi_agent "$1"
 '''.strip()
 
@@ -285,8 +286,10 @@ exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
     ]
     for mount in mounts:
         command.extend(["--volume", mount])
+    tier = [] if service_tier is None else [
+        f"service_tier={json.dumps(service_tier, ensure_ascii=False)}"]
     return command + [image, "/bin/sh", "-eu", "-c", preflight, "review", prompt,
-                      model, f'model_reasoning_effort="{effort}"']
+                      model, f'model_reasoning_effort="{effort}"', *tier]
 
 
 def terminal_verdict(message: str, verdicts: Sequence[str] = REVIEW_VERDICTS) -> str:
@@ -447,6 +450,7 @@ def run_review(
     carry: Sequence[str] = (),
     run_id: int | None = None,
     on_start=None,
+    service_tier: str | None = None,
 ) -> str:
     """`profile` must be what the model and effort compute to; another is refused."""
     if not model:
@@ -485,6 +489,7 @@ def run_review(
             model=model,
             effort=effort,
             run_id=run_id,
+            service_tier=service_tier,
         )
         try:
             with _removing_on_signal(name):

@@ -65,11 +65,15 @@ def recorded_turn(project, role, routed_role, conn, run_id, launch):
         output = launch()
         payload.update(exit_status=getattr(output, "exit_code", 0),
                        timed_out=getattr(output, "timed_out", False))
+        if hasattr(output, "service_tier"):
+            payload["service_tier"] = output.service_tier
         return output
     except Exception as exc:
         cause = exc.__cause__ or exc
         payload["exit_status"] = getattr(cause, "returncode", None)
         payload["timed_out"] = isinstance(cause, subprocess.TimeoutExpired)
+        if hasattr(exc, "service_tier"):
+            payload["service_tier"] = exc.service_tier
         if payload["timed_out"] and hasattr(exc, "tail"):
             payload["tail"] = exc.tail
         raise

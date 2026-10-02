@@ -19,6 +19,7 @@ from holophyte.config.agent_settings import (
     agent_command,
     fallback_entries,
     review_route,
+    review_tier,
 )
 from holophyte.config.reader import (
     AGENT_CONFIG_KEYS,
@@ -146,7 +147,8 @@ def probe_route(project, role, fallback, timeout, entry):
                     repo=Path(scratch), base_sha=sha, candidate_sha=sha,
                     prompt=goal, model=pair[0], effort=pair[1],
                     profile=review_profile(*pair),
-                    timeout=cap, verdicts=None)
+                    timeout=cap, verdicts=None,
+                    service_tier=review_tier(project, fallback=fallback))
                 code = 0
             elif role == "implement":
                 code, out = launcher.launch(
