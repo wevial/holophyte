@@ -46,6 +46,24 @@ if turn == "SLEEP":
 print(turn)
 """
 
+# A command-based fallback reviewer: the probe gets its checkout's commit, a
+# review the next fallback turn, read and slept on as the container's are.
+FALLBACK = f"""#!{sys.executable}
+import os, subprocess, sys, time
+turns = os.environ["REVIEW_TURNS"]
+if sys.argv[-1] == {probes.REVIEW_PROBE_GOAL!r}:
+    print("ready")
+    print(subprocess.check_output(["git", "rev-parse", "HEAD"], text=True))
+    sys.exit(0)
+count = os.path.join(turns, "fallback-count")
+n = int(open(count).read()) + 1 if os.path.exists(count) else 1
+open(count, "w").write(str(n))
+turn = open(os.path.join(turns, "fallback-" + str(n))).read()
+if turn == "SLEEP":
+    time.sleep(120)
+print(turn)
+"""
+
 APPROVAL = ("Reviewed the diff; no blockers.\n"
             "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
             "SCOPE scripted-1.txt: needed — the scripted work\n"
@@ -161,6 +179,22 @@ class ReviewTimeoutLoopTests(LoopFixture):
         self.assertEqual(outcome, "failed")
         self.assertIn("review timed out after 3s (twice)", reason)
         self.assertEqual(self.dispatched(), ["gpt-6-astra", "gpt-5.6-sol"])
+        self.assertEqual(self.review_turns(),
+                         [("primary", True), ("fallback", True)])
+
+
+    def test_a_timeout_returned_by_a_command_fallback_fails_as_twice(self):
+        script = self.target.parent / "bin" / "reviewer-fallback"
+        script.write_text(FALLBACK)
+        script.chmod(0o755)
+        self.configure(f'[agents]\nreviewer_fallback = "{script}"\n')
+        for n, turn in enumerate(("SLEEP", APPROVAL), 1):
+            (self.turns / f"fallback-{n}").write_text(turn)
+        self.review("SLEEP")
+        ((outcome, reason),) = self.read("SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("review timed out after 3s (twice)", reason)
+        self.assertEqual((self.turns / "fallback-count").read_text(), "1")
         self.assertEqual(self.review_turns(),
                          [("primary", True), ("fallback", True)])
 

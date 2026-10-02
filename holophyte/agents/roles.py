@@ -175,11 +175,14 @@ def timed_out(failure):
 
 def second_attempt(launch, failure):
     try:
-        return launch()
+        output = launch()
     except InfraFailure as again:
         if not (timed_out(failure) and timed_out(again)):
             raise
         raise InfraFailure(f"{failure} (twice)", "review_route") from again
+    if timed_out(failure) and getattr(output, "timed_out", False):
+        raise InfraFailure(f"{failure} (twice)", "review_route")
+    return output
 
 
 def unreadable_output(role, failure):
@@ -278,7 +281,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         from holophyte.review.review_session import prepare_environment, record_session
 
         beat_s = sweep_config(project).heartbeat_stale_ms / 2000
-        cap = 1800 if timeout is None else min(timeout, 1800)
+        cap = REVIEW_TIMEOUT if timeout is None else min(timeout, REVIEW_TIMEOUT)
         kill = GroupKill()
         try:
             with review_scratch(cwd) as scratch:
