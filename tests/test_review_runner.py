@@ -8,6 +8,7 @@ import contextlib
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -531,6 +532,19 @@ class ContainerCommandTests(unittest.TestCase):
         self.assertEqual(lines[copy], "cp -a /workspace /home/reviewer/candidate")
         self.assertIn(" -C /home/reviewer/candidate", lines[run])
         self.assertNotIn("-C /workspace", lines[run])
+
+    def test_ephemeral_codex_runs_with_multi_agent_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command = self._rendered(Path(tmp))
+        script = command[command.index("-c") + 1].replace("\\\n", " ")
+        run = next(line for line in script.splitlines() if line.startswith("exec "))
+        argv = shlex.split(run)
+
+        self.assertEqual(argv[1:3], ["/opt/codex/bin/codex", "exec"])
+        self.assertIn("--ephemeral", argv)
+        disable = argv.index("--disable")
+        self.assertEqual(argv[disable + 1], "multi_agent")
+        self.assertLess(disable, argv.index("$1"))
 
     def test_workspace_stays_read_only(self):
         with tempfile.TemporaryDirectory() as tmp:
