@@ -160,8 +160,9 @@ class RepeatedPassTests(unittest.TestCase):
 
     def test_a_failure_is_not_recorded(self):
         cmd = self.cmd + "; exit 1"
-        self.assertFalse(self.verify(cmd=cmd)[0])
-        self.assertFalse(self.verify(cmd=cmd)[0])
+        for _ in range(2):
+            self.assertFalse(holophyte.loop.gates.run_verify(
+                cmd, self.wt, run_id=7, rerun=False)[0])
         self.assertEqual(self.runs(), 2)
 
 
@@ -329,7 +330,8 @@ class IsolatedVerifyTests(unittest.TestCase):
               patch.dict(os.environ, HOST_SECRET='private'),
               patch.object(launcher, 'run_capped',
                            side_effect=filesystem_runner) as run):
-            ok, out = gates.run_verify(command, self.wt, project=self.target)
+            ok, out = gates.run_verify(command, self.wt, project=self.target,
+                                       rerun=False)
             self.assertFalse(ok)
             ok, recorded = gates.with_baseline(self.target, self.wt, command, ok, out)
             self.assertIn('No such file', recorded.results[0]['output'])

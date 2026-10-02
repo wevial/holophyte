@@ -93,6 +93,12 @@ def failure_lines(conn):
         " WHERE outcome = 'failed' GROUP BY 1 ORDER BY 1")]
 
 
+def flaky_lines(conn):
+    (count,) = conn.execute(
+        "SELECT COUNT(*) FROM runEvents WHERE kind = 'verify_flaky'").fetchone()
+    return [f"verify flaky: {count}"] if count else []
+
+
 TOIL_WINDOWS = (("24h", 24 * 3_600_000), ("7d", 7 * 24 * 3_600_000))
 
 
@@ -145,6 +151,7 @@ def report_lines(conn, target=None):
         live += note_lines(conn)
         live += approval_lines(conn)
         live += failure_lines(conn)
+        live += flaky_lines(conn)
         live += toil_lines(conn, now)
         live.append("gap layers: " + ", ".join(
             f"{layer} {count}"

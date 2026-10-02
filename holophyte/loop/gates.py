@@ -141,12 +141,35 @@ def parse_clause_output(output):
             failed, "\n".join(cleaned))
 
 
+FAILURE_MARKERS = ("FAIL", "Error", "Traceback", "AssertionError", "assert",
+                   "expect(", "✘", "panic:", "--- FAIL")
+ACCESS_LOG_RE = re.compile(
+    r'^\s*\S+ \S+ \S+ \[[^\]]+\] "[A-Z]+ \S+ HTTP/[\d.]+" \d{3}\b')
+KEY_LINES = 40
+KEY_LINE_WIDTH = 300
+
+
+def key_lines(output):
+    found = [line.rstrip()[:KEY_LINE_WIDTH] for line in output.splitlines()
+             if any(mark in line for mark in FAILURE_MARKERS)
+             and not ACCESS_LOG_RE.match(line)][:KEY_LINES]
+    if not found:
+        return ""
+    return "[verify]   key lines:\n" + "".join(f"{line}\n" for line in found)
+
+
+def shown_output(output, silent):
+    kept = "\n".join(line for line in output.splitlines()
+                     if not ACCESS_LOG_RE.match(line)).strip()
+    return kept or ("(only access-log lines)" if output.strip() else silent)
+
+
 def failure_report(cmd, clauses, per_clause, failed, returncode, cleaned):
     if not (failed and clauses and 1 <= failed[0] <= len(clauses)):
-        body = cleaned.strip() or "(no output — the command failed silently)"
+        body = shown_output(cleaned, "(no output — the command failed silently)")
         return (f"[verify] FAILED: command exited {returncode}\n"
-                f"[verify]   full command: {cmd}\n"
-                f"[verify]   output:\n{body[-2000:]}")
+                f"[verify]   full command: {cmd}\n" + key_lines(cleaned)
+                + f"[verify]   output:\n{body[-2000:]}")
     idx, rc = failed
     head = (f"[verify] FAILED: clause {idx} of {len(clauses)} exited {rc}\n"
             f"[verify]   full command: {cmd}\n"
@@ -155,13 +178,14 @@ def failure_report(cmd, clauses, per_clause, failed, returncode, cleaned):
     for n in range(1, idx + 1):
         status = f"exit {rc}" if n == idx else "ok"
         lines.append(f"[verify]   --- clause {n} ({status}): {clauses[n - 1]}")
-        lines.append(per_clause.get(n, "").strip() or (
+        lines.append(shown_output(per_clause.get(n, ""), (
             "(no output — the clause failed silently)" if n == idx
-            else "(no output)"))
+            else "(no output)")))
     if idx < len(clauses):
         lines.append("[verify]   not executed: clause " + ", ".join(
             str(n) for n in range(idx + 1, len(clauses) + 1)))
-    return f"{head}\n" + "\n".join(lines)[-2000:]
+    return (f"{head}\n" + key_lines(per_clause.get(idx, ""))
+            + "\n".join(lines)[-2000:])
 
 
 TIMEOUT_HEAD = "[verify] FAILED: verify timed out after "
@@ -175,10 +199,10 @@ def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
     running = max(per_clause) if per_clause else None
     head = f"{TIMEOUT_HEAD}{timeout:g}s"
     if not (clauses and running and 1 <= running <= len(clauses)):
-        body = cleaned.strip() or "(no output before the timeout)"
+        body = shown_output(cleaned, "(no output before the timeout)")
         return (f"{head}\n"
-                f"[verify]   full command: {cmd}\n"
-                f"[verify]   output:\n{body[-2000:]}")
+                f"[verify]   full command: {cmd}\n" + key_lines(cleaned)
+                + f"[verify]   output:\n{body[-2000:]}")
     head += (f" in clause {running} of {len(clauses)}\n"
              f"[verify]   full command: {cmd}\n"
              f"[verify]   running clause: {clauses[running - 1]}")
@@ -186,13 +210,14 @@ def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
     for n in range(1, running + 1):
         status = "timed out" if n == running else "ok"
         lines.append(f"[verify]   --- clause {n} ({status}): {clauses[n - 1]}")
-        lines.append(per_clause.get(n, "").strip() or (
+        lines.append(shown_output(per_clause.get(n, ""), (
             "(no output before the timeout)" if n == running
-            else "(no output)"))
+            else "(no output)")))
     if running < len(clauses):
         lines.append("[verify]   not executed: clause " + ", ".join(
             str(n) for n in range(running + 1, len(clauses) + 1)))
-    return f"{head}\n" + "\n".join(lines)[-2000:]
+    return (f"{head}\n" + key_lines(per_clause.get(running, ""))
+            + "\n".join(lines)[-2000:])
 
 
 def vacuous_green_report(cmd, cleaned):
@@ -330,12 +355,39 @@ def run_capped(cmd, cwd, timeout, on_start=None, *, env=None,
 
 
 def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None,
-               project=None):
+               project=None, rerun=True):
     from store.working import working
 
     with working(conn, run_id, verify=True):
-        return _run_verify(cmd, cwd, contracts, timeout, project=project,
-                           run_id=run_id)
+        ok, out = _run_verify(cmd, cwd, contracts, timeout, project=project,
+                              run_id=run_id)
+        if ok or not rerun or not failed_by_exit(out):
+            return ok, out
+        again_ok, again = _run_verify(cmd, cwd, contracts, timeout,
+                                      project=project, run_id=run_id)
+    if again_ok:
+        record_flaky(conn, run_id, out)
+        return True, (f"{again}\n[verify] passed on an immediate rerun; "
+                      f"the first attempt failed:\n{out}")
+    return False, VerificationOutput(
+        f"{out}\n[verify] an immediate rerun failed too:\n{again}",
+        out.results, failure=out.failure)
+
+
+def failed_by_exit(out):
+    failure = getattr(out, "failure", None)
+    return bool(failure) and failure["exit_status"] not in (0, None)
+
+
+def record_flaky(conn, run_id, report):
+    import json
+
+    import store
+
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "verify_flaky",
+                           "Verify failed, then passed on an immediate rerun",
+                           level="detail", payload=json.dumps({"report": str(report)}))
 
 
 # Failures are never recorded; the worktree keeps another store's run 1 apart.
@@ -587,7 +639,8 @@ def run_baseline(project, wt, tier, conn=None, run_id=None):
     failure = None
     for command in getattr(config, tier):
         ok, out = run_verify(command, wt, timeout=config.timeout_sec,
-                             conn=conn, run_id=run_id, project=project)
+                             conn=conn, run_id=run_id, project=project,
+                             rerun=False)
         results.append({"source": "baseline", "tier": tier,
                         "command": command, "exitCode": 0 if ok else 1,
                         "output": str(out)})
