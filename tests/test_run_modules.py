@@ -1,5 +1,6 @@
 """KO-639: the per-module parallel runner and the `unit` workflow that runs it."""
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -90,26 +91,133 @@ def live_members(pgid):
     return members
 
 
-def block_scalars(text, *path):
-    """The `key: value` scalars directly under the block mapping at `path` in
-    YAML `text`, read by indentation: requirements.txt ships no YAML parser,
-    so this reads only block mappings, skipping sequence items under them."""
-    found, stack = {}, []
-    for raw in text.splitlines():
-        line = "" if raw.lstrip().startswith("#") else raw.split(" #")[0]
-        if not line.strip():
-            continue
-        indent = len(line) - len(line.lstrip())
-        while stack and stack[-1][0] >= indent:
-            stack.pop()
-        content = line.strip()
-        if content.startswith("-") or ":" not in content:
-            continue
-        key, _, value = content.partition(":")
-        if [k for _, k in stack] == list(path) and value.strip():
-            found[key] = value.strip().strip('"')
-        stack.append((indent, key))
-    return found
+ENTRY = re.compile(r"(?P<key>[^\s'\"\[\]{}#&*!|>%@`-][^:#]*?|-[^\s:#][^:#]*?)"
+                   r":(?:\s+(?P<value>.*))?$")
+PLAIN = re.compile(r"[^\s'\"\[\]{}#&*!|>%@`,]")
+
+
+class StrictYaml:
+    """A YAML parser for the block subset a workflow uses: block mappings
+    and sequences, `|` and `|-` scalars, flow sequences of scalars, quoted
+    and plain scalars with int, bool and null resolution. requirements.txt
+    ships no YAML library, so any construct outside that subset raises
+    ValueError rather than being read as something it is not."""
+
+    def __init__(self, text):
+        if "\t" in text:
+            raise ValueError("tab in indentation")
+        self.lines, self.i = text.splitlines(), 0
+
+    @classmethod
+    def load(cls, text):
+        parser = cls(text)
+        row = parser.row()
+        if row is None:
+            return None
+        if row[0] != 0:
+            raise ValueError("document does not start at column 0")
+        document = parser.node(0)
+        if parser.row() is not None:
+            raise ValueError(f"bad indentation at line {parser.i + 1}")
+        return document
+
+    def row(self):
+        while self.i < len(self.lines):
+            line = self.lines[self.i]
+            content = line.strip()
+            if content and not content.startswith("#"):
+                if content.startswith(("---", "...", "%")):
+                    raise ValueError(f"unsupported line {self.i + 1}")
+                return len(line) - len(line.lstrip(" ")), content
+            self.i += 1
+        return None
+
+    def node(self, indent):
+        content = self.row()[1]
+        if content == "-" or content.startswith("- "):
+            return self.sequence(indent)
+        return self.mapping(indent)
+
+    def mapping(self, indent):
+        found = {}
+        while (row := self.row()) and row[0] == indent:
+            entry = ENTRY.match(row[1])
+            if not entry:
+                raise ValueError(f"not a mapping entry at line {self.i + 1}")
+            key = entry["key"].rstrip()
+            if key in found:
+                raise ValueError(f"duplicate key {key!r}")
+            self.i += 1
+            found[key] = self.value(entry["value"] or "", indent)
+        if row and row[0] > indent:
+            raise ValueError(f"bad indentation at line {self.i + 1}")
+        return found
+
+    def sequence(self, indent):
+        items = []
+        while (row := self.row()) and row[0] == indent and (
+                row[1] == "-" or row[1].startswith("- ")):
+            rest = row[1][1:].lstrip(" ")
+            if ENTRY.match(rest):
+                inner = indent + len(row[1]) - len(rest)
+                self.lines[self.i] = " " * inner + rest
+                items.append(self.mapping(inner))
+            else:
+                self.i += 1
+                items.append(self.value(rest, indent))
+        if row and row[0] > indent:
+            raise ValueError(f"bad indentation at line {self.i + 1}")
+        return items
+
+    def value(self, text, indent):
+        if text in ("|", "|-"):
+            return self.literal(indent, keep_newline=text == "|")
+        if text == "" or text.startswith("#"):
+            row = self.row()
+            if row and (row[0] > indent or row[0] == indent and (
+                    row[1] == "-" or row[1].startswith("- "))):
+                return self.node(row[0])
+            return None
+        return self.scalar(text)
+
+    def literal(self, indent, keep_newline):
+        body, block = [], None
+        while self.i < len(self.lines):
+            line = self.lines[self.i]
+            depth = len(line) - len(line.lstrip(" "))
+            if line.strip() and (depth <= indent if block is None
+                                 else depth < block):
+                break
+            if line.strip() and block is None:
+                block = depth
+            body.append(line[block:] if line.strip() else "")
+            self.i += 1
+        text = "\n".join(body).rstrip("\n")
+        return text + "\n" if keep_newline and text else text
+
+    def scalar(self, text):
+        if text[0] in "\"'":
+            close = text.find(text[0], 1)
+            while text[0] == '"' and close > 0 and text[close - 1] == "\\":
+                close = text.find('"', close + 1)
+            tail = text[close + 1:].strip()
+            if close < 0 or tail and not tail.startswith("#"):
+                raise ValueError(f"unterminated or trailing text: {text}")
+            quoted = text[1:close]
+            return quoted.replace("''", "'") if text[0] == "'" else quoted
+        plain = re.split(r"\s+#", text, maxsplit=1)[0].rstrip()
+        if plain.startswith("["):
+            if not plain.endswith("]") or "[" in plain[1:] or "{" in plain:
+                raise ValueError(f"unsupported flow sequence: {plain}")
+            inner = plain[1:-1].strip()
+            return [self.scalar(item.strip())
+                    for item in inner.split(",")] if inner else []
+        if not PLAIN.match(plain) or ": " in plain:
+            raise ValueError(f"unsupported scalar: {plain}")
+        if re.fullmatch(r"[-+]?[0-9]+", plain):
+            return int(plain)
+        return {"true": True, "false": False, "null": None,
+                "~": None}.get(plain, plain)
 
 
 class RunModulesTests(unittest.TestCase):
@@ -256,9 +364,11 @@ class UnitWorkflowTests(unittest.TestCase):
         self.assertIn("python3 tests/run_modules.py", jobs)
 
     def test_unit_job_is_capped_at_thirty_minutes(self):
-        unit = block_scalars(WORKFLOW.read_text(), "jobs", "unit")
-        self.assertEqual(unit.get("runs-on"), "ubuntu-latest", unit)
-        self.assertLessEqual(int(unit["timeout-minutes"]), 30)
+        workflow = StrictYaml.load(WORKFLOW.read_text())
+        unit = workflow["jobs"]["unit"]
+        self.assertEqual(unit["runs-on"], "ubuntu-latest", unit)
+        self.assertIsInstance(unit["timeout-minutes"], int)
+        self.assertLessEqual(unit["timeout-minutes"], 30)
 
 
 if __name__ == "__main__":
