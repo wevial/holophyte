@@ -268,7 +268,7 @@ echo "PREFLIGHT_OK candidate=$actual" >&2
 cp -a /workspace /home/reviewer/candidate
 exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
   -m "$2" -c "$3" \
-  -s danger-full-access --ephemeral "$1"
+  -s danger-full-access --ephemeral --disable multi_agent "$1"
 '''.strip()
 
     command = [
