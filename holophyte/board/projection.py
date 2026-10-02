@@ -475,7 +475,10 @@ def _ticket_problems(text, repo):
 
 def file_ticket(target, path, state, board, out=None, priority=None,
                 update=None, revision=None, labels=None):
+    from holophyte.loop.claim import refresh_before_filing
+
     out = out or sys.stdout
+    refresh_before_filing(target, out)
     text = Path(path).read_text()
     ticket = ticket_template.parse(text)
     problems = _ticket_problems(text, target.path)
