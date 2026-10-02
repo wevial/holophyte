@@ -212,6 +212,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     model, effort = review_route(project, fallback=switched)
     tier = review_tier(project, fallback=switched)
     profile = review_profile(model, effort)
+    tiered = {} if tier is None else {"service_tier": tier}
     # A kill ends the container's client; the runner removes the container.
     kill = GroupKill()
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
@@ -230,7 +231,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 verdicts=None,
                 carry=carry_directories(project),
                 on_start=kill.arm,
-                service_tier=tier,
+                **tiered,
             ), profile)
         output.service_tier = tier
         return output
@@ -242,6 +243,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         failure.service_tier = tier
         raise failure from e
     except subprocess.TimeoutExpired as e:
+        e.service_tier = tier
         if role != "review":
             raise
         failure = InfraFailure(
