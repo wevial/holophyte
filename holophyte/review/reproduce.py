@@ -1,4 +1,5 @@
 import json
+import subprocess
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from time import time
@@ -10,8 +11,16 @@ import ticket_template
 from holophyte import failure_reason
 from holophyte.agents.review_workspace import review_refs
 from holophyte.board.projection import block_ticket, ledger
+from holophyte.config.reader import VERIFY_TIMEOUT
 from holophyte.environment_git import paths, unstage_environment
-from holophyte.loop.gates import MergeParked, RunFailure, run_verify, sh, with_baseline
+from holophyte.loop.gates import (
+    MergeParked,
+    RunFailure,
+    _verify_command,
+    run_verify,
+    sh,
+    with_baseline,
+)
 from holophyte.loop.runs import heartbeat_while, record_round, set_phase
 from holophyte.loop.stop import boundary, keep_route
 from holophyte.redact import safe_print as print
@@ -163,7 +172,7 @@ def review_rounds(*args, resume=None):
         ok, out = _verified(frame, 1, pending)
         if not ok:
             return _set_aside(loop, frame, 1, out)
-        skipped = _skipped(frame, out)
+        skipped = _skipped(frame)
         if skipped:
             headline = "new tests skipped on the base"
             set_phase(frame.conn, frame.run_id, "reviewing",
@@ -186,7 +195,7 @@ def _second(loop, frame, pending):
     ok, out = _verified(frame, 2, pending)
     if not ok:
         return _set_aside(loop, frame, 2, out)
-    if _skipped(frame, out):
+    if _skipped(frame):
         return _hand_on(loop, frame, {"phase": "reviewing", "rnd": 2, "ok": ok,
                                       "out": out})
     reply, decision, started = _check(loop, frame, 2, ok, out)
@@ -240,18 +249,15 @@ def _set_aside(loop, frame, rnd, out):
                                   "ok": False, "out": out})
 
 
-def _skipped(frame, out):
-    rows = getattr(out, "results", None)
-    output = str(out) if rows is None else "\n".join(
-        row["output"] for row in rows if row["source"] == "ticket")
-    if not skipped_tests.skip_counts(output):
-        output = _rerun(frame, frame.verify_cmd)
+def _skipped(frame):
     added = skipped_tests.added_tests(frame.wt, frame.base_sha, frame.sha)
-    skipped = skipped_tests.skipped_on_base(
-        output, added, lambda command: _rerun(frame, command))
+    probe = added and skipped_tests.probe_command(
+        frame.verify_cmd, [name for _, name in added])
+    skipped = probe and skipped_tests.skipped_on_base(_probe(frame, probe),
+                                                      added)
     if not skipped:
         return None
-    summary = ("the candidate's new tests were skipped where the evidence "
+    summary = ("the candidate's new tests did not run where the evidence "
                f"check runs: {', '.join(test for test, _ in skipped)}")
     print(f"[holo2] {summary}")
     if frame.conn is not None and frame.run_id is not None:
@@ -262,10 +268,14 @@ def _skipped(frame, out):
     return skipped
 
 
-def _rerun(frame, command):
+def _probe(frame, command):
     with working(frame.conn, frame.run_id, verify=True), \
             heartbeat_while(frame.conn, frame.run_id, frame.beat_s):
-        return str(run_verify(command, frame.wt, project=frame.target)[1])
+        try:
+            return _verify_command(frame.target, command, frame.wt,
+                                   VERIFY_TIMEOUT)[1] or ""
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
 
 
 def _check(loop, frame, rnd, ok, out):
