@@ -142,6 +142,7 @@ def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,
     if pending.get("stale"):
         stale_again(branch, sha, stale)
     stale_rereview(conn, run_id, provider, task_id, sha, rnd, stale)
+    boundary(conn, run_id, "verifying", rnd=rnd + 1, stale=stale)
     return {"phase": "reviewing", "ok": ok, "out": out, "stale": stale}
 
 

@@ -18,6 +18,7 @@ import store.tickets
 from holophyte.babysit import babysitter
 from holophyte.loop.gates import RunFailure
 from holophyte.loop.runs import open_store, set_phase
+from holophyte.loop.stop import continuation, resume_paused
 
 CRITERIA = ["Given a missing file, then load() returns an empty thing",
             "Given a broken file, then load() names the line"]
@@ -66,6 +67,7 @@ class StaleApprovalRereviewTests(unittest.TestCase):
             time_box_ms=60 * 60 * 1000)
         store.tickets.transition(self.conn, ticket, "in_flight")
         self.run_id = store.claim(self.conn, project_id, ticket)
+        self.project_id, self.ticket_id = project_id, ticket
         set_phase(self.conn, self.run_id, "merge_gate")
         self.prompts, self.fix_turns = [], []
 
@@ -97,7 +99,8 @@ class StaleApprovalRereviewTests(unittest.TestCase):
 
         def reviewer(target, role, goal, *args, **kwargs):
             self.prompts.append(goal)
-            return replies.pop(0)
+            reply = replies.pop(0)
+            return reply() if callable(reply) else reply
 
         def implementer(target, conn, run_id, beat_s, wt, budget_min, goal,
                         **kwargs):
@@ -109,13 +112,19 @@ class StaleApprovalRereviewTests(unittest.TestCase):
                 patch.object(holophyte.loop.implement, "_transport_timed",
                              implementer))
 
-    def review_rounds(self, *replies, cap=2):
+    def review_rounds(self, *replies, cap=2, resume=None):
         reviewer, fixer, babysit_fixer = self.agents(replies)
         with reviewer, fixer, babysit_fixer:
             return holophyte.loop.review_round._review_rounds(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
                 self.root, 30, self.base, self.head, TICKET, "true", (),
-                CRITERIA, 10, cap)
+                CRITERIA, 10, cap, resume=resume)
+
+    def pausing(self, reply):
+        def pause_then_reply():
+            store.pause(self.conn, self.run_id, "review checkpoint")
+            return reply
+        return pause_then_reply
 
     def review_fix(self, *replies, fix_note="repair the pin"):
         reviewer, fixer, babysit_fixer = self.agents(replies)
@@ -161,6 +170,23 @@ class StaleApprovalRereviewTests(unittest.TestCase):
         reason = str(failed.exception)
         self.assertIn(f"changed since approval at {self.approved}", reason)
         self.assertNotIn("(none recorded)", reason)
+
+    def test_pause_after_a_stale_only_round_keeps_the_guard_on_resume(self):
+        with self.assertRaises(store.RunEnded):
+            self.review_rounds(self.pausing(self.stale_reply()), cap=3)
+        resume_paused(self.project, self.conn, self.ticket_id, "go on")
+        store.tickets.transition(self.conn, self.ticket_id, "in_flight")
+        self.run_id = store.claim(self.conn, self.project_id, self.ticket_id)
+        set_phase(self.conn, self.run_id, "merge_gate")
+
+        with self.assertRaises(RunFailure) as failed:
+            self.review_rounds(self.stale_reply(), self.direct_reply(), cap=3,
+                               resume=continuation(self.conn, self.run_id))
+
+        self.assertEqual(self.fix_turns, [])
+        self.assertEqual(len(self.prompts), 2)
+        self.assertIn(f"changed since approval at {self.approved}",
+                      str(failed.exception))
 
     def test_review_round_with_a_stale_and_an_ordinary_finding_gets_a_fix(self):
         with self.assertRaises(RunFailure) as failed:
