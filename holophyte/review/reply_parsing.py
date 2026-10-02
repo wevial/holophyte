@@ -354,15 +354,31 @@ def _defines_in_class(lines, cls, name):
     return False if seen else None
 
 
-def _approval_witnesses(note, references, root, approved_range):
+APPROVAL_RE = re.compile(r"\bapproval\s+at\s+([0-9a-f]{7,40})\b", re.I)
+
+
+def cited_approval(reply, root, sha):
+    cited = {subprocess.run(
+        ["git", "rev-parse", "--verify", "-q", f"{value}^{{commit}}"],
+        cwd=root, capture_output=True, text=True).stdout.strip()
+        for value in APPROVAL_RE.findall(reply)}
+    return (cited.pop(), sha) if len(cited) == 1 and "" not in cited else None
+
+
+def _approval_problems(note, references, approved_range):
     if not approved_range or not re.search(r"\bapproval\s+at\b", note, re.I):
+        return None
+    hashes = APPROVAL_RE.findall(note)
+    if not any(approved_range[0].lower().startswith(value.lower())
+               for value in hashes):
+        return ["prior approval must name the approved sha"]
+    return [] if references else ["prior approval must name a test"]
+
+
+def _approval_witnesses(note, references, root, approved_range):
+    if _approval_problems(note, references, approved_range) != []:
         return []
     approved, sha = approved_range
-    hashes = re.findall(r"\bapproval\s+at\s+([0-9a-f]{7,40})\b", note, re.I)
-    if not any(approved.lower().startswith(value.lower()) for value in hashes):
-        return ["prior approval must name the approved sha"]
-    if not references:
-        return ["prior approval must name a test"]
     changed = {(Path(root) / path).resolve()
                for path in _changed_files(root, approved, sha)}
     return [f"{path} (changed since approval at {approved})"
@@ -375,22 +391,33 @@ def criteria_findings(reply, criteria, root=None, *, approved_range=None,
     findings = []
     for n, criterion in enumerate(criteria or (), 1):
         status, note = block.get(n, ("unwitnessed", UNWITNESSED_NOTE))
+        stale = []
         if status == "met" and note and root is not None:
             references = test_references(note)
             missing = missing_witnesses(references, root)
-            missing += _approval_witnesses(note, references, root, approved_range)
-            if missing:
-                status, note = "unwitnessed", MISSING_WITNESS_NOTE + "; ".join(missing)
+            missing += _approval_problems(note, references, approved_range) or []
+            stale = _approval_witnesses(note, references, root, approved_range)
+            if missing or stale:
+                status, note = ("unwitnessed",
+                                MISSING_WITNESS_NOTE + "; ".join(missing + stale))
+                stale = [] if missing else stale
         if status == "met" and note:
             continue
         if status == "met":
             status, note = "unwitnessed", "met claimed but no test or check named"
         message = (f"CRITERION {n}: {status} \u2014 {note or '(no reason given)'}"
                    f"\n{criterion}")
-        findings.append({"path": CRITERIA_PATH, "line": n,
-                         "severity": DEFAULT_SEVERITY,
-                         "message": finding_message(message)})
+        finding = {"path": CRITERIA_PATH, "line": n,
+                   "severity": DEFAULT_SEVERITY,
+                   "message": finding_message(message)}
+        findings.append(dict(finding, stale_approval=approved_range[0])
+                        if stale else finding)
     return findings + _scope_findings(reply, scope)
+
+
+def stale_approvals(decision, findings):
+    only_stale = all(finding.get("stale_approval") for finding in findings)
+    return list(findings) if decision == "APPROVE" and only_stale else []
 
 
 def _scope_findings(reply, scope):

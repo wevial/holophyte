@@ -85,6 +85,9 @@ Each module, one line:
   reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
   witness checks and a verdict.
+- `holophyte/review/stale_approval.py` — a review left only stale cited
+  approvals: the `stale_approval_rereview` event, and the failure when the
+  review again at that head still cites one.
 - `holophyte/review/findings.py` — `FINDINGS.md` as a bounded window over the
   store's rows.
 - `holophyte/cli/report.py` — `--report`: estimate vs actual per finished run
