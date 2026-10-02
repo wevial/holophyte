@@ -22,15 +22,47 @@ def git_environment():
     return {key: value for key, value in os.environ.items() if key not in excluded}
 
 
+STDERR_TAIL = 1000
+
+
+def subcommand(argv):
+    words = iter(argv[1:])
+    for word in words:
+        if word != "-c":
+            return word
+        next(words, None)
+    return "?"
+
+
+class GitError(subprocess.CalledProcessError):
+    def __str__(self):
+        text = "".join(
+            char if char.isprintable() else " " for char in (self.stderr or "")
+        )
+        tail = " ".join(text.split())[-STDERR_TAIL:]
+        return (
+            f"git {subcommand(self.cmd)} exited with status {self.returncode}: "
+            f"{tail or '(no stderr)'}"
+        )
+
+
 def git(worktree, *args, index=None):
-    result = subprocess.run(
-        ["git", "-c", "core.hooksPath=/dev/null", *args],
-        cwd=worktree,
-        env={**git_environment(), **({"GIT_INDEX_FILE": str(index)} if index else {})},
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-c", "core.hooksPath=/dev/null", *args],
+            cwd=worktree,
+            env={
+                **git_environment(),
+                **({"GIT_INDEX_FILE": str(index)} if index else {}),
+            },
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        raise GitError(
+            error.returncode, error.cmd, error.output, error.stderr
+        ) from error
     return result.stdout.strip()
 
 
