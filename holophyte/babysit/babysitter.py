@@ -170,7 +170,10 @@ def _refresh_verify(project, conn, run_id, beat_s, wt, sha, command, contracts):
 
 def _verify_detached_main(project, conn, run_id, beat_s, wt, ref, command, contracts):
     sha = sh(["git", "rev-parse", ref], wt)
-    with detached_main(project, conn, run_id, beat_s, wt, sha) as detached:
+    with detached_main(project, conn, run_id, beat_s, wt, sha) as (
+            detached, setup_failure):
+        if setup_failure is not None:
+            return sha, None, setup_failure
         command, skipped = drop_candidate_modules(command, wt, detached)
         if skipped and conn is not None and run_id is not None:
             store.record_event(
@@ -193,13 +196,16 @@ def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
         return sha
     main_sha, main_ok, main_out = _verify_detached_main(
         project, conn, run_id, beat_s, wt, ref, command, contracts)
-    if not main_ok:
+    if main_ok is False:
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     f"main is red at {main_sha}; verify command: {command}\n"
                     f"Merged tree:\n{out}\nMain:\n{main_out}\n"
                     "Fix main and send this run back through babysit.", ())
+    main_state = ("passes." if main_ok else "was not verified because its"
+                  f" worktree setup failed:\n{main_out}\n")
     goal = (f"The merge of main introduced a verification failure on {pull.url}; "
-            f"main at {main_sha} passes. Failing verify command: {command}\n{out}\n"
+            f"main at {main_sha} {main_state} Failing verify command: {command}\n"
+            f"{out}\n"
             f"The ticket is the contract:\n{ticket}\n"
             "Fix this failure on this branch and commit; keep the ticket's verify "
             "commands passing. This is one implementer fix turn.")

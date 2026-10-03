@@ -9,11 +9,8 @@ ignored rather than filed against a thread that does not exist.
 
 Run: python3 -m unittest discover -s tests -p 'test_babysit*' -v
 """
-import io
 import json
-import os
 import re
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -26,7 +23,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
-from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
+import babysit_fixture as cases  # noqa: E402
+from fake_agent import Commit, Idle  # noqa: E402
 from loop_fixture import (  # noqa: E402
     BRANCH,
     MergeModeFixture,
@@ -34,8 +32,6 @@ from loop_fixture import (  # noqa: E402
     a_task,
 )
 
-import holophyte.cli.operator  # noqa: E402
-import holophyte.loop.pipeline  # noqa: E402
 from holophyte.babysit import babysitter  # noqa: E402
 from holophyte.pr import github, pr_status  # noqa: E402
 from holophyte.pr.github import PullRequest, Thread  # noqa: E402
@@ -313,7 +309,8 @@ class MergeableReadTests(unittest.TestCase):
         self.assertEqual(self.read(None).mergeable, "UNKNOWN")
 
 
-class ConflictingPullRequestTests(MergeModeFixture):
+class ConflictingPullRequestTests(cases.ConflictingMainHelpers,
+                                  MergeModeFixture):
     """A babysit pass over a pull request GitHub reports CONFLICTING
     merges `origin/main` -- the remote's `main`, not the checkout's
     possibly stale local one -- into the branch, pushes, and goes back
@@ -322,52 +319,6 @@ class ConflictingPullRequestTests(MergeModeFixture):
     implementer's to resolve, and one left unresolved parks the run
     naming the conflicting paths. MERGEABLE and UNKNOWN answers trigger
     none of it (KO-377)."""
-
-    def parked_on_a_nit(self, work):
-        """A run parked on its pull request by a declined nit thread,
-        under `approve = "human"`; `work` is the implementer step that
-        made the candidate. Returns the approved candidate's sha."""
-        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
-        self.fake_route(states=[self.pr_state([self.NIT])])
-        self.loop(work, APPROVE, Idle(""),
-                  Reply("THREAD 1: DECLINE -- a naming preference"),
-                  provider=self.provider())
-        approved = self.git("rev-parse", BRANCH).strip()
-        for path in self.api_dir.iterdir():
-            path.unlink()
-        return approved
-
-    def remote_main(self, path, body):
-        """A commit on top of `main` as the remote would hold it: built in
-        the target's object store without moving the checkout's `main`
-        (which stays behind, as a writer host's does while the remote
-        moved), then `refs/remotes/origin/main` pointed at it -- the
-        state the fake route's swallowed `git fetch origin` would leave.
-        Returns the new `main` sha."""
-        index = self.worktrees.parent / "remote-main-index"
-        env = dict(os.environ, GIT_INDEX_FILE=str(index))
-
-        def plumb(*args, **kw):
-            return subprocess.run(
-                ["git", *args], cwd=self.target, env=env, check=True,
-                capture_output=True, text=True, **kw).stdout.strip()
-
-        plumb("read-tree", "main")
-        blob = plumb("hash-object", "-w", "--stdin", input=body)
-        plumb("update-index", "--add", "--cacheinfo",
-              f"100644,{blob},{path}")
-        moved = self.git("commit-tree", plumb("write-tree"), "-p", "main",
-                         "-m", "main moved on").strip()
-        index.unlink(missing_ok=True)
-        self.git("update-ref", "refs/remotes/origin/main", moved)
-        return moved
-
-    def resume(self, *script):
-        """`--babysit` the parked run and drive it through the harness,
-        faked GitHub serving whatever `serve()` last laid down."""
-        holophyte.cli.operator.babysit_ticket(
-            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
-        return self.loop(*script, provider=self.provider())
 
     def test_a_conflicting_pull_request_merges_origin_main_in(self):
         """KO-377: GitHub says CONFLICTING and `origin/main` merges

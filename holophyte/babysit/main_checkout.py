@@ -18,8 +18,9 @@ def detached_main(target, conn, run_id, beat_s, wt, sha):
         sh(["git", "worktree", "add", "--detach", str(detached), sha], wt)
         links = []
         try:
-            links = _prepare(target, conn, run_id, beat_s, wt, detached, sha)
-            yield detached
+            links, setup_failure = _prepare(target, conn, run_id, beat_s, wt,
+                                            detached, sha)
+            yield detached, setup_failure
         finally:
             try:
                 # Setup may have replaced a link with a directory of its own.
@@ -42,14 +43,17 @@ def _prepare(target, conn, run_id, beat_s, wt, detached, sha):
             link.symlink_to((wt / entry).resolve(), target_is_directory=True)
             links.append(link)
     notes = [f"carried {', '.join(carried)} from the task worktree"] if carried else []
-    commands = setup_commands(target) if missing else []
+    commands = setup_commands(target) if missing or not entries else []
+    setup_failure = None
     if commands:
         with heartbeat_while(conn, run_id, beat_s):
             ok, out = run_worktree_setup(target, detached)
-        notes.append(f"ran setup for {', '.join(missing)}: {'; '.join(commands)}"
+        setup_failure = None if ok else out
+        scope = f" for {', '.join(missing)}" if missing else ""
+        notes.append(f"ran setup{scope}: {'; '.join(commands)}"
                      + ("" if ok else f" -- FAILED:\n{out}"))
     if notes and conn is not None and run_id is not None:
         store.record_event(conn, run_id, "verification",
                            f"main-side verify at {sha[:12]} prepared like a task"
                            f" worktree: {'; '.join(notes)}")
-    return links
+    return links, setup_failure

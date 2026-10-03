@@ -1,6 +1,7 @@
 """Shared PR babysitting fixtures, conflict cases, and operator-note cases."""
 import dataclasses
 import io
+import os
 import sqlite3
 import subprocess
 from contextlib import closing
@@ -573,3 +574,53 @@ class ConversationFix(Commit):
     def play(self, cwd, turn):
         super().play(cwd, turn)
         return "THREAD 1: Moved the button beside Save."
+
+
+class ConflictingMainHelpers:
+    """A run parked on its pull request while `origin/main` moves on."""
+
+    def parked_on_a_nit(self, work):
+        """A run parked on its pull request by a declined nit thread,
+        under `approve = "human"`; `work` is the implementer step that
+        made the candidate. Returns the approved candidate's sha."""
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state([self.NIT])])
+        self.loop(work, APPROVE, Idle(""),
+                  Reply("THREAD 1: DECLINE -- a naming preference"),
+                  provider=self.provider())
+        approved = self.git("rev-parse", BRANCH).strip()
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        return approved
+
+    def remote_main(self, path, body):
+        """A commit on top of `main` as the remote would hold it: built in
+        the target's object store without moving the checkout's `main`
+        (which stays behind, as a writer host's does while the remote
+        moved), then `refs/remotes/origin/main` pointed at it -- the
+        state the fake route's swallowed `git fetch origin` would leave.
+        Returns the new `main` sha."""
+        index = self.worktrees.parent / "remote-main-index"
+        env = dict(os.environ, GIT_INDEX_FILE=str(index))
+
+        def plumb(*args, **kw):
+            return subprocess.run(
+                ["git", *args], cwd=self.target, env=env, check=True,
+                capture_output=True, text=True, **kw).stdout.strip()
+
+        plumb("read-tree", "main")
+        blob = plumb("hash-object", "-w", "--stdin", input=body)
+        plumb("update-index", "--add", "--cacheinfo",
+              f"100644,{blob},{path}")
+        moved = self.git("commit-tree", plumb("write-tree"), "-p", "main",
+                         "-m", "main moved on").strip()
+        index.unlink(missing_ok=True)
+        self.git("update-ref", "refs/remotes/origin/main", moved)
+        return moved
+
+    def resume(self, *script):
+        """`--babysit` the parked run and drive it through the harness,
+        faked GitHub serving whatever `serve()` last laid down."""
+        holophyte.cli.operator.babysit_ticket(
+            self.project, "KO-131", "sent back to the babysitter", out=io.StringIO())
+        return self.loop(*script, provider=self.provider())
