@@ -95,7 +95,7 @@ class MainSideSetupBabysitTests(cases.ConflictingMainHelpers, MergeModeFixture):
             " AND summary LIKE 'main-side verify%prepared%'")]
 
     def test_a_failed_setup_on_main_goes_to_the_fix_round_not_red_main(self):
-        command = "test -e FIXED.md -o ! -e THING.md"
+        command = "test -e FIXED.md"
         moved = self.setup_candidate(command, ["echo no-venv >&2; exit 3"])
         fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
         self.assertEqual(fake.roles[0], "implement")

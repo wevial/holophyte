@@ -201,10 +201,10 @@ def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
                     f"main is red at {main_sha}; verify command: {command}\n"
                     f"Merged tree:\n{out}\nMain:\n{main_out}\n"
                     "Fix main and send this run back through babysit.", ())
-    main_state = ("passes." if main_ok else "was not verified because its"
+    main_state = ("passes. " if main_ok else "was not verified because its"
                   f" worktree setup failed:\n{main_out}\n")
     goal = (f"The merge of main introduced a verification failure on {pull.url}; "
-            f"main at {main_sha} {main_state} Failing verify command: {command}\n"
+            f"main at {main_sha} {main_state}Failing verify command: {command}\n"
             f"{out}\n"
             f"The ticket is the contract:\n{ticket}\n"
             "Fix this failure on this branch and commit; keep the ticket's verify "
