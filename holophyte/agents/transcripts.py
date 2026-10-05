@@ -149,11 +149,19 @@ def render(path):
         return entries
 
 
+def sessions_lead(rows):
+    lead = {}
+    for _, kind, data in rows:
+        if data.get('role') == 'implement':
+            lead.setdefault(data.get('route'), kind == 'agent_session')
+    return lead
+
+
 def turns(events):
-    """Implement sessions pair either side of a turn and carry to resumed ones."""
-    result, pending, latest, owned = [], {}, {}, set()
-    for seq, kind, payload in events:
-        data = decoded(payload)
+    """A route's first implement event says which side its sessions record on."""
+    rows = [(seq, kind, decoded(payload)) for seq, kind, payload in events]
+    result, pending, latest, lead = [], {}, {}, sessions_lead(rows)
+    for seq, kind, data in rows:
         role, route = data.get('role'), data.get('route')
         if role not in ('implement', 'review', 'adjudicate', 'write'):
             continue
@@ -162,20 +170,15 @@ def turns(events):
             if role not in ('implement', 'review'):
                 continue
             session_id = data.get('session_id')
-            waiting = result[-1] if result else None
             if role == 'implement':
                 latest[key] = session_id
-            if (role == 'implement' and waiting is not None
-                    and (waiting['role'], waiting['route']) == key
-                    and waiting['id'] not in owned):
-                waiting['session_id'] = session_id
-                owned.add(waiting['id'])
+            if (role == 'implement' and not lead[route] and result
+                    and (result[-1]['role'], result[-1]['route']) == key):
+                result[-1]['session_id'] = session_id
             else:
                 pending[key] = session_id
         elif kind == 'agent_turn':
             label = data.get('label')
-            if key in pending:
-                owned.add(seq)
             result.append(dict(id=seq, role=role, route=route,
                                label=label if isinstance(label, str) else None,
                                seconds=data.get('seconds'),
