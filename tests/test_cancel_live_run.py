@@ -8,6 +8,7 @@ Run: python3 -m unittest discover -s tests -p 'test_cancel_live_run.py' -v
 """
 import contextlib
 import io
+import json
 import os
 import sqlite3
 import sys
@@ -109,7 +110,7 @@ class CancelLiveRunTests(ConfigTestCase):
         self.assertEqual(self.read("SELECT status FROM tickets"), [("abandoned",)])
         self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)])
 
-    def test_a_version_40_store_migrates_to_admit_a_board_cancel(self):
+    def test_a_version_40_store_admits_a_board_cancel_and_drops_version_40_builds(self):
         run = self.working_run()
         path = self.project.store_path
         with contextlib.closing(sqlite3.connect(path)) as old:
@@ -131,6 +132,11 @@ class CancelLiveRunTests(ConfigTestCase):
         self.assertEqual(status, 0, printed)
         self.assertEqual(self.read("PRAGMA user_version"),
                          [(store.SCHEMA_VERSION,)])
+        with contextlib.closing(sqlite3.connect(path)) as conn:
+            note = json.loads(store.schema.latest_migration_note(conn))
+        self.assertEqual(note["from"], 40)
+        self.assertGreater(note["readableFrom"], 40,
+                           "a version 40 build parks a board cancel")
         self.assertEqual(
             self.read('SELECT i."trigger" FROM runs r JOIN interventions i'
                       f" ON i.id = r.stopRequested WHERE r.id = {run}"),

@@ -26,7 +26,7 @@ SCHEMA_VERSION = 41
 # a dropped or renamed column or table, a new or tightened constraint on an
 # existing column, an enum value removed or renamed, or one added to
 # `runs.phase`, `projects.admission`, `tickets.status` or `runs.parkKind`.
-READABLE_FROM = 40
+READABLE_FROM = 41
 
 BUSY_TIMEOUT_S = 30
 
