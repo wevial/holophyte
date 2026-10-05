@@ -206,13 +206,23 @@ def record_review_boundary(conn, run_id, role, failure):
                                            "exit_status": error.exit_status}))
 
 
+def kept_session(project, role, conn, run_id, review_round, sessions):
+    if role != "review" or None in (conn, run_id, review_round):
+        return {}
+    return {"transcripts": project.holo_dir / "transcripts",
+            "on_session": sessions.append}
+
+
 def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
-                     run_id, switched):
+                     run_id, switched, review_round=None):
     from holophyte.loop.runs import heartbeat_while
+    from holophyte.review.review_session import record_review_session
     model, effort = review_route(project, fallback=switched)
     tier = review_tier(project, fallback=switched)
     profile = review_profile(model, effort)
     tiered = {} if tier is None else {"service_tier": tier}
+    sessions = []
+    kept = kept_session(project, role, conn, run_id, review_round, sessions)
     # A kill ends the container's client; the runner removes the container.
     kill = GroupKill()
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
@@ -232,8 +242,13 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 carry=carry_directories(project),
                 on_start=kill.arm,
                 **tiered,
+                **kept,
             ), profile)
         output.service_tier = tier
+        for session in sessions:
+            record_review_session(conn, run_id, session, role,
+                                  "fallback" if switched else "primary",
+                                  review_round)
         return output
     except review_runner.ReviewBoundaryError as e:
         # The candidate was never judged: the failure is the factory's.
@@ -279,7 +294,8 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     if cmd is None:
         if role != "implement":
             return container_review(project, role, goal, cwd, base_sha,
-                                    candidate_sha, conn, run_id, switched)
+                                    candidate_sha, conn, run_id, switched,
+                                    review_round)
         cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role != "implement":

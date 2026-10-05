@@ -123,7 +123,7 @@ class ReviewServiceTierTests(unittest.TestCase):
         self.assertEqual(self.codex_argv(), [
             "exec", "--json", "-C", "/home/reviewer/candidate",
             "-m", "gpt-6-astra", "-c", 'model_reasoning_effort="high"',
-            "-s", "danger-full-access", "--ephemeral", "--disable", "multi_agent",
+            "-s", "danger-full-access", "--disable", "multi_agent",
             GOAL])
 
     def test_an_empty_or_non_string_tier_is_refused_naming_the_key(self):
