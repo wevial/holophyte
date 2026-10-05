@@ -1093,7 +1093,7 @@ retention_days = 7
 | `stale_strikes` | Default: `2` | Positive integer; increase to require more consecutive silent sightings before acting. |
 | `budget_grace` | Default: `1.5` | Finite positive number; change the grace multiplier on the run's per-turn allowance. |
 | `run_cap` | Default: `3.0` | Finite number from 1.5 to 5.0; change the hard ceiling in scaled ticket boxes. |
-| `review_overlap_threshold` | Default: `0.5` | Finite number in (0, 1]; change the shared-findings fraction that signals a stuck review. |
+| `review_overlap_threshold` | Default: `0.5` | Finite number in (0, 1]; change the shared-findings fraction that signals a stuck review (`review_stuck`). Only code findings are compared: a criterion restated as unmet is left out, and the same criterion restated in three consecutive rounds trips `criterion_stuck` instead. |
 | `sweep_interval_sec` | Default: `60` seconds | Finite positive number; change how often a project's own supervisor sweeps. The host sweep's interval is `host.toml`'s `[supervisor] sweep_sec` instead. |
 | `restart_grace_sec` | Default: `120` seconds | Finite positive number; increase for slower self-merge restarts. |
 | `board_ask_sec` | Default: `600` seconds | Integer at least 60; change the minimum interval between fallback board listings. |
