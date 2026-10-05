@@ -368,12 +368,17 @@ def keep_transcript(home: Path, transcripts: Path, session: str) -> bool:
         newest = max(found, key=lambda path: path.lstat().st_mtime_ns)
         transcripts.mkdir(parents=True, exist_ok=True, mode=0o700)
         transcripts.chmod(0o700)
+        target = transcripts / newest.name
         source = os.open(newest, os.O_RDONLY | os.O_NOFOLLOW)
-        with open(source, "rb") as reader, open(os.open(
-                transcripts / newest.name,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600),
-                "wb") as writer:
-            shutil.copyfileobj(reader, writer)
+        with open(source, "rb") as reader:
+            created = os.open(
+                target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                with open(created, "wb") as writer:
+                    shutil.copyfileobj(reader, writer)
+            except OSError:
+                target.unlink(missing_ok=True)
+                raise
     except OSError:
         return False
     return True

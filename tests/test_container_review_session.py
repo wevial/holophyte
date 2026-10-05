@@ -4,6 +4,7 @@ Run: python3 -m unittest discover -s tests -p 'test_container_review_session.py'
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
@@ -150,6 +151,26 @@ class ContainerReviewSessionTests(unittest.TestCase):
 
         self.assertEqual([s["session_id"] for s in sessions], [THREAD])
         self.assertEqual(earlier.read_text(), "earlier\n")
+        self.assertEqual(json.loads((self.kept / ROLLOUT).read_text()),
+                         {"type": "session_meta"})
+
+    def test_a_copy_failing_midway_leaves_no_partial_rollout_to_block_the_next(self):
+        keep = review_runner.keep_transcript
+
+        def keep_on_a_full_disk(*args):
+            def fill(reader, writer):
+                writer.write(reader.read(4))
+                writer.flush()
+                raise OSError(errno.ENOSPC, "No space left on device")
+            with patch.object(review_runner.shutil, "copyfileobj", fill):
+                return keep(*args)
+
+        with patch.object(review_runner, "keep_transcript", keep_on_a_full_disk):
+            self.assertEqual(self.review(THREAD, ROLLOUT), [])
+        self.assertEqual(list(self.kept.iterdir()), [])
+
+        self.assertEqual([s["session_id"] for s in self.review(THREAD, ROLLOUT)],
+                         [THREAD])
         self.assertEqual(json.loads((self.kept / ROLLOUT).read_text()),
                          {"type": "session_meta"})
 
