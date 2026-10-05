@@ -149,34 +149,35 @@ def render(path):
         return entries
 
 
-def sessions_lead(rows):
-    lead = {}
-    for _, kind, data in rows:
-        if data.get('role') == 'implement':
-            lead.setdefault(data.get('route'), kind == 'agent_session')
-    return lead
+def follows_turn(marks, at, trails):
+    _, role, route = marks[at]
+    before = at > 0 and marks[at - 1] == ('agent_turn', role, route)
+    after = at + 1 < len(marks) and marks[at + 1] == ('agent_turn', role, route)
+    if before != after:
+        trails[route] = before
+    return before and trails.get(route, True)
 
 
 def turns(events):
-    """A route's first implement event says which side its sessions record on."""
+    """A session beside one turn pairs with it; between two, the route's habit."""
     rows = [(seq, kind, decoded(payload)) for seq, kind, payload in events]
-    result, pending, latest, lead = [], {}, {}, sessions_lead(rows)
-    for seq, kind, data in rows:
+    rows = [row for row in rows if row[2].get('role') in
+            ('implement', 'review', 'adjudicate', 'write')]
+    marks = [(kind, data.get('role'), data.get('route')) for _, kind, data in rows]
+    result, pending, latest, trails = [], {}, {}, {}
+    for at, (seq, kind, data) in enumerate(rows):
         role, route = data.get('role'), data.get('route')
-        if role not in ('implement', 'review', 'adjudicate', 'write'):
-            continue
         key = role, route
         if kind == 'agent_session':
-            if role not in ('implement', 'review'):
-                continue
             session_id = data.get('session_id')
-            if role == 'implement':
-                latest[key] = session_id
-            if (role == 'implement' and not lead[route] and result
-                    and (result[-1]['role'], result[-1]['route']) == key):
-                result[-1]['session_id'] = session_id
-            else:
+            if role == 'review':
                 pending[key] = session_id
+            elif role == 'implement':
+                latest[key] = session_id
+                if follows_turn(marks, at, trails):
+                    result[-1]['session_id'] = session_id
+                else:
+                    pending[key] = session_id
         elif kind == 'agent_turn':
             label = data.get('label')
             result.append(dict(id=seq, role=role, route=route,

@@ -144,6 +144,14 @@ class SessionPairingTests(unittest.TestCase):
                           ('review', 'primary', None),
                           ('implement', 'primary', 'fix')])
 
+    def test_route_switching_to_post_turn_sessions_pairs_them_back(self):
+        self.assertEqual(paired(session('implement', 'primary', 'container'),
+                                turn('implement', 'primary'),
+                                turn('implement', 'primary'),
+                                session('implement', 'primary', 'host')),
+                         [('implement', 'primary', 'container'),
+                          ('implement', 'primary', 'host')])
+
     def test_each_route_keeps_its_own_implement_session(self):
         self.assertEqual(paired(session('implement', 'primary', 'impl-primary'),
                                 turn('implement', 'primary'),
