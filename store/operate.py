@@ -324,21 +324,27 @@ def pause(conn, run_id, note, source="human", now=None):
     return request
 
 
+_CANCEL_TRIGGERS = ("linear_cancelled", "board_cancelled")
+
+
 def abort(conn, run_id, note, source="human", now=None, close=False, trigger="manual"):
     with _transaction(conn):
         row = conn.execute(
-            "SELECT r.endedAt, r.outcome, r.phase, r.stopRequested, i.action"
-            " FROM runs r LEFT JOIN interventions i ON i.id = r.stopRequested"
+            "SELECT r.endedAt, r.outcome, r.phase, r.stopRequested, i.action,"
+            ' i."trigger" FROM runs r'
+            " LEFT JOIN interventions i ON i.id = r.stopRequested"
             " WHERE r.id = ?", (run_id,)).fetchone()
         if row is None:
             raise ValueError(f"no run {run_id}")
-        ended, outcome, phase, pending, action = row
+        ended, outcome, phase, pending, action, pending_trigger = row
         if ended is not None:
             raise ValueError(f"run {run_id} already ended with outcome {outcome}")
         if TERMINAL_PHASES["abandoned"] not in RUN_PHASE_TRANSITIONS[phase]:
             raise ValueError(f"run {run_id} is {phase}; it cannot end abandoned")
-        wanted = "abort_close" if close else "abort"
-        if action in (wanted, "abort_close"):
+        wanted = "abort_close" if close or action == "abort_close" else "abort"
+        cancels = (trigger in _CANCEL_TRIGGERS
+                   and pending_trigger not in _CANCEL_TRIGGERS)
+        if action in (wanted, "abort_close") and not cancels:
             return pending
         request = record_intervention(conn, run_id, wanted, note, source=source,
                                       trigger=trigger, guidance=note, now=now)

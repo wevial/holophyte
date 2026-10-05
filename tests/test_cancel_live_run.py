@@ -47,12 +47,12 @@ class CancelLiveRunTests(ConfigTestCase):
             status = holophyte.cli.entry.cli([str(self.target), *args])
         return status, out.getvalue()
 
-    def working_run(self):
-        """NAT-1 claimed and working, as a worker leaves it between turns."""
+    def working_run(self, identifier="NAT-1"):
+        """`identifier` claimed and working, as a worker leaves it between turns."""
         with contextlib.closing(open_store(self.project)) as conn:
             project_id, ticket_id = conn.execute(
                 "SELECT projectId, id FROM tickets"
-                " WHERE linearIdentifier = 'NAT-1'").fetchone()
+                " WHERE linearIdentifier = ?", (identifier,)).fetchone()
             run = store.claim(conn, project_id, ticket_id)
             store.tickets.transition(conn, ticket_id, "in_flight")
             store.set_phase(conn, run, "working")
@@ -88,6 +88,30 @@ class CancelLiveRunTests(ConfigTestCase):
         status, printed = self.cli("--status")
         self.assertEqual(status, 0, printed)
         self.assertNotIn("parked NAT-1", printed)
+
+    def test_a_cancel_after_a_pending_abort_still_closes_the_ticket(self):
+        self.assertEqual(self.cli("--file-ticket", str(self.root / "T.md"))[0], 0)
+        for identifier, abort, action in (("NAT-1", (), "abort"),
+                                          ("NAT-2", ("--close-pr",), "abort_close")):
+            with self.subTest(abort=abort):
+                run = self.working_run(identifier)
+                self.cli("--abort", identifier, "--note", "host going down", *abort)
+                status, printed = self.cli("--cancel", identifier, "--revision",
+                                           "1", "--note", "wrong scope")
+                self.assertEqual(status, 0, printed)
+
+                self.reach_safe_point(run)
+
+                self.assertEqual(self.read(
+                    "SELECT status, blockedQuestion FROM tickets"
+                    f" WHERE linearIdentifier = '{identifier}'"),
+                    [("abandoned", None)])
+                self.assertEqual(self.read(
+                    'SELECT i."action", i."trigger" FROM runs r'
+                    " JOIN interventions i ON i.id = r.stopRequested"
+                    f" WHERE r.id = {run}"), [(action, "board_cancelled")])
+                printed = self.cli("--status")[1]
+                self.assertNotIn(f"parked {identifier}", printed)
 
     def test_an_operator_abort_still_parks_the_ticket(self):
         run = self.working_run()
