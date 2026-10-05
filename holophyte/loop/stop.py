@@ -30,12 +30,23 @@ def stop_if_requested(conn, run_id, phase):
     stopped_at, phase = phase, "merge_gate" if pr_url else phase
     target = Project.locate(repo)
     sha = preserve(target, branch) if branch else None
+    if not _end_paused(conn, run_id, ticket_id, phase, note, sha):
+        end_aborted(conn, run_id)
+    if pr_url:
+        from holophyte.loop import pause_notice
+        pause_notice.mark(target, conn, run_id, stopped_at)
+    raise store.RunEnded(run_id, "paused", note)
+
+
+def _end_paused(conn, run_id, ticket_id, phase, note, sha):
     with _transaction(conn):
         ended, outcome, reason = conn.execute(
             "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
             (run_id,)).fetchone()
         if ended is not None:
             raise store.RunEnded(run_id, outcome, reason)
+        if abort_requested(conn, run_id):
+            return False
         saved = _checkpoint.get()
         state = saved[3] if saved and saved[:3] == (conn, run_id, phase) else {}
         route = _route.get()
@@ -48,10 +59,7 @@ def stop_if_requested(conn, run_id, phase):
                       candidate_sha=sha)
         store.walk_ticket(conn, ticket_id, "blocked_on_operator")
         store.set_question(conn, ticket_id, note)
-    if pr_url:
-        from holophyte.loop import pause_notice
-        pause_notice.mark(target, conn, run_id, stopped_at)
-    raise store.RunEnded(run_id, "paused", note)
+    return True
 
 
 class Aborted(store.RunEnded):

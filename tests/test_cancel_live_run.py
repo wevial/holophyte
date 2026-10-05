@@ -131,6 +131,12 @@ class CancelLiveRunTests(ConfigTestCase):
         self.assertNotIn("parked NAT-1", self.cli("--status")[1])
 
     def test_a_cancel_landing_while_an_abort_preserves_work_closes_the_ticket(self):
+        self.cancel_while_preserving("--abort")
+
+    def test_a_cancel_landing_while_a_pause_preserves_work_closes_the_ticket(self):
+        self.cancel_while_preserving("--pause")
+
+    def cancel_while_preserving(self, stop):
         git = ["git", "-c", "user.name=t", "-c", "user.email=t@t.invalid"]
         subprocess.run([*git, "init", "-q", "-b", "main"], cwd=self.target,
                        check=True)
@@ -143,7 +149,7 @@ class CancelLiveRunTests(ConfigTestCase):
         run = self.working_run()
         with contextlib.closing(open_store(self.project)) as conn:
             store.set_branch(conn, run, "task/nat-1")
-        self.cli("--abort", "NAT-1", "--note", "host going down")
+        self.cli(stop, "NAT-1", "--note", "host going down")
         stage_work = holophyte.loop.claim.stage_work
 
         def cancel_then_stage(target, cwd):
@@ -154,6 +160,7 @@ class CancelLiveRunTests(ConfigTestCase):
         with patch.object(holophyte.loop.claim, "stage_work", cancel_then_stage):
             self.reach_safe_point(run)
 
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("abandoned",)])
         self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
                          [("abandoned", None)])
         (sha,) = self.read("SELECT candidateSha FROM runs")[0]
