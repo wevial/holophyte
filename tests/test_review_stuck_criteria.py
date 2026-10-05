@@ -76,6 +76,19 @@ class CodeFindingOverlapTests(StuckCriteriaTestCase):
         self.assertEqual(trip.condition, "review_stuck")
         self.assertIn("rounds 1 and 2 share 0.50", trip.evidence)
 
+    def test_a_lone_repeated_code_finding_reworded_still_trips(self):
+        earlier = [dict(code("a.py", 1), message="Missing cancellation guard")]
+        later = [dict(code("a.py", 1),
+                      message="Cancellation guard is still missing")]
+        earlier, later = earlier + restated(2), later + restated(2)
+        self.assertEqual(store.findings_overlap(earlier, later), 1.0)
+        run_id = self.a_run(phase="addressing")
+        self.rounds(run_id, earlier, later)
+
+        trip, = self.sweep(run_id).trips
+
+        self.assertEqual(trip.condition, "review_stuck")
+
     def test_rounds_of_restatements_alone_report_no_overlap(self):
         self.assertIsNone(store.findings_overlap(restated(1, 3), restated(1, 3)))
         run_id = self.a_run(phase="reviewing")
