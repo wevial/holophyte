@@ -125,6 +125,7 @@ def cancel_ticket(conn, project_id, identifier, expected_revision, note,
     with _transaction(conn):
         ticket_id, status, run_id, _text = _open_ticket(
             conn, project_id, identifier, expected_revision)
+        _refuse_merged_park(conn, ticket_id, identifier)
         revision = _record_column(conn, ticket_id, "canceled", "cancel", note,
                                   author, now)
         if run_id is not None:
@@ -162,6 +163,17 @@ def resolve_dependencies(conn, project_id):
                 transition(conn, ticket_id, "ready")
                 resolved.append(identifier)
     return resolved
+
+
+def _refuse_merged_park(conn, ticket_id, identifier):
+    row = conn.execute(
+        "SELECT r.id FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.id = ? AND r.endedAt IS NULL"
+        " AND r.phase = 'blocked_on_operator'", (ticket_id,)).fetchone()
+    if row is not None:
+        raise FilingRefused([
+            f"{identifier}'s run {row[0]} is parked blocked_on_operator after"
+            " its merge landed and cannot end abandoned; nothing changed"])
 
 
 def _close_parked_run(conn, ticket_id, identifier, now):

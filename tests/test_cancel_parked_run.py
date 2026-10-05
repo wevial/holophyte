@@ -1,6 +1,7 @@
 """A native-board `--cancel` whose ticket's last run is parked ends that run
 `abandoned` behind a `close_out` intervention and leaves its pull request
-open; a run that already ended is left alone. The command line runs against
+open; a run that already ended is left alone, and a run parked after its
+merge landed refuses the cancel. The command line runs against
 a real store under a throwaway home, and Linear's transport refuses to be
 called.
 
@@ -128,7 +129,7 @@ class CancelParkedRunTests(ConfigTestCase):
             store.release(conn, run, "failed", "verify failed")
         self.assert_cancel_leaves(run)
 
-    def test_a_cancel_leaves_a_run_parked_after_its_merge_untouched(self):
+    def test_a_cancel_refuses_a_ticket_whose_run_parked_after_its_merge(self):
         with contextlib.closing(open_store(self.project)) as conn:
             project_id, ticket_id = conn.execute(
                 "SELECT projectId, id FROM tickets").fetchone()
@@ -139,7 +140,18 @@ class CancelParkedRunTests(ConfigTestCase):
                 store.set_phase(conn, run, phase)
             store.park(conn, run, "blocked_on_operator", "after command failed")
             store.tickets.transition(conn, ticket_id, "blocked_on_operator")
-        self.assert_cancel_leaves(run)
+        runs = "SELECT phase, outcome, endedAt FROM runs"
+        tickets = "SELECT status, boardColumn, revision FROM tickets"
+        before = self.read(runs), self.read(tickets)
+
+        status, printed = self.cli("--cancel", "NAT-1", "--revision", "1",
+                                   "--note", "wrong scope")
+
+        self.assertEqual(status, 1, printed)
+        self.assertIn(f"run {run} is parked blocked_on_operator", printed)
+        self.assertEqual((self.read(runs), self.read(tickets)), before)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM interventions"
+                                   " WHERE runId IS NOT NULL"), [(0,)])
 
     def assert_cancel_leaves(self, run):
         before = self.read("SELECT phase, outcome, endedAt FROM runs")
