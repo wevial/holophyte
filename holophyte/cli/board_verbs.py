@@ -48,10 +48,15 @@ def _board_verb(args, board, out=None):
                                   args.note)
             line = f"moved {identifier} to {args.move[1]} (revision {revision})"
         else:
-            revision, run = board.cancel(identifier, args.revision, args.note)
+            revision, run, closed = board.cancel(identifier, args.revision,
+                                                 args.note)
             line = f"canceled {identifier} (revision {revision})"
             if run is not None:
                 line += f"; run {run} ends abandoned at its next safe point"
+            elif closed is not None:
+                line += f"; run {closed[0]} ended abandoned"
+                if closed[1] is not None:
+                    line += f", {closed[1]} left open"
     except RevisionMoved as moved:
         line = (f"{identifier} is at revision {moved.current}, not "
                 f"{moved.expected}; nothing changed")
