@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import threading
@@ -353,24 +354,26 @@ def codex_session(output: str) -> str | None:
     return None
 
 
-def keep_transcript(home: Path, transcripts: Path) -> bool:
+def keep_transcript(home: Path, transcripts: Path, session: str) -> bool:
     sessions = home / ".codex" / "sessions"
     try:
-        found = [path for path in sessions.rglob("*.jsonl")
-                 if not path.is_symlink() and path.is_file()
-                 and path.resolve().is_relative_to(home.resolve())]
+        if (sessions.parent.is_symlink() or sessions.is_symlink()
+                or not sessions.is_dir()):
+            return False
+        found = [Path(top) / name for top, _, names in os.walk(sessions)
+                 for name in names if name.endswith(f"-{session}.jsonl")]
+        found = [path for path in found if stat.S_ISREG(path.lstat().st_mode)]
         if not found:
             return False
-        newest = max(found, key=lambda path: path.stat().st_mtime_ns)
+        newest = max(found, key=lambda path: path.lstat().st_mtime_ns)
         transcripts.mkdir(parents=True, exist_ok=True, mode=0o700)
         transcripts.chmod(0o700)
-        landing = transcripts / newest.name
         source = os.open(newest, os.O_RDONLY | os.O_NOFOLLOW)
         with open(source, "rb") as reader, open(os.open(
-                landing, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-                0o600), "wb") as writer:
+                transcripts / newest.name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600),
+                "wb") as writer:
             shutil.copyfileobj(reader, writer)
-        landing.chmod(0o600)
     except OSError:
         return False
     return True
@@ -549,7 +552,7 @@ def run_review(
             raise
         session = codex_session(result.stdout)
         if (session and transcripts is not None and on_session is not None
-                and keep_transcript(home, transcripts)):
+                and keep_transcript(home, transcripts, session)):
             on_session(session)
         return message
 

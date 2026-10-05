@@ -43,16 +43,21 @@ print("PREFLIGHT_OK candidate=shim", file=sys.stderr, flush=True)
 os.execv("/bin/sh", ["/bin/sh", "-eu", "-c", statement, *positional])
 """
 
-# Writes a rollout under its home when told a name, and opens the stream with
-# `thread.started` when told an id.
+# Writes a rollout under its home when told a name, a newer forged file when
+# told a decoy name, and opens the stream with `thread.started` when told an id.
 CODEX = """#!{python}
 import json, os, pathlib
 thread = os.environ.get("STUB_THREAD_ID")
 rollout = os.environ.get("STUB_ROLLOUT")
+decoy = os.environ.get("STUB_DECOY")
+day = pathlib.Path(os.environ["HOME"], ".codex", "sessions", "2026", "10", "05")
 if rollout:
-    day = pathlib.Path(os.environ["HOME"], ".codex", "sessions", "2026", "10", "05")
-    day.mkdir(parents=True)
+    day.mkdir(parents=True, exist_ok=True)
     (day / rollout).write_text(json.dumps({{"type": "session_meta"}}) + "\\n")
+if decoy:
+    day.mkdir(parents=True, exist_ok=True)
+    (day / decoy).write_text("forged\\n")
+    os.utime(day / decoy, (4e9, 4e9))
 events = [{{"type": "thread.started", "thread_id": thread}}] if thread else []
 events += [{{"type": "item.completed", "item": item}} for item in (
     {{"type": "command_execution", "exit_code": 0}},
@@ -133,6 +138,20 @@ class ContainerReviewSessionTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.kept.stat().st_mode), 0o700)
         self.assertEqual(transcripts.locate("codex", THREAD, self.kept),
                          kept.resolve())
+
+    def test_a_newer_file_named_for_another_session_does_not_replace_its_transcript(
+            self):
+        earlier = self.kept / "rollout-2026-10-04T09-00-00-earlier-thread.jsonl"
+        self.kept.mkdir(mode=0o700)
+        earlier.write_text("earlier\n")
+
+        with patch.dict(os.environ, {"STUB_DECOY": earlier.name}):
+            sessions = self.review(THREAD, ROLLOUT)
+
+        self.assertEqual([s["session_id"] for s in sessions], [THREAD])
+        self.assertEqual(earlier.read_text(), "earlier\n")
+        self.assertEqual(json.loads((self.kept / ROLLOUT).read_text()),
+                         {"type": "session_meta"})
 
     def test_a_missing_or_malformed_id_or_rollout_records_and_keeps_nothing(self):
         for label, thread, rollout in (
