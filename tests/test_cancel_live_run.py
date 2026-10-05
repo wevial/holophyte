@@ -264,6 +264,19 @@ class CancelLiveRunTests(ConfigTestCase):
         self.assertEqual(self.read("SELECT status FROM tickets"), [("abandoned",)])
         self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)])
 
+    def test_a_cancel_after_an_abort_stopped_the_run_abandons_the_ticket_at_once(self):
+        run = self.working_run()
+        self.cli("--abort", "NAT-1", "--note", "host going down")
+        self.reach_safe_point(run)
+        self.assertIn("parked NAT-1", self.cli("--status")[1])
+
+        status, printed = self.cli("--cancel", "NAT-1", "--revision", "1",
+                                   "--note", "wrong scope")
+
+        self.assertEqual(status, 0, printed)
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("abandoned",)])
+        self.assertNotIn("parked NAT-1", self.cli("--status")[1])
+
     def test_a_version_40_store_admits_a_board_cancel_and_drops_version_40_builds(self):
         run = self.working_run()
         path = self.project.store_path

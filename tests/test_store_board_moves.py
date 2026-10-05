@@ -89,7 +89,8 @@ class StoreBoardMoveTests(unittest.TestCase):
         live = self.run_on("NAT-4")
         parked = self.run_on("NAT-5")
         store.set_phase(self.conn, parked, "verifying")
-        store.park(self.conn, parked, "awaiting_merge_approval")
+        store.park(self.conn, parked, "awaiting_merge_approval",
+                   pr_url="https://github.com/o/r/pull/5")
         store.tickets.transition(self.conn, self.ticket_id("NAT-5"),
                                  "blocked_on_operator")
 
