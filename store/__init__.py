@@ -400,6 +400,8 @@ _RECORD_SEP = "\x1e"
 
 _NO_LINE = -1
 
+CRITERIA_PATH = "criteria"
+
 # A literal: it is stored and compared across releases, so it cannot drift.
 EMPTY_FINGERPRINT = (
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -456,14 +458,23 @@ def findings_fingerprint(findings):
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _code_finding(finding):
+    return (finding.get("evidence_only") is not True
+            and finding.get("fingerprint", finding)["path"] != CRITERIA_PATH)
+
+
 def findings_overlap(earlier, later):
     earlier_keys = _finding_keys(earlier)
     later_keys = _finding_keys(later)
-    earlier = [f for f in earlier if f.get("evidence_only") is not True]
-    later = [f for f in later if f.get("evidence_only") is not True]
+    restated = any(path == CRITERIA_PATH
+                   for path, _line, _severity in earlier_keys | later_keys)
+    earlier_keys = {key for key in earlier_keys if key[0] != CRITERIA_PATH}
+    later_keys = {key for key in later_keys if key[0] != CRITERIA_PATH}
+    earlier = [f for f in earlier if _code_finding(f)]
+    later = [f for f in later if _code_finding(f)]
     union = earlier_keys | later_keys
     if not union:
-        return 1.0
+        return None if restated else 1.0
     # One coarse key can stand for two different complaints; compare messages.
     if len(union) == 1 and earlier and later:
         earlier_messages = {_message_digest(f) for f in earlier}
