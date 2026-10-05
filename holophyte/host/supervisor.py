@@ -52,6 +52,8 @@ SWEEPABLE_PHASES = tuple(
 STALE_HEARTBEAT = "stale_heartbeat"
 TIME_BOX = "time_box"
 REVIEW_STUCK = "review_stuck"
+CRITERION_STUCK = "criterion_stuck"
+CRITERION_STUCK_ROUNDS = 3
 
 SWEEP_EVENT = "supervisor_sweep"
 
@@ -77,8 +79,44 @@ def review_overlap(conn, run_id):
     if any(store.findings_fingerprint(findings) == store.EMPTY_FINGERPRINT
            for findings in (earlier_findings, later_findings)):
         return None
-    return earlier, later, store.findings_overlap(earlier_findings,
-                                                  later_findings)
+    overlap = store.findings_overlap(earlier_findings, later_findings)
+    return None if overlap is None else (earlier, later, overlap)
+
+
+def criteria_stuck(conn, run_id):
+    rounds = store.read.newest_ended_rounds(conn, run_id,
+                                            CRITERION_STUCK_ROUNDS)
+    if len(rounds) < CRITERION_STUCK_ROUNDS:
+        return None
+    unmet = set.intersection(*(
+        {finding.get("line") for finding in json.loads(each.findings)
+         if finding.get("path") == store.CRITERIA_PATH}
+        for each in rounds))
+    if not unmet:
+        return None
+    return sorted(each.round for each in rounds), sorted(unmet)
+
+
+def _spoken_list(items):
+    *head, last = [str(item) for item in items]
+    return f"{', '.join(head)} and {last}" if head else last
+
+
+def review_trip(conn, run_id, overlap_threshold):
+    overlap = review_overlap(conn, run_id)
+    if overlap is not None and overlap[2] >= overlap_threshold:
+        earlier, later, shared = overlap
+        return (REVIEW_STUCK,
+                f"rounds {earlier} and {later} share {shared:.2f} of"
+                f" their findings ({overlap_threshold} threshold)")
+    stuck = criteria_stuck(conn, run_id)
+    if stuck is not None:
+        rounds, unmet = stuck
+        noun = "criterion" if len(unmet) == 1 else "criteria"
+        return (CRITERION_STUCK,
+                f"{noun} {_spoken_list(unmet)} restated as unmet in rounds"
+                f" {_spoken_list(rounds)}")
+    return None
 
 
 def still_tripped(target, conn, trip, knobs=None):
@@ -102,6 +140,8 @@ def still_tripped(target, conn, trip, knobs=None):
         overlap = review_overlap(conn, trip.run_id)
         return (overlap is not None
                 and overlap[2] >= knobs.review_overlap_threshold)
+    if trip.condition == CRITERION_STUCK:
+        return criteria_stuck(conn, trip.run_id) is not None
     return True
 
 
@@ -192,14 +232,10 @@ def sweep(target, conn, now, act=False, provider=None, knobs=None):
                     f" {run_cap}x run cap)",
                     heartbeat, host))
             elif (phase in REVIEW_PHASES
-                    and (overlap := review_overlap(conn, run_id)) is not None
-                    and overlap[2] >= overlap_threshold):
-                earlier, later, shared = overlap
-                trips.append(Trip(
-                    run_id, ticket, phase, REVIEW_STUCK,
-                    f"rounds {earlier} and {later} share {shared:.2f} of"
-                    f" their findings ({overlap_threshold} threshold)",
-                    heartbeat, host))
+                    and (review := review_trip(conn, run_id,
+                                               overlap_threshold))):
+                trips.append(Trip(run_id, ticket, phase, *review,
+                                  heartbeat, host))
             elif strikes:
                 watched.append(
                     f"run {run_id} ({ticket}, {phase}): silent"

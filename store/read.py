@@ -302,11 +302,11 @@ class EndedRound:
     findings: str
 
 
-def newest_ended_rounds(conn, run_id):
+def newest_ended_rounds(conn, run_id, count=2):
     rows = conn.execute(
         "SELECT round, findings FROM reviewRounds"
         " WHERE runId = ? AND endedAt IS NOT NULL"
-        " ORDER BY round DESC LIMIT 2", (run_id,)).fetchall()
+        " ORDER BY round DESC LIMIT ?", (run_id, count)).fetchall()
     return [EndedRound(round=row[0], findings=row[1]) for row in rows]
 
 

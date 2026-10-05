@@ -6,6 +6,7 @@ from pathlib import Path
 
 import review_runner
 from holophyte.review.briefs import REFUTED_CLOSE, REFUTED_OPEN, _changed_files
+from store import CRITERIA_PATH
 
 # A CSI opens with ESC-[ or with the single C1 byte \x9b.
 ANSI_CSI_RE = re.compile(r"(?:\x1b\[|\x9b)[0-9;?]*[ -/]*[@-~]")
@@ -172,9 +173,6 @@ def finding_severity(block):
 CRITERION_LINE_RE = re.compile(
     r"^\s*CRITERION\s+(\d+)\s*:\s*(met|not met|unwitnessed)\b"
     r"\s*(?:[-\u2013\u2014:]+\s*)?(.*?)\s*$", re.I | re.M)
-
-
-CRITERIA_PATH = "criteria"
 
 
 UNWITNESSED_NOTE = "no CRITERION line in the reply"
