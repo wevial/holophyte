@@ -27,11 +27,13 @@ def stop_if_requested(conn, run_id, phase):
     _, branch, ticket_id, repo, note, pr_url, action = row
     if action in ABORTS:
         end_aborted(conn, run_id)
+        return
     stopped_at, phase = phase, "merge_gate" if pr_url else phase
     target = Project.locate(repo)
     sha = preserve(target, branch) if branch else None
     if not _end_paused(conn, run_id, ticket_id, phase, note, sha):
         end_aborted(conn, run_id)
+        return
     if pr_url:
         from holophyte.loop import pause_notice
         pause_notice.mark(target, conn, run_id, stopped_at)
@@ -95,10 +97,13 @@ def end_aborted(conn, run_id):
             (run_id,)).fetchone()
         if ended is not None:
             raise store.RunEnded(run_id, outcome, reason)
-        note, action, source, trigger = conn.execute(
+        request = conn.execute(
             'SELECT i.guidance, i.action, i.source, i."trigger" FROM runs r'
-            " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
-            (run_id,)).fetchone()
+            " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?"
+            " AND i.action IN ('abort', 'abort_close')", (run_id,)).fetchone()
+        if request is None:
+            return
+        note, action, source, trigger = request
         store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
         if trigger in ("linear_cancelled", "board_cancelled"):
             store.walk_ticket(conn, ticket_id, "abandoned")
@@ -249,6 +254,7 @@ def abort_run(target, conn, run_id, note, *, provider, close=False,
         return False
     try:
         end_aborted(conn, run_id)
+        return False
     except Aborted:
         (ticket_id,) = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
                                     (run_id,)).fetchone()

@@ -136,7 +136,25 @@ class CancelLiveRunTests(ConfigTestCase):
     def test_a_cancel_landing_while_a_pause_preserves_work_closes_the_ticket(self):
         self.cancel_while_preserving("--pause")
 
-    def cancel_while_preserving(self, stop):
+    def test_an_abort_resumed_while_its_work_is_preserved_lets_the_run_go_on(self):
+        run = self.branch_with_work()
+        self.cli("--abort", "NAT-1", "--note", "host going down")
+        stage_work = holophyte.loop.claim.stage_work
+
+        def resume_then_stage(target, cwd):
+            with contextlib.closing(open_store(self.project)) as conn:
+                store.resume(conn, run, note="keep going")
+            stage_work(target, cwd)
+
+        with patch.object(holophyte.loop.claim, "stage_work", resume_then_stage), \
+                contextlib.closing(open_store(self.project)) as conn:
+            stop_if_requested(conn, run, "working")
+
+        self.assertEqual(self.read("SELECT phase, endedAt, stopRequested FROM runs"),
+                         [("working", None, None)])
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("in_flight",)])
+
+    def branch_with_work(self):
         git = ["git", "-c", "user.name=t", "-c", "user.email=t@t.invalid"]
         subprocess.run([*git, "init", "-q", "-b", "main"], cwd=self.target,
                        check=True)
@@ -149,6 +167,11 @@ class CancelLiveRunTests(ConfigTestCase):
         run = self.working_run()
         with contextlib.closing(open_store(self.project)) as conn:
             store.set_branch(conn, run, "task/nat-1")
+        return run
+
+    def cancel_while_preserving(self, stop):
+        run = self.branch_with_work()
+        wt = self.project.worktrees / "nat-1"
         self.cli(stop, "NAT-1", "--note", "host going down")
         stage_work = holophyte.loop.claim.stage_work
 
