@@ -1,9 +1,11 @@
 """Transcript renderers keep known speech and commands, never raw records."""
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from holophyte.agents.transcripts import locate, render
+import store
+from holophyte.agents.transcripts import locate, render, turns
 from tests.transcript_fixture import TranscriptCase
 
 FIXTURES = Path(__file__).parent / 'fixtures' / 'transcripts'
@@ -74,6 +76,73 @@ class TranscriptTests(unittest.TestCase):
                 ('command', 'wait for cell 8'),
                 ('tool', 'done\nExit code: 0'),
             ])
+
+
+def session(role, route, session_id):
+    return 'agent_session', dict(role=role, route=route, session_id=session_id)
+
+
+def turn(role, route):
+    return 'agent_turn', dict(role=role, route=route, seconds=1)
+
+
+def paired(*events):
+    return [(t['role'], t['route'], t['session_id']) for t in turns(
+        (seq, kind, json.dumps(data)) for seq, (kind, data) in enumerate(events))]
+
+
+class SessionPairingTests(unittest.TestCase):
+    def test_implement_session_before_its_turn_pairs(self):
+        self.assertEqual(paired(session('implement', 'primary', 'impl'),
+                                turn('implement', 'primary')),
+                         [('implement', 'primary', 'impl')])
+
+    def test_implement_session_after_its_turn_pairs(self):
+        self.assertEqual(paired(turn('implement', 'primary'),
+                                session('implement', 'primary', 'impl')),
+                         [('implement', 'primary', 'impl')])
+
+    def test_fix_round_turn_resumes_the_implement_session(self):
+        self.assertEqual(paired(session('implement', 'primary', 'impl'),
+                                turn('implement', 'primary'),
+                                session('review', 'primary', 'review-1'),
+                                turn('review', 'primary'),
+                                turn('implement', 'primary'),
+                                session('review', 'primary', 'review-2'),
+                                turn('review', 'primary')),
+                         [('implement', 'primary', 'impl'),
+                          ('review', 'primary', 'review-1'),
+                          ('implement', 'primary', 'impl'),
+                          ('review', 'primary', 'review-2')])
+
+    def test_each_route_keeps_its_own_implement_session(self):
+        self.assertEqual(paired(session('implement', 'primary', 'impl-primary'),
+                                turn('implement', 'primary'),
+                                session('implement', 'fallback', 'impl-fallback'),
+                                turn('implement', 'fallback'),
+                                turn('implement', 'primary')),
+                         [('implement', 'primary', 'impl-primary'),
+                          ('implement', 'fallback', 'impl-fallback'),
+                          ('implement', 'primary', 'impl-primary')])
+
+
+class RunTurnsSessionTests(TranscriptCase):
+    def test_container_route_turns_carry_the_run_session(self):
+        self.seed()
+        with store.open(str(self.db)) as conn:
+            store.record_agent_session(conn, self.run, 'container', 'implement',
+                                       'primary')
+            for role in ('implement', 'review', 'implement'):
+                store.record_event(conn, self.run, 'agent_turn', f'{role} turn ended',
+                                   level='detail', payload=json.dumps(
+                                       dict(role=role, route='primary', seconds=5)))
+            recorded = conn.execute('SELECT providerSessionId FROM runs WHERE id = ?',
+                                    (self.run,)).fetchone()[0]
+        self.start('')
+        code, _, body = self.request('GET', f'/runs/{self.run}/turns')
+        self.assertEqual(code, 200)
+        self.assertEqual([t['session_id'] for t in body['turns']],
+                         [recorded, None, recorded])
 
 
 class TranscriptFallbackTests(TranscriptCase):

@@ -150,8 +150,8 @@ def render(path):
 
 
 def turns(events):
-    """A review session event precedes its turn; an implement one follows it."""
-    result, pending = [], {}
+    """Implement sessions pair either side of a turn and carry to resumed ones."""
+    result, pending, latest, owned = [], {}, {}, set()
     for seq, kind, payload in events:
         data = decoded(payload)
         role, route = data.get('role'), data.get('route')
@@ -161,15 +161,23 @@ def turns(events):
         if kind == 'agent_session':
             if role not in ('implement', 'review'):
                 continue
+            session_id = data.get('session_id')
+            waiting = result[-1] if result else None
             if role == 'implement':
-                if result and (result[-1]['role'], result[-1]['route']) == key:
-                    result[-1]['session_id'] = data.get('session_id')
+                latest[key] = session_id
+            if (role == 'implement' and waiting is not None
+                    and (waiting['role'], waiting['route']) == key
+                    and waiting['id'] not in owned):
+                waiting['session_id'] = session_id
+                owned.add(waiting['id'])
             else:
-                pending[key] = data.get('session_id')
+                pending[key] = session_id
         elif kind == 'agent_turn':
             label = data.get('label')
+            if key in pending:
+                owned.add(seq)
             result.append(dict(id=seq, role=role, route=route,
                                label=label if isinstance(label, str) else None,
                                seconds=data.get('seconds'),
-                               session_id=pending.pop(key, None)))
+                               session_id=pending.pop(key, latest.get(key))))
     return result
