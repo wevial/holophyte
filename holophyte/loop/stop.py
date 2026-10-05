@@ -86,11 +86,6 @@ def end_aborted(conn, run_id):
         (run_id,)).fetchone()
     target = Project.locate(repo)
     sha = preserve(target, branch, "abort") if branch else None
-    if sha and pr_url:
-        try:
-            github.push_branch(target, branch)
-        except InfraFailure as refused:
-            store.record_event(conn, run_id, "warning", f"abort push: {refused}")
     with _transaction(conn):
         ended, outcome, reason = conn.execute(
             "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
@@ -110,6 +105,11 @@ def end_aborted(conn, run_id):
         else:
             store.walk_ticket(conn, ticket_id, "blocked_on_operator")
             store.set_question(conn, ticket_id, note)
+    if sha and pr_url:
+        try:
+            github.push_branch(target, branch)
+        except InfraFailure as refused:
+            store.record_event(conn, run_id, "warning", f"abort push: {refused}")
     # Closed after the run ends, so a reconcile never finds a parked run to reject.
     if pr_url and action == "abort_close":
         from holophyte.babysit.babysitter import COMMENT_HEADER

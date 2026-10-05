@@ -138,6 +138,7 @@ class CancelLiveRunTests(ConfigTestCase):
 
     def test_an_abort_resumed_while_its_work_is_preserved_lets_the_run_go_on(self):
         run = self.branch_with_work()
+        remote = self.open_pull(run)
         self.cli("--abort", "NAT-1", "--note", "host going down")
         stage_work = holophyte.loop.claim.stage_work
 
@@ -153,6 +154,35 @@ class CancelLiveRunTests(ConfigTestCase):
         self.assertEqual(self.read("SELECT phase, endedAt, stopRequested FROM runs"),
                          [("working", None, None)])
         self.assertEqual(self.read("SELECT status FROM tickets"), [("in_flight",)])
+        self.assertEqual(self.remote_branch(remote), "",
+                         "a withdrawn abort published its WIP commit")
+
+    def test_a_confirmed_abort_pushes_its_preserved_work_to_the_pull(self):
+        run = self.branch_with_work()
+        remote = self.open_pull(run)
+        self.cli("--abort", "NAT-1", "--note", "host going down")
+
+        self.reach_safe_point(run)
+
+        (sha,) = self.read("SELECT candidateSha FROM runs")[0]
+        self.assertEqual(self.remote_branch(remote), sha)
+
+    def open_pull(self, run):
+        remote = self.root / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(remote)],
+                       cwd=self.target, check=True)
+        with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn, \
+                conn:
+            conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
+                         ("https://github.com/o/r/pull/1", run))
+        return remote
+
+    def remote_branch(self, remote):
+        return subprocess.run(
+            ["git", "for-each-ref", "--format=%(objectname)",
+             "refs/heads/task/nat-1"], cwd=remote, capture_output=True,
+            text=True, check=True).stdout.strip()
 
     def branch_with_work(self):
         git = ["git", "-c", "user.name=t", "-c", "user.email=t@t.invalid"]
