@@ -118,8 +118,8 @@ class SessionPairingTests(unittest.TestCase):
     def test_each_route_keeps_its_own_implement_session(self):
         self.assertEqual(paired(session('implement', 'primary', 'impl-primary'),
                                 turn('implement', 'primary'),
-                                session('implement', 'fallback', 'impl-fallback'),
                                 turn('implement', 'fallback'),
+                                session('implement', 'fallback', 'impl-fallback'),
                                 turn('implement', 'primary')),
                          [('implement', 'primary', 'impl-primary'),
                           ('implement', 'fallback', 'impl-fallback'),
@@ -127,7 +127,7 @@ class SessionPairingTests(unittest.TestCase):
 
 
 class RunTurnsSessionTests(TranscriptCase):
-    def test_container_route_turns_carry_the_run_session(self):
+    def test_container_order_turns_carry_the_run_session(self):
         self.seed()
         with store.open(str(self.db)) as conn:
             store.record_agent_session(conn, self.run, 'container', 'implement',
