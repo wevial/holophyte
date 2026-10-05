@@ -166,7 +166,14 @@ class NativeBoard:
                 "SELECT r.id FROM tickets t JOIN runs r ON r.id = t.activeRunId"
                 " WHERE t.projectId = ? AND t.linearIdentifier = ?"
                 " AND r.endedAt IS NULL", (project_id, identifier)).fetchone()
-        return revision, None if row is None else row[0]
+            closed = conn.execute(
+                "SELECT r.id, r.prUrl FROM tickets t"
+                " JOIN runs r ON r.id = t.lastRunId"
+                " JOIN interventions i ON i.runId = r.id"
+                " WHERE t.projectId = ? AND t.linearIdentifier = ?"
+                " AND i.action = 'close_out' AND i.\"trigger\" = 'board_cancelled'",
+                (project_id, identifier)).fetchone()
+        return revision, None if row is None else row[0], closed
 
     def stored_body(self, identifier):
         row = self._row(identifier)

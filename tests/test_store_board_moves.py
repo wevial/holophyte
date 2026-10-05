@@ -83,18 +83,12 @@ class StoreBoardMoveTests(unittest.TestCase):
         self.assertEqual(self.row("NAT-1"), ("ready", "backlog", "Backlog", 2))
         self.assertEqual(self.notes("NAT-1"), [("move", "later")])
 
-    def test_a_cancel_abandons_idle_aborts_live_and_leaves_parked(self):
-        for _ in range(5):
+    def test_a_cancel_abandons_idle_and_aborts_live(self):
+        for _ in range(4):
             self.file()
         live = self.run_on("NAT-4")
-        parked = self.run_on("NAT-5")
-        store.set_phase(self.conn, parked, "verifying")
-        store.park(self.conn, parked, "awaiting_merge_approval",
-                   pr_url="https://github.com/o/r/pull/5")
-        store.tickets.transition(self.conn, self.ticket_id("NAT-5"),
-                                 "blocked_on_operator")
 
-        for identifier in ("NAT-3", "NAT-4", "NAT-5"):
+        for identifier in ("NAT-3", "NAT-4"):
             revision = store.board.cancel_ticket(
                 self.conn, self.project_id, identifier, 1, "wrong scope")
             self.assertEqual(revision, 2)
@@ -111,10 +105,6 @@ class StoreBoardMoveTests(unittest.TestCase):
             " WHERE r.id = ?", (live,)).fetchone()
         self.assertEqual(stop, ("abort", "human", "board_cancelled",
                                 "wrong scope", None))
-        self.assertEqual(self.row("NAT-5")[0], "blocked_on_operator")
-        self.assertEqual(self.conn.execute(
-            "SELECT phase, endedAt, stopRequested FROM runs WHERE id = ?",
-            (parked,)).fetchone(), ("awaiting_merge_approval", None, None))
 
         with self.assertRaises(store.board.FilingRefused):
             store.board.cancel_ticket(self.conn, self.project_id, "NAT-3", 2,

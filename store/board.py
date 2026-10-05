@@ -8,7 +8,7 @@ import ticket_template
 
 from . import RevisionMoved
 from .notes import record_note
-from .operate import abort
+from .operate import abort, record_intervention, release
 from .revisions import record_board_fields
 from .schema import _transaction
 from .stories import abandon_story, story
@@ -119,7 +119,7 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
 
 def cancel_ticket(conn, project_id, identifier, expected_revision, note,
                   author="cli", now=None):
-    """Cancel as a board does; the reconcile closes a ticket parked on a pull."""
+    """Cancel as a board does; a run awaiting merge approval ends abandoned."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -130,6 +130,8 @@ def cancel_ticket(conn, project_id, identifier, expected_revision, note,
         if run_id is not None:
             abort(conn, run_id, note, source="human", now=now,
                   trigger="board_cancelled")
+        elif _close_parked_run(conn, ticket_id, identifier, now):
+            walk_ticket(conn, ticket_id, "abandoned")
         elif status != "blocked_on_operator" \
                 or not _parked_on_pull_request(conn, ticket_id):
             walk_ticket(conn, ticket_id, "abandoned")
@@ -160,6 +162,25 @@ def resolve_dependencies(conn, project_id):
                 transition(conn, ticket_id, "ready")
                 resolved.append(identifier)
     return resolved
+
+
+def _close_parked_run(conn, ticket_id, identifier, now):
+    row = conn.execute(
+        "SELECT r.id, r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.id = ? AND r.endedAt IS NULL"
+        " AND r.phase = 'awaiting_merge_approval'", (ticket_id,)).fetchone()
+    if row is None:
+        return False
+    run_id, url = row
+    kept = "" if url is None else f" and {url} left open"
+    record_intervention(
+        conn, run_id, "close_out",
+        f"{identifier} canceled on the board; run {run_id} ended"
+        f" abandoned{kept}", source="human", trigger="board_cancelled",
+        now=now)
+    release(conn, run_id, "abandoned", f"canceled on the board{kept}",
+            now=now)
+    return True
 
 
 def _parked_on_pull_request(conn, ticket_id):
