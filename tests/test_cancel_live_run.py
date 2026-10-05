@@ -13,6 +13,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,7 +25,7 @@ import holophyte.loop.claim  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.loop.runs import open_store  # noqa: E402
+from holophyte.loop.runs import heartbeat_while, open_store  # noqa: E402
 from holophyte.loop.stop import stop_if_requested  # noqa: E402
 from tests.test_cli_native_update import NATIVE, body, no_linear  # noqa: E402
 
@@ -156,6 +157,26 @@ class CancelLiveRunTests(ConfigTestCase):
         self.assertEqual(self.read("SELECT status FROM tickets"), [("in_flight",)])
         self.assertEqual(self.remote_branch(remote), "",
                          "a withdrawn abort published its WIP commit")
+
+    def test_an_abort_the_heartbeat_saw_then_resumed_lets_the_run_go_on(self):
+        run = self.branch_with_work()
+        self.cli("--abort", "NAT-1", "--note", "host going down")
+        stage_work = holophyte.loop.claim.stage_work
+
+        def resume_then_stage(target, cwd):
+            with contextlib.closing(open_store(self.project)) as conn:
+                store.resume(conn, run, note="keep going")
+            stage_work(target, cwd)
+
+        seen = threading.Event()
+        with patch.object(holophyte.loop.claim, "stage_work", resume_then_stage), \
+                contextlib.closing(open_store(self.project)) as conn:
+            with heartbeat_while(conn, run, 0.01, on_swept=seen.set):
+                self.assertTrue(seen.wait(10), "the heartbeat never saw the abort")
+
+        self.assertEqual(self.read("SELECT phase, endedAt, stopRequested FROM runs"),
+                         [("working", None, None)])
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("in_flight",)])
 
     def test_a_confirmed_abort_pushes_its_preserved_work_to_the_pull(self):
         run = self.branch_with_work()
