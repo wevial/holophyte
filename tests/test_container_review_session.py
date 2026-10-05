@@ -156,7 +156,8 @@ class ContainerReviewSessionTests(unittest.TestCase):
     def test_a_missing_or_malformed_id_or_rollout_records_and_keeps_nothing(self):
         for label, thread, rollout in (
                 ("no id", None, ROLLOUT),
-                ("malformed id", "not an id", ROLLOUT),
+                ("malformed id", "not an id",
+                 "rollout-2026-10-05T09-00-00-not an id.jsonl"),
                 ("no rollout", THREAD, None)):
             with self.subTest(label):
                 self.assertEqual(self.review(thread, rollout), [])
