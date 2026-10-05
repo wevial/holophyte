@@ -76,18 +76,15 @@ class CodeFindingOverlapTests(StuckCriteriaTestCase):
         self.assertEqual(trip.condition, "review_stuck")
         self.assertIn("rounds 1 and 2 share 0.50", trip.evidence)
 
-    def test_a_lone_repeated_code_finding_reworded_still_trips(self):
-        earlier = [dict(code("a.py", 1), message="Missing cancellation guard")]
-        later = [dict(code("a.py", 1),
-                      message="Cancellation guard is still missing")]
-        earlier, later = earlier + restated(2), later + restated(2)
-        self.assertEqual(store.findings_overlap(earlier, later), 1.0)
+    def test_different_complaints_at_one_code_location_share_nothing(self):
+        earlier = [dict(code("worker.py", 20), message="Missing timeout")]
+        later = [dict(code("worker.py", 20), message="Retry count is wrong")]
+        earlier, later = earlier + restated(1), later + restated(1)
+        self.assertEqual(store.findings_overlap(earlier, later), 0.0)
         run_id = self.a_run(phase="addressing")
         self.rounds(run_id, earlier, later)
 
-        trip, = self.sweep(run_id).trips
-
-        self.assertEqual(trip.condition, "review_stuck")
+        self.assertEqual(self.sweep(run_id).trips, [])
 
     def test_rounds_of_restatements_alone_report_no_overlap(self):
         self.assertIsNone(store.findings_overlap(restated(1, 3), restated(1, 3)))
@@ -130,7 +127,8 @@ class PersistentCriterionTests(StuckCriteriaTestCase):
         trip, = self.sweep(run_id).trips
         store.record_review_round(
             self.conn, run_id, 4, "changes_requested", "reviewer",
-            findings=[code("d.py", 4)], started_at=T0 + 21 * MINUTE,
+            findings=[code("d.py", 4)] + restated(1),
+            started_at=T0 + 21 * MINUTE,
             ended_at=T0 + 22 * MINUTE)
 
         outcome = holophyte.host.supervisor.act_on_trip(

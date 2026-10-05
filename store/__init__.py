@@ -476,7 +476,7 @@ def findings_overlap(earlier, later):
     if not union:
         return None if restated else 1.0
     # One coarse key can stand for two different complaints; compare messages.
-    if len(union) == 1 and not restated and earlier and later:
+    if len(union) == 1 and earlier and later:
         earlier_messages = {_message_digest(f) for f in earlier}
         later_messages = {_message_digest(f) for f in later}
         return 1.0 if earlier_messages == later_messages else 0.0
