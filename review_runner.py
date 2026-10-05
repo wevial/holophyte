@@ -43,6 +43,7 @@ CODEX_FILES = ("codex", "codex-code-mode-host")
 
 REVIEW_VERDICTS = ("APPROVE", "REQUEST_CHANGES")
 ADJUDICATION_VERDICTS = ("PASS", "FAIL")
+SESSION_EVENTS = {"thread.started": "thread_id", "session.created": "session_id"}
 
 
 EVIDENCE_LINE = 300
@@ -269,7 +270,7 @@ echo "PREFLIGHT_OK candidate=$actual" >&2
 cp -a /workspace /home/reviewer/candidate
 exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
   -m "$2" -c "$3" ${4+-c "$4"} \
-  -s danger-full-access --ephemeral --disable multi_agent "$1"
+  -s danger-full-access --disable multi_agent "$1"
 '''.strip()
 
     command = [
@@ -304,22 +305,26 @@ def terminal_verdict(message: str, verdicts: Sequence[str] = REVIEW_VERDICTS) ->
     return found[0].removeprefix("VERDICT: ")
 
 
+def codex_events(output: str):
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        try:
+            yield json.loads(line)
+        except json.JSONDecodeError as exc:
+            error = ReviewBoundaryError("Codex emitted invalid JSONL")
+            error.line = "".join(ch for ch in line if ch.isprintable())[
+                :EVIDENCE_LINE]
+            raise error from exc
+
+
 def parse_codex_output(
     output: str, verdicts: Sequence[str] | None = REVIEW_VERDICTS
 ) -> tuple[str, str | None]:
     """Read trusted CLI JSONL events, not model-controlled transcript strings."""
     command_succeeded = False
     messages: list[str] = []
-    for line in output.splitlines():
-        if not line.strip():
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError as exc:
-            error = ReviewBoundaryError("Codex emitted invalid JSONL")
-            error.line = "".join(ch for ch in line if ch.isprintable())[
-                :EVIDENCE_LINE]
-            raise error from exc
+    for event in codex_events(output):
         if event.get("type") != "item.completed":
             continue
         item = event.get("item", {})
@@ -335,6 +340,40 @@ def parse_codex_output(
     if verdicts is None:
         return message, None
     return message, terminal_verdict(message, verdicts)
+
+
+def codex_session(output: str) -> str | None:
+    from holophyte.agents.transcripts import SESSION_ID
+
+    for event in codex_events(output):
+        key = SESSION_EVENTS.get(event.get("type"))
+        value = event.get(key) if key else None
+        if isinstance(value, str) and SESSION_ID.fullmatch(value):
+            return value
+    return None
+
+
+def keep_transcript(home: Path, transcripts: Path) -> bool:
+    sessions = home / ".codex" / "sessions"
+    try:
+        found = [path for path in sessions.rglob("*.jsonl")
+                 if not path.is_symlink() and path.is_file()
+                 and path.resolve().is_relative_to(home.resolve())]
+        if not found:
+            return False
+        newest = max(found, key=lambda path: path.stat().st_mtime_ns)
+        transcripts.mkdir(parents=True, exist_ok=True, mode=0o700)
+        transcripts.chmod(0o700)
+        landing = transcripts / newest.name
+        source = os.open(newest, os.O_RDONLY | os.O_NOFOLLOW)
+        with open(source, "rb") as reader, open(os.open(
+                landing, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+                0o600), "wb") as writer:
+            shutil.copyfileobj(reader, writer)
+        landing.chmod(0o600)
+    except OSError:
+        return False
+    return True
 
 
 def image_for(candidate: StagedCandidate) -> tuple[str, str]:
@@ -451,6 +490,8 @@ def run_review(
     run_id: int | None = None,
     on_start=None,
     service_tier: str | None = None,
+    transcripts: Path | None = None,
+    on_session=None,
 ) -> str:
     """`profile` must be what the model and effort compute to; another is refused."""
     if not model:
@@ -506,6 +547,10 @@ def run_review(
             error.tail = result.stdout[-EVIDENCE_TAIL:]
             error.exit_status = result.returncode
             raise
+        session = codex_session(result.stdout)
+        if (session and transcripts is not None and on_session is not None
+                and keep_transcript(home, transcripts)):
+            on_session(session)
         return message
 
 

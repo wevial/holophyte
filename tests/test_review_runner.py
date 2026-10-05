@@ -533,7 +533,7 @@ class ContainerCommandTests(unittest.TestCase):
         self.assertIn(" -C /home/reviewer/candidate", lines[run])
         self.assertNotIn("-C /workspace", lines[run])
 
-    def test_ephemeral_codex_runs_with_multi_agent_disabled(self):
+    def test_codex_keeps_its_session_and_runs_with_multi_agent_disabled(self):
         with tempfile.TemporaryDirectory() as tmp:
             command = self._rendered(Path(tmp))
         script = command[command.index("-c") + 1].replace("\\\n", " ")
@@ -541,7 +541,9 @@ class ContainerCommandTests(unittest.TestCase):
         argv = shlex.split(run)
 
         self.assertEqual(argv[1:3], ["/opt/codex/bin/codex", "exec"])
-        self.assertIn("--ephemeral", argv)
+        self.assertNotIn("--ephemeral", argv)
+        self.assertEqual(argv[argv.index("-s") + 1], "danger-full-access")
+        self.assertEqual(argv[argv.index("-C") + 1], "/home/reviewer/candidate")
         disable = argv.index("--disable")
         self.assertEqual(argv[disable + 1], "multi_agent")
         self.assertLess(disable, argv.index("$1"))

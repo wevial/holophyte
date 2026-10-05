@@ -17,6 +17,10 @@ def record_session(scratch, conn, run_id, role, route, round_number):
             session = source.read(201)
     except (OSError, UnicodeError):
         return
+    record_review_session(conn, run_id, session, role, route, round_number)
+
+
+def record_review_session(conn, run_id, session, role, route, round_number):
     if (not session or len(session) > 200 or '\x00' in session
             or any(c.isspace() for c in session)):
         return

@@ -1171,7 +1171,7 @@ judges a project's watcher beat stale after two of those intervals.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `transcripts` | Default: `[]` | Allowed transcript roots (a path or list of paths), relative to the config directory or absolute, with home expansion. Empty disables transcript reads; turn metadata remains available. Codex roots contain rollout JSONL files; durable Devin exports belong below a directory named for the session id. The operator must preserve review exports before scratch cleanup. |
+| `transcripts` | Default: `[]` | Allowed transcript roots (a path or list of paths), relative to the config directory or absolute, with home expansion. Empty disables transcript reads; turn metadata remains available. Codex roots contain rollout JSONL files; durable Devin exports belong below a directory named for the session id. The operator must preserve review exports before scratch cleanup. A container review copies its Codex session into the `transcripts` directory in the project's holophyte directory, beside `config.toml`; list `"transcripts"` here to open review turns. |
 | `token_file` | Default: Absent | Non-empty path string, relative to the config directory or absolute, with home expansion; set for non-loopback reads or any enabled write routes. |
 | `machine_token_file` | Default: Absent | Non-empty path string, resolved as `token_file` is; set to accept one machine-wide token beside the project's own wherever `token_file` is demanded. |
 | `actions` | Default: `false` | Boolean; enable to expose authenticated daemon action routes. |

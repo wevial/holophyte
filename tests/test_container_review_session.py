@@ -1,0 +1,148 @@
+"""A container review records the reviewer's Codex session and keeps its transcript.
+
+Run: python3 -m unittest discover -s tests -p 'test_container_review_session.py' -v
+"""
+from __future__ import annotations
+
+import json
+import os
+import stat
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+import holophyte.config.project  # noqa: E402 - after the sys.path insert above
+import review_runner  # noqa: E402 - after the sys.path insert above
+import store  # noqa: E402
+import store.tickets  # noqa: E402
+from holophyte.agents import roles, transcripts  # noqa: E402
+
+# `run` stands in for the container: it runs the built script's Codex statement
+# with the positional arguments `docker run` was handed, the mounts' host sides
+# standing in for /opt/codex/bin and the reviewer home.
+DOCKER = """#!{python}
+import os, sys
+args = sys.argv[1:]
+if args[0] == "inspect":
+    sys.exit(1)
+if args[0] != "run":
+    sys.exit(0)
+host = {{v.split(":")[1]: v.split(":")[0]
+        for a, v in zip(args, args[1:]) if a == "--volume"}}
+shell = args.index("/bin/sh")
+script, positional = args[shell + 3], args[shell + 4:]
+statement = script[script.index("exec /opt/codex/bin/codex"):]
+statement = statement.replace("/opt/codex/bin", host["/opt/codex/bin"])
+os.environ["HOME"] = host["/home/reviewer"]
+print("PREFLIGHT_OK candidate=shim", file=sys.stderr, flush=True)
+os.execv("/bin/sh", ["/bin/sh", "-eu", "-c", statement, *positional])
+"""
+
+# Writes a rollout under its home when told a name, and opens the stream with
+# `thread.started` when told an id.
+CODEX = """#!{python}
+import json, os, pathlib
+thread = os.environ.get("STUB_THREAD_ID")
+rollout = os.environ.get("STUB_ROLLOUT")
+if rollout:
+    day = pathlib.Path(os.environ["HOME"], ".codex", "sessions", "2026", "10", "05")
+    day.mkdir(parents=True)
+    (day / rollout).write_text(json.dumps({{"type": "session_meta"}}) + "\\n")
+events = [{{"type": "thread.started", "thread_id": thread}}] if thread else []
+events += [{{"type": "item.completed", "item": item}} for item in (
+    {{"type": "command_execution", "exit_code": 0}},
+    {{"type": "agent_message", "text": "VERDICT: APPROVE"}})]
+for event in events:
+    print(json.dumps(event))
+"""
+
+THREAD = "0199b2c4-7e1a-7c30-9a51-3f0d2e6b8a14"
+ROLLOUT = f"rollout-2026-10-05T09-00-00-{THREAD}.jsonl"
+
+
+class ContainerReviewSessionTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        repo = self.root / "repo"
+        repo.mkdir()
+        git = ["git", "-c", "user.name=Test", "-c", "user.email=t@example.invalid"]
+        subprocess.run([*git, "init", "-q", "-b", "main"], cwd=repo, check=True)
+        (repo / "value.txt").write_text("candidate\n")
+        subprocess.run([*git, "add", "value.txt"], cwd=repo, check=True)
+        subprocess.run([*git, "commit", "-qm", "candidate"], cwd=repo, check=True)
+        self.sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        for name, body in (("docker", DOCKER), ("codex", CODEX),
+                           ("codex-code-mode-host", "#!/bin/sh\nexit 0\n")):
+            (bin_dir / name).write_text(body.format(python=sys.executable))
+            (bin_dir / name).chmod(0o755)
+        (self.root / "auth.json").write_text("{}")
+        env = patch.dict(os.environ, {
+            "HOLOPHYTE_HOME": str(self.root / "home"),
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"})
+        env.start()
+        self.addCleanup(env.stop)
+        self.scratch = self.root / "reviews"
+        for name, value in (("SCRATCH_ROOT", self.scratch),
+                            ("CODEX_AUTH", self.root / "auth.json")):
+            patcher = patch.object(review_runner, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.project = holophyte.config.project.Project.locate(repo)
+        self.project.holo_dir.mkdir(parents=True)
+        self.conn = store.open(str(self.project.store_path))
+        self.addCleanup(self.conn.close)
+        project_id = store.tickets.ensure_project(self.conn, "team", repo)
+        ticket = store.tickets.mirror_ticket(
+            self.conn, project_id, linear_issue_id="i", linear_identifier="KO-1",
+            title="t", acceptance_criteria=["c"], verification_commands=["true"])
+        store.tickets.transition(self.conn, ticket, "in_flight")
+        self.run_id = store.claim(self.conn, project_id, ticket)
+        self.kept = self.project.holo_dir / "transcripts"
+
+    def review(self, thread, rollout):
+        stub = {"STUB_THREAD_ID": thread or "", "STUB_ROLLOUT": rollout or ""}
+        with patch.dict(os.environ, stub):
+            output = roles.agent(
+                self.project, "review", "judge the candidate", self.project.path,
+                base_sha=self.sha, candidate_sha=self.sha, conn=self.conn,
+                run_id=self.run_id, review_round=2)
+        self.assertEqual(output, "VERDICT: APPROVE")
+        self.assertEqual(list(self.scratch.iterdir()), [])
+        return [json.loads(payload) for (payload,) in self.conn.execute(
+            "SELECT payload FROM runEvents WHERE runId=? AND kind='agent_session'",
+            (self.run_id,))]
+
+    def test_the_turn_records_the_codex_thread_and_keeps_its_rollout(self):
+        sessions = self.review(THREAD, ROLLOUT)
+
+        self.assertEqual(sessions, [{"session_id": THREAD, "role": "review",
+                                     "route": "primary", "round": 2}])
+        kept = self.kept / ROLLOUT
+        self.assertEqual(json.loads(kept.read_text()), {"type": "session_meta"})
+        self.assertEqual(stat.S_IMODE(kept.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(self.kept.stat().st_mode), 0o700)
+        self.assertEqual(transcripts.locate("codex", THREAD, self.kept),
+                         kept.resolve())
+
+    def test_a_missing_or_malformed_id_or_rollout_records_and_keeps_nothing(self):
+        for label, thread, rollout in (
+                ("no id", None, ROLLOUT),
+                ("malformed id", "not an id", ROLLOUT),
+                ("no rollout", THREAD, None)):
+            with self.subTest(label):
+                self.assertEqual(self.review(thread, rollout), [])
+                self.assertFalse(self.kept.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
