@@ -129,7 +129,7 @@ def cancel_ticket(conn, project_id, identifier, expected_revision, note,
                                   author, now)
         if run_id is not None:
             abort(conn, run_id, note, source="human", now=now,
-                  trigger="manual")
+                  trigger="board_cancelled")
         elif status != "blocked_on_operator":
             walk_ticket(conn, ticket_id, "abandoned")
         found = story(conn, ticket_id)

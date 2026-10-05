@@ -108,8 +108,8 @@ class StoreBoardMoveTests(unittest.TestCase):
             'SELECT i."action", i.source, i."trigger", i.guidance, r.endedAt'
             " FROM runs r JOIN interventions i ON i.id = r.stopRequested"
             " WHERE r.id = ?", (live,)).fetchone()
-        self.assertEqual(stop, ("abort", "human", "manual", "wrong scope",
-                                None))
+        self.assertEqual(stop, ("abort", "human", "board_cancelled",
+                                "wrong scope", None))
         self.assertEqual(self.row("NAT-5")[0], "blocked_on_operator")
         self.assertEqual(self.conn.execute(
             "SELECT phase, endedAt, stopRequested FROM runs WHERE id = ?",

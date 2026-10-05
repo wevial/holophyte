@@ -91,7 +91,7 @@ def end_aborted(conn, run_id):
         if ended is not None:
             raise store.RunEnded(run_id, outcome, reason)
         store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
-        if trigger == "linear_cancelled":
+        if trigger in ("linear_cancelled", "board_cancelled"):
             store.walk_ticket(conn, ticket_id, "abandoned")
         else:
             store.walk_ticket(conn, ticket_id, "blocked_on_operator")

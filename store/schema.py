@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 40
+SCHEMA_VERSION = 41
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -417,17 +417,19 @@ def _widen_interventions_action(conn):
         " AND name = 'interventions'").fetchone()
     if row is None:
         return
-    # Only the action CHECK's own list: the literal elsewhere must not skip a rebuild.
+    # Only each CHECK's own list: a literal elsewhere must not skip a rebuild.
     (ddl,) = row
     admitted = ddl.partition('"action" IN (')[2].partition(")")[0]
-    if all(value in admitted
-           for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
-                         "'restart_supervisor'", "'launch_loop'",
-                         "'config_edit'", "'launch_backoff'", "'route_fallback'",
-                         "'migrate'", "'hold'", "'release_hold'",
-                         "'register_project'", "'disable'", "'pause'",
-                         "'abort'", "'abort_close'", "'approve_story'",
-                         "'decide'")):
+    triggers = ddl.partition('"trigger" IN (')[2].partition(")")[0]
+    if "'board_cancelled'" in triggers and all(
+            value in admitted
+            for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
+                          "'restart_supervisor'", "'launch_loop'",
+                          "'config_edit'", "'launch_backoff'", "'route_fallback'",
+                          "'migrate'", "'hold'", "'release_hold'",
+                          "'register_project'", "'disable'", "'pause'",
+                          "'abort'", "'abort_close'", "'approve_story'",
+                          "'decide'")):
         return
     (orphans,) = conn.execute(
         "SELECT COUNT(*) FROM interventions i LEFT JOIN runs r"
