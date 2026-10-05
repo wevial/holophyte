@@ -134,6 +134,7 @@ class InterventionTrigger(str, Enum):
     LINEAR_CANCELLED = 'linear_cancelled'
     LINEAR_COMPLETED = 'linear_completed'
     MANUAL = 'manual'
+    BOARD_CANCELLED = 'board_cancelled'
 
 
 class InterventionAction(str, Enum):

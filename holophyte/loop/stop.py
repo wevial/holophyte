@@ -27,15 +27,28 @@ def stop_if_requested(conn, run_id, phase):
     _, branch, ticket_id, repo, note, pr_url, action = row
     if action in ABORTS:
         end_aborted(conn, run_id)
+        return
     stopped_at, phase = phase, "merge_gate" if pr_url else phase
     target = Project.locate(repo)
     sha = preserve(target, branch) if branch else None
+    if not _end_paused(conn, run_id, ticket_id, phase, note, sha):
+        end_aborted(conn, run_id)
+        return
+    if pr_url:
+        from holophyte.loop import pause_notice
+        pause_notice.mark(target, conn, run_id, stopped_at)
+    raise store.RunEnded(run_id, "paused", note)
+
+
+def _end_paused(conn, run_id, ticket_id, phase, note, sha):
     with _transaction(conn):
         ended, outcome, reason = conn.execute(
             "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
             (run_id,)).fetchone()
         if ended is not None:
             raise store.RunEnded(run_id, outcome, reason)
+        if abort_requested(conn, run_id):
+            return False
         saved = _checkpoint.get()
         state = saved[3] if saved and saved[:3] == (conn, run_id, phase) else {}
         route = _route.get()
@@ -48,10 +61,7 @@ def stop_if_requested(conn, run_id, phase):
                       candidate_sha=sha)
         store.walk_ticket(conn, ticket_id, "blocked_on_operator")
         store.set_question(conn, ticket_id, note)
-    if pr_url:
-        from holophyte.loop import pause_notice
-        pause_notice.mark(target, conn, run_id, stopped_at)
-    raise store.RunEnded(run_id, "paused", note)
+    return True
 
 
 class Aborted(store.RunEnded):
@@ -69,33 +79,37 @@ def abort_requested(conn, run_id):
 def end_aborted(conn, run_id):
     from holophyte.loop.gates import InfraFailure
     from holophyte.pr import github
-    (branch, ticket_id, repo, note, pr_url, action, source, trigger,
-     identifier) = conn.execute(
-        "SELECT r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl,"
-        ' i.action, i.source, i."trigger", t.linearIdentifier'
+    branch, ticket_id, repo, pr_url, identifier = conn.execute(
+        "SELECT r.branch, r.ticketId, p.repoPath, r.prUrl, t.linearIdentifier"
         " FROM runs r JOIN projects p ON p.id = r.projectId"
-        " JOIN tickets t ON t.id = r.ticketId"
-        " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
+        " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
         (run_id,)).fetchone()
     target = Project.locate(repo)
     sha = preserve(target, branch, "abort") if branch else None
-    if sha and pr_url:
-        try:
-            github.push_branch(target, branch)
-        except InfraFailure as refused:
-            store.record_event(conn, run_id, "warning", f"abort push: {refused}")
     with _transaction(conn):
         ended, outcome, reason = conn.execute(
             "SELECT endedAt, outcome, outcomeReason FROM runs WHERE id = ?",
             (run_id,)).fetchone()
         if ended is not None:
             raise store.RunEnded(run_id, outcome, reason)
+        request = conn.execute(
+            'SELECT i.guidance, i.action, i.source, i."trigger" FROM runs r'
+            " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?"
+            " AND i.action IN ('abort', 'abort_close')", (run_id,)).fetchone()
+        if request is None:
+            return
+        note, action, source, trigger = request
         store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
-        if trigger == "linear_cancelled":
+        if trigger in ("linear_cancelled", "board_cancelled"):
             store.walk_ticket(conn, ticket_id, "abandoned")
         else:
             store.walk_ticket(conn, ticket_id, "blocked_on_operator")
             store.set_question(conn, ticket_id, note)
+    if sha and pr_url:
+        try:
+            github.push_branch(target, branch)
+        except InfraFailure as refused:
+            store.record_event(conn, run_id, "warning", f"abort push: {refused}")
     # Closed after the run ends, so a reconcile never finds a parked run to reject.
     if pr_url and action == "abort_close":
         from holophyte.babysit.babysitter import COMMENT_HEADER
@@ -240,6 +254,7 @@ def abort_run(target, conn, run_id, note, *, provider, close=False,
         return False
     try:
         end_aborted(conn, run_id)
+        return False
     except Aborted:
         (ticket_id,) = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
                                     (run_id,)).fetchone()

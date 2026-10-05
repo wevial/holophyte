@@ -1,6 +1,6 @@
 {
   "project": "/repo",
-  "schema_version": 40,
+  "schema_version": 41,
   "admission": "enabled",
   "hold_note": null,
   "active_routes": {

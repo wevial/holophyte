@@ -89,7 +89,8 @@ class StoreBoardMoveTests(unittest.TestCase):
         live = self.run_on("NAT-4")
         parked = self.run_on("NAT-5")
         store.set_phase(self.conn, parked, "verifying")
-        store.park(self.conn, parked, "awaiting_merge_approval")
+        store.park(self.conn, parked, "awaiting_merge_approval",
+                   pr_url="https://github.com/o/r/pull/5")
         store.tickets.transition(self.conn, self.ticket_id("NAT-5"),
                                  "blocked_on_operator")
 
@@ -108,8 +109,8 @@ class StoreBoardMoveTests(unittest.TestCase):
             'SELECT i."action", i.source, i."trigger", i.guidance, r.endedAt'
             " FROM runs r JOIN interventions i ON i.id = r.stopRequested"
             " WHERE r.id = ?", (live,)).fetchone()
-        self.assertEqual(stop, ("abort", "human", "manual", "wrong scope",
-                                None))
+        self.assertEqual(stop, ("abort", "human", "board_cancelled",
+                                "wrong scope", None))
         self.assertEqual(self.row("NAT-5")[0], "blocked_on_operator")
         self.assertEqual(self.conn.execute(
             "SELECT phase, endedAt, stopRequested FROM runs WHERE id = ?",

@@ -31,7 +31,8 @@ class StoreEnumTests(unittest.TestCase):
         self.addCleanup(old.close)
         old.executescript(PREVIOUS_SCHEMA.read_text())
         previous = enum_checks(old)
-        unchanged = set(previous) - {('interventions', 'action')}
+        unchanged = set(previous) - {('interventions', 'action'),
+                                     ('interventions', 'trigger')}
         self.assertEqual({key: actual[key].replace(", 'paused'", "")
                           for key in unchanged},
                          {key: previous[key] for key in unchanged})
@@ -40,6 +41,9 @@ class StoreEnumTests(unittest.TestCase):
                          + ", 'hold', 'release_hold', 'register_project',"
                          " 'disable', 'pause', 'abort', 'abort_close',"
                          " 'approve_story', 'decide'))")
+        self.assertEqual(actual['interventions', 'trigger'],
+                         previous['interventions', 'trigger'][:-2]
+                         + ", 'board_cancelled'))")
         self.assertEqual(set(actual), set(enums.CONSTRAINED_COLUMNS))
         self.assertEqual(actual['runs', 'parkKind'],
                          "CHECK (parkKind IN ('pull_request', 'pull_request_closed', "
@@ -124,8 +128,8 @@ class StoreEnumTests(unittest.TestCase):
                 finally:
                     conn.close()
 
-    def test_a_store_one_version_back_admits_the_ci_park(self):
-        previous = store.schema.SCHEMA_VERSION - 1
+    def test_a_version_39_store_admits_the_ci_park(self):
+        previous = 39
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = Path(tmp.name) / "store.db"
@@ -165,7 +169,7 @@ class StoreEnumTests(unittest.TestCase):
         conn.execute("UPDATE runs SET parkKind = 'ci'")
         self.assertEqual(conn.execute("SELECT parkKind FROM runs").fetchone(),
                          ("ci",))
-        self.assertEqual(store.schema.READABLE_FROM, store.schema.SCHEMA_VERSION)
+        self.assertGreaterEqual(store.schema.READABLE_FROM, 40)
 
     def test_public_vocabulary_and_graph_membership(self):
         self.assertEqual(store.PHASES, tuple(e.value for e in enums.RunPhase))

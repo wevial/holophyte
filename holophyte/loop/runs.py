@@ -76,6 +76,7 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
     from holophyte.loop.stop import Aborted, abort_requested, end_aborted
     if swept[:1] == [ABORT] or not swept and abort_requested(conn, run_id):
         end_aborted(conn, run_id)
+        swept.clear()
     if isinstance(failure, Aborted):
         raise failure
     if swept:

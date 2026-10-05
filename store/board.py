@@ -119,7 +119,7 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
 
 def cancel_ticket(conn, project_id, identifier, expected_revision, note,
                   author="cli", now=None):
-    """Cancel as a board does; the reconcile closes a `blocked_on_operator` ticket."""
+    """Cancel as a board does; the reconcile closes a ticket parked on a pull."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -129,8 +129,9 @@ def cancel_ticket(conn, project_id, identifier, expected_revision, note,
                                   author, now)
         if run_id is not None:
             abort(conn, run_id, note, source="human", now=now,
-                  trigger="manual")
-        elif status != "blocked_on_operator":
+                  trigger="board_cancelled")
+        elif status != "blocked_on_operator" \
+                or not _parked_on_pull_request(conn, ticket_id):
             walk_ticket(conn, ticket_id, "abandoned")
         found = story(conn, ticket_id)
         if found is not None and found.ticketId == ticket_id:
@@ -159,6 +160,13 @@ def resolve_dependencies(conn, project_id):
                 transition(conn, ticket_id, "ready")
                 resolved.append(identifier)
     return resolved
+
+
+def _parked_on_pull_request(conn, ticket_id):
+    return conn.execute(
+        "SELECT 1 FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.id = ? AND r.phase IN ('awaiting_merge_approval', 'rejected')"
+        " AND r.prUrl IS NOT NULL", (ticket_id,)).fetchone() is not None
 
 
 def _open_ticket(conn, project_id, identifier, expected_revision):
