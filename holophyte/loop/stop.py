@@ -69,13 +69,10 @@ def abort_requested(conn, run_id):
 def end_aborted(conn, run_id):
     from holophyte.loop.gates import InfraFailure
     from holophyte.pr import github
-    (branch, ticket_id, repo, note, pr_url, action, source, trigger,
-     identifier) = conn.execute(
-        "SELECT r.branch, r.ticketId, p.repoPath, i.guidance, r.prUrl,"
-        ' i.action, i.source, i."trigger", t.linearIdentifier'
+    branch, ticket_id, repo, pr_url, identifier = conn.execute(
+        "SELECT r.branch, r.ticketId, p.repoPath, r.prUrl, t.linearIdentifier"
         " FROM runs r JOIN projects p ON p.id = r.projectId"
-        " JOIN tickets t ON t.id = r.ticketId"
-        " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
+        " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
         (run_id,)).fetchone()
     target = Project.locate(repo)
     sha = preserve(target, branch, "abort") if branch else None
@@ -90,6 +87,10 @@ def end_aborted(conn, run_id):
             (run_id,)).fetchone()
         if ended is not None:
             raise store.RunEnded(run_id, outcome, reason)
+        note, action, source, trigger = conn.execute(
+            'SELECT i.guidance, i.action, i.source, i."trigger" FROM runs r'
+            " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
+            (run_id,)).fetchone()
         store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
         if trigger in ("linear_cancelled", "board_cancelled"):
             store.walk_ticket(conn, ticket_id, "abandoned")

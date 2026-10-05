@@ -11,6 +11,7 @@ import io
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -19,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
 import holophyte.cli.entry  # noqa: E402
+import holophyte.loop.claim  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
@@ -112,6 +114,53 @@ class CancelLiveRunTests(ConfigTestCase):
                     f" WHERE r.id = {run}"), [(action, "board_cancelled")])
                 printed = self.cli("--status")[1]
                 self.assertNotIn(f"parked {identifier}", printed)
+
+    def test_a_close_pr_abort_after_a_cancel_keeps_the_cancel(self):
+        run = self.working_run()
+        self.cli("--cancel", "NAT-1", "--revision", "1", "--note", "wrong scope")
+        self.cli("--abort", "NAT-1", "--note", "close it too", "--close-pr")
+
+        self.reach_safe_point(run)
+
+        self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
+                         [("abandoned", None)])
+        self.assertEqual(self.read(
+            'SELECT i."action", i."trigger" FROM runs r'
+            " JOIN interventions i ON i.id = r.stopRequested"),
+            [("abort_close", "board_cancelled")])
+        self.assertNotIn("parked NAT-1", self.cli("--status")[1])
+
+    def test_a_cancel_landing_while_an_abort_preserves_work_closes_the_ticket(self):
+        git = ["git", "-c", "user.name=t", "-c", "user.email=t@t.invalid"]
+        subprocess.run([*git, "init", "-q", "-b", "main"], cwd=self.target,
+                       check=True)
+        subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"],
+                       cwd=self.target, check=True)
+        wt = self.project.worktrees / "nat-1"
+        subprocess.run([*git, "worktree", "add", "-q", "-b", "task/nat-1",
+                        str(wt)], cwd=self.target, check=True)
+        (wt / "work.txt").write_text("unfinished\n")
+        run = self.working_run()
+        with contextlib.closing(open_store(self.project)) as conn:
+            store.set_branch(conn, run, "task/nat-1")
+        self.cli("--abort", "NAT-1", "--note", "host going down")
+        stage_work = holophyte.loop.claim.stage_work
+
+        def cancel_then_stage(target, cwd):
+            self.assertEqual(self.cli("--cancel", "NAT-1", "--revision", "1",
+                                      "--note", "wrong scope")[0], 0)
+            stage_work(target, cwd)
+
+        with patch.object(holophyte.loop.claim, "stage_work", cancel_then_stage):
+            self.reach_safe_point(run)
+
+        self.assertEqual(self.read("SELECT status, blockedQuestion FROM tickets"),
+                         [("abandoned", None)])
+        (sha,) = self.read("SELECT candidateSha FROM runs")[0]
+        self.assertEqual(subprocess.run(
+            ["git", "show", f"{sha}:work.txt"], cwd=wt, capture_output=True,
+            text=True, check=True).stdout, "unfinished\n")
+        self.assertNotIn("parked NAT-1", self.cli("--status")[1])
 
     def test_an_operator_abort_still_parks_the_ticket(self):
         run = self.working_run()

@@ -342,6 +342,8 @@ def abort(conn, run_id, note, source="human", now=None, close=False, trigger="ma
         if TERMINAL_PHASES["abandoned"] not in RUN_PHASE_TRANSITIONS[phase]:
             raise ValueError(f"run {run_id} is {phase}; it cannot end abandoned")
         wanted = "abort_close" if close or action == "abort_close" else "abort"
+        if pending_trigger in _CANCEL_TRIGGERS:
+            trigger = pending_trigger
         cancels = (trigger in _CANCEL_TRIGGERS
                    and pending_trigger not in _CANCEL_TRIGGERS)
         if action in (wanted, "abort_close") and not cancels:
