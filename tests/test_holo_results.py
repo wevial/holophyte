@@ -98,6 +98,12 @@ class RequeueResultTests(ResultTests):
         self.assertEqual(result, {"action": "requeue", "ok": False, "ticket": "HOLO-1",
                                   "recorded": None, "detail": self.requeue_refusal()})
 
+    def test_a_repeated_pause_writes_no_row_and_cites_none(self):
+        first = self.result(self.holo("pause", "HOLO-1", "lunch", "--json"), 0)
+        self.assertEqual(first["recorded"], self.intervention_id("pause"))
+        again = self.result(self.holo("pause", "HOLO-1", "lunch", "--json"), 0)
+        self.assertEqual((again["ok"], again["recorded"]), (True, None))
+
     def test_without_json_a_requeue_prints_one_line_naming_its_intervention(self):
         self.fail_the_run()
         completed = self.holo("requeue", "HOLO-1", "rerun")

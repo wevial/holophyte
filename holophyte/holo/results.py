@@ -38,7 +38,8 @@ def run_write(args, resolve):
     from_stderr = not lines and code != 0
     if from_stderr:
         lines = err.getvalue().strip().splitlines()[-1:]
-    result = build_result(args, code, lines, recorded_row(args, target, before))
+    row = recorded_row(args, target, before) if code == 0 else (None, None)
+    result = build_result(args, code, lines, row)
     if args.json:
         print(json.dumps(result))
     elif result["ok"]:
@@ -67,7 +68,7 @@ def send_back(args, target):
         args.leaf.error("send-back needs its project: -p NAME|PATH")
     if note is None:
         args.leaf.error("send-back records the instruction the run goes back with")
-    if not values[0].isdigit():
+    if not values[0].isdecimal():
         args.leaf.error(f"RUN is a run id, not {values[0]!r}")
     from holophyte.cli.operator import send_back_run
     from holophyte.config.checks import check_config
@@ -100,7 +101,7 @@ def named(args):
     value = getattr(args, "arg0", None)
     first = args.command.takes[:1]
     if first == ("RUN",):
-        return None, int(value) if value.isdigit() else value
+        return None, int(value) if value.isdecimal() else value
     return (value, None) if first == ("KEY",) else (None, None)
 
 
