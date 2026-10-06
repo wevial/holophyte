@@ -67,11 +67,10 @@ def capture_spec_digest(project, wt, task_id):
     if not cfg.ui_capture_local:
         return None
     words = shlex.split(cfg.ui_capture)
-    defaults = [after for word, after in zip(words, words[1:])
-                if word == "--default"]
-    defaults += [word.removeprefix("--default=") for word in words
-                 if word.startswith("--default=")]
-    for spec in (_local_spec(cfg, task_id), *defaults):
+    defaults = [after if word == "--default" else word.removeprefix("--default=")
+                for word, after in zip(words, words[1:] + [""])
+                if word == "--default" or word.startswith("--default=")]
+    for spec in (_local_spec(cfg, task_id), *defaults[-1:]):
         path = Path(wt, spec)
         if path.is_file():
             return hashlib.sha256(path.read_bytes()).hexdigest()

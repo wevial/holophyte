@@ -116,8 +116,11 @@ class LocalCaptureSpecTests(unittest.TestCase):
     def test_edited_default_spec_is_captured_again_at_the_same_head(self):
         (self.root / SPEC).unlink()
         default = self.root / "e2e/default.capture.ts"
+        (self.root / "e2e/overridden.capture.ts").write_text("overridden")
         for option in ("--default e2e/default.capture.ts",
-                       "--default=e2e/default.capture.ts"):
+                       "--default=e2e/default.capture.ts",
+                       "--default e2e/overridden.capture.ts"
+                       " --default=e2e/default.capture.ts"):
             with self.subTest(option=option):
                 self.runs.unlink(missing_ok=True)
                 default.write_text("first")
