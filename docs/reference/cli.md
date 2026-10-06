@@ -111,7 +111,7 @@ internal, spawned by the loop's pool.
 | Command | Aliases | Factory invocation |
 | --- | --- | --- |
 | `holo status [--json]` | | `--status [--json] [PROJECT]` |
-| `holo report` | | `--report PROJECT` |
+| `holo report [--since WINDOW] [--notes] [--json]` | | none: the window's counts, read from the store as below; `factory.py --report PROJECT` is unchanged |
 | `holo sweep [--act]` | | `--sweep [--act] PROJECT` |
 | `holo board diff` | | `--board-diff PROJECT` |
 | `holo board import [--dry-run]` | | `--board-import [--dry-run] PROJECT` |
@@ -204,6 +204,36 @@ hour, then `h`. The symbols are coloured (`!` orange, `>` blue, `✓` green,
 `✗` red) only when the output is a terminal and `NO_COLOR` is unset or
 empty; the write commands' `✓`/`✗` follow the same rule.
 
+`holo report` reads the project's store read-only and opens with counts
+for a window, `--since`: `Nh` or `Nd` (`24h`, `7d`, `30d`), or `all`;
+default `7d`. Any other form exits 2 naming the accepted ones. A run is in
+the window when it ended in it; a live run is in no count. A project with
+no store exits 1. Its lines carry no `[holo2]` prefix:
+
+| Section | Lines |
+| --- | --- |
+| header | the project's directory and the window, `holophyte · last 7 days` |
+| `Shipped` | the merged, abandoned and failed runs, and the median minutes of work per merged run with the median estimate beside it, `3 merged · 1 abandoned · 2 failed · median 16 min per ticket (estimate 30)`; with none of the three, `nothing shipped in the last 7 days` |
+| `Failures` | the failed runs by failure kind, most first, `verify 3 · infra 1`, or `none` |
+| `Gaps` | the gaps whose latest layer is `none`, as open, then each other layer holding a gap, over the whole store as `factory.py --report`'s `gap layers:` line counts them |
+| `Hands-on` | the human interventions by action, `3 interventions (requeue 2 · approve 1)`, and the send-backs, the `operator_note` events |
+| `Runs (N)` | the window's ended runs in end order: `✓` merged, `✗` failed, `·` otherwise, the ticket, the outcome, the work against the estimate in minutes, the review rounds and how long ago it ended |
+| `Notes (N)` | with `--notes` only: each send-back note consumed in the window, newest first, with the time it was consumed, the ticket, run and round, and its author |
+
+`holo report --json` prints the object the page renders from, the notes
+included with or without `--notes`:
+
+| Key | Value |
+| --- | --- |
+| `project` | the repository path |
+| `window` | `since` as given, `from_ms` the window's start (`null` for `all`) and `now_ms` |
+| `shipped` | `merged`, `abandoned`, `failed`, `median_min` and `median_estimate_min` (`null` with no merged run measured) |
+| `failures` | failure kind to count |
+| `gaps` | `open`, `layers` (each layer to its count) and `found_by` (each finder to its count) |
+| `hands_on` | `interventions`, `by_action` (action to count) and `send_backs` |
+| `runs` | the window's runs in end order, each with `run`, `ticket`, `actual_min`, `agent_min`, `verify_min`, `estimate_min`, `ratio`, `rounds`, `outcome`, `host`, `ended_ms`, `merge_sha` and `wall_min`, as a `GET /runs` row has them |
+| `notes` | the window's consumed notes, newest first: `run`, `ticket`, `round`, `event_id`, `author`, `note` and `consumed_ms` |
+
 Five reads are no `factory.py` mode: each calls, in process, the view
 function the [serve daemon](http.md) answers its route with, so the command
 and the route agree. Each opens the store read-only and writes nothing.
@@ -247,8 +277,8 @@ whose output it prints.
 | Code | Meaning |
 | --- | --- |
 | 0 | done, or the board was empty |
-| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, babysitter, re-point, pause, resume, abort, close-out, hold or hold release, a refused `project` command, a stale revision or refused move or cancel; a `holo` read answered 404, 503 or any status but 200 and 400 |
-| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included; `holo`: no project found, a name `host.toml` does not register, or a refused `client.toml`; a `holo` read answered 400 |
+| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, babysitter, re-point, pause, resume, abort, close-out, hold or hold release, a refused `project` command, a stale revision or refused move or cancel; a `holo` read answered 404, 503 or any status but 200 and 400; `holo report` on a project with no store |
+| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included; `holo`: no project found, a name `host.toml` does not register, or a refused `client.toml`; a `holo` read answered 400; a `holo report --since` window it does not take |
 
 ## Output prefix
 

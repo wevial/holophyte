@@ -102,6 +102,9 @@ def main(argv=None):
     if args.command.mode == "--status" and not args.json:
         from holophyte.holo.status_page import show
         return show(target, client.get(TIMEZONE))
+    if args.command.mode == "--report":
+        from holophyte.holo.report_page import show
+        return show(args, target[0], client.get(TIMEZONE))
     if args.command in READS:
         from holophyte.holo.reads import read
         return read(args, target[0] if target else None)

@@ -111,6 +111,7 @@ PINNED = {
     "holophyte/holo/grammar.py": 2,
     "holophyte/holo/reads.py": 0,
     "holophyte/holo/render.py": 1,
+    "holophyte/holo/report_page.py": 1,
     "holophyte/holo/resolve.py": 0,
     "holophyte/holo/results.py": 1,
     "holophyte/holo/status_page.py": 1,

@@ -50,8 +50,8 @@ Each module, one line:
 - `holophyte/holo/cli.py` — `main()`, the `holo` console script `pyproject.toml`
   declares: `--version` prints the package version and the checkout's short
   `HEAD`; a subcommand resolves its project, translates through the grammar table
-  and runs as `_legacy_cli()`, a write command through `run_write()`, or answers
-  as a read; `holo project` is `factory.py project`.
+  and runs as `_legacy_cli()`, a write command through `run_write()`, `report`
+  through `report_page`, or answers as a read; `holo project` is `factory.py project`.
 - `holophyte/holo/reads.py` — the `holo` reads `runs`, `run N`, `attention`,
   `board` and `ticket KEY`: each calls the daemon's view in process, prints its
   body for `--json` or a compact listing of it, and maps its status to the exit.
@@ -72,6 +72,11 @@ Each module, one line:
 - `holophyte/holo/status_page.py` — `holo status` without `--json`: the
   `--status --json` object, the project or the host form, rendered as needs
   you, running, quiet and problems sections and a sweep and build footer.
+- `holophyte/holo/report_page.py` — `holo report`: one object for a window,
+  `--since`, built read-only from the ended runs, failure kinds, gap layers,
+  human interventions, send-backs and consumed notes, printed with `--json` or
+  rendered as counts first, then the window's runs and, with `--notes`, the
+  notes.
 - `holophyte/holo/units.py` — `holo start`, which records the launch and
   starts the project's loop unit through the daemon's `unit_action()`, or
   runs the loop in the terminal with `--foreground`; and `holo stop`, which
