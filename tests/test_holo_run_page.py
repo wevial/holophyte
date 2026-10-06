@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -63,7 +64,10 @@ class RunPageCase(unittest.TestCase):
         environ = {key: value for key, value in os.environ.items()
                    if key not in ("HOLO_PROJECT", "NO_COLOR")}
         environ["HOLOPHYTE_HOME"] = str(self.home)
+        environ["TZ"] = "UTC"
+        self.addCleanup(time.tzset)
         self.enterContext(patch.dict(os.environ, environ, clear=True))
+        time.tzset()
         self.target = self.root / "repo"
         self.commit_two_files()
         self.project = Project.locate(self.target, adopt=False)

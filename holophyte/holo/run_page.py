@@ -9,7 +9,6 @@ PARKED = {"awaiting_merge_approval": "parked, awaiting merge approval",
 PHASE_MARKS = {"awaiting_merge_approval": "!", "blocked_on_operator": "!",
                "failed": "✗", "killed": "✗", "rejected": "✗"}
 EVENT_MARKS = {"failure": "✗", "route_failure": "✗"}
-VERDICT_MARKS = {"pass": "✓", None: ">"}
 NEXT = {
     ("awaiting_merge_approval", None): (
         ("holo approve {ticket}", False),
@@ -55,10 +54,10 @@ def state_line(run):
 
 
 def timeline(detail):
-    rows = [(event["at"], *event_row(event)) for event in detail["events"]]
-    rows += [(rnd["ended_ms"] or rnd["started_ms"],
-              VERDICT_MARKS.get(rnd["verdict"], "✗"), f"review r{rnd['round']}",
-              round_text(rnd)) for rnd in detail["rounds"]]
+    rows = [(rnd["ended_ms"] or rnd["started_ms"],
+             "✓" if rnd["verdict"] == "pass" else "✗", f"review r{rnd['round']}",
+             round_text(rnd)) for rnd in detail["rounds"]]
+    rows += [(event["at"], *event_row(event)) for event in detail["events"]]
     return sorted(rows, key=lambda row: row[0])
 
 
@@ -72,7 +71,7 @@ def event_row(event):
 
 
 def round_text(rnd):
-    parts = [rnd["verdict"] or "open"]
+    parts = [rnd["verdict"]]
     if rnd["reviewer_model"]:
         parts.append(rnd["reviewer_model"])
     if rnd["findings"]:

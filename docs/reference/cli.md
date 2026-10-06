@@ -208,10 +208,11 @@ Five reads are no `factory.py` mode: each calls, in process, the view
 function the [serve daemon](http.md) answers its route with, so the command
 and the route agree. Each opens the store read-only and writes nothing.
 `--json` prints the route's body as the daemon would send it; without it,
-`holo run N` prints the page below and each other read a compact listing,
-one line per run, item, column entry, file, ledger entry or turn. The view's status is the exit: 200 is 0, 400 is 2,
-and 404, 503 or any other is 1, with the body's `error` on stderr. The
-project is found as above; `attention` with none is the host form, the host
+`holo run N` with no `--files`, `--ledger` or `--turns` prints the page
+below, and each other read prints a compact listing, one line per run,
+item, column entry, file, ledger entry or turn. The view's status is the
+exit: 200 is 0, 400 is 2, and 404, 503 or any other is 1, with the body's
+`error` on stderr. The project is found as above; `attention` with none is the host form, the host
 daemon's root `/attention` built from `host.toml` with no daemon running.
 
 | Command | Aliases | Route whose body `--json` prints |
@@ -229,8 +230,8 @@ daemon's root `/attention` built from `host.toml` with no daemon running.
 
 | Section | Lines |
 | --- | --- |
-| header | the ticket and its title; then `run N`, its outcome, its phase or `parked, awaiting merge approval`, its elapsed minutes against its time box, `43 of 30 min`, a live run's heartbeat age, and its pull request, `PR #432` |
-| timeline | one line per event and review round in time order: a symbol (`✓` done, `✗` changes requested or a failure, `!` parked on a person, `>` a round still open), the phase reached or the event's kind or `review rN`, the clock time, then the event's note or summary, or the round's verdict, reviewer and first finding as `p2 store/board.py:140` |
+| header | the ticket and its title; then `run N`, its outcome, its phase or `parked, awaiting merge approval`, its elapsed minutes against its time box, `43 of 30 min`, the heartbeat age of a live run not parked, and its pull request, `PR #432` |
+| timeline | one line per event and review round in time order: a symbol (`✓` done, `✗` changes requested or a failure, `!` parked on a person), the phase reached or the event's kind or `review rN`, the clock time, then the event's note or summary, or the round's verdict, reviewer and first finding as `p2 store/board.py:140` |
 | `Files` | each file the run touched with its added and removed counts, `store/board.py +1 −1`, or the files route's error |
 | `Next` | the commands the run's phase and outcome call for: parked awaiting merge approval, `holo approve KEY`, and with a pull request `holo send-back N "note"` and `holo babysit KEY`; failed, `holo requeue KEY "note"`; then for every run `holo run N --ledger` |
 
