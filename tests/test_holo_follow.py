@@ -204,6 +204,17 @@ class FollowTests(FollowCase):
         self.assertEqual(notes, [f"entry {number}"
                                  for number in range(LEDGER_PAGE + 1)])
 
+    def test_since_prints_the_stores_schema_migration_once(self):
+        follow = self.follow("--since", "1h", "--json")
+
+        entry = json.loads(follow.line())
+
+        self.assertEqual((entry["kind"], entry["action"], entry["ticket"]),
+                         ("intervention", "migrate", None))
+        self.assertEqual(entry["schema_to"], store.SCHEMA_VERSION)
+        self.assertIn("store schema", entry["summary"])
+        self.assertEqual(follow.quiet(SEVERAL_POLLS), [])
+
     def test_an_intervention_prints_one_line(self):
         run = self.live()
         follow = self.follow()

@@ -214,7 +214,8 @@ piped, each frame follows a line carrying its time, `--- 10:42:05 PDT ---`.
 thing that happens in the project: its runs' narrative events (a phase
 change, a re-point) and its ledger entries (a round's
 verdict, an adjudication, a merge, a failure, an intervention, a note),
-each shaped as a `GET /ledger` entry. Each line is the local clock time, a symbol (`✓` a
+each shaped as a `GET /ledger` entry, with the store's schema migrations
+that `GET /ledger` lists among them. Each line is the local clock time, a symbol (`✓` a
 merge, `✗` a failure, `!` an intervention, `>` anything else), the ticket and
 a one-line summary, led by its kind for a ledger entry:
 
@@ -226,8 +227,8 @@ a one-line summary, led by its kind for a ledger entry:
 
 It starts from now, or from `--since AGO` before it (`90s`, `30m`, `1h`,
 `2d`), polls every `--every SECONDS` (default 2), prints what each poll
-finds oldest first, and prints each event and entry once, by its store id,
-however many a poll finds. It never prints the
+finds oldest first, and prints each event and entry once, by its store id
+(a migration by its time and versions), however many a poll finds. It never prints the
 agents' own output; that is `holo run N --turns`. Each poll also reads
 `GET /attention`: a live run whose heartbeat is older than the project's
 `heartbeat_stale_min`, or a supervisor whose beat is, prints one `✗` line

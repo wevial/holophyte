@@ -57,7 +57,8 @@ Each module, one line:
   the grammar table builds, and ticket keys from `holo board --json` cached per
   project for 60 seconds.
 - `holophyte/holo/follow.py` — `holo follow`: polls the project's narrative
-  run events and ledger entries from a starting time by store id, prints
+  run events and ledger entries from a starting time by store id, and the
+  ledger view's schema migrations, prints
   each new one once, oldest first, as a line or a JSON object, and one `✗`
   line when a live run's or the supervisor's heartbeat goes stale, once
   until it recovers.

@@ -59,6 +59,10 @@ def ledger_entry(entry):
             "summary": first_line(entry.text)}
 
 
+def migration_key(row):
+    return (row["at"], row["schema_from"], row["schema_to"])
+
+
 def stall_entry(item, now):
     silent = age(item["heartbeat_age_ms"] // 1000)
     if item["kind"] == "supervisor":
@@ -84,6 +88,7 @@ class Follow:
         self.project = project
         self.start = start
         self.after = {EVENT: 0, LEDGER: 0}
+        self.migrations = set()
         self.held = []
         self.stalled = set()
 
@@ -120,7 +125,18 @@ class Follow:
             if page:
                 self.after[LEDGER] = page[-1].id
             if len(page) < LEDGER_PAGE:
-                return [ledger_entry(entry) for entry in entries]
+                return ([ledger_entry(entry) for entry in entries]
+                        + self.migrated(conn))
+
+    def migrated(self, conn):
+        from holophyte.serve.serve_runs import migration_rows
+        rows = migration_rows(conn, self.start, LEDGER_PAGE,
+                              str(self.project.path))
+        fresh = [row for row in reversed(rows)
+                 if migration_key(row) not in self.migrations]
+        self.migrations.update(migration_key(row) for row in fresh)
+        return [{"stream": LEDGER, **row, "summary": first_line(row["text"])}
+                for row in fresh]
 
     def stalls(self, now):
         from holophyte.serve.views import attention
