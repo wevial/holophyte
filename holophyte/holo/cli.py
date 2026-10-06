@@ -73,22 +73,47 @@ def project_argv(args, default):
     return [resolved.value]
 
 
+def remote(args, argv, host, config):
+    from holophyte.holo.resolve import Refused
+    from holophyte.holo.transport import run
+    try:
+        return run(args, host, config)
+    except (Refused, UsageError) as refused:
+        from holophyte.holo.results import usage_result
+        usage_result(argv, refused.line)
+        raise
+
+
+def client(argv):
+    from holophyte.holo.resolve import Refused, client_config
+    from holophyte.holo.transport import remote_host
+    try:
+        config = client_config()
+        return config, remote_host(config)
+    except Refused as refused:
+        from holophyte.holo.results import usage_result
+        usage_result(argv, refused.line)
+        raise
+
+
+def project(argv, host, config):
+    if host is not None:
+        from holophyte.holo.transport import run_project
+        return run_project(argv, host, config)
+    from holophyte.cli.entry import cli
+    return cli(argv)
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == [HELPER]:
         from holophyte.holo.completion import complete
         return complete(argv[1:])
-    from holophyte.holo.resolve import DEFAULT, TIMEZONE, Refused, client_config
-    try:
-        client = client_config()
-    except Refused as refused:
-        from holophyte.holo.results import usage_result
-        usage_result(argv, refused.line)
-        raise
-    default = client.get(DEFAULT)
+    from holophyte.holo.resolve import DEFAULT, TIMEZONE
+    config, host = client(argv)
+    default = config.get(DEFAULT)
     if argv[:1] == ["project"]:
-        from holophyte.cli.entry import cli
-        return cli(argv)
+        return project(argv, host, config)
     parser = build_parser()
     try:
         args = parse(parser, argv)
@@ -105,13 +130,15 @@ def main(argv=None):
     if args.command is COMPLETION:
         from holophyte.holo.completion import script
         return script(args.shell)
+    if host is not None:
+        return remote(args, argv, host, config)
     if getattr(args, "foreground", False):
         from holophyte.holo.units import foreground
         return foreground(args, project_argv(args, default))
     if args.command.records is not None:
         from holophyte.holo.results import run_write
         return run_write(args, lambda: project_argv(args, default))
-    return dispatch(args, project_argv(args, default), client.get(TIMEZONE))
+    return dispatch(args, project_argv(args, default), config.get(TIMEZONE))
 
 
 def dispatch(args, target, timezone):

@@ -145,16 +145,22 @@ def read(args, target, zone_name=None):
     else:
         project = Project.locate(Path(target), adopt=False)
         route, (code, body) = READS[args.command.words][0](args, project)
+    if (code == 200 and not args.json and args.command.words == ("run",)
+            and not run_part(args)):
+        from holophyte.holo.run_page import show as show_page
+        show_page(project, body, zone_name)
+    else:
+        show(args, route, code == 200, body)
+    return exit_code(code)
+
+
+def show(args, route, ok, body):
     if args.json:
         print(json.dumps(body))
-    elif code == 200 and args.command.words == ("run",) and not run_part(args):
-        from holophyte.holo.run_page import show
-        show(project, body, zone_name)
-    elif code == 200:
+    elif ok:
         for line in listing(args, body):
             print(" ".join(line.splitlines()))
     else:
         detail = f": {body['detail']}" if body.get("detail") else ""
         print(f"[holo2] {route}: {body.get('error') or 'not found'}{detail}",
               file=sys.stderr)
-    return exit_code(code)

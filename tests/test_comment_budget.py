@@ -117,6 +117,7 @@ PINNED = {
     "holophyte/holo/results.py": 1,
     "holophyte/holo/run_page.py": 1,
     "holophyte/holo/status_page.py": 1,
+    "holophyte/holo/transport.py": 1,
     "holophyte/holo/units.py": 1,
 
     "holophyte/host/__init__.py": 0,
