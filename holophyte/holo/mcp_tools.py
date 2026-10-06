@@ -119,16 +119,22 @@ def run_tool(tool, arguments):
         return Answer(True, f"[holo2] {tool.name}: no answer in {TIMEOUT_SEC}s")
     said = "\n".join(text.strip() for text in (done.stdout, done.stderr)
                      if text.strip())
+    body = document(done.stdout) if tool.json else None
     if not answered(tool, done.returncode, done.stdout):
-        return Answer(True, said or f"[holo2] {tool.name}: exit"
-                      f" {done.returncode}")
+        text = json.dumps(body) if body is not None else said
+        return Answer(True, text or f"[holo2] {tool.name}: exit"
+                      f" {done.returncode}", body)
     if not tool.json:
         return Answer(False, done.stdout)
-    try:
-        body = json.loads(done.stdout)
-    except ValueError:
-        body = None
-    if not isinstance(body, dict):
+    if body is None:
         return Answer(True, f"[holo2] {tool.name}: no JSON object printed\n"
                       + said)
     return Answer(False, json.dumps(body), body)
+
+
+def document(text):
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None

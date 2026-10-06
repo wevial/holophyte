@@ -333,8 +333,9 @@ tool takes an optional `project`, a `[serve]` name or a repository path.
 A tool whose command prints a JSON object returns it as `structuredContent`
 and as text; `board_diff` and `sweep_preview` return the command's text,
 `board_diff` also when it exits 1 for a difference. A command that refuses
-is a result with `isError: true` carrying its output and its message, as
-are arguments the tool's input schema refuses. An unknown tool is a
+is a result with `isError: true` carrying its output and its message, its
+JSON object, such as `{"error": "no such run", "run": 999}`, also as
+`structuredContent`; so are arguments the tool's input schema refuses. An unknown tool is a
 JSON-RPC error, -32602. stdout carries only protocol messages, and closing stdin exits 0.
 `holo mcp` alone needs the MCP Python SDK (`mcp` in `requirements.txt`);
 without it, it exits 1 naming the package and

@@ -165,8 +165,9 @@ class SessionTests(McpCase):
         self.assertEqual(oracle.returncode, 1, oracle.stderr)
         self.assertEqual(json.loads(oracle.stdout)["error"], "no such run")
         self.assertIs(result.is_error, True)
+        self.assertEqual(result.structured_content, json.loads(oracle.stdout))
         self.assertEqual(json.loads(result.content[0].text),
-                         json.loads(oracle.stdout))
+                         result.structured_content)
 
     def test_arguments_the_input_schema_refuses_are_an_error_result(self):
         result = self.call("run", {"project": "alpha", "run": "12"})
