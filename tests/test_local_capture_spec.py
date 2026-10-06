@@ -72,13 +72,13 @@ class LocalCaptureSpecTests(unittest.TestCase):
         self.head = self.git("rev-parse", "HEAD")
         self.write_spec("BROKEN")
         self.command = shlex.join([sys.executable, str(script)])
-        self.project = holophyte.config.project.Project.locate(self.root)
-        self.project.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.configure(self.command)
         self.enterContext(patch.object(pr_media, "_publish_git", publish))
         self.fix_turns = 0
 
     def configure(self, command, local="true"):
+        self.project = holophyte.config.project.Project.locate(self.root)
+        self.project.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.project.config_path.write_text(
             '[merge]\nmode = "pr"\napprove = "auto"\nui_paths = ["ui/**"]\n'
             f"ui_capture = '{command}'\nui_capture_local = {local}\n")
@@ -116,15 +116,19 @@ class LocalCaptureSpecTests(unittest.TestCase):
     def test_edited_default_spec_is_captured_again_at_the_same_head(self):
         (self.root / SPEC).unlink()
         default = self.root / "e2e/default.capture.ts"
-        default.write_text("first")
-        self.configure(f"{self.command} --default e2e/default.capture.ts")
+        for option in ("--default e2e/default.capture.ts",
+                       "--default=e2e/default.capture.ts"):
+            with self.subTest(option=option):
+                self.runs.unlink(missing_ok=True)
+                default.write_text("first")
+                self.configure(f"{self.command} {option}")
 
-        pr_media.prepare(self.project, self.root, "KO-1")
-        default.write_text("second")
-        pr_media.prepare(self.project, self.root, "KO-1")
+                pr_media.prepare(self.project, self.root, "KO-1")
+                default.write_text("second")
+                pr_media.prepare(self.project, self.root, "KO-1")
 
-        self.assertEqual(self.git("rev-parse", "HEAD"), self.head)
-        self.assertEqual(self.run_count(), 2)
+                self.assertEqual(self.git("rev-parse", "HEAD"), self.head)
+                self.assertEqual(self.run_count(), 2)
 
     def test_committed_capture_mode_ignores_uncommitted_capture_files(self):
         self.write_spec("FIXED")
