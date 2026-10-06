@@ -7,7 +7,6 @@ Run: python3 -m unittest discover -s tests -p 'test_holo_mcp_http.py' -v
 import http.client
 import json
 import os
-import shutil
 import socket
 import subprocess
 import sys
@@ -24,7 +23,7 @@ from mcp.client.streamable_http import streamable_http_client
 
 import holophyte.cli.entry
 from holophyte.config.project import Project
-from tests.host_fixture import factory_checkout, git
+from tests.host_fixture import git
 from tests.test_holo_mcp import ROOT, TOOLS
 from tests.test_holo_mcp_writes import AUTHOR, WRITES, WriteCase
 
@@ -32,6 +31,9 @@ TOKEN = "machine-secret"
 FIXTURE = ROOT / "tests" / "fixtures" / "serve" / "mcp-tools-list.json"
 NAME = "alpha"
 CHECK_SEC = 2
+# Uvicorn's graceful stop and the interpreter's exit, after the check fires.
+SHUTDOWN_SEC = 1
+INTERVAL = "\nCODE_CHECK_SEC = 15\n"
 START_WAIT_SEC = 30
 REQUEUE = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
            "params": {"name": "requeue",
@@ -254,18 +256,36 @@ class StartupTests(HttpCase):
 
 
 class CodeFollowTests(HttpCase):
-    def test_a_new_commit_in_the_checkout_exits_0(self):
-        self.checkout = factory_checkout(self, self.root / "factory",
-                                         CHECK_SEC)
-        shutil.copy(ROOT / "pyproject.toml", self.checkout)
+    def clone(self):
+        """A `git clone` of this factory whose check interval is cut to
+        `CHECK_SEC` in a commit of its own, made before the server starts."""
+        checkout = self.root / "factory"
+        git(self.root, "clone", "-q", str(ROOT), str(checkout))
+        watch = checkout / "holophyte" / "serve" / "serve_watch.py"
+        text = watch.read_text()
+        self.assertIn(INTERVAL, text)
+        watch.write_text(text.replace(INTERVAL,
+                                      f"\nCODE_CHECK_SEC = {CHECK_SEC}\n"))
+        git(checkout, "commit", "-q", "-am", "check interval")
+        return checkout
+
+    def test_a_new_commit_in_the_clone_exits_0_within_the_check_interval(self):
+        self.checkout = self.clone()
         server = self.start()
 
         (self.checkout / "moved.txt").write_text("B\n")
         git(self.checkout, "add", "moved.txt")
         git(self.checkout, "commit", "-q", "-m", "B")
+        committed = time.monotonic()
+        try:
+            code = server.wait(timeout=CHECK_SEC + SHUTDOWN_SEC)
+        except subprocess.TimeoutExpired:
+            self.fail(f"still serving {CHECK_SEC + SHUTDOWN_SEC}s after the"
+                      " commit")
+        elapsed = time.monotonic() - committed
 
-        self.assertEqual(server.wait(timeout=CHECK_SEC + 5), 0,
-                         server.communicate())
+        self.assertEqual(code, 0, server.communicate())
+        self.assertLessEqual(elapsed, CHECK_SEC + SHUTDOWN_SEC)
 
 
 if __name__ == "__main__":
