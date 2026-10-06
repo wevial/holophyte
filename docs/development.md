@@ -52,6 +52,10 @@ Each module, one line:
   `HEAD`; a subcommand resolves its project, translates through the grammar table
   and runs as `_legacy_cli()`, a write command through `run_write()`, `report`
   through `report_page`, or answers as a read; `holo project` is `factory.py project`.
+- `holophyte/holo/completion.py` — `holo completion bash|zsh|fish`'s scripts
+  and the hidden `holo __complete` helper they call: candidates from the parser
+  the grammar table builds, and ticket keys from `holo board --json` cached per
+  project for 60 seconds.
 - `holophyte/holo/reads.py` — the `holo` reads `runs`, `run N`, `attention`,
   `board` and `ticket KEY`: each calls the daemon's view in process, prints its
   body for `--json` or a compact listing of it, and maps its status to the exit.
