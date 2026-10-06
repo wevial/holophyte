@@ -1012,8 +1012,10 @@ selects and runs that ticket's script. With `ui_capture_local = true`, every
 worktree setup writes a `.gitignore` holding `*` into `ui_capture_dir`, so the
 directory ignores itself (in the worktree and in a container turn's clone),
 and the brief names the spec `<ui_capture_dir>/<ticket key>.capture.ts`, which
-stays in the worktree and is never committed. Numbered images receive state captions;
-missing images are marked "not captured" in the PR and reviewer prompt.
+stays in the worktree and is never committed. A change to the local spec the
+capture would run reruns the capture at the same commit and counts as
+fix-round progress. Numbered images receive state captions; missing images
+are marked "not captured" in the PR and reviewer prompt.
 Tickets without the section keep the default capture.
 
 A Playwright project can name the factory's own runner as `ui_capture`
