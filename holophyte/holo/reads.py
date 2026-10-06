@@ -97,7 +97,7 @@ def ledger_lines(body):
 
 
 def turns_lines(body):
-    return [f"{t['id']}  {t['role']}  {t['route']}  {t['label'] or '-'}"
+    return [f"{t['id']}  {t['role']}  {t['route'] or '-'}  {t['label'] or '-'}"
             f"  {t['seconds'] if t['seconds'] is not None else '-'}s"
             for t in body["turns"]]
 

@@ -136,6 +136,10 @@ def canonical(words):
     return next(command for command in COMMANDS if command.words == words)
 
 
+def canonical_read(word):
+    return next(command for command in READS if command.words == (word,))
+
+
 def _positionals(command):
     names = list(command.takes) + ([command.landed] if command.landed else [])
     return [(f"arg{index}", name) for index, name in enumerate(names)]
@@ -212,7 +216,10 @@ def _shown(argv):
     if not argv or argv[0] not in SHOWN:
         return argv
     verbs = {words[1] for words, _, _ in _rows() if words[0] == argv[0]}
-    if argv[1:2] and (argv[1] in verbs or argv[1] in ("-h", "--help")):
+    keyed = canonical_read(argv[0]).takes
+    second = argv[1] if argv[1:] else None
+    if second in verbs or second in ("-h", "--help") or (
+            second is not None and not second.startswith("-") and not keyed):
         return argv
     return [argv[0], SHOW, *argv[1:]]
 
