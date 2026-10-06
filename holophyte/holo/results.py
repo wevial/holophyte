@@ -3,6 +3,7 @@ import json
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from types import SimpleNamespace
 
 from holophyte.admission import project_of
 from holophyte.config.project import Project, legacy_state_layouts
@@ -16,6 +17,7 @@ from holophyte.holo.grammar import (
 from store.read import open_readonly
 
 PREFIX = "[holo2] "
+RUN_DIGITS = len(str(2**63 - 1))
 
 
 class Tee(StringIO):
@@ -62,9 +64,18 @@ def usage_result(argv, line):
     command = next((command for prefix, command in rows
                     if tuple(argv[:len(prefix)]) == prefix), None)
     if command is not None and command.records is not None and "--json" in options:
-        print(json.dumps({"action": " ".join(command.words), "ok": False,
-                          "detail": line.removeprefix(PREFIX),
-                          "recorded": None}))
+        args = parsed(argv) or SimpleNamespace(command=command)
+        print(json.dumps(build_result(args, 2, [line.removeprefix(PREFIX)],
+                                      (None, None))))
+
+
+def parsed(argv):
+    from holophyte.holo.cli import build_parser
+    try:
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            return build_parser().parse_known_args(argv)[0]
+    except SystemExit:
+        return None
 
 
 def exit_parts(code):
@@ -86,10 +97,8 @@ def send_back(args, target):
         args.leaf.error("send-back needs its project: -p NAME|PATH")
     if note is None:
         args.leaf.error("send-back records the instruction the run goes back with")
-    if not values[0].isdecimal():
-        args.leaf.error(f"RUN is a run id, not {values[0]!r}")
-    run_id = int(values[0])
-    if not 0 < run_id < 2**63:
+    run_id = parse_run(values[0])
+    if run_id is None:
         args.leaf.error("RUN must be a positive 64-bit run id")
     from holophyte.cli.operator import send_back_run
     from holophyte.config.checks import check_config
@@ -97,6 +106,13 @@ def send_back(args, target):
     project.config()
     check_config(project)
     return send_back_run(project, run_id, note)
+
+
+def parse_run(value):
+    if not (value.isascii() and value.isdigit() and len(value) <= RUN_DIGITS):
+        return None
+    run_id = int(value)
+    return run_id if 0 < run_id < 2**63 else None
 
 
 def store_path(target):
@@ -131,7 +147,7 @@ def named(args):
     value = getattr(args, "arg0", None)
     first = args.command.takes[:1]
     if first == ("RUN",):
-        return None, int(value) if value.isdecimal() else value
+        return None, None if value is None else parse_run(value)
     if first == ("KEY",):
         return value, None
     update = getattr(args, "update", None)

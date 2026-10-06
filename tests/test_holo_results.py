@@ -151,6 +151,14 @@ class SendBackResultTests(ResultTests):
         self.assertEqual(self.result(completed, 2)["ok"], False)
         self.assertEqual(list(self.conn.iterdump()), before)
 
+    def test_send_back_of_a_run_id_too_long_to_convert_is_a_usage_error(self):
+        completed = self.holo("send-back", "9" * 5000, "note", "--json")
+        self.assertNotIn("Traceback", completed.stderr)
+        result = self.result(completed, 2)
+        self.assertEqual((result["action"], result["ok"], result["recorded"]),
+                         ("send-back", False, None))
+        self.assertNotIn("run", result)
+
 
 class ProjectAndGapResultTests(ResultTests):
     def test_hold_json_cites_the_projects_hold_row(self):
@@ -208,6 +216,18 @@ class UsageAndFileResultTests(Home):
         self.assertEqual((result["action"], result["ok"], result["recorded"]),
                          ("requeue", False, None))
         self.assertEqual(result["detail"], completed.stderr.splitlines()[-1])
+
+    def test_a_usage_result_keeps_the_ticket_or_run_named_before_the_error(self):
+        for argv, named in ((("requeue", "HOLO-1"), {"ticket": "HOLO-1"}),
+                            (("send-back", "1"), {"run": 1})):
+            with self.subTest(argv=argv):
+                completed = holo(*argv, "note", "--json", "--bogus", home=self.home)
+                self.assertEqual(completed.returncode, 2)
+                (line,) = completed.stdout.splitlines()
+                self.assertEqual(json.loads(line), {
+                    "action": argv[0], "ok": False, "recorded": None,
+                    "detail": "holo: error: unrecognized arguments: --bogus",
+                    **named})
 
     def test_a_client_config_refusal_with_json_prints_a_result_and_exits_two(self):
         self.home.mkdir(parents=True)
