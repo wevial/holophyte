@@ -84,8 +84,8 @@ any other mode without a project is a usage error.
 ## holo
 
 `holo COMMAND [ARGS] [-p NAME|PATH] [--verbose]` is the short form of the
-modes above. Each command but `send-back` stands for one `factory.py`
-invocation and runs through the same parser, so its refusals, messages and
+modes above. Each command but `send-back`, `start` and `stop` stands for one
+`factory.py` invocation and runs through the same parser, so its refusals, messages and
 exit codes are the factory's own. A command's project is the first of these
 that answers:
 
@@ -106,8 +106,7 @@ naming all four sources. `--verbose` prints the project and the source that
 named it to stderr. `NOTE` is free text, the last argument;
 `-n/--note NOTE` is the same. `holo project VERB` is `factory.py project
 VERB` with its arguments unchanged. `--worker` has no command: it is
-internal, spawned by the loop's pool, and the loop itself is not a `holo`
-command yet.
+internal, spawned by the loop's pool.
 
 | Command | Aliases | Factory invocation |
 | --- | --- | --- |
@@ -131,6 +130,9 @@ command yet.
 | `holo abort KEY NOTE [--close-pr]` | `holo ticket abort` | `--abort KEY --note NOTE [--close-pr] PROJECT` |
 | `holo hold NOTE` | | `--hold --note NOTE PROJECT` |
 | `holo release NOTE` | | `--release-hold --note NOTE PROJECT` |
+| `holo start [NOTE]` | `holo loop start` | none: `systemctl --user start holophyte-loop@NAME`, recorded first as the console's launch-loop is |
+| `holo start --foreground` | `holo loop start` | `PROJECT`: the loop in this terminal |
+| `holo stop NOTE [--now]` | `holo loop stop` | `--hold --note NOTE PROJECT`; with `--now`, then `--abort KEY --note NOTE PROJECT` for each live run |
 | `holo close KEY URL [NOTE]` | `holo ticket close` | `--close KEY --landed URL [--note NOTE] PROJECT` |
 | `holo gap KEY LAYER NOTE [--carried-by KEY] [--found-by F]` | `holo ticket gap` | `--gap-layer KEY LAYER --note NOTE [--carried-by KEY] [--found-by F] PROJECT` |
 | `holo story file SLUG [--update KEY --revision N] [--priority P]` | | `--file-story SLUG [--update KEY --revision N] [--priority P] PROJECT` |
@@ -139,6 +141,27 @@ command yet.
 | `holo story decide KEY ID [OPTION] NOTE` | | `--decide KEY ID [OPTION] --note NOTE PROJECT` |
 | `holo supervise [--once]` | | `--supervise [--once] [PROJECT]` |
 | `holo serve [ADDR]` | | `--serve [ADDR] [PROJECT]` |
+
+`holo start` starts the project's loop unit and returns: it records a
+`launch_loop` intervention, then runs `systemctl --user start
+holophyte-loop@NAME`, `NAME` the project's `[serve] name` in `host.toml`,
+and prints the unit and the ready count. A project with no `[serve] name`
+in `host.toml` has no unit and is refused naming the entry, as is a
+disabled project. A held project needs
+the note: `start` releases the hold with it before starting the unit, and
+without one it exits 1 naming the hold. Closing the terminal leaves the
+unit running. `holo start --foreground` is `factory.py PROJECT`, the loop
+in this terminal.
+
+`holo stop NOTE` holds the project's admission as `holo hold NOTE` does,
+so the loop admits no new ticket and the host sweep starts no loop for it;
+a project already held is refused as `hold` refuses it. Its live runs, every run
+not ended and not parked, finish their work, and the loop exits at its next
+idle check once none is left; `stop` names the runs it waits for. `holo
+stop --now NOTE` also aborts each live run as `holo abort` does, with the
+note: each stops at its next safe point and keeps its work. Neither stops
+the unit, because stopping it kills a live run mid-turn and loses its work;
+the loop exits on its own once the hold leaves it idle.
 
 The write commands, each that takes a `NOTE` and `holo file`, print one
 result. Without `--json` it is one line: `✓` and what the verb did, then
@@ -163,6 +186,24 @@ $ holo requeue HOLO-133 "rerun" --json -p holophyte
 `--json` changes the output, never the exit code below: a usage error is
 still exit 2, its result `ok: false` with the error line as `detail`.
 
+`holo status` without `--json` renders the `--status --json` object, the
+project form or the host form, as a page read top down; with `--json` it
+prints that object unchanged. Its lines carry no `[holo2]` prefix:
+
+| Section | Lines |
+| --- | --- |
+| header | the project or the home, then the date and clock time, `Tue Oct 6, 10:42 PDT` |
+| `Needs you (N)` | `!`, the project, the ticket and the question of each parked ticket; a project whose admission is held or disabled, with its note and ready count; a story planned and waiting on approval, or parked with its open decisions counted; the reason of each stranded run and how long ago it ended, `14 min` |
+| `Running (N)` | `>`, the project, the ticket, the phase and the heartbeat's age, `heartbeat 20 s ago`; a merge lock or a project supervisor lock held by a live holder |
+| `Quiet` | `✓` and the ready count of each enabled project with nothing live, parked, stranded or wrong and no story planned or parked |
+| `Problems (N)` | `✗` and a `try:` hint for a lock naming a dead pid, a run no longer live or no holder, an unreadable project, a project the last sweep errored on, a sweep that failed, or one that started over two minutes ago and never ended; a project here has no quiet line |
+| footer | the sweep's state and age, `Sweep ok 40 s ago` or `Sweep killed, started 94 h ago`, the home lock's live pid, and the build as a short hash, `build 92ef2b0` (host form only) |
+
+A free lock prints no line. Ages are `s` under a minute, `min` under an
+hour, then `h`. The symbols are coloured (`!` orange, `>` blue, `✓` green,
+`✗` red) only when the output is a terminal and `NO_COLOR` is unset or
+empty; the write commands' `✓`/`✗` follow the same rule.
+
 Five reads are no `factory.py` mode: each calls, in process, the view
 function the [serve daemon](http.md) answers its route with, so the command
 and the route agree. Each opens the store read-only and writes nothing.
@@ -182,6 +223,27 @@ daemon's root `/attention` built from `host.toml` with no daemon running.
 | `holo board [--json]` | | `GET /board` |
 | `holo ticket KEY [--json]` | | `GET /tickets/KEY` |
 
+`holo completion bash|zsh|fish` prints a completion script for that shell.
+It completes the commands, their aliases and flags, the choices the factory's
+parser knows (`ready|backlog`, the gap layers, the priorities) and, where a
+command takes a `KEY`, the keys of the project's open tickets. Install it once:
+
+```
+holo completion bash > ~/.holo-completion.bash   # and in ~/.bashrc: source ~/.holo-completion.bash
+holo completion zsh > "${fpath[1]}/_holo"        # a directory on $fpath, before compinit runs
+holo completion fish > ~/.config/fish/completions/holo.fish
+```
+
+bash 3.2, the macOS one, does not reliably `source <(...)`, so write the
+script to a file and `source` the file. Each script asks the hidden
+`holo __complete WORDS...` for its candidates, one per line, so a new command
+completes without a new script. The keys come from `holo board --json` for the
+project the words name, found as above, and are cached in
+`HOLOPHYTE_HOME/completion/`, one file per project, for 60 seconds from the
+file's mtime: a ticket filed within that minute completes once it has passed.
+With no project, or a board read that fails, no key completes and nothing is
+printed.
+
 `HOLOPHYTE_HOME/client.toml` is the client config every `holo` command reads
 first; a key it does not hold below, or a file TOML cannot read, exits 2
 naming the file.
@@ -189,6 +251,7 @@ naming the file.
 | Key | Purpose |
 | --- | --- |
 | `default_project` | the project, a `[serve] name` or a repository path, when `-p`, `HOLO_PROJECT` and the current repository give none |
+| `timezone` | the zone `holo` pages show clock times in, an IANA name such as `"America/Los_Angeles"`; default the local zone; a name `zoneinfo` does not know exits 2 naming the key and the value |
 
 ## Startup checks
 
@@ -221,6 +284,7 @@ after the store.
 | --- | --- | --- |
 | `HOLOPHYTE_HOME` | `Project` | the state root, default `~/.holophyte`; tests point it at a temp dir |
 | `HOLO_PROJECT` | `holo` | the project, a `[serve] name` or a repository path, when no `-p` is given |
+| `NO_COLOR` | `holo` | set and not empty, `holo` prints its symbols without colour on a terminal too |
 | `LINEAR_API_KEY` | `linear_provider` | the board's API key; env or `.env` beside the module |
 | `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the project units (`holophyte-serve@`, `holophyte-supervise@`), and `HOLOPHYTE_TARGET` alone the loop unit | one instance's project, bind address, port |
 | `LISTEN_FDS`, `LISTEN_PID` | `--serve` | set by the service manager's socket unit: with `LISTEN_FDS=1` and `LISTEN_PID` this process's pid, the daemon serves on fd 3 instead of binding, and exits 0 on a factory `HEAD` move for the socket to start the new code |

@@ -3,7 +3,14 @@ import sys
 import tomllib
 from importlib import metadata
 
-from holophyte.holo.grammar import READS, add_commands, factory_argv, parse
+from holophyte.holo.grammar import (
+    COMPLETION,
+    HELPER,
+    READS,
+    add_commands,
+    factory_argv,
+    parse,
+)
 from holophyte.host.startup import build_sha, factory_checkout
 
 DISTRIBUTION = "holophyte"
@@ -68,13 +75,17 @@ def project_argv(args, default):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    from holophyte.holo.resolve import DEFAULT, Refused, client_config
+    if argv[:1] == [HELPER]:
+        from holophyte.holo.completion import complete
+        return complete(argv[1:])
+    from holophyte.holo.resolve import DEFAULT, TIMEZONE, Refused, client_config
     try:
-        default = client_config().get(DEFAULT)
+        client = client_config()
     except Refused as refused:
         from holophyte.holo.results import usage_result
         usage_result(argv, refused.line)
         raise
+    default = client.get(DEFAULT)
     if argv[:1] == ["project"]:
         from holophyte.cli.entry import cli
         return cli(argv)
@@ -91,10 +102,19 @@ def main(argv=None):
     if args.words is None:
         parser.print_help()
         return 0
+    if args.command is COMPLETION:
+        from holophyte.holo.completion import script
+        return script(args.shell)
+    if getattr(args, "foreground", False):
+        from holophyte.holo.units import foreground
+        return foreground(args, project_argv(args, default))
     if args.command.records is not None:
         from holophyte.holo.results import run_write
         return run_write(args, lambda: project_argv(args, default))
     target = project_argv(args, default)
+    if args.command.mode == "--status" and not args.json:
+        from holophyte.holo.status_page import show
+        return show(target, client.get(TIMEZONE))
     if args.command in READS:
         from holophyte.holo.reads import read
         return read(args, target[0] if target else None)

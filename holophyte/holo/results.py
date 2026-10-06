@@ -14,6 +14,7 @@ from holophyte.holo.grammar import (
     canonical,
     factory_argv,
 )
+from holophyte.holo.render import colour_on, symbol
 from store.read import open_readonly
 
 PREFIX = "[holo2] "
@@ -51,9 +52,9 @@ def run_write(args, resolve):
     if args.json:
         print(json.dumps(result))
     elif result["ok"]:
-        print(human_line(result, lines))
+        print(human_line(result, lines, colour_on(sys.stdout)))
     elif not from_stderr:
-        print(human_line(result, lines), file=sys.stderr)
+        print(human_line(result, lines, colour_on(sys.stderr)), file=sys.stderr)
     return code
 
 
@@ -89,10 +90,13 @@ def exit_parts(code):
 
 
 def call(args, target):
-    if args.command.mode is None:
+    if args.command.mode is not None:
+        from holophyte.cli.entry import _legacy_cli
+        return _legacy_cli(target + factory_argv(args))
+    if args.command.words == ("send-back",):
         return send_back(args, target)
-    from holophyte.cli.entry import _legacy_cli
-    return _legacy_cli(target + factory_argv(args))
+    from holophyte.holo.units import VERBS
+    return VERBS[args.command.words](args, target)
 
 
 def send_back(args, target):
@@ -164,6 +168,7 @@ def recorded_row(args, target, before):
         return None, None
     ticket, run = named(args)
     actions = args.command.records
+    on_run = " OR r.projectId = ?" if ticket is None and run is None else ""
     conn = open_readonly(path)
     try:
         project = project_of(conn, Project.locate(target[0], adopt=False))
@@ -173,9 +178,10 @@ def recorded_row(args, target, before):
             " LEFT JOIN tickets t ON t.id = r.ticketId"
             f" WHERE i.id > ? AND i.action IN ({','.join('?' * len(actions))})"
             " AND (t.linearIdentifier = ? OR i.runId = ?"
-            " OR (i.runId IS NULL AND i.projectId = ?))"
+            f" OR (i.runId IS NULL AND i.projectId = ?){on_run})"
             " ORDER BY i.id DESC LIMIT 1",
-            (before, *actions, ticket, run, project)).fetchone()
+            (before, *actions, ticket, run, project,
+             *[project] * bool(on_run))).fetchone()
     finally:
         conn.close()
     return row or (None, None)
@@ -193,10 +199,10 @@ def build_result(args, code, lines, row):
     return result
 
 
-def human_line(result, lines):
+def human_line(result, lines, colour=False):
     if not result["ok"]:
-        return "✗ " + " · ".join(lines)
+        return symbol("✗", colour) + " " + " · ".join(lines)
     parts = lines or [result["action"]]
     if result["recorded"] is not None:
         parts = [*parts, f"intervention {result['recorded']} recorded"]
-    return "✓ " + " · ".join(parts)
+    return symbol("✓", colour) + " " + " · ".join(parts)

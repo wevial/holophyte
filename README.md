@@ -68,10 +68,13 @@ holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an a
 holo approve KEY ["note"] -p NAME|PATH           # each ticket verb takes the factory mode's arguments, the note last; see docs/reference/cli.md#holo
 holo hold "note" -p NAME|PATH                    # and holo release "note"
 holo send-back RUN "note" -p NAME|PATH           # the console's send-back of run RUN; no factory.py equivalent
+holo start ["note"] [--foreground] -p NAME|PATH  # start the project's loop unit and return; the note releases a hold
+holo stop [--now] "note" -p NAME|PATH            # hold the project: the loop ends after its live runs; --now aborts them
 holo sweep [--act] | board diff | board import | store import PATH --dry-run | report -p NAME|PATH
 holo story file|approve|witness|decide ... -p NAME|PATH # the story modes
 holo supervise [--once] | serve [ADDR] [-p NAME|PATH] # the host forms when no source names a project
 holo project add|remove|list|enable|hold|disable   # factory.py project, unchanged
+holo completion bash|zsh|fish                     # the shell's completion script; see docs/reference/cli.md#holo
 holo runs [--limit N] [--json] -p NAME|PATH      # recent runs; --json prints GET /runs's body
 holo run N [--files|--ledger|--turns] [--json] -p NAME|PATH # one run's detail, files, ledger or turns, as GET /runs/N[/files|/ledger|/turns]
 holo attention [--json] [-p NAME|PATH]           # what waits on the operator, as GET /attention; the host's when no project is named
