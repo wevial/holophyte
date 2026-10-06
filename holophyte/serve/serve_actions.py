@@ -5,6 +5,7 @@ import sys
 import traceback
 
 import store.read
+from holophyte.admission import project_of
 from holophyte.loop.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.loop.runs import open_store
 from holophyte.redact import known_secrets, outbound
@@ -38,13 +39,17 @@ def parse_action_body(raw):
     return body
 
 
-def unit_action(project, action, unit_name):
+def unit_action(project, action, unit_name, asked=None):
     """An intervention that cannot be recorded first does not run."""
     verb, template, intervention = UNIT_ACTIONS[action]
     unit = template + unit_name
-    note = f"operator asked the daemon to {verb} {unit} (POST /actions/{action})"
+    who, route = asked or ("the daemon", f"POST /actions/{action}")
+    note = f"operator asked {who} to {verb} {unit} ({route})"
     recorded = record_action_intervention(project, intervention, note)
-    if recorded is None:
+    written = recorded is not None or (
+        action == "launch-loop"
+        and record_on_project(project, intervention, note) is not None)
+    if not written:
         detail = ("the store holds no run to record the intervention"
                   " against; nothing run")
         return 200, {"action": action, "ok": False, "detail": detail,
@@ -69,6 +74,19 @@ def record_action_intervention(project, action, note):
     finally:
         conn.close()
     return run_id
+
+
+def record_on_project(project, action, note):
+    if not project.store_path.exists():
+        return None
+    conn = open_store(project)
+    try:
+        key = project_of(conn, project)
+        return None if key is None else store.record_project_intervention(
+            conn, action, note, source="human", trigger="manual",
+            project_id=key)
+    finally:
+        conn.close()
 
 
 def tickets_named(conn, identifier):
