@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "holophyte"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["tomlkit==0.15.1"]
+dependencies = ["tomlkit==0.15.1", "mcp==2.3.0"]
 
 [project.scripts]
 holo = "holophyte.holo.cli:main"

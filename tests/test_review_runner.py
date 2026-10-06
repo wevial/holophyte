@@ -677,8 +677,8 @@ class CandidateImageTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v11_and_every_tracked_reference_names_it(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v11")
+    def test_image_tag_is_v12_and_every_tracked_reference_names_it(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v12")
         tracked = subprocess.run(
             ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
         ).stdout.decode().split("\0")
@@ -688,10 +688,10 @@ class ReviewerImageTests(unittest.TestCase):
             if (ROOT / path).is_file()
             for tag in re.findall(rb"ubuntu24\.04-v\d+", (ROOT / path).read_bytes())
         }
-        self.assertIn(("review_runner.py", "ubuntu24.04-v11"), references)
-        self.assertIn(("docs/reviewing.md", "ubuntu24.04-v11"), references)
+        self.assertIn(("review_runner.py", "ubuntu24.04-v12"), references)
+        self.assertIn(("docs/reviewing.md", "ubuntu24.04-v12"), references)
         self.assertEqual(
-            {ref for ref in references if ref[1] != "ubuntu24.04-v11"}, set())
+            {ref for ref in references if ref[1] != "ubuntu24.04-v12"}, set())
 
     def test_dockerfile_installs_pinned_checksummed_bun_on_path(self):
         text = self.DOCKERFILE.read_text()

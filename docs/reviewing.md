@@ -53,7 +53,7 @@ review, from the size of the candidate's diff and the `[loop]` review keys
 [config.md](config.md)). The cap is printed and recorded in the run's ledger,
 and the terminal adjudication follows the last round it allows.
 
-The first review builds `holophyte-reviewer:ubuntu24.04-v11` automatically from
+The first review builds `holophyte-reviewer:ubuntu24.04-v12` automatically from
 the digest-pinned Ubuntu image; it carries git, python3 with its `venv`
 module, ripgrep, a pinned Bun (checksum-verified, on `PATH` under
 `/opt/bun/bin`) so console `bun` criteria can be witnessed inside the
@@ -73,8 +73,8 @@ Playwright version needs a new image, as a new Bun does), and a pinned Go 1.26.6
 toolchain is ever downloaded, caches under the writable `/home/reviewer`, `CGO_ENABLED=1` with `gcc` and
 the C library headers so `go test -race` runs) so a Go project's `go test`
 criteria can be witnessed too. It also installs
-`tomlkit` at the version `requirements.txt` pins, so the factory's own suite
-imports inside the container, and a pinned Claude CLI (the native linux-x64
+`tomlkit` and `mcp` at the versions `requirements.txt` pins, so the factory's
+own suite imports inside the container, and a pinned Claude CLI (the native linux-x64
 build, checksum-verified against its release manifest, on `PATH` under
 `/opt/claude/bin`, `DISABLE_AUTOUPDATER=1`) whose managed settings at
 `/etc/claude-code/managed-settings.json` make `bypassPermissions` the default

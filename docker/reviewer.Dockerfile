@@ -116,12 +116,15 @@ RUN set -eu \
 ENV PATH=/opt/claude/bin:$PATH \
     DISABLE_AUTOUPDATER=1
 
-# tomlkit is the factory's one Python dependency (`requirements.txt`, the
-# daemon's `PUT /config` patch): the suite imports it, so the reviewer's
-# `python3 -m unittest discover` needs it at the same pinned version.
+# tomlkit and mcp are the factory's Python dependencies (`requirements.txt`;
+# tomlkit for the daemon's `PUT /config` patch, mcp for `holo mcp` only): the
+# suite imports them, so the reviewer's `python3 -m unittest discover` needs
+# them at the same pinned versions.
 ARG TOMLKIT_VERSION=0.15.1
+ARG MCP_VERSION=2.3.0
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
-        "tomlkit==${TOMLKIT_VERSION}"
+        "tomlkit==${TOMLKIT_VERSION}" \
+        "mcp==${MCP_VERSION}"
 
 RUN mkdir -p /home/reviewer /workspace \
     && chmod 0755 /home/reviewer /workspace
