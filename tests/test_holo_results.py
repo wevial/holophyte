@@ -5,6 +5,8 @@ Run: python3 -m unittest discover -s tests -p 'test_holo_results.py' -v
 """
 import getpass
 import json
+import os
+import sqlite3
 import unittest
 
 import store
@@ -160,6 +162,33 @@ class ProjectAndGapResultTests(ResultTests):
         self.assertEqual(self.conn.execute(
             "SELECT layer, note FROM gapLayers WHERE ticketId = ?",
             (self.ticket,)).fetchall(), [("witness", "note")])
+
+
+class StoreLocationResultTests(ResultTests):
+    def test_a_repeated_pause_from_an_adopted_legacy_store_cites_no_row(self):
+        store.pause(self.conn, self.run, "lunch")
+        self.conn.close()
+        current = Project.locate(self.path, adopt=False).store_path
+        legacy = self.path.parent / f"{self.path.name}.holophyte.db"
+        os.replace(current, legacy)
+        result = self.result(self.holo("pause", "HOLO-1", "lunch", "--json"), 0)
+        self.assertFalse(legacy.exists())
+        self.assertEqual((result["ok"], result["recorded"]), (True, None))
+
+
+class EmptyStoreResultTests(Home):
+    def test_hold_json_on_an_empty_store_file_initializes_it_and_cites_the_row(self):
+        path = self.repo("repo", "HOLO")
+        sqlite3.connect(Project.locate(path, adopt=False).store_path).close()
+        completed = holo("hold", "maintenance", "--json", "-p", str(path),
+                         home=self.home)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        conn = store.open(str(Project.locate(path, adopt=False).store_path))
+        self.addCleanup(conn.close)
+        (row,) = conn.execute(
+            "SELECT id FROM interventions WHERE action = 'hold'").fetchall()
+        self.assertEqual((result["ok"], result["recorded"]), (True, row[0]))
 
 
 if __name__ == "__main__":

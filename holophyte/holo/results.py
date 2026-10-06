@@ -5,7 +5,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 
 from holophyte.admission import project_of
-from holophyte.config.project import Project
+from holophyte.config.project import Project, legacy_state_layouts
 from holophyte.holo.grammar import arguments, factory_argv
 from store.read import open_readonly
 
@@ -86,11 +86,20 @@ def store_path(target):
 
 
 def newest_intervention(target):
-    path = store_path(target)
-    if path is None:
+    if not target:
         return 0
+    paths = [Project.locate(target[0], adopt=False).store_path]
+    paths += [source for _, moves in legacy_state_layouts(target[0])
+              for source, name in moves if name == "store.db"]
+    return max((newest_in(path) for path in paths if path.exists()), default=0)
+
+
+def newest_in(path):
     conn = open_readonly(path)
     try:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
+                        " AND name = 'interventions'").fetchone() is None:
+            return 0
         return conn.execute("SELECT COALESCE(MAX(id), 0)"
                             " FROM interventions").fetchone()[0]
     finally:
