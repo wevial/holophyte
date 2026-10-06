@@ -252,7 +252,15 @@ HTTP_ROUTES = {
     ("abort",): Route("POST", "/actions/abort", ("run", "note", "close")),
     ("start",): Route("POST", "/actions/launch-loop"),
 }
-DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+class Unredirected(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *_):
+        return None
+
+
+DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                     Unredirected())
 
 
 class Failed(Exception):
@@ -293,7 +301,10 @@ class Daemon:
             raise Failed(f"{self.url} answered 401: the token in"
                          f" {self.token_file} is not one it accepts")
         answer = document(raw.decode(errors="replace"))
-        return code, {"error": f"HTTP {code}"} if answer is None else answer
+        if answer is None:
+            raise Failed(f"{self.url}{path} answered {code} with no JSON"
+                         " object; is url the host daemon?")
+        return code, answer
 
 
 def failure(args, failed):
@@ -304,10 +315,11 @@ def failure(args, failed):
     return failed.code
 
 
-def unrouted(args, label):
+def unrouted(args, label, by_ssh=True):
+    other = (f"transport = \"ssh\" in {client_path()} runs it" if by_ssh
+             else f"{SSH} does not carry it either; run it on the host")
     return failure(args, Failed(
-        f"{label} has no HTTP route on the host daemon; transport = \"ssh\""
-        f" in {client_path()} runs it"))
+        f"{label} has no HTTP route on the host daemon; {other}"))
 
 
 def run_http(args, url, config):
@@ -316,7 +328,8 @@ def run_http(args, url, config):
     if getattr(args, "foreground", False):
         return unrouted(args, f"{label} --foreground")
     if route is None:
-        return unrouted(args, label)
+        return unrouted(args, label, command.mode not in HOST_ONLY
+                        and command.words not in CLIENT_ONLY)
     project = named_project(args, config, label, HTTP)
     prefix = "" if project is None else "/projects/" + quote(project, safe="")
     known = fields(args, route)
@@ -403,7 +416,8 @@ def write_over(args, daemon, prefix, route, known):
                      2 if code == 400 else 1)
     from holophyte.holo.render import colour_on
     ok = bool(reply.get("ok"))
-    shown = {"action": " ".join(args.command.words), "recorded": None, **reply}
+    shown = {"action": " ".join(args.command.words), "recorded": None,
+             **reply, "ok": ok}
     lines = [line.removeprefix(PREFIX)
              for line in str(reply.get("detail") or "").splitlines()]
     if args.json:

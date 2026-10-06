@@ -1,7 +1,8 @@
 """`holo` with a client config naming `transport = "http"` calls the host
-daemon's routes. The daemon is a real `HostServer` on a loopback port behind
-a machine token, over a real registered project and store; `holo` runs as
-its own process with the seat's home.
+daemon's routes. The daemon is a real `HostServer` on a loopback port over a
+real registered project and store, its machine token guarding reads as well
+as actions, as on a bind beyond loopback; `holo` runs as its own process with
+the seat's home.
 
 Run: python3 -m unittest discover -s tests -p 'test_holo_http.py' -v
 """

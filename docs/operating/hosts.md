@@ -153,7 +153,8 @@ This road carries only what the daemon serves: the reads `runs`, `run N`,
 `attention`, `board` and `ticket KEY`, and the verbs with an action route
 (`requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`,
 `start`), which need `[serve] actions = true` in `host.toml`. Every other
-command, `status` included, exits 1 naming itself and `transport = "ssh"`;
+command, `status` included, exits 1 naming itself and, where ssh carries
+it, `transport = "ssh"`;
 `holo` never falls back to ssh on its own.
 
 ## The drawer

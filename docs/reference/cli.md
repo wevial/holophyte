@@ -300,13 +300,14 @@ KEY` print what the local command prints; `attention` with no project is the
 root's. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`
 and `start` post to `POST /projects/NAME/actions/...`
 ([The daemon's actions](daemon.md)): `release` to `release-hold`, `start` to
-`launch-loop`, which takes no note, and `pause` and `abort` first read the
+`launch-loop`, which takes no note and releases no hold, and `pause` and `abort` first read the
 ticket's live run from `GET /tickets/KEY`. A write's result is the daemon's
 reply, printed as a `✓`/`✗` line or, with `--json`, as given. stderr says
 `via http to URL`, and a `--json` result gains `"transport": "http"`. Every
 other command, `status` and `report` included, has no route: it exits 1
-saying so and that `transport = "ssh"` runs it, and nothing is sent over
-either road. A 401 exits 1 naming `token_file`'s file; a 404 on an action
+saying so and, where ssh carries it, that `transport = "ssh"` runs it, and
+nothing is sent over either road. A redirect is not followed, so the token
+goes nowhere but `url`, and an answer that is not a JSON object exits 1. A 401 exits 1 naming `token_file`'s file; a 404 on an action
 names the host's `[serve] actions`; any other refusal exits 1 with the
 daemon's message (2 for its 400), and a daemon that does not answer exits 1
 naming the URL.
