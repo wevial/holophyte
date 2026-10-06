@@ -117,12 +117,10 @@ def _note_checks(parser, args):
 def _author_checks(parser, args):
     if args.author is None:
         return
-    custom = args.babysit is not None and args.note not in (
-        None, BABYSIT_DEFAULT_NOTE)
-    if not (custom or (args.file_ticket is not None and args.note is not None)):
-        parser.error("--author names who a custom --babysit --note or a "
-                     "--file-ticket --note is from; it has nothing to sign "
-                     "by itself")
+    signs = args.babysit is not None or args.file_ticket is not None
+    if not signs or args.note is None:
+        parser.error("--author names who a --babysit or --file-ticket --note "
+                     "is from; it has nothing to sign by itself")
     if not args.author.strip():
         parser.error("--author is who the note is from; leave it off for the "
                      "caller's login rather than blank")
@@ -356,10 +354,10 @@ def build_parser():
              "--decide, required: the answer's")
     parser.add_argument(
         "--author", metavar="NAME",
-        help="with --babysit and a custom --note: the maintainer instruction's"
-             " author; with --file-ticket and --note: who the filed ticket's"
-             " first board note, AUTHOR: NOTE, is from; default the caller's"
-             " login")
+        help="with --babysit and --note: the maintainer instruction's"
+             " author, sent as one even when the note is the default; with"
+             " --file-ticket and --note: who the filed ticket's first board"
+             " note, AUTHOR: NOTE, is from; default the caller's login")
     parser.add_argument(
         "--state", choices=FILE_TICKET_STATES,
         help="with --file-ticket: the workflow state the issue is created in "

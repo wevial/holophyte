@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli.entry
+import holophyte.cli.operator
 import store
 import store.board
 import store.tickets
@@ -232,6 +233,16 @@ class SendBackTests(WriteCase):
         self.assertIs(result.is_error, False, result.content)
         self.assertEqual(self.send_back_author(),
                          {"note": "fix the padding", "author": SIGNED})
+
+    def test_babysit_signs_a_note_matching_the_default_text_as_well(self):
+        note = holophyte.cli.operator.BABYSIT_DEFAULT_NOTE
+
+        result = self.call("babysit", {"ticket": "HOLO-3", "note": note,
+                                       "author": AUTHOR})
+
+        self.assertIs(result.is_error, False, result.content)
+        self.assertEqual(self.send_back_author(),
+                         {"note": note, "author": SIGNED})
 
     def test_holo_babysit_author_is_the_send_backs(self):
         done = self.holo("babysit", "HOLO-3", "look again", "--author", AUTHOR)

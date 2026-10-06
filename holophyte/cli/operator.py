@@ -312,7 +312,7 @@ def babysit_ticket(target, identifier, note, out=None, author=None):
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            if note != BABYSIT_DEFAULT_NOTE:
+            if note != BABYSIT_DEFAULT_NOTE or author is not None:
                 run_id = store.read.ticket_by_id(conn, ticket_id).lastRunId
                 event_id = operator_notes.send_back(
                     conn, run_id, note,
