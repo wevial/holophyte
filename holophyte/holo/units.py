@@ -141,11 +141,10 @@ def stop(args, target):
     if note is None:
         args.leaf.error("stop holds the project: give a note saying why")
     from holophyte.cli.board_verbs import require_board
-    from holophyte.cli.operator import _operator_store
     from provider import board_for
     project = checked(Project.locate(target[0]))
     board = require_board(project, board_for(project)) if args.now else None
-    conn = _operator_store(project)
+    conn = open_store(project)
     try:
         runs = live_runs(conn, hold(conn, project, note))
         named = ", ".join(f"run {run_id} ({ticket})" for run_id, ticket in runs)

@@ -96,19 +96,20 @@ The reply also carries `unit`, the instance addressed, and `recorded`, the
 run the intervention landed on (below).
 
 The record is a human `restart_supervisor` intervention on the store's
-newest run, its narrative naming the unit and the route: a supervisor
-restart is about the runs it watches over. A store with no run yet records
-it on the project's row instead, `recorded` null. A project with no store,
-or a store with neither, has nothing to record against and the unit is left
-alone: `ok: false` saying so, `recorded` null, `systemctl` not called. No
-body is read.
+newest run, its narrative naming the unit and the route: interventions are
+keyed by run, and a supervisor restart is about the runs it watches over.
+A project with no store, or a store with no run yet, has nothing to record
+against and the unit is left alone: `ok: false` saying so, `recorded`
+null, `systemctl` not called. No body is read.
 
 ## `POST /actions/launch-loop`
 
 Runs `systemctl --user start holophyte-loop@NAME`: one pass of the loop as
 the deploy template defines it, inactive again once the queue is down.
 Everything else is as `restart-supervisor`, the intervention a
-`launch_loop` row.
+`launch_loop` row, except that a store with no run yet records it on the
+project's row, `recorded` null; only a store with neither leaves the unit
+alone.
 
 ## `POST /actions/requeue`
 

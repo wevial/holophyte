@@ -46,10 +46,12 @@ def unit_action(project, action, unit_name, asked=None):
     who, route = asked or ("the daemon", f"POST /actions/{action}")
     note = f"operator asked {who} to {verb} {unit} ({route})"
     recorded = record_action_intervention(project, intervention, note)
-    if recorded is None and record_on_project(project, intervention,
-                                              note) is None:
+    written = recorded is not None or (
+        action == "launch-loop"
+        and record_on_project(project, intervention, note) is not None)
+    if not written:
         detail = ("the store holds no run to record the intervention"
-                  " against, nor a project row; nothing run")
+                  " against; nothing run")
         return 200, {"action": action, "ok": False, "detail": detail,
                      "unit": unit, "recorded": None}
     if action == "launch-loop":

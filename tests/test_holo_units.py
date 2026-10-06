@@ -12,6 +12,7 @@ import time
 from unittest.mock import patch
 
 import store
+import store.read
 import store.tickets
 from holophyte.config.project import Project
 from holophyte.host.supervisor import reconcile_parked_pull_requests
@@ -203,6 +204,23 @@ class StopTests(UnitTests):
 
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.calls(), ["--user start holophyte-loop@alpha"])
+
+    def test_stop_on_a_project_with_no_store_yet_holds_it(self):
+        self.conn.close()
+        path = self.project.store_path
+        for each in path.parent.glob(path.name + "*"):
+            each.unlink()
+
+        done = self.holo("stop", "maintenance")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("no run is live", done.stdout)
+        conn = store.read.open_readonly(path)
+        self.addCleanup(conn.close)
+        self.assertEqual(conn.execute(
+            "SELECT admission, holdNote FROM projects").fetchall(),
+            [("held", "maintenance")])
+        self.assertEqual(self.calls(), [])
 
     def test_stop_holds_a_disabled_project_as_the_hold_verb_does(self):
         store.tickets.set_admission(self.conn, self.project_id, "disabled",
