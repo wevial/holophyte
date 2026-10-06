@@ -23,6 +23,9 @@ class ScriptTitleApprovalCitationTests(unittest.TestCase):
         test = self.root / "e2e/smoke/readme.capture.ts"
         test.parent.mkdir(parents=True)
         test.write_text(f"test('{TITLE}', async () => {{}});\n")
+        source = self.root / "src/lib/format.ts"
+        source.parent.mkdir(parents=True)
+        source.write_text("export function formatDate(d: Date) { return ''; }\n")
         self.approved = self.commit("approved")
         (self.root / "README.md").write_text("# Pictures\n")
         self.candidate = self.commit("candidate")
@@ -51,6 +54,21 @@ class ScriptTitleApprovalCitationTests(unittest.TestCase):
     def test_single_quoted_title_in_capture_file_witnesses_criterion(self):
         self.assertEqual(self.findings(
             f"e2e/smoke/readme.capture.ts::'{TITLE}'"), [])
+
+    def test_absent_title_in_capture_file_leaves_criterion_unwitnessed(self):
+        (finding,) = self.findings(
+            'e2e/smoke/readme.capture.ts::"the README pictures: the inbox"')
+        self.assertIn("CRITERION 1: unwitnessed", finding["message"])
+        self.assertIn("e2e/smoke/readme.capture.ts", finding["message"])
+        self.assertIn("the README pictures: the inbox", finding["message"])
+        self.assertIn("no test named", finding["message"])
+
+    def test_bare_name_in_ordinary_source_file_is_not_a_test(self):
+        (finding,) = self.findings("src/lib/format.ts::formatDate")
+        self.assertEqual(
+            finding["message"].splitlines()[0],
+            "CRITERION 1: unwitnessed — named test not found: "
+            "prior approval must name a test")
 
 
 if __name__ == "__main__":
