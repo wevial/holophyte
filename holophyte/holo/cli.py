@@ -61,8 +61,13 @@ def project_argv(args, default):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    from holophyte.holo.resolve import DEFAULT, client_config
-    default = client_config().get(DEFAULT)
+    from holophyte.holo.resolve import DEFAULT, Refused, client_config
+    try:
+        default = client_config().get(DEFAULT)
+    except Refused as refused:
+        from holophyte.holo.results import usage_result
+        usage_result(argv, refused.line)
+        raise
     if argv[:1] == ["project"]:
         from holophyte.cli.entry import cli
         return cli(argv)

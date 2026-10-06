@@ -63,7 +63,8 @@ def usage_result(argv, line):
                     if tuple(argv[:len(prefix)]) == prefix), None)
     if command is not None and command.records is not None and "--json" in options:
         print(json.dumps({"action": " ".join(command.words), "ok": False,
-                          "detail": line, "recorded": None}))
+                          "detail": line.removeprefix(PREFIX),
+                          "recorded": None}))
 
 
 def exit_parts(code):
