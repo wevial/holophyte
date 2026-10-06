@@ -168,6 +168,13 @@ def _positional(text):
             or bool(NEGATIVE_NUMBER.fullmatch(text)))
 
 
+def _late_positionals(extra):
+    cut = extra.index("--") if "--" in extra else len(extra)
+    if not all(map(_positional, extra[:cut])):
+        return None
+    return extra[:cut] + extra[cut + 1:]
+
+
 def parse(parser, argv):
     args, extra = parser.parse_known_args(argv)
     command = getattr(args, "command", None)
@@ -176,8 +183,9 @@ def parse(parser, argv):
         slots = [dest for dest, name in _positionals(command) if name.startswith("[")]
         empty = [dest for dest in slots + ["note"] * bool(command.note)
                  if getattr(args, dest) is None]
-        if len(extra) <= len(empty) and all(map(_positional, extra)):
-            for dest, text in zip(empty, extra):
+        late = _late_positionals(extra)
+        if late is not None and len(late) <= len(empty):
+            for dest, text in zip(empty, late):
                 setattr(args, dest, text)
             extra = []
     if extra:

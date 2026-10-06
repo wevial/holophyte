@@ -114,10 +114,19 @@ class TableTests(unittest.TestCase):
                                    "-p", "/repo"])
             self.assertEqual((cancel.cancel, cancel.revision, cancel.note),
                              ("HOLO-1", 2, note))
-        with contextlib.redirect_stderr(io.StringIO()), \
-                self.assertRaises(SystemExit) as refused:
-            factory_args(["cancel", "HOLO-1", "--revision", "2", "--bogus"])
-        self.assertEqual(refused.exception.code, 2)
+        for unknown in (["--bogus"], ["--bogus", "--", "x"]):
+            with contextlib.redirect_stderr(io.StringIO()), \
+                    self.assertRaises(SystemExit) as refused:
+                factory_args(["cancel", "HOLO-1", "--revision", "2", *unknown])
+            self.assertEqual(refused.exception.code, 2)
+
+    def test_words_after_a_double_dash_following_a_flag_are_the_note(self):
+        cancel = factory_args(["cancel", "HOLO-1", "--revision", "2", "--", "--bogus"])
+        self.assertEqual((cancel.cancel, cancel.revision, cancel.note),
+                         ("HOLO-1", 2, "--bogus"))
+        decide = factory_args(["story", "decide", "HOLO-1", "1", "-p", "/repo",
+                               "--", "-2", "-x"])
+        self.assertEqual((decide.decide, decide.note), (["HOLO-1", "1", "-2"], "-x"))
 
     def test_every_alias_names_a_canonical_command_and_shadows_none(self):
         canonical = [command.words for command in COMMANDS]
