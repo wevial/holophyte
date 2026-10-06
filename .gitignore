@@ -11,3 +11,5 @@ console/electron/node_modules/
 console/test-results/
 .playwright-mcp/
 uv.lock
+*.egg-info/
+/build/
