@@ -142,7 +142,11 @@ def run(args, host, config):
                f" (over {SSH} the current repository does not answer)")
     with ExitStack() as stack:
         stdin = ticket_stdin(args, stack)
-        line = remote_line(config, remote_words(args, project))
+        words = remote_words(args, project)
+        line = remote_line(config, words)
+        if run_page(args):
+            files = [*words[:1], "--files", *words[1:]]
+            line += f" && {remote_line(config, files)}"
         code, text, tail = call(host, line, label, stdin, json_form(command))
     if text is not None:
         return render(args, code, text, tail, config.get(TIMEZONE))
@@ -152,16 +156,34 @@ def run(args, host, config):
     return code
 
 
-def render(args, code, text, tail, timezone):
+def run_page(args):
+    from holophyte.holo.reads import run_part
+    return (args.command.words == ("run",) and not args.json
+            and run_part(args) is None)
+
+
+def document(text):
     try:
         body = json.loads(text)
     except ValueError:
-        body = None
-    if not isinstance(body, dict):
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def render(args, code, text, tail, timezone):
+    page = run_page(args)
+    head, _, files = text.partition("\n") if page else (text, "", "")
+    body = document(head)
+    if body is None:
         sys.stdout.write(text)
         return code
     if args.json:
         print(json.dumps({**body, "transport": SSH}))
+    elif page and "error" not in body:
+        from holophyte.holo.run_page import show_page
+        files = document(files) or {"error": tail or "the host sent no files"}
+        show_page(body, files, timezone)
+        return 0
     elif args.command in READS:
         from holophyte.holo.reads import show
         show(args, f"holo {' '.join(args.command.words)}", code == 0, body)

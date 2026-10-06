@@ -145,8 +145,7 @@ class RemoteCommandTests(SshTests):
         (call,) = self.calls()
         self.assertEqual(call[:3], ["-o", "BatchMode=yes", "writer"])
 
-    def test_status_over_ssh_renders_the_same_page_as_status_run_locally(self):
-        store.hold(self.conn, self.project_id, "maintenance")
+    def pages(self, *argv):
         pages = {}
         for transport, home in (("local", self.host), ("ssh", self.seat)):
             out, err = io.StringIO(), io.StringIO()
@@ -159,11 +158,34 @@ class RemoteCommandTests(SshTests):
                   contextlib.redirect_stderr(err)):
                 os.environ.pop("HOLO_TRANSPORT", None)
                 os.environ.pop("HOLO_PROJECT", None)
-                self.assertEqual(holophyte.holo.cli.main(
-                    ["status", "-p", "alpha"]), 0, err.getvalue())
+                self.assertEqual(holophyte.holo.cli.main(list(argv)), 0,
+                                 err.getvalue())
             pages[transport] = out.getvalue()
         self.assertEqual(len(self.calls()), 1)
+        return pages
+
+    def test_status_over_ssh_renders_the_same_page_as_status_run_locally(self):
+        store.hold(self.conn, self.project_id, "maintenance")
+        pages = self.pages("status", "-p", "alpha")
         self.assertIn("admission held: maintenance", pages["local"])
+        self.assertEqual(pages["ssh"], pages["local"])
+
+    def test_run_over_ssh_renders_the_same_page_as_run_locally(self):
+        git = ("git", "-c", "user.name=test", "-c", "user.email=test@example.com",
+               "-c", "commit.gpgsign=false", "-C", str(self.alpha))
+        (self.alpha / "notes.txt").write_text("one\n")
+        for words in (("checkout", "-q", "-b", "main"), ("add", "notes.txt"),
+                      ("commit", "-q", "-m", "base"),
+                      ("checkout", "-q", "-b", "task/holo-1")):
+            subprocess.run([*git, *words], check=True)
+        (self.alpha / "notes.txt").write_text("one\ntwo\n")
+        subprocess.run([*git, "commit", "-q", "-am", "task"], check=True)
+        subprocess.run([*git, "checkout", "-q", "main"], check=True)
+        run = self.claim()
+        store.set_branch(self.conn, run, "task/holo-1")
+        store.release(self.conn, run, "failed", "verify failed", now=T0 + 1)
+        pages = self.pages("run", str(run), "-p", "alpha")
+        self.assertIn("Files  notes.txt +1 −0", pages["local"])
         self.assertEqual(pages["ssh"], pages["local"])
 
     def test_a_note_with_quotes_and_a_semicolon_reaches_the_host_store_verbatim(self):
