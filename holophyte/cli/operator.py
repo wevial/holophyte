@@ -312,6 +312,22 @@ def babysit_ticket(target, identifier, note, out=None):
         conn.close()
 
 
+def send_back_run(target, run_id, note, out=None):
+    out = out or sys.stdout
+    conn = _operator_store(target)
+    try:
+        try:
+            event_id = operator_notes.send_back(conn, run_id, note,
+                                                getpass.getuser())
+        except (store.ApproveRefused, ValueError) as refused:
+            raise SystemExit(f"[holo2] run {run_id}: {refused}") from None
+        print(f"[holo2] run {run_id} sent back to the babysitter as a"
+              f" maintainer instruction (operator_note event {event_id})",
+              file=out)
+    finally:
+        conn.close()
+
+
 def repoint(target, identifier, sha, note, out=None):
     out = out or sys.stdout
     conn = _operator_store(target)

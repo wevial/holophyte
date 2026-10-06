@@ -84,9 +84,10 @@ any other mode without a project is a usage error.
 ## holo
 
 `holo COMMAND [ARGS] [-p NAME|PATH] [--verbose]` is the short form of the
-modes above. Each command stands for one `factory.py` invocation and runs
-through the same parser, so its refusals, messages and exit codes are the
-factory's own. A command's project is the first of these that answers:
+modes above. Each command but `send-back` stands for one `factory.py`
+invocation and runs through the same parser, so its refusals, messages and
+exit codes are the factory's own. A command's project is the first of these
+that answers:
 
 1. `-p NAME|PATH` on the command line;
 2. `HOLO_PROJECT` in the environment, read as `-p` is;
@@ -99,7 +100,8 @@ A value holding a path separator, or naming an existing directory, is a
 repository path; any other value is a `[serve] name` in `host.toml`, and a
 name it does not register exits 2 naming the registered names rather than
 asking the next source. With no source answering, `status`, `serve` and
-`supervise` are the [host forms](#host-forms), and any other command exits 2
+`supervise` are the [host forms](#host-forms), as is the `attention` read
+below, and any other command exits 2
 naming all four sources. `--verbose` prints the project and the source that
 named it to stderr. `NOTE` is free text, the last argument;
 `-n/--note NOTE` is the same. `holo project VERB` is `factory.py project
@@ -122,6 +124,7 @@ command yet.
 | `holo requeue KEY NOTE` | `holo ticket requeue` | `--requeue KEY --note NOTE PROJECT` |
 | `holo approve KEY [NOTE]` | `holo ticket approve` | `--approve KEY [--note NOTE] PROJECT` |
 | `holo babysit KEY [NOTE]` | `holo ticket babysit` | `--babysit KEY [--note NOTE] PROJECT` |
+| `holo send-back RUN NOTE` | | none: the console's send-back of run `RUN`, its note by the caller's login |
 | `holo repoint KEY SHA NOTE` | `holo ticket repoint` | `--repoint KEY SHA --note NOTE PROJECT` |
 | `holo pause KEY NOTE` | `holo ticket pause` | `--pause KEY --note NOTE PROJECT` |
 | `holo resume KEY NOTE` | `holo ticket resume` | `--resume KEY --note NOTE PROJECT` |
@@ -136,6 +139,48 @@ command yet.
 | `holo story decide KEY ID [OPTION] NOTE` | | `--decide KEY ID [OPTION] --note NOTE PROJECT` |
 | `holo supervise [--once]` | | `--supervise [--once] [PROJECT]` |
 | `holo serve [ADDR]` | | `--serve [ADDR] [PROJECT]` |
+
+The write commands, each that takes a `NOTE` and `holo file`, print one
+result. Without `--json` it is one line: `✓` and what the verb did, then
+`intervention N recorded` when it wrote an interventions row, on stdout; or
+`✗` and the refusal on stderr. With `--json` it is one JSON object on
+stdout, the keys the daemon's `POST /actions/...` answers use:
+
+| Key | Value |
+| --- | --- |
+| `action` | the command's words, `requeue` or `story approve` |
+| `ok` | `true` when the verb exited 0 |
+| `detail` | the verb's message or its refusal, without the `[holo2]` prefix |
+| `recorded` | the id of the interventions row the verb wrote, or `null` when it wrote none (a refusal, `gap`, `move`, `file`) |
+| `ticket` | the `KEY` the command names, or `file --update KEY`'s, when it names one |
+| `run` | the run the interventions row is on, or `send-back`'s `RUN` |
+
+```
+$ holo requeue HOLO-133 "rerun" --json -p holophyte
+{"action": "requeue", "ok": true, "detail": "HOLO-133 requeued after run 941", "recorded": 1704, "ticket": "HOLO-133", "run": 941}
+```
+
+`--json` changes the output, never the exit code below: a usage error is
+still exit 2, its result `ok: false` with the error line as `detail`.
+
+Five reads are no `factory.py` mode: each calls, in process, the view
+function the [serve daemon](http.md) answers its route with, so the command
+and the route agree. Each opens the store read-only and writes nothing.
+`--json` prints the route's body as the daemon would send it; without it,
+each prints a compact listing, one line per run, item, column entry, file,
+ledger entry or turn. The view's status is the exit: 200 is 0, 400 is 2,
+and 404, 503 or any other is 1, with the body's `error` on stderr. The
+project is found as above; `attention` with none is the host form, the host
+daemon's root `/attention` built from `host.toml` with no daemon running.
+
+| Command | Aliases | Route whose body `--json` prints |
+| --- | --- | --- |
+| `holo runs [--limit N] [--json]` | | `GET /runs[?limit=N]` |
+| `holo run N [--json]` | `holo run show N` | `GET /runs/N` |
+| `holo run N --files\|--ledger\|--turns [--json]` | `holo run show N` | `GET /runs/N/files`, `/runs/N/ledger`, `/runs/N/turns` |
+| `holo attention [--json]` | | `GET /attention`, or the host daemon's root `GET /attention` |
+| `holo board [--json]` | | `GET /board` |
+| `holo ticket KEY [--json]` | | `GET /tickets/KEY` |
 
 `HOLOPHYTE_HOME/client.toml` is the client config every `holo` command reads
 first; a key it does not hold below, or a file TOML cannot read, exits 2
@@ -160,8 +205,8 @@ whose output it prints.
 | Code | Meaning |
 | --- | --- |
 | 0 | done, or the board was empty |
-| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, babysitter, re-point, pause, resume, abort, close-out, hold or hold release, a refused `project` command, a stale revision or refused move or cancel |
-| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included; `holo`: no project found, a name `host.toml` does not register, or a refused `client.toml` |
+| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, babysitter, re-point, pause, resume, abort, close-out, hold or hold release, a refused `project` command, a stale revision or refused move or cancel; a `holo` read answered 404, 503 or any status but 200 and 400 |
+| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included; `holo`: no project found, a name `host.toml` does not register, or a refused `client.toml`; a `holo` read answered 400 |
 
 ## Output prefix
 
