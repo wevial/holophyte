@@ -398,6 +398,28 @@ def narrative_events(conn, run_id, detail_kinds=()):
 
 
 @dataclass(frozen=True)
+class RunEvent:
+    id: int
+    runId: int
+    ticket: str | None
+    at: int
+    kind: str
+    summary: str
+
+
+def narrative_events_after(conn, after_id, since):
+    rows = conn.execute(
+        "SELECT runEvents.id, runEvents.runId, tickets.linearIdentifier,"
+        " runEvents.at, runEvents.kind, runEvents.summary"
+        " FROM runEvents JOIN runs ON runs.id = runEvents.runId"
+        " LEFT JOIN tickets ON tickets.id = runs.ticketId"
+        " WHERE runEvents.id > ? AND runEvents.at >= ?"
+        " AND runEvents.level = 'narrative' ORDER BY runEvents.id",
+        (after_id, since)).fetchall()
+    return [RunEvent(*row) for row in rows]
+
+
+@dataclass(frozen=True)
 class LedgerEntry:
     id: int
     runId: int
@@ -458,17 +480,20 @@ class LedgerWindowEntry:
     waitedMs: int | None = None
 
 
+_LAUNCH_BACKOFF_SHOWN = (
+    "NOT (ledger.kind = 'intervention' AND"
+    " (ledger.text LIKE 'supervisor launch_loop:%' OR"
+    " ledger.text LIKE 'supervisor launch_backoff:%') AND EXISTS"
+    " (SELECT 1 FROM projects p WHERE p.id = tickets.projectId"
+    " AND p.launchBackoffReason IS NOT NULL"
+    " AND ledger.at >= json_extract(p.launchBackoffReason, '$.since')))")
+
+
 def ledger_since(conn, since, kind=None, ticket=None, limit=200,
                  hide_launch_backoff=False):
     where = ["ledger.at >= ?"]
     if hide_launch_backoff:
-        where.append(
-            "NOT (ledger.kind = 'intervention' AND"
-            " (ledger.text LIKE 'supervisor launch_loop:%' OR"
-            " ledger.text LIKE 'supervisor launch_backoff:%') AND EXISTS"
-            " (SELECT 1 FROM projects p WHERE p.id = tickets.projectId"
-            " AND p.launchBackoffReason IS NOT NULL"
-            " AND ledger.at >= json_extract(p.launchBackoffReason, '$.since')))")
+        where.append(_LAUNCH_BACKOFF_SHOWN)
     args = [since]
     if kind is not None:
         where.append("ledger.kind = ?")
@@ -483,6 +508,17 @@ def ledger_since(conn, since, kind=None, ticket=None, limit=200,
         " FROM ledger JOIN tickets ON tickets.id = ledger.ticketId"
         f" WHERE {' AND '.join(where)} ORDER BY ledger.at DESC, ledger.id DESC"
         " LIMIT ?", args).fetchall()
+    return [_ledger_entry(LedgerWindowEntry, row, ticket=row[2])
+            for row in rows]
+
+
+def ledger_after(conn, after_id, since, limit=200):
+    rows = conn.execute(
+        "SELECT ledger.id, ledger.runId, tickets.linearIdentifier, ledger.at,"
+        " ledger.kind, ledger.text, ledger.source," + _LEDGER_MARKS +
+        " FROM ledger JOIN tickets ON tickets.id = ledger.ticketId"
+        " WHERE ledger.id > ? AND ledger.at >= ? AND " + _LAUNCH_BACKOFF_SHOWN +
+        " ORDER BY ledger.id LIMIT ?", (after_id, since, limit)).fetchall()
     return [_ledger_entry(LedgerWindowEntry, row, ticket=row[2])
             for row in rows]
 

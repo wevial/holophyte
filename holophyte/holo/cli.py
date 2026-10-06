@@ -5,6 +5,7 @@ from importlib import metadata
 
 from holophyte.holo.grammar import (
     COMPLETION,
+    FOLLOW,
     HELPER,
     READS,
     add_commands,
@@ -104,6 +105,39 @@ def project(argv, host, config):
     return cli(argv)
 
 
+def status(args, target, zone_name):
+    from holophyte.holo.status_page import show, watch
+    if args.watch is None:
+        return show(target, zone_name)
+    from holophyte.holo.follow import every_seconds
+    return watch(every_seconds(args.watch),
+                 lambda out, colour: show(target, zone_name, out, colour),
+                 zone_name)
+
+
+def local(args, default, zone_name):
+    if getattr(args, "foreground", False):
+        from holophyte.holo.units import foreground
+        return foreground(args, project_argv(args, default))
+    if args.command.records is not None:
+        from holophyte.holo.results import run_write
+        return run_write(args, lambda: project_argv(args, default))
+    target = project_argv(args, default)
+    if args.command is FOLLOW:
+        from holophyte.holo.follow import follow
+        return follow(args, target[0], zone_name)
+    if args.command.mode == "--status" and not args.json:
+        return status(args, target, zone_name)
+    if args.command.mode == "--report":
+        from holophyte.holo.report_page import show
+        return show(args, target[0], zone_name)
+    if args.command in READS:
+        from holophyte.holo.reads import read
+        return read(args, target[0] if target else None, zone_name)
+    from holophyte.cli.entry import _legacy_cli
+    return _legacy_cli(target + factory_argv(args))
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == [HELPER]:
@@ -130,26 +164,8 @@ def main(argv=None):
     if args.command is COMPLETION:
         from holophyte.holo.completion import script
         return script(args.shell)
+    from holophyte.holo.follow import check_intervals
+    check_intervals(args)
     if host is not None:
         return remote(args, argv, host, config)
-    if getattr(args, "foreground", False):
-        from holophyte.holo.units import foreground
-        return foreground(args, project_argv(args, default))
-    if args.command.records is not None:
-        from holophyte.holo.results import run_write
-        return run_write(args, lambda: project_argv(args, default))
-    return dispatch(args, project_argv(args, default), config.get(TIMEZONE))
-
-
-def dispatch(args, target, timezone):
-    if args.command.mode == "--status" and not args.json:
-        from holophyte.holo.status_page import show
-        return show(target, timezone)
-    if args.command.mode == "--report":
-        from holophyte.holo.report_page import show
-        return show(args, target[0], timezone)
-    if args.command in READS:
-        from holophyte.holo.reads import read
-        return read(args, target[0] if target else None, timezone)
-    from holophyte.cli.entry import _legacy_cli
-    return _legacy_cli(target + factory_argv(args))
+    return local(args, default, config.get(TIMEZONE))

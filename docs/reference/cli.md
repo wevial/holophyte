@@ -110,7 +110,7 @@ internal, spawned by the loop's pool.
 
 | Command | Aliases | Factory invocation |
 | --- | --- | --- |
-| `holo status [--json]` | | `--status [--json] [PROJECT]` |
+| `holo status [--json] [--watch [SECONDS]]` | | `--status [--json] [PROJECT]` |
 | `holo report [--since WINDOW] [--notes] [--json]` | | none: the window's counts, read from the store as below; `factory.py --report PROJECT` is unchanged |
 | `holo sweep [--act]` | | `--sweep [--act] PROJECT` |
 | `holo board diff` | | `--board-diff PROJECT` |
@@ -203,6 +203,41 @@ A free lock prints no line. Ages are `s` under a minute, `min` under an
 hour, then `h`. The symbols are coloured (`!` orange, `>` blue, `✓` green,
 `✗` red) only when the output is a terminal and `NO_COLOR` is unset or
 empty; the write commands' `✓`/`✗` follow the same rule.
+
+`holo status --watch [SECONDS]` draws that page again every `SECONDS`
+(default 5, any number above zero) until Ctrl-C, which exits 0. On a
+terminal each frame clears the screen first, so the page redraws in place;
+piped, each frame follows a line carrying its time, `--- 10:42:05 PDT ---`.
+`--watch` takes no `--json`.
+
+`holo follow [--since AGO] [--every SECONDS] [--json]` streams one line per
+thing that happens in the project: its runs' narrative events (a phase
+change, a re-point) and its ledger entries (a round's
+verdict, an adjudication, a merge, a failure, an intervention, a note),
+each shaped as a `GET /ledger` entry, with the store's schema migrations
+that `GET /ledger` lists among them. Each line is the local clock time, a symbol (`✓` a
+merge, `✗` a failure, `!` an intervention, `>` anything else), the ticket and
+a one-line summary, led by its kind for a ledger entry:
+
+```
+14:02:11  >  HOLO-1  working -> verifying
+14:06:40  >  HOLO-1  round: r1 approve
+14:07:02  ✓  HOLO-1  merge: merged 92ef2b0
+```
+
+It starts from now, or from `--since AGO` before it (`90s`, `30m`, `1h`,
+`2d`), polls every `--every SECONDS` (default 2), prints what each poll
+finds oldest first, and prints each event and entry once, by its store id
+(a migration by its time and versions), however many a poll finds. It never prints the
+agents' own output; that is `holo run N --turns`. Each poll also reads
+`GET /attention`: a live run whose heartbeat is older than the project's
+`heartbeat_stale_min`, or a supervisor whose beat is, prints one `✗` line
+naming it, and no other until it recovers and goes stale again, so silence
+means a quiet project, not a dead one. A line with `--json` is one JSON
+object: `stream` (`event`, `ledger` or `stall`), `at`, `run`, `ticket`,
+`kind` and `summary`, an event's or entry's `id`, and a ledger entry's other
+fields. stderr says once
+where it starts from; Ctrl-C exits 0.
 
 `holo report` reads the project's store read-only and opens with counts
 for a window, `--since`: `Nh` or `Nd` (`24h`, `7d`, `30d`), or `all`;
@@ -309,7 +344,9 @@ says `via ssh to HOST`, and a `--json` result gains `"transport": "ssh"`; a
 local one has no such key. A command with a JSON form runs with `--json` and
 is printed here by the local renderer; `report`, `sweep`, `board diff`,
 `board import`, `store import`, `story witness` and `holo project VERB` stream
-the remote output as it arrives. The project comes from `-p`,
+the remote output as it arrives. `holo follow` runs there with `--json` and each
+object is rendered here as its line arrives; `holo status --watch` asks for
+the `--status --json` object over ssh once per frame and draws it here. The project comes from `-p`,
 `HOLO_PROJECT` or `default_project` and goes over by name, never from the
 current repository, whose path is this machine's; with none named here, the
 host resolves one as it would for a local command. The remote side always

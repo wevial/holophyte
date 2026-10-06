@@ -56,6 +56,12 @@ Each module, one line:
   and the hidden `holo __complete` helper they call: candidates from the parser
   the grammar table builds, and ticket keys from `holo board --json` cached per
   project for 60 seconds.
+- `holophyte/holo/follow.py` — `holo follow`: polls the project's narrative
+  run events and ledger entries from a starting time by store id, and the
+  ledger view's schema migrations, prints
+  each new one once, oldest first, as a line or a JSON object, and one `✗`
+  line when a live run's or the supervisor's heartbeat goes stale, once
+  until it recovers.
 - `holophyte/holo/reads.py` — the `holo` reads `runs`, `run N`, `attention`,
   `board` and `ticket KEY`: each calls the daemon's view in process, prints its
   body for `--json` or a compact listing of it, and maps its status to the exit.
@@ -72,13 +78,17 @@ Each module, one line:
   read back as `recorded`, printed as JSON with `--json` or as a `✓`/`✗` line.
 - `holophyte/holo/transport.py` — a `holo` command run on `client.toml`'s
   `host` over ssh: the remote command line, the ssh call, its exit code
-  and the `via` line; `HOLO_TRANSPORT=local` keeps it local.
+  and the `via` line; `holo follow`'s JSON lines rendered as each arrives and
+  `holo status --watch`'s status object asked for each frame;
+  `HOLO_TRANSPORT=local` keeps it local.
 - `holophyte/holo/render.py` — the pieces every `holo` page shares: a clock
   time in the client's zone, a relative age, a short hash, and a symbol
   coloured only on a terminal without `NO_COLOR`.
 - `holophyte/holo/status_page.py` — `holo status` without `--json`: the
   `--status --json` object, the project or the host form, rendered as needs
-  you, running, quiet and problems sections and a sweep and build footer.
+  you, running, quiet and problems sections and a sweep and build footer;
+  with `--watch`, redrawn every interval in place on a terminal, or after a
+  separator line carrying its time when piped.
 - `holophyte/holo/report_page.py` — `holo report`: one object for a window,
   `--since`, built read-only from the ended runs, failure kinds, gap layers,
   human interventions, send-backs and consumed notes, printed with `--json` or
