@@ -60,6 +60,14 @@ class HttpReferenceTests(unittest.TestCase):
         assert_covers(self, section(self.document, "Host `GET /attention`"),
                       "host-attention.json")
 
+    def test_mcp_section_names_every_key_of_the_pinned_tool_list(self):
+        text = section(self.document, "`POST /mcp`")
+        assert_covers(self, text, "mcp-tools-list.json")
+        dropped = text.replace("`destructiveHint`", "").replace(
+            '"destructiveHint"', "")
+        with self.assertRaisesRegex(AssertionError, "destructiveHint"):
+            assert_covers(self, dropped, "mcp-tools-list.json")
+
     def test_dropping_a_documented_key_names_it(self):
         text = section(self.document, "`GET /status`")
         dropped = text.replace("`stop_requested`", "").replace(

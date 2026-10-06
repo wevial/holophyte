@@ -51,6 +51,7 @@ flowchart LR
 | Surface | Bound to | Reachable by | Authentication |
 | --- | --- | --- | --- |
 | host daemon | the host's private-network address, port 7710, held by `holophyte-serve.socket` | every member of that network | one bearer token per host, `host.toml`'s `[serve] machine_token_file`; `/`, its files and `/peers` open |
+| MCP server (`holo mcp --http`, `holophyte-mcp.service`) | `127.0.0.1` by default, or the host's private-network address; port 7711, beside the daemon's 7710 | the host on loopback; every member of that network when bound there | the host's one machine token, `host.toml`'s `[serve] machine_token_file`, on every bind including loopback; no open routes |
 | ssh | the host | the private network (and whatever else the host allows) | keys |
 | loops, host sweep, stores | local processes and files | the host only | filesystem |
 | Linear, Codex, origin | outbound only | n/a | API key, Codex login, deploy key |
@@ -67,7 +68,9 @@ umask 077 && head -c 32 /dev/urandom | base64 > ~/.holophyte/machine.token
 
 and name it in `host.toml` (`[serve] machine_token_file = "machine.token"`,
 relative to the home) before the daemon next starts; a daemon started
-without it beyond loopback fails by design. A project's own `[serve]
+without it beyond loopback fails by design. `holo mcp --http` refuses to
+start without the file on any bind, and serves its write tools only under
+`[serve] actions = true`. A project's own `[serve]
 token_file` is still accepted under that project's prefix alone, for one
 release. Still bind the private network's address rather than the
 wildcard: the token is the second boundary, not a reason to drop the

@@ -934,6 +934,82 @@ written. The cancel is the store's `cancel_ticket()`, authored `console`:
 abort (its `stopRequested` names an `abort` intervention), null when the
 ticket had none; 409 with `current` and 422 with `problems` as a move's.
 
+## `POST /mcp`
+
+The factory's MCP tools over HTTP, for an agent with no shell on the
+seat: the [Model Context Protocol](https://modelcontextprotocol.io)'s
+Streamable HTTP transport, served by `holo mcp --http [HOST:PORT]`, not by
+either daemon. It is a process of its own on the writer host, the MCP
+Python SDK's app under uvicorn, on `127.0.0.1:7711` by default or the
+address given (the host's private-network address, beside the daemon's
+7710); `deploy/holophyte-mcp.service` runs it. The daemon never imports the
+SDK, and a host without it keeps its daemon.
+
+```
+POST /mcp
+Authorization: Bearer MACHINE_TOKEN
+Content-Type: application/json
+Accept: application/json, text/event-stream
+
+{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+```
+
+```json
+{"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "requeue",
+ "description": "put a failed run's ticket back in the queue (holo requeue KEY --json)",
+ "inputSchema": {"type": "object", "properties": {"project": {"type": "string",
+ "minLength": 1, "description": "..."}, "ticket": {}, "note": {}, "author": {}},
+ "required": ["ticket", "note", "author"], "additionalProperties": false},
+ "annotations": {"readOnlyHint": false, "destructiveHint": false}}]}}
+```
+
+Its tools are the ones `holo mcp` serves on stdio ([`holo mcp`](cli.md#holo)),
+with the same schemas, annotations and results, and it adds none. Each
+reply is a JSON-RPC 2.0 object, `jsonrpc` and the request's `id` beside
+`result` or `error`. A tool list's `result` holds `tools`, each with its
+`name`, `description`, `inputSchema` and `annotations`. An `inputSchema` is
+a JSON Schema object: `type`, `properties` (each a `type`, `minLength` or
+`minimum`, an `enum` and its `default`, and a `description`), `required`
+and `additionalProperties`, false. Every tool takes an optional `project`,
+a `[serve]` name or a repository path; `report` also takes `since`, `runs`
+`limit`, `run` the `run` id and its `view`, `ticket` the `key`, and the
+writes their own `ticket`, `run` or `body` and the required `note` and
+`author`. `annotations` holds `readOnlyHint`, true for a read, and
+`destructiveHint`, false for every tool served today, so a client that
+asks a person before a destructive write asks here as on stdio. A tool
+call's `result` holds `content`, a list of one object whose `type` is
+`text` and whose `text` is the answer; `structuredContent`, the command's
+JSON object, when it printed one; and `isError`, true for a refusal. An
+unknown tool is the reply's `error`, with `code` -32602 and a `message`
+naming the tools.
+
+Each call runs its `holo` command on the host (`HOLO_TRANSPORT=local`) as
+a subprocess, as on stdio, and a write records its author as `AUTHOR via
+MCP`. The five write tools are listed and callable only when
+`host.toml`'s `[serve] actions` is true; otherwise only the reads are
+listed and a write is an unknown tool.
+
+The transport is stateless and answers in JSON: a request gets one JSON
+reply, a notification 202 with no body, and no `Mcp-Session-Id` is
+issued; an unsupported `MCP-Protocol-Version` is 400. No event stream is
+offered. Every request, on every bind, loopback included, needs
+`host.toml`'s `[serve] machine_token_file` as its bearer, compared in
+constant time; a host registry without that key is a startup error naming
+it, and nothing listens. A request carrying an `Origin` header is a
+browser's and is refused, the DNS-rebinding defence the transport asks
+of a server; an MCP client sends none. These answers come before anything
+runs:
+
+| Status | When |
+| --- | --- |
+| 401 | no `Authorization: Bearer` header, another scheme or another value; body `{}` |
+| 403 | the right bearer and an `Origin` header; body carries `error` |
+| 405 | the right bearer and any method but `POST`, `GET` included; `Allow: POST`, body carries `error` |
+
+Like the daemon, it follows the code: every `CODE_CHECK_SEC` (15 s) it
+compares the factory checkout's `HEAD` with the one it started from and
+exits 0 on a move, and its unit starts the new code.
+
 ## Static files
 
 `GET /` answers `console/dist/index.html` and `GET /PATH` answers

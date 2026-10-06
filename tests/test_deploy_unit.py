@@ -264,6 +264,23 @@ class HostUnitCommandTests(unittest.TestCase):
                       done.stderr + done.stdout)
 
 
+class McpUnitTests(unittest.TestCase):
+    MCP = "holophyte-mcp.service"
+
+    def test_runs_the_http_form_restarting_on_a_clean_exit_outside_the_target(self):
+        unit = host_unit(self.MCP)
+        service = unit["Service"]
+        self.assertEqual(shlex.split(service["ExecStart"]),
+                         ["/usr/bin/python3", "-m", "holophyte.holo", "mcp",
+                          "--http"])
+        self.assertIn("WorkingDirectory", service)
+        # A `HEAD` move exits 0, which only `always` restarts.
+        self.assertEqual(service["Restart"], "always")
+        self.assertNotIn(self.MCP, words(host_unit(TARGET)["Unit"]["Wants"]))
+        self.assertNotIn(TARGET, words(unit["Unit"].get("PartOf", "")))
+        self.assertEqual(unit["Install"]["WantedBy"], "default.target")
+
+
 @unittest.skipUnless(sys.platform.startswith("linux")
                      and shutil.which("systemd-analyze"),
                      "systemd-analyze --user verify needs Linux with systemd;"

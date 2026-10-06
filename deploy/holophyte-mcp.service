@@ -1,0 +1,26 @@
+[Unit]
+Description=Holophyte MCP server (holo mcp --http) beside the host daemon
+After=network-online.target
+# Not PartOf holophyte.target, and no target wants it: it needs the `mcp`
+# package, so it is enabled by hand once `/usr/bin/python3 -c 'import mcp'`
+# succeeds, and a host without the SDK never loops on a failing unit.
+
+[Service]
+Type=simple
+# Plain `--http` binds 127.0.0.1:7711. To serve beyond loopback, append the
+# host's private-network address: `--http HOST:7711`. Every bind needs
+# host.toml's [serve] machine_token_file; writes need [serve] actions = true.
+# On a factory HEAD move it exits 0, so Restart=always starts the new code.
+# WorkingDirectory is the factory checkout; adjust it to your layout.
+WorkingDirectory=%h/srv/dev/holophyte
+ExecStart=/usr/bin/python3 -m holophyte.holo mcp --http
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=%h
+
+[Install]
+WantedBy=default.target

@@ -359,6 +359,9 @@ is a result with `isError: true` carrying its output and its message, its
 JSON object, such as `{"error": "no such run", "run": 999}`, also as
 `structuredContent`; so are arguments the tool's input schema refuses. An unknown tool is a
 JSON-RPC error, -32602. stdout carries only protocol messages, and closing stdin exits 0.
+`holo mcp --http [HOST:PORT]` serves the same tools over HTTP at `POST
+/mcp`, on the writer host behind its machine token, the writes only under
+`host.toml`'s `[serve] actions`: [`POST /mcp`](http.md#post-mcp).
 `holo mcp` alone needs the MCP Python SDK (`mcp` in `requirements.txt`);
 without it, it exits 1 naming the package and
 `python3 -m pip install --user -r requirements.txt`, and every other

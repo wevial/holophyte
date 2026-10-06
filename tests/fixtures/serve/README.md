@@ -15,3 +15,7 @@ root become `/root`, a state directory's hash `HASH`, revisions
 `run-merge-ready.json` pins `GET /runs/N/merge` for a run parked on an
 approved, green, quiet pull request, built in `tests/test_serve_merge.py`:
 the branch head's sha becomes `HEAD_SHA`.
+
+`mcp-tools-list.json` pins `holo mcp --http`'s reply to `tools/list` with
+`[serve] actions` true, reads and writes, as served on loopback; nothing in
+it depends on the host.

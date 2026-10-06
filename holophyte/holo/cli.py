@@ -165,6 +165,9 @@ def main(argv=None):
     if args.command is COMPLETION:
         from holophyte.holo.completion import script
         return script(args.shell)
+    if args.command is MCP and args.http is not None:
+        from holophyte.holo.mcp_http import serve_http
+        return serve_http(package_version(), args.http)
     if args.command is MCP:
         from holophyte.holo.mcp_server import serve
         return serve(package_version())

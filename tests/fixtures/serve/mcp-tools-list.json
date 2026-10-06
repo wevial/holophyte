@@ -1,0 +1,411 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "what the factory is doing now: one project, or the host when none is named (holo status --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            }
+          },
+          "required": [],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "status"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "what waits on the operator: one project's, or the host's when none is named (holo attention --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            }
+          },
+          "required": [],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "attention"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "a window's counts, runs and notes (holo report --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "since": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the window: Nh, Nd or all; default 7d"
+            }
+          },
+          "required": [],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "report"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "recent ended runs (holo runs --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "at most this many runs"
+            }
+          },
+          "required": [],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "runs"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "one run's detail, files, ledger or turns (holo run N --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "run": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the run's id"
+            },
+            "view": {
+              "enum": [
+                "detail",
+                "files",
+                "ledger",
+                "turns"
+              ],
+              "default": "detail",
+              "description": "the run's detail, or its files, ledger or agent turns"
+            }
+          },
+          "required": [
+            "run"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "run"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "the board's columns (holo board --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            }
+          },
+          "required": [],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "board"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "one ticket's detail (holo ticket KEY --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the ticket's key, such as HOLO-1"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "ticket"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "where the store's ready queue differs from the board's, as text (holo board diff)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            }
+          },
+          "required": [],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "board_diff"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
+        "description": "what an acting sweep would do, as text; it writes only sightings (holo sweep)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            }
+          },
+          "required": [],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "sweep_preview"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
+        "description": "file a ticket body to Backlog, the note and author its first board note (holo file - --backlog --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the ticket's markdown, laid out as ticketTemplate.md"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "body",
+            "note",
+            "author"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "file_ticket"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
+        "description": "send a run parked on its pull request back to the babysitter, the note its instruction (holo send-back RUN --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "run": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the run's id"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "run",
+            "note",
+            "author"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "send_back"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
+        "description": "send a ticket's run parked on its pull request back to the babysitter, the note its instruction (holo babysit KEY --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "ticket": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the ticket's key, such as HOLO-1"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "ticket",
+            "note",
+            "author"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "babysit"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
+        "description": "put a failed run's ticket back in the queue (holo requeue KEY --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "ticket": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the ticket's key, such as HOLO-1"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "ticket",
+            "note",
+            "author"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "requeue"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
+        "description": "stop the project admitting new tickets (holo hold --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "note",
+            "author"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "hold"
+      }
+    ]
+  }
+}

@@ -36,17 +36,17 @@ def refusal(tool, arguments):
     return unsigned_road(tool)
 
 
-def build(version):
+def build(version, tools=TOOLS):
     import anyio
     import mcp_types as types
     from mcp.server import Server
     from mcp.shared.exceptions import MCPError
 
-    named = {tool.name: tool for tool in TOOLS}
+    named = {tool.name: tool for tool in tools}
 
     async def list_tools(ctx, params):
         return types.ListToolsResult(
-            tools=[described(types, tool) for tool in TOOLS])
+            tools=[described(types, tool) for tool in tools])
 
     async def call_tool(ctx, params):
         tool = named.get(params.name)
@@ -68,15 +68,19 @@ def build(version):
                   on_call_tool=call_tool)
 
 
+def sdk_missing(missing):
+    print(f"[holo2] holo mcp needs the MCP Python SDK, the package"
+          f" {PACKAGE!r}, which does not import ({missing}); install it"
+          f" with {INSTALL}", file=sys.stderr)
+    return 1
+
+
 def serve(version):
     try:
         import anyio
         from mcp.server.stdio import stdio_server
     except ImportError as missing:
-        print(f"[holo2] holo mcp needs the MCP Python SDK, the package"
-              f" {PACKAGE!r}, which does not import ({missing}); install it"
-              f" with {INSTALL}", file=sys.stderr)
-        return 1
+        return sdk_missing(missing)
     server = build(version)
 
     async def run():
