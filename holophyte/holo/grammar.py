@@ -140,6 +140,8 @@ def _add_leaf(commands, word, command, help_text):
                               metavar=flag.metavar, nargs=nargs)
     leaf.add_argument("-p", "--project", metavar="NAME|PATH",
                       help="a registered [serve] name or a repository path")
+    leaf.add_argument("--verbose", action="store_true",
+                      help="print the project resolved and the source that named it")
     leaf.set_defaults(command=command, leaf=leaf)
 
 

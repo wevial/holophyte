@@ -83,12 +83,25 @@ any other mode without a project is a usage error.
 
 ## holo
 
-`holo COMMAND [ARGS] [-p NAME|PATH]` is the short form of the modes above.
-Each command stands for one `factory.py` invocation and runs through the
-same parser, so its refusals, messages and exit codes are the factory's
-own. `-p` names the project by its `[serve] name` in `host.toml`, or by
-its repository path; with no `-p`, `status`, `serve` and `supervise` are
-the [host forms](#host-forms). `NOTE` is free text, the last argument;
+`holo COMMAND [ARGS] [-p NAME|PATH] [--verbose]` is the short form of the
+modes above. Each command stands for one `factory.py` invocation and runs
+through the same parser, so its refusals, messages and exit codes are the
+factory's own. A command's project is the first of these that answers:
+
+1. `-p NAME|PATH` on the command line;
+2. `HOLO_PROJECT` in the environment, read as `-p` is;
+3. the current repository: the top level of the git work tree the shell is
+   in (`git rev-parse --show-toplevel`, so a subdirectory counts), when
+   `host.toml` registers that path; any other directory does not answer;
+4. `default_project` in `HOLOPHYTE_HOME/client.toml`, read as `-p` is.
+
+A value holding a path separator, or naming an existing directory, is a
+repository path; any other value is a `[serve] name` in `host.toml`, and a
+name it does not register exits 2 naming the registered names rather than
+asking the next source. With no source answering, `status`, `serve` and
+`supervise` are the [host forms](#host-forms), and any other command exits 2
+naming all four sources. `--verbose` prints the project and the source that
+named it to stderr. `NOTE` is free text, the last argument;
 `-n/--note NOTE` is the same. `holo project VERB` is `factory.py project
 VERB` with its arguments unchanged. `--worker` has no command: it is
 internal, spawned by the loop's pool, and the loop itself is not a `holo`
@@ -124,6 +137,14 @@ command yet.
 | `holo supervise [--once]` | | `--supervise [--once] [PROJECT]` |
 | `holo serve [ADDR]` | | `--serve [ADDR] [PROJECT]` |
 
+`HOLOPHYTE_HOME/client.toml` is the client config every `holo` command reads
+first; a key it does not hold below, or a file TOML cannot read, exits 2
+naming the file.
+
+| Key | Purpose |
+| --- | --- |
+| `default_project` | the project, a `[serve] name` or a repository path, when `-p`, `HOLO_PROJECT` and the current repository give none |
+
 ## Startup checks
 
 Every mode validates every `config.toml` table it can see and refuses an
@@ -140,7 +161,7 @@ whose output it prints.
 | --- | --- |
 | 0 | done, or the board was empty |
 | 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, babysitter, re-point, pause, resume, abort, close-out, hold or hold release, a refused `project` command, a stale revision or refused move or cancel |
-| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included |
+| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included; `holo`: no project found, a name `host.toml` does not register, or a refused `client.toml` |
 
 ## Output prefix
 
@@ -154,6 +175,7 @@ after the store.
 | Variable | Read by | Purpose |
 | --- | --- | --- |
 | `HOLOPHYTE_HOME` | `Project` | the state root, default `~/.holophyte`; tests point it at a temp dir |
+| `HOLO_PROJECT` | `holo` | the project, a `[serve] name` or a repository path, when no `-p` is given |
 | `LINEAR_API_KEY` | `linear_provider` | the board's API key; env or `.env` beside the module |
 | `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the project units (`holophyte-serve@`, `holophyte-supervise@`), and `HOLOPHYTE_TARGET` alone the loop unit | one instance's project, bind address, port |
 | `LISTEN_FDS`, `LISTEN_PID` | `--serve` | set by the service manager's socket unit: with `LISTEN_FDS=1` and `LISTEN_PID` this process's pid, the daemon serves on fd 3 instead of binding, and exits 0 on a factory `HEAD` move for the socket to start the new code |
