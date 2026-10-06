@@ -3,7 +3,14 @@ import sys
 import tomllib
 from importlib import metadata
 
-from holophyte.holo.grammar import READS, add_commands, factory_argv, parse
+from holophyte.holo.grammar import (
+    COMPLETION,
+    HELPER,
+    READS,
+    add_commands,
+    factory_argv,
+    parse,
+)
 from holophyte.host.startup import build_sha, factory_checkout
 
 DISTRIBUTION = "holophyte"
@@ -68,6 +75,9 @@ def project_argv(args, default):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == [HELPER]:
+        from holophyte.holo.completion import complete
+        return complete(argv[1:])
     from holophyte.holo.resolve import DEFAULT, TIMEZONE, Refused, client_config
     try:
         client = client_config()
@@ -92,6 +102,9 @@ def main(argv=None):
     if args.words is None:
         parser.print_help()
         return 0
+    if args.command is COMPLETION:
+        from holophyte.holo.completion import script
+        return script(args.shell)
     if getattr(args, "foreground", False):
         from holophyte.holo.units import foreground
         return foreground(args, project_argv(args, default))

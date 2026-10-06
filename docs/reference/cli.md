@@ -235,6 +235,27 @@ daemon's root `/attention` built from `host.toml` with no daemon running.
 | `Files` | each file the run touched with its added and removed counts, `store/board.py +1 −1`, or the files route's error |
 | `Next` | the commands the run's phase and outcome call for: parked awaiting merge approval, `holo approve KEY`, and with a pull request `holo send-back N "note"` and `holo babysit KEY`; failed, `holo requeue KEY "note"`; then for every run `holo run N --ledger` |
 
+`holo completion bash|zsh|fish` prints a completion script for that shell.
+It completes the commands, their aliases and flags, the choices the factory's
+parser knows (`ready|backlog`, the gap layers, the priorities) and, where a
+command takes a `KEY`, the keys of the project's open tickets. Install it once:
+
+```
+holo completion bash > ~/.holo-completion.bash   # and in ~/.bashrc: source ~/.holo-completion.bash
+holo completion zsh > "${fpath[1]}/_holo"        # a directory on $fpath, before compinit runs
+holo completion fish > ~/.config/fish/completions/holo.fish
+```
+
+bash 3.2, the macOS one, does not reliably `source <(...)`, so write the
+script to a file and `source` the file. Each script asks the hidden
+`holo __complete WORDS...` for its candidates, one per line, so a new command
+completes without a new script. The keys come from `holo board --json` for the
+project the words name, found as above, and are cached in
+`HOLOPHYTE_HOME/completion/`, one file per project, for 60 seconds from the
+file's mtime: a ticket filed within that minute completes once it has passed.
+With no project, or a board read that fails, no key completes and nothing is
+printed.
+
 `HOLOPHYTE_HOME/client.toml` is the client config every `holo` command reads
 first; a key it does not hold below, or a file TOML cannot read, exits 2
 naming the file.
