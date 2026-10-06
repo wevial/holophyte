@@ -22,6 +22,7 @@ FORMS = "Nh, Nd or all, such as 24h, 7d, 30d or all"
 SHIPPED = ("merged", "abandoned", "failed")
 OPEN_LAYER = "none"
 SEND_BACK = "operator_note"
+FAILURE_NAMES = {"review_route": "review"}
 MARKS = {"merged": "✓", "failed": "✗"}
 LABEL = 10
 
@@ -75,10 +76,13 @@ def shipped(rows):
 
 
 def failures(conn, start):
-    return dict(conn.execute(
-        "SELECT COALESCE(failureKind, 'unclassified'), COUNT(*) FROM runs"
-        " WHERE outcome = 'failed' AND endedAt >= ?"
-        " GROUP BY 1 ORDER BY COUNT(*) DESC, 1", (start,)))
+    counts = {}
+    for kind, count in conn.execute(
+            "SELECT COALESCE(failureKind, 'unclassified'), COUNT(*) FROM runs"
+            " WHERE outcome = 'failed' AND endedAt >= ? GROUP BY 1", (start,)):
+        name = FAILURE_NAMES.get(kind, kind)
+        counts[name] = counts.get(name, 0) + count
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 def gaps(conn):
@@ -200,14 +204,13 @@ def note_lines(body, tz):
 
 
 def page(body, tz=None, colour=False, notes=False):
-    name = Path(body["project"]).name
-    lines = [f"{name} · {window_words(body['window']['since'])}", ""]
-    lines += [f"{label.ljust(LABEL)}{text}" for label, text in count_lines(body)]
+    lines = [f"{label.ljust(LABEL)}{text}" for label, text in count_lines(body)]
     if body["runs"]:
         lines += [""] + run_lines(body, colour)
     if notes:
         lines += [""] + note_lines(body, tz)
-    return lines
+    name = Path(body["project"]).name
+    return lines + ["", f"{name} · {window_words(body['window']['since'])}"]
 
 
 def show(args, target, zone_name, out=None):

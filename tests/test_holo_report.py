@@ -108,7 +108,7 @@ class CountTests(WindowReportCase):
         self.assertEqual(body["shipped"], {
             "merged": 3, "abandoned": 1, "failed": 2,
             "median_min": 16, "median_estimate_min": 30})
-        self.assertEqual(body["failures"], {"verify": 1, "review_route": 1})
+        self.assertEqual(body["failures"], {"verify": 1, "review": 1})
         self.assertNotIn(self.old_run, [row["run"] for row in body["runs"]])
 
     def test_since_all_counts_the_eight_day_old_merge(self):
@@ -152,15 +152,15 @@ class NoteTests(WindowReportCase):
         super().setUp()
         self.send_back_both_notes()
 
-    def test_page_opens_with_its_header_then_the_counts_and_no_note_text(self):
+    def test_page_opens_with_the_counts_and_shows_no_note_text(self):
         out = self.read()
         self.assertNotIn(FIRST_NOTE, out)
         self.assertNotIn(SECOND_NOTE, out)
         lines = [line for line in out.splitlines() if line.strip()]
-        self.assertEqual(lines[0], "repo · last 7 days")
-        self.assertEqual([line.split()[0] for line in lines[1:5]],
+        self.assertEqual([line.split()[0] for line in lines[:4]],
                          list(COUNT_LABELS))
-        self.assertEqual(lines[5], "Runs (6)")
+        self.assertEqual(lines[4], "Runs (6)")
+        self.assertEqual(lines[-1], "repo · last 7 days")
 
     def test_notes_flag_lists_both_notes_after_the_counts_newest_first(self):
         lines = self.read("--notes").splitlines()

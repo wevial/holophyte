@@ -206,19 +206,20 @@ empty; the write commands' `✓`/`✗` follow the same rule.
 
 `holo report` reads the project's store read-only and opens with counts
 for a window, `--since`: `Nh` or `Nd` (`24h`, `7d`, `30d`), or `all`;
-default `7d`. Any other form exits 2 naming the accepted ones. A run is in
-the window when it ended in it; a live run is in no count. A project with
-no store exits 1. Its lines carry no `[holo2]` prefix:
+default `7d`. Any other form exits 2 naming the accepted ones. The four
+count lines come first. A run is in the window when it ended in it; a live
+run is in no count. A project with no store exits 1. Its lines carry no
+`[holo2]` prefix:
 
 | Section | Lines |
 | --- | --- |
-| header | the project's directory and the window, `holophyte · last 7 days` |
 | `Shipped` | the merged, abandoned and failed runs, and the median minutes of work per merged run with the median estimate beside it, `3 merged · 1 abandoned · 2 failed · median 16 min per ticket (estimate 30)`; with none of the three, `nothing shipped in the last 7 days`, or `in the store's history` for `all` |
-| `Failures` | the failed runs by failure kind, most first, `verify 3 · infra 1`, or `none` |
+| `Failures` | the failed runs by failure kind, most first, `verify 3 · infra 1`, or `none`; the stored kind `review_route` is shown as `review` |
 | `Gaps` | the gaps whose latest layer is `none`, as open, then each other layer holding a gap, over the whole store as `factory.py --report`'s `gap layers:` line counts them |
 | `Hands-on` | the human interventions by action, `3 interventions (requeue 2 · approve 1)`, and the send-backs, the human `operator_note` interventions, which the interventions count leaves out |
 | `Runs (N)` | the window's ended runs in end order: `✓` merged, `✗` failed, `·` otherwise, the ticket, the outcome, the work against the estimate in minutes, the review rounds and how long ago it ended |
 | `Notes (N)` | with `--notes` only: each send-back note consumed in the window, newest first, with the time it was consumed, the ticket, run and round, and its author |
+| footer | the project's directory and the window, `holophyte · last 7 days` |
 
 `holo report --json` prints the object the page renders from, the notes
 included with or without `--notes`:
@@ -228,7 +229,7 @@ included with or without `--notes`:
 | `project` | the repository path |
 | `window` | `since` as given, `from_ms` the window's start (`null` for `all`) and `now_ms` |
 | `shipped` | `merged`, `abandoned`, `failed`, `median_min` and `median_estimate_min` (`null` with no merged run measured) |
-| `failures` | failure kind to count |
+| `failures` | failure kind to count, `review_route` named `review` |
 | `gaps` | `open`, `layers` (each layer to its count) and `found_by` (each finder to its count) |
 | `hands_on` | `interventions` and `by_action` (action to count), both without `operator_note`, and `send_backs`, its count |
 | `runs` | the window's runs in end order, each with `run`, `ticket`, `actual_min`, `agent_min`, `verify_min`, `estimate_min`, `ratio`, `rounds`, `outcome`, `host`, `ended_ms`, `merge_sha` and `wall_min`, as a `GET /runs` row has them |
