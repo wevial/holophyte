@@ -93,6 +93,8 @@ def argv(tool, arguments):
         value = arguments.get(field.name)
         if value is None:
             continue
+        if field.schema.get("type") == "integer":
+            value = int(value)
         if field.words is None:
             positionals.append(str(value))
         else:

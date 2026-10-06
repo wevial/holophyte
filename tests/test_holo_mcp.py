@@ -158,6 +158,24 @@ class SessionTests(McpCase):
         self.assertEqual(json.loads(result.content[0].text),
                          result.structured_content)
 
+    def test_a_whole_number_sent_as_a_float_runs_as_the_integer(self):
+        async def use(client, _):
+            return (await client.call_tool("runs", {"project": "alpha",
+                                                    "limit": 1.0}),
+                    await client.call_tool("run", {"project": "alpha",
+                                                   "run": 1.0,
+                                                   "view": "ledger"}))
+        runs, ledger = self.session(use)
+        oracles = (self.holo("runs", "--limit", "1", "--json", "-p", "alpha"),
+                   self.holo("run", "1", "--ledger", "--json", "-p", "alpha"))
+
+        for result, oracle in zip((runs, ledger), oracles):
+            with self.subTest(args=oracle.args[3:]):
+                self.assertEqual(oracle.returncode, 0, oracle.stderr)
+                self.assertIs(result.is_error, False, result.content)
+                self.assertEqual(result.structured_content,
+                                 json.loads(oracle.stdout))
+
     def test_a_run_the_store_lacks_is_an_error_result_with_its_message(self):
         result = self.call("run", {"project": "alpha", "run": 999})
         oracle = self.holo("run", "999", "--json", "-p", "alpha")
