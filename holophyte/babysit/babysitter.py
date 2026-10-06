@@ -256,7 +256,9 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
     check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
-    for pass_no in range(1, merge.pr_rounds + 1):
+    pass_no = refreshes = 0
+    while pass_no < merge.pr_rounds and refreshes < merge.pr_main_refreshes:
+        pass_no += 1
         stop_if_requested(conn, run_id, "merge_gate")
         retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
         state = _settled_or_park(
@@ -279,6 +281,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                 project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
                 pull, budget_min, reviewed=reviewed, previous=state, refresh=refresh,
                 verify_cmd=verify_cmd, contracts=contracts, ticket=ticket)
+            pass_no, refreshes = pass_no - 1, refreshes + 1
             continue
         rnd = _next_round(conn, run_id)
         if state.threads:
@@ -340,6 +343,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                     beat_s, pull, budget_min, reviewed=reviewed,
                     refusal=refused, previous=state, refresh=refresh,
                     verify_cmd=verify_cmd, contracts=contracts, ticket=ticket)
+                pass_no, refreshes = pass_no - 1, refreshes + 1
                 continue
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     _ready(released, sha), (), reviewed=reviewed)
@@ -350,9 +354,12 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
     sha, reviewed = retrigger.sha, retrigger.reviewed
     _pr_terminal(project, conn, run_id, provider, task_id, branch, sha,
                  pull, state, reviewed)
+    cap = (f"pr_main_refreshes = {merge.pr_main_refreshes} main refreshes made"
+           if refreshes == merge.pr_main_refreshes
+           else f"pr_rounds = {merge.pr_rounds} passes made")
     _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                f"[merge] pr_rounds = {merge.pr_rounds} passes made; the"
-                " babysitter stops here", state.threads, reviewed=reviewed)
+                f"[merge] {cap}; the babysitter stops here", state.threads,
+                reviewed=reviewed)
 
 
 def _fixes_reviewed(merge):
