@@ -24,6 +24,21 @@ def checkout_files():
     return [name for name in listed.split("\0") if name and (ROOT / name).is_file()]
 
 
+def copy_checkout(copy):
+    for name in checkout_files():
+        target = copy / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, target)
+    git(copy, "init", "-q")
+    git(copy, "add", "-A")
+    git(copy, "commit", "-qm", "copy of the checkout")
+
+
+def fresh_venv(venv):
+    subprocess.run([sys.executable, "-m", "venv", venv], check=True)
+    return venv / "bin" / "python"
+
+
 def expected_line(checkout):
     with (checkout / "pyproject.toml").open("rb") as stream:
         version = tomllib.load(stream)["project"]["version"]
@@ -47,17 +62,11 @@ class EditableInstallTests(unittest.TestCase):
         cls.directory = tempfile.mkdtemp()
         cls.addClassCleanup(shutil.rmtree, cls.directory)
         cls.copy = Path(cls.directory) / "checkout"
-        for name in checkout_files():
-            target = cls.copy / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(ROOT / name, target)
-        git(cls.copy, "init", "-q")
-        git(cls.copy, "add", "-A")
-        git(cls.copy, "commit", "-qm", "copy of the checkout")
+        copy_checkout(cls.copy)
         venv = Path(cls.directory) / "venv"
-        subprocess.run([sys.executable, "-m", "venv", venv], check=True)
+        python = fresh_venv(venv)
         install = subprocess.run(
-            [venv / "bin" / "python", "-m", "pip", "install", "-q", "-e", cls.copy],
+            [python, "-m", "pip", "install", "-q", "-e", cls.copy],
             capture_output=True, text=True)
         if install.returncode != 0:
             raise AssertionError(f"pip install -e failed:\n{install.stderr}")
@@ -92,11 +101,26 @@ class EditableInstallTests(unittest.TestCase):
 
 
 class UninstalledCheckoutTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory)
+        self.copy = Path(directory) / "checkout"
+        copy_checkout(self.copy)
+        self.python = fresh_venv(Path(directory) / "venv")
+        self.env = {key: value for key, value in os.environ.items()
+                    if key != "PYTHONPATH"}
+
     def test_module_form_prints_the_checkout_version_line(self):
-        result = subprocess.run([sys.executable, "-m", "holophyte.holo", "--version"],
-                                cwd=ROOT, capture_output=True, text=True)
+        installed = subprocess.run(
+            [self.python, "-c", "from importlib import metadata; "
+             "metadata.version('holophyte')"],
+            cwd=self.copy, capture_output=True, text=True, env=self.env)
+        self.assertIn("PackageNotFoundError", installed.stderr)
+        result = subprocess.run([self.python, "-m", "holophyte.holo", "--version"],
+                                cwd=self.copy, capture_output=True, text=True,
+                                env=self.env)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), expected_line(ROOT))
+        self.assertEqual(result.stdout.strip(), expected_line(self.copy))
 
 
 class DependencyPinTests(unittest.TestCase):
