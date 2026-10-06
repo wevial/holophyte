@@ -63,6 +63,8 @@ python3 factory.py --worker /path/to/repo         # internal: one worker of the 
 python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
 holo --version                                   # the package version and the checkout's short HEAD
 holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode has a holo command
+holo status --watch [SECONDS]                    # the status page redrawn every SECONDS (default 5) until Ctrl-C
+holo follow [--since AGO] [--every SECONDS] [--json] -p NAME|PATH # one line per run event and ledger entry as it is written, and one when a heartbeat goes stale
 holo requeue KEY "note" -p NAME|PATH             # factory.py --requeue KEY --note "note" PATH; -p takes a [serve] name or a path, and without it the project is found as for status
 holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an alias of each ticket verb
 holo approve KEY ["note"] -p NAME|PATH           # each ticket verb takes the factory mode's arguments, the note last; see docs/reference/cli.md#holo

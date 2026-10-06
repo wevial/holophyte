@@ -7,6 +7,7 @@ class Flag(NamedTuple):
     name: str
     metavar: str | tuple | None = None
     emits: tuple = ()
+    const: str | None = None
 
     @property
     def dest(self):
@@ -44,12 +45,16 @@ LIMIT = Flag("--limit", "N")
 FILES = Flag("--files")
 LEDGER = Flag("--ledger")
 TURNS = Flag("--turns")
+WATCH = Flag("--watch", "SECONDS", const="5")
+SINCE = Flag("--since", "AGO")
+EVERY = Flag("--every", "SECONDS")
 
 REQUIRED, OPTIONAL = "required", "optional"
 NEGATIVE_NUMBER = re.compile(r"-[0-9]+|-[0-9]*\.[0-9]+")
 
 COMMANDS = (
-    Command(("status",), "--status", "what the factory is doing now", flags=(JSON,)),
+    Command(("status",), "--status", "what the factory is doing now",
+            flags=(JSON, WATCH)),
     Command(("report",), "--report", "the estimate-vs-actual table"),
     Command(("sweep",), "--sweep", "tripped runs; --act fails them", flags=(ACT,)),
     Command(("board", "diff"), "--board-diff",
@@ -134,6 +139,8 @@ COMPLETION = Command(("completion",), None,
                      takes=("SHELL",))
 SHELLS = ("bash", "zsh", "fish")
 HELPER = "__complete"
+FOLLOW = Command(("follow",), None, "one line per run event as it is written",
+                 flags=(JSON, SINCE, EVERY))
 
 SHOW = "show"
 SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
@@ -187,6 +194,9 @@ def _add_leaf(commands, word, command, help_text):
     for flag in command.flags:
         if flag.metavar is None:
             leaf.add_argument(flag.name, dest=flag.dest, action="store_true")
+        elif flag.const is not None:
+            leaf.add_argument(flag.name, dest=flag.dest, nargs="?",
+                              const=flag.const, metavar=flag.metavar)
         else:
             nargs = len(flag.metavar) if isinstance(flag.metavar, tuple) else None
             leaf.add_argument(flag.name, dest=flag.dest, action="append",
@@ -230,6 +240,7 @@ def add_commands(parser):
                            description=COMPLETION.does)
     shell.add_argument("shell", metavar="SHELL", choices=SHELLS)
     shell.set_defaults(command=COMPLETION, leaf=shell)
+    _add_leaf(top, "follow", FOLLOW, FOLLOW.does)
     return parser
 
 
@@ -303,6 +314,8 @@ def factory_argv(args):
         argv.append(f"--note={note}")
     for flag in command.flags:
         given = getattr(args, flag.dest)
+        if flag.const is not None:
+            continue
         if flag.metavar is None:
             argv += (list(flag.emits) or [flag.name]) if given else []
             continue

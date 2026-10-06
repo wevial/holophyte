@@ -172,6 +172,8 @@ EXPECTED_READ = [
     "lock_wait",
     # KO-269: the `serve` daemon's `/runs/N` reads.
     "narrative_events",
+    # HOLO-145: `holo follow`'s narrative events across runs after an id.
+    "narrative_events_after",
     "newest_ended_rounds",
     # KO-280: the `serve` daemon's `/board` read of the open tickets.
     "open_tickets",

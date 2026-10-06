@@ -398,6 +398,28 @@ def narrative_events(conn, run_id, detail_kinds=()):
 
 
 @dataclass(frozen=True)
+class RunEvent:
+    id: int
+    runId: int
+    ticket: str | None
+    at: int
+    kind: str
+    summary: str
+
+
+def narrative_events_after(conn, after_id, since):
+    rows = conn.execute(
+        "SELECT runEvents.id, runEvents.runId, tickets.linearIdentifier,"
+        " runEvents.at, runEvents.kind, runEvents.summary"
+        " FROM runEvents JOIN runs ON runs.id = runEvents.runId"
+        " LEFT JOIN tickets ON tickets.id = runs.ticketId"
+        " WHERE runEvents.id > ? AND runEvents.at >= ?"
+        " AND runEvents.level = 'narrative' ORDER BY runEvents.id",
+        (after_id, since)).fetchall()
+    return [RunEvent(*row) for row in rows]
+
+
+@dataclass(frozen=True)
 class LedgerEntry:
     id: int
     runId: int
