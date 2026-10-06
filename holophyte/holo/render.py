@@ -27,8 +27,8 @@ def moment(ms, tz=None):
     return at if tz is not None else at.astimezone()
 
 
-def clock(ms, tz=None):
-    return moment(ms, tz).strftime("%H:%M %Z")
+def clock(ms, tz=None, seconds=False):
+    return moment(ms, tz).strftime("%H:%M:%S %Z" if seconds else "%H:%M %Z")
 
 
 def day(ms, tz=None):
