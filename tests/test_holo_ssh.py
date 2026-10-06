@@ -82,13 +82,14 @@ class SshTests(unittest.TestCase):
         holo.chmod(0o755)
         (self.seat / "client.toml").write_text('host = "writer"\n')
 
-    def register(self, name):
+    def register(self, name, prefix="HOLO"):
         path = self.root / name
         subprocess.run(["git", "init", "-q", str(path)], check=True)
         target = Project.locate(path, adopt=False)
         target.holo_dir.mkdir(parents=True, exist_ok=True)
         target.config_path.write_text(
-            f'[board]\nkind = "native"\nprefix = "HOLO"\n[serve]\nname = "{name}"\n')
+            f'[board]\nkind = "native"\nprefix = "{prefix}"\n'
+            f'[serve]\nname = "{name}"\n')
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertFalse(holophyte.cli.entry.cli(["project", "add", str(path)]))
         return path
@@ -148,11 +149,9 @@ class RemoteCommandTests(SshTests):
         store.release(self.conn, run, "failed", "verify failed", now=T0 + 1)
         completed = self.holo("requeue", "HOLO-1", NOTE, "-p", "alpha")
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        (row_id,), = self.conn.execute(
-            "SELECT id FROM interventions WHERE action = 'requeue'")
-        (text,), = self.conn.execute(
-            "SELECT text FROM ledger WHERE kind = 'intervention'")
-        self.assertEqual(text, f"human requeue: {NOTE}")
+        (row_id, note), = self.conn.execute(
+            "SELECT id, note FROM interventions WHERE action = 'requeue'")
+        self.assertEqual(note, NOTE)
         self.assertEqual(list(self.root.rglob("pwned")), [])
         (line,) = completed.stdout.splitlines()
         self.assertTrue(line.startswith("✓ HOLO-1"), line)
@@ -177,6 +176,12 @@ class RemoteCommandTests(SshTests):
                  "PYTHONPATH": str(ROOT)})
         self.assertEqual(oracle.returncode, 0, oracle.stderr)
         self.assertEqual(completed.stdout, oracle.stdout)
+
+    def test_a_project_name_beginning_with_a_dash_reaches_the_host_as_the_name(self):
+        dashed = self.register("-alpha", "DASH")
+        completed = self.holo("status", "--json", "--project=-alpha")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout)["target"], str(dashed))
 
     def test_a_remote_refusal_exits_one_and_a_host_usage_error_exits_two(self):
         self.claim()

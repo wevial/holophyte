@@ -64,7 +64,7 @@ def remote_words(args, project):
             words += ([flag.name, *value] if isinstance(value, list)
                       else [f"{flag.name}={value}"])
     if project is not None:
-        words += ["-p", project]
+        words += [f"-p={project}"] if project.startswith("-") else ["-p", project]
     if args.verbose:
         words.append("--verbose")
     words += ["--json"] * json_form(command)
