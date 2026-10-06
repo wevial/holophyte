@@ -301,14 +301,12 @@ def approve(target, identifier, note, out=None, force=False):
 
 
 def _parked_at_pull_request(conn, ticket_id):
-    ticket = store.read.ticket_by_id(conn, ticket_id)
-    if ticket.status != "blocked_on_operator" or ticket.lastRunId is None:
+    run_id = store.read.ticket_by_id(conn, ticket_id).lastRunId
+    park = None if run_id is None else store.read.park_facts(conn, run_id)
+    if park is None or park.ticket_status != "blocked_on_operator" \
+            or park.phase != PARKED_PHASE or not park.pr_url:
         return None
-    row = conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
-                       (ticket.lastRunId,)).fetchone()
-    if row is None or row[0] != PARKED_PHASE or not row[1]:
-        return None
-    return ticket.lastRunId
+    return run_id
 
 
 def babysit_ticket(target, identifier, note, out=None):

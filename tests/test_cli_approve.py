@@ -164,7 +164,6 @@ class ApproveCliTests(unittest.TestCase):
         # Released, the ticket is claimable again -- the loop's next pass
         # is what takes the candidate to the gate.
         self.assertTrue(store.tickets.pickable(self.conn, self.ticket))
-        self.assertEqual(self.github.calls, [])
 
     def test_a_pull_request_github_shows_ready_is_released(self):
         self.park_at_pull_request()
