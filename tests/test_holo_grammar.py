@@ -101,13 +101,23 @@ class TableTests(unittest.TestCase):
                 for field, expected in fields.items():
                     self.assertEqual(getattr(args, field), expected)
 
-    def test_the_note_is_the_last_positional_and_never_a_decision_option(self):
+    def test_the_last_positional_is_the_note_even_when_it_looks_like_an_option(self):
         decide = factory_args(["story", "decide", "HOLO-1", "1", "why"])
         self.assertEqual((decide.decide, decide.note), (["HOLO-1", "1"], "why"))
-        unnoted = factory_args(["story", "decide", "HOLO-1", "1", "2"])
-        self.assertEqual((unnoted.decide, unnoted.note), (["HOLO-1", "1", "2"], None))
-        hyphen = factory_args(["requeue", "HOLO-1", "-n", "-1 was wrong"])
-        self.assertEqual(hyphen.note, "-1 was wrong")
+        for note in ("2", "default"):
+            numeric = factory_args(["story", "decide", "HOLO-1", "1", note])
+            self.assertEqual((numeric.decide, numeric.note), (["HOLO-1", "1"], note))
+
+    def test_a_dash_leading_note_after_a_flag_is_the_note_and_a_flag_is_not(self):
+        for note in ("-1 was wrong", "-1"):
+            cancel = factory_args(["cancel", "HOLO-1", "--revision", "2", note,
+                                   "-p", "/repo"])
+            self.assertEqual((cancel.cancel, cancel.revision, cancel.note),
+                             ("HOLO-1", 2, note))
+        with contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit) as refused:
+            factory_args(["cancel", "HOLO-1", "--revision", "2", "--bogus"])
+        self.assertEqual(refused.exception.code, 2)
 
     def test_every_alias_names_a_canonical_command_and_shadows_none(self):
         canonical = [command.words for command in COMMANDS]

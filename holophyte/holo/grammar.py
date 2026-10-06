@@ -39,7 +39,7 @@ BASELINE_GREEN = Flag("--baseline-green", "W")
 BASELINE_RED_KIND = Flag("--baseline-red-kind", ("KIND", "W"))
 
 REQUIRED, OPTIONAL = "required", "optional"
-OPTION_SHAPE = re.compile(r"-?[0-9]+|default")
+NEGATIVE_NUMBER = re.compile(r"-[0-9]+|-[0-9]*\.[0-9]+")
 
 COMMANDS = (
     Command(("status",), "--status", "what the factory is doing now", flags=(JSON,)),
@@ -163,6 +163,11 @@ def add_commands(parser):
     return parser
 
 
+def _positional(text):
+    return (not text.startswith("-") or text == "-" or " " in text
+            or bool(NEGATIVE_NUMBER.fullmatch(text)))
+
+
 def parse(parser, argv):
     args, extra = parser.parse_known_args(argv)
     command = getattr(args, "command", None)
@@ -171,7 +176,7 @@ def parse(parser, argv):
         slots = [dest for dest, name in _positionals(command) if name.startswith("[")]
         empty = [dest for dest in slots + ["note"] * bool(command.note)
                  if getattr(args, dest) is None]
-        if len(extra) <= len(empty) and not any(text.startswith("-") for text in extra):
+        if len(extra) <= len(empty) and all(map(_positional, extra)):
             for dest, text in zip(empty, extra):
                 setattr(args, dest, text)
             extra = []
@@ -189,7 +194,7 @@ def _note(args, command):
     if command.note and note is None and option is None:
         filled = [index for index, (_, name) in enumerate(_positionals(command))
                   if name.startswith("[") and values[index] is not None]
-        if filled and not OPTION_SHAPE.fullmatch(values[filled[-1]]):
+        if filled:
             note, values[filled[-1]] = values[filled[-1]], None
     return values, note if option is None else option
 
