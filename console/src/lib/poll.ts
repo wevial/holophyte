@@ -6,6 +6,9 @@ import type { Attention, HostProject, HostStatus, Status } from "./types";
 
 /** The handoff's cadence: one `/status` + `/attention` round trip every 10 s. */
 export const POLL_INTERVAL_MS = 10_000;
+/** A pull request's merge readiness is read once every this many polls:
+ *  each read costs the daemon several GitHub API calls. */
+export const MERGE_READINESS_POLLS = 6;
 /** One tick's requests are abandoned at eight seconds so a slow peer never
  *  overlaps the next tick. */
 export const REQUEST_TIMEOUT_MS = 8_000;
