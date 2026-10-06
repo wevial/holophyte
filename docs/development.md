@@ -50,8 +50,11 @@ Each module, one line:
 - `holophyte/holo/cli.py` — `main()`, the `holo` console script `pyproject.toml`
   declares: `--version` prints the package version and the checkout's short
   `HEAD`; a subcommand resolves its project, translates through the grammar table
-  and runs as `_legacy_cli()`, a write command through `run_write()`; `holo project`
-  is `factory.py project`.
+  and runs as `_legacy_cli()`, a write command through `run_write()`, or answers
+  as a read; `holo project` is `factory.py project`.
+- `holophyte/holo/reads.py` — the `holo` reads `runs`, `run N`, `attention`,
+  `board` and `ticket KEY`: each calls the daemon's view in process, prints its
+  body for `--json` or a compact listing of it, and maps its status to the exit.
 - `holophyte/holo/resolve.py` — a `holo` command's project from `-p`,
   `HOLO_PROJECT`, the current repository or `client.toml`'s `default_project`,
   the client config reader, and the refusal when none answers.
@@ -59,7 +62,7 @@ Each module, one line:
   `factory.py` mode, the `send-back`, `start` and `stop` rows, the
   interventions actions each write row records, the `ticket VERB` and `loop
   start|stop` aliases, and their translation to the argv `build_parser()`
-  parses.
+  parses; and the read rows, `run show N` among them.
 - `holophyte/holo/results.py` — a write command's one result: the verb run
   with its printed line and refusal captured, the interventions row it wrote
   read back as `recorded`, printed as JSON with `--json` or as a `✓`/`✗` line.

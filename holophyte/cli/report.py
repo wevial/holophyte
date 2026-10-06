@@ -73,7 +73,7 @@ def ended_rows(conn):
                      actual / estimate if estimate and actual is not None else None,
                      run.reviewRoundCount, run.outcome or "ended", run.host,
                      run.endedAt, run.mergeSha,
-                     (run.endedAt - run.startedAt) / 60000))
+                     (run.endedAt - run.startedAt) / 60000, run.id))
     return rows
 
 
