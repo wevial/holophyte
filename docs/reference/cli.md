@@ -209,10 +209,10 @@ for a window, `--since`: `Nh` or `Nd` (`24h`, `7d`, `30d`), or `all`;
 default `7d`. Any other form exits 2 naming the accepted ones. The four
 count lines come first. A run is in the window when it ended in it, so a
 live run is in no `Shipped`, `Failures` or `Runs` count; `Hands-on` counts
-interventions and send-backs by when they were recorded, a live run's
-included, and `Gaps` counts the whole store. A project with no store exits
-1. Its lines carry no
-`[holo2]` prefix:
+interventions and send-backs by when they were recorded, including those
+from live runs. `Gaps` counts the whole store. A project with no store
+exits 1, its refusal on stderr with the `[holo2] report:` prefix. The
+page's lines carry no `[holo2]` prefix:
 
 | Section | Lines |
 | --- | --- |
