@@ -8,7 +8,8 @@ PARKED = {"awaiting_merge_approval": "parked, awaiting merge approval",
           "blocked_on_operator": "parked, blocked on operator"}
 PHASE_MARKS = {"awaiting_merge_approval": "!", "blocked_on_operator": "!",
                "failed": "✗", "killed": "✗", "rejected": "✗"}
-EVENT_MARKS = {"failure": "✗", "route_failure": "✗"}
+EVENT_MARKS = {kind: "✗" for kind in (
+    "run_cap", "route_failure", "ci_expired", "launch_loop_failed")}
 NEXT = {
     ("awaiting_merge_approval", None): (
         ("holo approve {ticket}", False),

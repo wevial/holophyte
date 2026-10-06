@@ -22,7 +22,10 @@ import store.tickets
 from holophyte.config.project import Project
 from holophyte.holo.cli import main
 from holophyte.holo.run_page import page
+from holophyte.loop.gates import RunFailure
+from holophyte.loop.implement import _check_run_cap
 from holophyte.serve.serve_runs import run_detail, run_files
+from store.working import working
 from tests.test_holo_grammar import ROOT
 
 PACIFIC = ZoneInfo("America/Los_Angeles")
@@ -217,6 +220,23 @@ class ParkedRunPageTests(RunPageCase):
         _, body = run_detail(self.project, str(self.parked))
         _, files = run_files(self.project, str(self.parked))
         self.assertIn(ESCAPE, "\n".join(page(body, files, PACIFIC, colour=True)))
+
+
+class FailureMarkTests(RunPageCase):
+    def test_a_run_stopped_by_its_run_cap_shows_the_cap_event_as_a_failure(self):
+        run = store.claim(self.conn, self.project_id, self.ticket("HOLO-153"),
+                          now=NOW - 3 * 60 * MINUTE)
+        store.set_phase(self.conn, run, "working", now=NOW - 3 * 60 * MINUTE)
+        with patch("store.working.time", return_value=NOW / 1000 - 3 * 3600), \
+                working(self.conn, run), \
+                patch("holophyte.loop.implement.time", return_value=NOW / 1000), \
+                self.assertRaises(RunFailure):
+            _check_run_cap(self.project, self.conn, run, 10, "0" * 40)
+
+        [line] = [line for line in self.page_of(run) if "run_cap" in line]
+
+        self.assertTrue(line.startswith("  ✗  run_cap"), line)
+        self.assertIn("out of time", line)
 
 
 class NextByStateTests(RunPageCase):
