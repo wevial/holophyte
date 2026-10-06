@@ -193,8 +193,8 @@ naming the file.
 | `remote_command` | the command that runs `holo` there, a path and its arguments with no shell operators; default `holo` |
 
 With `host` set, `holo` runs the same command on that host: `holo requeue
-HOLO-1 "note"` runs `HOLO_TRANSPORT=local holo requeue HOLO-1 --note=note -p
-NAME --json` through `ssh -o BatchMode=yes HOST`, every argument quoted for
+HOLO-1 "note"` runs `HOLO_TRANSPORT=local holo requeue --note=note -p NAME
+--json -- HOLO-1` through `ssh -o BatchMode=yes HOST`, every argument quoted for
 the remote shell, so a missing key fails rather than prompting. stderr
 says `via ssh to HOST`, and a `--json` result gains `"transport": "ssh"`; a
 local one has no such key. A command with a JSON form runs with `--json` and

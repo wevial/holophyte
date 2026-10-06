@@ -164,6 +164,20 @@ class RemoteCommandTests(SshTests):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(len(self.calls()), 1)
 
+    def test_a_positional_beginning_with_a_dash_reaches_the_host_as_a_positional(self):
+        store.open(str(self.login / "-snapshot.db")).close()
+        completed = self.holo("store", "import", "--dry-run", "-p", "alpha",
+                              "--", "-snapshot.db")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        oracle = subprocess.run(
+            [sys.executable, str(ROOT / "factory.py"), str(self.alpha),
+             "--import-store=-snapshot.db", "--dry-run"], cwd=self.login,
+            capture_output=True, text=True,
+            env={**os.environ, "HOLOPHYTE_HOME": str(self.host),
+                 "PYTHONPATH": str(ROOT)})
+        self.assertEqual(oracle.returncode, 0, oracle.stderr)
+        self.assertEqual(completed.stdout, oracle.stdout)
+
     def test_a_remote_refusal_exits_one_and_a_host_usage_error_exits_two(self):
         self.claim()
         refused = self.holo("requeue", "HOLO-1", "rerun", "-p", "alpha")
@@ -179,12 +193,12 @@ class RemoteCommandTests(SshTests):
         self.fake(UNREACHABLE_SSH.format(python=sys.executable,
                                          record=str(self.record),
                                          message=REFUSED))
-        completed = self.holo("status", "-p", "alpha")
-        self.assertEqual(completed.returncode, 1, completed.stderr)
-        self.assertTrue(any(line.startswith("[holo2]") and "writer" in line
-                            and REFUSED in line
-                            for line in completed.stderr.splitlines()),
-                        completed.stderr)
+        for command in ("status", "sweep"):
+            with self.subTest(command=command):
+                completed = self.holo(command, "-p", "alpha")
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertEqual(completed.stderr.splitlines()[-1],
+                                 f"[holo2] ssh to writer failed: {REFUSED}")
         written = self.holo("hold", "maintenance", "-p", "alpha", "--json")
         self.assertEqual(written.returncode, 1, written.stderr)
         result = json.loads(written.stdout)
@@ -205,7 +219,7 @@ class FileOverSshTests(SshTests):
             "SELECT body FROM tickets WHERE linearIdentifier = 'HOLO-1'")
         self.assertEqual(stored[0], body)
         (call,) = self.calls()
-        self.assertIn("file - -p alpha", call[-1])
+        self.assertEqual(shlex.split(call[-1])[-2:], ["--", "-"])
 
     def test_a_ticket_file_missing_on_the_client_exits_two_without_ssh(self):
         completed = self.holo("file", "MISSING.md", "-p", "alpha")

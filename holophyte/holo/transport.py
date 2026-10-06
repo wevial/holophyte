@@ -49,7 +49,8 @@ def seat_project(option, default):
 def remote_words(args, project):
     command = args.command
     values, note = arguments(args, command)
-    words = [*command.words, *(value for value in values if value is not None)]
+    positionals = [value for value in values if value is not None]
+    words = list(command.words)
     if note is not None:
         words.append(f"--note={note}")
     for flag in command.flags:
@@ -66,7 +67,8 @@ def remote_words(args, project):
         words += ["-p", project]
     if args.verbose:
         words.append("--verbose")
-    return words + ["--json"] * json_form(command)
+    words += ["--json"] * json_form(command)
+    return words + ["--", *positionals] * bool(positionals)
 
 
 def remote_line(config, words):
@@ -143,7 +145,7 @@ def run(args, host, config):
         code, text, tail = call(host, line, label, stdin, json_form(command))
     if text is not None:
         return render(args, code, text, tail)
-    if args.json and command.records is not None:
+    if command.records is not None and args.json:
         result = build_result(args, code, [tail], (None, None))
         print(json.dumps({**result, "transport": SSH}))
     return code
