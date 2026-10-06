@@ -129,6 +129,12 @@ READS = (
             takes=("KEY",), flags=(JSON,)),
 )
 
+COMPLETION = Command(("completion",), None,
+                     "print a completion script for bash, zsh or fish",
+                     takes=("SHELL",))
+SHELLS = ("bash", "zsh", "fish")
+HELPER = "__complete"
+
 SHOW = "show"
 SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
 
@@ -220,6 +226,10 @@ def add_commands(parser):
                                                     required=True)
         _add_leaf(groups[words[0]], words[1], command, help_text)
     top.add_parser("project", help=PROJECT_HELP, add_help=False)
+    shell = top.add_parser("completion", help=COMPLETION.does,
+                           description=COMPLETION.does)
+    shell.add_argument("shell", metavar="SHELL", choices=SHELLS)
+    shell.set_defaults(command=COMPLETION, leaf=shell)
     return parser
 
 

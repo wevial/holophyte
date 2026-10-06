@@ -3,7 +3,14 @@ import sys
 import tomllib
 from importlib import metadata
 
-from holophyte.holo.grammar import READS, add_commands, factory_argv, parse
+from holophyte.holo.grammar import (
+    COMPLETION,
+    HELPER,
+    READS,
+    add_commands,
+    factory_argv,
+    parse,
+)
 from holophyte.host.startup import build_sha, factory_checkout
 
 DISTRIBUTION = "holophyte"
@@ -77,24 +84,36 @@ def remote(args, argv, host, config):
         raise
 
 
-def main(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    from holophyte.holo.resolve import DEFAULT, TIMEZONE, Refused, client_config
+def client(argv):
+    from holophyte.holo.resolve import Refused, client_config
     from holophyte.holo.transport import remote_host
     try:
         config = client_config()
-        host = remote_host(config)
+        return config, remote_host(config)
     except Refused as refused:
         from holophyte.holo.results import usage_result
         usage_result(argv, refused.line)
         raise
+
+
+def project(argv, host, config):
+    if host is not None:
+        from holophyte.holo.transport import run_project
+        return run_project(argv, host, config)
+    from holophyte.cli.entry import cli
+    return cli(argv)
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == [HELPER]:
+        from holophyte.holo.completion import complete
+        return complete(argv[1:])
+    from holophyte.holo.resolve import DEFAULT, TIMEZONE
+    config, host = client(argv)
     default = config.get(DEFAULT)
     if argv[:1] == ["project"]:
-        if host is not None:
-            from holophyte.holo.transport import run_project
-            return run_project(argv, host, config)
-        from holophyte.cli.entry import cli
-        return cli(argv)
+        return project(argv, host, config)
     parser = build_parser()
     try:
         args = parse(parser, argv)
@@ -108,6 +127,9 @@ def main(argv=None):
     if args.words is None:
         parser.print_help()
         return 0
+    if args.command is COMPLETION:
+        from holophyte.holo.completion import script
+        return script(args.shell)
     if host is not None:
         return remote(args, argv, host, config)
     if getattr(args, "foreground", False):
