@@ -787,6 +787,7 @@ Use TOML literal strings for custom patterns, for example
 | `approve` | Default: `"auto"` | `"auto"` or `"human"`; choose human to require an explicit operator approval before merging. |
 | `mode` | Default: `"local"` | `"local"` or `"pr"`; choose pr to send the candidate through GitHub checks and review. |
 | `pr_rounds` | Default: `5` | Integer at least 1; change the maximum babysit passes before parking. |
+| `pr_main_refreshes` | Default: `10` | Integer at least 1; change the maximum babysit passes that only merge `main` into the pull request before parking. These passes do not count toward `pr_rounds`. |
 | `pr_merge_method` | Default: `"merge"` | `"merge"`, `"squash"`, or `"rebase"`; match the repository's merge rules. |
 | `pr_poll_sec` | Default: `180` seconds | Integer at least 10; change the minimum interval between automatic babysit resumes. |
 | `pr_quiet_sec` | Default: `300` seconds | Integer at least 0; change the quiet period after GitHub activity, or use 0 for immediate green merges. |
@@ -827,6 +828,10 @@ mode = "local"     # "pr": push the branch to origin and open a pull request
 # How many babysit passes over an open pull request before the run parks
 # for the operator. Optional; the value shown is the default.
 pr_rounds = 5
+# How many babysit passes that only merge main into the pull request (it
+# conflicted, or a merge was refused as behind main) before the run parks;
+# they do not count toward pr_rounds. Optional; the value shown is the default.
+pr_main_refreshes = 10
 # How the babysitter merges a green, quiet pull request: "merge", "squash" or
 # "rebase". Optional; the value shown is the default.
 pr_merge_method = "merge"
@@ -929,6 +934,15 @@ the cap that keeps the loop from arguing with a review bot forever. Every
 pass is a `reviewRounds` row with route `github:LOGIN`, so the count is
 visible in FINDINGS. Anything that is not such an integer (`0`, `true`,
 `"5"`) is a startup error naming the key.
+
+`pr_main_refreshes` is an integer of at least 1 (default 10): the number of
+babysitter passes that only merge `origin/main` into the branch -- GitHub
+reported the pull request conflicting, or refused the merge because the
+branch is behind main -- before the run parks naming this cap. Such a pass
+does not count toward `pr_rounds`, so a reviewed, green pull request is not
+parked for keeping up with a busy main, while one that can never catch up
+still parks. Anything that is not such an integer is a startup error naming
+the key.
 
 `pr_merge_method` is the `merge_method` the babysitter sends GitHub's merge API
 when it lands a green, quiet pull request under `mode = "pr"`: `"merge"` (the

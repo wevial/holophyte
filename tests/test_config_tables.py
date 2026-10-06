@@ -398,7 +398,7 @@ class MergeConfigTests(ConfigTestCase):
         config = config_tables.merge_config(self.project)
         self.assertTrue(config.strip_attribution)
         self.assertEqual(config[1:],
-                         ("auto", "local", 5, "merge", 180, 300, 1800, 600, False,
+                         ("auto", "local", 5, 10, "merge", 180, 300, 1800, 600, False,
                           True, "", False, False,
                           (), "", "e2e/capture", False, "", None, 10, 20, "park",
                           "act", (), "holophyte", (), (), ("devin-ai-integration",
@@ -537,6 +537,8 @@ class MergeConfigTests(ConfigTestCase):
                           ("pr_rounds = 0", "pr_rounds"),
                           ("pr_rounds = true", "pr_rounds"),
                           ('pr_rounds = "5"', "pr_rounds"),
+                          ("pr_main_refreshes = 0", "pr_main_refreshes"),
+                          ('pr_main_refreshes = "10"', "pr_main_refreshes"),
                           ('pr_merge_method = "fast-forward"',
                            "pr_merge_method"),
                           ('pr_text = "agent"', "pr_text"),

@@ -270,7 +270,7 @@ DEFAULT_STRIP_ATTRIBUTION = (
 MERGE_KEYS = {
     "strip_attribution": DEFAULT_STRIP_ATTRIBUTION,
     "approve": "auto", "mode": "local",
-    "pr_rounds": 5,
+    "pr_rounds": 5, "pr_main_refreshes": 10,
     "pr_merge_method": "merge",
     "pr_poll_sec": 180,
     "pr_quiet_sec": 300,
@@ -296,7 +296,8 @@ MERGE_VALUES = {"approve": MERGE_APPROVALS, "mode": MERGE_MODES,
                "human_threads": MERGE_HUMAN_THREADS, "bot_threads": ("act", "advisory")}
 MergeConfig = collections.namedtuple("MergeConfig", tuple(MERGE_KEYS))
 PR_POLL_FLOOR = 10
-MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_poll_sec": PR_POLL_FLOOR,
+MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_main_refreshes": 1,
+                    "pr_poll_sec": PR_POLL_FLOOR,
                     "pr_quiet_sec": 0, "check_wait_sec": 1,
                     "missing_check_sec": 1}
 
