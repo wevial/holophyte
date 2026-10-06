@@ -11,3 +11,7 @@ The status fixture includes an unestimated run with no recorded host;
 collide, built in `tests/test_serve_host.py`: paths under the temporary
 root become `/root`, a state directory's hash `HASH`, revisions
 `REVISION`, pids 1 and host labels `writer`; the clock is fixed.
+
+`run-merge-ready.json` pins `GET /runs/N/merge` for a run parked on an
+approved, green, quiet pull request, built in `tests/test_serve_merge.py`:
+the branch head's sha becomes `HEAD_SHA`.

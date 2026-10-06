@@ -16,10 +16,14 @@ def recorded_reason(body):
     note = body.get("note")
     if not isinstance(note, str) or not note.strip():
         return None
+    return f"{console_author(body)} via the console: {note.strip()}"
+
+
+def console_author(body):
     author = body.get("author", DEFAULT_AUTHOR)
     if not isinstance(author, str) or not author.strip():
-        author = DEFAULT_AUTHOR
-    return f"{author.strip()} via the console: {note.strip()}"
+        return DEFAULT_AUTHOR
+    return author.strip()
 
 
 def lever(action, target, body, act):

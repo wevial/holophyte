@@ -50,6 +50,10 @@ class HttpReferenceTests(unittest.TestCase):
         assert_covers(self, section(self.document, "`GET /runs/N`"),
                       "run-detail.json")
 
+    def test_run_merge_section_names_every_pinned_key(self):
+        assert_covers(self, section(self.document, "`GET /runs/N/merge`"),
+                      "run-merge-ready.json")
+
     def test_host_sections_name_every_key_the_host_root_answers(self):
         assert_covers(self, section(self.document, "Host `GET /status`"),
                       "host-status.json")

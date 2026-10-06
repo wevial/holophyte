@@ -451,23 +451,26 @@ class MergeModeFixture(LoopFixture):
     HEAD = "HEAD_SHA"
     ENQUEUED_AT = "2026-09-23T12:00:00Z"
 
-    def pr_state(self, threads=(), checks="SUCCESS", merged=False,
+    @classmethod
+    def pr_state(cls, threads=(), checks="SUCCESS", merged=False,
                  head=HEAD, resolved=(), next_cursor=None,
-                 mergeable="MERGEABLE", updated_at="2000-01-01T00:00:00Z"):
+                 mergeable="MERGEABLE", updated_at="2000-01-01T00:00:00Z",
+                 review=None):
         """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
         tuple) open, `resolved` the same shape but resolved, the head's
         check rollup, whether the PR is merged, GitHub's `mergeable`
         answer (None for the lazy-computation `null`), `updated_at` the
-        `updatedAt` ISO stamp, and -- for a page that is not the last --
-        the cursor of the next."""
-        nodes = [self.thread(n, *t) for n, t in enumerate(threads, 1)]
-        nodes += [self.thread(n, *t[:4], resolved=True)
+        `updatedAt` ISO stamp, `review` the `reviewDecision` (None for a
+        repository that requires no review), and -- for a page that is
+        not the last -- the cursor of the next."""
+        nodes = [cls.thread(n, *t) for n, t in enumerate(threads, 1)]
+        nodes += [cls.thread(n, *t[:4], resolved=True)
                   for n, t in enumerate(resolved, len(nodes) + 1)]
         return {"data": {"repository": {"pullRequest": {
             "state": "MERGED" if merged else "OPEN", "merged": merged,
             "headRefOid": head, "mergeable": mergeable,
-            "updatedAt": updated_at,
-            "mergeCommit": {"oid": self.MERGE_SHA} if merged else None,
+            "updatedAt": updated_at, "reviewDecision": review,
+            "mergeCommit": {"oid": cls.MERGE_SHA} if merged else None,
             "commits": {"nodes": [{"commit": {"statusCheckRollup":
                                               {"state": checks}}}]},
             "reviewThreads": {
