@@ -33,7 +33,7 @@ def run_write(args, resolve):
     target, before = [], None
     try:
         with redirect_stdout(out), redirect_stderr(err):
-            target = resolve(args.project)
+            target = resolve()
             before = newest_intervention(target)
             code, message = exit_parts(call(args, target))
     except SystemExit as stop:
