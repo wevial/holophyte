@@ -7,6 +7,7 @@ import { hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
 import { TICK_MS, type Fetch } from "../lib/poll";
 import { prLabel } from "../lib/shipped";
 import { groupByProject } from "../lib/runs";
+import { MergeAction } from "./MergeAction";
 import { PullRequestDetail } from "./PullRequestDetail";
 import { RowActions } from "./RowActions";
 import { PrFacts } from "./PrFacts";
@@ -19,7 +20,7 @@ export function PullRequestTable({ hosts, project, now, actionFetch, polls = 0, 
   now: number;
   actionFetch?: Fetch;
   polls?: number;
-  deps?: { fetch: Fetch };
+  deps: { fetch: Fetch };
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const id = useId();
@@ -87,9 +88,13 @@ export function PullRequestTable({ hosts, project, now, actionFetch, polls = 0, 
                     {description.meta && <p className="text-[12px] text-faint">{description.meta}</p>}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-muted">{description.ageMs == null ? "" : formatAge(description.ageMs)}</td>
-                  <td className="px-4 py-3"><RowActions kind="pr_open" actions={description.actions} ticket={description.ticket}
-                    prUrl={item.pr_url} runId={typeof item.run === "number" ? item.run : undefined}
-                    daemon={host ? { base: host.base, actions: host.status?.actions === true, fetch: actionFetch } : undefined} /></td>
+                  <td className="px-4 py-3"><div className="flex flex-col items-end gap-1.5">
+                    <RowActions kind="pr_open" actions={description.actions} ticket={description.ticket}
+                      prUrl={item.pr_url} runId={typeof item.run === "number" ? item.run : undefined}
+                      daemon={host ? { base: host.base, actions: host.status?.actions === true, fetch: actionFetch } : undefined} />
+                    {host?.status?.actions === true && typeof item.run === "number" && <MergeAction base={host.base}
+                      runId={item.run} prUrl={item.pr_url} polls={polls} deps={deps} fetch={actionFetch} />}
+                  </div></td>
                 </tr>
                 {open && host && typeof item.run === "number" && <tr id={detailId} className="border-t border-line">
                   <td colSpan={5} className="px-4 py-3">

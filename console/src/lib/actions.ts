@@ -14,6 +14,8 @@ export const ROUTES: Record<string, string> = {
   // Reason boxes (components/ReasonAction.tsx), not one-click posts.
   Abort: "/actions/abort",
   "Abort and close": "/actions/abort",
+  // A confirm step (components/MergeAction.tsx), drawn only when ready.
+  Merge: "/actions/merge",
 };
 
 /** The labels whose route is the daemon's own, not a project's. */

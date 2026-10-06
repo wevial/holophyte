@@ -19,10 +19,11 @@ const item: AttentionItem = {
   pr: { number: 2170, checks: "success", review: "review_required", threads: 0 },
 };
 const host = hostOf({ ...status, project: "/projects/repo", actions: true }, { level: "attention", now: status.now, items: [item] });
+const offline = { fetch: async () => new Response("not found", { status: 404 }) };
 afterEach(() => { cleanup(); localStorage.clear(); });
 
 test("a parked candidate shows its project, linked ticket and PR, reason and band-format waiting time", () => {
-  render(<PullRequestTable hosts={[host]} project="all" now={status.now} />);
+  render(<PullRequestTable hosts={[host]} project="all" now={status.now} deps={offline} />);
   const row = screen.getAllByRole("row")[1]!;
   const cells = within(row).getAllByRole("cell");
   expect(screen.getByRole("heading", { name: "repo · 1" })).toBeTruthy();
@@ -40,7 +41,7 @@ test("the Pull request cell names the pull request by its read title, else by th
     { ...item, title: "ticket 7", pr: { ...(item.pr as object), title: titled } },
     { ...item, ticket: "KO-8", run: 48, title: "Ticket eight's title", pr: { ...(item.pr as object), title: null } },
   ] })];
-  render(<PullRequestTable hosts={hosts} project="all" now={status.now} />);
+  render(<PullRequestTable hosts={hosts} project="all" now={status.now} deps={offline} />);
   const [first, second] = screen.getAllByRole("row").slice(1).map(row => within(row).getAllByRole("cell")[1]!);
   expect(first!.textContent).toBe(`#2170${titled}`);
   expect(first!.getAttribute("title")).toBe(titled);
@@ -53,7 +54,7 @@ test("project selection narrows both the table and the pointer, including a PR-o
     items: [{ ...item, ticket: "KO-8", run: 48 }] }, "http://writer:7711");
   const hosts = [host, other];
   const show = (project: string) => <><NeedsYou hosts={hosts} project={project} now={status.now} />
-    <PullRequestTable hosts={hosts} project={project} now={status.now} /></>;
+    <PullRequestTable hosts={hosts} project={project} now={status.now} deps={offline} /></>;
   const view = render(show("all"));
   expect(screen.getByRole("link", { name: "2 pull requests below" })).toBeTruthy();
   expect(screen.getAllByRole("row")).toHaveLength(4);
@@ -74,7 +75,7 @@ test("table actions retain Open PR and the private send-back note across polls",
   const realOpen = window.open;
   window.open = ((...args: unknown[]) => { opened.push(args); return null; }) as typeof window.open;
   try {
-    const view = render(<PullRequestTable hosts={[host]} project="all" now={status.now} actionFetch={fetchImpl} />);
+    const view = render(<PullRequestTable hosts={[host]} project="all" now={status.now} deps={offline} actionFetch={fetchImpl} />);
     expect(screen.getAllByRole("button").map(button => button.textContent)).toEqual(["▸", "Open PR", "Send back with note"]);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open PR" })); });
     expect(opened).toEqual([[item.pr_url, "_blank", "noopener,noreferrer"]]);
@@ -82,7 +83,7 @@ test("table actions retain Open PR and the private send-back note across polls",
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send back with note" })); });
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Please fix the heading" } });
-    view.rerender(<PullRequestTable hosts={[{ ...host, attention: { ...host.attention!, items: [{ ...item }] } }]} project="all" now={status.now} actionFetch={fetchImpl} />);
+    view.rerender(<PullRequestTable hosts={[{ ...host, attention: { ...host.attention!, items: [{ ...item }] } }]} project="all" now={status.now} deps={offline} actionFetch={fetchImpl} />);
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("Please fix the heading");
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send" })); await settle(); });
     expect(seen).toEqual([{ url: `${host.base}/actions/send-back`, method: "POST", authorization: "Bearer test-token",
@@ -164,7 +165,7 @@ test("project tables follow Floor order, pool hosts, omit empty projects and the
   const empty = hostOf({ ...status, project: "/projects/empty" }, { level: "none", now: status.now, items: [] }, "http://writer:7712");
   const same = hostOf({ ...status, project: "/projects/repo" }, { level: "attention", now: status.now,
     items: [{ ...item, ticket: "KO-9" }] }, "http://writer:7713");
-  render(<PullRequestTable hosts={[host, other, empty, same]} project="all" now={status.now} />);
+  render(<PullRequestTable hosts={[host, other, empty, same]} project="all" now={status.now} deps={offline} />);
   const tables = screen.getAllByRole("table");
   expect(tables).toHaveLength(2);
   expect(tables.map(table => table.getAttribute("aria-label"))).toEqual(["repo pull requests", "alpha pull requests"]);
@@ -179,7 +180,11 @@ test("detail is lazy, shows the latest findings and full facts, and rows stay in
   const other = hostOf({ ...status, project: "/projects/repo" }, { level: "attention", now: status.now,
     items: [{ ...item, ticket: "KO-8" }] }, "http://writer:7711");
   const seen: string[] = [];
-  const deps = { fetch: async (url: string) => { seen.push(url); return Response.json(detail); } };
+  const deps = { fetch: async (url: string) => {
+    if (url.endsWith("/merge")) return new Response("not found", { status: 404 });
+    seen.push(url);
+    return Response.json(detail);
+  } };
   const show = (polls: number) => <StrictMode><PullRequestTable hosts={[structuredClone(host), structuredClone(other)]}
     project="all" now={status.now} polls={polls} deps={deps} /></StrictMode>;
   const view = render(show(0));
@@ -219,7 +224,11 @@ test("detail is lazy, shows the latest findings and full facts, and rows stay in
 test("pending and failed detail stay inside the detail row and retry recovers", async () => {
   let resolve!: (value: Response) => void;
   let calls = 0;
-  const deps = { fetch: async () => { calls++; return calls === 1 ? new Promise<Response>(done => { resolve = done; }) : Response.json(detail); } };
+  const deps = { fetch: async (url: string) => {
+    if (url.endsWith("/merge")) return new Response("not found", { status: 404 });
+    calls++;
+    return calls === 1 ? new Promise<Response>(done => { resolve = done; }) : Response.json(detail);
+  } };
   render(<PullRequestTable hosts={[host]} project="all" now={status.now} deps={deps} />);
   fireEvent.click(screen.getByRole("button", { name: "Details for KO-7" }));
   expect(screen.getByText("Loading run detail…").closest("tr")).toBe(screen.getAllByRole("row")[2]! as HTMLTableRowElement);
