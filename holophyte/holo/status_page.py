@@ -193,7 +193,11 @@ def host_rows(snap, sweep, now):
         rows.append(Row("✗", "host", "", hinted(
             f"home lock names dead pid {home['pid']}", SWEEP_NOW)))
     failure = sweep_failure(sweep, now)
-    if failure and not swept_errors(sweep):
+    keys = {project["name"] or project["path"] for project in snap["projects"]}
+    errors = set(swept_errors(sweep))
+    shown = (errors and errors <= keys and not sweep.get("error")
+             and not killed(sweep, now))
+    if failure and not shown:
         rows.append(Row("✗", "sweep", "", hinted(failure, SWEEP_LOG_HINT)))
     return rows
 
