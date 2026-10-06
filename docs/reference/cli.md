@@ -212,7 +212,7 @@ piped, each frame follows a line carrying its time, `--- 10:42:05 PDT ---`.
 
 `holo follow [--since AGO] [--every SECONDS] [--json]` streams one line per
 thing that happens in the project: its runs' narrative events (a phase
-change, a re-point, an intervention) and its ledger entries (a round's
+change, a re-point) and its ledger entries (a round's
 verdict, an adjudication, a merge, a failure, an intervention, a note), the
 `GET /ledger` view's. Each line is the local clock time, a symbol (`✓` a
 merge, `✗` a failure, `!` an intervention, `>` anything else), the ticket and

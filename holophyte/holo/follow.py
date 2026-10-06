@@ -15,6 +15,8 @@ AGO = re.compile(r"([0-9]+(?:\.[0-9]+)?)([smhd])")
 UNIT_MS = {"s": 1000, "m": 60_000, "h": 3_600_000, "d": 86_400_000}
 LEDGER_MARKS = {"merge": "✓", "failure": "✗", "intervention": "!"}
 EVENT, LEDGER, STALL = "event", "ledger", "stall"
+LEDGER_TWIN = "intervention"
+LOOKBACK_MS = 60_000
 
 
 def now_ms():
@@ -107,21 +109,24 @@ class Follow:
             conn.close()
         if events:
             self.after = events[-1].id
-        pool = self.held + events
+        pool = self.held + [event for event in events
+                            if event.kind != LEDGER_TWIN]
         self.held = [event for event in pool if event.at >= now]
         return [event_entry(event) for event in pool if event.at < now]
 
     def ledger(self, now):
         from holophyte.serve.serve_runs import LEDGER_CAP, ledger
+        floor = max(self.start, self.since - LOOKBACK_MS)
         code, body = ledger(self.project, urlencode(
-            {"since": self.since, "limit": LEDGER_CAP}))
+            {"since": floor, "limit": LEDGER_CAP}))
         if code != 200:
             return []
         fresh = [entry for entry in reversed(body["entries"])
                  if entry["at"] < now and ledger_key(entry) not in self.seen]
         self.seen.update(ledger_key(entry) for entry in fresh)
         self.since = max([self.since] + [entry["at"] for entry in fresh])
-        self.seen = {key for key in self.seen if key[0] >= self.since}
+        floor = max(self.start, self.since - LOOKBACK_MS)
+        self.seen = {key for key in self.seen if key[0] >= floor}
         return [ledger_entry(entry) for entry in fresh]
 
     def stalls(self, now):

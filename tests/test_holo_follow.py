@@ -167,6 +167,27 @@ class FollowTests(FollowCase):
         self.assertEqual(notes, ["note: written before follow",
                                  "note: written after follow"])
 
+    def test_an_entry_committed_after_a_newer_one_still_prints_once(self):
+        run = self.live()
+        follow = self.follow()
+        dated = now_ms()
+        time.sleep(0.05)
+        store.record_ledger(self.conn, run, "note", "the newer entry")
+        follow.line()
+        store.record_ledger(self.conn, run, "failure", "dated earlier", now=dated)
+
+        self.assertTrue(follow.line().endswith("  ✗  HOLO-1  failure: dated earlier"))
+        self.assertEqual(follow.quiet(SEVERAL_POLLS), [])
+
+    def test_an_intervention_prints_one_line(self):
+        run = self.live()
+        follow = self.follow()
+        store.record_intervention(self.conn, run, "pause", "operator pause note")
+
+        self.assertTrue(follow.line().endswith(
+            "  !  HOLO-1  intervention: human pause: operator pause note"))
+        self.assertEqual(follow.quiet(SEVERAL_POLLS), [])
+
     def test_a_stale_heartbeat_prints_one_line_until_it_recovers(self):
         run = self.live()
         follow = self.follow()
@@ -208,6 +229,7 @@ class FollowTests(FollowCase):
         run = self.live()
         follow = self.follow(home=self.seat)
         self.assertIn("follow", self.calls()[0][-1])
+        self.assertIn("--json", self.calls()[0][-1])
         store.record_ledger(self.conn, run, "merge", "merged over ssh")
 
         self.assertTrue(follow.line().endswith("  ✓  HOLO-1  merge: merged over ssh"))

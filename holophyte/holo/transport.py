@@ -138,12 +138,12 @@ def stream(host, line, label, each):
     try:
         for raw in child.stdout:
             each(raw.decode(errors="replace"))
+        child.wait()
+        reader.join()
     except KeyboardInterrupt:
         child.terminate()
         child.wait()
         return 0
-    child.wait()
-    reader.join()
     if child.returncode == SSH_FAILED:
         ssh_failed(host, tail[0])
         return 1
