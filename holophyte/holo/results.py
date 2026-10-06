@@ -6,7 +6,13 @@ from io import StringIO
 
 from holophyte.admission import project_of
 from holophyte.config.project import Project, legacy_state_layouts
-from holophyte.holo.grammar import arguments, factory_argv
+from holophyte.holo.grammar import (
+    ALIASES,
+    COMMANDS,
+    arguments,
+    canonical,
+    factory_argv,
+)
 from store.read import open_readonly
 
 PREFIX = "[holo2] "
@@ -47,6 +53,17 @@ def run_write(args, resolve):
     elif not from_stderr:
         print(human_line(result, lines), file=sys.stderr)
     return code
+
+
+def usage_result(argv, line):
+    options = argv[:argv.index("--")] if "--" in argv else argv
+    rows = [(command.words, command) for command in COMMANDS]
+    rows += [(alias, canonical(words)) for alias, words in ALIASES]
+    command = next((command for prefix, command in rows
+                    if tuple(argv[:len(prefix)]) == prefix), None)
+    if command is not None and command.records is not None and "--json" in options:
+        print(json.dumps({"action": " ".join(command.words), "ok": False,
+                          "detail": line, "recorded": None}))
 
 
 def exit_parts(code):
@@ -111,7 +128,10 @@ def named(args):
     first = args.command.takes[:1]
     if first == ("RUN",):
         return None, int(value) if value.isdecimal() else value
-    return (value, None) if first == ("KEY",) else (None, None)
+    if first == ("KEY",):
+        return value, None
+    update = getattr(args, "update", None)
+    return (update[-1] if update else None), None
 
 
 def recorded_row(args, target, before):

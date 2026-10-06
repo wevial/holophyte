@@ -16,6 +16,7 @@ from holophyte.holo import cli as holo_cli
 from holophyte.holo.grammar import COMMANDS, parse
 from store.operator_notes import notes, send_back
 from tests.test_holo_grammar import T0, Home, holo
+from tests.test_provider import ticket_body
 
 PR_URL = "https://example.invalid/org/repo/pull/1"
 
@@ -189,6 +190,36 @@ class EmptyStoreResultTests(Home):
         (row,) = conn.execute(
             "SELECT id FROM interventions WHERE action = 'hold'").fetchall()
         self.assertEqual((result["ok"], result["recorded"]), (True, row[0]))
+
+
+class UsageAndFileResultTests(Home):
+    def test_a_usage_error_with_json_prints_a_result_and_exits_two(self):
+        completed = holo("requeue", "--json", home=self.home)
+        self.assertEqual(completed.returncode, 2)
+        (line,) = completed.stdout.splitlines()
+        result = json.loads(line)
+        self.assertEqual((result["action"], result["ok"], result["recorded"]),
+                         ("requeue", False, None))
+        self.assertEqual(result["detail"], completed.stderr.splitlines()[-1])
+
+    def test_a_file_update_json_names_the_ticket_it_updates(self):
+        path = self.repo("repo", "HOLO")
+        (path / "tests").mkdir()
+        (path / "tests" / "test_thing.py").write_text("")
+        ticket = path.parent / "T.md"
+        ticket.write_text(ticket_body(
+            verify="python3 -m unittest discover -s tests -p 'test_thing.py'"))
+        filed = self.result(holo("file", str(ticket), "--json", "-p", str(path),
+                                 home=self.home))
+        self.assertNotIn("ticket", filed)
+        updated = self.result(holo("file", str(ticket), "--update", "HOLO-1",
+                                   "--revision", "1", "--json", "-p", str(path),
+                                   home=self.home))
+        self.assertEqual((updated["ok"], updated["ticket"]), (True, "HOLO-1"))
+
+    def result(self, completed):
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return json.loads(completed.stdout)
 
 
 if __name__ == "__main__":

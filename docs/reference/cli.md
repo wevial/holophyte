@@ -137,7 +137,7 @@ stdout, the keys the daemon's `POST /actions/...` answers use:
 | `ok` | `true` when the verb exited 0 |
 | `detail` | the verb's message or its refusal, without the `[holo2]` prefix |
 | `recorded` | the id of the interventions row the verb wrote, or `null` when it wrote none (a refusal, `gap`, `move`, `file`) |
-| `ticket` | the `KEY` the command names, when it names one |
+| `ticket` | the `KEY` the command names, or `file --update KEY`'s, when it names one |
 | `run` | the run the interventions row is on, or `send-back`'s `RUN` |
 
 ```
@@ -145,7 +145,8 @@ $ holo requeue HOLO-133 "rerun" --json -p holophyte
 {"action": "requeue", "ok": true, "detail": "HOLO-133 requeued after run 941", "recorded": 1704, "ticket": "HOLO-133", "run": 941}
 ```
 
-`--json` changes the output, never the exit code below.
+`--json` changes the output, never the exit code below: a usage error is
+still exit 2, its result `ok: false` with the error line as `detail`.
 
 ## Startup checks
 
