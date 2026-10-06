@@ -74,7 +74,7 @@ toolchain is ever downloaded, caches under the writable `/home/reviewer`, `CGO_E
 the C library headers so `go test -race` runs) so a Go project's `go test`
 criteria can be witnessed too. It also installs
 `tomlkit` and `mcp` at the versions `requirements.txt` pins, so the factory's
-own suite imports inside the container, and a pinned Claude CLI (the native linux-x64
+own suite runs inside the container on its dependencies, and a pinned Claude CLI (the native linux-x64
 build, checksum-verified against its release manifest, on `PATH` under
 `/opt/claude/bin`, `DISABLE_AUTOUPDATER=1`) whose managed settings at
 `/etc/claude-code/managed-settings.json` make `bypassPermissions` the default

@@ -14,7 +14,8 @@ Python 3.11+ and Git on the host, Docker for the reviewer container, and
 `ruff` is the one developer tool (`pip install --user ruff`). `tomlkit` and `mcp` are the runtime dependencies, pinned in
 `requirements.txt` (`python3 -m pip install --user -r requirements.txt`);
 the daemon needs `tomlkit` to edit a config in place and exits naming it
-when it is missing, and only `holo mcp` needs `mcp`. `python3 -m pip install --user -e .` in the checkout installs
+when it is missing, and only `holo mcp` needs `mcp`.
+`python3 -m pip install --user -e .` in the checkout installs
 the `holo` command, which imports from the checkout and so follows its
 `HEAD`. Bun is needed
 only to build the console (`bun --cwd=console run build`); see

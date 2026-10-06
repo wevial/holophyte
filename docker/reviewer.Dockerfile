@@ -118,8 +118,8 @@ ENV PATH=/opt/claude/bin:$PATH \
 
 # tomlkit and mcp are the factory's Python dependencies (`requirements.txt`;
 # tomlkit for the daemon's `PUT /config` patch, mcp for `holo mcp` only): the
-# suite imports them, so the reviewer's `python3 -m unittest discover` needs
-# them at the same pinned versions.
+# reviewer's `python3 -m unittest discover` runs against the versions the
+# unit check installs.
 ARG TOMLKIT_VERSION=0.15.1
 ARG MCP_VERSION=2.3.0
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
