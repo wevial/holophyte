@@ -15,7 +15,12 @@ DEFAULT = "default_project"
 HOST = "host"
 REMOTE_COMMAND = "remote_command"
 TIMEZONE = "timezone"
-CLIENT_KEYS = frozenset((DEFAULT, HOST, REMOTE_COMMAND, TIMEZONE))
+TRANSPORT_KEY = "transport"
+URL = "url"
+TOKEN_FILE = "token_file"
+TRANSPORTS = ("ssh", "http")
+CLIENT_KEYS = frozenset((DEFAULT, HOST, REMOTE_COMMAND, TIMEZONE,
+                         TRANSPORT_KEY, URL, TOKEN_FILE))
 HOST_FORMS = frozenset(("--status", "--serve", "--supervise", "GET /attention"))
 
 
@@ -62,12 +67,34 @@ def client_config(path=None):
         if not isinstance(value, str) or not value.strip() or value.startswith("-"):
             refuse(f"[holo2] {path}: {key} must be a non-empty string not"
                    f" starting with '-', got {value!r}")
+    check_road(path, table)
     zone_name = table.get(TIMEZONE)
     if zone_name is not None and (not isinstance(zone_name, str)
                                   or zone(zone_name) is None):
         refuse(f"[holo2] {path}: {TIMEZONE} must be a zone name such as"
                f" \"America/Los_Angeles\", got {zone_name!r}")
     return table
+
+
+def check_road(path, table):
+    choice, url = table.get(TRANSPORT_KEY), table.get(URL)
+    if choice is not None and choice not in TRANSPORTS:
+        refuse(f"[holo2] {path}: {TRANSPORT_KEY} must be"
+               f" {' or '.join(map(repr, TRANSPORTS))}, got {choice!r}")
+    if url is not None and (not isinstance(url, str)
+                            or not url.startswith(("http://", "https://"))):
+        refuse(f"[holo2] {path}: {URL} must be an http:// or https:// URL,"
+               f" got {url!r}")
+    token = table.get(TOKEN_FILE)
+    if token is not None and (not isinstance(token, str) or not token.strip()):
+        refuse(f"[holo2] {path}: {TOKEN_FILE} must be a file's path,"
+               f" got {token!r}")
+    if url is not None and token is None:
+        refuse(f"[holo2] {path}: {URL} needs {TOKEN_FILE}, a file holding the"
+               " daemon's token")
+    needed = {"ssh": HOST, "http": URL}.get(choice)
+    if needed is not None and table.get(needed) is None:
+        refuse(f"[holo2] {path}: {TRANSPORT_KEY} = {choice!r} needs {needed}")
 
 
 def _named(value, source, host):

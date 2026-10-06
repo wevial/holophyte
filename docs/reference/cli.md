@@ -334,6 +334,9 @@ naming the file.
 | `default_project` | the project, a `[serve] name` or a repository path, when `-p`, `HOLO_PROJECT` and the current repository give none |
 | `host` | the ssh destination every command runs on, as `ssh` reads it (`user@name`, or a `Host` alias in your ssh config); unset, `holo` runs locally |
 | `remote_command` | the command that runs `holo` there, a path and its arguments with no shell operators; default `holo` |
+| `transport` | `ssh` or `http`: how `holo` reaches the host; default `ssh` when `host` is set, `http` when only `url` is |
+| `url` | the host daemon's base URL, `http://` or `https://`, for `transport = "http"`; it needs `token_file`, and one without it exits 2 naming both keys |
+| `token_file` | a file holding the daemon's machine token, sent as `Authorization: Bearer ...`; the token is never taken on the command line or printed, and a file that is not one line of printable ASCII exits 1 naming it, nothing sent |
 | `timezone` | the zone `holo` pages show clock times in, an IANA name such as `"America/Los_Angeles"`; default the local zone; a name `zoneinfo` does not know exits 2 naming the key and the value |
 
 With `host` set, `holo` runs the same command on that host: `holo requeue
@@ -359,6 +362,26 @@ long-lived processes and `story file` reads a directory, so over ssh each
 exits 2 before ssh runs. The remote command's exit code is `holo`'s; ssh's
 own failure, exit 255, is exit 1 naming the host and ssh's message, and a
 write command's `--json` result says so with `ok: false`.
+
+With `transport = "http"`, `holo` calls the host daemon's routes at `url`
+instead ([HTTP endpoints](http.md#the-host-daemon)), under
+`/projects/NAME/...`, `NAME` the project's `[serve] name`. The reads `runs`,
+`run N` (`--files`, `--ledger`, `--turns`), `attention`, `board` and `ticket
+KEY` print what the local command prints, `board`'s `editable` false as
+there; `attention` with no project is the root's. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`
+and `start` post to `POST /projects/NAME/actions/...`
+([The daemon's actions](daemon.md)): `release` to `release-hold`, `start` to
+`launch-loop`, which takes no note and releases no hold, and `pause` and `abort` first read the
+ticket's live run from `GET /tickets/KEY`. A write's result is the daemon's
+reply, printed as a `✓`/`✗` line or, with `--json`, as given. stderr says
+`via http to URL`, and a `--json` result gains `"transport": "http"`. Every
+other command, `status` and `report` included, has no route: it exits 1
+saying so and, where ssh carries it, that `transport = "ssh"` runs it, and
+nothing is sent over either road. A redirect is not followed, so the token
+goes nowhere but `url`, and an answer that is not a JSON object exits 1. A 401 exits 1 naming `token_file`'s file; a 404 on an action
+names the host's `[serve] actions`; any other refusal exits 1 with the
+daemon's message (2 for its 400), and a daemon that does not answer exits 1
+naming the URL.
 
 ## Startup checks
 
