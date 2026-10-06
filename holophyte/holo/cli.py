@@ -24,22 +24,31 @@ def build_parser():
     return add_commands(parser)
 
 
-def project_argv(value):
-    if value is None:
+def project_argv(args, default):
+    from holophyte.holo.resolve import HOST_FORMS, none_found, resolve
+    from holophyte.host.registry import HostError
+    try:
+        resolved = resolve(args.project, default)
+    except HostError as bad:
+        raise SystemExit(str(bad)) from None
+    if resolved is None:
+        if args.command.mode not in HOST_FORMS:
+            print(none_found(args.command.words), file=sys.stderr)
+            raise SystemExit(2)
+        if args.verbose:
+            print("[holo2] no source names a project: the host form",
+                  file=sys.stderr)
         return []
-    if "/" not in value and value not in (".", ".."):
-        from holophyte.host.registry import Host, HostError
-        try:
-            entry = Host.locate().project(value)
-        except HostError as bad:
-            raise SystemExit(str(bad)) from None
-        if entry is not None:
-            return [str(entry.path)]
-    return [value]
+    if args.verbose:
+        print(f"[holo2] project {resolved.shown} from {resolved.source}",
+              file=sys.stderr)
+    return [resolved.value]
 
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    from holophyte.holo.resolve import DEFAULT, client_config
+    default = client_config().get(DEFAULT)
     if argv[:1] == ["project"]:
         from holophyte.cli.entry import cli
         return cli(argv)
@@ -52,4 +61,4 @@ def main(argv=None):
         parser.print_help()
         return 0
     from holophyte.cli.entry import _legacy_cli
-    return _legacy_cli(project_argv(args.project) + factory_argv(args))
+    return _legacy_cli(project_argv(args, default) + factory_argv(args))
