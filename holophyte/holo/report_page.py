@@ -72,7 +72,8 @@ def shipped(rows):
               for outcome in SHIPPED}
     return {**counts,
             "median_min": median(row["actual_min"] for row in merged),
-            "median_estimate_min": median(row["estimate_min"] for row in merged)}
+            "median_estimate_min": median(row["estimate_min"] for row in merged
+                                          if row["actual_min"] is not None)}
 
 
 def failures(conn, start):
@@ -119,7 +120,7 @@ def consumed_notes(conn, start):
 
 def report(conn, project, since, now):
     span = window_ms(since)
-    start = 0 if span is None else now - span
+    start = 0 if span is None else max(0, now - span)
     owns_transaction = not conn.in_transaction
     if owns_transaction:
         conn.execute("BEGIN")

@@ -147,6 +147,17 @@ class CountTests(WindowReportCase):
         self.assertEqual(body["shipped"]["merged"], 3)
 
 
+    def test_estimate_median_pairs_only_the_merges_with_measured_work(self):
+        for identifier in ("KO-10", "KO-11"):
+            unmeasured = self.run_ended(identifier, "merged", 1, 100, DAY)
+            self.conn.execute("UPDATE runs SET workingMs = NULL WHERE id = ?",
+                              (unmeasured,))
+            self.conn.commit()
+        shipped = json.loads(self.read("--json"))["shipped"]
+        self.assertEqual((shipped["merged"], shipped["median_min"],
+                          shipped["median_estimate_min"]), (5, 16, 30))
+
+
 class NoteTests(WindowReportCase):
     def setUp(self):
         super().setUp()
@@ -186,6 +197,13 @@ class EdgeTests(ReportCase):
         self.assertEqual((code, out), (2, ""))
         self.assertIn("Nh, Nd or all", err)
         self.assertIn("'7x'", err)
+
+    def test_a_window_reaching_before_the_epoch_counts_from_the_epoch(self):
+        run = self.run_ended("KO-1", "failed", 5, 30, DAY, "verify")
+        body = json.loads(self.read("--since", "100000000000000d", "--json"))
+        self.assertEqual(body["window"]["from_ms"], 0)
+        self.assertEqual(body["failures"], {"verify": 1})
+        self.assertEqual([row["run"] for row in body["runs"]], [run])
 
     def test_a_store_with_no_ended_runs_says_nothing_shipped(self):
         ticket = store.tickets.mirror_ticket(

@@ -111,13 +111,16 @@ def main(argv=None):
     if args.command.records is not None:
         from holophyte.holo.results import run_write
         return run_write(args, lambda: project_argv(args, default))
-    target = project_argv(args, default)
+    return dispatch(args, project_argv(args, default), client.get(TIMEZONE))
+
+
+def dispatch(args, target, timezone):
     if args.command.mode == "--status" and not args.json:
         from holophyte.holo.status_page import show
-        return show(target, client.get(TIMEZONE))
+        return show(target, timezone)
     if args.command.mode == "--report":
         from holophyte.holo.report_page import show
-        return show(args, target[0], client.get(TIMEZONE))
+        return show(args, target[0], timezone)
     if args.command in READS:
         from holophyte.holo.reads import read
         return read(args, target[0] if target else None)

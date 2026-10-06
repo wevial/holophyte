@@ -227,7 +227,7 @@ included with or without `--notes`:
 | Key | Value |
 | --- | --- |
 | `project` | the repository path |
-| `window` | `since` as given, `from_ms` the window's start (`null` for `all`) and `now_ms` |
+| `window` | `since` as given, `from_ms` the window's start (`null` for `all`, `0` for a window reaching before the epoch) and `now_ms` |
 | `shipped` | `merged`, `abandoned`, `failed`, `median_min` and `median_estimate_min` (`null` with no merged run measured) |
 | `failures` | failure kind to count, `review_route` named `review` |
 | `gaps` | `open`, `layers` (each layer to its count) and `found_by` (each finder to its count) |
