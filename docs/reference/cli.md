@@ -100,7 +100,8 @@ A value holding a path separator, or naming an existing directory, is a
 repository path; any other value is a `[serve] name` in `host.toml`, and a
 name it does not register exits 2 naming the registered names rather than
 asking the next source. With no source answering, `status`, `serve` and
-`supervise` are the [host forms](#host-forms), and any other command exits 2
+`supervise` are the [host forms](#host-forms), as is the `attention` read
+below, and any other command exits 2
 naming all four sources. `--verbose` prints the project and the source that
 named it to stderr. `NOTE` is free text, the last argument;
 `-n/--note NOTE` is the same. `holo project VERB` is `factory.py project
@@ -162,6 +163,25 @@ $ holo requeue HOLO-133 "rerun" --json -p holophyte
 `--json` changes the output, never the exit code below: a usage error is
 still exit 2, its result `ok: false` with the error line as `detail`.
 
+Five reads are no `factory.py` mode: each calls, in process, the view
+function the [serve daemon](http.md) answers its route with, so the command
+and the route agree. Each opens the store read-only and writes nothing.
+`--json` prints the route's body as the daemon would send it; without it,
+each prints a compact listing, one line per run, item, column entry, file,
+ledger entry or turn. The view's status is the exit: 200 is 0, 400 is 2,
+and 404, 503 or any other is 1, with the body's `error` on stderr. The
+project is found as above; `attention` with none is the host form, the host
+daemon's root `/attention` built from `host.toml` with no daemon running.
+
+| Command | Aliases | Route whose body `--json` prints |
+| --- | --- | --- |
+| `holo runs [--limit N] [--json]` | | `GET /runs[?limit=N]` |
+| `holo run N [--json]` | `holo run show N` | `GET /runs/N` |
+| `holo run N --files\|--ledger\|--turns [--json]` | `holo run show N` | `GET /runs/N/files`, `/runs/N/ledger`, `/runs/N/turns` |
+| `holo attention [--json]` | | `GET /attention`, or the host daemon's root `GET /attention` |
+| `holo board [--json]` | | `GET /board` |
+| `holo ticket KEY [--json]` | | `GET /tickets/KEY` |
+
 `HOLOPHYTE_HOME/client.toml` is the client config every `holo` command reads
 first; a key it does not hold below, or a file TOML cannot read, exits 2
 naming the file.
@@ -185,8 +205,8 @@ whose output it prints.
 | Code | Meaning |
 | --- | --- |
 | 0 | done, or the board was empty |
-| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, babysitter, re-point, pause, resume, abort, close-out, hold or hold release, a refused `project` command, a stale revision or refused move or cancel |
-| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included; `holo`: no project found, a name `host.toml` does not register, or a refused `client.toml` |
+| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, babysitter, re-point, pause, resume, abort, close-out, hold or hold release, a refused `project` command, a stale revision or refused move or cancel; a `holo` read answered 404, 503 or any status but 200 and 400 |
+| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included; `holo`: no project found, a name `host.toml` does not register, or a refused `client.toml`; a `holo` read answered 400 |
 
 ## Output prefix
 

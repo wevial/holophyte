@@ -151,7 +151,8 @@ def runs(project, query=""):
     if limit is not None:
         rows = rows[:limit]
     return 200, {
-        "rows": [{"ticket": ticket, "ticket_url": ticket_urls.get(ticket),
+        "rows": [{"run": run_id, "ticket": ticket,
+                  "ticket_url": ticket_urls.get(ticket),
                   "actual_min": actual, "agent_min": agent,
                   "verify_min": verify,
                   "estimate_min": estimate, "ratio": ratio,
@@ -159,7 +160,7 @@ def runs(project, query=""):
                   "host": json_host(project, host), "ended_ms": ended_at,
                   "merge_sha": merge_sha, "wall_min": wall_min}
                  for ticket, actual, agent, verify, estimate, ratio, rounds,
-                 outcome, host, ended_at, merge_sha, wall_min in rows],
+                 outcome, host, ended_at, merge_sha, wall_min, run_id in rows],
         "limit": limit,
     }
 

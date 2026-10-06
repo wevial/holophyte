@@ -118,9 +118,10 @@ class RunsTests(PreviousBuildCases, ServeTestCase):
                 "estimate_min", "ratio", "rounds", "outcome", "host",
                 "ended_ms", "merge_sha", "wall_min")
         return [dict(zip(keys, row + (ended, sha, (ended - started) / MIN)),
-                     ticket_url=None)
-                for row, ended, sha, started in zip(
-                    rows, self.ended_at(), self.merge_shas(), self.column("startedAt"))]
+                     ticket_url=None, run=run_id)
+                for row, ended, sha, started, run_id in zip(
+                    rows, self.ended_at(), self.merge_shas(),
+                    self.column("startedAt"), self.column("id"))]
 
     def ended_at(self):
         return self.column("endedAt")
