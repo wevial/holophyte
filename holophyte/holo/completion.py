@@ -90,7 +90,7 @@ def _metavars(action):
 
 def _inline(parser, word):
     name, equals, value = word.partition("=")
-    if word.startswith("--") and equals:
+    if equals and name in parser._option_string_actions:
         head = name + equals
     elif not word.startswith("--") and len(word) > 2:
         name, head, value = word[:2], word[:2], word[2:]
@@ -244,6 +244,8 @@ def complete(words):
     from holophyte.holo.cli import build_parser
     *before, current = list(words) or [""]
     walk = Walk(build_parser(), before)
+    if current == "=" and walk.pending is not None and not walk.taken:
+        current = ""
     for candidate in walk.offered(current, quiet_keys):
         if candidate.startswith(current):
             print(candidate)

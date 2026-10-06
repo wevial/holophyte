@@ -100,6 +100,10 @@ class BashScriptTests(CompletionCase):
     def test_a_command_prefix_completes_to_its_command(self):
         self.assertEqual(self.complete("holo req", 1), ["requeue"])
 
+    def test_an_option_value_after_the_equals_bash_splits_off_completes(self):
+        self.assertEqual(self.complete("holo file T.md --priority =", 4),
+                         list(FILE_TICKET_PRIORITIES))
+
     def test_after_ticket_the_ticket_aliases_and_no_top_level_only_command(self):
         replies = self.complete('holo ticket ""', 2)
         self.assertEqual(sorted(replies), sorted(TICKET_VERBS))
@@ -139,8 +143,9 @@ class TicketKeyTests(CompletionCase):
         split_by_bash = ("file", "T.md", "--project", "=", "alpha",
                          "--update", "=", "HO")
         self.assertEqual(self.offered(*split_by_bash), ["HOLO-1", "HOLO-2"])
-        self.assertEqual(self.offered("requeue", "-palpha", "HO"),
-                         ["HOLO-1", "HOLO-2"])
+        for project in ("-palpha", "-p=alpha"):
+            self.assertEqual(self.offered("requeue", project, "HO"),
+                             ["HOLO-1", "HOLO-2"])
         self.assertEqual(self.offered("file", "T.md", "-p", "alpha", "--update=HO"),
                          ["--update=HOLO-1", "--update=HOLO-2"])
 
