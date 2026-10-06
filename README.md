@@ -61,6 +61,15 @@ python3 factory.py --cancel KEY-n --revision N --note TEXT /path/to/repo # cance
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
 python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
 holo --version                                   # the package version and the checkout's short HEAD
+holo status [--json]                             # the host, or with -p NAME|PATH one project; every factory.py mode has a holo command
+holo requeue KEY "note" -p NAME|PATH             # factory.py --requeue KEY --note "note" PATH; -p takes a [serve] name or a path
+holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an alias of each ticket verb
+holo approve KEY ["note"] -p NAME|PATH           # likewise babysit, pause, resume, abort, repoint, close, gap, move, cancel, file
+holo hold "note" -p NAME|PATH                    # and holo release "note"
+holo sweep [--act] | board diff | board import | store import PATH --dry-run | report -p NAME|PATH
+holo story file|approve|witness|decide ... -p NAME|PATH # the story modes
+holo supervise [--once] | serve [ADDR] [-p NAME|PATH] # the host forms without -p
+holo project add|remove|list|enable|hold|disable   # factory.py project, unchanged
 ```
 
 `--file-ticket` validates the file against the project, creates the issue,
