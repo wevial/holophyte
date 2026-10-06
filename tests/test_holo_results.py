@@ -144,6 +144,13 @@ class SendBackResultTests(ResultTests):
             send_back(self.conn, self.run, "note", getpass.getuser())
         self.assertIn(str(refused.exception), completed.stderr)
 
+    def test_send_back_of_a_run_id_beyond_sqlite_integers_is_a_usage_error(self):
+        before = list(self.conn.iterdump())
+        completed = self.holo("send-back", str(2**63), "note", "--json")
+        self.assertNotIn("Traceback", completed.stderr)
+        self.assertEqual(self.result(completed, 2)["ok"], False)
+        self.assertEqual(list(self.conn.iterdump()), before)
+
 
 class ProjectAndGapResultTests(ResultTests):
     def test_hold_json_cites_the_projects_hold_row(self):

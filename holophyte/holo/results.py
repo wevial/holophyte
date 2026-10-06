@@ -87,12 +87,15 @@ def send_back(args, target):
         args.leaf.error("send-back records the instruction the run goes back with")
     if not values[0].isdecimal():
         args.leaf.error(f"RUN is a run id, not {values[0]!r}")
+    run_id = int(values[0])
+    if not 0 < run_id < 2**63:
+        args.leaf.error("RUN must be a positive 64-bit run id")
     from holophyte.cli.operator import send_back_run
     from holophyte.config.checks import check_config
     project = Project.locate(target[0])
     project.config()
     check_config(project)
-    return send_back_run(project, int(values[0]), note)
+    return send_back_run(project, run_id, note)
 
 
 def store_path(target):
