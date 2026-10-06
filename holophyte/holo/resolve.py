@@ -21,9 +21,15 @@ class Resolved(NamedTuple):
     shown: str
 
 
+class Refused(SystemExit):
+    def __init__(self, line):
+        super().__init__(2)
+        self.line = line
+
+
 def refuse(message):
     print(message, file=sys.stderr)
-    raise SystemExit(2)
+    raise Refused(message)
 
 
 def client_path():

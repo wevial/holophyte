@@ -84,9 +84,10 @@ any other mode without a project is a usage error.
 ## holo
 
 `holo COMMAND [ARGS] [-p NAME|PATH] [--verbose]` is the short form of the
-modes above. Each command stands for one `factory.py` invocation and runs
-through the same parser, so its refusals, messages and exit codes are the
-factory's own. A command's project is the first of these that answers:
+modes above. Each command but `send-back` stands for one `factory.py`
+invocation and runs through the same parser, so its refusals, messages and
+exit codes are the factory's own. A command's project is the first of these
+that answers:
 
 1. `-p NAME|PATH` on the command line;
 2. `HOLO_PROJECT` in the environment, read as `-p` is;
@@ -123,6 +124,7 @@ command yet.
 | `holo requeue KEY NOTE` | `holo ticket requeue` | `--requeue KEY --note NOTE PROJECT` |
 | `holo approve KEY [NOTE]` | `holo ticket approve` | `--approve KEY [--note NOTE] PROJECT` |
 | `holo babysit KEY [NOTE]` | `holo ticket babysit` | `--babysit KEY [--note NOTE] PROJECT` |
+| `holo send-back RUN NOTE` | | none: the console's send-back of run `RUN`, its note by the caller's login |
 | `holo repoint KEY SHA NOTE` | `holo ticket repoint` | `--repoint KEY SHA --note NOTE PROJECT` |
 | `holo pause KEY NOTE` | `holo ticket pause` | `--pause KEY --note NOTE PROJECT` |
 | `holo resume KEY NOTE` | `holo ticket resume` | `--resume KEY --note NOTE PROJECT` |
@@ -137,6 +139,29 @@ command yet.
 | `holo story decide KEY ID [OPTION] NOTE` | | `--decide KEY ID [OPTION] --note NOTE PROJECT` |
 | `holo supervise [--once]` | | `--supervise [--once] [PROJECT]` |
 | `holo serve [ADDR]` | | `--serve [ADDR] [PROJECT]` |
+
+The write commands, each that takes a `NOTE` and `holo file`, print one
+result. Without `--json` it is one line: `✓` and what the verb did, then
+`intervention N recorded` when it wrote an interventions row, on stdout; or
+`✗` and the refusal on stderr. With `--json` it is one JSON object on
+stdout, the keys the daemon's `POST /actions/...` answers use:
+
+| Key | Value |
+| --- | --- |
+| `action` | the command's words, `requeue` or `story approve` |
+| `ok` | `true` when the verb exited 0 |
+| `detail` | the verb's message or its refusal, without the `[holo2]` prefix |
+| `recorded` | the id of the interventions row the verb wrote, or `null` when it wrote none (a refusal, `gap`, `move`, `file`) |
+| `ticket` | the `KEY` the command names, or `file --update KEY`'s, when it names one |
+| `run` | the run the interventions row is on, or `send-back`'s `RUN` |
+
+```
+$ holo requeue HOLO-133 "rerun" --json -p holophyte
+{"action": "requeue", "ok": true, "detail": "HOLO-133 requeued after run 941", "recorded": 1704, "ticket": "HOLO-133", "run": 941}
+```
+
+`--json` changes the output, never the exit code below: a usage error is
+still exit 2, its result `ok: false` with the error line as `detail`.
 
 Five reads are no `factory.py` mode: each calls, in process, the view
 function the [serve daemon](http.md) answers its route with, so the command
