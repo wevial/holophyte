@@ -197,6 +197,35 @@ class LockAndBuildTests(StatusPageTests):
         self.assertEqual(self.page(snap)[-1], "Sweep ok 40 s ago · build 92ef2b0")
 
 
+class SweepProblemTests(StatusPageTests):
+    def test_a_sweep_error_naming_a_project_replaces_its_quiet_line(self):
+        (self.home / "sweep.json").write_text(json.dumps(
+            {"started": NOW - 45_000, "ended": NOW - 40_000, "exit": 1,
+             "projects": {"alpha": "ok", "beta": "error: store locked"}}))
+
+        snap = self.snapshot()
+        snap["build"]["head"] = SHA
+
+        lines = self.page(snap)
+
+        self.assertNotIn("Quiet", lines)
+        self.assertIn("  ✗  beta   sweep: error: store locked  try: journalctl"
+                      " --user -u holophyte-sweep.service -n 200", lines)
+        self.assertEqual(lines[-1], "Sweep failed 40 s ago · build 92ef2b0")
+
+    def test_a_sweep_that_started_long_ago_and_never_ended_is_killed(self):
+        (self.home / "sweep.json").write_text(json.dumps(
+            {"started": NOW - 94 * 60 * MINUTE, "ended": None, "exit": None}))
+
+        lines = self.page()
+
+        problems = lines[lines.index("Problems (1)") + 1]
+        self.assertTrue(problems.startswith(
+            "  ✗  sweep  the sweep started 94 h ago never ended  try: "), problems)
+        self.assertTrue(lines[-1].startswith("Sweep killed, started 94 h ago · "),
+                        lines[-1])
+
+
 class ColourTests(StatusPageTests):
     def setUp(self):
         super().setUp()

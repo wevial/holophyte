@@ -17,9 +17,10 @@ from holophyte.holo.render import (
     symbol,
     zone,
 )
+from holophyte.serve.serve_host import SWEEP_TIMEOUT_SEC
 
 STATUS_JSON = ["--status", "--json"]
-SUPERVISE_HINT = "holo supervise --once"
+SWEEP_NOW = "systemctl --user start holophyte-sweep.service"
 SWEEP_LOG_HINT = "journalctl --user -u holophyte-sweep.service -n 200"
 REGISTRY_HINT = "holo project list"
 
@@ -54,26 +55,13 @@ def show(target, zone_name, out=None):
 
 
 def page(snap, now, tz=None, colour=False):
-    projects = projects_of(snap)
+    sweep = sweep_of(snap)
     needs, running, quiet, problems = [], [], [], []
-    for project in projects:
-        who = project["name"] or Path(project["path"]).name
-        status = project["store"]
-        if status is None:
-            problems.append(Row("✗", who, "", hinted(project["error"],
-                                                    REGISTRY_HINT)))
-            continue
-        own = (parked_rows(who, status) + stranded_rows(who, status, now))
-        live = running_rows(who, status)
-        trouble = lock_rows(who, status, project["name"] or project["path"])
-        needs += own
-        running += live
-        problems += trouble
-        if not (own or live or trouble):
-            ready = status["ready"]
-            quiet.append(Row("✓", who, "",
-                             f"{ready} ready" if ready else "nothing ready"))
-    problems += host_rows(snap, now)
+    for project in projects_of(snap):
+        sections = project_rows(project, now, swept_errors(sweep))
+        for rows, more in zip((needs, running, quiet, problems), sections):
+            rows += more
+    problems += host_rows(snap, sweep, now)
     rows = needs + running + quiet + problems
     widths = (max((len(row.who) for row in rows), default=0),
               max((len(row.what) for row in rows), default=0),
@@ -85,10 +73,29 @@ def page(snap, now, tz=None, colour=False):
             counted = title if title == "Quiet" else f"{title} ({len(section)})"
             lines += ["", counted]
             lines += [line(row, widths, colour) for row in section]
-    footer = footer_line(snap, now)
-    if footer:
-        lines += ["", footer]
+    if "target" not in snap:
+        lines += ["", footer_line(snap, sweep, now)]
     return lines
+
+
+def project_rows(project, now, errors):
+    key = project["name"] or project["path"]
+    who = project["name"] or Path(project["path"]).name
+    status = project["store"]
+    if status is None:
+        return [], [], [], [Row("✗", who, "", hinted(project["error"],
+                                                    REGISTRY_HINT))]
+    needs = parked_rows(who, status) + stranded_rows(who, status, now)
+    running = running_rows(who, status)
+    trouble = lock_rows(who, status, key)
+    if key in errors:
+        trouble.append(Row("✗", who, "", hinted(f"sweep: {errors[key]}",
+                                                SWEEP_LOG_HINT)))
+    if needs or running or trouble:
+        return needs, running, [], trouble
+    ready = status["ready"]
+    return [], [], [Row("✓", who, "", f"{ready} ready" if ready
+                        else "nothing ready")], []
 
 
 def projects_of(snap):
@@ -156,58 +163,78 @@ def lock_rows(who, status, project):
     rows = []
     supervisor = status["supervisor_lock"]
     if supervisor and supervisor["pid"] is None:
-        rows.append(Row("✗", who, "", hinted("supervisor lock names no pid",
-                                             SUPERVISE_HINT)))
+        rows.append(Row("✗", who, "", hinted(
+            "supervisor lock names no pid",
+            "remove its supervisor.lock once no supervisor runs")))
     elif supervisor and supervisor["stale"]:
         rows.append(Row("✗", who, "", hinted(
-            f"supervisor lock names dead pid {supervisor['pid']}",
-            SUPERVISE_HINT)))
+            f"supervisor lock names dead pid {supervisor['pid']}", SWEEP_NOW)))
     merge = status["merge_lock"]
-    sweep = f"holo sweep --act -p {project}"
     if merge and merge["run"] is None:
-        rows.append(Row("✗", who, "", hinted("merge lock names no run", sweep)))
+        rows.append(Row("✗", who, "", hinted(
+            "merge lock names no run", "remove its merge.lock once no merge runs")))
     elif merge and merge["stale"]:
         rows.append(Row("✗", who, "", hinted(
-            f"merge lock names run {merge['run']}, which has ended", sweep)))
+            f"merge lock names run {merge['run']}, which is not live",
+            f"holo sweep --act -p {project}")))
     return rows
 
 
-def host_rows(snap, now):
+def host_rows(snap, sweep, now):
     if "target" in snap:
         return []
     rows = []
     home = snap["home_lock"]
     if home and home["pid"] is None:
-        rows.append(Row("✗", "host", "", hinted("home lock names no pid",
-                                                SUPERVISE_HINT)))
+        rows.append(Row("✗", "host", "", hinted(
+            "home lock names no pid",
+            f"remove {snap['home']}/supervisor.lock once no sweep runs")))
     elif home and home["stale"]:
         rows.append(Row("✗", "host", "", hinted(
-            f"home lock names dead pid {home['pid']}", SUPERVISE_HINT)))
-    failure = sweep_failure(snap["sweep"])
-    if failure:
+            f"home lock names dead pid {home['pid']}", SWEEP_NOW)))
+    failure = sweep_failure(sweep, now)
+    if failure and not swept_errors(sweep):
         rows.append(Row("✗", "sweep", "", hinted(failure, SWEEP_LOG_HINT)))
     return rows
 
 
-def sweep_failure(sweep):
+def sweep_of(snap):
+    sweep = snap.get("sweep")
+    if sweep and not isinstance(sweep, dict):
+        return {"error": "sweep.json is not a JSON object"}
+    return sweep
+
+
+def swept_errors(sweep):
+    outcomes = (sweep or {}).get("projects")
+    if not isinstance(outcomes, dict):
+        return {}
+    return {name: first_line(str(outcome), "") for name, outcome in outcomes.items()
+            if str(outcome).startswith("error")}
+
+
+def killed(sweep, now):
+    started, ended = sweep.get("started"), sweep.get("ended")
+    return (isinstance(started, int) and not isinstance(ended, int)
+            and now - started > SWEEP_TIMEOUT_SEC * 1000)
+
+
+def sweep_failure(sweep, now):
     if not sweep:
         return None
     if sweep.get("error"):
         return first_line(str(sweep["error"]), "")
+    if killed(sweep, now):
+        return (f"the sweep started {age_since(sweep['started'], now)} ago"
+                " never ended")
     code = sweep.get("exit")
-    if not isinstance(code, int) or code == 0:
-        return None
-    outcomes = sweep.get("projects")
-    errors = [f"{name}: {outcome}" for name, outcome in
-              (outcomes.items() if isinstance(outcomes, dict) else ())
-              if str(outcome).startswith("error")]
-    return first_line(errors[0] if errors else "", f"exit {code}")
+    if isinstance(code, int) and code != 0:
+        return f"the sweep exited {code}"
+    return None
 
 
-def footer_line(snap, now):
-    if "target" in snap:
-        return None
-    parts = [sweep_part(snap["sweep"], now)]
+def footer_line(snap, sweep, now):
+    parts = [sweep_part(sweep, now)]
     home = snap["home_lock"]
     if home and home["stale"] is False:
         parts.append(f"supervisor pid {home['pid']}")
@@ -220,9 +247,10 @@ def sweep_part(sweep, now):
     if not sweep:
         return "Sweep none"
     ended, started = sweep.get("ended"), sweep.get("started")
+    failed = sweep_failure(sweep, now)
     if isinstance(ended, int):
-        state = "failed" if sweep_failure(sweep) else "ok"
-        return f"Sweep {state} {age_since(ended, now)} ago"
+        return f"Sweep {'failed' if failed else 'ok'} {age_since(ended, now)} ago"
     if isinstance(started, int):
-        return f"Sweep running, started {age_since(started, now)} ago"
-    return "Sweep failed" if sweep_failure(sweep) else "Sweep none"
+        state = "killed" if failed else "running"
+        return f"Sweep {state}, started {age_since(started, now)} ago"
+    return "Sweep failed" if failed else "Sweep none"

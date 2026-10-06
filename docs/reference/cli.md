@@ -172,8 +172,8 @@ prints that object unchanged. Its lines carry no `[holo2]` prefix:
 | `Needs you (N)` | `!`, the project, the ticket and the question of each parked ticket; the reason of each stranded run and how long ago it ended, `14 min` |
 | `Running (N)` | `>`, the project, the ticket, the phase and the heartbeat's age, `heartbeat 20 s ago`; a merge lock or a project supervisor lock held by a live holder |
 | `Quiet` | `✓` and the ready count of each project with nothing live, parked, stranded or wrong |
-| `Problems (N)` | `✗` and a `try:` hint for a lock naming a dead pid, an ended run or no holder, an unreadable project, or a failed sweep; a project here has no quiet line |
-| footer | the sweep's state and age, `Sweep ok 40 s ago`, the home lock's live pid, and the build as a short hash, `build 92ef2b0` (host form only) |
+| `Problems (N)` | `✗` and a `try:` hint for a lock naming a dead pid, a run no longer live or no holder, an unreadable project, a project the last sweep errored on, a sweep that failed, or one that started over two minutes ago and never ended; a project here has no quiet line |
+| footer | the sweep's state and age, `Sweep ok 40 s ago` or `Sweep killed, started 94 h ago`, the home lock's live pid, and the build as a short hash, `build 92ef2b0` (host form only) |
 
 A free lock prints no line. Ages are `s` under a minute, `min` under an
 hour, then `h`. The symbols are coloured (`!` orange, `>` blue, `✓` green,
