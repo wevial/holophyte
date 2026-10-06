@@ -8,12 +8,11 @@ DISTRIBUTION = "holophyte"
 
 
 def package_version():
-    # An editable install's metadata keeps the version it was installed at.
-    pyproject = factory_checkout() / "pyproject.toml"
-    if not pyproject.is_file():
+    try:
         return metadata.version(DISTRIBUTION)
-    with pyproject.open("rb") as stream:
-        return tomllib.load(stream)["project"]["version"]
+    except metadata.PackageNotFoundError:
+        with (factory_checkout() / "pyproject.toml").open("rb") as stream:
+            return tomllib.load(stream)["project"]["version"]
 
 
 def build_parser():
