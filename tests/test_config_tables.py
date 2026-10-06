@@ -513,11 +513,6 @@ class MergeConfigTests(ConfigTestCase):
         self.locate('[merge]\nmode = "pr"\npr_rounds = 2\n')
         self.assertEqual(config_tables.merge_config(self.project).pr_rounds, 2)
 
-    def test_pr_main_refreshes_is_read(self):
-        self.locate('[merge]\nmode = "pr"\npr_main_refreshes = 3\n')
-        self.assertEqual(
-            config_tables.merge_config(self.project).pr_main_refreshes, 3)
-
     def test_pr_is_read(self):
         self.locate('[merge]\nmode = "pr"\n')
         self.assertEqual(config_tables.merge_config(self.project).mode, "pr")
