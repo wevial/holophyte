@@ -70,6 +70,12 @@ Each module, one line:
 - `holophyte/holo/results.py` — a write command's one result: the verb run
   with its printed line and refusal captured, the interventions row it wrote
   read back as `recorded`, printed as JSON with `--json` or as a `✓`/`✗` line.
+- `holophyte/holo/render.py` — the pieces every `holo` page shares: a clock
+  time in the client's zone, a relative age, a short hash, and a symbol
+  coloured only on a terminal without `NO_COLOR`.
+- `holophyte/holo/status_page.py` — `holo status` without `--json`: the
+  `--status --json` object, the project or the host form, rendered as needs
+  you, running, quiet and problems sections and a sweep and build footer.
 - `holophyte/holo/units.py` — `holo start`, which records the launch and
   starts the project's loop unit through the daemon's `unit_action()`, or
   runs the loop in the terminal with `--foreground`; and `holo stop`, which

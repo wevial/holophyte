@@ -14,6 +14,7 @@ from holophyte.holo.grammar import (
     canonical,
     factory_argv,
 )
+from holophyte.holo.render import colour_on, symbol
 from store.read import open_readonly
 
 PREFIX = "[holo2] "
@@ -51,9 +52,9 @@ def run_write(args, resolve):
     if args.json:
         print(json.dumps(result))
     elif result["ok"]:
-        print(human_line(result, lines))
+        print(human_line(result, lines, colour_on(sys.stdout)))
     elif not from_stderr:
-        print(human_line(result, lines), file=sys.stderr)
+        print(human_line(result, lines, colour_on(sys.stderr)), file=sys.stderr)
     return code
 
 
@@ -198,10 +199,10 @@ def build_result(args, code, lines, row):
     return result
 
 
-def human_line(result, lines):
+def human_line(result, lines, colour=False):
     if not result["ok"]:
-        return "✗ " + " · ".join(lines)
+        return symbol("✗", colour) + " " + " · ".join(lines)
     parts = lines or [result["action"]]
     if result["recorded"] is not None:
         parts = [*parts, f"intervention {result['recorded']} recorded"]
-    return "✓ " + " · ".join(parts)
+    return symbol("✓", colour) + " " + " · ".join(parts)

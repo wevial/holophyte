@@ -78,13 +78,14 @@ def main(argv=None):
     if argv[:1] == [HELPER]:
         from holophyte.holo.completion import complete
         return complete(argv[1:])
-    from holophyte.holo.resolve import DEFAULT, Refused, client_config
+    from holophyte.holo.resolve import DEFAULT, TIMEZONE, Refused, client_config
     try:
-        default = client_config().get(DEFAULT)
+        client = client_config()
     except Refused as refused:
         from holophyte.holo.results import usage_result
         usage_result(argv, refused.line)
         raise
+    default = client.get(DEFAULT)
     if argv[:1] == ["project"]:
         from holophyte.cli.entry import cli
         return cli(argv)
@@ -111,6 +112,9 @@ def main(argv=None):
         from holophyte.holo.results import run_write
         return run_write(args, lambda: project_argv(args, default))
     target = project_argv(args, default)
+    if args.command.mode == "--status" and not args.json:
+        from holophyte.holo.status_page import show
+        return show(target, client.get(TIMEZONE))
     if args.command in READS:
         from holophyte.holo.reads import read
         return read(args, target[0] if target else None)

@@ -5,13 +5,15 @@ import tomllib
 from pathlib import Path
 from typing import NamedTuple
 
+from holophyte.holo.render import zone
 from holophyte.host.registry import Host, home
 
 CLIENT_FILE = "client.toml"
-CLIENT_KEYS = frozenset(("default_project",))
 ENVIRONMENT = "HOLO_PROJECT"
 CURRENT = "current repository"
 DEFAULT = "default_project"
+TIMEZONE = "timezone"
+CLIENT_KEYS = frozenset((DEFAULT, TIMEZONE))
 HOST_FORMS = frozenset(("--status", "--serve", "--supervise", "GET /attention"))
 
 
@@ -53,6 +55,11 @@ def client_config(path=None):
                                 or not default.strip()):
         refuse(f"[holo2] {path}: {DEFAULT} must be a project name or path,"
                f" got {default!r}")
+    zone_name = table.get(TIMEZONE)
+    if zone_name is not None and (not isinstance(zone_name, str)
+                                  or zone(zone_name) is None):
+        refuse(f"[holo2] {path}: {TIMEZONE} must be a zone name such as"
+               f" \"America/Los_Angeles\", got {zone_name!r}")
     return table
 
 
