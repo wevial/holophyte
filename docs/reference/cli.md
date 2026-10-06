@@ -81,6 +81,49 @@ any other mode without a project is a usage error.
 | `--serve [HOST:PORT]` | the host daemon: every registered project's routes under `/projects/NAME/...` (`NAME` its `[serve] name`), and the host's `/status` and `/attention` at the root; serves on the socket the service manager hands over (`LISTEN_FDS`), else the address given, else `host.toml`'s `[serve] bind`; `host.toml`'s `[serve] machine_token_file` is the bearer beyond loopback and for every write, `[serve] actions` opens the project actions and `POST /actions/run-sweep`. On a factory `HEAD` move it exits 0 when handed its socket, and re-executes otherwise | `host.toml`, each store; writes only through the opt-ins, and `run-sweep` appends to `HOLOPHYTE_HOME/host-actions.jsonl` |
 | `--supervise [--once]` | the host sweep: under `HOLOPHYTE_HOME/supervisor.lock` (a second run beside a live one exits 1 naming its pid), sweeps every registered store and bumps its one host-sweep beat (pid 0), then acts on the trips and reconciles pull requests, board closes and owed loops round-robin under a deadline of half `[supervisor] sweep_sec`; a project whose own `supervisor.lock` names a live pid is skipped, a dead one is removed; a disabled project, or one with no store or no row for its path, is skipped; writes `HOLOPHYTE_HOME/sweep.json` after every project; `--once` is one run, exit 1 when any project errored, and without it a run every `sweep_sec` until SIGINT/SIGTERM | `host.toml`, each store, `sweep.json`, Linear, GitHub, the loop units |
 
+## holo
+
+`holo COMMAND [ARGS] [-p NAME|PATH]` is the short form of the modes above.
+Each command stands for one `factory.py` invocation and runs through the
+same parser, so its refusals, messages and exit codes are the factory's
+own. `-p` names the project by its `[serve] name` in `host.toml`, or by
+its repository path; with no `-p`, `status`, `serve` and `supervise` are
+the [host forms](#host-forms). `NOTE` is free text, the last argument;
+`-n/--note NOTE` is the same. `holo project VERB` is `factory.py project
+VERB` with its arguments unchanged. `--worker` has no command: it is
+internal, spawned by the loop's pool, and the loop itself is not a `holo`
+command yet.
+
+| Command | Aliases | Factory invocation |
+| --- | --- | --- |
+| `holo status [--json]` | | `--status [--json] [PROJECT]` |
+| `holo report` | | `--report PROJECT` |
+| `holo sweep [--act]` | | `--sweep [--act] PROJECT` |
+| `holo board diff` | | `--board-diff PROJECT` |
+| `holo board import [--dry-run]` | | `--board-import [--dry-run] PROJECT` |
+| `holo store import PATH --dry-run` | | `--import-store PATH --dry-run PROJECT` |
+| `holo file FILE [--backlog] [--priority P]` | `holo ticket file` | `--file-ticket FILE [--state Backlog] [--priority P] PROJECT` |
+| `holo file FILE --update KEY [--revision N] [--labels a,b]` | `holo ticket file` | `--file-ticket FILE --update KEY [--revision N] [--labels a,b] PROJECT` |
+| `holo move KEY ready\|backlog --revision N [NOTE]` | `holo ticket move` | `--move KEY ready\|backlog --revision N [--note NOTE] PROJECT` |
+| `holo cancel KEY --revision N NOTE` | `holo ticket cancel` | `--cancel KEY --revision N --note NOTE PROJECT` |
+| `holo requeue KEY NOTE` | `holo ticket requeue` | `--requeue KEY --note NOTE PROJECT` |
+| `holo approve KEY [NOTE]` | `holo ticket approve` | `--approve KEY [--note NOTE] PROJECT` |
+| `holo babysit KEY [NOTE]` | `holo ticket babysit` | `--babysit KEY [--note NOTE] PROJECT` |
+| `holo repoint KEY SHA NOTE` | `holo ticket repoint` | `--repoint KEY SHA --note NOTE PROJECT` |
+| `holo pause KEY NOTE` | `holo ticket pause` | `--pause KEY --note NOTE PROJECT` |
+| `holo resume KEY NOTE` | `holo ticket resume` | `--resume KEY --note NOTE PROJECT` |
+| `holo abort KEY NOTE [--close-pr]` | `holo ticket abort` | `--abort KEY --note NOTE [--close-pr] PROJECT` |
+| `holo hold NOTE` | | `--hold --note NOTE PROJECT` |
+| `holo release NOTE` | | `--release-hold --note NOTE PROJECT` |
+| `holo close KEY URL [NOTE]` | `holo ticket close` | `--close KEY --landed URL [--note NOTE] PROJECT` |
+| `holo gap KEY LAYER NOTE [--carried-by KEY] [--found-by F]` | `holo ticket gap` | `--gap-layer KEY LAYER --note NOTE [--carried-by KEY] [--found-by F] PROJECT` |
+| `holo story file SLUG [--update KEY --revision N] [--priority P]` | | `--file-story SLUG [--update KEY --revision N] [--priority P] PROJECT` |
+| `holo story approve KEY --revision N NOTE [--baseline-green W] [--baseline-red-kind KIND W]` | | `--approve-story KEY --revision N --note NOTE [--baseline-green W] [--baseline-red-kind KIND W] PROJECT` |
+| `holo story witness KEY` | | `--witness-pass KEY PROJECT` |
+| `holo story decide KEY ID [OPTION] NOTE` | | `--decide KEY ID [OPTION] --note NOTE PROJECT` |
+| `holo supervise [--once]` | | `--supervise [--once] [PROJECT]` |
+| `holo serve [ADDR]` | | `--serve [ADDR] [PROJECT]` |
+
 ## Startup checks
 
 Every mode validates every `config.toml` table it can see and refuses an

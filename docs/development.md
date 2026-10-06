@@ -49,7 +49,11 @@ Each module, one line:
 - `holophyte/holo/__init__.py` — the `holo` command's package.
 - `holophyte/holo/cli.py` — `main()`, the `holo` console script `pyproject.toml`
   declares: `--version` prints the package version and the checkout's short
-  `HEAD`.
+  `HEAD`; a subcommand resolves `-p NAME|PATH`, translates through the grammar table
+  and runs as `_legacy_cli()`; `holo project` is `factory.py project`.
+- `holophyte/holo/grammar.py` — the `holo` command table: one canonical row per
+  `factory.py` mode, the `ticket VERB` aliases, and their translation to the
+  argv `build_parser()` parses.
 - `holophyte/holo/__main__.py` — `python3 -m holophyte.holo`, the same command
   without an install.
 - `holophyte/config/project.py` — where a project's state lives (`HOLOPHYTE_HOME`,
