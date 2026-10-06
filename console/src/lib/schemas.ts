@@ -144,3 +144,8 @@ export const runDetailSchema = z.looseObject({
   rounds: z.array(roundSchema), events: z.array(runEventSchema),
   chain: runChainSchema.optional(),
 });
+// `GET /runs/N/merge`: whether a run parked for a human's merge may merge now.
+export const mergeReadinessSchema = z.looseObject({
+  ready: z.boolean(), reason: z.string().nullable(), detail: z.string().nullable(),
+  facts: z.array(z.looseObject({ name: z.string(), ok: z.boolean(), detail: z.string() })),
+});
