@@ -17,8 +17,29 @@ def package_version():
             return tomllib.load(stream)["project"]["version"]
 
 
+class UsageError(SystemExit):
+    def __init__(self, line, partial=None):
+        super().__init__(2)
+        self.line = line
+        self.partial = partial
+
+
+class Parser(argparse.ArgumentParser):
+    partial = None
+
+    def parse_known_args(self, args=None, namespace=None):
+        self.partial = argparse.Namespace() if namespace is None else namespace
+        return super().parse_known_args(args, self.partial)
+
+    def error(self, message):
+        line = f"{self.prog}: error: {message}"
+        self.print_usage(sys.stderr)
+        sys.stderr.write(line + "\n")
+        raise UsageError(line, self.partial)
+
+
 def build_parser():
-    parser = argparse.ArgumentParser(prog="holo")
+    parser = Parser(prog="holo")
     parser.add_argument("--version", action="store_true",
                         help="print the package version and the checkout's build")
     return add_commands(parser)
@@ -47,18 +68,31 @@ def project_argv(args, default):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    from holophyte.holo.resolve import DEFAULT, client_config
-    default = client_config().get(DEFAULT)
+    from holophyte.holo.resolve import DEFAULT, Refused, client_config
+    try:
+        default = client_config().get(DEFAULT)
+    except Refused as refused:
+        from holophyte.holo.results import usage_result
+        usage_result(argv, refused.line)
+        raise
     if argv[:1] == ["project"]:
         from holophyte.cli.entry import cli
         return cli(argv)
     parser = build_parser()
-    args = parse(parser, argv)
+    try:
+        args = parse(parser, argv)
+    except UsageError as usage:
+        from holophyte.holo.results import usage_result
+        usage_result(argv, usage.line)
+        raise
     if args.version:
         print(f"holo {package_version()} (build {build_sha()})")
         return 0
     if args.words is None:
         parser.print_help()
         return 0
+    if args.command.records is not None:
+        from holophyte.holo.results import run_write
+        return run_write(args, lambda: project_argv(args, default))
     from holophyte.cli.entry import _legacy_cli
     return _legacy_cli(project_argv(args, default) + factory_argv(args))

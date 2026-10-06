@@ -21,6 +21,7 @@ class Command(NamedTuple):
     landed: str | None = None
     note: str | None = None
     flags: tuple = ()
+    records: tuple | None = None
 
 
 ACT = Flag("--act")
@@ -53,41 +54,51 @@ COMMANDS = (
             "what importing another store would move", takes=("PATH",),
             flags=(DRY_RUN,)),
     Command(("file",), "--file-ticket", "file a ticket, or --update its body",
-            takes=("FILE",), flags=(BACKLOG, PRIORITY, UPDATE, REVISION, LABELS)),
+            takes=("FILE",), flags=(BACKLOG, PRIORITY, UPDATE, REVISION, LABELS),
+            records=()),
     Command(("move",), "--move", "a native ticket to ready or backlog",
-            takes=("KEY", "ready|backlog"), note=OPTIONAL, flags=(REVISION,)),
+            takes=("KEY", "ready|backlog"), note=OPTIONAL, flags=(REVISION,),
+            records=()),
     Command(("cancel",), "--cancel", "cancel a native ticket", takes=("KEY",),
-            note=REQUIRED, flags=(REVISION,)),
+            note=REQUIRED, flags=(REVISION,),
+            records=("abort", "abort_close", "close_out")),
     Command(("requeue",), "--requeue", "a failed ticket back in the queue",
-            takes=("KEY",), note=REQUIRED),
+            takes=("KEY",), note=REQUIRED, records=("requeue",)),
     Command(("approve",), "--approve", "release a run parked for merge approval",
-            takes=("KEY",), note=OPTIONAL),
+            takes=("KEY",), note=OPTIONAL, records=("approve",)),
     Command(("babysit",), "--babysit", "look at a parked run's pull request again",
-            takes=("KEY",), note=OPTIONAL),
+            takes=("KEY",), note=OPTIONAL, records=("babysit", "operator_note")),
+    Command(("send-back",), None,
+            "send a run parked on its pull request back with an instruction",
+            takes=("RUN",), note=REQUIRED, records=("operator_note",)),
     Command(("repoint",), "--repoint", "move a parked candidate to a rebuilt tip",
-            takes=("KEY", "SHA"), note=REQUIRED),
+            takes=("KEY", "SHA"), note=REQUIRED, records=("repoint",)),
     Command(("pause",), "--pause", "stop a run at its next safe point",
-            takes=("KEY",), note=REQUIRED),
+            takes=("KEY",), note=REQUIRED, records=("pause",)),
     Command(("resume",), "--resume", "continue a paused run", takes=("KEY",),
-            note=REQUIRED),
+            note=REQUIRED, records=("resume",)),
     Command(("abort",), "--abort", "end a run now, preserving its work",
-            takes=("KEY",), note=REQUIRED, flags=(CLOSE_PR,)),
-    Command(("hold",), "--hold", "stop new admission", note=REQUIRED),
+            takes=("KEY",), note=REQUIRED, flags=(CLOSE_PR,),
+            records=("abort", "abort_close")),
+    Command(("hold",), "--hold", "stop new admission", note=REQUIRED,
+            records=("hold",)),
     Command(("release",), "--release-hold", "enable admission again",
-            note=REQUIRED),
+            note=REQUIRED, records=("release_hold",)),
     Command(("close",), "--close", "record a change landed outside the factory",
-            takes=("KEY",), landed="URL", note=OPTIONAL),
+            takes=("KEY",), landed="URL", note=OPTIONAL, records=("close_out",)),
     Command(("gap",), "--gap-layer", "where a gap's lesson landed",
-            takes=("KEY", "LAYER"), note=REQUIRED, flags=(CARRIED_BY, FOUND_BY)),
+            takes=("KEY", "LAYER"), note=REQUIRED, flags=(CARRIED_BY, FOUND_BY),
+            records=()),
     Command(("story", "file"), "--file-story", "file a story from stories/SLUG",
             takes=("SLUG",), flags=(PRIORITY, UPDATE, REVISION)),
     Command(("story", "approve"), "--approve-story",
             "approve a planned story and release its children", takes=("KEY",),
-            note=REQUIRED, flags=(REVISION, BASELINE_GREEN, BASELINE_RED_KIND)),
+            note=REQUIRED, flags=(REVISION, BASELINE_GREEN, BASELINE_RED_KIND),
+            records=("approve_story",)),
     Command(("story", "witness"), "--witness-pass",
             "run an open story's witnesses at main's tip", takes=("KEY",)),
     Command(("story", "decide"), "--decide", "answer a parked story's decision",
-            takes=("KEY", "ID", "[OPTION]"), note=REQUIRED),
+            takes=("KEY", "ID", "[OPTION]"), note=REQUIRED, records=("decide",)),
     Command(("supervise",), "--supervise", "the acting sweep on a timer",
             flags=(ONCE,)),
     Command(("serve",), "--serve", "the JSON daemon and the console",
@@ -138,6 +149,9 @@ def _add_leaf(commands, word, command, help_text):
             nargs = len(flag.metavar) if isinstance(flag.metavar, tuple) else None
             leaf.add_argument(flag.name, dest=flag.dest, action="append",
                               metavar=flag.metavar, nargs=nargs)
+    if command.records is not None:
+        leaf.add_argument("--json", dest="json", action="store_true",
+                          help="print one JSON result object")
     leaf.add_argument("-p", "--project", metavar="NAME|PATH",
                       help="a registered [serve] name or a repository path")
     leaf.add_argument("--verbose", action="store_true",
@@ -195,7 +209,7 @@ def parse(parser, argv):
     return args
 
 
-def _note(args, command):
+def arguments(args, command):
     values = [getattr(args, dest) for dest, _ in _positionals(command)]
     note = getattr(args, "note", None)
     option = getattr(args, "note_option", None)
@@ -211,7 +225,7 @@ def _note(args, command):
 
 def factory_argv(args):
     command = args.command
-    values, note = _note(args, command)
+    values, note = arguments(args, command)
     taken = [value for value in values[:len(command.takes)] if value is not None]
     if len(taken) == 1:
         argv = [f"{command.mode}={taken[0]}"]
