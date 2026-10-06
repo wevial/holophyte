@@ -1,14 +1,19 @@
 import { expect, test } from "bun:test";
 import { ContractError, fetchJson, pollOnce } from "../src/lib/poll";
 import { groupByProject } from "../src/lib/runs";
-import { runDetailSchema, statusSchema } from "../src/lib/schemas";
+import { mergeReadinessSchema, runDetailSchema, statusSchema } from "../src/lib/schemas";
 import status from "../../tests/fixtures/serve/status.json";
 import detail from "../../tests/fixtures/serve/run-detail.json";
 import unestimatedDetail from "../../tests/fixtures/serve/run-detail-unestimated.json";
+import mergeReady from "../../tests/fixtures/serve/run-merge-ready.json";
 
 test("both shared daemon fixtures parse, including newer nested fields", () => {
   expect<unknown>(statusSchema.parse(status)).toEqual(status);
   expect<unknown>(runDetailSchema.parse(detail)).toEqual(detail);
+});
+
+test("the pinned merge readiness fixture parses unchanged", () => {
+  expect<unknown>(mergeReadinessSchema.parse(mergeReady)).toEqual(mergeReady);
 });
 
 test("a status names its path as project; an older daemon's extra target is ignored, target alone is rejected", () => {
