@@ -38,29 +38,35 @@ export function MergeAction({ base, runId, prUrl, polls, deps, fetch }: {
   const readiness = useMergeReadiness(base, runId, polls, deps);
   const [confirming, setConfirming] = useState(false);
   const [merged, setMerged] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [answer, setAnswer] = useState<{ text: string; ok: boolean } | null>(null);
   const merge = async () => {
-    const result = await postAction(base, ROUTES.Merge!, { run: runId }, fetch ?? pageFetch);
-    setAnswer({ text: result.detail, ok: result.ok });
-    setConfirming(false);
-    if (result.ok) setMerged(true);
+    setPosting(true);
+    try {
+      const result = await postAction(base, ROUTES.Merge!, { run: runId }, fetch ?? pageFetch);
+      setAnswer({ text: result.detail, ok: result.ok });
+      if (result.ok) setMerged(true);
+    } finally {
+      setPosting(false);
+      setConfirming(false);
+    }
   };
-  if (confirming && readiness?.ready !== true) setConfirming(false);
+  if (confirming && !posting && readiness?.ready !== true) setConfirming(false);
   const reason = readiness?.reason ?? null;
   const waiting = readiness && !readiness.ready && reason != null && !SILENT.has(reason)
     ? WAITING_LINES[reason] ?? readiness.detail : null;
   return (
     <div className="flex flex-col items-end gap-1.5">
-      {!merged && readiness?.ready === true && (confirming ? (
+      {!merged && (confirming ? (
         <div role="group" aria-label="Confirm merge" className="flex flex-col items-end gap-1.5">
           <p className="text-[12px] text-ink">Merge {prUrl ? prLabel(prUrl) : "the pull request"} into main?</p>
           <div className="flex gap-1.5">
             <ActionButton onAct={merge}>Confirm merge</ActionButton>
-            <button type="button" onClick={() => setConfirming(false)}
-              className="rounded-button px-2 py-1 text-[12px] text-muted">Cancel</button>
+            <button type="button" disabled={posting} onClick={() => setConfirming(false)}
+              className="rounded-button px-2 py-1 text-[12px] text-muted disabled:opacity-60">Cancel</button>
           </div>
         </div>
-      ) : <ActionButton onAct={async () => { setAnswer(null); setConfirming(true); }}>Merge</ActionButton>)}
+      ) : readiness?.ready === true && <ActionButton onAct={async () => { setAnswer(null); setConfirming(true); }}>Merge</ActionButton>)}
       {!merged && waiting && <p data-merge-waiting className="text-right text-[12px] text-muted">{waiting}</p>}
       {answer && (
         <p data-action-detail data-ok={answer.ok} role="status"

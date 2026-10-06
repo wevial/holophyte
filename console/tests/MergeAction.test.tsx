@@ -110,6 +110,21 @@ test("Confirm merge posts the run once with the bearer, shows the daemon's detai
   expect(within(cell()).queryByRole("button", { name: "Merge" })).toBeNull();
 });
 
+test("while a confirmed merge is in flight it cannot be cancelled or posted again", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(done => { release = done; });
+  const { post, cell } = await show(readiness, { post: fakeFetch({ ok: true, detail: "released" }, gate) });
+  await act(async () => { fireEvent.click(within(cell()).getByRole("button", { name: "Merge" })); });
+  await act(async () => { fireEvent.click(within(cell()).getByRole("button", { name: "Confirm merge" })); await settle(); });
+  const cancel = within(cell()).getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
+  expect(cancel.disabled).toBe(true);
+  await act(async () => { fireEvent.click(cancel); });
+  expect(within(cell()).queryByRole("button", { name: "Merge" })).toBeNull();
+  await act(async () => { release(); await settle(); });
+  expect(post).toHaveLength(1);
+  expect(within(cell()).getByRole("status").textContent).toBe("released");
+});
+
 test("a refused or failed merge shows its detail as a refusal", async () => {
   const refused = await confirmWith({ ok: false, reason: "head_moved", detail: "the branch head moved" });
   expect(within(refused.cell()).getByRole("status").textContent).toBe("the branch head moved");
