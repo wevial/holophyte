@@ -727,11 +727,12 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                   provider=self.provider())
         approved = self.git("rev-parse", BRANCH).strip()
+        self.serve(self.pr_state(head=approved, review="APPROVED"))
+        holophyte.cli.operator.approve(self.project, "KO-131", "looks fine",
+                               out=io.StringIO())
         self.calls.unlink()
         for path in self.api_dir.iterdir():
             path.unlink()
-        holophyte.cli.operator.approve(self.project, "KO-131", "looks fine",
-                               out=io.StringIO())
 
         fake, guard = self.loop(provider=self.provider())
 

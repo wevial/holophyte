@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { hostProjectSchema, hostStatusSchema, statusSchema, supervisorSchema, sweepSchema, runSchema, findingSchema, roundSchema, runDetailSchema, runEventSchema } from "./schemas";
+import type { hostProjectSchema, hostStatusSchema, statusSchema, supervisorSchema, sweepSchema, runSchema, findingSchema, roundSchema, runDetailSchema, runEventSchema, mergeReadinessSchema } from "./schemas";
 
 /** The daemon's `/attention` body (holophyte/serve/server.py `attention()`). */
 export interface Attention {
@@ -129,3 +129,4 @@ export type Finding = z.infer<typeof findingSchema>;
 export type Round = z.infer<typeof roundSchema>;
 export type RunDetailBody = z.infer<typeof runDetailSchema>;
 export type RunEvent = z.infer<typeof runEventSchema>;
+export type MergeReadiness = z.infer<typeof mergeReadinessSchema>;

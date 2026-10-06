@@ -41,6 +41,7 @@ python3 factory.py --serve [HOST:PORT]          # the host daemon: every project
 python3 factory.py --status [--json]            # every project in host.toml, the last host sweep, the locks
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
 python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run parked for merge approval
+python3 factory.py --approve KO-n --force --note TEXT /path/to/repo # ...though its pull request is not ready to merge
 python3 factory.py --babysit KO-n [--note TEXT] /path/to/repo # look at a parked run's pull request again
 python3 factory.py /path/to/repo --pause KO-n --note TEXT # stop at the next safe point
 python3 factory.py /path/to/repo --resume KO-n --note TEXT # continue a paused run
