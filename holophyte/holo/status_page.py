@@ -1,5 +1,6 @@
 """`holo status` for a person: the `--status --json` object as a page."""
 import json
+import shlex
 import sys
 from contextlib import redirect_stdout
 from io import StringIO
@@ -176,7 +177,7 @@ def lock_rows(who, status, project):
     elif merge and merge["stale"]:
         rows.append(Row("✗", who, "", hinted(
             f"merge lock names run {merge['run']}, which is not live",
-            f"holo sweep --act -p {project}")))
+            f"holo sweep --act -p {shlex.quote(project)}")))
     return rows
 
 
@@ -192,13 +193,18 @@ def host_rows(snap, sweep, now):
     elif home and home["stale"]:
         rows.append(Row("✗", "host", "", hinted(
             f"home lock names dead pid {home['pid']}", SWEEP_NOW)))
+    readable = {project["name"] or project["path"] for project in snap["projects"]
+                if project["store"] is not None}
+    errors = swept_errors(sweep)
+    reasons = [f"{name}: {outcome}" for name, outcome in errors.items()
+               if name not in readable]
     failure = sweep_failure(sweep, now)
-    keys = {project["name"] or project["path"] for project in snap["projects"]}
-    errors = set(swept_errors(sweep))
-    shown = (errors and errors <= keys and not sweep.get("error")
-             and not killed(sweep, now))
-    if failure and not shown:
-        rows.append(Row("✗", "sweep", "", hinted(failure, SWEEP_LOG_HINT)))
+    exited = failure and not sweep.get("error") and not killed(sweep, now)
+    if failure and not (exited and errors):
+        reasons.insert(0, failure)
+    if reasons:
+        rows.append(Row("✗", "sweep", "", hinted("; ".join(reasons),
+                                                 SWEEP_LOG_HINT)))
     return rows
 
 

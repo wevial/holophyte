@@ -7,6 +7,7 @@ import io
 import json
 import os
 import pty
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,7 @@ from holophyte.holo import cli as holo_cli
 from holophyte.holo.status_page import page
 from holophyte.host.registry import Host
 from holophyte.host.supervisor_lock import supervisor_lock_path
+from holophyte.loop.gates import merge_lock_path
 from tests.host_fixture import HostFixture
 from tests.test_holo_grammar import ROOT, factory, holo
 
@@ -224,6 +226,43 @@ class SweepProblemTests(StatusPageTests):
             "  ✗  sweep  the sweep started 94 h ago never ended  try: "), problems)
         self.assertTrue(lines[-1].startswith("Sweep killed, started 94 h ago · "),
                         lines[-1])
+
+
+    def test_a_sweep_error_on_an_unreadable_project_keeps_its_reason(self):
+        for path in Project.locate(self.beta).store_path.parent.glob("store.db*"):
+            path.unlink()
+        (self.home / "sweep.json").write_text(json.dumps(
+            {"started": NOW - 45_000, "ended": NOW - 40_000, "exit": 1,
+             "projects": {"alpha": "ok", "beta": "error: store locked"}}))
+
+        lines = self.page()
+
+        self.assertIn("  ✗  sweep  beta: error: store locked  try: journalctl"
+                      " --user -u holophyte-sweep.service -n 200", lines)
+
+
+class HintQuotingTests(StatusPageTests):
+    def test_a_stale_merge_lock_hint_quotes_a_path_with_spaces(self):
+        spaced = self.repo("project with spaces")
+        self.cli("project", "add", str(spaced))
+        conn = store.open(str(Project.locate(spaced).store_path))
+        self.addCleanup(conn.close)
+        project_id = store.ensure_project(conn, "team-project with spaces", spaced)
+        ticket = store.tickets.mirror_ticket(
+            conn, project_id, linear_issue_id="issue-S-1",
+            linear_identifier="S-1", title="ticket S-1",
+            acceptance_criteria=["Given S-1, then it is worked"],
+            verification_commands=["echo ok"])
+        store.tickets.transition(conn, ticket, "in_flight")
+        run = store.claim(conn, project_id, ticket, now=NOW - 30 * MINUTE)
+        store.release(conn, run, "failed", reason=REASON, now=NOW - MINUTE)
+        merge_lock_path(Project.locate(spaced)).write_text(f"{run} {NOW / 1000}\n")
+
+        [problem] = [line for line in self.page() if "merge lock" in line]
+
+        hint = problem.split("try: ", 1)[1]
+        self.assertEqual(shlex.split(hint),
+                         ["holo", "sweep", "--act", "-p", "project with spaces"])
 
 
 class ColourTests(StatusPageTests):
