@@ -62,7 +62,7 @@ def _local_spec(cfg, task_id):
     return PurePosixPath(cfg.ui_capture_dir, f"{task_id}.capture.ts")
 
 
-def capture_spec_digest(project, wt, task_id):
+def capture_spec_digest(project, wt, task_id, evidence_states=()):
     cfg = merge_config(project)
     if not cfg.ui_capture_local:
         return None
@@ -70,6 +70,8 @@ def capture_spec_digest(project, wt, task_id):
     defaults = [after if word == "--default" else word.removeprefix("--default=")
                 for word, after in zip(words, words[1:] + [""])
                 if word == "--default" or word.startswith("--default=")]
+    if "\n".join(evidence_states).strip():
+        defaults = []
     for spec in (_local_spec(cfg, task_id), *defaults[-1:]):
         path = Path(wt, spec)
         if path.is_file():
@@ -485,7 +487,7 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
                 cfg.media_repo, cfg.media_bucket, cfg.media_max_file_mb,
                 cfg.media_max_total_mb, list(evidence_states),
                 _execution_fingerprint(project),
-                capture_spec_digest(project, wt, task_id)]
+                capture_spec_digest(project, wt, task_id, evidence_states)]
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
     receipt = git_dir / f'pr-media-{key}.txt'

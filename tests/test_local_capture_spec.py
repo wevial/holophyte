@@ -143,7 +143,7 @@ class LocalCaptureSpecTests(unittest.TestCase):
 
         self.assertEqual(self.run_count(), 1)
 
-    def review_rounds(self, conn, fix):
+    def review_rounds(self, conn, fix, body=TICKET):
         project_id = store.tickets.ensure_project(conn, "team-1", self.root)
         ticket = store.tickets.mirror_ticket(
             conn, project_id, linear_issue_id="issue-1",
@@ -173,7 +173,7 @@ class LocalCaptureSpecTests(unittest.TestCase):
               patch.object(holophyte.loop.implement, "_transport_timed", fixer)):
             return holophyte.loop.review_round._review_rounds(
                 self.project, conn, run_id, None, "KO-1", "task", self.root,
-                30, self.base, self.head, TICKET, self.verify, (), CRITERIA,
+                30, self.base, self.head, body, self.verify, (), CRITERIA,
                 10, 2)
 
     def test_fix_round_that_changes_nothing_still_ends_the_run(self):
@@ -186,6 +186,22 @@ class LocalCaptureSpecTests(unittest.TestCase):
 
         self.assertEqual(self.fix_turns, 1)
         self.assertEqual(len(self.prompts), 1)
+
+    def test_fix_round_that_edits_a_default_the_states_bypass_ends_the_run(self):
+        conn = open_store(self.project)
+        self.addCleanup(conn.close)
+        store.init(conn)
+        (self.root / SPEC).unlink()
+        default = self.root / "e2e/default.capture.ts"
+        default.write_text("first")
+        self.configure(f"{self.command} --default e2e/default.capture.ts")
+
+        with self.assertRaisesRegex(RunFailure, "fix round made no progress"):
+            self.review_rounds(conn, lambda: default.write_text("second"),
+                               TICKET + "\n## Evidence\n\nDialog open\n")
+
+        self.assertEqual(self.fix_turns, 1)
+        self.assertEqual(self.run_count(), 1)
 
     def test_fix_round_that_only_rewrites_the_spec_is_reviewed_again(self):
         conn = open_store(self.project)

@@ -221,7 +221,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         pending = {}
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
         from holophyte.agents.fix_session import fix_turn
-        spec = capture_spec_digest(project, wt, task_id)
+        states = ticket_template.parse(ticket).evidence_states
+        spec = capture_spec_digest(project, wt, task_id, states)
         fixes, timed_out = fix_turn(
             project, conn, run_id, beat_s, wt, budget_min, ticket,
             without_refuted(verdict), sha, timed=_timed, check_cap=_check_run_cap)
@@ -231,8 +232,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                f"Reviewer findings:\n{verdict}\n\n"
                f"Implementer response:\n{fixes}", provider)
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-        if timed_out or (head == sha and
-                         capture_spec_digest(project, wt, task_id) == spec):
+        if timed_out or (head == sha and capture_spec_digest(
+                project, wt, task_id, states) == spec):
             print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
             findings = store.read.rounds_of(conn, run_id)[-1].findings if conn else None
