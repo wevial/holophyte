@@ -38,8 +38,7 @@ def implementer_brief(project, ticket, task_id):
     if not states or not cfg.ui_capture:
         return ""
     if cfg.ui_capture_local:
-        # The name the bundled runner reads (capture_playwright.py).
-        spec = PurePosixPath(cfg.ui_capture_dir, f"{task_id}.capture.ts")
+        spec = _local_spec(cfg, task_id)
         where = (f"\n\nWrite the capture spec `{spec}` for this ticket, "
                  f"runnable by `{cfg.ui_capture}`. The file stays in the "
                  "worktree and is never committed: its directory ignores "
@@ -51,8 +50,30 @@ def implementer_brief(project, ticket, task_id):
     return (where + " Produce one image "
             "per state, named NN-slug.png in state order (01, 02, ...), plus "
             "a recording when the states describe a flow. The harness receives "
-            "HOLOPHYTE_TICKET and newline-joined HOLOPHYTE_EVIDENCE_STATES.\n"
+            "HOLOPHYTE_TICKET and newline-joined HOLOPHYTE_EVIDENCE_STATES. "
+            f"Run `{cfg.ui_capture}` in the foreground until it exits, never "
+            "in the background, and open each NN-slug.png before ending the "
+            "turn.\n"
             + "\n".join(f"{i:02d}: {state}" for i, state in enumerate(states, 1)))
+
+
+def _local_spec(cfg, task_id):
+    # The name the bundled runner reads (capture_playwright.py).
+    return PurePosixPath(cfg.ui_capture_dir, f"{task_id}.capture.ts")
+
+
+def capture_spec_digest(project, wt, task_id):
+    cfg = merge_config(project)
+    if not cfg.ui_capture_local:
+        return None
+    words = shlex.split(cfg.ui_capture)
+    defaults = [after for word, after in zip(words, words[1:])
+                if word == "--default"]
+    for spec in (_local_spec(cfg, task_id), *defaults):
+        path = Path(wt, spec)
+        if path.is_file():
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+    return None
 
 
 def evidence_problems(project, evidence_states):
@@ -462,7 +483,8 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
                 task_id, cfg.ui_paths, cfg.ui_capture, github.origin_url(project),
                 cfg.media_repo, cfg.media_bucket, cfg.media_max_file_mb,
                 cfg.media_max_total_mb, list(evidence_states),
-                _execution_fingerprint(project)]
+                _execution_fingerprint(project),
+                capture_spec_digest(project, wt, task_id)]
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
     receipt = git_dir / f'pr-media-{key}.txt'
