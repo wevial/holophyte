@@ -297,6 +297,9 @@ def render(args, code, text, tail, timezone):
         files = document(files) or {"error": tail or "the host sent no files"}
         show_page(body, files, timezone)
         return 0
+    elif args.command.mode == "--report":
+        from holophyte.holo.report_page import show_body
+        return show_body(args, body, timezone) if code == 0 else code
     elif args.command in READS:
         from holophyte.holo.reads import show
         show(args, f"holo {' '.join(args.command.words)}", code == 0, body)

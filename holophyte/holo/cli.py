@@ -128,6 +128,9 @@ def local(args, default, zone_name):
         return follow(args, target[0], zone_name)
     if args.command.mode == "--status" and not args.json:
         return status(args, target, zone_name)
+    if args.command.mode == "--report":
+        from holophyte.holo.report_page import show
+        return show(args, target[0], zone_name)
     if args.command in READS:
         from holophyte.holo.reads import read
         return read(args, target[0] if target else None, zone_name)
