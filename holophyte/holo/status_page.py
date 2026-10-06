@@ -50,9 +50,14 @@ def show(target, zone_name, out=None):
     except ValueError:
         out.write(text)
         return code
+    show_snap(snap, zone_name, out)
+    return code
+
+
+def show_snap(snap, zone_name, out=None):
+    out = sys.stdout if out is None else out
     lines = page(snap, int(time() * 1000), zone(zone_name), colour_on(out))
     print("\n".join(lines), file=out)
-    return code
 
 
 def page(snap, now, tz=None, colour=False):

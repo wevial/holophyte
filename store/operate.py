@@ -446,9 +446,10 @@ def record_intervention(conn, run_id, action, note, source="human",
             raise ValueError(f"no run {run_id}")
         cursor = conn.execute(
             'INSERT INTO interventions'
-            ' (runId, source, "trigger", "action", question, guidance, at)'
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (run_id, source, trigger, action, question, guidance, now))
+            ' (runId, source, "trigger", "action", question, guidance, note, at)'
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (run_id, source, trigger, action, question, guidance,
+             None if action == _enums.InterventionAction.MIGRATE else note, now))
         _append_event(conn, run_id, "narrative", "intervention",
                       f"{source} {action}: {note}", now)
         record_ledger(conn, run_id, "intervention",
