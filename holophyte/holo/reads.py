@@ -156,7 +156,7 @@ def read(args, target):
         print(json.dumps(body))
     elif code == 200:
         for line in listing(args, body):
-            print(line)
+            print(" ".join(line.splitlines()))
     else:
         detail = f": {body['detail']}" if body.get("detail") else ""
         print(f"[holo2] {route}: {body.get('error') or 'not found'}{detail}",

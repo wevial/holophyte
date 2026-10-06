@@ -199,6 +199,21 @@ class RunReadsTests(StoreReadsCase):
         self.assertEqual([(t["role"], t["label"]) for t in turns["turns"]],
                          [("implement", "first")])
 
+    def test_a_multiline_ledger_text_is_still_one_line_per_entry(self):
+        run = self.ended["KO-3"]
+        conn = store.open(str(self.project.store_path))
+        try:
+            store.record_intervention(
+                conn, run, "redirect", "first line\nsecond line",
+                source="supervisor", trigger="off_criteria",
+                question="which branch?", now=NOW)
+        finally:
+            conn.close()
+        entries = run_ledger(self.project, str(run))[1]["entries"]
+        lines = self.read("run", str(run), "--ledger").splitlines()
+        self.assertEqual(len(lines), len(entries))
+        self.assertIn("first line second line", lines[-1])
+
     def test_an_unknown_run_exits_one_with_the_404_error(self):
         code, out, err = holo("run", "9999", "-p", str(self.target))
         self.assertEqual(run_detail(self.project, "9999")[0], 404)
