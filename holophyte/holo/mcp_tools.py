@@ -4,7 +4,9 @@ import subprocess
 import sys
 from typing import Callable, NamedTuple
 
-READ = 0
+READ, WRITE = 0, 1
+STDIN = "-"
+VIA = "via MCP"
 TIMEOUT_SEC = 120
 BOARD_DIFF_SUMMARY = "[holo2] board diff: "
 VIEWS = ("detail", "files", "ledger", "turns")
@@ -25,6 +27,8 @@ class Tool(NamedTuple):
     tier: int = READ
     json: bool = True
     answered: str | None = None
+    signs: Callable | None = None
+    stdin: str | None = None
 
 
 class Answer(NamedTuple):
@@ -56,8 +60,34 @@ VIEW = Field("view", {
     lambda value: [] if value == VIEWS[0] else [f"--{value}"])
 KEY = Field("key", {"type": "string", "minLength": 1,
                     "description": "the ticket's key, such as HOLO-1"}, None)
+TICKET = KEY._replace(name="ticket")
+BODY = Field("body", {
+    "type": "string", "minLength": 1,
+    "description": "the ticket's markdown, laid out as ticketTemplate.md"},
+    None)
+NOTE = Field("note", {
+    "type": "string", "minLength": 1,
+    "description": "why, in non-blank free text; recorded with the author"},
+    None)
+AUTHOR = Field("author", {
+    "type": "string", "minLength": 1,
+    "description": "who asks, non-blank; recorded as AUTHOR via MCP"}, None)
+SIGNATURE = (NOTE, AUTHOR)
 
-TOOLS = (
+
+def signed(author):
+    return f"{author} {VIA}"
+
+
+def in_note(note, author):
+    return [f"--note={signed(author)}: {note}"]
+
+
+def by_author(note, author):
+    return [f"--note={note}", f"--author={signed(author)}"]
+
+
+READS = (
     Tool("status", "what the factory is doing now: one project, or the host"
          " when none is named (holo status --json)", ("status",), (PROJECT,)),
     Tool("attention", "what waits on the operator: one project's, or the"
@@ -80,11 +110,46 @@ TOOLS = (
          " only sightings (holo sweep)", ("sweep",), (PROJECT,), json=False),
 )
 
+WRITES = (
+    Tool("file_ticket", "file a ticket body to Backlog, the note and author"
+         " its first board note (holo file - --backlog --json)",
+         ("file", "--backlog"), (PROJECT, BODY), required=("body",),
+         tier=WRITE, signs=by_author, stdin="body"),
+    Tool("send_back", "send a run parked on its pull request back to the"
+         " babysitter, the note its instruction (holo send-back RUN --json)",
+         ("send-back",), (PROJECT, RUN), required=("run",), tier=WRITE,
+         signs=by_author),
+    Tool("babysit", "send a ticket's run parked on its pull request back to"
+         " the babysitter, the note its instruction (holo babysit KEY --json)",
+         ("babysit",), (PROJECT, TICKET), required=("ticket",), tier=WRITE,
+         signs=by_author),
+    Tool("requeue", "put a failed run's ticket back in the queue"
+         " (holo requeue KEY --json)", ("requeue",), (PROJECT, TICKET),
+         required=("ticket",), tier=WRITE, signs=in_note),
+    Tool("hold", "stop the project admitting new tickets (holo hold --json)",
+         ("hold",), (PROJECT,), tier=WRITE, signs=in_note),
+)
+
+TOOLS = READS + WRITES
+
+
+def signature(tool):
+    return SIGNATURE if tool.signs is not None else ()
+
+
+def blank(tool, arguments):
+    return next((field.name for field in signature(tool)
+                 if isinstance(arguments.get(field.name), str)
+                 and not arguments[field.name].strip()), None)
+
 
 def input_schema(tool):
+    fields = tool.fields + signature(tool)
     return {"type": "object",
-            "properties": {field.name: field.schema for field in tool.fields},
-            "required": list(tool.required), "additionalProperties": False}
+            "properties": {field.name: field.schema for field in fields},
+            "required": [*tool.required,
+                         *(field.name for field in signature(tool))],
+            "additionalProperties": False}
 
 
 def argv(tool, arguments):
@@ -93,12 +158,18 @@ def argv(tool, arguments):
         value = arguments.get(field.name)
         if value is None:
             continue
+        if field.name == tool.stdin:
+            positionals.append(STDIN)
+            continue
         if field.schema.get("type") == "integer":
             value = int(value)
         if field.words is None:
             positionals.append(str(value))
         else:
             words += field.words(value)
+    if tool.signs is not None:
+        words += tool.signs(arguments["note"].strip(),
+                            arguments["author"].strip())
     words += ["--json"] * tool.json
     return [sys.executable, "-m", "holophyte.holo", *words,
             *["--", *positionals] * bool(positionals)]
@@ -113,10 +184,11 @@ def answered(tool, code, out):
 
 
 def run_tool(tool, arguments):
+    feed = ({"input": arguments[tool.stdin]} if tool.stdin is not None
+            else {"stdin": subprocess.DEVNULL})
     try:
-        done = subprocess.run(argv(tool, arguments), stdin=subprocess.DEVNULL,
-                              capture_output=True, text=True,
-                              timeout=TIMEOUT_SEC)
+        done = subprocess.run(argv(tool, arguments), capture_output=True,
+                              text=True, timeout=TIMEOUT_SEC, **feed)
     except subprocess.TimeoutExpired:
         return Answer(True, f"[holo2] {tool.name}: no answer in {TIMEOUT_SEC}s")
     said = "\n".join(text.strip() for text in (done.stdout, done.stderr)

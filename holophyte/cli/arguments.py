@@ -100,17 +100,32 @@ def _note_checks(parser, args):
                          " --cancel, --gap-layer, --approve-story and --decide"
                          " require --note TEXT")
         return
-    optional = args.approve or args.babysit or args.close or args.move
+    filed = args.file_ticket if args.update is None else None
+    optional = args.approve or args.babysit or args.close or args.move or filed
     if args.note is not None and args.requeue is None \
             and args.repoint is None and optional is None:
         parser.error("--note is what --requeue, --approve, --babysit, "
-                     "--repoint, --close and --move record; it has nothing to "
-                     "annotate by itself")
+                     "--repoint, --close, --move and --file-ticket record; it "
+                     "has nothing to annotate by itself")
     if optional is not None and args.note is not None \
             and not args.note.strip():
-        parser.error("--note with --approve, --babysit, --close or --move is "
-                     "the operator's own words; leave it off for the default "
-                     "rather than blank")
+        parser.error("--note with --approve, --babysit, --close, --move or "
+                     "--file-ticket is the operator's own words; leave it off "
+                     "for the default rather than blank")
+
+
+def _author_checks(parser, args):
+    if args.author is None:
+        return
+    custom = args.babysit is not None and args.note not in (
+        None, BABYSIT_DEFAULT_NOTE)
+    if not (custom or (args.file_ticket is not None and args.note is not None)):
+        parser.error("--author names who a custom --babysit --note or a "
+                     "--file-ticket --note is from; it has nothing to sign "
+                     "by itself")
+    if not args.author.strip():
+        parser.error("--author is who the note is from; leave it off for the "
+                     "caller's login rather than blank")
 
 
 def _close_checks(parser, args):
@@ -336,8 +351,15 @@ def build_parser():
              f"unless {BABYSIT_DEFAULT_NOTE!r}; with --close: context for the external "
              "landing; recorded on the intervention row's "
              "event; with --cancel, required, or --move: the ticket's note; "
+             "with --file-ticket: the filed ticket's first board note; "
              "with --approve-story, required: the approval's; with "
              "--decide, required: the answer's")
+    parser.add_argument(
+        "--author", metavar="NAME",
+        help="with --babysit and a custom --note: the maintainer instruction's"
+             " author; with --file-ticket and --note: who the filed ticket's"
+             " first board note, AUTHOR: NOTE, is from; default the caller's"
+             " login")
     parser.add_argument(
         "--state", choices=FILE_TICKET_STATES,
         help="with --file-ticket: the workflow state the issue is created in "

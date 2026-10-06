@@ -120,7 +120,8 @@ def send_back(args, target):
     project = Project.locate(target[0])
     project.config()
     check_config(project)
-    return send_back_run(project, run_id, note)
+    author = getattr(args, "author", None)
+    return send_back_run(project, run_id, note, author[-1] if author else None)
 
 
 def parse_run(value):

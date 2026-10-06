@@ -38,6 +38,7 @@ PRIORITY = Flag("--priority", "P")
 UPDATE = Flag("--update", "KEY")
 REVISION = Flag("--revision", "N")
 LABELS = Flag("--labels", "a,b")
+AUTHOR = Flag("--author", "NAME")
 CARRIED_BY = Flag("--carried-by", "KEY")
 FOUND_BY = Flag("--found-by", "F")
 BASELINE_GREEN = Flag("--baseline-green", "W")
@@ -70,7 +71,8 @@ COMMANDS = (
             "what importing another store would move", takes=("PATH",),
             flags=(DRY_RUN,)),
     Command(("file",), "--file-ticket", "file a ticket, or --update its body",
-            takes=("FILE",), flags=(BACKLOG, PRIORITY, UPDATE, REVISION, LABELS),
+            takes=("FILE",), note=OPTIONAL,
+            flags=(BACKLOG, PRIORITY, UPDATE, REVISION, LABELS, AUTHOR),
             records=()),
     Command(("move",), "--move", "a native ticket to ready or backlog",
             takes=("KEY", "ready|backlog"), note=OPTIONAL, flags=(REVISION,),
@@ -83,10 +85,12 @@ COMMANDS = (
     Command(("approve",), "--approve", "release a run parked for merge approval",
             takes=("KEY",), note=OPTIONAL, flags=(FORCE,), records=("approve",)),
     Command(("babysit",), "--babysit", "look at a parked run's pull request again",
-            takes=("KEY",), note=OPTIONAL, records=("babysit", "operator_note")),
+            takes=("KEY",), note=OPTIONAL, flags=(AUTHOR,),
+            records=("babysit", "operator_note")),
     Command(("send-back",), None,
             "send a run parked on its pull request back with an instruction",
-            takes=("RUN",), note=REQUIRED, records=("operator_note",)),
+            takes=("RUN",), note=REQUIRED, flags=(AUTHOR,),
+            records=("operator_note",)),
     Command(("repoint",), "--repoint", "move a parked candidate to a rebuilt tip",
             takes=("KEY", "SHA"), note=REQUIRED, records=("repoint",)),
     Command(("pause",), "--pause", "stop a run at its next safe point",

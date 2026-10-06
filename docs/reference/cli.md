@@ -19,7 +19,7 @@ command family, [below](#project-commands).
 | `--serve PORT PROJECT` | the JSON daemon on loopback (`--serve 7710` binds `127.0.0.1:7710`), which also serves the console at `/` from the built bundle; it reads by default and writes only through two opt-ins, `[serve] actions` (`POST /actions/...`) and `[serve] config_edit` (`PUT /config`) ([The daemon's actions](daemon.md)); `--serve HOST:PORT` binds the named address instead, and a non-loopback bind demands `[serve] token_file`, whose contents every JSON request but `/peers` must present as a bearer token (`/`, the console's files and `/peers` stay open; a loopback bind, `127.0.0.1:PORT` included, ignores the key for reads, but either write opt-in demands `[serve] token_file` on every bind, loopback included, and the routes it opens answer only to the bearer) | store, read-only by default; with `[serve] actions` the store and the systemd units, with `[serve] config_edit` the project's `config.toml` |
 | `--requeue KO-n --note TEXT PROJECT` | walks a failed ticket back to `ready` with an `interventions` row | store |
 | `--approve KO-n [--note TEXT] [--force] PROJECT` | releases a ticket parked by `[merge] approve = "human"`: an `interventions` row with action `approve`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim reuses the preserved worktree and branch, re-runs the pre-merge verify and merges with no implementer or reviewer -- under `[merge] mode = "pr"`, babysits the pull request once more and merges it through the API when green and quiet. A run parked on a pull request is first read from GitHub with the readiness check the daemon's `POST /actions/merge` uses: not ready, including GitHub unreadable (`github_unreadable`), it exits 1 naming the ticket and the reason (`KO-n: review not approved`) and writes nothing; `--force`, which requires a non-blank `--note`, releases it anyway and records the intervention's note as `forced past readiness: REASON; NOTE`. A run parked with no pull request is released without reading GitHub; refuses any other state, naming it | store |
-| `--babysit KO-n [--note TEXT] PROJECT` | sends a ticket parked on its pull request (`[merge] mode = "pr"`) back to the babysitter: the `interventions` row `store.babysit()` writes, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim resumes the candidate on the PR and reads its threads and checks again, parking again under `approve = "human"` rather than merging; refuses any other state, naming it | store |
+| `--babysit KO-n [--note TEXT [--author NAME]] PROJECT` | sends a ticket parked on its pull request (`[merge] mode = "pr"`) back to the babysitter; a custom note is a maintainer instruction, like `holo send-back`'s, whose author is `--author` or the caller's login; otherwise the `interventions` row `store.babysit()` writes, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim resumes the candidate on the PR and reads its threads and checks again, parking again under `approve = "human"` rather than merging; refuses any other state, naming it | store |
 | `--repoint KO-n SHA --note TEXT PROJECT` | moves a parked candidate to a rebuilt branch tip: an `interventions` row with action `repoint` carrying the note, a `runEvents` row naming the old and new shas, then `runs.candidateSha` set to `SHA` (a full 40-hex commit id); the run stays parked and the branch is not touched; the merge gate `--approve` resumes into holds the branch to the new sha; refuses a ticket not parked awaiting merge approval, one already approved (its release is in flight: requeue instead) or a malformed sha, naming it | store |
 | `--pause KO-n --note TEXT PROJECT` | asks the ticket's run to stop at its next safe point: a `pause` intervention carrying the note and the run marked, in one transaction; the run later commits its work as WIP, keeps its worktree and branch, ends `paused` and parks the ticket `blocked_on_operator` (see [Operating](../operating.md#pause-one-run-at-its-next-safe-point)); refuses a ticket with no run or a run already ended, naming its outcome; repeating a pending request keeps the first note | store |
 | `--resume KO-n --note TEXT PROJECT` | releases a paused run to claim: the resume intervention carrying the note, the run released with its resume phase, the ticket walked to `ready` and its question cleared, then the pull request's pause notice removed; the next claim reuses the worktree and continues from the recorded boundary; refuses a ticket whose latest run did not end `paused` | store |
@@ -29,7 +29,7 @@ command family, [below](#project-commands).
 | `--release-hold --note TEXT PROJECT` | enables admission again: a `release_hold` intervention carrying the note; refuses a project already enabled, or one with neither a row nor `[board]` | store |
 | `--close KO-n --landed URL [--note TEXT] PROJECT` | closes a ticket whose change landed outside the factory: a `close_out` intervention on its last run naming `URL` and the note, the question cleared and the ticket walked to `merged` with no merge sha, in one transaction; then the lease label removed, the board issue moved and the ledger posted as a comment; refuses a ticket already merged, one with a live run, or one whose last run did not end `rejected`, `failed`, `abandoned` or `killed` | store, Linear |
 | `--gap-layer KEY-n LAYER --note TEXT [--carried-by KEY-n] [--found-by witness\|operator] PROJECT` | records the correction layer the lesson of the gap ticket `KEY-n` answers landed in: appends one `gapLayers` row with `LAYER` (`impossible`, `static`, `witness`, `guidance`, `review` or `none`), the note, the operator's user as author, `--carried-by`, the ticket carrying the lesson when it is not the gap's own, and `--found-by`, who found the gap (`foundBy`, `operator` when omitted); `--report`'s `gap layers:` line counts each ticket's latest row and its `gaps found: witness N, operator M` line counts those rows by finder. No `interventions` row is written: the verb changes no run, ticket or project state, and an intervention would count as human toil in `--report` and `/status`. An unknown layer or finder, or `--found-by` without `--gap-layer`, is a usage error (exit 2); a ticket the store does not hold exits 1 naming it | store |
-| `--file-ticket TICKET.md [--state Todo\|Backlog] [--priority urgent\|high\|medium\|low] PROJECT` | validates, creates the issue in the Linear project the project's `[board]` names, reads it back, validates again | Linear |
+| `--file-ticket TICKET.md [--state Todo\|Backlog] [--priority urgent\|high\|medium\|low] [--note TEXT [--author NAME]] PROJECT` | validates, creates the issue in the Linear project the project's `[board]` names, reads it back, validates again; then posts `AUTHOR: NOTE` as its first board note through the board's `comment()`, `AUTHOR` the caller's login when `--author` is left off; a note the board refuses exits 2 naming the filed ticket | Linear |
 | `--worker PROJECT` | internal, spawned by the scheduler under `[loop] workers > 1`: claims one ticket, works it to merge or park, exits with the run's status (0 merged, 1 failed, 2 parked, 3 nothing to claim, 4 stopped for a human); skips the startup probes, the sweep and the supervisor spawn, which the scheduler ran for the pool | Linear, store, worktrees, `main`, `FINDINGS.md` |
 | `--file-ticket TICKET.md --update KO-n PROJECT` | same, replacing an existing issue's title, body and estimate; a blocker the file's `Depends on:` names and the board lacks is recorded and printed as `+KO-a`, one the board holds and the file no longer names is printed as `board also holds KO-c` -- relations are added, never removed | Linear |
 | `--file-ticket TICKET.md --update KEY-n --revision N [--priority urgent\|high\|medium\|low] [--labels a,b] PROJECT` | on a native board: replaces the ticket's body, and its priority or labels when given, at revision `N`; a ticket at another revision exits 1 printing `KEY-n is at revision M, not N; nothing changed`, and every refusal of the store's is one line with exit 1; on a Linear board all three are refused beside `--update` | store |
@@ -116,14 +116,14 @@ internal, spawned by the loop's pool.
 | `holo board diff` | | `--board-diff PROJECT` |
 | `holo board import [--dry-run]` | | `--board-import [--dry-run] PROJECT` |
 | `holo store import PATH --dry-run` | | `--import-store PATH --dry-run PROJECT` |
-| `holo file FILE [--backlog] [--priority P]` | `holo ticket file` | `--file-ticket FILE [--state Backlog] [--priority P] PROJECT` |
+| `holo file FILE [--backlog] [--priority P] [NOTE [--author NAME]]` | `holo ticket file` | `--file-ticket FILE [--state Backlog] [--priority P] [--note NOTE [--author NAME]] PROJECT` |
 | `holo file FILE --update KEY [--revision N] [--labels a,b]` | `holo ticket file` | `--file-ticket FILE --update KEY [--revision N] [--labels a,b] PROJECT` |
 | `holo move KEY ready\|backlog --revision N [NOTE]` | `holo ticket move` | `--move KEY ready\|backlog --revision N [--note NOTE] PROJECT` |
 | `holo cancel KEY --revision N NOTE` | `holo ticket cancel` | `--cancel KEY --revision N --note NOTE PROJECT` |
 | `holo requeue KEY NOTE` | `holo ticket requeue` | `--requeue KEY --note NOTE PROJECT` |
 | `holo approve KEY [NOTE] [--force]` | `holo ticket approve` | `--approve KEY [--note NOTE] [--force] PROJECT` |
-| `holo babysit KEY [NOTE]` | `holo ticket babysit` | `--babysit KEY [--note NOTE] PROJECT` |
-| `holo send-back RUN NOTE` | | none: the console's send-back of run `RUN`, its note by the caller's login |
+| `holo babysit KEY [NOTE [--author NAME]]` | `holo ticket babysit` | `--babysit KEY [--note NOTE [--author NAME]] PROJECT` |
+| `holo send-back RUN NOTE [--author NAME]` | | none: the console's send-back of run `RUN`, its note by `--author`, or else the caller's login (over http, the daemon's `maintainer`) |
 | `holo repoint KEY SHA NOTE` | `holo ticket repoint` | `--repoint KEY SHA --note NOTE PROJECT` |
 | `holo pause KEY NOTE` | `holo ticket pause` | `--pause KEY --note NOTE PROJECT` |
 | `holo resume KEY NOTE` | `holo ticket resume` | `--resume KEY --note NOTE PROJECT` |
@@ -312,11 +312,12 @@ as a subprocess. Register it once, then the client lists its tools:
 claude mcp add holo -- holo mcp
 ```
 
-Each tool is read-only, marked `readOnlyHint: true`, and runs the `holo`
-command beside it as a subprocess with a two-minute timeout, so it answers
-what that command answers: the project is found the same way, and with
-`host` set in `client.toml` the command reaches the host over ssh. Every
-tool takes an optional `project`, a `[serve]` name or a repository path.
+Each tool runs the `holo` command beside it as a subprocess with a
+two-minute timeout, so it answers what that command answers: the project
+is found the same way, and with `host` set in `client.toml` the command
+reaches the host over ssh. Every tool takes an optional `project`, a
+`[serve]` name or a repository path. The reads are marked `readOnlyHint:
+true`.
 
 | Tool | Arguments | Runs |
 | --- | --- | --- |
@@ -329,6 +330,23 @@ tool takes an optional `project`, a `[serve]` name or a repository path.
 | `ticket` | `key`, required | `holo ticket KEY --json` |
 | `board_diff` | | `holo board diff` |
 | `sweep_preview` | | `holo sweep`, which acts on nothing and writes only sightings |
+
+The five write tools are marked `readOnlyHint: false` and
+`destructiveHint: false`. Each requires a non-blank `note` and `author`; a
+missing or blank one is a result with `isError: true` naming it, and no
+command runs. The interventions table has no actor column, so the author
+rides in what the verb records as `AUTHOR via MCP`, as the console's
+actions record `AUTHOR via the console`. The verb's own checks and
+refusals hold, and its result object below is the tool's
+`structuredContent`; a refusal is `isError: true`.
+
+| Tool | Arguments | Runs | Records |
+| --- | --- | --- | --- |
+| `file_ticket` | `body`, required | `holo file - --backlog --note NOTE --author "AUTHOR via MCP" --json`, the body on stdin | the ticket in Backlog, never Ready, and its first board note `AUTHOR via MCP: NOTE`; an invalid body files nothing and is an error carrying the template checker's first problem |
+| `send_back` | `run`, required | `holo send-back RUN --note NOTE --author "AUTHOR via MCP" --json` | the maintainer instruction `NOTE`, its author `AUTHOR via MCP` |
+| `babysit` | `ticket`, required | `holo babysit KEY --note NOTE --author "AUTHOR via MCP" --json` | the same, for the ticket's parked run |
+| `requeue` | `ticket`, required | `holo requeue KEY --note "AUTHOR via MCP: NOTE" --json` | a `requeue` interventions row with that text |
+| `hold` | | `holo hold --note "AUTHOR via MCP: NOTE" --json` | a `hold` interventions row with that text |
 
 A tool whose command prints a JSON object returns it as `structuredContent`
 and as text; `board_diff` and `sweep_preview` return the command's text,

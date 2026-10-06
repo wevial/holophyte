@@ -1,7 +1,14 @@
 """`holo mcp`: the tool table served over stdio on the MCP SDK's low-level server."""
 import sys
 
-from holophyte.holo.mcp_tools import READ, TOOLS, Answer, input_schema, run_tool
+from holophyte.holo.mcp_tools import (
+    READ,
+    TOOLS,
+    Answer,
+    blank,
+    input_schema,
+    run_tool,
+)
 
 NAME = "holo"
 PACKAGE = "mcp"
@@ -12,12 +19,24 @@ def described(types, tool):
     return types.Tool(
         name=tool.name, description=tool.description,
         input_schema=input_schema(tool),
-        annotations=types.ToolAnnotations(read_only_hint=tool.tier == READ))
+        annotations=types.ToolAnnotations(read_only_hint=tool.tier == READ,
+                                          destructive_hint=False))
+
+
+def refusal(tool, arguments):
+    import jsonschema
+    empty = blank(tool, arguments)
+    if empty is not None:
+        return f"{empty} must be non-blank text"
+    try:
+        jsonschema.validate(arguments, input_schema(tool))
+    except jsonschema.ValidationError as bad:
+        return bad.message
+    return None
 
 
 def build(version):
     import anyio
-    import jsonschema
     import mcp_types as types
     from mcp.server import Server
     from mcp.shared.exceptions import MCPError
@@ -35,10 +54,9 @@ def build(version):
                            message=f"unknown tool {params.name!r}; the tools"
                                    f" are {', '.join(named)}")
         arguments = params.arguments or {}
-        try:
-            jsonschema.validate(arguments, input_schema(tool))
-        except jsonschema.ValidationError as bad:
-            answer = Answer(True, f"[holo2] {tool.name}: {bad.message}")
+        refused = refusal(tool, arguments)
+        if refused is not None:
+            answer = Answer(True, f"[holo2] {tool.name}: {refused}")
         else:
             answer = await anyio.to_thread.run_sync(run_tool, tool, arguments)
         return types.CallToolResult(

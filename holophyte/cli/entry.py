@@ -4,6 +4,7 @@ import sys
 from holophyte.board.projection import file_ticket
 from holophyte.cli.arguments import (
     FILE_TICKET_STATES,
+    _author_checks,
     _board_verb_checks,
     _close_checks,
     _file_ticket_only,
@@ -54,6 +55,7 @@ def _legacy_cli(argv):
     _board_verb_checks(parser, args)
     _modifier_checks(parser, args)
     _note_checks(parser, args)
+    _author_checks(parser, args)
     _close_checks(parser, args)
     _gap_layer_checks(parser, args)
     if args.target is None:
@@ -83,7 +85,8 @@ def _legacy_cli(argv):
                            args.state or FILE_TICKET_STATES[0],
                            require_board(target, board),
                            priority=args.priority, update=args.update,
-                           revision=args.revision, labels=args.labels)
+                           revision=args.revision, labels=args.labels,
+                           note=args.note, author=args.author)
     if args.supervise:
         return _supervise_project(target, board)
     if args.worker:

@@ -329,7 +329,8 @@ HTTP_ROUTES = {
     ("board",): Route("GET", "/board", local=(("editable", False),)),
     ("ticket",): Route("GET", "/tickets/{KEY}"),
     ("requeue",): Route("POST", "/actions/requeue", ("ticket", "note")),
-    ("send-back",): Route("POST", "/actions/send-back", ("run", "note")),
+    ("send-back",): Route("POST", "/actions/send-back",
+                          ("run", "note", "author")),
     ("hold",): Route("POST", "/actions/hold", ("note",)),
     ("release",): Route("POST", "/actions/release-hold", ("note",)),
     ("pause",): Route("POST", "/actions/pause", ("run", "note")),
@@ -443,7 +444,9 @@ def fields(args, route):
     if command.note == REQUIRED and (note is None or not note.strip()):
         args.leaf.error(f"holo {' '.join(command.words)}'s note must say why"
                         " (non-blank text)")
-    known = {"note": note, "close": bool(getattr(args, "close_pr", False))}
+    author = getattr(args, "author", None)
+    known = {"note": note, "close": bool(getattr(args, "close_pr", False)),
+             "author": author[-1] if author else None}
     first = command.takes[:1]
     if first == ("KEY",):
         known["ticket"] = values[0]
