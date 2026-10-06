@@ -101,12 +101,11 @@ class TableTests(unittest.TestCase):
                 for field, expected in fields.items():
                     self.assertEqual(getattr(args, field), expected)
 
-    def test_the_note_is_the_last_positional_wherever_the_flags_fall(self):
+    def test_the_note_is_the_last_positional_and_never_a_decision_option(self):
         decide = factory_args(["story", "decide", "HOLO-1", "1", "why"])
         self.assertEqual((decide.decide, decide.note), (["HOLO-1", "1"], "why"))
-        move = factory_args(["move", "HOLO-1", "backlog", "--revision", "4", "later"])
-        self.assertEqual((move.move, move.revision, move.note),
-                         (["HOLO-1", "backlog"], 4, "later"))
+        unnoted = factory_args(["story", "decide", "HOLO-1", "1", "2"])
+        self.assertEqual((unnoted.decide, unnoted.note), (["HOLO-1", "1", "2"], None))
         hyphen = factory_args(["requeue", "HOLO-1", "-n", "-1 was wrong"])
         self.assertEqual(hyphen.note, "-1 was wrong")
 

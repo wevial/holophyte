@@ -1,4 +1,5 @@
 """`holo` commands as data: each canonical row stands for one factory.py mode."""
+import re
 from typing import NamedTuple
 
 
@@ -38,6 +39,7 @@ BASELINE_GREEN = Flag("--baseline-green", "W")
 BASELINE_RED_KIND = Flag("--baseline-red-kind", ("KIND", "W"))
 
 REQUIRED, OPTIONAL = "required", "optional"
+OPTION_SHAPE = re.compile(r"-?[0-9]+|default")
 
 COMMANDS = (
     Command(("status",), "--status", "what the factory is doing now", flags=(JSON,)),
@@ -187,7 +189,7 @@ def _note(args, command):
     if command.note and note is None and option is None:
         filled = [index for index, (_, name) in enumerate(_positionals(command))
                   if name.startswith("[") and values[index] is not None]
-        if filled:
+        if filled and not OPTION_SHAPE.fullmatch(values[filled[-1]]):
             note, values[filled[-1]] = values[filled[-1]], None
     return values, note if option is None else option
 
