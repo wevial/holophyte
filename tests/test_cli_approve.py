@@ -30,7 +30,12 @@ import store
 import store.read
 import store.tickets
 from holophyte.loop.runs import open_store
+from tests.host_fixture import git
 from tests.phase_fixture import finish_run, park_run
+from tests.test_serve_merge import FakeGithub
+
+BRANCH = "task/ko-1-a-ticket"
+PULL = "https://github.com/example/repo/pull/7"
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -57,6 +62,8 @@ class ApproveCliTests(unittest.TestCase):
         self.addCleanup(conn.close)
         self.conn = conn
         self.project_id = store.tickets.ensure_project(conn, "team-1", self.repo)
+        self.github = FakeGithub()
+        self.github.install(self)
         self.ticket = store.tickets.mirror_ticket(
             conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="a ticket",
@@ -82,6 +89,37 @@ class ApproveCliTests(unittest.TestCase):
         self.conn.commit()
         park_run(self.conn, self.run, "awaiting_merge_approval",
                    now=T0 + 2 * MINUTE, pr_url=pr_url)
+
+    def park_at_pull_request(self):
+        """`park(PULL)` under `[merge] mode = "pr"` and `approve = "human"`,
+        its branch pushed to a real bare `origin` at the parked candidate;
+        GitHub's API answers through `self.github`, ready until told not."""
+        with self.target.config_path.open("a") as config:
+            config.write('[merge]\nmode = "pr"\napprove = "human"\n')
+        origin = self.root / "origin.git"
+        git(self.root, "init", "--bare", "-b", "main", str(origin))
+        git(self.repo, "init", "-b", BRANCH)
+        (self.repo / "candidate").write_text("candidate\n")
+        git(self.repo, "add", "candidate")
+        git(self.repo, "commit", "-m", "candidate")
+        git(self.repo, "remote", "add", "origin", str(origin))
+        git(self.repo, "push", "origin", BRANCH)
+        sha = git(self.repo, "rev-parse", "HEAD")
+        self.park(pr_url=PULL)
+        store.set_branch(self.conn, self.run, BRANCH)
+        self.conn.execute("UPDATE runs SET candidateSha = ? WHERE id = ?",
+                          (sha, self.run))
+        self.conn.commit()
+        self.github.head = sha
+
+    def dump(self):
+        return list(self.conn.iterdump())
+
+    def intervention_note(self):
+        (summary,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+            " 'intervention'", (self.run,)).fetchone()
+        return summary.removeprefix("human approve: ")
 
     def cli(self, *args):
         out, err = io.StringIO(), io.StringIO()
@@ -126,6 +164,74 @@ class ApproveCliTests(unittest.TestCase):
         # Released, the ticket is claimable again -- the loop's next pass
         # is what takes the candidate to the gate.
         self.assertTrue(store.tickets.pickable(self.conn, self.ticket))
+        self.assertEqual(self.github.calls, [])
+
+    def test_a_pull_request_github_shows_ready_is_released(self):
+        self.park_at_pull_request()
+
+        out, _ = self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn(f"KO-1 approved: run {self.run}", out)
+        self.assertIn(("graphql",), [call[:1] for call in self.github.calls])
+        self.assertEqual(self.interventions(), [(self.run, "approve")])
+        self.assertEqual(self.intervention_note(), "ok")
+        self.assertEqual(self.run_row()[2], "merge_gate")
+        self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+
+    def test_a_pull_request_not_ready_is_refused_naming_why(self):
+        self.park_at_pull_request()
+        self.github.review = None
+        before = self.dump()
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        # A message as SystemExit's code is how the interpreter exits 1.
+        self.assertIsInstance(raised.exception.code, str)
+        self.assertIn("KO-1: review not approved", raised.exception.code)
+        self.assertEqual(self.dump(), before)
+
+    def test_an_unreadable_github_refuses_and_force_releases_past_it(self):
+        self.park_at_pull_request()
+        self.github.unreachable = True
+        before = self.dump()
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1")
+
+        self.assertIn("KO-1: github unreadable", str(raised.exception))
+        self.assertEqual(self.dump(), before)
+        self.cli("--approve", "KO-1", "--force", "--note", "GitHub is down")
+        self.assertEqual(self.interventions(), [(self.run, "approve")])
+        self.assertEqual(self.intervention_note(), "forced past readiness:"
+                         " github_unreadable; GitHub is down")
+
+    def test_force_releases_a_pull_request_not_ready_recording_the_reason(self):
+        self.park_at_pull_request()
+        self.github.review = "REVIEW_REQUIRED"
+
+        out, _ = self.cli("--approve", "KO-1", "--force", "--note",
+                          "teammate approved in chat")
+
+        self.assertIn(f"KO-1 approved: run {self.run}", out)
+        self.assertEqual(self.interventions(), [(self.run, "approve")])
+        note = self.intervention_note()
+        self.assertTrue(note.startswith(
+            "forced past readiness: review_not_approved"), note)
+        self.assertIn("teammate approved in chat", note)
+        self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+
+    def test_force_without_a_note_is_an_argparse_error_writing_nothing(self):
+        self.park_at_pull_request()
+        self.github.review = None
+        before = self.dump()
+        for note in ((), ("--note", "  ")):
+            with self.subTest(note=note), \
+                    self.assertRaises(SystemExit) as raised:
+                self.cli("--approve", "KO-1", "--force", *note)
+            self.assertEqual(raised.exception.code, 2)
+        self.assertEqual(self.dump(), before)
+        self.assertEqual(self.github.calls, [])
 
     def test_babysit_releases_the_parked_run_without_approving(self):
         """`--babysit KO-n` is `--approve`'s twin with its own action: the

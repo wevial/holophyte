@@ -81,6 +81,11 @@ def label_names(text):
 
 
 def _note_checks(parser, args):
+    if args.force and args.approve is None:
+        parser.error("--force belongs to --approve")
+    if args.force and not (args.note or "").strip():
+        parser.error("--approve --force releases a pull request GitHub would "
+                     "not merge; say why with --note TEXT")
     if args.requeue is not None and not (args.note or "").strip():
         parser.error("--requeue records why the ticket goes back in the "
                      "queue; say so with --note TEXT")
@@ -189,8 +194,16 @@ def build_parser():
              "resume point at the merge gate and walks the ticket to ready, "
              "in one transaction; the loop's next claim reuses the preserved "
              "worktree and branch, re-runs the pre-merge verify and merges "
-             "without an implementer or a reviewer; refuses a ticket in any "
-             "other state naming it, and writes nothing then")
+             "without an implementer or a reviewer; a run parked on a pull "
+             "request is released only when GitHub shows it ready to merge, "
+             "as the console's merge button asks, unless --force; refuses a "
+             "ticket in any other state, or a pull request not ready, naming "
+             "why, and writes nothing then")
+    parser.add_argument(
+        "--force", action="store_true",
+        help="with --approve, required --note: release the run although its "
+             "pull request is not ready to merge, recording 'forced past "
+             "readiness: REASON' ahead of the note")
     modes.add_argument(
         "--babysit", metavar="KO-n",
         help="send the ticket parked on its pull request ([merge] mode = "

@@ -385,6 +385,7 @@ class ConflictRefusalCases(BabysitHelpers):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.loop(Commit("candidate"), review, Idle(""), provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
+        self.serve(self.pr_state(head=candidate, review="APPROVED"))
         holophyte.cli.operator.approve(self.project, "KO-131", "merge this candidate",
                                    out=io.StringIO())
         fake, _ = self.loop(provider=self.provider())
