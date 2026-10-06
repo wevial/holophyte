@@ -81,6 +81,12 @@ class ResolveTests(unittest.TestCase):
         inner.mkdir(parents=True)
         self.assertEqual(self.status_target(cwd=inner), self.alpha)
 
+    def test_a_relative_path_names_the_repository_it_resolves_to(self):
+        inner = self.alpha / "src"
+        inner.mkdir()
+        self.assertEqual(self.status_target("-p", ".", cwd=self.alpha), self.alpha)
+        self.assertEqual(self.status_target(cwd=inner, project=".."), self.alpha)
+
     def test_default_project_answers_outside_any_registered_work_tree(self):
         self.client('default_project = "beta"\n')
         unregistered = self.root / "unregistered"

@@ -52,7 +52,8 @@ def client_config(path=None):
 
 def _named(value, source, host):
     if "/" in value or os.sep in value or Path(value).is_dir():
-        return Resolved(value, source, value)
+        path = str(Path(value).expanduser().resolve())
+        return Resolved(path, source, path)
     entry = host.project(value)
     if entry is not None:
         return Resolved(str(entry.path), source, f"{value} ({entry.path})")
