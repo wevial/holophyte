@@ -186,6 +186,24 @@ $ holo requeue HOLO-133 "rerun" --json -p holophyte
 `--json` changes the output, never the exit code below: a usage error is
 still exit 2, its result `ok: false` with the error line as `detail`.
 
+`holo status` without `--json` renders the `--status --json` object, the
+project form or the host form, as a page read top down; with `--json` it
+prints that object unchanged. Its lines carry no `[holo2]` prefix:
+
+| Section | Lines |
+| --- | --- |
+| header | the project or the home, then the date and clock time, `Tue Oct 6, 10:42 PDT` |
+| `Needs you (N)` | `!`, the project, the ticket and the question of each parked ticket; a project whose admission is held or disabled, with its note and ready count; a story planned and waiting on approval, or parked with its open decisions counted; the reason of each stranded run and how long ago it ended, `14 min` |
+| `Running (N)` | `>`, the project, the ticket, the phase and the heartbeat's age, `heartbeat 20 s ago`; a merge lock or a project supervisor lock held by a live holder |
+| `Quiet` | `✓` and the ready count of each enabled project with nothing live, parked, stranded or wrong and no story planned or parked |
+| `Problems (N)` | `✗` and a `try:` hint for a lock naming a dead pid, a run no longer live or no holder, an unreadable project, a project the last sweep errored on, a sweep that failed, or one that started over two minutes ago and never ended; a project here has no quiet line |
+| footer | the sweep's state and age, `Sweep ok 40 s ago` or `Sweep killed, started 94 h ago`, the home lock's live pid, and the build as a short hash, `build 92ef2b0` (host form only) |
+
+A free lock prints no line. Ages are `s` under a minute, `min` under an
+hour, then `h`. The symbols are coloured (`!` orange, `>` blue, `✓` green,
+`✗` red) only when the output is a terminal and `NO_COLOR` is unset or
+empty; the write commands' `✓`/`✗` follow the same rule.
+
 Five reads are no `factory.py` mode: each calls, in process, the view
 function the [serve daemon](http.md) answers its route with, so the command
 and the route agree. Each opens the store read-only and writes nothing.
@@ -212,6 +230,7 @@ naming the file.
 | Key | Purpose |
 | --- | --- |
 | `default_project` | the project, a `[serve] name` or a repository path, when `-p`, `HOLO_PROJECT` and the current repository give none |
+| `timezone` | the zone `holo` pages show clock times in, an IANA name such as `"America/Los_Angeles"`; default the local zone; a name `zoneinfo` does not know exits 2 naming the key and the value |
 
 ## Startup checks
 
@@ -244,6 +263,7 @@ after the store.
 | --- | --- | --- |
 | `HOLOPHYTE_HOME` | `Project` | the state root, default `~/.holophyte`; tests point it at a temp dir |
 | `HOLO_PROJECT` | `holo` | the project, a `[serve] name` or a repository path, when no `-p` is given |
+| `NO_COLOR` | `holo` | set and not empty, `holo` prints its symbols without colour on a terminal too |
 | `LINEAR_API_KEY` | `linear_provider` | the board's API key; env or `.env` beside the module |
 | `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the project units (`holophyte-serve@`, `holophyte-supervise@`), and `HOLOPHYTE_TARGET` alone the loop unit | one instance's project, bind address, port |
 | `LISTEN_FDS`, `LISTEN_PID` | `--serve` | set by the service manager's socket unit: with `LISTEN_FDS=1` and `LISTEN_PID` this process's pid, the daemon serves on fd 3 instead of binding, and exits 0 on a factory `HEAD` move for the socket to start the new code |
