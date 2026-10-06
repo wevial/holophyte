@@ -5,7 +5,7 @@ import sys
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
-from time import time
+from time import sleep, time
 from typing import NamedTuple
 
 from holophyte.holo.render import (
@@ -24,6 +24,7 @@ STATUS_JSON = ["--status", "--json"]
 SWEEP_NOW = "systemctl --user start holophyte-sweep.service"
 SWEEP_LOG_HINT = "journalctl --user -u holophyte-sweep.service -n 200"
 REGISTRY_HINT = "holo project list"
+CLEAR = "\x1b[H\x1b[2J"
 
 
 class Row(NamedTuple):
@@ -34,7 +35,7 @@ class Row(NamedTuple):
     wait: str = ""
 
 
-def show(target, zone_name, out=None):
+def show(target, zone_name, out=None, colour=None):
     out = sys.stdout if out is None else out
     from holophyte.cli.entry import _legacy_cli
     captured = StringIO()
@@ -50,14 +51,31 @@ def show(target, zone_name, out=None):
     except ValueError:
         out.write(text)
         return code
-    show_snap(snap, zone_name, out)
+    show_snap(snap, zone_name, out, colour)
     return code
 
 
-def show_snap(snap, zone_name, out=None):
+def show_snap(snap, zone_name, out=None, colour=None):
     out = sys.stdout if out is None else out
-    lines = page(snap, int(time() * 1000), zone(zone_name), colour_on(out))
+    colour = colour_on(out) if colour is None else colour
+    lines = page(snap, int(time() * 1000), zone(zone_name), colour)
     print("\n".join(lines), file=out)
+
+
+def watch(seconds, frame, zone_name, out=None):
+    out = sys.stdout if out is None else out
+    tty, colour = out.isatty(), colour_on(out)
+    try:
+        while True:
+            drawn = StringIO()
+            frame(drawn, colour)
+            at = clock(int(time() * 1000), zone(zone_name), seconds=True)
+            out.write(CLEAR if tty else f"--- {at} ---\n")
+            out.write(drawn.getvalue())
+            out.flush()
+            sleep(seconds)
+    except KeyboardInterrupt:
+        return 0
 
 
 def page(snap, now, tz=None, colour=False):

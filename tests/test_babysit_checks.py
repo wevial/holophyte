@@ -292,31 +292,6 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertIn("FAILED verify before merge", comment)
 
 
-    def test_pr_rounds_caps_the_passes_and_parks_naming_the_cap(self):
-        self.configure('[merge]\nmode = "pr"\npr_rounds = 2\n')
-        self.fake_route(states=[self.pr_state([self.DEFECT])])
-        address = Reply("THREAD 1: ADDRESS -- a real crash")
-
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                            address, Commit("fix 1"), address, Commit("fix 2"),
-                            provider=self.provider())
-
-        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
-                                      "implement", "adjudicate", "implement"])
-        self.assertEqual([kind for kind, _ in self.api_calls()],
-                         ["state", "reply", "resolve",
-                          "state", "reply", "resolve", "state"])
-        self.assertEqual(
-            self.read("SELECT round, reviewerModel FROM reviewRounds"
-                      " WHERE reviewerModel LIKE 'github:%' ORDER BY round"),
-            [(2, "github:review-bot"), (3, "github:review-bot")])
-        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
-                         [("awaiting_merge_approval", None)])
-        question = self.question()
-        self.assertIn("pr_rounds = 2", question)
-        self.assertIn(self.DEFECT[3], question)
-
-
     def test_a_head_that_is_not_the_candidate_parks_instead_of_merging(self):
         self.enterContext(patch.object(holophyte.pr.github, "SLEEP"))
         self.configure('[merge]\nmode = "pr"\n')

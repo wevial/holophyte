@@ -35,7 +35,8 @@ def _store_verb(args, target, board):
     if args.approve is not None:
         require_board(target, board)
         approve(target, args.approve,
-                args.note if args.note is not None else APPROVE_DEFAULT_NOTE)
+                args.note if args.note is not None else APPROVE_DEFAULT_NOTE,
+                force=args.force)
         return True
     if args.babysit is not None:
         require_board(target, board)

@@ -117,6 +117,65 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(self.steps(), ["threads", "fix", "checks", "quiet", "parked"])
         self.assertEqual(len(self.pushed()), 2)
 
+    def conflicting_passes(self, toml, conflicts):
+        """`conflicts` passes GitHub reports CONFLICTING (every pass for
+        None), each answered by a merge of `origin/main` and a push, then
+        green; returns the pushes after the one that opened the PR."""
+        self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n' + toml)
+        conflicting = self.pr_state(mergeable="CONFLICTING")
+        self.fake_route(states=[conflicting] if conflicts is None
+                        else [conflicting] * conflicts + [self.pr_state()])
+        cases.ConflictingMainHelpers.remote_main(self, "MOVED.md", "main moved\n")
+        self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
+        return self.pushed()[1:]
+
+    def test_main_refreshes_do_not_spend_pr_rounds(self):
+        refreshes = self.conflicting_passes("pr_rounds = 2\n", 3)
+        self.assertEqual(len(refreshes), 3)
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", self.MERGE_SHA)])
+
+    def test_pr_main_refreshes_caps_the_refreshes_and_parks_naming_the_cap(self):
+        refreshes = self.conflicting_passes(
+            "pr_rounds = 2\npr_main_refreshes = 2\n", None)
+        self.assertEqual(len(refreshes), 2)
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        self.assertIn("[merge] pr_main_refreshes = 2 main refreshes made",
+                      self.question())
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+
+    def test_a_refused_merge_behind_main_does_not_spend_the_only_pass(self):
+        review = self.conflict_refusal()
+        self.configure('[merge]\nmode = "pr"\npr_rounds = 1\n')
+        self.loop(Commit("the scripted work"), review, Idle(""), APPROVE, Idle(""),
+                  provider=self.provider())
+        self.assert_conflict_merge_landed()
+
+    def test_pr_rounds_caps_the_passes_and_parks_naming_the_cap(self):
+        self.configure('[merge]\nmode = "pr"\npr_rounds = 2\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+        address = Reply("THREAD 1: ADDRESS -- a real crash")
+
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            address, Commit("fix 1"), address, Commit("fix 2"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
+                                      "implement", "adjudicate", "implement"])
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "reply", "resolve",
+                          "state", "reply", "resolve", "state"])
+        self.assertEqual(
+            self.read("SELECT round, reviewerModel FROM reviewRounds"
+                      " WHERE reviewerModel LIKE 'github:%' ORDER BY round"),
+            [(2, "github:review-bot"), (3, "github:review-bot")])
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+        question = self.question()
+        self.assertIn("[merge] pr_rounds = 2 passes made", question)
+        self.assertIn(self.DEFECT[3], question)
+
     def test_conflict_covering_review_and_park_steps(self):
         review = self.conflict_refusal(conflict=True)
         self.loop(self.ratchet_work(), review, Idle(""),
@@ -488,7 +547,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                   REQUEST_CHANGES, provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
         holophyte.cli.operator.approve(self.project, "KO-131", "accept this candidate",
-                                   out=io.StringIO())
+                                   out=io.StringIO(), force=True)
         out = self.main_output(provider=self.provider())
         self.assertEqual(self.last_fake.roles, [])
         self.assertIn("verify ok before merge", out)

@@ -18,7 +18,7 @@ command family, [below](#project-commands).
 | `--supervise PROJECT` | the acting sweep every `sweep_interval_sec`, under the project's supervisor lock; runs the code it started with, and exits for its service manager to restart when a newer build has stamped the store; refused for a project `host.toml` lists, which the host sweep watches | store |
 | `--serve PORT PROJECT` | the JSON daemon on loopback (`--serve 7710` binds `127.0.0.1:7710`), which also serves the console at `/` from the built bundle; it reads by default and writes only through two opt-ins, `[serve] actions` (`POST /actions/...`) and `[serve] config_edit` (`PUT /config`) ([The daemon's actions](daemon.md)); `--serve HOST:PORT` binds the named address instead, and a non-loopback bind demands `[serve] token_file`, whose contents every JSON request but `/peers` must present as a bearer token (`/`, the console's files and `/peers` stay open; a loopback bind, `127.0.0.1:PORT` included, ignores the key for reads, but either write opt-in demands `[serve] token_file` on every bind, loopback included, and the routes it opens answer only to the bearer) | store, read-only by default; with `[serve] actions` the store and the systemd units, with `[serve] config_edit` the project's `config.toml` |
 | `--requeue KO-n --note TEXT PROJECT` | walks a failed ticket back to `ready` with an `interventions` row | store |
-| `--approve KO-n [--note TEXT] PROJECT` | releases a ticket parked by `[merge] approve = "human"`: an `interventions` row with action `approve`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim reuses the preserved worktree and branch, re-runs the pre-merge verify and merges with no implementer or reviewer -- under `[merge] mode = "pr"`, babysits the pull request once more and merges it through the API when green and quiet; refuses any other state, naming it | store |
+| `--approve KO-n [--note TEXT] [--force] PROJECT` | releases a ticket parked by `[merge] approve = "human"`: an `interventions` row with action `approve`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim reuses the preserved worktree and branch, re-runs the pre-merge verify and merges with no implementer or reviewer -- under `[merge] mode = "pr"`, babysits the pull request once more and merges it through the API when green and quiet. A run parked on a pull request is first read from GitHub with the readiness check the daemon's `POST /actions/merge` uses: not ready, including GitHub unreadable (`github_unreadable`), it exits 1 naming the ticket and the reason (`KO-n: review not approved`) and writes nothing; `--force`, which requires a non-blank `--note`, releases it anyway and records the intervention's note as `forced past readiness: REASON; NOTE`. A run parked with no pull request is released without reading GitHub; refuses any other state, naming it | store |
 | `--babysit KO-n [--note TEXT] PROJECT` | sends a ticket parked on its pull request (`[merge] mode = "pr"`) back to the babysitter: the `interventions` row `store.babysit()` writes, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim resumes the candidate on the PR and reads its threads and checks again, parking again under `approve = "human"` rather than merging; refuses any other state, naming it | store |
 | `--repoint KO-n SHA --note TEXT PROJECT` | moves a parked candidate to a rebuilt branch tip: an `interventions` row with action `repoint` carrying the note, a `runEvents` row naming the old and new shas, then `runs.candidateSha` set to `SHA` (a full 40-hex commit id); the run stays parked and the branch is not touched; the merge gate `--approve` resumes into holds the branch to the new sha; refuses a ticket not parked awaiting merge approval, one already approved (its release is in flight: requeue instead) or a malformed sha, naming it | store |
 | `--pause KO-n --note TEXT PROJECT` | asks the ticket's run to stop at its next safe point: a `pause` intervention carrying the note and the run marked, in one transaction; the run later commits its work as WIP, keeps its worktree and branch, ends `paused` and parks the ticket `blocked_on_operator` (see [Operating](../operating.md#pause-one-run-at-its-next-safe-point)); refuses a ticket with no run or a run already ended, naming its outcome; repeating a pending request keeps the first note | store |
@@ -110,7 +110,7 @@ internal, spawned by the loop's pool.
 
 | Command | Aliases | Factory invocation |
 | --- | --- | --- |
-| `holo status [--json]` | | `--status [--json] [PROJECT]` |
+| `holo status [--json] [--watch [SECONDS]]` | | `--status [--json] [PROJECT]` |
 | `holo report` | | `--report PROJECT` |
 | `holo sweep [--act]` | | `--sweep [--act] PROJECT` |
 | `holo board diff` | | `--board-diff PROJECT` |
@@ -121,7 +121,7 @@ internal, spawned by the loop's pool.
 | `holo move KEY ready\|backlog --revision N [NOTE]` | `holo ticket move` | `--move KEY ready\|backlog --revision N [--note NOTE] PROJECT` |
 | `holo cancel KEY --revision N NOTE` | `holo ticket cancel` | `--cancel KEY --revision N --note NOTE PROJECT` |
 | `holo requeue KEY NOTE` | `holo ticket requeue` | `--requeue KEY --note NOTE PROJECT` |
-| `holo approve KEY [NOTE]` | `holo ticket approve` | `--approve KEY [--note NOTE] PROJECT` |
+| `holo approve KEY [NOTE] [--force]` | `holo ticket approve` | `--approve KEY [--note NOTE] [--force] PROJECT` |
 | `holo babysit KEY [NOTE]` | `holo ticket babysit` | `--babysit KEY [--note NOTE] PROJECT` |
 | `holo send-back RUN NOTE` | | none: the console's send-back of run `RUN`, its note by the caller's login |
 | `holo repoint KEY SHA NOTE` | `holo ticket repoint` | `--repoint KEY SHA --note NOTE PROJECT` |
@@ -204,6 +204,41 @@ hour, then `h`. The symbols are coloured (`!` orange, `>` blue, `✓` green,
 `✗` red) only when the output is a terminal and `NO_COLOR` is unset or
 empty; the write commands' `✓`/`✗` follow the same rule.
 
+`holo status --watch [SECONDS]` draws that page again every `SECONDS`
+(default 5, any number above zero) until Ctrl-C, which exits 0. On a
+terminal each frame clears the screen first, so the page redraws in place;
+piped, each frame follows a line carrying its time, `--- 10:42:05 PDT ---`.
+`--watch` takes no `--json`.
+
+`holo follow [--since AGO] [--every SECONDS] [--json]` streams one line per
+thing that happens in the project: its runs' narrative events (a phase
+change, a re-point) and its ledger entries (a round's
+verdict, an adjudication, a merge, a failure, an intervention, a note),
+each shaped as a `GET /ledger` entry, with the store's schema migrations
+that `GET /ledger` lists among them. Each line is the local clock time, a symbol (`✓` a
+merge, `✗` a failure, `!` an intervention, `>` anything else), the ticket and
+a one-line summary, led by its kind for a ledger entry:
+
+```
+14:02:11  >  HOLO-1  working -> verifying
+14:06:40  >  HOLO-1  round: r1 approve
+14:07:02  ✓  HOLO-1  merge: merged 92ef2b0
+```
+
+It starts from now, or from `--since AGO` before it (`90s`, `30m`, `1h`,
+`2d`), polls every `--every SECONDS` (default 2), prints what each poll
+finds oldest first, and prints each event and entry once, by its store id
+(a migration by its time and versions), however many a poll finds. It never prints the
+agents' own output; that is `holo run N --turns`. Each poll also reads
+`GET /attention`: a live run whose heartbeat is older than the project's
+`heartbeat_stale_min`, or a supervisor whose beat is, prints one `✗` line
+naming it, and no other until it recovers and goes stale again, so silence
+means a quiet project, not a dead one. A line with `--json` is one JSON
+object: `stream` (`event`, `ledger` or `stall`), `at`, `run`, `ticket`,
+`kind` and `summary`, an event's or entry's `id`, and a ledger entry's other
+fields. stderr says once
+where it starts from; Ctrl-C exits 0.
+
 Five reads are no `factory.py` mode: each calls, in process, the view
 function the [serve daemon](http.md) answers its route with, so the command
 and the route agree. Each opens the store read-only and writes nothing.
@@ -278,7 +313,9 @@ says `via ssh to HOST`, and a `--json` result gains `"transport": "ssh"`; a
 local one has no such key. A command with a JSON form runs with `--json` and
 is printed here by the local renderer; `report`, `sweep`, `board diff`,
 `board import`, `store import`, `story witness` and `holo project VERB` stream
-the remote output as it arrives. The project comes from `-p`,
+the remote output as it arrives. `holo follow` runs there with `--json` and each
+object is rendered here as its line arrives; `holo status --watch` asks for
+the `--status --json` object over ssh once per frame and draws it here. The project comes from `-p`,
 `HOLO_PROJECT` or `default_project` and goes over by name, never from the
 current repository, whose path is this machine's; with none named here, the
 host resolves one as it would for a local command. The remote side always

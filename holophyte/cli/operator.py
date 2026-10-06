@@ -33,6 +33,7 @@ from holophyte.loop.pool_handoff import (  # noqa: F401
 )
 from holophyte.loop.reexec import reexec_self
 from holophyte.loop.runs import open_store
+from holophyte.pr.merge_ready import PARKED_PHASE, readiness
 from holophyte.review.findings import commit_findings
 from store import operator_notes
 from store.gap_layers import record_gap_layer
@@ -272,13 +273,23 @@ def _requeue_candidate(conn, ticket_id):
         return ticket.lastRunId, row[2]
     return None
 
-def approve(target, identifier, note, out=None):
+def approve(target, identifier, note, out=None, force=False):
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
+        parked_run = store.read.ticket_by_id(conn, ticket_id).lastRunId
+        if _parked_at_pull_request(conn, parked_run):
+            ready = readiness(target, parked_run)
+            if ready.reason is not None and not force:
+                raise SystemExit(
+                    f"[holo2] {identifier}: {ready.reason.replace('_', ' ')}"
+                    f" ({ready.detail}); nothing approved, and --force"
+                    " --note TEXT releases it anyway")
+            if ready.reason is not None:
+                note = f"forced past readiness: {ready.reason}; {note}"
         try:
-            run_id = store.approve(conn, ticket_id, note)
+            run_id = store.approve(conn, ticket_id, note, run_id=parked_run)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} approved: run {run_id} released from"
@@ -287,6 +298,12 @@ def approve(target, identifier, note, out=None):
               file=out)
     finally:
         conn.close()
+
+
+def _parked_at_pull_request(conn, run_id):
+    park = None if run_id is None else store.read.park_facts(conn, run_id)
+    return park is not None and park.ticket_status == "blocked_on_operator" \
+        and park.phase == PARKED_PHASE and bool(park.pr_url)
 
 
 def babysit_ticket(target, identifier, note, out=None):

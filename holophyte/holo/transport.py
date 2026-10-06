@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.error
 import urllib.request
 from contextlib import ExitStack
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import quote, urlencode
 
-from holophyte.holo.grammar import JSON, READS, REQUIRED, arguments
+from holophyte.holo.grammar import FOLLOW, JSON, READS, REQUIRED, arguments
 from holophyte.holo.resolve import (
     DEFAULT,
     ENVIRONMENT,
@@ -79,7 +80,7 @@ def remote_words(args, project):
         words.append(f"--note={note}")
     for flag in command.flags:
         given = getattr(args, flag.dest)
-        if flag is JSON or not given:
+        if flag is JSON or flag.const is not None or not given:
             continue
         if flag.metavar is None:
             words.append(flag.name)
@@ -121,14 +122,89 @@ def ssh(host, line, stdin, capture):
         return child.returncode, out.read().decode(errors="replace"), tail
 
 
+def ssh_failed(host, tail):
+    failure = f"ssh to {host} failed: {tail or 'exit 255'}"
+    print(PREFIX + failure, file=sys.stderr)
+    return failure
+
+
 def call(host, line, label, stdin=subprocess.DEVNULL, capture=False):
     print(f"[holo2] {label} via {SSH} to {host}", file=sys.stderr)
     code, text, tail = ssh(host, line, stdin, capture)
     if code == SSH_FAILED:
-        failure = f"ssh to {host} failed: {tail or 'exit 255'}"
-        print(PREFIX + failure, file=sys.stderr)
-        return 1, None, failure
+        return 1, None, ssh_failed(host, tail)
     return code, text, tail
+
+
+def drain(stream, tail):
+    for raw in stream:
+        text = raw.decode(errors="replace")
+        sys.stderr.write(text)
+        sys.stderr.flush()
+        tail[0] = text.strip() or tail[0]
+
+
+def stream(host, line, label, each):
+    print(f"[holo2] {label} via {SSH} to {host}", file=sys.stderr, flush=True)
+    sys.stdout.flush()
+    try:
+        child = subprocess.Popen(
+            ["ssh", "-o", "BatchMode=yes", host, line],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+    except OSError as bad:
+        ssh_failed(host, str(bad))
+        return 1
+    tail = [""]
+    reader = threading.Thread(target=drain, args=(child.stderr, tail), daemon=True)
+    reader.start()
+    try:
+        for raw in child.stdout:
+            each(raw.decode(errors="replace"))
+        child.wait()
+        reader.join()
+    except KeyboardInterrupt:
+        child.terminate()
+        child.wait()
+        return 0
+    if child.returncode == SSH_FAILED:
+        ssh_failed(host, tail[0])
+        return 1
+    return child.returncode
+
+
+def followed(args, timezone):
+    from holophyte.holo.follow import line
+    from holophyte.holo.render import colour_on, zone
+    tz, colour = zone(timezone), colour_on(sys.stdout)
+
+    def each(text):
+        body = document(text)
+        if body is None:
+            sys.stdout.write(text)
+        elif args.json:
+            print(json.dumps({**body, "transport": SSH}))
+        else:
+            print(line(body, tz, colour))
+        sys.stdout.flush()
+    return each
+
+
+def watched(args, host, line, timezone):
+    from holophyte.holo.follow import every_seconds
+    from holophyte.holo.status_page import show_snap, watch
+    print(f"[holo2] holo status --watch via {SSH} to {host}", file=sys.stderr)
+
+    def frame(out, colour):
+        code, text, tail = ssh(host, line, subprocess.DEVNULL, True)
+        body = document(text) if code != SSH_FAILED else None
+        if body is not None:
+            show_snap(body, timezone, out, colour)
+        elif code == SSH_FAILED:
+            print(PREFIX + f"ssh to {host} failed: {tail or 'exit 255'}", file=out)
+        else:
+            out.write(text)
+    return watch(every_seconds(args.watch), frame, timezone)
 
 
 def run_project(argv, host, config):
@@ -176,6 +252,11 @@ def run(args, host, config):
         stdin = ticket_stdin(args, stack)
         words = remote_words(args, project)
         line = remote_line(config, words)
+        if command is FOLLOW:
+            return stream(host, line, label,
+                          followed(args, config.get(TIMEZONE)))
+        if getattr(args, "watch", None) is not None:
+            return watched(args, host, line, config.get(TIMEZONE))
         if run_page(args):
             files = [*words[:1], "--files", *words[1:]]
             line += f" && {remote_line(config, files)}"
