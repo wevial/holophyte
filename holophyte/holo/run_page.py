@@ -23,8 +23,12 @@ PULL = re.compile(r"/pull/(\d+)/?$")
 
 def show(project, detail, zone_name, out=None):
     from holophyte.serve.serve_runs import run_files
-    out = sys.stdout if out is None else out
     _, files = run_files(project, str(detail["run"]["id"]))
+    show_page(detail, files, zone_name, out)
+
+
+def show_page(detail, files, zone_name, out=None):
+    out = sys.stdout if out is None else out
     lines = page(detail, files, zone(zone_name), colour_on(out))
     print("\n".join(lines), file=out)
 

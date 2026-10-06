@@ -263,7 +263,31 @@ naming the file.
 | Key | Purpose |
 | --- | --- |
 | `default_project` | the project, a `[serve] name` or a repository path, when `-p`, `HOLO_PROJECT` and the current repository give none |
+| `host` | the ssh destination every command runs on, as `ssh` reads it (`user@name`, or a `Host` alias in your ssh config); unset, `holo` runs locally |
+| `remote_command` | the command that runs `holo` there, a path and its arguments with no shell operators; default `holo` |
 | `timezone` | the zone `holo` pages show clock times in, an IANA name such as `"America/Los_Angeles"`; default the local zone; a name `zoneinfo` does not know exits 2 naming the key and the value |
+
+With `host` set, `holo` runs the same command on that host: `holo requeue
+HOLO-1 "note"` runs `HOLO_TRANSPORT=local holo requeue --note=note -p NAME
+--json -- HOLO-1` through `ssh -o BatchMode=yes HOST`, every argument quoted for
+the remote shell, so a missing key fails rather than prompting. stderr
+says `via ssh to HOST`, and a `--json` result gains `"transport": "ssh"`; a
+local one has no such key. A command with a JSON form runs with `--json` and
+is printed here by the local renderer; `report`, `sweep`, `board diff`,
+`board import`, `store import`, `story witness` and `holo project VERB` stream
+the remote output as it arrives. The project comes from `-p`,
+`HOLO_PROJECT` or `default_project` and goes over by name, never from the
+current repository, whose path is this machine's; with none named here, the
+host resolves one as it would for a local command. The remote side always
+runs locally (`HOLO_TRANSPORT=local`), whatever `host` its own `client.toml`
+names.
+`holo file TICKET.md` sends the file over the session's stdin, which the
+host reads as `holo file -`, a ticket body from stdin; a file this machine
+cannot read exits 2 before ssh runs. `serve` and `supervise` start
+long-lived processes and `story file` reads a directory, so over ssh each
+exits 2 before ssh runs. The remote command's exit code is `holo`'s; ssh's
+own failure, exit 255, is exit 1 naming the host and ssh's message, and a
+write command's `--json` result says so with `ok: false`.
 
 ## Startup checks
 
@@ -296,6 +320,7 @@ after the store.
 | --- | --- | --- |
 | `HOLOPHYTE_HOME` | `Project` | the state root, default `~/.holophyte`; tests point it at a temp dir |
 | `HOLO_PROJECT` | `holo` | the project, a `[serve] name` or a repository path, when no `-p` is given |
+| `HOLO_TRANSPORT` | `holo` | `local` runs the command here whatever `client.toml`'s `host` says; the one value |
 | `NO_COLOR` | `holo` | set and not empty, `holo` prints its symbols without colour on a terminal too |
 | `LINEAR_API_KEY` | `linear_provider` | the board's API key; env or `.env` beside the module |
 | `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the project units (`holophyte-serve@`, `holophyte-supervise@`), and `HOLOPHYTE_TARGET` alone the loop unit | one instance's project, bind address, port |
