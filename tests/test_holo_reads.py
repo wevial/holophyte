@@ -118,6 +118,11 @@ class StoreReadsCase(unittest.TestCase):
         try:
             store.init(conn)
             project = store.tickets.ensure_project(conn, "team-1", self.target)
+            live = ticket(conn, project, "KO-7")
+            store.tickets.transition(conn, live, "in_flight")
+            self.live = store.claim(conn, project, live, now=NOW - 2 * 60 * MIN)
+            store.set_phase(conn, self.live, "working", now=NOW - 2 * 60 * MIN)
+            store.heartbeat(conn, self.live, now=NOW - 60 * MIN)
             self.ended = {}
             plan = (("KO-1", 10 * MIN, "merged", None),
                     ("KO-2", 45 * MIN, "failed", None),
@@ -141,11 +146,6 @@ class StoreReadsCase(unittest.TestCase):
                 finish_run(conn, run, outcome, now=started + took,
                            merge_sha=sha)
                 self.ended[identifier] = run
-            live = ticket(conn, project, "KO-7")
-            store.tickets.transition(conn, live, "in_flight")
-            self.live = store.claim(conn, project, live, now=NOW - 2 * 60 * MIN)
-            store.set_phase(conn, self.live, "working", now=NOW - 2 * 60 * MIN)
-            store.heartbeat(conn, self.live, now=NOW - 60 * MIN)
             block(conn, project, "KO-8", "which API?")
         finally:
             conn.close()
