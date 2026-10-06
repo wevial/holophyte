@@ -72,7 +72,9 @@ Each module, one line:
   read back as `recorded`, printed as JSON with `--json` or as a `✓`/`✗` line.
 - `holophyte/holo/transport.py` — a `holo` command run on `client.toml`'s
   `host` over ssh: the remote command line, the ssh call, its exit code
-  and the `via` line; `HOLO_TRANSPORT=local` keeps it local.
+  and the `via` line; `HOLO_TRANSPORT=local` keeps it local. With
+  `transport = "http"`, the route table of the commands the host daemon
+  serves, the bearer call to `url`, and the refusal of every other command.
 - `holophyte/holo/render.py` — the pieces every `holo` page shares: a clock
   time in the client's zone, a relative age, a short hash, and a symbol
   coloured only on a terminal without `NO_COLOR`.
