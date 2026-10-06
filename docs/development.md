@@ -63,12 +63,17 @@ Each module, one line:
   `HOLO_PROJECT`, the current repository or `client.toml`'s `default_project`,
   the client config reader, and the refusal when none answers.
 - `holophyte/holo/grammar.py` — the `holo` command table: one canonical row per
-  `factory.py` mode and the `send-back` row, the interventions actions each
-  write row records, the `ticket VERB` aliases, and their translation to the
-  argv `build_parser()` parses; and the read rows, `run show N` among them.
+  `factory.py` mode, the `send-back`, `start` and `stop` rows, the
+  interventions actions each write row records, the `ticket VERB` and `loop
+  start|stop` aliases, and their translation to the argv `build_parser()`
+  parses; and the read rows, `run show N` among them.
 - `holophyte/holo/results.py` — a write command's one result: the verb run
   with its printed line and refusal captured, the interventions row it wrote
   read back as `recorded`, printed as JSON with `--json` or as a `✓`/`✗` line.
+- `holophyte/holo/units.py` — `holo start`, which records the launch and
+  starts the project's loop unit through the daemon's `unit_action()`, or
+  runs the loop in the terminal with `--foreground`; and `holo stop`, which
+  holds the project and, with `--now`, aborts its live runs.
 - `holophyte/holo/__main__.py` — `python3 -m holophyte.holo`, the same command
   without an install.
 - `holophyte/config/project.py` — where a project's state lives (`HOLOPHYTE_HOME`,
