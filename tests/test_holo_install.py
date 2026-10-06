@@ -45,6 +45,7 @@ class EditableInstallTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.directory = tempfile.mkdtemp()
+        cls.addClassCleanup(shutil.rmtree, cls.directory)
         cls.copy = Path(cls.directory) / "checkout"
         for name in checkout_files():
             target = cls.copy / name
@@ -59,13 +60,8 @@ class EditableInstallTests(unittest.TestCase):
             [venv / "bin" / "python", "-m", "pip", "install", "-q", "-e", cls.copy],
             capture_output=True, text=True)
         if install.returncode != 0:
-            shutil.rmtree(cls.directory)
             raise AssertionError(f"pip install -e failed:\n{install.stderr}")
         cls.holo = venv / "bin" / "holo"
-
-    @classmethod
-    def tearDownClass(cls):
-        shutil.rmtree(cls.directory)
 
     def run_holo(self, *args):
         return subprocess.run([self.holo, *args], cwd=self.directory,
