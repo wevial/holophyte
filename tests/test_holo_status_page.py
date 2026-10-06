@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import holophyte.cli.status
 import holophyte.holo.status_page
 import store
+import store.stories
 import store.tickets
 import tests.test_holo_results as results_tests
 from holophyte.cli.status import host_snapshot
@@ -30,6 +31,7 @@ from holophyte.host.supervisor_lock import supervisor_lock_path
 from holophyte.loop.gates import merge_lock_path
 from tests.host_fixture import HostFixture
 from tests.test_holo_grammar import ROOT, factory, holo
+from tests.test_store_stories import WITNESSES
 
 NOW = int(datetime(2026, 10, 6, 17, 42, tzinfo=timezone.utc).timestamp() * 1000)
 MINUTE = 60_000
@@ -239,6 +241,47 @@ class SweepProblemTests(StatusPageTests):
 
         self.assertIn("  ✗  sweep  beta: error: store locked  try: journalctl"
                       " --user -u holophyte-sweep.service -n 200", lines)
+
+
+class BetaWaitingTests(StatusPageTests):
+    """Beta has no run or blocked ticket, yet waits on a person."""
+
+    def setUp(self):
+        super().setUp()
+        self.beta_conn = store.open(str(Project.locate(self.beta).store_path))
+        self.addCleanup(self.beta_conn.close)
+        self.beta_id = store.ensure_project(self.beta_conn, "team-beta", self.beta)
+
+    def beta_ticket(self, key):
+        return store.tickets.mirror_ticket(
+            self.beta_conn, self.beta_id, linear_issue_id=f"issue-{key}",
+            linear_identifier=key, title=f"ticket {key}")
+
+    def test_a_story_parked_on_a_decision_is_under_needs_you_not_quiet(self):
+        parent = self.beta_ticket("BETA-1")
+        children = [(self.beta_ticket("BETA-2"), "completes", ("W1", "W2"))]
+        store.stories.file_story(self.beta_conn, parent, WITNESSES, children)
+        revision = self.beta_conn.execute(
+            "SELECT revision FROM tickets WHERE id = ?", (parent,)).fetchone()[0]
+        store.stories.approve_story(self.beta_conn, parent, revision,
+                                    "operator", "go")
+        store.stories.park_story(self.beta_conn, parent, "unmet", "W1 is red",
+                                 ["rerun", "abandon the story"], "rerun")
+
+        lines = self.page()
+
+        needs = lines[lines.index("Needs you (3)") + 1:]
+        self.assertIn('  !  beta   BETA-1    story "ticket BETA-1" parked,'
+                      " 1 open decision", needs)
+        self.assertNotIn("Quiet", lines)
+
+    def test_a_held_project_names_its_hold_and_note_instead_of_quiet(self):
+        store.hold(self.beta_conn, self.beta_id, "maintenance window")
+
+        lines = self.page()
+
+        self.assertIn("  !  beta   admission held: maintenance window", lines)
+        self.assertNotIn("Quiet", lines)
 
 
 class HintQuotingTests(StatusPageTests):

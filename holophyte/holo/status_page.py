@@ -86,7 +86,8 @@ def project_rows(project, now, errors):
     if status is None:
         return [], [], [], [Row("✗", who, "", hinted(project["error"],
                                                     REGISTRY_HINT))]
-    needs = parked_rows(who, status) + stranded_rows(who, status, now)
+    needs = (admission_rows(who, status) + parked_rows(who, status)
+             + story_rows(who, status) + stranded_rows(who, status, now))
     running = running_rows(who, status)
     trouble = lock_rows(who, status, key)
     if key in errors:
@@ -133,6 +134,30 @@ def parked_rows(who, status):
     return [Row("!", who, parked["ticket"] or "",
                 first_line(parked["question"], "(no question)"))
             for parked in status["parked"]]
+
+
+def admission_rows(who, status):
+    rows = [row for row in status["projects"] if row["admission"] != "enabled"]
+    ready = f" · {status['ready']} ready" if status["ready"] else ""
+    return [Row("!", who, "", (f"{row['path']} " if len(status["projects"]) > 1
+                               else "")
+                + f"admission {row['admission']}: "
+                + first_line(row["hold_note"], "(no note)") + ready)
+            for row in rows]
+
+
+def story_rows(who, status):
+    rows = []
+    for story in status.get("stories", []):
+        title = f"story \"{first_line(story['title'], '')}\""
+        if story["state"] == "planned":
+            rows.append(Row("!", who, story["ticket"],
+                            f"{title} planned, waiting on approval"))
+        elif story["state"] == "parked" or story["decisions"]:
+            count = story["decisions"]
+            open_ = f", {count} open decision{'s' * (count != 1)}" if count else ""
+            rows.append(Row("!", who, story["ticket"], f"{title} parked{open_}"))
+    return rows
 
 
 def stranded_rows(who, status, now):
