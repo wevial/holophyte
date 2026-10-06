@@ -123,6 +123,6 @@ def dispatch(args, target, timezone):
         return show(args, target[0], timezone)
     if args.command in READS:
         from holophyte.holo.reads import read
-        return read(args, target[0] if target else None)
+        return read(args, target[0] if target else None, timezone)
     from holophyte.cli.entry import _legacy_cli
     return _legacy_cli(target + factory_argv(args))

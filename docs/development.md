@@ -81,6 +81,9 @@ Each module, one line:
   human interventions, send-backs and consumed notes, printed with `--json` or
   rendered as counts first, then the window's runs and, with `--notes`, the
   notes.
+- `holophyte/holo/run_page.py` — `holo run N` without `--json`: the run's
+  detail and files bodies rendered as a header, a timeline of its events and
+  rounds, its files and the next commands its phase and outcome call for.
 - `holophyte/holo/units.py` — `holo start`, which records the launch and
   starts the project's loop unit through the daemon's `unit_action()`, or
   runs the loop in the terminal with `--foreground`; and `holo stop`, which
