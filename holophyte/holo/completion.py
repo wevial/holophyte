@@ -1,4 +1,5 @@
 """`holo completion SHELL` and the hidden helper its scripts call for candidates."""
+import argparse
 import contextlib
 import hashlib
 import io
@@ -6,6 +7,7 @@ import json
 import os
 import time
 
+from holophyte.holo.grammar import SHOW
 from store.enums import GapFinder, GapLayer
 
 CACHE_DIR = "completion"
@@ -72,7 +74,7 @@ def metavar_choices(metavar):
 
 def _subcommands(parser):
     return next((action for action in parser._actions
-                 if action.__class__.__name__ == "_SubParsersAction"), None)
+                 if isinstance(action, argparse._SubParsersAction)), None)
 
 
 def _arity(action):
@@ -95,13 +97,25 @@ class Walk:
         for word in words:
             self.step(word)
 
+    def shown(self):
+        subcommands = _subcommands(self.parser)
+        return None if subcommands is None else subcommands.choices.get(SHOW)
+
     def step(self, word):
         if self.pending is not None:
+            if word == "=" and not self.taken:
+                return
             self.given[self.pending.dest] = word
             self.taken += 1
             if self.taken == _arity(self.pending):
                 self.pending = None
             return
+        subcommands = _subcommands(self.parser)
+        if (subcommands is not None and not self.positionals
+                and word in subcommands.choices):
+            self.parser = subcommands.choices[word]
+            return
+        self.parser = self.shown() or self.parser
         if word.startswith("-") and word != "-":
             name, _, value = word.partition("=")
             action = self.parser._option_string_actions.get(name)
@@ -111,25 +125,20 @@ class Walk:
                 else:
                     self.pending, self.taken = action, 0
             return
-        subcommands = _subcommands(self.parser)
-        if (subcommands is not None and not self.positionals
-                and word in subcommands.choices):
-            self.parser = subcommands.choices[word]
-            return
         self.positionals.append(word)
 
     def offered(self, current, keys):
         if self.pending is not None:
             return self.values(self.pending, self.taken, keys)
         if current.startswith("-"):
-            return list(self.parser._option_string_actions)
+            return list((self.shown() or self.parser)._option_string_actions)
         subcommands = _subcommands(self.parser)
         if subcommands is None:
             return self.positional(self.parser, len(self.positionals), keys)
         if self.positionals:
             return []
         names = [choice.dest for choice in subcommands._choices_actions]
-        shown = subcommands.choices.get("show")
+        shown = self.shown()
         return names + (self.positional(shown, 0, keys) if shown else [])
 
     def positional(self, leaf, index, keys):

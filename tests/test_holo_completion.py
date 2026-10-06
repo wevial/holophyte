@@ -136,6 +136,9 @@ class TicketKeyTests(CompletionCase):
     def test_a_key_position_offers_the_open_tickets_keys(self):
         self.assertEqual(self.offered("requeue", "-p", "alpha", "HO"),
                          ["HOLO-1", "HOLO-2"])
+        split_by_bash = ("file", "T.md", "--project", "=", "alpha",
+                         "--update", "=", "HO")
+        self.assertEqual(self.offered(*split_by_bash), ["HOLO-1", "HOLO-2"])
 
     def test_the_keys_are_read_again_only_once_the_cache_is_a_minute_old(self):
         self.assertEqual(self.offered("requeue", "-p", "alpha", ""),
@@ -166,6 +169,11 @@ class TableTests(CompletionCase):
         self.assertEqual(first - set(offered), set())
         self.assertNotIn(HELPER, offered)
         self.assertNotIn(HELPER, self.holo("--help").stdout)
+
+    def test_a_read_named_by_its_group_word_completes_its_flags(self):
+        self.assertEqual(self.offered("board", "--j"), ["--json"])
+        self.assertEqual(self.offered("ticket", "HOLO-1", "--j"), ["--json"])
+        self.assertEqual(self.offered("run", "5", "--l"), ["--ledger"])
 
     def test_a_positional_or_option_with_choices_offers_them(self):
         cases = {("move", "HOLO-1", ""): ["ready", "backlog"],
