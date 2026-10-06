@@ -205,6 +205,9 @@ Each module, one line:
 - `holophyte/serve/serve_levers.py` — the daemon's `hold`, `release-hold`,
   `pause` and `resume` actions (KO-609): the CLI's store calls behind the
   action token, each requiring a note, and the `paused` attention item.
+- `holophyte/serve/serve_merge.py` — the daemon's `GET /runs/N/merge` and
+  `POST /actions/merge`: a run parked for a human's merge read for
+  readiness, and released through the store's `approve` only when ready.
 - `holophyte/agents/transcripts.py` — opted-in transcript location, rendering and turn event joins.
 - `holophyte/agents/transcript_config.py` — the daemon transcript root allow-list.
 - `holophyte/serve/serve_runs.py` — the daemon's run and ledger read routes
@@ -316,6 +319,10 @@ Each module, one line:
   normalise them beside check runs for required-context folding (KO-485).
 - `holophyte/pr/pr_head.py` — bounded settling after a push and the foreign-head
   guard before the babysitter judges or merges a candidate.
+- `holophyte/pr/merge_ready.py` — whether a parked run may merge now: its
+  park, `[merge] approve`, and GitHub's review decision, checks,
+  `mergeable`, threads and head against `origin`, as ordered facts and
+  the first failing fact's reason.
 - `holophyte/pr/pr_activity.py` — authored PR activity and event-backed wake guards.
 - `holophyte/host/ci_wake.py` — when the reconcile sends a run parked `ci` back to
   the babysitter (its checks finished, or it is green and quiet for

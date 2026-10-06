@@ -84,6 +84,34 @@ def approved_candidate(conn, ticket_id, run_id):
                              approved_sha=row[4], paused=row[6] == "paused")
 
 
+@dataclass(frozen=True)
+class ParkFacts:
+    run_id: int
+    ticket_id: int
+    identifier: str
+    ticket_status: str
+    active_run_id: int | None
+    newest: bool
+    phase: str
+    branch: str | None
+    pr_url: str | None
+    candidate_sha: str | None
+    approved_sha: str | None
+
+
+def park_facts(conn, run_id):
+    row = conn.execute(
+        "SELECT r.id, r.ticketId, t.linearIdentifier, t.status, t.activeRunId,"
+        " t.lastRunId = r.id AND NOT EXISTS (SELECT 1 FROM runs o"
+        " WHERE o.ticketId = r.ticketId AND o.id > r.id),"
+        " r.phase, r.branch, r.prUrl, r.candidateSha, r.approvedSha"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
+        (run_id,)).fetchone()
+    if row is None:
+        return None
+    return ParkFacts(*row[:5], bool(row[5]), *row[6:])
+
+
 def last_independent_verdict(conn, ticket_id):
     """Rounds carry no sha: `approvedSha` is the only record of what was reviewed."""
     return conn.execute(

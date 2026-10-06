@@ -46,7 +46,8 @@ endpoints](http.md#the-host-daemon)). The opt-ins move: `[serve] actions`
 in `host.toml` opens the actions for every registered project at once, and
 `config_edit` stays in each project's own config. Both answer only to
 `host.toml`'s `[serve] machine_token_file`, on every bind, and a project's
-own `token_file` under its own prefix, for one release; the daemon refuses
+own `token_file` under its own prefix, for one release (not `merge`,
+which answers only to the machine token); the daemon refuses
 to start with either opt-in on and no machine token, naming the key.
 `restart-supervisor` is not a host daemon's route (404): a registered
 project has no supervisor unit, and the host sweep's own action,
@@ -126,6 +127,53 @@ A `ticket` the store never mirrored, or one the store refuses to requeue
 200 with `ok: false` and the refusal in `detail`; nothing is written. A
 body that is not a JSON object, or one with no `ticket`, is 400 naming it.
 A project with no store is 503.
+
+## `POST /actions/merge`
+
+Body: a JSON object with `run` (required, the run parked for a human's
+merge), `note` and `author` (both optional). Under `[merge] mode = "pr"`
+and `approve = "human"` a green and quiet pull request parks its run in
+`awaiting_merge_approval`; this route is a console's "merge" on it, and
+it merges only an approved, green, quiet pull request.
+
+First it computes the readiness [`GET /runs/N/merge`](http.md#get-runsnmerge)
+answers, again, at call time: the run parked on its pull request under
+`approve = "human"`, then GitHub read afresh through the babysitter's own
+pull request read for an `APPROVED` review decision, passing required
+checks, `MERGEABLE`, no open review thread, and the branch head on
+`origin` and the pull request still the run's `candidateSha` or
+`approvedSha`. Not ready is 200 with `ok: false` and nothing written:
+
+```json
+{"action": "merge", "ok": false, "run": 52, "reason": "review_not_approved",
+ "detail": "GitHub's review decision is REVIEW_REQUIRED", "facts": [...]}
+```
+
+`reason`, `detail` and `facts` are the read route's. Ready, the daemon
+calls the store's `approve` release, the one `--approve KO-n` makes: in
+one transaction an `approve` interventions row on the run, the run
+released `abandoned` with `resumePhase` `merge_gate`, and the ticket
+walked to `ready`. Its note reads `AUTHOR via the console: merge at head
+SHA; FACTS held`, then the body's `note` when one is given; `author`
+defaults to `maintainer`. The daemon does not merge: the loop's next
+claim resumes the candidate on its pull request and the babysitter
+merges it, re-checking green and quiet under the merge lock and parking
+it again otherwise.
+
+```json
+{"action": "merge", "ok": true, "run": 52, "ticket": "KO-219",
+ "head_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
+ "detail": "approved at 5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f; the loop's next claim merges the candidate on https://github.com/example/repo/pull/31"}
+```
+
+The release names the run it checked: a ticket that moves between the
+read and the write, a newer run parked in its place included, is the
+store's `ApproveRefused`, `ok: false` with `reason` `not_parked` and the
+refusal in `detail`, and nothing is approved. On a host daemon
+`/projects/NAME/actions/merge` answers only to the machine token; a
+project's own token is 401. A `run` that is not a positive integer is
+400; a project with no store is 503. `--approve` and `holo approve` keep
+releasing without reading GitHub.
 
 ## The project's configuration: `GET /config` and `PUT /config`
 
@@ -270,16 +318,20 @@ the payload is read from the store.
 on its pull request as kind `pr_open`, with the PR's URL and the reason it
 parked. The console's one action on it, "Open PR", opens that URL in a
 new tab and posts nothing: the pull request waits on a review or a merge
-by a person, and the daemon has no route for either. An "Approve" route
-belongs to a later ticket; `--approve KO-n` on the writer host merges a
-parked candidate today.
+by a person. For a run parked for a human's merge (`[merge] approve =
+"human"`), [`GET /runs/N/merge`](http.md#get-runsnmerge) says whether it
+may merge now and [`POST /actions/merge`](#post-actionsmerge) releases it
+to the loop once GitHub shows it approved, green, mergeable, quiet and at
+the parked head; the console's Merge button is not built yet.
+`--approve KO-n` on the writer host releases a parked candidate without
+reading GitHub.
 
 ## Errors
 
 | Status | When |
 | --- | --- |
-| 400 | the body is not a JSON object, or `requeue` has no `ticket`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value; a `patch` that is not an object, or with a key the daemon cannot apply |
+| 400 | the body is not a JSON object, or `requeue` has no `ticket`, or `merge` has no positive integer `run`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value; a `patch` that is not an object, or with a key the daemon cannot apply |
 | 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
-| 404 | `[serve] actions` is not `true`, or the action is not one of the three; `/config` without `[serve] config_edit = true`; on a host daemon, `restart-supervisor`, a project name outside the registry, and any root action but `run-sweep` |
+| 404 | `[serve] actions` is not `true`, or the action is not one of this page's; `/config` without `[serve] config_edit = true`; on a host daemon, `restart-supervisor`, a project name outside the registry, and any root action but `run-sweep` |
 | 405 | `POST` on any path outside `/actions/`; `PUT` on any path but `/config` |
-| 503 | `requeue` against a project with no store yet; `PUT /config` with no store or no run to record against; on a host daemon, a project whose store is stamped newer than the build can read, or is locked or corrupt when the action reads or writes it |
+| 503 | `requeue` or `merge` against a project with no store yet; `PUT /config` with no store or no run to record against; on a host daemon, a project whose store is stamped newer than the build can read, or is locked or corrupt when the action reads or writes it |

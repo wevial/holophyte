@@ -167,11 +167,11 @@ class ApproveRefused(Exception):
 APPROVED_RESUME_PHASE = "merge_gate"
 
 
-def approve(conn, ticket_id, note, now=None):
+def approve(conn, ticket_id, note, now=None, run_id=None):
     return _release_parked(
         conn, ticket_id, "approve", note,
         "approved for merge; the next claim resumes the candidate"
-        " at the merge gate", now)
+        " at the merge gate", now, run_id=run_id)
 
 
 def babysit(conn, ticket_id, note, now=None, source="human"):
@@ -183,7 +183,7 @@ def babysit(conn, ticket_id, note, now=None, source="human"):
 
 def _release_parked(conn, ticket_id, action, note, reason, now,
                     require_pr=False, source="human", guidance=None,
-                    before_release=None):
+                    before_release=None, run_id=None):
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -202,6 +202,10 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
             raise ApproveRefused(
                 f"{identifier} is {status}, not blocked_on_operator; nothing"
                 " is parked awaiting merge approval")
+        if run_id is not None and last_run_id != run_id:
+            raise ApproveRefused(
+                f"{identifier}'s newest run is {last_run_id}, not run"
+                f" {run_id}; nothing approved")
         run = (conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
                             (last_run_id,)).fetchone()
                if last_run_id is not None else None)

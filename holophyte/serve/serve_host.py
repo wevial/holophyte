@@ -30,6 +30,7 @@ from holophyte.serve.serve_actions import (
 )
 from holophyte.serve.serve_board import post_path, post_ticket, put_ticket, ticket_path
 from holophyte.serve.serve_config import require_tomlkit
+from holophyte.serve.serve_merge import MERGE_ACTION
 from holophyte.serve.serve_watch import CODE_CHECK_SEC, CodeWatch, adopted_socket
 from holophyte.serve.server import (
     CONSOLE_DIR,
@@ -366,6 +367,9 @@ class HostHandler(StatusHandler):
             board = post_path(path)
             if board is not None:
                 return post_ticket(self, scope, path, *board)
+            if path == ACTIONS_PREFIX + MERGE_ACTION and self.server.actions \
+                    and not self.admitted(self.server.write_token):
+                return self.answer(401, {})
             return self.post(scope, path)
         if not path.startswith(ACTIONS_PREFIX):
             return self.refuse()

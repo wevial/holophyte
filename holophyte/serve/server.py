@@ -36,6 +36,12 @@ from holophyte.serve.serve_config import (
     write_config,
 )
 from holophyte.serve.serve_levers import LEVERS
+from holophyte.serve.serve_merge import (
+    MERGE_ACTION,
+    RUN_MERGE_PATH,
+    merge_action,
+    run_merge,
+)
 from holophyte.serve.serve_runs import (
     RUN_FILES_PATH,
     RUN_LEDGER_PATH,
@@ -211,6 +217,7 @@ SHAPED_ROUTES = (
     (RUN_TURNS_PATH, run_turns),
     (RUN_TRANSCRIPT_PATH, run_transcript),
     (RUN_LEDGER_PATH, run_ledger),
+    (RUN_MERGE_PATH, run_merge),
     (TICKET_PATH, ticket_detail),
 )
 
@@ -330,6 +337,8 @@ class StatusHandler(BaseHTTPRequestHandler):
                     body.get("author", "maintainer"))
             if action == REQUEUE_ACTION:
                 return requeue_action(project, body)
+            if action == MERGE_ACTION:
+                return merge_action(project, body)
             if action in LEVERS:
                 return LEVERS[action](project, body)
             return unit_action(project, action, scope.unit_name)
