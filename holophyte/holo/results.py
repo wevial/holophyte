@@ -1,8 +1,10 @@
 """A `holo` write verb's one result: a JSON object, or a line for a person."""
 import json
 import sys
+import tempfile
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 
 from holophyte.admission import project_of
@@ -17,6 +19,7 @@ from holophyte.holo.grammar import (
 from store.read import open_readonly
 
 PREFIX = "[holo2] "
+STDIN = "-"
 RUN_DIGITS = len(str(2**63 - 1))
 
 
@@ -92,7 +95,11 @@ def call(args, target):
     if args.command.mode is None:
         return send_back(args, target)
     from holophyte.cli.entry import _legacy_cli
-    return _legacy_cli(target + factory_argv(args))
+    with tempfile.TemporaryDirectory() as scratch:
+        if args.command.words == ("file",) and args.arg0 == STDIN:
+            args.arg0 = str(Path(scratch) / "stdin.md")
+            Path(args.arg0).write_bytes(sys.stdin.buffer.read())
+        return _legacy_cli(target + factory_argv(args))
 
 
 def send_back(args, target):

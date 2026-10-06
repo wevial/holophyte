@@ -117,6 +117,27 @@ registered project, whose supervisor is the host sweep. Units outlive the
 shell session that started them, so a dead tmux server takes nothing down
 with it.
 
+## `holo` on the operator seat
+
+`holo` on the operator seat runs each command on the writer host over ssh.
+Install the factory editable on both roles, `python3 -m pip install --user
+-e .` in each checkout, so `holo` is on the `PATH` of each; on the writer
+host it must be on the `PATH` a non-interactive ssh login sees. Then write
+the seat's `~/.holophyte/client.toml`, `HOST` the writer host's ssh
+destination:
+
+```toml
+host = "HOST"
+default_project = "NAME"
+```
+
+The seat's ssh needs a key the writer host accepts with no prompt: `holo`
+runs ssh with `BatchMode=yes`. `holo status` then prints the writer host's
+status with `via ssh to HOST` on stderr, and `holo file TICKET.md` files a
+ticket written on the seat. Set `remote_command` when `holo` is not on that
+`PATH`, and `HOLO_TRANSPORT=local` for one command on the seat itself. The
+keys are in the [CLI reference](../reference/cli.md#holo).
+
 ## The drawer
 
 `contrib/swiftbar/holophyte.10s.py` runs under SwiftBar on the operator

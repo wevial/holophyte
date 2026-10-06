@@ -152,13 +152,17 @@ def read(args, target):
     else:
         project = Project.locate(Path(target), adopt=False)
         route, (code, body) = READS[args.command.words][0](args, project)
+    show(args, route, code == 200, body)
+    return exit_code(code)
+
+
+def show(args, route, ok, body):
     if args.json:
         print(json.dumps(body))
-    elif code == 200:
+    elif ok:
         for line in listing(args, body):
             print(" ".join(line.splitlines()))
     else:
         detail = f": {body['detail']}" if body.get("detail") else ""
         print(f"[holo2] {route}: {body.get('error') or 'not found'}{detail}",
               file=sys.stderr)
-    return exit_code(code)

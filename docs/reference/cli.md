@@ -189,6 +189,30 @@ naming the file.
 | Key | Purpose |
 | --- | --- |
 | `default_project` | the project, a `[serve] name` or a repository path, when `-p`, `HOLO_PROJECT` and the current repository give none |
+| `host` | the ssh destination every command runs on, as `ssh` reads it (`user@name`, or a `Host` alias in your ssh config); unset, `holo` runs locally |
+| `remote_command` | the command that runs `holo` there, a path and its arguments with no shell operators; default `holo` |
+
+With `host` set, `holo` runs the same command on that host: `holo requeue
+HOLO-1 "note"` runs `HOLO_TRANSPORT=local holo requeue HOLO-1 --note=note -p
+NAME --json` through `ssh -o BatchMode=yes HOST`, every argument quoted for
+the remote shell, so a missing key fails rather than prompting. stderr
+says `via ssh to HOST`, and a `--json` result gains `"transport": "ssh"`; a
+local one has no such key. A command with a JSON form runs with `--json` and
+is printed here by the local renderer; `report`, `sweep`, `board diff`,
+`board import`, `store import`, `story witness` and `holo project VERB` stream
+the remote output as it arrives. The project comes from `-p`,
+`HOLO_PROJECT` or `default_project` and goes over by name, never from the
+current repository, whose path is this machine's; with none named here, the
+host resolves one as it would for a local command. The remote side always
+runs locally (`HOLO_TRANSPORT=local`), whatever `host` its own `client.toml`
+names.
+`holo file TICKET.md` sends the file over the session's stdin, which the
+host reads as `holo file -`, a ticket body from stdin; a file this machine
+cannot read exits 2 before ssh runs. `serve` and `supervise` start
+long-lived processes and `story file` reads a directory, so over ssh each
+exits 2 before ssh runs. The remote command's exit code is `holo`'s; ssh's
+own failure, exit 255, is exit 1 naming the host and ssh's message, and a
+write command's `--json` result says so with `ok: false`.
 
 ## Startup checks
 
@@ -221,6 +245,7 @@ after the store.
 | --- | --- | --- |
 | `HOLOPHYTE_HOME` | `Project` | the state root, default `~/.holophyte`; tests point it at a temp dir |
 | `HOLO_PROJECT` | `holo` | the project, a `[serve] name` or a repository path, when no `-p` is given |
+| `HOLO_TRANSPORT` | `holo` | `local` runs the command here whatever `client.toml`'s `host` says; the one value |
 | `LINEAR_API_KEY` | `linear_provider` | the board's API key; env or `.env` beside the module |
 | `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the project units (`holophyte-serve@`, `holophyte-supervise@`), and `HOLOPHYTE_TARGET` alone the loop unit | one instance's project, bind address, port |
 | `LISTEN_FDS`, `LISTEN_PID` | `--serve` | set by the service manager's socket unit: with `LISTEN_FDS=1` and `LISTEN_PID` this process's pid, the daemon serves on fd 3 instead of binding, and exits 0 on a factory `HEAD` move for the socket to start the new code |

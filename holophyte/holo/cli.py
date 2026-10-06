@@ -66,16 +66,33 @@ def project_argv(args, default):
     return [resolved.value]
 
 
+def remote(args, argv, host, config):
+    from holophyte.holo.resolve import Refused
+    from holophyte.holo.transport import run
+    try:
+        return run(args, host, config)
+    except (Refused, UsageError) as refused:
+        from holophyte.holo.results import usage_result
+        usage_result(argv, refused.line)
+        raise
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     from holophyte.holo.resolve import DEFAULT, Refused, client_config
+    from holophyte.holo.transport import remote_host
     try:
-        default = client_config().get(DEFAULT)
+        config = client_config()
+        host = remote_host(config)
     except Refused as refused:
         from holophyte.holo.results import usage_result
         usage_result(argv, refused.line)
         raise
+    default = config.get(DEFAULT)
     if argv[:1] == ["project"]:
+        if host is not None:
+            from holophyte.holo.transport import run_project
+            return run_project(argv, host, config)
         from holophyte.cli.entry import cli
         return cli(argv)
     parser = build_parser()
@@ -91,6 +108,8 @@ def main(argv=None):
     if args.words is None:
         parser.print_help()
         return 0
+    if host is not None:
+        return remote(args, argv, host, config)
     if args.command.records is not None:
         from holophyte.holo.results import run_write
         return run_write(args, lambda: project_argv(args, default))

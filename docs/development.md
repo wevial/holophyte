@@ -65,6 +65,9 @@ Each module, one line:
 - `holophyte/holo/results.py` — a write command's one result: the verb run
   with its printed line and refusal captured, the interventions row it wrote
   read back as `recorded`, printed as JSON with `--json` or as a `✓`/`✗` line.
+- `holophyte/holo/transport.py` — a `holo` command run on `client.toml`'s
+  `host` over ssh: the remote command line, the ssh call, its exit code
+  and the `via` line; `HOLO_TRANSPORT=local` keeps it local.
 - `holophyte/holo/__main__.py` — `python3 -m holophyte.holo`, the same command
   without an install.
 - `holophyte/config/project.py` — where a project's state lives (`HOLOPHYTE_HOME`,
