@@ -79,7 +79,7 @@ def remote(args, argv, host, config):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    from holophyte.holo.resolve import DEFAULT, Refused, client_config
+    from holophyte.holo.resolve import DEFAULT, TIMEZONE, Refused, client_config
     from holophyte.holo.transport import remote_host
     try:
         config = client_config()
@@ -110,10 +110,16 @@ def main(argv=None):
         return 0
     if host is not None:
         return remote(args, argv, host, config)
+    if getattr(args, "foreground", False):
+        from holophyte.holo.units import foreground
+        return foreground(args, project_argv(args, default))
     if args.command.records is not None:
         from holophyte.holo.results import run_write
         return run_write(args, lambda: project_argv(args, default))
     target = project_argv(args, default)
+    if args.command.mode == "--status" and not args.json:
+        from holophyte.holo.status_page import show
+        return show(target, config.get(TIMEZONE))
     if args.command in READS:
         from holophyte.holo.reads import read
         return read(args, target[0] if target else None)

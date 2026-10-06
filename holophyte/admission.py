@@ -34,13 +34,18 @@ def project_of(conn, target):
                  if path == str(target.path.resolve())), None)
 
 
-def set_hold(conn, target, holding, note):
+def project_row(conn, target):
     project = project_of(conn, target)
     if project is None:
         settings = board_config(target)
         if settings is None:
             raise ValueError("project has no store row or [board] configuration")
         project = store.ensure_project(conn, settings.team, target.path)
+    return project
+
+
+def set_hold(conn, target, holding, note):
+    project = project_row(conn, target)
     (store.hold if holding else store.release_hold)(conn, project, note)
     return project
 
