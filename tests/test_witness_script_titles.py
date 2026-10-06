@@ -11,7 +11,7 @@ TITLE = ("the README pictures: a section thread hermes answers, "
          "the decisions answered, a passage comment")
 
 
-class ScriptTitleApprovalCitationTests(unittest.TestCase):
+class ApprovedRepoCase(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -20,14 +20,15 @@ class ScriptTitleApprovalCitationTests(unittest.TestCase):
                      ("config", "user.name", "Test reviewer"),
                      ("config", "user.email", "reviewer@example.test")):
             self.git(*args)
-        test = self.root / "e2e/smoke/readme.capture.ts"
-        test.parent.mkdir(parents=True)
-        test.write_text(f"test('{TITLE}', async () => {{}});\n")
-        source = self.root / "src/lib/format.ts"
-        source.parent.mkdir(parents=True)
-        source.write_text("export function formatDate(d: Date) { return ''; }\n")
+
+    def write(self, path, text):
+        file = self.root / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(text)
+
+    def approve(self):
         self.approved = self.commit("approved")
-        (self.root / "README.md").write_text("# Pictures\n")
+        self.write("README.md", "# Pictures\n")
         self.candidate = self.commit("candidate")
 
     def git(self, *args):
@@ -46,6 +47,16 @@ class ScriptTitleApprovalCitationTests(unittest.TestCase):
         return reply_parsing.criteria_findings(
             reply, ["c1"], self.root,
             approved_range=(self.approved, self.candidate))
+
+
+class ScriptTitleApprovalCitationTests(ApprovedRepoCase):
+    def setUp(self):
+        super().setUp()
+        self.write("e2e/smoke/readme.capture.ts",
+                   f"test('{TITLE}', async () => {{}});\n")
+        self.write("src/lib/format.ts",
+                   "export function formatDate(d: Date) { return ''; }\n")
+        self.approve()
 
     def test_double_quoted_title_in_capture_file_witnesses_criterion(self):
         self.assertEqual(self.findings(
@@ -69,6 +80,32 @@ class ScriptTitleApprovalCitationTests(unittest.TestCase):
             finding["message"].splitlines()[0],
             "CRITERION 1: unwitnessed — named test not found: "
             "prior approval must name a test")
+
+
+ROUTE_TEST = "app/api/(transaction)/document/[documentId]/update/test/route.test.ts"
+ROUTE_TITLE = "gives $label document\\'s receipt the document\\'s visibility"
+
+
+class RouteSegmentPathCitationTests(ApprovedRepoCase):
+    def setUp(self):
+        super().setUp()
+        self.write(ROUTE_TEST, f"it('{ROUTE_TITLE}', async () => {{}});\n")
+        self.approve()
+
+    def test_title_under_route_group_and_dynamic_segment_witnesses_criterion(self):
+        self.assertEqual(self.findings(f"{ROUTE_TEST}::'{ROUTE_TITLE}'"), [])
+
+    def test_citation_in_prose_parentheses_reads_path_from_its_first_word(self):
+        for prose in (f"(see {ROUTE_TEST}::'{ROUTE_TITLE}')",
+                      f"({ROUTE_TEST}::'{ROUTE_TITLE}')"):
+            with self.subTest(prose=prose):
+                self.assertEqual(self.findings(prose), [])
+
+    def test_absent_title_under_route_segments_names_full_path_as_not_found(self):
+        (finding,) = self.findings(f"{ROUTE_TEST}::'gives no receipt'")
+        self.assertIn(f"{ROUTE_TEST}::gives no receipt", finding["message"])
+        self.assertIn('no test named "gives no receipt"', finding["message"])
+        self.assertNotIn("outside the worktree", finding["message"])
 
 
 if __name__ == "__main__":

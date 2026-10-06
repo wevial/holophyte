@@ -192,10 +192,10 @@ def criteria_block(reply):
 
 
 WITNESS_TEST_RE = re.compile(
-    r"(?P<path>[\w./-]+\.py)::(?:(?P<cls>\w+)::)?(?P<name>test\w*)"
-    r"|(?P<script>[\w./-]+\.(?:[jt]sx?|[mc][jt]s))::"
+    r"(?P<path>[\w./-][\w./()\[\]-]*\.py)::(?:(?P<cls>\w+)::)?(?P<name>test\w*)"
+    r"|(?P<script>[\w./-][\w./()\[\]-]*\.(?:[jt]sx?|[mc][jt]s))::"
     r"(?:\"(?P<title_dq>(?:[^\"\\\n]|\\.)+)\"|'(?P<title_sq>(?:[^'\\\n]|\\.)+)')"
-    r"|(?P<other>[\w./-]+(?:\.(?:test|spec)\.tsx?|\.test\.js|_test\.go))::"
+    r"|(?P<other>[\w./-][\w./()\[\]-]*(?:\.(?:test|spec)\.tsx?|\.test\.js|_test\.go))::"
     r"(?:\"(?P<title>(?:[^\"\\\n]|\\.)+)\"|(?P<ident>\w+))"
     r"|(?P<mod>tests(?:\.\w+)+)\.(?P<name2>test\w*)")
 
