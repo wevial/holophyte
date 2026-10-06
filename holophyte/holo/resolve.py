@@ -14,7 +14,7 @@ CURRENT = "current repository"
 DEFAULT = "default_project"
 TIMEZONE = "timezone"
 CLIENT_KEYS = frozenset((DEFAULT, TIMEZONE))
-HOST_FORMS = frozenset(("--status", "--serve", "--supervise"))
+HOST_FORMS = frozenset(("--status", "--serve", "--supervise", "GET /attention"))
 
 
 class Resolved(NamedTuple):

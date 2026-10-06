@@ -3,7 +3,7 @@ import sys
 import tomllib
 from importlib import metadata
 
-from holophyte.holo.grammar import add_commands, factory_argv, parse
+from holophyte.holo.grammar import READS, add_commands, factory_argv, parse
 from holophyte.host.startup import build_sha, factory_checkout
 
 DISTRIBUTION = "holophyte"
@@ -95,8 +95,12 @@ def main(argv=None):
     if args.command.records is not None:
         from holophyte.holo.results import run_write
         return run_write(args, lambda: project_argv(args, default))
+    target = project_argv(args, default)
     if args.command.mode == "--status" and not args.json:
         from holophyte.holo.status_page import show
-        return show(project_argv(args, default), client.get(TIMEZONE))
+        return show(target, client.get(TIMEZONE))
+    if args.command in READS:
+        from holophyte.holo.reads import read
+        return read(args, target[0] if target else None)
     from holophyte.cli.entry import _legacy_cli
-    return _legacy_cli(project_argv(args, default) + factory_argv(args))
+    return _legacy_cli(target + factory_argv(args))
