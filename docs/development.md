@@ -46,6 +46,12 @@ Each module, one line:
   `require_board()`.
 - `holophyte/cli/host_modes.py` — the host forms of `--status`, `--serve` and
   `--supervise`, the read-only modes, and `start_supervisor()`.
+- `holophyte/holo/__init__.py` — the `holo` command's package.
+- `holophyte/holo/cli.py` — `main()`, the `holo` console script `pyproject.toml`
+  declares: `--version` prints the package version and the checkout's short
+  `HEAD`.
+- `holophyte/holo/__main__.py` — `python3 -m holophyte.holo`, the same command
+  without an install.
 - `holophyte/config/project.py` — where a project's state lives (`HOLOPHYTE_HOME`,
   the `<slug>` directory, legacy adoption) and the `Project` value.
 - `holophyte/config/reader.py` — `load_config()`, `config_table()`, `KNOWN_KEYS`
