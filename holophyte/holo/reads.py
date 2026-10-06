@@ -74,15 +74,6 @@ def runs_lines(body):
             f"  {row['rounds']} rounds" for row in body["rows"]]
 
 
-def run_lines(body):
-    run = body["run"]
-    lines = [f"run {run['id']}  {run['ticket']}  attempt {run['attempt']}"
-             f"  {run['outcome'] or run['phase']}  {run['title']}"]
-    lines += [f"  round {r['round']}  {r['verdict'] or 'open'}"
-              f"  {r['reviewer_model'] or '-'}" for r in body["rounds"]]
-    return lines
-
-
 def files_lines(body):
     lines = [f"{f['status']}  +{f['added']} -{f['deleted']}  {f['path']}"
              for f in body["files"]]
@@ -130,7 +121,7 @@ def ticket_lines(body):
 
 
 READS = {("runs",): (runs_answer, runs_lines),
-         ("run",): (run_answer, run_lines),
+         ("run",): (run_answer, None),
          ("attention",): (attention_answer, attention_lines),
          ("board",): (board_answer, board_lines),
          ("ticket",): (ticket_answer, ticket_lines)}
@@ -138,21 +129,28 @@ RUN_LISTINGS = {"files": files_lines, "ledger": ledger_lines,
                 "turns": turns_lines}
 
 
+def run_part(args):
+    return next((part for part in RUN_PARTS if getattr(args, part)), None)
+
+
 def listing(args, body):
     if args.command.words == ("run",):
-        part = next((part for part in RUN_PARTS if getattr(args, part)), None)
-        if part is not None:
-            return RUN_LISTINGS[part](body)
+        return RUN_LISTINGS[run_part(args)](body)
     return READS[args.command.words][1](body)
 
 
-def read(args, target):
+def read(args, target, zone_name=None):
     if target is None:
         route, (code, body) = "GET /attention", host_attention_answer()
     else:
         project = Project.locate(Path(target), adopt=False)
         route, (code, body) = READS[args.command.words][0](args, project)
-    show(args, route, code == 200, body)
+    if (code == 200 and not args.json and args.command.words == ("run",)
+            and not run_part(args)):
+        from holophyte.holo.run_page import show as show_page
+        show_page(project, body, zone_name)
+    else:
+        show(args, route, code == 200, body)
     return exit_code(code)
 
 
