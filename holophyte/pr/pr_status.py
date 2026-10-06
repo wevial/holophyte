@@ -47,6 +47,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
         nodes { ... on ClosedEvent { actor { login } } }
       }
       state merged headRefOid mergeable mergeCommit { oid } updatedAt title
+      reviewDecision
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
       comments(first: 100, after: $commentsAfter) {
         pageInfo { hasNextPage endCursor }
@@ -404,6 +405,7 @@ def _state_of(node, threads, runs, required, awaited=()):
                          else required + list(awaited))
     merge = node.get("mergeCommit") or {}
     mergeable = node.get("mergeable")
+    decision = node.get("reviewDecision")
     return PrState(threads=tuple(threads), checks=checks,
                    head_sha=node.get("headRefOid"),
                    merged=bool(node.get("merged")),
@@ -415,6 +417,8 @@ def _state_of(node, threads, runs, required, awaited=()):
                    if isinstance(mergeable, str) and mergeable
                    else "UNKNOWN",
                    updated_at=_iso_ms(node.get("updatedAt")),
+                   review=decision.lower() if isinstance(decision, str)
+                   and decision else None,
                    pending_contexts=tuple(r["name"] for r in (runs or [])
                                           if isinstance(r, dict)
                                           and r.get("name")

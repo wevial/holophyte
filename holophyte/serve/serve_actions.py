@@ -19,7 +19,7 @@ UNIT_ACTIONS = {
 REQUEUE_ACTION = "requeue"
 ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION, "send-back", "hold",
                                      "release-hold", "pause", "resume",
-                                     "abort"}
+                                     "abort", "merge"}
 # The store refuses an empty requeue note.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
 MAX_BODY = 64 * 1024

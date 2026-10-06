@@ -1,0 +1,46 @@
+{
+  "run": 1,
+  "ticket": "KO-7",
+  "pr_url": "https://github.com/example/repo/pull/31",
+  "head_sha": "HEAD_SHA",
+  "ready": true,
+  "reason": null,
+  "detail": null,
+  "facts": [
+    {
+      "name": "parked",
+      "ok": true,
+      "detail": "run 1 is KO-7's newest run, parked awaiting_merge_approval on https://github.com/example/repo/pull/31"
+    },
+    {
+      "name": "human_approval",
+      "ok": true,
+      "detail": "[merge] approve is \"human\""
+    },
+    {
+      "name": "review_approved",
+      "ok": true,
+      "detail": "GitHub's review decision is APPROVED"
+    },
+    {
+      "name": "checks_passed",
+      "ok": true,
+      "detail": "the required checks are success"
+    },
+    {
+      "name": "mergeable",
+      "ok": true,
+      "detail": "GitHub's mergeable is MERGEABLE"
+    },
+    {
+      "name": "threads_resolved",
+      "ok": true,
+      "detail": "no review thread is open"
+    },
+    {
+      "name": "head_unchanged",
+      "ok": true,
+      "detail": "origin's task/ko-7-ticket-7 and the pull request are at HEAD_SHA"
+    }
+  ]
+}
