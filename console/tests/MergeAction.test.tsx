@@ -115,7 +115,10 @@ test("while a confirmed merge is in flight it cannot be cancelled or posted agai
   const gate = new Promise<void>(done => { release = done; });
   const { post, cell } = await show(readiness, { post: fakeFetch({ ok: true, detail: "released" }, gate) });
   await act(async () => { fireEvent.click(within(cell()).getByRole("button", { name: "Merge" })); });
-  await act(async () => { fireEvent.click(within(cell()).getByRole("button", { name: "Confirm merge" })); await settle(); });
+  const confirm = within(cell()).getByRole("button", { name: "Confirm merge" });
+  await act(async () => { fireEvent.click(confirm); await settle(); });
+  await act(async () => { fireEvent.click(confirm); await settle(); });
+  expect(post).toHaveLength(1);
   const cancel = within(cell()).getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
   expect(cancel.disabled).toBe(true);
   await act(async () => { fireEvent.click(cancel); });
