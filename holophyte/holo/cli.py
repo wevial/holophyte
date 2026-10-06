@@ -68,13 +68,14 @@ def project_argv(args, default):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    from holophyte.holo.resolve import DEFAULT, Refused, client_config
+    from holophyte.holo.resolve import DEFAULT, TIMEZONE, Refused, client_config
     try:
-        default = client_config().get(DEFAULT)
+        client = client_config()
     except Refused as refused:
         from holophyte.holo.results import usage_result
         usage_result(argv, refused.line)
         raise
+    default = client.get(DEFAULT)
     if argv[:1] == ["project"]:
         from holophyte.cli.entry import cli
         return cli(argv)
@@ -94,5 +95,8 @@ def main(argv=None):
     if args.command.records is not None:
         from holophyte.holo.results import run_write
         return run_write(args, lambda: project_argv(args, default))
+    if args.command.mode == "--status" and not args.json:
+        from holophyte.holo.status_page import show
+        return show(project_argv(args, default), client.get(TIMEZONE))
     from holophyte.cli.entry import _legacy_cli
     return _legacy_cli(project_argv(args, default) + factory_argv(args))

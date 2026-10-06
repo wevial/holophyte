@@ -109,8 +109,10 @@ PINNED = {
     "holophyte/holo/__main__.py": 0,
     "holophyte/holo/cli.py": 0,
     "holophyte/holo/grammar.py": 2,
+    "holophyte/holo/render.py": 1,
     "holophyte/holo/resolve.py": 0,
     "holophyte/holo/results.py": 1,
+    "holophyte/holo/status_page.py": 1,
 
     "holophyte/host/__init__.py": 0,
     "holophyte/host/ci_wake.py": 0,
