@@ -235,6 +235,11 @@ def show(args, target, zone_name, out=None):
     if args.json:
         print(json.dumps(body), file=out)
         return 0
+    return show_body(args, body, zone_name, out)
+
+
+def show_body(args, body, zone_name, out=None):
+    out = sys.stdout if out is None else out
     lines = page(body, zone(zone_name), colour_on(out), args.notes)
     print("\n".join(lines), file=out)
     return 0
