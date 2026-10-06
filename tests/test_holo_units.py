@@ -86,11 +86,6 @@ class UnitTests(Home):
         store.tickets.transition(self.conn, ticket, "in_flight")
         return store.claim(self.conn, self.project_id, ticket, now=T0)
 
-    def ended_run(self):
-        run = self.live_run()
-        store.release(self.conn, run, "failed", "verify failed", now=T0 + 1)
-        return run
-
     def interventions(self):
         return self.conn.execute(
             'SELECT "action", runId, note, guidance FROM interventions'
@@ -108,7 +103,6 @@ class UnitTests(Home):
 
 class StartTests(UnitTests):
     def test_start_records_the_launch_before_systemctl_starts_the_unit(self):
-        run = self.ended_run()
         self.ticket()
 
         done = self.holo("start")
@@ -116,12 +110,13 @@ class StartTests(UnitTests):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.calls(), ["--user start holophyte-loop@alpha"])
         self.assertEqual(self.seen(), ["launch_loop"])
-        self.assertEqual(self.interventions()[-1][:2], ("launch_loop", run))
+        action, run, note, _ = self.interventions()[-1]
+        self.assertEqual((action, run), ("launch_loop", None))
+        self.assertIn("holo start", note)
         self.assertIn("holophyte-loop@alpha", done.stdout)
         self.assertIn("1 ticket ready", done.stdout)
 
     def test_a_failed_systemctl_exits_1_with_its_error_and_keeps_the_record(self):
-        self.ended_run()
         self.fake_systemctl(code=1, error="Failed to connect to bus\n")
 
         done = self.holo("start")
@@ -132,7 +127,6 @@ class StartTests(UnitTests):
         self.assertEqual(self.interventions()[-1][0], "launch_loop")
 
     def test_a_held_project_without_a_note_is_refused_naming_the_hold(self):
-        self.ended_run()
         store.hold(self.conn, self.project_id, "disk replacement")
         before = self.interventions()
 
@@ -145,28 +139,27 @@ class StartTests(UnitTests):
         self.assertEqual(self.calls(), [])
 
     def test_a_note_releases_the_hold_before_the_launch(self):
-        self.ended_run()
         store.hold(self.conn, self.project_id, "disk replacement")
 
         done = self.holo("start", "back after maintenance")
 
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(
-            [(action, note) for action, _, note, _ in self.interventions()[-2:]],
-            [("release_hold", "back after maintenance"), ("launch_loop", None)])
+        (released, _, note, _), (launched, _, _, _) = self.interventions()[-2:]
+        self.assertEqual((released, note, launched),
+                         ("release_hold", "back after maintenance", "launch_loop"))
         self.assertEqual(self.admission(), ("enabled", None))
         self.assertEqual(self.calls(), ["--user start holophyte-loop@alpha"])
 
-    def test_a_start_with_no_run_to_record_against_keeps_the_hold(self):
-        store.hold(self.conn, self.project_id, "disk replacement")
-        before = self.interventions()
+    def test_a_registered_project_with_no_serve_name_is_refused_naming_it(self):
+        config = self.project.config_path
+        config.write_text(config.read_text().replace('name = "alpha"',
+                                                     'name = ""'))
 
-        done = self.holo("start", "back after maintenance")
+        done = holo("start", "-p", str(self.path), home=self.home)
 
         self.assertEqual(done.returncode, 1)
-        self.assertIn("no run to record the launch against", done.stderr)
-        self.assertEqual(self.interventions(), before)
-        self.assertEqual(self.admission(), ("held", "disk replacement"))
+        self.assertIn(f"the {self.home / 'host.toml'} entry {self.path} has no"
+                      " [serve] name", done.stderr)
         self.assertEqual(self.calls(), [])
 
     def test_foreground_is_the_loop_entry_and_never_the_unit(self):
@@ -210,6 +203,16 @@ class StopTests(UnitTests):
 
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.calls(), ["--user start holophyte-loop@alpha"])
+
+    def test_stop_holds_a_disabled_project_as_the_hold_verb_does(self):
+        store.tickets.set_admission(self.conn, self.project_id, "disabled",
+                                    "retired for now")
+
+        done = self.holo("stop", "new reason")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.admission(), ("held", "new reason"))
+        self.assertEqual(self.interventions()[-1][::2], ("hold", "new reason"))
 
     def test_stop_now_holds_and_aborts_each_live_run_with_the_note(self):
         first, second = self.live_run(), self.live_run()

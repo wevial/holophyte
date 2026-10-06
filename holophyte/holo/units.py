@@ -1,16 +1,15 @@
 """`holo start` and `holo stop`: a loop unit started, or its admission held."""
 import store
 import store.read
-from holophyte.admission import held_line, project_of, set_hold, state
+from holophyte.admission import held_line, project_of, project_row, set_hold, state
 from holophyte.config.project import Project
 from holophyte.holo.grammar import arguments
 from holophyte.host.registry import Host, HostError, registered_at
 from holophyte.loop.runs import open_store
 
 
-def located(target):
+def checked(project):
     from holophyte.config.checks import check_config
-    project = Project.locate(target[0])
     project.config()
     check_config(project)
     return project
@@ -33,11 +32,12 @@ def unit_name(project, host=None):
 
 
 def stored(project):
-    if not project.store_path.exists():
-        return "enabled", None, None
-    conn = store.read.open_readonly(project.store_path)
+    conn = open_store(project)
     try:
-        return (*state(conn, project), store.read.newest_run_id(conn))
+        project_row(conn, project)
+        return state(conn, project)
+    except ValueError as refused:
+        raise SystemExit(f"[holo2] {refused}") from None
     finally:
         conn.close()
 
@@ -72,18 +72,15 @@ def given_note(args, verb):
 def start(args, target):
     from holophyte.serve.serve_actions import unit_action
     note = given_note(args, "start")
-    project = located(target)
+    project = Project.locate(target[0])
     name = unit_name(project)
-    admitted, hold_note, newest = stored(project)
+    admitted, hold_note = stored(checked(project))
     if admitted == "disabled":
         raise SystemExit(f"[holo2] project {project.path} disabled: {hold_note};"
                          " holo start does not enable it")
     if admitted == "held" and note is None:
         raise SystemExit(f"[holo2] project {project.path} held: {hold_note};"
                          " holo start NOTE releases the hold and starts its loop")
-    if newest is None:
-        raise SystemExit("[holo2] the store holds no run to record the launch"
-                         " against; nothing run")
     if admitted == "held":
         release(project, note)
     asked = "holo start" + (f": {note}" if note is not None else "")
@@ -115,13 +112,10 @@ def live_runs(conn, project_id):
 
 
 def hold(conn, project, note):
-    if state(conn, project)[0] == "enabled":
-        try:
-            key = set_hold(conn, project, True, note)
-        except ValueError as refused:
-            raise SystemExit(f"[holo2] {refused}") from None
-    else:
-        key = project_of(conn, project)
+    try:
+        key = set_hold(conn, project, True, note)
+    except ValueError as refused:
+        raise SystemExit(f"[holo2] {refused}") from None
     print(held_line(conn, key))
     return key
 
@@ -149,7 +143,7 @@ def stop(args, target):
     from holophyte.cli.board_verbs import require_board
     from holophyte.cli.operator import _operator_store
     from provider import board_for
-    project = located(target)
+    project = checked(Project.locate(target[0]))
     board = require_board(project, board_for(project)) if args.now else None
     conn = _operator_store(project)
     try:

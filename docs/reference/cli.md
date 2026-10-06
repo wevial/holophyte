@@ -145,15 +145,16 @@ internal, spawned by the loop's pool.
 `launch_loop` intervention, then runs `systemctl --user start
 holophyte-loop@NAME`, `NAME` the project's `[serve] name` in `host.toml`,
 and prints the unit and the ready count. A project with no `[serve] name`
-in `host.toml` has no unit and is refused, as is a store with no run yet to
-record the launch against, and a disabled project. A held project needs
+in `host.toml` has no unit and is refused naming the entry, as is a
+disabled project. A held project needs
 the note: `start` releases the hold with it before starting the unit, and
 without one it exits 1 naming the hold. Closing the terminal leaves the
 unit running. `holo start --foreground` is `factory.py PROJECT`, the loop
 in this terminal.
 
-`holo stop NOTE` holds the project's admission, so the loop admits no new
-ticket and the host sweep starts no loop for it. Its live runs, every run
+`holo stop NOTE` holds the project's admission as `holo hold NOTE` does,
+so the loop admits no new ticket and the host sweep starts no loop for it;
+a project already held is refused as `hold` refuses it. Its live runs, every run
 not ended and not parked, finish their work, and the loop exits at its next
 idle check once none is left; `stop` names the runs it waits for. `holo
 stop --now NOTE` also aborts each live run as `holo abort` does, with the

@@ -5,6 +5,7 @@ import sys
 import traceback
 
 import store.read
+from holophyte.admission import project_of
 from holophyte.loop.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.loop.runs import open_store
 from holophyte.redact import known_secrets, outbound
@@ -45,9 +46,10 @@ def unit_action(project, action, unit_name, asked=None):
     who, route = asked or ("the daemon", f"POST /actions/{action}")
     note = f"operator asked {who} to {verb} {unit} ({route})"
     recorded = record_action_intervention(project, intervention, note)
-    if recorded is None:
+    if recorded is None and record_on_project(project, intervention,
+                                              note) is None:
         detail = ("the store holds no run to record the intervention"
-                  " against; nothing run")
+                  " against, nor a project row; nothing run")
         return 200, {"action": action, "ok": False, "detail": detail,
                      "unit": unit, "recorded": None}
     if action == "launch-loop":
@@ -70,6 +72,19 @@ def record_action_intervention(project, action, note):
     finally:
         conn.close()
     return run_id
+
+
+def record_on_project(project, action, note):
+    if not project.store_path.exists():
+        return None
+    conn = open_store(project)
+    try:
+        key = project_of(conn, project)
+        return None if key is None else store.record_project_intervention(
+            conn, action, note, source="human", trigger="manual",
+            project_id=key)
+    finally:
+        conn.close()
 
 
 def tickets_named(conn, identifier):
