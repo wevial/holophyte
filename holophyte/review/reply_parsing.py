@@ -193,6 +193,8 @@ def criteria_block(reply):
 
 WITNESS_TEST_RE = re.compile(
     r"(?P<path>[\w./-]+\.py)::(?:(?P<cls>\w+)::)?(?P<name>test\w*)"
+    r"|(?P<script>[\w./-]+\.(?:[jt]sx?|[mc][jt]s))::"
+    r"(?:\"(?P<title_dq>(?:[^\"\\\n]|\\.)+)\"|'(?P<title_sq>(?:[^'\\\n]|\\.)+)')"
     r"|(?P<other>[\w./-]+(?:\.(?:test|spec)\.tsx?|\.test\.js|_test\.go))::"
     r"(?:\"(?P<title>(?:[^\"\\\n]|\\.)+)\"|(?P<ident>\w+))"
     r"|(?P<mod>tests(?:\.\w+)+)\.(?P<name2>test\w*)")
@@ -208,11 +210,13 @@ def test_references(witness):
             references.append((match.group("path"), match.group("cls"),
                                match.group("name")))
             continue
-        if match.group("other"):
-            title = match.group("title")
+        script_path = match.group("script") or match.group("other")
+        if script_path:
+            title = next(filter(None, match.group("title_dq", "title_sq",
+                                                  "title")), None)
             if title is not None:
                 title = re.sub(r"\\(.)", r"\1", title)
-            references.append((match.group("other"), None,
+            references.append((script_path, None,
                                title or match.group("ident")))
             continue
         segments = match.group("mod").split(".")

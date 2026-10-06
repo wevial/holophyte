@@ -11,10 +11,11 @@ pass. Stdlib Python and SQLite; no frameworks.
 
 Python 3.11+ and Git on the host, Docker for the reviewer container, and
 `LINEAR_API_KEY` in the environment or a `.env` beside `linear_provider.py`.
-`ruff` is the one developer tool (`pip install --user ruff`). `tomlkit` is the one runtime dependency, pinned in
+`ruff` is the one developer tool (`pip install --user ruff`). `tomlkit` and `mcp` are the runtime dependencies, pinned in
 `requirements.txt` (`python3 -m pip install --user -r requirements.txt`);
-the daemon needs it to edit a config in place and exits naming it when it
-is missing. `python3 -m pip install --user -e .` in the checkout installs
+the daemon needs `tomlkit` to edit a config in place and exits naming it
+when it is missing, and only `holo mcp` needs `mcp`.
+`python3 -m pip install --user -e .` in the checkout installs
 the `holo` command, which imports from the checkout and so follows its
 `HEAD`. Bun is needed
 only to build the console (`bun --cwd=console run build`); see
