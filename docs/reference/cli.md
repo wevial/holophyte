@@ -304,6 +304,43 @@ daemon's root `/attention` built from `host.toml` with no daemon running.
 | `Files` | each file the run touched with its added and removed counts, `store/board.py +1 −1`, or the files route's error |
 | `Next` | the commands the run's phase and outcome call for: parked awaiting merge approval, `holo approve KEY`, and with a pull request `holo send-back N "note"` and `holo babysit KEY`; failed, `holo requeue KEY "note"`; then for every run `holo run N --ledger` |
 
+`holo mcp` is a [Model Context Protocol](https://modelcontextprotocol.io)
+server on stdio, for an MCP client such as Claude Code or Codex to launch
+as a subprocess. Register it once, then the client lists its tools:
+
+```
+claude mcp add holo -- holo mcp
+```
+
+Each tool is read-only, marked `readOnlyHint: true`, and runs the `holo`
+command beside it as a subprocess with a two-minute timeout, so it answers
+what that command answers: the project is found the same way, and with
+`host` set in `client.toml` the command reaches the host over ssh. Every
+tool takes an optional `project`, a `[serve]` name or a repository path.
+
+| Tool | Arguments | Runs |
+| --- | --- | --- |
+| `status` | | `holo status --json`; the host form with no project found |
+| `attention` | | `holo attention --json`; the host form with no project found |
+| `report` | `since` | `holo report --json [--since WINDOW]` |
+| `runs` | `limit` | `holo runs --json [--limit N]` |
+| `run` | `run`, required; `view`: `detail` (default), `files`, `ledger` or `turns` | `holo run N --json`, with `--files`, `--ledger` or `--turns` for the view |
+| `board` | | `holo board --json` |
+| `ticket` | `key`, required | `holo ticket KEY --json` |
+| `board_diff` | | `holo board diff` |
+| `sweep_preview` | | `holo sweep`, which acts on nothing and writes only sightings |
+
+A tool whose command prints a JSON object returns it as `structuredContent`
+and as text; `board_diff` and `sweep_preview` return the command's text,
+`board_diff` also when it exits 1 for a difference. A command that refuses
+is a result with `isError: true` carrying its output and its message, as
+are arguments the tool's input schema refuses. An unknown tool is a
+JSON-RPC error, -32602. stdout carries only protocol messages, and closing stdin exits 0.
+`holo mcp` alone needs the MCP Python SDK (`mcp` in `requirements.txt`);
+without it, it exits 1 naming the package and
+`python3 -m pip install --user -r requirements.txt`, and every other
+command runs as before.
+
 `holo completion bash|zsh|fish` prints a completion script for that shell.
 It completes the commands, their aliases and flags, the choices the factory's
 parser knows (`ready|backlog`, the gap layers, the priorities) and, where a

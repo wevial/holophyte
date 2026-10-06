@@ -146,6 +146,8 @@ SHELLS = ("bash", "zsh", "fish")
 HELPER = "__complete"
 FOLLOW = Command(("follow",), None, "one line per run event as it is written",
                  flags=(JSON, SINCE, EVERY))
+MCP = Command(("mcp",), None,
+              "serve the factory's reads to an agent as MCP tools over stdio")
 
 SHOW = "show"
 SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
@@ -246,6 +248,8 @@ def add_commands(parser):
     shell.add_argument("shell", metavar="SHELL", choices=SHELLS)
     shell.set_defaults(command=COMPLETION, leaf=shell)
     _add_leaf(top, "follow", FOLLOW, FOLLOW.does)
+    server = top.add_parser("mcp", help=MCP.does, description=MCP.does)
+    server.set_defaults(command=MCP, leaf=server)
     return parser
 
 

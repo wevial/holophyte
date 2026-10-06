@@ -73,6 +73,14 @@ Each module, one line:
   interventions actions each write row records, the `ticket VERB` and `loop
   start|stop` aliases, and their translation to the argv `build_parser()`
   parses; and the read rows, `run show N` among them.
+- `holophyte/holo/mcp_server.py` — `holo mcp`: the MCP SDK's low-level
+  `Server` on stdio, listing the tool table's rows and answering a call by
+  running its `holo` command; the SDK is imported only here, and without it
+  `holo mcp` exits 1 naming the package and its install command.
+- `holophyte/holo/mcp_tools.py` — the `holo mcp` tool table: each tool's
+  name, input schema, tier and the `holo ... --json` argv it runs as a
+  subprocess with a timeout, and its result, a JSON object or text, or an
+  error carrying the command's message.
 - `holophyte/holo/results.py` — a write command's one result: the verb run
   with its printed line and refusal captured, the interventions row it wrote
   read back as `recorded`, printed as JSON with `--json` or as a `✓`/`✗` line.
