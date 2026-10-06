@@ -131,6 +131,12 @@ class ResolveTests(unittest.TestCase):
         for name in ("gamma", "alpha", "beta"):
             self.assertIn(name, result.stderr)
 
+    def test_an_empty_flag_is_refused_not_read_as_the_current_directory(self):
+        result = self.holo("status", "--json", "-p", "", cwd=self.alpha)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("-p is empty", result.stderr)
+
     def test_an_unknown_client_config_key_is_refused_by_every_command(self):
         self.client('default_project = "beta"\ntransport = "ssh"\n')
         for args in (["status"], ["hold", "note", "-p", "alpha"],

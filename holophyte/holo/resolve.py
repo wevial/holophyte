@@ -51,6 +51,8 @@ def client_config(path=None):
 
 
 def _named(value, source, host):
+    if not value.strip():
+        refuse(f"[holo2] {source} is empty; give a project name or path")
     if "/" in value or os.sep in value or Path(value).is_dir():
         path = str(Path(value).expanduser().resolve())
         return Resolved(path, source, path)
