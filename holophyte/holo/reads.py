@@ -68,7 +68,8 @@ def ticket_answer(args, project):
 
 
 def runs_lines(body):
-    return [f"{row['ticket']}  {row['outcome']}  ended {when(row['ended_ms'])}"
+    return [f"{row['ticket']}  run {row['run']}  {row['outcome']}"
+            f"  ended {when(row['ended_ms'])}"
             f"  {minutes(row['actual_min'])} of {minutes(row['estimate_min'])}"
             f"  {row['rounds']} rounds" for row in body["rows"]]
 

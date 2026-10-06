@@ -211,7 +211,8 @@ class RunReadsTests(StoreReadsCase):
         for line, (identifier, outcome) in zip(
                 lines, (("KO-1", "merged"), ("KO-2", "failed"),
                         ("KO-3", "merged"))):
-            self.assertIn(identifier, line)
+            self.assertRegex(line, rf"^{identifier}\b")
+            self.assertRegex(line, rf"\brun {self.ended[identifier]}\b")
             self.assertIn(outcome, line)
 
     def test_every_read_leaves_the_store_bytes_unchanged(self):
