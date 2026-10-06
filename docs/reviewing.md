@@ -251,7 +251,10 @@ One pass:
    the candidate is read whole, the fixes included.
 
 After `[merge] pr_rounds` passes the run parks naming the cap, whatever
-the PR looks like.
+the PR looks like. A pass that only merges `main` into the branch (GitHub
+reported a conflict, or refused the merge as behind main) does not count
+toward `pr_rounds`; `[merge] pr_main_refreshes` (default 10) caps those
+passes instead, and the run parks naming that cap when it is reached.
 
 Every park is the `awaiting_merge_approval` park of `approve = "human"`:
 the ticket asks `PR open: URL` with why and the open threads listed, the
