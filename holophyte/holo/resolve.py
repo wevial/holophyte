@@ -12,7 +12,7 @@ CLIENT_KEYS = frozenset(("default_project",))
 ENVIRONMENT = "HOLO_PROJECT"
 CURRENT = "current repository"
 DEFAULT = "default_project"
-HOST_FORMS = frozenset(("--status", "--serve", "--supervise"))
+HOST_FORMS = frozenset(("--status", "--serve", "--supervise", "GET /attention"))
 
 
 class Resolved(NamedTuple):

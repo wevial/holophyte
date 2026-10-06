@@ -37,6 +37,10 @@ CARRIED_BY = Flag("--carried-by", "KEY")
 FOUND_BY = Flag("--found-by", "F")
 BASELINE_GREEN = Flag("--baseline-green", "W")
 BASELINE_RED_KIND = Flag("--baseline-red-kind", ("KIND", "W"))
+LIMIT = Flag("--limit", "N")
+FILES = Flag("--files")
+LEDGER = Flag("--ledger")
+TURNS = Flag("--turns")
 
 REQUIRED, OPTIONAL = "required", "optional"
 NEGATIVE_NUMBER = re.compile(r"-[0-9]+|-[0-9]*\.[0-9]+")
@@ -94,6 +98,22 @@ COMMANDS = (
             takes=("[ADDR]",)),
 )
 
+READS = (
+    Command(("runs",), "GET /runs", "recent ended runs", flags=(JSON, LIMIT)),
+    Command(("run",), "GET /runs/N",
+            "one run's detail, or its --files, --ledger or --turns",
+            takes=("N",), flags=(JSON, FILES, LEDGER, TURNS)),
+    Command(("attention",), "GET /attention",
+            "what waits on the operator; the host's when no project is named",
+            flags=(JSON,)),
+    Command(("board",), "GET /board", "the board's columns", flags=(JSON,)),
+    Command(("ticket",), "GET /tickets/KEY", "one ticket's detail",
+            takes=("KEY",), flags=(JSON,)),
+)
+
+SHOW = "show"
+SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
+
 NOT_EXPOSED = {"--worker": "internal: the loop's pool spawns it"}
 
 TICKET_VERBS = ("file", "move", "cancel", "requeue", "approve", "babysit",
@@ -102,10 +122,11 @@ TICKET_VERBS = ("file", "move", "cancel", "requeue", "approve", "babysit",
 ALIASES = tuple((("ticket", verb), (verb,)) for verb in TICKET_VERBS)
 
 GROUPS = {
-    "board": "the board's modes",
+    "board": "holo board: the board's columns; or one of its modes",
+    "run": "holo run N: one run's detail",
     "store": "the store's modes",
     "story": "a story's modes",
-    "ticket": "aliases: ticket VERB is holo VERB",
+    "ticket": "holo ticket KEY: one ticket's detail; ticket VERB is holo VERB",
 }
 
 PROJECT_HELP = "factory.py project VERB, its arguments passed unchanged"
@@ -121,7 +142,9 @@ def _positionals(command):
 
 
 def _add_leaf(commands, word, command, help_text):
-    leaf = commands.add_parser(word, help=help_text, description=help_text)
+    listed = {} if help_text is None else {"help": help_text}
+    leaf = commands.add_parser(word, description=help_text or command.does,
+                               **listed)
     for dest, name in _positionals(command):
         optional = name.startswith("[")
         leaf.add_argument(dest, metavar=name.strip("[]"),
@@ -145,13 +168,21 @@ def _add_leaf(commands, word, command, help_text):
     leaf.set_defaults(command=command, leaf=leaf)
 
 
-def add_commands(parser):
-    top = parser.add_subparsers(dest="words", metavar="COMMAND")
-    groups = {}
+def _rows():
     rows = [(command.words, command, command.does) for command in COMMANDS]
     rows += [(alias, canonical(words), f"= holo {' '.join(words)}")
              for alias, words in ALIASES]
-    for words, command, help_text in rows:
+    for command in READS:
+        word = command.words[0]
+        rows.append(((word, SHOW), command, SHOWN[word]) if word in SHOWN
+                    else (command.words, command, command.does))
+    return rows
+
+
+def add_commands(parser):
+    top = parser.add_subparsers(dest="words", metavar="COMMAND")
+    groups = {}
+    for words, command, help_text in _rows():
         if len(words) == 1:
             _add_leaf(top, words[0], command, help_text)
             continue
@@ -177,8 +208,17 @@ def _late_positionals(extra):
     return extra[:cut] + extra[cut + 1:]
 
 
+def _shown(argv):
+    if not argv or argv[0] not in SHOWN:
+        return argv
+    verbs = {words[1] for words, _, _ in _rows() if words[0] == argv[0]}
+    if argv[1:2] and (argv[1] in verbs or argv[1] in ("-h", "--help")):
+        return argv
+    return [argv[0], SHOW, *argv[1:]]
+
+
 def parse(parser, argv):
-    args, extra = parser.parse_known_args(argv)
+    args, extra = parser.parse_known_args(_shown(list(argv)))
     command = getattr(args, "command", None)
     if extra and command is not None:
         # argparse leaves an optional positional empty once a flag splits the line.

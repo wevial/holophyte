@@ -3,7 +3,7 @@ import sys
 import tomllib
 from importlib import metadata
 
-from holophyte.holo.grammar import add_commands, factory_argv, parse
+from holophyte.holo.grammar import READS, add_commands, factory_argv, parse
 from holophyte.host.startup import build_sha, factory_checkout
 
 DISTRIBUTION = "holophyte"
@@ -60,5 +60,9 @@ def main(argv=None):
     if args.words is None:
         parser.print_help()
         return 0
+    target = project_argv(args, default)
+    if args.command in READS:
+        from holophyte.holo.reads import read
+        return read(args, target[0] if target else None)
     from holophyte.cli.entry import _legacy_cli
-    return _legacy_cli(project_argv(args, default) + factory_argv(args))
+    return _legacy_cli(target + factory_argv(args))
