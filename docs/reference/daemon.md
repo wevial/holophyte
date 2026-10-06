@@ -46,7 +46,8 @@ endpoints](http.md#the-host-daemon)). The opt-ins move: `[serve] actions`
 in `host.toml` opens the actions for every registered project at once, and
 `config_edit` stays in each project's own config. Both answer only to
 `host.toml`'s `[serve] machine_token_file`, on every bind, and a project's
-own `token_file` under its own prefix, for one release; the daemon refuses
+own `token_file` under its own prefix, for one release (not `merge`,
+which answers only to the machine token); the daemon refuses
 to start with either opt-in on and no machine token, naming the key.
 `restart-supervisor` is not a host daemon's route (404): a registered
 project has no supervisor unit, and the host sweep's own action,
@@ -163,9 +164,12 @@ it again otherwise.
  "detail": "approved at 5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f; the loop's next claim merges the candidate on https://github.com/example/repo/pull/31"}
 ```
 
-A ticket that moves between the read and the write (the store's
-`ApproveRefused`) is `ok: false` with `reason` `not_parked` and the
-store's refusal in `detail`. A `run` that is not a positive integer is
+The release names the run it checked: a ticket that moves between the
+read and the write, a newer run parked in its place included, is the
+store's `ApproveRefused`, `ok: false` with `reason` `not_parked` and the
+refusal in `detail`, and nothing is approved. On a host daemon
+`/projects/NAME/actions/merge` answers only to the machine token; a
+project's own token is 401. A `run` that is not a positive integer is
 400; a project with no store is 503. `--approve` and `holo approve` keep
 releasing without reading GitHub.
 

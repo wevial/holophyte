@@ -43,7 +43,8 @@ def merge_action(project, body):
         return 200, refused
     conn = open_store(project)
     try:
-        store.approve(conn, ready.park.ticket_id, approval_note(body, ready))
+        store.approve(conn, ready.park.ticket_id, approval_note(body, ready),
+                      run_id=run_id)
     except store.ApproveRefused as moved:
         return 200, {**refused, "reason": "not_parked", "detail": str(moved)}
     finally:

@@ -29,7 +29,12 @@ from holophyte.config.project import Project  # noqa: E402
 from holophyte.loop.gates import InfraFailure  # noqa: E402
 from tests.host_fixture import git  # noqa: E402
 from tests.phase_fixture import park_run  # noqa: E402
-from tests.test_serve_host import MACHINE, HostServeCase, bearer  # noqa: E402
+from tests.test_serve_host import (  # noqa: E402
+    ALPHA_TOKEN,
+    MACHINE,
+    HostServeCase,
+    bearer,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "serve" / "run-merge-ready.json"
 TOKEN = "merge-action-token"
@@ -48,9 +53,12 @@ class FakeGithub:
         self.review, self.checks, self.mergeable = "APPROVED", "SUCCESS", \
             "MERGEABLE"
         self.threads, self.head, self.unreachable = (), None, False
+        self.while_reading = None
 
     def graphql(self, target, pull, query, variables):
         self.calls.append(("graphql", query))
+        if self.while_reading is not None:
+            self.while_reading()
         if self.unreachable:
             raise InfraFailure("GitHub did not answer POST graphql:"
                                " <urlopen error [Errno 111] Connection refused>")
@@ -131,6 +139,21 @@ class MergeCase(ServeTestCase):
         finally:
             conn.close()
 
+    def supersede(self):
+        """Approve the parked run 1, then park a newer run 2 on the ticket."""
+        conn = store.open(str(self.db))
+        try:
+            ticket = store.read.ticket_by_identifier(conn, "KO-7")
+            store.approve(conn, ticket.id, "approved on the writer host")
+            store.tickets.transition(conn, ticket.id, "in_flight")
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            newer = store.claim(conn, project, ticket.id, now=self.now)
+            store.set_phase(conn, newer, "working", now=self.now)
+        finally:
+            conn.close()
+        self.park(run_id=newer)
+        return newer
+
     def read_merge(self, run_id=None):
         run_id = self.run if run_id is None else run_id
         code, _, body = self.request("GET", f"/runs/{run_id}/merge", BEARER)
@@ -187,6 +210,24 @@ class ReadyMergeTests(MergeCase):
         self.assertEqual(self.rows("SELECT resumePhase FROM runs WHERE id = ?",
                                    self.run), [("merge_gate",)])
         self.assertEqual(self.github.merge_calls(), [])
+
+    def test_a_run_superseded_during_the_github_read_approves_nothing(self):
+        self.park()
+        self.start_actions()
+        superseded = []
+        self.github.while_reading = lambda: superseded or superseded.append(
+            self.supersede())
+        code, _, posted = self.post_merge(run=self.run)
+        self.assertEqual((code, posted["ok"], posted.get("reason")),
+                         (200, False, "not_parked"), posted)
+        (newer,) = superseded
+        self.assertEqual(self.rows(
+            "SELECT action FROM interventions WHERE runId = ?", newer), [])
+        self.assertEqual(self.rows(
+            "SELECT phase, endedAt FROM runs WHERE id = ?", newer),
+            [("awaiting_merge_approval", None)])
+        self.assertEqual(self.rows("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
 
 
 class GithubRefusalTests(MergeCase):
@@ -262,17 +303,7 @@ class UnparkedTests(MergeCase):
 
     def test_a_run_that_is_not_its_tickets_newest_is_not_parked(self):
         self.park()
-        conn = store.open(str(self.db))
-        try:
-            ticket = store.read.ticket_by_identifier(conn, "KO-7")
-            store.approve(conn, ticket.id, "approved on the writer host")
-            store.tickets.transition(conn, ticket.id, "in_flight")
-            project = store.tickets.ensure_project(conn, "team-1", self.target)
-            newer = store.claim(conn, project, ticket.id, now=self.now)
-            store.set_phase(conn, newer, "working", now=self.now)
-        finally:
-            conn.close()
-        self.park(run_id=newer)
+        self.supersede()
         self.start_actions()
         body = self.assert_refused_unread("not_parked", run_id=self.run)
         self.assertEqual(body["detail"],
@@ -318,11 +349,14 @@ class HostMergeTests(HostServeCase):
     def test_a_project_merge_answers_only_to_the_machine_token(self):
         github = FakeGithub()
         github.install(self)
+        self.config("alpha", '[serve]\ntoken_file = "{}"\n'.format(
+            self.token_file(self.root / "alpha.token", ALPHA_TOKEN)))
         self.host_config(machine_token_file=self.machine(), actions=True)
         self.start()
         path = Project.locate(self.paths["alpha"]).store_path
         before = dump(path)
         for headers, status in ((None, 401), (bearer("not-the-token"), 401),
+                                (bearer(ALPHA_TOKEN), 401),
                                 (bearer(MACHINE), 200)):
             with self.subTest(headers=headers):
                 code, body = self.request(
