@@ -29,6 +29,8 @@ JSON = Flag("--json")
 DRY_RUN = Flag("--dry-run")
 ONCE = Flag("--once")
 CLOSE_PR = Flag("--close-pr")
+FOREGROUND = Flag("--foreground")
+NOW = Flag("--now")
 BACKLOG = Flag("--backlog", emits=("--state", "Backlog"))
 PRIORITY = Flag("--priority", "P")
 UPDATE = Flag("--update", "KEY")
@@ -88,6 +90,11 @@ COMMANDS = (
             records=("hold",)),
     Command(("release",), "--release-hold", "enable admission again",
             note=REQUIRED, records=("release_hold",)),
+    Command(("start",), None, "start the project's loop unit and return",
+            note=OPTIONAL, flags=(FOREGROUND,),
+            records=("release_hold", "launch_loop")),
+    Command(("stop",), None, "hold the project: its loop ends after its live runs",
+            note=REQUIRED, flags=(NOW,), records=("hold",)),
     Command(("close",), "--close", "record a change landed outside the factory",
             takes=("KEY",), landed="URL", note=OPTIONAL, records=("close_out",)),
     Command(("gap",), "--gap-layer", "where a gap's lesson landed",
@@ -130,7 +137,8 @@ NOT_EXPOSED = {"--worker": "internal: the loop's pool spawns it"}
 TICKET_VERBS = ("file", "move", "cancel", "requeue", "approve", "babysit",
                 "repoint", "pause", "resume", "abort", "close", "gap")
 
-ALIASES = tuple((("ticket", verb), (verb,)) for verb in TICKET_VERBS)
+ALIASES = (tuple((("ticket", verb), (verb,)) for verb in TICKET_VERBS)
+           + ((("loop", "start"), ("start",)), (("loop", "stop"), ("stop",))))
 
 GROUPS = {
     "board": "holo board: the board's columns; or one of its modes",
@@ -138,6 +146,7 @@ GROUPS = {
     "store": "the store's modes",
     "story": "a story's modes",
     "ticket": "holo ticket KEY: one ticket's detail; ticket VERB is holo VERB",
+    "loop": "aliases: loop start and loop stop are holo start and holo stop",
 }
 
 PROJECT_HELP = "factory.py project VERB, its arguments passed unchanged"

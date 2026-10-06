@@ -84,8 +84,8 @@ any other mode without a project is a usage error.
 ## holo
 
 `holo COMMAND [ARGS] [-p NAME|PATH] [--verbose]` is the short form of the
-modes above. Each command but `send-back` stands for one `factory.py`
-invocation and runs through the same parser, so its refusals, messages and
+modes above. Each command but `send-back`, `start` and `stop` stands for one
+`factory.py` invocation and runs through the same parser, so its refusals, messages and
 exit codes are the factory's own. A command's project is the first of these
 that answers:
 
@@ -106,8 +106,7 @@ naming all four sources. `--verbose` prints the project and the source that
 named it to stderr. `NOTE` is free text, the last argument;
 `-n/--note NOTE` is the same. `holo project VERB` is `factory.py project
 VERB` with its arguments unchanged. `--worker` has no command: it is
-internal, spawned by the loop's pool, and the loop itself is not a `holo`
-command yet.
+internal, spawned by the loop's pool.
 
 | Command | Aliases | Factory invocation |
 | --- | --- | --- |
@@ -131,6 +130,9 @@ command yet.
 | `holo abort KEY NOTE [--close-pr]` | `holo ticket abort` | `--abort KEY --note NOTE [--close-pr] PROJECT` |
 | `holo hold NOTE` | | `--hold --note NOTE PROJECT` |
 | `holo release NOTE` | | `--release-hold --note NOTE PROJECT` |
+| `holo start [NOTE]` | `holo loop start` | none: `systemctl --user start holophyte-loop@NAME`, recorded first as the console's launch-loop is |
+| `holo start --foreground` | `holo loop start` | `PROJECT`: the loop in this terminal |
+| `holo stop NOTE [--now]` | `holo loop stop` | `--hold --note NOTE PROJECT`; with `--now`, then `--abort KEY --note NOTE PROJECT` for each live run |
 | `holo close KEY URL [NOTE]` | `holo ticket close` | `--close KEY --landed URL [--note NOTE] PROJECT` |
 | `holo gap KEY LAYER NOTE [--carried-by KEY] [--found-by F]` | `holo ticket gap` | `--gap-layer KEY LAYER --note NOTE [--carried-by KEY] [--found-by F] PROJECT` |
 | `holo story file SLUG [--update KEY --revision N] [--priority P]` | | `--file-story SLUG [--update KEY --revision N] [--priority P] PROJECT` |
@@ -139,6 +141,27 @@ command yet.
 | `holo story decide KEY ID [OPTION] NOTE` | | `--decide KEY ID [OPTION] --note NOTE PROJECT` |
 | `holo supervise [--once]` | | `--supervise [--once] [PROJECT]` |
 | `holo serve [ADDR]` | | `--serve [ADDR] [PROJECT]` |
+
+`holo start` starts the project's loop unit and returns: it records a
+`launch_loop` intervention, then runs `systemctl --user start
+holophyte-loop@NAME`, `NAME` the project's `[serve] name` in `host.toml`,
+and prints the unit and the ready count. A project with no `[serve] name`
+in `host.toml` has no unit and is refused naming the entry, as is a
+disabled project. A held project needs
+the note: `start` releases the hold with it before starting the unit, and
+without one it exits 1 naming the hold. Closing the terminal leaves the
+unit running. `holo start --foreground` is `factory.py PROJECT`, the loop
+in this terminal.
+
+`holo stop NOTE` holds the project's admission as `holo hold NOTE` does,
+so the loop admits no new ticket and the host sweep starts no loop for it;
+a project already held is refused as `hold` refuses it. Its live runs, every run
+not ended and not parked, finish their work, and the loop exits at its next
+idle check once none is left; `stop` names the runs it waits for. `holo
+stop --now NOTE` also aborts each live run as `holo abort` does, with the
+note: each stops at its next safe point and keeps its work. Neither stops
+the unit, because stopping it kills a live run mid-turn and loses its work;
+the loop exits on its own once the hold leaves it idle.
 
 The write commands, each that takes a `NOTE` and `holo file`, print one
 result. Without `--json` it is one line: `✓` and what the verb did, then

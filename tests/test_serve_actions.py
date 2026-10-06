@@ -216,6 +216,34 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertEqual(code, 200)
         self.assertIs(body["ok"], False)
 
+    def test_with_a_project_row_and_no_run_only_launch_loop_is_recorded_and_run(self):
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            store.tickets.ensure_project(conn, "team-1", self.target)
+        finally:
+            conn.close()
+        self.start(self.token_config("actions = true\n"))
+        with patch.object(subprocess, "run") as run:
+            run.side_effect = lambda argv, **kw: self.completed(argv)
+            _, _, restart = self.request("POST", "/actions/restart-supervisor",
+                                         self.BEARER)
+            run.assert_not_called()
+            _, _, launch = self.request("POST", "/actions/launch-loop",
+                                        self.BEARER)
+        self.assertIs(restart["ok"], False)
+        self.assertIn("no run to record", restart["detail"])
+        self.assertIs(launch["ok"], True)
+        self.assertEqual(run.call_args.args[0][:3], ["systemctl", "--user", "start"])
+        conn = store.read.open_readonly(self.db)
+        try:
+            rows = conn.execute(
+                'SELECT runId, "action" FROM interventions'
+                " WHERE action != 'migrate'").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(rows, [(None, "launch_loop")])
+
     def test_launch_loop_reports_a_failed_systemctl_as_ok_false(self):
         self.seed()
         self.start(self.token_config("actions = true\n"))
