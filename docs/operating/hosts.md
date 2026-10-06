@@ -138,6 +138,25 @@ ticket written on the seat. Set `remote_command` when `holo` is not on that
 `PATH`, and `HOLO_TRANSPORT=local` for one command on the seat itself. The
 keys are in the [CLI reference](../reference/cli.md#holo).
 
+A seat with the daemon's machine token but no ssh key reaches the writer
+host over the host daemon's HTTP routes instead:
+
+```toml
+transport = "http"
+url = "http://HOST:PORT"
+token_file = "~/.holophyte/daemon.token"
+default_project = "NAME"
+```
+
+`token_file` holds `host.toml`'s machine token, mode 600 as on the host.
+This road carries only what the daemon serves: the reads `runs`, `run N`,
+`attention`, `board` and `ticket KEY`, and the verbs with an action route
+(`requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`,
+`start`), which need `[serve] actions = true` in `host.toml`. Every other
+command, `status` included, exits 1 naming itself and, where ssh carries
+it, `transport = "ssh"`;
+`holo` never falls back to ssh on its own.
+
 ## The drawer
 
 `contrib/swiftbar/holophyte.10s.py` runs under SwiftBar on the operator

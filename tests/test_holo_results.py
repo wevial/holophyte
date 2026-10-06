@@ -242,7 +242,7 @@ class UsageAndFileResultTests(Home):
 
     def test_a_client_config_refusal_with_json_prints_a_result_and_exits_two(self):
         self.home.mkdir(parents=True)
-        (self.home / "client.toml").write_text('transport = "ssh"\n')
+        (self.home / "client.toml").write_text('tunnel = "ssh"\n')
         completed = holo("hold", "maintenance", "--json", "-p", str(self.root),
                          home=self.home)
         self.assertEqual(completed.returncode, 2)
@@ -250,7 +250,7 @@ class UsageAndFileResultTests(Home):
         result = json.loads(line)
         self.assertEqual((result["action"], result["ok"], result["recorded"]),
                          ("hold", False, None))
-        self.assertIn("unknown key 'transport'", result["detail"])
+        self.assertIn("unknown key 'tunnel'", result["detail"])
 
     def test_a_file_update_json_names_the_ticket_it_updates(self):
         path = self.repo("repo", "HOLO")

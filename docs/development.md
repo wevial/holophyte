@@ -88,7 +88,9 @@ Each module, one line:
   `host` over ssh: the remote command line, the ssh call, its exit code
   and the `via` line; `holo follow`'s JSON lines rendered as each arrives and
   `holo status --watch`'s status object asked for each frame;
-  `HOLO_TRANSPORT=local` keeps it local.
+  `HOLO_TRANSPORT=local` keeps it local. With `transport = "http"`, the route
+  table of the commands the host daemon serves, the bearer call to `url`, and
+  the refusal of every other command.
 - `holophyte/holo/render.py` — the pieces every `holo` page shares: a clock
   time in the client's zone, a relative age, a short hash, and a symbol
   coloured only on a terminal without `NO_COLOR`.
