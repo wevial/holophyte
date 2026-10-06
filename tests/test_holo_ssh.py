@@ -14,6 +14,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -23,11 +24,15 @@ import holophyte.holo.cli
 import store
 import store.tickets
 from holophyte.config.project import Project
+from store.operator_notes import consume
+from tests.phase_fixture import finish_run
 from tests.test_holo_grammar import T0
 from tests.test_provider import ticket_body
 
 ROOT = Path(__file__).resolve().parent.parent
 NOTE = 'it\'s "done"; touch pwned'
+MINUTE = 60_000
+DAY = 24 * 60 * MINUTE
 REFUSED = "ssh: connect to host writer port 22: Connection refused"
 
 FAKE_SSH = '''#!{python}
@@ -125,14 +130,14 @@ class SshTests(unittest.TestCase):
             return []
         return [json.loads(line) for line in self.record.read_text().splitlines()]
 
-    def claim(self):
+    def claim(self, now=T0):
         self.ticket = store.tickets.mirror_ticket(
             self.conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="HOLO-1", title="a ticket",
             acceptance_criteria=["Given a ticket, then it is worked"],
             verification_commands=["echo ok"], time_box_ms=25 * 60_000)
         store.tickets.transition(self.conn, self.ticket, "in_flight")
-        return store.claim(self.conn, self.project_id, self.ticket, now=T0)
+        return store.claim(self.conn, self.project_id, self.ticket, now=now)
 
 
 class RemoteCommandTests(SshTests):
@@ -187,6 +192,30 @@ class RemoteCommandTests(SshTests):
         pages = self.pages("run", str(run), "-p", "alpha")
         self.assertIn("Files  notes.txt +1 −0", pages["local"])
         self.assertEqual(pages["ssh"], pages["local"])
+
+    def test_report_over_ssh_renders_the_same_pages_as_report_run_locally(self):
+        now = int(time.time() * 1000)
+        ended = now - 3 * DAY - 30 * MINUTE
+        run = self.claim(now=ended - 20 * MINUTE)
+        finish_run(self.conn, run, "merged", now=ended)
+        for note in ("first send-back", "second send-back"):
+            store.record_event(
+                self.conn, run, "operator_note", f"maintainer: {note}",
+                level="detail", now=ended,
+                payload=json.dumps({"note": note, "author": "maintainer"}))
+            (event,) = self.conn.execute(
+                "SELECT MAX(id) FROM runEvents WHERE kind = 'operator_note'"
+            ).fetchone()
+            consume(self.conn, run, [event], 1)
+        plain = self.pages("report", "-p", "alpha")
+        self.record.unlink()
+        noted = self.pages("report", "--notes", "-p", "alpha")
+        self.assertTrue(plain["local"].startswith("Shipped   1 merged"),
+                        plain["local"])
+        self.assertNotIn("second send-back", plain["local"])
+        self.assertIn("second send-back", noted["local"])
+        self.assertEqual(plain["ssh"], plain["local"])
+        self.assertEqual(noted["ssh"], noted["local"])
 
     def test_a_note_with_quotes_and_a_semicolon_reaches_the_host_store_verbatim(self):
         run = self.claim()

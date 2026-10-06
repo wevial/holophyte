@@ -46,6 +46,8 @@ LIMIT = Flag("--limit", "N")
 FILES = Flag("--files")
 LEDGER = Flag("--ledger")
 TURNS = Flag("--turns")
+WINDOW = Flag("--since", "WINDOW")
+NOTES = Flag("--notes")
 WATCH = Flag("--watch", "SECONDS", const="5")
 SINCE = Flag("--since", "AGO")
 EVERY = Flag("--every", "SECONDS")
@@ -56,7 +58,9 @@ NEGATIVE_NUMBER = re.compile(r"-[0-9]+|-[0-9]*\.[0-9]+")
 COMMANDS = (
     Command(("status",), "--status", "what the factory is doing now",
             flags=(JSON, WATCH)),
-    Command(("report",), "--report", "the estimate-vs-actual table"),
+    Command(("report",), "--report",
+            "a window's counts, then its runs; its notes with --notes",
+            flags=(WINDOW, NOTES, JSON)),
     Command(("sweep",), "--sweep", "tripped runs; --act fails them", flags=(ACT,)),
     Command(("board", "diff"), "--board-diff",
             "where the store's ready queue differs from the board's"),

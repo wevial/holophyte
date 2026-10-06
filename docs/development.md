@@ -50,8 +50,8 @@ Each module, one line:
 - `holophyte/holo/cli.py` — `main()`, the `holo` console script `pyproject.toml`
   declares: `--version` prints the package version and the checkout's short
   `HEAD`; a subcommand resolves its project, translates through the grammar table
-  and runs as `_legacy_cli()`, a write command through `run_write()`, or answers
-  as a read; `holo project` is `factory.py project`.
+  and runs as `_legacy_cli()`, a write command through `run_write()`, `report`
+  through `report_page`, or answers as a read; `holo project` is `factory.py project`.
 - `holophyte/holo/completion.py` — `holo completion bash|zsh|fish`'s scripts
   and the hidden `holo __complete` helper they call: candidates from the parser
   the grammar table builds, and ticket keys from `holo board --json` cached per
@@ -89,6 +89,11 @@ Each module, one line:
   you, running, quiet and problems sections and a sweep and build footer;
   with `--watch`, redrawn every interval in place on a terminal, or after a
   separator line carrying its time when piped.
+- `holophyte/holo/report_page.py` — `holo report`: one object for a window,
+  `--since`, built read-only from the ended runs, failure kinds, gap layers,
+  human interventions, send-backs and consumed notes, printed with `--json` or
+  rendered as counts first, then the window's runs and, with `--notes`, the
+  notes.
 - `holophyte/holo/run_page.py` — `holo run N` without `--json`: the run's
   detail and files bodies rendered as a header, a timeline of its events and
   rounds, its files and the next commands its phase and outcome call for.
