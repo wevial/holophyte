@@ -117,6 +117,7 @@ def main(argv=None):
         return show(target, client.get(TIMEZONE))
     if args.command in READS:
         from holophyte.holo.reads import read
-        return read(args, target[0] if target else None)
+        return read(args, target[0] if target else None,
+                    client.get(TIMEZONE))
     from holophyte.cli.entry import _legacy_cli
     return _legacy_cli(target + factory_argv(args))
