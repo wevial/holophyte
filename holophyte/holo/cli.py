@@ -91,6 +91,9 @@ def main(argv=None):
     if args.words is None:
         parser.print_help()
         return 0
+    if getattr(args, "foreground", False):
+        from holophyte.holo.units import foreground
+        return foreground(args, project_argv(args, default))
     if args.command.records is not None:
         from holophyte.holo.results import run_write
         return run_write(args, lambda: project_argv(args, default))

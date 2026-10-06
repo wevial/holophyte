@@ -38,11 +38,12 @@ def parse_action_body(raw):
     return body
 
 
-def unit_action(project, action, unit_name):
+def unit_action(project, action, unit_name, asked=None):
     """An intervention that cannot be recorded first does not run."""
     verb, template, intervention = UNIT_ACTIONS[action]
     unit = template + unit_name
-    note = f"operator asked the daemon to {verb} {unit} (POST /actions/{action})"
+    who, route = asked or ("the daemon", f"POST /actions/{action}")
+    note = f"operator asked {who} to {verb} {unit} ({route})"
     recorded = record_action_intervention(project, intervention, note)
     if recorded is None:
         detail = ("the store holds no run to record the intervention"
