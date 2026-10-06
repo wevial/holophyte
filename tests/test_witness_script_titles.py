@@ -97,7 +97,8 @@ class RouteSegmentPathCitationTests(ApprovedRepoCase):
 
     def test_citation_in_prose_parentheses_reads_path_from_its_first_word(self):
         for prose in (f"(see {ROUTE_TEST}::'{ROUTE_TITLE}')",
-                      f"({ROUTE_TEST}::'{ROUTE_TITLE}')"):
+                      f"({ROUTE_TEST}::'{ROUTE_TITLE}')",
+                      f"-({ROUTE_TEST}::'{ROUTE_TITLE}')"):
             with self.subTest(prose=prose):
                 self.assertEqual(self.findings(prose), [])
 
