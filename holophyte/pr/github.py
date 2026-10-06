@@ -121,6 +121,7 @@ class PrState:
     closed: bool = False
     mergeable: str = "UNKNOWN"
     updated_at: int | None = None
+    review: str | None = None
     pending_contexts: tuple = ()
     failed_checks: tuple = ()
     missing_checks: tuple = ()

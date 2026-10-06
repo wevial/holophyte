@@ -279,6 +279,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "latest_human_intervention_at",
                                                     "live_runs", "merged_runs",
                                                     "newest_run_id",
+                                                    # HOLO-155: the merge
+                                                    # route's park facts.
+                                                    "park_facts",
                                                     "recent_failed_runs",
                                                     # HOLO-109: a run's chain
                                                     # of its ticket's runs.

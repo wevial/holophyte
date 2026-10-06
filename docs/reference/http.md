@@ -389,6 +389,59 @@ hand; the error names the branch).
 504 when git does not answer within its cap. The endpoint serves no file
 contents or diff hunks and writes nothing to the repository.
 
+## `GET /runs/N/merge`
+
+```json
+{"run": 52, "ticket": "KO-219",
+ "pr_url": "https://github.com/example/repo/pull/31",
+ "head_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
+ "ready": false, "reason": "checks_pending",
+ "detail": "the required checks are pending: vitest",
+ "facts": [
+  {"name": "parked", "ok": true, "detail": "run 52 is KO-219's newest run, parked awaiting_merge_approval on https://github.com/example/repo/pull/31"},
+  {"name": "human_approval", "ok": true, "detail": "[merge] approve is \"human\""},
+  {"name": "review_approved", "ok": true, "detail": "GitHub's review decision is APPROVED"},
+  {"name": "checks_passed", "ok": false, "detail": "the required checks are pending: vitest"},
+  {"name": "mergeable", "ok": true, "detail": "GitHub's mergeable is MERGEABLE"},
+  {"name": "threads_resolved", "ok": true, "detail": "no review thread is open"},
+  {"name": "head_unchanged", "ok": true, "detail": "origin's task/ko-219 and the pull request are at 5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f"}
+ ]}
+```
+
+Whether a run parked for a human's merge may be merged now: what the
+console reads to draw a Merge button or say why not. The same answer
+`POST /actions/merge` ([The daemon's actions](daemon.md#post-actionsmerge))
+computes again at call time before it releases anything; nothing is
+cached. `ready` is true when every fact holds. `facts` is always these
+seven, in this order, each its `name`, whether it holds (`ok`) and a
+`detail` in words:
+
+| `name` | Holds when |
+| --- | --- |
+| `parked` | the run is its ticket's newest run, in phase `awaiting_merge_approval`, the ticket `blocked_on_operator` with no live run, and the run recorded a pull request and a branch |
+| `human_approval` | `[merge] approve` is `"human"` |
+| `review_approved` | GitHub's `reviewDecision` is `APPROVED` |
+| `checks_passed` | the required checks fold to success, as the babysitter folds them |
+| `mergeable` | GitHub's `mergeable` is `MERGEABLE` |
+| `threads_resolved` | no review thread is open, as the babysitter counts them |
+| `head_unchanged` | the branch head on `origin`, read with `git ls-remote` from the project's checkout, and the pull request's `headRefOid` are the same commit, and it is the run's `candidateSha` or its `approvedSha` |
+
+When `parked` or `human_approval` fails the daemon asks GitHub nothing:
+the five GitHub facts are `ok: false` with a `detail` saying they were
+not read. `reason` is null when `ready`, else the first failing fact's
+reason, one of `not_parked`, `not_human_approval`,
+`review_not_approved`, `checks_pending`, `checks_failing`, `conflicting`,
+`mergeable_unknown` (GitHub has not computed `mergeable` yet),
+`threads_unresolved`, `head_moved` and `github_unreadable` (a GitHub read
+or the `ls-remote` failed); `detail` is that fact's `detail`. A
+repository whose rules require no review has a null `reviewDecision`:
+`review_not_approved`. `head_sha` is `origin`'s branch head, null when
+it was not read. `ticket` and `pr_url` are the run's.
+
+`N` parses as on `/runs/N`: a non-integer is 400, an integer with no run
+is 404 carrying `run`. The route writes nothing; a GitHub read that fails
+is `github_unreadable` with 200.
+
 ## `GET /runs/N/ledger`
 
 ```json
@@ -974,8 +1027,8 @@ each behind the machine token alone.
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with a non-integer `N` |
-| 404 | `/runs/N`, `/runs/N/files` or `/runs/N/ledger` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
+| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
+| 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
 | 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and, on a host daemon, `/tickets`, `/tickets/ID/move` and `/tickets/ID/cancel`, and `PUT` outside `/config` and, on a host daemon, `/tickets/ID`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build can read, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |

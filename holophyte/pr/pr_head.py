@@ -34,8 +34,11 @@ def _just_pushed_state(target, conn, run_id, provider, task_id, branch,
 
 
 def _remote_head(target, branch):
-    code, out = git(worktree_path(target, branch), "ls-remote", github.REMOTE,
-                    f"refs/heads/{branch}")
+    return remote_head(worktree_path(target, branch), branch)
+
+
+def remote_head(repo, branch):
+    code, out = git(repo, "ls-remote", github.REMOTE, f"refs/heads/{branch}")
     if code or not out.strip():
         raise InfraFailure(f"cannot read remote head for {branch}: {out.strip()}")
     return out.split()[0]
