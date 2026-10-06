@@ -139,6 +139,10 @@ class TicketKeyTests(CompletionCase):
         split_by_bash = ("file", "T.md", "--project", "=", "alpha",
                          "--update", "=", "HO")
         self.assertEqual(self.offered(*split_by_bash), ["HOLO-1", "HOLO-2"])
+        self.assertEqual(self.offered("requeue", "-palpha", "HO"),
+                         ["HOLO-1", "HOLO-2"])
+        self.assertEqual(self.offered("file", "T.md", "-p", "alpha", "--update=HO"),
+                         ["--update=HOLO-1", "--update=HOLO-2"])
 
     def test_the_keys_are_read_again_only_once_the_cache_is_a_minute_old(self):
         self.assertEqual(self.offered("requeue", "-p", "alpha", ""),
@@ -178,7 +182,8 @@ class TableTests(CompletionCase):
     def test_a_positional_or_option_with_choices_offers_them(self):
         cases = {("move", "HOLO-1", ""): ["ready", "backlog"],
                  ("gap", "HOLO-1", ""): [layer.value for layer in GapLayer],
-                 ("file", "T.md", "--priority", ""): list(FILE_TICKET_PRIORITIES)}
+                 ("file", "T.md", "--priority", ""): list(FILE_TICKET_PRIORITIES),
+                 ("file", "T.md", "--priority=h"): ["--priority=high"]}
         for words, expected in cases.items():
             with self.subTest(words=words):
                 self.assertEqual(self.offered(*words), expected)

@@ -88,6 +88,20 @@ def _metavars(action):
     return metavar if isinstance(metavar, tuple) else (metavar,) * _arity(action)
 
 
+def _inline(parser, word):
+    name, equals, value = word.partition("=")
+    if word.startswith("--") and equals:
+        head = name + equals
+    elif not word.startswith("--") and len(word) > 2:
+        name, head, value = word[:2], word[:2], word[2:]
+    else:
+        return None, None, None
+    action = parser._option_string_actions.get(name)
+    if action is None or not _arity(action):
+        return None, None, None
+    return action, head, value
+
+
 class Walk:
     """Where the words before the one being completed leave the parser."""
 
@@ -117,13 +131,13 @@ class Walk:
             return
         self.parser = self.shown() or self.parser
         if word.startswith("-") and word != "-":
-            name, _, value = word.partition("=")
-            action = self.parser._option_string_actions.get(name)
+            action, _, value = _inline(self.parser, word)
+            if action is not None:
+                self.given[action.dest] = value
+                return
+            action = self.parser._option_string_actions.get(word)
             if action is not None and _arity(action):
-                if value:
-                    self.given[action.dest] = value
-                else:
-                    self.pending, self.taken = action, 0
+                self.pending, self.taken = action, 0
             return
         self.positionals.append(word)
 
@@ -131,7 +145,11 @@ class Walk:
         if self.pending is not None:
             return self.values(self.pending, self.taken, keys)
         if current.startswith("-"):
-            return list((self.shown() or self.parser)._option_string_actions)
+            leaf = self.shown() or self.parser
+            action, head, _ = _inline(leaf, current)
+            if action is not None:
+                return [head + value for value in self.values(action, 0, keys)]
+            return list(leaf._option_string_actions)
         subcommands = _subcommands(self.parser)
         if subcommands is None:
             return self.positional(self.parser, len(self.positionals), keys)
