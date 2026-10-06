@@ -137,13 +137,13 @@ class SessionTests(McpCase):
                           initialized.server_info.version),
                          ("holo", package_version()))
 
-    def test_tools_are_the_nine_reads_each_read_only_with_an_input_schema(self):
+    def test_the_nine_reads_are_each_read_only_with_an_input_schema(self):
         async def use(client, _):
             return (await client.list_tools()).tools
-        tools = self.session(use)
+        reads = [tool for tool in self.session(use) if tool.name in TOOLS]
 
-        self.assertEqual(sorted(tool.name for tool in tools), sorted(TOOLS))
-        for tool in tools:
+        self.assertEqual(sorted(tool.name for tool in reads), sorted(TOOLS))
+        for tool in reads:
             with self.subTest(tool=tool.name):
                 self.assertEqual(tool.input_schema["type"], "object")
                 self.assertIs(tool.annotations.read_only_hint, True)
@@ -196,7 +196,7 @@ class SessionTests(McpCase):
     def test_an_unknown_tool_is_invalid_params_and_writes_nothing(self):
         before = self.dump()
 
-        refused = self.call("requeue", {"project": "alpha", "key": "ALPHA-1"})
+        refused = self.call("approve", {"project": "alpha", "key": "ALPHA-1"})
 
         self.assertIsInstance(refused, MCPError)
         self.assertEqual(refused.code, -32602)

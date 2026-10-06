@@ -42,7 +42,7 @@ def _store_verb(args, target, board):
         require_board(target, board)
         babysit_ticket(target, args.babysit,
                         args.note if args.note is not None
-                        else BABYSIT_DEFAULT_NOTE)
+                        else BABYSIT_DEFAULT_NOTE, author=args.author)
         return True
     if args.gap_layer is not None:
         identifier, layer = args.gap_layer

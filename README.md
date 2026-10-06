@@ -42,7 +42,7 @@ python3 factory.py --status [--json]            # every project in host.toml, th
 python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
 python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run parked for merge approval
 python3 factory.py --approve KO-n --force --note TEXT /path/to/repo # ...though its pull request is not ready to merge
-python3 factory.py --babysit KO-n [--note TEXT] /path/to/repo # look at a parked run's pull request again
+python3 factory.py --babysit KO-n [--note TEXT [--author NAME]] /path/to/repo # look at a parked run's pull request again
 python3 factory.py /path/to/repo --pause KO-n --note TEXT # stop at the next safe point
 python3 factory.py /path/to/repo --resume KO-n --note TEXT # continue a paused run
 python3 factory.py /path/to/repo --abort KO-n --note TEXT # end a run now, preserving its work
@@ -50,7 +50,7 @@ python3 factory.py /path/to/repo --abort KO-n --close-pr --note TEXT # ...and cl
 python3 factory.py --repoint KO-n SHA --note TEXT /path/to/repo # move a parked candidate to a rebuilt branch tip
 python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # record a change landed outside the factory
 python3 factory.py /path/to/repo --gap-layer KEY-n LAYER --note TEXT [--carried-by KEY-n] [--found-by witness|operator] # where a gap's lesson landed: impossible, static, witness, guidance, review or none; who found it
-python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] /path/to/repo
+python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] [--note TEXT [--author NAME]] /path/to/repo
 python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
 python3 factory.py --file-ticket TICKET.md --update KEY-n --revision N [--priority urgent|high|medium|low] [--labels a,b] /path/to/repo # a native board's edit
 python3 factory.py --file-story SLUG [--priority urgent|high|medium|low] /path/to/repo # a native or store-mode Linear board's story, filed from stories/SLUG

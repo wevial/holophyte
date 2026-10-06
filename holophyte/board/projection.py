@@ -1,6 +1,7 @@
 """The store's ticket state and run narrative, projected onto the board."""
 import contextlib
 import fcntl
+import getpass
 import hashlib
 import os
 import re
@@ -474,7 +475,8 @@ def _ticket_problems(text, repo):
 
 
 def file_ticket(target, path, state, board, out=None, priority=None,
-                update=None, revision=None, labels=None):
+                update=None, revision=None, labels=None, note=None,
+                author=None):
     from holophyte.loop.claim import refresh_before_filing
 
     out = out or sys.stdout
@@ -504,6 +506,14 @@ def file_ticket(target, path, state, board, out=None, priority=None,
         print(f"[holo2] {identifier}: as stored by Linear, {stored[0]}",
               file=out)
         return 2
+    if note is not None:
+        author = getpass.getuser() if author is None else author
+        try:
+            board.comment(identifier, f"{author}: {note.strip()}")
+        except Exception as unposted:
+            print(f"[holo2] {identifier}: filed, its note not confirmed"
+                  f" posted: {unposted}", file=out)
+            return 2
     return 0
 
 

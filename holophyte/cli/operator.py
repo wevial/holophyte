@@ -306,16 +306,17 @@ def _parked_at_pull_request(conn, run_id):
         and park.phase == PARKED_PHASE and bool(park.pr_url)
 
 
-def babysit_ticket(target, identifier, note, out=None):
+def babysit_ticket(target, identifier, note, out=None, author=None):
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            if note != BABYSIT_DEFAULT_NOTE:
+            if note != BABYSIT_DEFAULT_NOTE or author is not None:
                 run_id = store.read.ticket_by_id(conn, ticket_id).lastRunId
                 event_id = operator_notes.send_back(
-                    conn, run_id, note, getpass.getuser())
+                    conn, run_id, note,
+                    getpass.getuser() if author is None else author)
                 purpose = ("as a maintainer instruction "
                            f"(operator_note event {event_id})")
             else:
@@ -329,13 +330,14 @@ def babysit_ticket(target, identifier, note, out=None):
         conn.close()
 
 
-def send_back_run(target, run_id, note, out=None):
+def send_back_run(target, run_id, note, author=None, out=None):
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
         try:
-            event_id = operator_notes.send_back(conn, run_id, note,
-                                                getpass.getuser())
+            event_id = operator_notes.send_back(
+                conn, run_id, note,
+                getpass.getuser() if author is None else author)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] run {run_id}: {refused}") from None
         print(f"[holo2] run {run_id} sent back to the babysitter as a"
