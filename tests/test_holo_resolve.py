@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli.entry
+import store
 from holophyte.config.project import Project
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -86,6 +87,18 @@ class ResolveTests(unittest.TestCase):
         inner.mkdir()
         self.assertEqual(self.status_target("-p", ".", cwd=self.alpha), self.alpha)
         self.assertEqual(self.status_target(cwd=inner, project=".."), self.alpha)
+
+    def test_a_work_tree_whose_path_ends_in_a_space_is_that_project(self):
+        self.client('default_project = "beta"\n')
+        spaced = self.root / "spaced "
+        subprocess.run(["git", "init", "-q", str(spaced)], check=True)
+        target = Project.locate(spaced, adopt=False)
+        target.holo_dir.mkdir(parents=True, exist_ok=True)
+        target.config_path.write_text('[serve]\nname = "spaced"\n')
+        store.open(str(target.store_path)).close()
+        with (self.home / "host.toml").open("a") as host:
+            host.write(f"\n[[project]]\npath = {json.dumps(str(spaced))}\n")
+        self.assertEqual(self.status_target(cwd=spaced), spaced)
 
     def test_default_project_answers_outside_any_registered_work_tree(self):
         self.client('default_project = "beta"\n')

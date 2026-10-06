@@ -68,9 +68,10 @@ def _work_tree():
                                 capture_output=True, text=True)
     except OSError:
         return None
-    if result.returncode != 0 or not result.stdout.strip():
+    top = result.stdout.removesuffix("\n")
+    if result.returncode != 0 or not top:
         return None
-    return Path(result.stdout.strip()).resolve()
+    return Path(top).resolve()
 
 
 def _current(host):
