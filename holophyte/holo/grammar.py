@@ -29,6 +29,7 @@ JSON = Flag("--json")
 DRY_RUN = Flag("--dry-run")
 ONCE = Flag("--once")
 CLOSE_PR = Flag("--close-pr")
+FORCE = Flag("--force")
 FOREGROUND = Flag("--foreground")
 NOW = Flag("--now")
 BACKLOG = Flag("--backlog", emits=("--state", "Backlog"))
@@ -75,7 +76,7 @@ COMMANDS = (
     Command(("requeue",), "--requeue", "a failed ticket back in the queue",
             takes=("KEY",), note=REQUIRED, records=("requeue",)),
     Command(("approve",), "--approve", "release a run parked for merge approval",
-            takes=("KEY",), note=OPTIONAL, records=("approve",)),
+            takes=("KEY",), note=OPTIONAL, flags=(FORCE,), records=("approve",)),
     Command(("babysit",), "--babysit", "look at a parked run's pull request again",
             takes=("KEY",), note=OPTIONAL, records=("babysit", "operator_note")),
     Command(("send-back",), None,

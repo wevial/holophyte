@@ -488,7 +488,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                   REQUEST_CHANGES, provider=self.provider())
         candidate = self.git("rev-parse", BRANCH).strip()
         holophyte.cli.operator.approve(self.project, "KO-131", "accept this candidate",
-                                   out=io.StringIO())
+                                   out=io.StringIO(), force=True)
         out = self.main_output(provider=self.provider())
         self.assertEqual(self.last_fake.roles, [])
         self.assertIn("verify ok before merge", out)

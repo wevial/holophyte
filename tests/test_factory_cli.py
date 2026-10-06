@@ -63,8 +63,10 @@ class FactorySchemaCliTests(unittest.TestCase):
                 fixture = self.fixture(cls)
                 if mode == "--requeue":
                     fixture.fail_the_run()
-                else:
+                elif mode == "--babysit":
                     fixture.park(pr_url="https://example.test/pull/7")
+                else:
+                    fixture.park()
                 self.stamp_older(fixture)
                 fixture.cli(mode, "KO-1", "--note", "continue")
                 self.assertEqual(self.version(fixture), store.SCHEMA_VERSION)
