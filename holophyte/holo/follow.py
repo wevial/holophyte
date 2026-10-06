@@ -4,7 +4,6 @@ import re
 import sys
 from pathlib import Path
 from time import sleep, time
-from urllib.parse import urlencode
 
 from holophyte.config.project import Project
 from holophyte.holo.grammar import FOLLOW
@@ -16,7 +15,7 @@ UNIT_MS = {"s": 1000, "m": 60_000, "h": 3_600_000, "d": 86_400_000}
 LEDGER_MARKS = {"merge": "✓", "failure": "✗", "intervention": "!"}
 EVENT, LEDGER, STALL = "event", "ledger", "stall"
 LEDGER_TWIN = "intervention"
-LOOKBACK_MS = 60_000
+LEDGER_PAGE = 1000
 
 
 def now_ms():
@@ -54,12 +53,10 @@ def event_entry(event):
 
 
 def ledger_entry(entry):
-    return {"stream": LEDGER, **entry, "summary": first_line(entry["text"])}
-
-
-def ledger_key(entry):
-    return (entry["at"], entry["run"], entry["kind"], entry["source"],
-            entry["text"])
+    from holophyte.serve.serve_runs import ledger_entry as view_entry
+    body = view_entry(entry, {"run": entry.runId, "ticket": entry.ticket})
+    return {"stream": LEDGER, "id": entry.id, **body,
+            "summary": first_line(entry.text)}
 
 
 def stall_entry(item, now):
@@ -86,48 +83,44 @@ class Follow:
     def __init__(self, project, start):
         self.project = project
         self.start = start
-        self.after = 0
-        self.since = start
-        self.seen = set()
+        self.after = {EVENT: 0, LEDGER: 0}
         self.held = []
         self.stalled = set()
 
     def poll(self, now):
-        # Only entries dated before `now` print, so both reads of one poll
-        # see the same moment and a later one cannot overtake an earlier.
-        entries = self.events(now) + self.ledger(now)
-        entries.sort(key=lambda entry: entry["at"])
-        return entries + self.stalls(now)
-
-    def events(self, now):
         import store.read
         conn = store.read.open_readonly(self.project.store_path)
         try:
-            events = store.read.narrative_events_after(conn, self.after,
-                                                       self.start)
+            pool = self.held + self.events(conn) + self.ledger(conn)
         finally:
             conn.close()
-        if events:
-            self.after = events[-1].id
-        pool = self.held + [event for event in events
-                            if event.kind != LEDGER_TWIN]
-        self.held = [event for event in pool if event.at >= now]
-        return [event_entry(event) for event in pool if event.at < now]
+        # Only entries dated before `now` print, so both reads of one poll
+        # see the same moment and a later one cannot overtake an earlier.
+        self.held = [entry for entry in pool if entry["at"] >= now]
+        due = sorted((entry for entry in pool if entry["at"] < now),
+                     key=lambda entry: entry["at"])
+        return due + self.stalls(now)
 
-    def ledger(self, now):
-        from holophyte.serve.serve_runs import LEDGER_CAP, ledger
-        floor = max(self.start, self.since - LOOKBACK_MS)
-        code, body = ledger(self.project, urlencode(
-            {"since": floor, "limit": LEDGER_CAP}))
-        if code != 200:
-            return []
-        fresh = [entry for entry in reversed(body["entries"])
-                 if entry["at"] < now and ledger_key(entry) not in self.seen]
-        self.seen.update(ledger_key(entry) for entry in fresh)
-        self.since = max([self.since] + [entry["at"] for entry in fresh])
-        floor = max(self.start, self.since - LOOKBACK_MS)
-        self.seen = {key for key in self.seen if key[0] >= floor}
-        return [ledger_entry(entry) for entry in fresh]
+    def events(self, conn):
+        import store.read
+        events = store.read.narrative_events_after(conn, self.after[EVENT],
+                                                   self.start)
+        if events:
+            self.after[EVENT] = events[-1].id
+        return [event_entry(event) for event in events
+                if event.kind != LEDGER_TWIN]
+
+    def ledger(self, conn):
+        import store.read
+        entries = []
+        while True:
+            page = store.read.ledger_after(conn, self.after[LEDGER],
+                                           self.start, LEDGER_PAGE)
+            entries += page
+            if page:
+                self.after[LEDGER] = page[-1].id
+            if len(page) < LEDGER_PAGE:
+                return [ledger_entry(entry) for entry in entries]
 
     def stalls(self, now):
         from holophyte.serve.views import attention

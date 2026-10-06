@@ -27,6 +27,7 @@ POLL = "0.2"
 SEVERAL_POLLS = 1.2
 HOUR_MS = 3_600_000
 CLEAR = "\x1b[H\x1b[2J"
+LEDGER_PAGE = 1000
 SEPARATOR = re.compile(r"--- \d\d:\d\d:\d\d \S+ ---")
 
 
@@ -178,6 +179,30 @@ class FollowTests(FollowCase):
 
         self.assertTrue(follow.line().endswith("  ✗  HOLO-1  failure: dated earlier"))
         self.assertEqual(follow.quiet(SEVERAL_POLLS), [])
+
+    def test_two_identical_entries_written_across_polls_print_two_lines(self):
+        run = self.live()
+        follow = self.follow()
+        dated = now_ms()
+        store.record_ledger(self.conn, run, "note", "same words", now=dated)
+        first = follow.line()
+        store.record_ledger(self.conn, run, "note", "same words", now=dated)
+
+        self.assertEqual(follow.line(), first)
+        self.assertEqual(follow.quiet(SEVERAL_POLLS), [])
+
+    def test_since_prints_every_entry_beyond_one_page_of_the_ledger(self):
+        run = self.live()
+        for number in range(LEDGER_PAGE + 1):
+            store.record_ledger(self.conn, run, "note", f"entry {number}")
+        follow = self.follow("--since", "1h")
+
+        lines = [follow.line()]
+        while not lines[-1].endswith(f"note: entry {LEDGER_PAGE}"):
+            lines.append(follow.line())
+        notes = [text.split("note: ")[1] for text in lines if "note: " in text]
+        self.assertEqual(notes, [f"entry {number}"
+                                 for number in range(LEDGER_PAGE + 1)])
 
     def test_an_intervention_prints_one_line(self):
         run = self.live()

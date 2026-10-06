@@ -213,8 +213,8 @@ piped, each frame follows a line carrying its time, `--- 10:42:05 PDT ---`.
 `holo follow [--since AGO] [--every SECONDS] [--json]` streams one line per
 thing that happens in the project: its runs' narrative events (a phase
 change, a re-point) and its ledger entries (a round's
-verdict, an adjudication, a merge, a failure, an intervention, a note), the
-`GET /ledger` view's. Each line is the local clock time, a symbol (`✓` a
+verdict, an adjudication, a merge, a failure, an intervention, a note),
+each shaped as a `GET /ledger` entry. Each line is the local clock time, a symbol (`✓` a
 merge, `✗` a failure, `!` an intervention, `>` anything else), the ticket and
 a one-line summary, led by its kind for a ledger entry:
 
@@ -226,14 +226,16 @@ a one-line summary, led by its kind for a ledger entry:
 
 It starts from now, or from `--since AGO` before it (`90s`, `30m`, `1h`,
 `2d`), polls every `--every SECONDS` (default 2), prints what each poll
-finds oldest first, and never prints an event twice. It never prints the
+finds oldest first, and prints each event and entry once, by its store id,
+however many a poll finds. It never prints the
 agents' own output; that is `holo run N --turns`. Each poll also reads
 `GET /attention`: a live run whose heartbeat is older than the project's
 `heartbeat_stale_min`, or a supervisor whose beat is, prints one `✗` line
 naming it, and no other until it recovers and goes stale again, so silence
 means a quiet project, not a dead one. A line with `--json` is one JSON
 object: `stream` (`event`, `ledger` or `stall`), `at`, `run`, `ticket`,
-`kind` and `summary`, and a ledger entry's other fields. stderr says once
+`kind` and `summary`, an event's or entry's `id`, and a ledger entry's other
+fields. stderr says once
 where it starts from; Ctrl-C exits 0.
 
 Five reads are no `factory.py` mode: each calls, in process, the view

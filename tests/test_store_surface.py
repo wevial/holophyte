@@ -164,6 +164,8 @@ EXPECTED_READ = [
     "claimable",
     # KO-250: a run's ledger entries, oldest first.
     "ledger",
+    # HOLO-145: `holo follow`'s ledger entries across runs after an id.
+    "ledger_after",
     # KO-278: the `serve` daemon's `/ledger` window across runs.
     "ledger_since",
     # Consolidation stage 1: the host daemon's bound on one store's lock
