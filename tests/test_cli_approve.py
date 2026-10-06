@@ -164,6 +164,31 @@ class ApproveCliTests(unittest.TestCase):
         # Released, the ticket is claimable again -- the loop's next pass
         # is what takes the candidate to the gate.
         self.assertTrue(store.tickets.pickable(self.conn, self.ticket))
+        self.assertEqual(self.github.calls, [])
+
+    def test_a_pull_request_park_replacing_the_local_one_is_not_approved(self):
+        """The local park is released elsewhere and a newer run parks on a
+        pull request GitHub has not approved, between the command reading
+        the park and its write: the write refuses the newer run."""
+        self.park()
+        local = self.run
+        approve = store.approve
+
+        def replaced_first(conn, ticket_id, note, **kwargs):
+            approve(self.conn, self.ticket, "released elsewhere")
+            self.park(pr_url=PULL)
+            return approve(conn, ticket_id, note, **kwargs)
+
+        with patch.object(store, "approve", replaced_first), \
+                self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn(f"newest run is {self.run}, not run {local}",
+                      str(raised.exception))
+        self.assertEqual(self.interventions(), [(local, "approve")])
+        self.assertEqual(self.run_row()[:2], ("awaiting_merge_approval", None))
+        self.assertEqual(self.ticket_row(),
+                         ("blocked_on_operator", None, self.run))
 
     def test_a_pull_request_github_shows_ready_is_released(self):
         self.park_at_pull_request()

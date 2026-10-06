@@ -278,8 +278,8 @@ def approve(target, identifier, note, out=None, force=False):
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
-        parked_run = _parked_at_pull_request(conn, ticket_id)
-        if parked_run is not None:
+        parked_run = store.read.ticket_by_id(conn, ticket_id).lastRunId
+        if _parked_at_pull_request(conn, parked_run):
             ready = readiness(target, parked_run)
             if ready.reason is not None and not force:
                 raise SystemExit(
@@ -300,13 +300,10 @@ def approve(target, identifier, note, out=None, force=False):
         conn.close()
 
 
-def _parked_at_pull_request(conn, ticket_id):
-    run_id = store.read.ticket_by_id(conn, ticket_id).lastRunId
+def _parked_at_pull_request(conn, run_id):
     park = None if run_id is None else store.read.park_facts(conn, run_id)
-    if park is None or park.ticket_status != "blocked_on_operator" \
-            or park.phase != PARKED_PHASE or not park.pr_url:
-        return None
-    return run_id
+    return park is not None and park.ticket_status == "blocked_on_operator" \
+        and park.phase == PARKED_PHASE and bool(park.pr_url)
 
 
 def babysit_ticket(target, identifier, note, out=None):
