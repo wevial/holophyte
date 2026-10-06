@@ -84,14 +84,16 @@ class TableTests(unittest.TestCase):
     def test_every_parser_mode_has_one_canonical_row_and_only_worker_is_hidden(self):
         _, modes = build_parser()
         registered = {action.option_strings[0] for action in modes._group_actions}
-        rows = collections.Counter(command.mode for command in COMMANDS)
+        rows = collections.Counter(command.mode for command in COMMANDS
+                                   if command.mode is not None)
         self.assertEqual({mode for mode, count in rows.items() if count > 1}, set())
         self.assertEqual(registered - set(rows), set(NOT_EXPOSED))
         self.assertEqual(set(rows) - registered, set())
         self.assertEqual(set(NOT_EXPOSED), {"--worker"})
 
     def test_each_row_translates_to_its_mode_and_note_in_the_factory_parser(self):
-        self.assertEqual(set(SAMPLES), {command.words for command in COMMANDS})
+        self.assertEqual(set(SAMPLES), {command.words for command in COMMANDS
+                                        if command.mode is not None})
         for words, (rest, dest, value, note, fields) in SAMPLES.items():
             with self.subTest(words=words):
                 args = factory_args([*words, *rest])
@@ -234,9 +236,10 @@ class RequeueTests(Home):
         legacy = factory("--requeue", "HOLO-1", "--note", "rerun it", str(self.path),
                          home=self.home)
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual((result.returncode, result.stderr),
-                         (legacy.returncode, legacy.stderr))
-        self.assertTrue(result.stderr.strip())
+        self.assertEqual(result.returncode, legacy.returncode)
+        refusal = legacy.stderr.strip().removeprefix("[holo2] ")
+        self.assertTrue(refusal)
+        self.assertIn(refusal, result.stderr)
         self.assertEqual(list(self.conn.iterdump()), before)
 
 

@@ -51,5 +51,8 @@ def main(argv=None):
     if args.words is None:
         parser.print_help()
         return 0
+    if args.command.records is not None:
+        from holophyte.holo.results import run_write
+        return run_write(args, project_argv)
     from holophyte.cli.entry import _legacy_cli
     return _legacy_cli(project_argv(args.project) + factory_argv(args))
