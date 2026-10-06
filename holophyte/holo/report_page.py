@@ -21,6 +21,7 @@ UNIT_WORD = {"h": "hour", "d": "day"}
 FORMS = "Nh, Nd or all, such as 24h, 7d, 30d or all"
 SHIPPED = ("merged", "abandoned", "failed")
 OPEN_LAYER = "none"
+SEND_BACK = "operator_note"
 MARKS = {"merged": "✓", "failed": "✗"}
 LABEL = 10
 
@@ -39,6 +40,14 @@ def window_words(since):
         return "all time"
     count, unit = SPAN.fullmatch(since).groups()
     return f"last {count} {UNIT_WORD[unit]}{'s' * (count != '1')}"
+
+
+def within(since):
+    return "in the store's history" if since == ALL else f"in the {window_words(since)}"
+
+
+def plural(count, word):
+    return f"{count} {word}{'s' * (count != 1)}"
 
 
 def median(values):
@@ -79,12 +88,10 @@ def gaps(conn):
 
 
 def hands_on(conn, start):
-    toil = store.read.toil_since(conn, start)
-    (send_backs,) = conn.execute(
-        "SELECT COUNT(*) FROM runEvents WHERE kind = 'operator_note' AND at >= ?",
-        (start,)).fetchone()
-    return {"interventions": sum(toil.by_action.values()),
-            "by_action": toil.by_action, "send_backs": send_backs}
+    by_action = store.read.toil_since(conn, start).by_action
+    send_backs = by_action.pop(SEND_BACK, 0)
+    return {"interventions": sum(by_action.values()), "by_action": by_action,
+            "send_backs": send_backs}
 
 
 def consumed_notes(conn, start):
@@ -139,7 +146,7 @@ def minutes(value):
 def shipped_line(body):
     counts = body["shipped"]
     if not any(counts[outcome] for outcome in SHIPPED):
-        return f"nothing shipped in the {window_words(body['window']['since'])}"
+        return f"nothing shipped {within(body['window']['since'])}"
     text = " · ".join(f"{counts[outcome]} {outcome}" for outcome in SHIPPED)
     if counts["median_min"] is not None:
         text += f" · median {minutes(counts['median_min'])} min per ticket"
@@ -158,9 +165,9 @@ def count_lines(body):
         ("Gaps", " · ".join([f"{gap['open']} open"] + [
             f"{layer} {count}" for layer, count in gap["layers"].items()
             if count and layer != OPEN_LAYER])),
-        ("Hands-on", f"{hands['interventions']} interventions"
+        ("Hands-on", plural(hands["interventions"], "intervention")
          + (f" ({by_action})" if by_action else "")
-         + f" · {hands['send_backs']} send-backs"),
+         + f" · {plural(hands['send_backs'], 'send-back')}"),
     ]
 
 

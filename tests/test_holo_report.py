@@ -15,8 +15,8 @@ from unittest.mock import patch
 import store
 import store.tickets
 from holophyte.config.project import Project
-from store.operator_notes import consume
-from tests.phase_fixture import finish_run
+from store.operator_notes import consume, send_back
+from tests.phase_fixture import finish_run, park_run
 from tests.test_holo_reads import holo
 
 MIN = 60 * 1000
@@ -129,13 +129,30 @@ class CountTests(WindowReportCase):
                         if line.startswith("Hands-on"))
         self.assertIn("3 interventions (requeue 2 · approve 1)", hands_on)
 
+    def test_a_send_back_counts_once_as_a_send_back_not_an_intervention(self):
+        parked = store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id="issue-KO-8",
+            linear_identifier="KO-8", title="parked ticket",
+            acceptance_criteria=["Given KO-8, then it is worked"],
+            verification_commands=["echo ok"])
+        store.tickets.transition(self.conn, parked, "in_flight")
+        run = store.claim(self.conn, self.project_id, parked, now=self.now - DAY)
+        park_run(self.conn, run, "awaiting_merge_approval",
+                 pr_url="https://example.test/org/repo/pull/8")
+        store.tickets.transition(self.conn, parked, "blocked_on_operator")
+        send_back(self.conn, run, FIRST_NOTE, "maintainer")
+        body = json.loads(self.read("--json"))
+        self.assertEqual(body["hands_on"], {"interventions": 0, "by_action": {},
+                                            "send_backs": 1})
+        self.assertEqual(body["shipped"]["merged"], 3)
+
 
 class NoteTests(WindowReportCase):
     def setUp(self):
         super().setUp()
         self.send_back_both_notes()
 
-    def test_page_opens_with_the_counts_and_shows_no_note_text(self):
+    def test_page_opens_with_its_header_then_the_counts_and_no_note_text(self):
         out = self.read()
         self.assertNotIn(FIRST_NOTE, out)
         self.assertNotIn(SECOND_NOTE, out)

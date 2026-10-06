@@ -213,10 +213,10 @@ no store exits 1. Its lines carry no `[holo2]` prefix:
 | Section | Lines |
 | --- | --- |
 | header | the project's directory and the window, `holophyte · last 7 days` |
-| `Shipped` | the merged, abandoned and failed runs, and the median minutes of work per merged run with the median estimate beside it, `3 merged · 1 abandoned · 2 failed · median 16 min per ticket (estimate 30)`; with none of the three, `nothing shipped in the last 7 days` |
+| `Shipped` | the merged, abandoned and failed runs, and the median minutes of work per merged run with the median estimate beside it, `3 merged · 1 abandoned · 2 failed · median 16 min per ticket (estimate 30)`; with none of the three, `nothing shipped in the last 7 days`, or `in the store's history` for `all` |
 | `Failures` | the failed runs by failure kind, most first, `verify 3 · infra 1`, or `none` |
 | `Gaps` | the gaps whose latest layer is `none`, as open, then each other layer holding a gap, over the whole store as `factory.py --report`'s `gap layers:` line counts them |
-| `Hands-on` | the human interventions by action, `3 interventions (requeue 2 · approve 1)`, and the send-backs, the `operator_note` events |
+| `Hands-on` | the human interventions by action, `3 interventions (requeue 2 · approve 1)`, and the send-backs, the human `operator_note` interventions, which the interventions count leaves out |
 | `Runs (N)` | the window's ended runs in end order: `✓` merged, `✗` failed, `·` otherwise, the ticket, the outcome, the work against the estimate in minutes, the review rounds and how long ago it ended |
 | `Notes (N)` | with `--notes` only: each send-back note consumed in the window, newest first, with the time it was consumed, the ticket, run and round, and its author |
 
@@ -230,7 +230,7 @@ included with or without `--notes`:
 | `shipped` | `merged`, `abandoned`, `failed`, `median_min` and `median_estimate_min` (`null` with no merged run measured) |
 | `failures` | failure kind to count |
 | `gaps` | `open`, `layers` (each layer to its count) and `found_by` (each finder to its count) |
-| `hands_on` | `interventions`, `by_action` (action to count) and `send_backs` |
+| `hands_on` | `interventions` and `by_action` (action to count), both without `operator_note`, and `send_backs`, its count |
 | `runs` | the window's runs in end order, each with `run`, `ticket`, `actual_min`, `agent_min`, `verify_min`, `estimate_min`, `ratio`, `rounds`, `outcome`, `host`, `ended_ms`, `merge_sha` and `wall_min`, as a `GET /runs` row has them |
 | `notes` | the window's consumed notes, newest first: `run`, `ticket`, `round`, `event_id`, `author`, `note` and `consumed_ms` |
 
