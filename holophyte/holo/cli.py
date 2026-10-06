@@ -7,6 +7,7 @@ from holophyte.holo.grammar import (
     COMPLETION,
     FOLLOW,
     HELPER,
+    MCP,
     READS,
     add_commands,
     factory_argv,
@@ -164,6 +165,9 @@ def main(argv=None):
     if args.command is COMPLETION:
         from holophyte.holo.completion import script
         return script(args.shell)
+    if args.command is MCP:
+        from holophyte.holo.mcp_server import serve
+        return serve(package_version())
     from holophyte.holo.follow import check_intervals
     check_intervals(args)
     if host is not None:
