@@ -6,17 +6,18 @@ on a writer host, to copy under `~/.config/systemd/user/` and enable by hand.
 
 ## Install
 
-The daemon has one Python dependency, `tomlkit`, which `PUT /config` uses
-to edit a project's config in place without losing comments and `project
-add` uses to rewrite `host.toml`; it is pinned in `requirements.txt`. On the
-writer host, before enabling the host units:
+The factory has two Python dependencies, both pinned in `requirements.txt`:
+`tomlkit`, which the daemon's `PUT /config` uses to edit a project's config
+in place without losing comments and `project add` uses to rewrite
+`host.toml`, and `mcp`, which only `holo mcp` needs. On the writer host,
+before enabling the host units:
 
 ```
 python3 -m pip install --user -r requirements.txt
 ```
 
-A daemon started without it exits with one line naming the module and this
-command.
+A daemon started without `tomlkit` exits with one line naming the module
+and this command.
 
 ## The host units
 

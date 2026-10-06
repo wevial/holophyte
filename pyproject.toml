@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "holophyte"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["tomlkit==0.15.1", "mcp==2.3.0"]
+
+[project.scripts]
+holo = "holophyte.holo.cli:main"
+
+[tool.setuptools]
+py-modules = ["provider", "linear_provider", "review_runner", "ticket_template", "story_template"]
+
+[tool.setuptools.packages.find]
+include = ["holophyte*", "store*"]

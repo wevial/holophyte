@@ -11,10 +11,13 @@ pass. Stdlib Python and SQLite; no frameworks.
 
 Python 3.11+ and Git on the host, Docker for the reviewer container, and
 `LINEAR_API_KEY` in the environment or a `.env` beside `linear_provider.py`.
-`ruff` is the one developer tool (`pip install --user ruff`). `tomlkit` is the one runtime dependency, pinned in
+`ruff` is the one developer tool (`pip install --user ruff`). `tomlkit` and `mcp` are the runtime dependencies, pinned in
 `requirements.txt` (`python3 -m pip install --user -r requirements.txt`);
-the daemon needs it to edit a config in place and exits naming it when it
-is missing. Bun is needed
+the daemon needs `tomlkit` to edit a config in place and exits naming it
+when it is missing, and only `holo mcp` needs `mcp`.
+`python3 -m pip install --user -e .` in the checkout installs
+the `holo` command, which imports from the checkout and so follows its
+`HEAD`. Bun is needed
 only to build the console (`bun --cwd=console run build`); see
 [Development](docs/development.md). Per-project settings go in
 `~/.holophyte/<slug>/config.toml`; see [Config](docs/config.md).
@@ -58,6 +61,7 @@ python3 factory.py --move KEY-n ready|backlog --revision N [--note TEXT] /path/t
 python3 factory.py --cancel KEY-n --revision N --note TEXT /path/to/repo # cancel a native ticket; a live run ends abandoned
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
 python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
+holo --version                                   # the package version and the checkout's short HEAD
 ```
 
 `--file-ticket` validates the file against the project, creates the issue,

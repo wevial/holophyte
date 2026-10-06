@@ -105,6 +105,10 @@ PINNED = {
     "holophyte/failure_reason.py": 0,
     "holophyte/files.py": 8,
 
+    "holophyte/holo/__init__.py": 0,
+    "holophyte/holo/__main__.py": 0,
+    "holophyte/holo/cli.py": 0,
+
     "holophyte/host/__init__.py": 0,
     "holophyte/host/ci_wake.py": 0,
     "holophyte/host/reconcile.py": 13,
