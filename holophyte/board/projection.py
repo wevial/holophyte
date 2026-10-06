@@ -510,9 +510,9 @@ def file_ticket(target, path, state, board, out=None, priority=None,
         author = getpass.getuser() if author is None else author
         try:
             board.comment(identifier, f"{author}: {note.strip()}")
-        except RuntimeError as unposted:
-            print(f"[holo2] {identifier}: filed, its note not posted:"
-                  f" {unposted}", file=out)
+        except Exception as unposted:
+            print(f"[holo2] {identifier}: filed, its note not confirmed"
+                  f" posted: {unposted}", file=out)
             return 2
     return 0
 

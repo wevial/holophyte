@@ -20,6 +20,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -280,6 +281,29 @@ class FileTicketCliTests(unittest.TestCase):
         self.assertTrue(lines[1].startswith("[holo2] KO-9: "), lines[1])
         self.assertIn(first, lines[1])
         self.assertEqual(linear.created()["description"], TICKET)
+
+    def test_a_note_linear_answers_with_an_http_error_prints_the_id_and_exits_2(self):
+        self.with_board()
+
+        class CommentFails(FakeLinear):
+            def __call__(self, query, variables=None):
+                if "commentCreate" in query:
+                    self.calls.append((query, variables))
+                    raise urllib.error.HTTPError(
+                        linear_provider.GRAPHQL, 500, "Internal Server Error",
+                        {}, None)
+                return super().__call__(query, variables)
+
+        linear = CommentFails()
+
+        status, printed = self.cli("--note", "triage", "--author", "seat",
+                                   linear=linear)
+
+        self.assertEqual(status, 2)
+        lines = printed.strip().splitlines()
+        self.assertTrue(lines[0].startswith("[holo2] filed KO-9: "), lines[0])
+        self.assertTrue(lines[1].startswith("[holo2] KO-9: filed, "), lines[1])
+        self.assertIn("500", lines[1])
 
     def test_state_backlog_is_used_and_state_done_is_refused(self):
         self.with_board()
