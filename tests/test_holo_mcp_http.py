@@ -29,6 +29,7 @@ from tests.test_holo_mcp import ROOT, TOOLS
 from tests.test_holo_mcp_writes import AUTHOR, WRITES, WriteCase
 
 TOKEN = "machine-secret"
+FIXTURE = ROOT / "tests" / "fixtures" / "serve" / "mcp-tools-list.json"
 NAME = "alpha"
 CHECK_SEC = 2
 START_WAIT_SEC = 30
@@ -165,7 +166,17 @@ class ActionsTests(HttpCase):
         self.assertEqual([tool.model_dump() for tool in over_http],
                          [tool.model_dump() for tool in on_stdio])
 
-    def test_requeue_records_the_author_via_mcp(self):
+    def test_the_tools_list_reply_is_the_pinned_fixture(self):
+        status, body = self.post(
+            body={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            Authorization=f"Bearer {TOKEN}")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), json.loads(FIXTURE.read_text()))
+
+    def test_requeue_runs_on_the_host_and_records_the_author_via_mcp(self):
+        (self.home / "client.toml").write_text('host = "seat.invalid"\n')
+
         async def use(client, _):
             return await client.call_tool("requeue", {
                 "project": NAME, "ticket": "HOLO-1",
@@ -239,7 +250,7 @@ class StartupTests(HttpCase):
 
         self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
         self.assertIn("[serve] machine_token_file", done.stderr)
-        self.assertFalse(listening(self.port))
+        self.assertNotIn("serving", done.stdout)
 
 
 class CodeFollowTests(HttpCase):

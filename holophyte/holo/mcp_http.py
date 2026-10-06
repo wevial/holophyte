@@ -47,6 +47,8 @@ def refused(scope, tokens):
 
 def guarded(app, tokens):
     async def guard(scope, receive, send):
+        if scope["type"] not in ("http", "lifespan"):
+            return
         answer = refused(scope, tokens) if scope["type"] == "http" else None
         if answer is None:
             return await app(scope, receive, send)
@@ -75,7 +77,10 @@ def listen_address(text):
                          f" got {text!r}") from None
 
 
-async def follow_code(server, watch, interval, out):
+async def follow_code(server, watch, interval, out, serving):
+    while not server.started:
+        await asyncio.sleep(0.05)
+    print(serving, file=out, flush=True)
     while not server.should_exit:
         await asyncio.sleep(interval)
         try:
@@ -86,8 +91,9 @@ async def follow_code(server, watch, interval, out):
             server.should_exit = True
 
 
-async def run(server, watch, interval, out):
-    follower = asyncio.ensure_future(follow_code(server, watch, interval, out))
+async def run(server, watch, interval, out, serving):
+    follower = asyncio.ensure_future(
+        follow_code(server, watch, interval, out, serving))
     try:
         await server.serve()
     finally:
@@ -115,10 +121,10 @@ def serve_http(version, address, out=None, interval=CODE_CHECK_SEC):
             enable_dns_rebinding_protection=False))
     server = uvicorn.Server(uvicorn.Config(
         guarded(app, tokens), host=bound, port=port, log_level="warning",
-        access_log=False, lifespan="on"))
+        access_log=False, lifespan="on", ws="none"))
     watch = CodeWatch(interval, out, factory_revision)
     tools = "with writes" if knobs.actions else "reads only"
-    print(f"[holo2] holo mcp serving http://{bound}:{port}{PATH} {tools},"
-          " behind the machine token", file=out, flush=True)
-    asyncio.run(run(server, watch, interval, out))
+    serving = (f"[holo2] holo mcp serving http://{bound}:{port}{PATH} {tools},"
+               " behind the machine token")
+    asyncio.run(run(server, watch, interval, out, serving))
     return 0

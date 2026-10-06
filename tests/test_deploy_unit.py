@@ -274,7 +274,7 @@ class McpUnitTests(unittest.TestCase):
                          ["/usr/bin/python3", "-m", "holophyte.holo", "mcp",
                           "--http"])
         self.assertIn("WorkingDirectory", service)
-        # A `HEAD` move exits 0, which only `always` restarts.
+        # A `HEAD` move exits 0 and a failure does not; both restart.
         self.assertEqual(service["Restart"], "always")
         self.assertNotIn(self.MCP, words(host_unit(TARGET)["Unit"]["Wants"]))
         self.assertNotIn(TARGET, words(unit["Unit"].get("PartOf", "")))
