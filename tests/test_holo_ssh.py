@@ -19,6 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli.entry
+import holophyte.holo.cli
 import store
 import store.tickets
 from holophyte.config.project import Project
@@ -143,6 +144,27 @@ class RemoteCommandTests(SshTests):
         self.assertIn("via ssh to writer", completed.stderr)
         (call,) = self.calls()
         self.assertEqual(call[:3], ["-o", "BatchMode=yes", "writer"])
+
+    def test_status_over_ssh_renders_the_same_page_as_status_run_locally(self):
+        store.hold(self.conn, self.project_id, "maintenance")
+        pages = {}
+        for transport, home in (("local", self.host), ("ssh", self.seat)):
+            out, err = io.StringIO(), io.StringIO()
+            with (patch.dict(os.environ, {
+                      "HOLOPHYTE_HOME": str(home),
+                      "PATH": f"{self.bin}:{os.environ['PATH']}"}),
+                  patch("holophyte.holo.status_page.time",
+                        return_value=T0 / 1000),
+                  contextlib.redirect_stdout(out),
+                  contextlib.redirect_stderr(err)):
+                os.environ.pop("HOLO_TRANSPORT", None)
+                os.environ.pop("HOLO_PROJECT", None)
+                self.assertEqual(holophyte.holo.cli.main(
+                    ["status", "-p", "alpha"]), 0, err.getvalue())
+            pages[transport] = out.getvalue()
+        self.assertEqual(len(self.calls()), 1)
+        self.assertIn("admission held: maintenance", pages["local"])
+        self.assertEqual(pages["ssh"], pages["local"])
 
     def test_a_note_with_quotes_and_a_semicolon_reaches_the_host_store_verbatim(self):
         run = self.claim()

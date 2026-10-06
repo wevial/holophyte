@@ -14,6 +14,7 @@ from holophyte.holo.resolve import (
     HOST,
     HOST_FORMS,
     REMOTE_COMMAND,
+    TIMEZONE,
     client_path,
     refuse,
 )
@@ -144,14 +145,14 @@ def run(args, host, config):
         line = remote_line(config, remote_words(args, project))
         code, text, tail = call(host, line, label, stdin, json_form(command))
     if text is not None:
-        return render(args, code, text, tail)
+        return render(args, code, text, tail, config.get(TIMEZONE))
     if command.records is not None and args.json:
         result = build_result(args, code, [tail], (None, None))
         print(json.dumps({**result, "transport": SSH}))
     return code
 
 
-def render(args, code, text, tail):
+def render(args, code, text, tail, timezone):
     try:
         body = json.loads(text)
     except ValueError:
@@ -171,8 +172,6 @@ def render(args, code, text, tail):
             print(human_line(body, detail.splitlines()),
                   file=sys.stdout if body.get("ok") else sys.stderr)
     else:
-        from holophyte.cli.status import render as project_lines
-        from holophyte.cli.status import render_host
-        print("\n".join(render_host(body) if "registry" in body
-                        else project_lines(body)))
+        from holophyte.holo.status_page import show_snap
+        show_snap(body, timezone)
     return code
