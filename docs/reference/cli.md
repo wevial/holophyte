@@ -339,6 +339,10 @@ rides in what the verb records as `AUTHOR via MCP`, as the console's
 actions record `AUTHOR via the console`. The verb's own checks and
 refusals hold, and its result object below is the tool's
 `structuredContent`; a refusal is `isError: true`.
+With `transport = "http"` in `client.toml` a write tool is refused before
+anything runs: the daemon's routes record their own author, `AUTHOR via
+the console`, so the reads alone go over http, and the writes over ssh or
+on the host.
 
 | Tool | Arguments | Runs | Records |
 | --- | --- | --- | --- |

@@ -8,6 +8,7 @@ from holophyte.holo.mcp_tools import (
     blank,
     input_schema,
     run_tool,
+    unsigned_road,
 )
 
 NAME = "holo"
@@ -32,7 +33,7 @@ def refusal(tool, arguments):
         jsonschema.validate(arguments, input_schema(tool))
     except jsonschema.ValidationError as bad:
         return bad.message
-    return None
+    return unsigned_road(tool)
 
 
 def build(version):

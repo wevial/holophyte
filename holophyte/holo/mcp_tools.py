@@ -143,6 +143,22 @@ def blank(tool, arguments):
                  and not arguments[field.name].strip()), None)
 
 
+def unsigned_road(tool):
+    from holophyte.holo.resolve import Refused, client_config, client_path
+    from holophyte.holo.transport import HTTP, remote_host, road
+    if tool.signs is None:
+        return None
+    try:
+        config = client_config()
+        if remote_host(config) is None or road(config) != HTTP:
+            return None
+    except Refused:
+        return None
+    return (f"the host daemon's http routes record their own author, not"
+            f" AUTHOR {VIA}, so nothing ran; set transport = \"ssh\" in"
+            f" {client_path()}, or run holo mcp on the host")
+
+
 def input_schema(tool):
     fields = tool.fields + signature(tool)
     return {"type": "object",

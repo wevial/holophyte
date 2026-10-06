@@ -9,10 +9,14 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import anyio
+from mcp import ClientSession, StdioServerParameters, stdio_client
 
 import holophyte.cli.entry
 import holophyte.cli.operator
@@ -21,6 +25,7 @@ import store.board
 import store.tickets
 from holophyte.config.project import Project
 from tests.phase_fixture import park_run
+from tests.test_holo_http import ROOT, HttpCase
 from tests.test_holo_mcp import MINUTE, NOW, TOOLS, McpCase
 
 WRITES = {"file_ticket", "send_back", "babysit", "requeue", "hold"}
@@ -298,6 +303,39 @@ class FileTicketTests(WriteCase):
         self.assertIn(store.board.ticket_problems(body, self.repo)[0],
                       result.structured_content["detail"])
         self.assertEqual(self.query("SELECT id FROM tickets"), before)
+
+
+class OverHttpTests(HttpCase):
+    """A seat whose client.toml names `transport = "http"` to a real host
+    daemon serving actions for `alpha`."""
+
+    def test_a_write_over_http_is_refused_naming_it_and_reaches_no_route(self):
+        before = self.conn.execute("SELECT id FROM interventions").fetchall()
+        params = StdioServerParameters(
+            command=sys.executable, args=["-m", "holophyte.holo", "mcp"],
+            cwd=str(self.desk), env={
+                **{key: value for key, value in os.environ.items()
+                   if key not in ("HOLO_PROJECT", "HOLO_TRANSPORT")},
+                "HOLOPHYTE_HOME": str(self.seat), "PYTHONPATH": str(ROOT),
+                "GIT_CEILING_DIRECTORIES": str(self.root)})
+
+        async def run():
+            with anyio.fail_after(60):
+                async with stdio_client(params) as (read, write):
+                    async with ClientSession(read, write) as client:
+                        await client.initialize()
+                        return await client.call_tool("hold", {
+                            "project": "alpha", "note": "maintenance",
+                            "author": AUTHOR})
+        result = anyio.run(run)
+
+        self.assertIs(result.is_error, True)
+        self.assertIn("http", result.content[0].text)
+        self.assertEqual(self.requests, [])
+        self.assertEqual(self.conn.execute(
+            "SELECT id FROM interventions").fetchall(), before)
+        self.assertEqual(self.conn.execute(
+            "SELECT admission FROM projects").fetchall(), [("enabled",)])
 
 
 if __name__ == "__main__":
