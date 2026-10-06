@@ -12,8 +12,10 @@ CLIENT_FILE = "client.toml"
 ENVIRONMENT = "HOLO_PROJECT"
 CURRENT = "current repository"
 DEFAULT = "default_project"
+HOST = "host"
+REMOTE_COMMAND = "remote_command"
 TIMEZONE = "timezone"
-CLIENT_KEYS = frozenset((DEFAULT, TIMEZONE))
+CLIENT_KEYS = frozenset((DEFAULT, HOST, REMOTE_COMMAND, TIMEZONE))
 HOST_FORMS = frozenset(("--status", "--serve", "--supervise", "GET /attention"))
 
 
@@ -55,6 +57,11 @@ def client_config(path=None):
                                 or not default.strip()):
         refuse(f"[holo2] {path}: {DEFAULT} must be a project name or path,"
                f" got {default!r}")
+    for key in (HOST, REMOTE_COMMAND):
+        value = table.get(key, "holo")
+        if not isinstance(value, str) or not value.strip() or value.startswith("-"):
+            refuse(f"[holo2] {path}: {key} must be a non-empty string not"
+                   f" starting with '-', got {value!r}")
     zone_name = table.get(TIMEZONE)
     if zone_name is not None and (not isinstance(zone_name, str)
                                   or zone(zone_name) is None):

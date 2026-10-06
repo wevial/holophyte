@@ -18,7 +18,7 @@ command family, [below](#project-commands).
 | `--supervise PROJECT` | the acting sweep every `sweep_interval_sec`, under the project's supervisor lock; runs the code it started with, and exits for its service manager to restart when a newer build has stamped the store; refused for a project `host.toml` lists, which the host sweep watches | store |
 | `--serve PORT PROJECT` | the JSON daemon on loopback (`--serve 7710` binds `127.0.0.1:7710`), which also serves the console at `/` from the built bundle; it reads by default and writes only through two opt-ins, `[serve] actions` (`POST /actions/...`) and `[serve] config_edit` (`PUT /config`) ([The daemon's actions](daemon.md)); `--serve HOST:PORT` binds the named address instead, and a non-loopback bind demands `[serve] token_file`, whose contents every JSON request but `/peers` must present as a bearer token (`/`, the console's files and `/peers` stay open; a loopback bind, `127.0.0.1:PORT` included, ignores the key for reads, but either write opt-in demands `[serve] token_file` on every bind, loopback included, and the routes it opens answer only to the bearer) | store, read-only by default; with `[serve] actions` the store and the systemd units, with `[serve] config_edit` the project's `config.toml` |
 | `--requeue KO-n --note TEXT PROJECT` | walks a failed ticket back to `ready` with an `interventions` row | store |
-| `--approve KO-n [--note TEXT] PROJECT` | releases a ticket parked by `[merge] approve = "human"`: an `interventions` row with action `approve`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim reuses the preserved worktree and branch, re-runs the pre-merge verify and merges with no implementer or reviewer -- under `[merge] mode = "pr"`, babysits the pull request once more and merges it through the API when green and quiet; refuses any other state, naming it | store |
+| `--approve KO-n [--note TEXT] [--force] PROJECT` | releases a ticket parked by `[merge] approve = "human"`: an `interventions` row with action `approve`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim reuses the preserved worktree and branch, re-runs the pre-merge verify and merges with no implementer or reviewer -- under `[merge] mode = "pr"`, babysits the pull request once more and merges it through the API when green and quiet. A run parked on a pull request is first read from GitHub with the readiness check the daemon's `POST /actions/merge` uses: not ready, including GitHub unreadable (`github_unreadable`), it exits 1 naming the ticket and the reason (`KO-n: review not approved`) and writes nothing; `--force`, which requires a non-blank `--note`, releases it anyway and records the intervention's note as `forced past readiness: REASON; NOTE`. A run parked with no pull request is released without reading GitHub; refuses any other state, naming it | store |
 | `--babysit KO-n [--note TEXT] PROJECT` | sends a ticket parked on its pull request (`[merge] mode = "pr"`) back to the babysitter: the `interventions` row `store.babysit()` writes, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim resumes the candidate on the PR and reads its threads and checks again, parking again under `approve = "human"` rather than merging; refuses any other state, naming it | store |
 | `--repoint KO-n SHA --note TEXT PROJECT` | moves a parked candidate to a rebuilt branch tip: an `interventions` row with action `repoint` carrying the note, a `runEvents` row naming the old and new shas, then `runs.candidateSha` set to `SHA` (a full 40-hex commit id); the run stays parked and the branch is not touched; the merge gate `--approve` resumes into holds the branch to the new sha; refuses a ticket not parked awaiting merge approval, one already approved (its release is in flight: requeue instead) or a malformed sha, naming it | store |
 | `--pause KO-n --note TEXT PROJECT` | asks the ticket's run to stop at its next safe point: a `pause` intervention carrying the note and the run marked, in one transaction; the run later commits its work as WIP, keeps its worktree and branch, ends `paused` and parks the ticket `blocked_on_operator` (see [Operating](../operating.md#pause-one-run-at-its-next-safe-point)); refuses a ticket with no run or a run already ended, naming its outcome; repeating a pending request keeps the first note | store |
@@ -121,7 +121,7 @@ internal, spawned by the loop's pool.
 | `holo move KEY ready\|backlog --revision N [NOTE]` | `holo ticket move` | `--move KEY ready\|backlog --revision N [--note NOTE] PROJECT` |
 | `holo cancel KEY --revision N NOTE` | `holo ticket cancel` | `--cancel KEY --revision N --note NOTE PROJECT` |
 | `holo requeue KEY NOTE` | `holo ticket requeue` | `--requeue KEY --note NOTE PROJECT` |
-| `holo approve KEY [NOTE]` | `holo ticket approve` | `--approve KEY [--note NOTE] PROJECT` |
+| `holo approve KEY [NOTE] [--force]` | `holo ticket approve` | `--approve KEY [--note NOTE] [--force] PROJECT` |
 | `holo babysit KEY [NOTE]` | `holo ticket babysit` | `--babysit KEY [--note NOTE] PROJECT` |
 | `holo send-back RUN NOTE` | | none: the console's send-back of run `RUN`, its note by the caller's login |
 | `holo repoint KEY SHA NOTE` | `holo ticket repoint` | `--repoint KEY SHA --note NOTE PROJECT` |
@@ -263,7 +263,31 @@ naming the file.
 | Key | Purpose |
 | --- | --- |
 | `default_project` | the project, a `[serve] name` or a repository path, when `-p`, `HOLO_PROJECT` and the current repository give none |
+| `host` | the ssh destination every command runs on, as `ssh` reads it (`user@name`, or a `Host` alias in your ssh config); unset, `holo` runs locally |
+| `remote_command` | the command that runs `holo` there, a path and its arguments with no shell operators; default `holo` |
 | `timezone` | the zone `holo` pages show clock times in, an IANA name such as `"America/Los_Angeles"`; default the local zone; a name `zoneinfo` does not know exits 2 naming the key and the value |
+
+With `host` set, `holo` runs the same command on that host: `holo requeue
+HOLO-1 "note"` runs `HOLO_TRANSPORT=local holo requeue --note=note -p NAME
+--json -- HOLO-1` through `ssh -o BatchMode=yes HOST`, every argument quoted for
+the remote shell, so a missing key fails rather than prompting. stderr
+says `via ssh to HOST`, and a `--json` result gains `"transport": "ssh"`; a
+local one has no such key. A command with a JSON form runs with `--json` and
+is printed here by the local renderer; `report`, `sweep`, `board diff`,
+`board import`, `store import`, `story witness` and `holo project VERB` stream
+the remote output as it arrives. The project comes from `-p`,
+`HOLO_PROJECT` or `default_project` and goes over by name, never from the
+current repository, whose path is this machine's; with none named here, the
+host resolves one as it would for a local command. The remote side always
+runs locally (`HOLO_TRANSPORT=local`), whatever `host` its own `client.toml`
+names.
+`holo file TICKET.md` sends the file over the session's stdin, which the
+host reads as `holo file -`, a ticket body from stdin; a file this machine
+cannot read exits 2 before ssh runs. `serve` and `supervise` start
+long-lived processes and `story file` reads a directory, so over ssh each
+exits 2 before ssh runs. The remote command's exit code is `holo`'s; ssh's
+own failure, exit 255, is exit 1 naming the host and ssh's message, and a
+write command's `--json` result says so with `ok: false`.
 
 ## Startup checks
 
@@ -296,6 +320,7 @@ after the store.
 | --- | --- | --- |
 | `HOLOPHYTE_HOME` | `Project` | the state root, default `~/.holophyte`; tests point it at a temp dir |
 | `HOLO_PROJECT` | `holo` | the project, a `[serve] name` or a repository path, when no `-p` is given |
+| `HOLO_TRANSPORT` | `holo` | `local` runs the command here whatever `client.toml`'s `host` says; the one value |
 | `NO_COLOR` | `holo` | set and not empty, `holo` prints its symbols without colour on a terminal too |
 | `LINEAR_API_KEY` | `linear_provider` | the board's API key; env or `.env` beside the module |
 | `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the project units (`holophyte-serve@`, `holophyte-supervise@`), and `HOLOPHYTE_TARGET` alone the loop unit | one instance's project, bind address, port |

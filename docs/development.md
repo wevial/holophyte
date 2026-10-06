@@ -70,6 +70,9 @@ Each module, one line:
 - `holophyte/holo/results.py` — a write command's one result: the verb run
   with its printed line and refusal captured, the interventions row it wrote
   read back as `recorded`, printed as JSON with `--json` or as a `✓`/`✗` line.
+- `holophyte/holo/transport.py` — a `holo` command run on `client.toml`'s
+  `host` over ssh: the remote command line, the ssh call, its exit code
+  and the `via` line; `HOLO_TRANSPORT=local` keeps it local.
 - `holophyte/holo/render.py` — the pieces every `holo` page shares: a clock
   time in the client's zone, a relative age, a short hash, and a symbol
   coloured only on a terminal without `NO_COLOR`.
