@@ -349,6 +349,10 @@ class MediaTests(unittest.TestCase):
         self.assertIn("01: Dialog open\n02: Name saved", brief)
         self.assertIn("NN-slug.png", brief)
         self.assertIn("recording", brief)
+        foreground = ("Run `python3 capture.py` in the foreground until it "
+                      "exits, never in the background, and open each "
+                      "NN-slug.png before ending the turn.")
+        self.assertIn(foreground, brief)
         self.assertNotIn("KO-7", brief)
         self.assertNotIn("commit", brief)
         self.config["merge"]["ui_capture_dir"] = "tests/screens"
@@ -360,6 +364,7 @@ class MediaTests(unittest.TestCase):
         local = _capture_brief(self.target, body, "KO-7")
         self.assertIn("`.holophyte-capture/KO-7.capture.ts`", local)
         self.assertIn("never committed", local)
+        self.assertIn(foreground, local)
         self.assertIn("01: Dialog open\n02: Name saved", local)
         self.assertIn("NN-slug.png", local)
 
