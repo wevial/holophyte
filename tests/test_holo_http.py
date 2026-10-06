@@ -175,6 +175,20 @@ class ReadTests(HttpCase):
         self.assertIn(f"via http to {self.url}", remote.stderr)
         self.assertEqual(self.requests, [("GET", "/projects/alpha/runs")])
 
+    def test_board_json_over_http_is_the_local_board_json_with_its_transport(self):
+        self.claim("HOLO-1")
+        boards = []
+        for home in (self.host, self.seat):
+            completed = self.holo("board", "--json", "-p", "alpha", home=home)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            body = json.loads(completed.stdout)
+            body.pop("now")
+            boards.append(body)
+        local, remote = boards
+        self.assertEqual(remote, {**local, "transport": "http"})
+        self.assertEqual([entry["ticket"] for column in local["columns"]
+                          for entry in column["tickets"]], ["HOLO-1"])
+
     def test_every_route_table_row_is_one_the_running_daemon_serves(self):
         run = self.failed_run("HOLO-1")
         for words, route in HTTP_ROUTES.items():
@@ -249,6 +263,17 @@ class RefusalTests(HttpCase):
                               completed.stderr)
                 for token in (WRONG, MACHINE):
                     self.assertNotIn(token, completed.stdout + completed.stderr)
+
+    def test_a_token_file_of_two_lines_exits_one_naming_the_file_not_its_text(self):
+        self.secret(self.token_file, "secret-one\nsecret-two")
+        for argv in (["runs"], ["requeue", "HOLO-1", "rerun"]):
+            with self.subTest(argv=argv):
+                completed = self.holo(*argv, "-p", "alpha")
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(str(self.token_file), completed.stderr)
+                for text in ("secret-one", "secret-two"):
+                    self.assertNotIn(text, completed.stdout + completed.stderr)
+        self.assertEqual(self.requests, [])
 
     def test_a_port_nothing_listens_on_exits_one_naming_the_url(self):
         with socket.socket() as probe:

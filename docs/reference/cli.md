@@ -267,7 +267,7 @@ naming the file.
 | `remote_command` | the command that runs `holo` there, a path and its arguments with no shell operators; default `holo` |
 | `transport` | `ssh` or `http`: how `holo` reaches the host; default `ssh` when `host` is set, `http` when only `url` is |
 | `url` | the host daemon's base URL, `http://` or `https://`, for `transport = "http"`; it needs `token_file`, and one without it exits 2 naming both keys |
-| `token_file` | a file holding the daemon's machine token, sent as `Authorization: Bearer ...`; the token is never taken on the command line or printed |
+| `token_file` | a file holding the daemon's machine token, sent as `Authorization: Bearer ...`; the token is never taken on the command line or printed, and a file that is not one line of printable ASCII exits 1 naming it, nothing sent |
 | `timezone` | the zone `holo` pages show clock times in, an IANA name such as `"America/Los_Angeles"`; default the local zone; a name `zoneinfo` does not know exits 2 naming the key and the value |
 
 With `host` set, `holo` runs the same command on that host: `holo requeue
@@ -296,8 +296,8 @@ With `transport = "http"`, `holo` calls the host daemon's routes at `url`
 instead ([HTTP endpoints](http.md#the-host-daemon)), under
 `/projects/NAME/...`, `NAME` the project's `[serve] name`. The reads `runs`,
 `run N` (`--files`, `--ledger`, `--turns`), `attention`, `board` and `ticket
-KEY` print what the local command prints; `attention` with no project is the
-root's. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`
+KEY` print what the local command prints, `board`'s `editable` false as
+there; `attention` with no project is the root's. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`
 and `start` post to `POST /projects/NAME/actions/...`
 ([The daemon's actions](daemon.md)): `release` to `release-hold`, `start` to
 `launch-loop`, which takes no note and releases no hold, and `pause` and `abort` first read the

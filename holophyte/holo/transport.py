@@ -235,13 +235,14 @@ class Route(NamedTuple):
     method: str
     path: str
     body: tuple = ()
+    local: tuple = ()
 
 
 HTTP_ROUTES = {
     ("runs",): Route("GET", "/runs"),
     ("run",): Route("GET", "/runs/{N}"),
     ("attention",): Route("GET", "/attention"),
-    ("board",): Route("GET", "/board"),
+    ("board",): Route("GET", "/board", local=(("editable", False),)),
     ("ticket",): Route("GET", "/tickets/{KEY}"),
     ("requeue",): Route("POST", "/actions/requeue", ("ticket", "note")),
     ("send-back",): Route("POST", "/actions/send-back", ("run", "note")),
@@ -281,6 +282,10 @@ class Daemon:
             refuse(f"[holo2] {TOKEN_FILE} {self.token_file} is not text")
         if not self.token:
             refuse(f"[holo2] {TOKEN_FILE} {self.token_file} is empty")
+        if not (self.token.isascii() and self.token.isprintable()):
+            raise Failed(f"{TOKEN_FILE} {self.token_file} is not one line of"
+                         " printable ASCII, so no bearer header carries it;"
+                         " nothing sent")
 
     def call(self, method, path, body=None):
         request = urllib.request.Request(
@@ -333,9 +338,9 @@ def run_http(args, url, config):
     project = named_project(args, config, label, HTTP)
     prefix = "" if project is None else "/projects/" + quote(project, safe="")
     known = fields(args, route)
-    daemon = Daemon(url, config)
-    print(f"[holo2] {label} via {HTTP} to {daemon.url}", file=sys.stderr)
     try:
+        daemon = Daemon(url, config)
+        print(f"[holo2] {label} via {HTTP} to {daemon.url}", file=sys.stderr)
         if route.method == "GET":
             return read_over(args, daemon, prefix, route, config.get(TIMEZONE))
         return write_over(args, daemon, prefix, route, known)
@@ -381,6 +386,8 @@ def read_over(args, daemon, prefix, route, timezone):
     limit = getattr(args, "limit", None)
     query = f"?{urlencode({'limit': limit[-1]})}" if limit else ""
     code, body = daemon.call("GET", prefix + path + query)
+    if code == 200:
+        body.update(route.local)
     if code == 200 and run_page(args):
         from holophyte.holo.run_page import show_page
         show_page(body, daemon.call("GET", f"{prefix}{path}/files")[1],
