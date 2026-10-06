@@ -64,16 +64,20 @@ def usage_result(argv, line):
     command = next((command for prefix, command in rows
                     if tuple(argv[:len(prefix)]) == prefix), None)
     if command is not None and command.records is not None and "--json" in options:
-        args = parsed(argv) or SimpleNamespace(command=command)
+        args = parsed(argv)
+        if getattr(args, "command", None) is not command:
+            args = SimpleNamespace(command=command)
         print(json.dumps(build_result(args, 2, [line.removeprefix(PREFIX)],
                                       (None, None))))
 
 
 def parsed(argv):
-    from holophyte.holo.cli import build_parser
+    from holophyte.holo.cli import UsageError, build_parser
     try:
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             return build_parser().parse_known_args(argv)[0]
+    except UsageError as usage:
+        return usage.partial
     except SystemExit:
         return None
 

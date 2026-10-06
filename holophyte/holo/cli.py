@@ -18,17 +18,24 @@ def package_version():
 
 
 class UsageError(SystemExit):
-    def __init__(self, line):
+    def __init__(self, line, partial=None):
         super().__init__(2)
         self.line = line
+        self.partial = partial
 
 
 class Parser(argparse.ArgumentParser):
+    partial = None
+
+    def parse_known_args(self, args=None, namespace=None):
+        self.partial = argparse.Namespace() if namespace is None else namespace
+        return super().parse_known_args(args, self.partial)
+
     def error(self, message):
         line = f"{self.prog}: error: {message}"
         self.print_usage(sys.stderr)
         sys.stderr.write(line + "\n")
-        raise UsageError(line)
+        raise UsageError(line, self.partial)
 
 
 def build_parser():

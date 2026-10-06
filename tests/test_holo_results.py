@@ -229,6 +229,17 @@ class UsageAndFileResultTests(Home):
                     "detail": "holo: error: unrecognized arguments: --bogus",
                     **named})
 
+    def test_a_usage_result_keeps_the_ticket_or_run_parsed_before_argparse_stops(self):
+        for argv, named in ((("send-back", "1", "note", "--json", "-p"), {"run": 1}),
+                            (("repoint", "HOLO-1", "--json"), {"ticket": "HOLO-1"})):
+            with self.subTest(argv=argv):
+                completed = holo(*argv, home=self.home)
+                self.assertEqual(completed.returncode, 2)
+                (line,) = completed.stdout.splitlines()
+                self.assertEqual(json.loads(line), {
+                    "action": argv[0], "ok": False, "recorded": None,
+                    "detail": completed.stderr.splitlines()[-1], **named})
+
     def test_a_client_config_refusal_with_json_prints_a_result_and_exits_two(self):
         self.home.mkdir(parents=True)
         (self.home / "client.toml").write_text('transport = "ssh"\n')
