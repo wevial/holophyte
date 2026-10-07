@@ -59,7 +59,7 @@ UI_CHANGE_VALUES = ("major", "minor")
 MOCKUP_URL_RE = re.compile(
     r"https://claude\.ai/(?:code/)?artifact/[\w-]+"
     r"|https://lotuspod(?:\.[A-Za-z0-9-]+)+/[\w.-]+\.html")
-URL_TOKEN_RE = re.compile(r"(?<![\w+.-])[A-Za-z][\w+.-]*://\S*")
+URL_TOKEN_RE = re.compile(r"(?<![\w+.-])[A-Za-z][\w+.-]*:[^\s*`>)\]\"']\S*")
 APPROVED_RE = re.compile(r"^(?:[-*+]\s+)?Approved \d{4}-\d{2}-\d{2}:\s*\S")
 EVIDENCE_STATES_FOR_MOCKUP = 3
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")

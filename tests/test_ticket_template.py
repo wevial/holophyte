@@ -1093,6 +1093,7 @@ class MockupTests(unittest.TestCase):
         for mockup in (
                 "https://claude.ai/artifact/3f2a9c\nHTTPS://example.com/mock.png",
                 "https://claude.ai/artifact/3f2a9c\nftp://example.com/mock.png",
+                "https://claude.ai/artifact/3f2a9c\ndata:text/html,hello",
                 "`https://claude.ai/artifact/3f2a9c(extra)`"):
             with self.subTest(mockup=mockup):
                 problems = tt.validate(tt.parse(
