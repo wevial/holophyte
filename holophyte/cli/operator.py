@@ -13,7 +13,7 @@ from holophyte.agents.fallback import startup_routes
 from holophyte.agents.probes import probe_diagnostic, probe_implementer
 from holophyte.board.projection import release_lease_label
 from holophyte.cli.report import migration_header, report_lines
-from holophyte.config.config_tables import loop_config, report_config
+from holophyte.config.config_tables import loop_config, merge_config, report_config
 from holophyte.host.reconcile import (
     CloseRefused,
     _reconcile_at_startup,
@@ -279,7 +279,8 @@ def approve(target, identifier, note, out=None, force=False):
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         parked_run = store.read.ticket_by_id(conn, ticket_id).lastRunId
-        if _parked_at_pull_request(conn, parked_run):
+        if _parked_at_pull_request(conn, parked_run) \
+                and merge_config(target).approve == "human":
             ready = readiness(target, parked_run)
             if ready.reason is not None and not force:
                 raise SystemExit(
