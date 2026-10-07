@@ -70,8 +70,8 @@ def worker(target, provider):
     reset(target)
     routes(target).critic_failed = os.environ.get(CRITIC_DOWN_ENV) == "1"
     try:
-        if "writer" in configured or "trimmer" in configured or any(
-                k in configured for k in (*AGENT_FALLBACK_KEYS, *REVIEW_FALLBACK_KEYS)):
+        if any(k in configured for k in ("writer", "trimmer", *AGENT_FALLBACK_KEYS,
+                                         *REVIEW_FALLBACK_KEYS)):
             if not startup_routes(target, provider, critic=False):
                 return WORKER_STOP
         result = _worker(target, provider)
