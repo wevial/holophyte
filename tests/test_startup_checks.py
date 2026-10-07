@@ -714,6 +714,12 @@ class TrimmerStartupTests(ConfigTestCase):
         self.assertIn("[holo2] trimmer route down; runs skip trim", printed)
         self.assertEqual(len(self.launched()), 2)
 
+    def test_status_reports_a_trimmer_down_at_startup_as_down_not_its_command(self):
+        from holophyte.serve.serve_runs import active_routes
+        self.start(f'trimmer = "{self.route("trimmer", ready=False)}"\n')
+        self.assertEqual(active_routes(self.project)["trimmer"],
+                         {"command": None, "down": True})
+
     def test_without_a_trimmer_only_the_implementer_is_probed(self):
         from holophyte.agents.probes import PROBE_GOAL
         started, printed = self.start(

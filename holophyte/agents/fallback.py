@@ -57,6 +57,7 @@ def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=No
     if not probe.ok:
         if role == "trim":
             state.trimmer_failed = True
+            state.publish()
         else:
             state.failed = True
         diagnostic = probe_diagnostic(project, probe)
@@ -149,4 +150,6 @@ def probe_trimmer(project, provider, *, activate):
     if not probe.ok:
         print("[holo2] trimmer route down; runs skip trim")
     if activate:
-        routes(project).trimmer_failed = not probe.ok
+        state = routes(project)
+        state.trimmer_failed = not probe.ok
+        state.publish()

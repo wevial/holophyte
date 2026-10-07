@@ -116,7 +116,9 @@ dispatches, an unset `writer` or `trimmer` the implementer's label, and an unset
 runs now: `command` is the executable alone, never its arguments, null for
 a seat left unset in `[agents]`; while a running loop has switched the seat
 to its fallback, `command` is the fallback's and the entry also carries
-`fallback`, naming it. `workers_on_previous_build` counts the workers a
+`fallback`, naming it. A configured `trimmer` that a running loop turned
+off, its probe and `trimmer_fallback` both failed, shows `command` null and
+`down` true, unlike an unset one's bare null. `workers_on_previous_build` counts the workers a
 restarted loop inherited from the build it replaced and still owns, 0
 when there are none. `toil` is the operator's hand work per merge over
 the last `24h` and the last `7d` before `now`, the same windows as
