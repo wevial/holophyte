@@ -24,7 +24,6 @@ from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
 
 LINE_FLOOR = 50
-IMPORT_LINE = ("import ", "from ")
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
@@ -127,7 +126,7 @@ def _imports_only(wt, parent, commit, path):
     changed = [line[1:].strip() for line in hunks.splitlines()
                if line.startswith(("+", "-"))]
     return (len(modes) == 1 and bool(changed)
-            and all(line.startswith(IMPORT_LINE) for line in changed))
+            and all(line.startswith(("import ", "from ")) for line in changed))
 
 
 def _green_prefix(wt, commits, green, untracked):
