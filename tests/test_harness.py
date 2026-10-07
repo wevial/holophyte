@@ -665,6 +665,48 @@ class ContainerImplementerTests(unittest.TestCase):
             (None, "no recorded session"))
 
 
+TRIMMER_CONFIG = ('[agents.implementer]\nharness = "claude"\nmodel = "opus"\n'
+                  'effort = "low"\n'
+                  '[agents.trimmer]\nharness = "claude"\nmodel = "sonnet"\n')
+
+
+class TrimmerTableTests(unittest.TestCase):
+    """`[agents.trimmer]`: its own seat on the implementer's launch path."""
+
+    setUp = ClaudeTableTests.setUp
+    received = ClaudeTableTests.received
+    configure = ContainerImplementerTests.configure
+    launch_turn = ContainerImplementerTests.launch_turn
+
+    def trim(self, goal):
+        return holophyte.agents.roles.agent(self.target, "trim", goal, self.repo,
+                                            conn=self.conn, run_id=self.run)
+
+    def test_a_claude_trimmer_runs_its_own_model_at_the_default_effort(self):
+        self.target.config_path.write_text(TRIMMER_CONFIG)
+        self.trim("trim the diff")
+        [argv] = self.received()
+        self.assertEqual(argv[:2], ["-p", "--session-id"])
+        self.assertEqual(str(uuid.UUID(argv[2], version=4)), argv[2])
+        self.assertEqual(argv[3:], ["--model", "sonnet", "--effort", "high",
+                                    "trim the diff"])
+
+    def test_startup_refuses_a_cursor_trimmer_naming_the_roles_cursor_serves(self):
+        self.target.config_path.write_text(
+            '[agents.trimmer]\nharness = "cursor"\nmodel = "gpt-6"\n')
+        with self.assertRaisesRegex(
+                SystemExit, r"\[agents\.trimmer\] harness: 'cursor' supports "
+                            r"adjudicator, reviewer, not trimmer"):
+            holophyte.config.checks.check_config(self.target)
+
+    def test_a_container_trim_launches_the_image_binary_not_the_harness_path(self):
+        self.configure(TRIMMER_CONFIG + '[harnesses]\nclaude = "/abs/path/claude"\n')
+        argv = self.launch_turn(lambda: self.trim("trim the diff"))
+        self.assertEqual(argv[0], "claude")
+        self.assertEqual(argv[4:], ["--model", "sonnet", "--effort", "high",
+                                    "trim the diff"])
+
+
 class CriticTableTests(unittest.TestCase):
     """`[agents.critic]`: table-only, Codex with the critic's own defaults,
     or Claude."""
@@ -701,7 +743,7 @@ class CriticTableTests(unittest.TestCase):
                                     "GOAL"])
         with self.assertRaisesRegex(
                 SystemExit, r"\[agents\.reviewer\] harness: 'claude' supports "
-                            r"critic, implementer, not reviewer"):
+                            r"critic, implementer, trimmer, not reviewer"):
             holophyte.config.checks.check_document(self.target(
                 '[agents.reviewer]\nharness = "claude"\nmodel = "sonnet"\n'))
 

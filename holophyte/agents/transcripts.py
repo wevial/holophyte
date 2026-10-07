@@ -162,7 +162,7 @@ def turns(events):
     """A session beside one turn pairs with it; between two, the route's habit."""
     rows = [(seq, kind, decoded(payload)) for seq, kind, payload in events]
     rows = [row for row in rows if row[2].get('role') in
-            ('implement', 'review', 'adjudicate', 'write')]
+            ('implement', 'review', 'adjudicate', 'write', 'trim')]
     marks = [(kind, data.get('role'), data.get('route')) for _, kind, data in rows]
     result, pending, latest, trails = [], {}, {}, {}
     for at, (seq, kind, data) in enumerate(rows):

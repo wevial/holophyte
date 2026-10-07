@@ -61,6 +61,7 @@ class ActiveRoutes:
         self.project_id = None
         self.failed = False
         self.writer_failed = False
+        self.trimmer_failed = False
         self.critic_failed = False
         self.stream = None
         self.project = project
@@ -80,8 +81,11 @@ class ActiveRoutes:
                                  or route_text((self.project.config().get('agents')
                                                 or {}).get('implementer'))
                                  or DEFAULT_IMPLEMENTER)
-        json.dump({AGENT_CONFIG_KEYS[role]: safe_command(self.project, command)
-                   for role, command in commands.items()}, self.stream)
+        snapshot = {AGENT_CONFIG_KEYS[role]: safe_command(self.project, command)
+                    for role, command in commands.items()}
+        if self.trimmer_failed:
+            snapshot['trimmer'] = None
+        json.dump(snapshot, self.stream)
         self.stream.flush()
 
     def close(self):

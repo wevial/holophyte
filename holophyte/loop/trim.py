@@ -6,6 +6,8 @@ from functools import partial
 from pathlib import Path
 
 import store
+from holophyte.agents.agent_routes import routes
+from holophyte.agents.fallback import outage_reason
 from holophyte.config.config_tables import trim_config
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import InfraFailure, run_verify, sh, with_baseline
@@ -58,6 +60,8 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
 
 
 def _skip_reason(project, conn, run_id, wt, budget_min, sha, lines, green):
+    if routes(project).trimmer_failed:
+        return "trimmer route down"
     if merge_conflicts(wt):
         return "the worktree is mid-merge with main"
     if lines < LINE_FLOOR:
@@ -76,8 +80,13 @@ def _turn(project, conn, run_id, beat_s, wt, budget_min, goal):
     except InfraFailure as error:
         return (getattr(error, "output", "") or str(error),
                 f"the route failed: {error}")
+    except (OSError, RuntimeError) as error:
+        return str(error), f"the route could not start: {error}"
     if timed_out:
         return out, "the turn timed out"
+    outage = outage_reason(getattr(out, "command", ""), out)
+    if outage:
+        return out, f"the route failed: {outage}"
     if _killed_by_signal(out, timed_out):
         return out, f"the turn was killed by a signal (exit {out.exit_code})"
     if getattr(out, "exit_code", 0):

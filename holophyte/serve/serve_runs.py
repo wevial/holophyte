@@ -505,9 +505,15 @@ def active_routes(project):
     table = {key: safe_command(project, value)
              for key, value in (project.config().get("agents") or {}).items()
              if key in AGENT_CONFIG_KEYS.values() and isinstance(value, (str, dict))}
-    return {seat: {"command": fallback.get(seat, table.get(seat)),
-                   **({"fallback": fallback[seat]} if seat in fallback else {})}
+    return {seat: seat_route(fallback, table, seat)
             for seat in AGENT_CONFIG_KEYS.values() if seat != "critic"}
+
+
+def seat_route(fallback, table, seat):
+    if seat in fallback and fallback[seat] is None:
+        return {"command": None, "down": True}
+    return {"command": fallback.get(seat, table.get(seat)),
+            **({"fallback": fallback[seat]} if seat in fallback else {})}
 
 
 RUN_TURNS_PATH = re.compile(r"^/runs/([^/]+)/turns$")

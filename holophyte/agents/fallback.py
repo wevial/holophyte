@@ -55,11 +55,15 @@ def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=No
         return False
     probe = probe or probe_seat(project, role, fallback=True)
     if not probe.ok:
-        state.failed = True
+        if role == "trim":
+            state.trimmer_failed = True
+            state.publish()
+        else:
+            state.failed = True
         diagnostic = probe_diagnostic(project, probe)
         print(diagnostic)
-        raise InfraFailure(
-            diagnostic, "infra" if role == "implement" else "review_route")
+        raise InfraFailure(diagnostic, "infra" if role in ("implement", "trim")
+                           else "review_route")
     command = commands[probe.entry]
     evidence = {"seat": AGENT_CONFIG_KEYS[role],
                 "reason": route_prose(project, reason),
@@ -90,15 +94,13 @@ def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=No
 def startup_routes(project, provider, implementer_probe=None, *, activate=True,
                    critic=True):
     """A pooled worker passes critic=False and inherits the scheduler's outcome."""
-    import store
     from holophyte.cli.operator import _record_startup_probe
-    from holophyte.loop.runs import open_store
 
     table = project.config().get("agents") or {}
     for role, seat in AGENT_CONFIG_KEYS.items():
         has_fallback = seat + "_fallback" in table or (
             role == "review" and container_fallback_profile(project, role))
-        if role != "implement" and not has_fallback:
+        if role == "trim" or (role != "implement" and not has_fallback):
             continue
         probe = ((implementer_probe or probe_implementer)(project)
                  if role == "implement" else
@@ -107,24 +109,47 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
             continue
         print(probe_diagnostic(project, probe))
         if not probe.ok and has_fallback:
-            fallback = probe_seat(project, role, fallback=True)
-            if fallback.ok and activate:
-                conn = open_store(project)
-                try:
-                    routes(project).project_id = store.ensure_project(
-                        conn, provider.team, project.path)
-                    activate_fallback(project, role, probe_diagnostic(project, probe),
-                                      conn, probe=fallback)
-                finally:
-                    conn.close()
-            elif not fallback.ok:
-                print(probe_diagnostic(project, fallback))
-            probe = fallback
+            probe = startup_fallback(project, provider, role, probe, activate)
         _record_startup_probe(project, provider, probe)
         if not probe.ok:
             return False
     probe_writer(project, activate=activate)
+    probe_trimmer(project, provider, activate=activate)
     if critic:
         # Even a scheduler keeps `critic_failed`: its workers inherit it.
         probe_critic(project, activate=True)
     return True
+
+
+def startup_fallback(project, provider, role, probe, activate):
+    import store
+    from holophyte.loop.runs import open_store
+
+    fallback = probe_seat(project, role, fallback=True)
+    if fallback.ok and activate:
+        conn = open_store(project)
+        try:
+            routes(project).project_id = store.ensure_project(
+                conn, provider.team, project.path)
+            activate_fallback(project, role, probe_diagnostic(project, probe),
+                              conn, probe=fallback)
+        finally:
+            conn.close()
+    elif not fallback.ok:
+        print(probe_diagnostic(project, fallback))
+    return fallback
+
+
+def probe_trimmer(project, provider, *, activate):
+    probe = probe_seat(project, "trim")
+    if probe is None:
+        return
+    print(probe_diagnostic(project, probe))
+    if not probe.ok and fallback_entries(project, "trim"):
+        probe = startup_fallback(project, provider, "trim", probe, activate)
+    if not probe.ok:
+        print("[holo2] trimmer route down; runs skip trim")
+    if activate:
+        state = routes(project)
+        state.trimmer_failed = not probe.ok
+        state.publish()
