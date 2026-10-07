@@ -9,7 +9,12 @@ from holophyte.holo.mcp_tools import READS, TOOLS
 from holophyte.holo.transport import LOCAL, TRANSPORT
 from holophyte.host.registry import Host, HostError, settings
 from holophyte.host.supervisor import factory_revision
-from holophyte.serve.serve_watch import CODE_CHECK_SEC, CodeWatch, Moved
+from holophyte.serve.serve_watch import (
+    CODE_CHECK_SEC,
+    DRAIN_SEC,
+    CodeWatch,
+    Moved,
+)
 from holophyte.serve.server import (
     ADDRESS_SHAPE,
     MACHINE_TOKEN_KEY,
@@ -121,7 +126,8 @@ def serve_http(version, address, out=None, interval=CODE_CHECK_SEC):
             enable_dns_rebinding_protection=False))
     server = uvicorn.Server(uvicorn.Config(
         guarded(app, tokens), host=bound, port=port, log_level="warning",
-        access_log=False, lifespan="on", ws="none"))
+        access_log=False, lifespan="on", ws="none",
+        timeout_graceful_shutdown=DRAIN_SEC))
     watch = CodeWatch(interval, out, factory_revision)
     tools = "with writes" if knobs.actions else "reads only"
     serving = (f"[holo2] holo mcp serving http://{bound}:{port}{PATH} {tools},"

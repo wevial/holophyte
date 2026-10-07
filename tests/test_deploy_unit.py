@@ -273,7 +273,8 @@ class McpUnitTests(unittest.TestCase):
         self.assertEqual(shlex.split(service["ExecStart"]),
                          ["/usr/bin/python3", "-m", "holophyte.holo", "mcp",
                           "--http"])
-        self.assertIn("WorkingDirectory", service)
+        self.assertEqual(service["WorkingDirectory"],
+                         host_unit(SERVE)["Service"]["WorkingDirectory"])
         # A `HEAD` move exits 0 and a failure does not; both restart.
         self.assertEqual(service["Restart"], "always")
         self.assertNotIn(self.MCP, words(host_unit(TARGET)["Unit"]["Wants"]))

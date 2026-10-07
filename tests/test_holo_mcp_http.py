@@ -33,7 +33,9 @@ NAME = "alpha"
 CHECK_SEC = 2
 # Uvicorn's graceful stop and the interpreter's exit, after the check fires.
 SHUTDOWN_SEC = 1
-INTERVAL = "\nCODE_CHECK_SEC = 15\n"
+DRAIN_SEC = 1
+CUTS = {"\nCODE_CHECK_SEC = 15\n": f"\nCODE_CHECK_SEC = {CHECK_SEC}\n",
+        "\nDRAIN_SEC = 20\n": f"\nDRAIN_SEC = {DRAIN_SEC}\n"}
 START_WAIT_SEC = 30
 REQUEUE = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
            "params": {"name": "requeue",
@@ -256,36 +258,55 @@ class StartupTests(HttpCase):
 
 
 class CodeFollowTests(HttpCase):
+    def setUp(self):
+        super().setUp()
+        self.checkout = self.clone()
+
     def clone(self):
-        """A `git clone` of this factory whose check interval is cut to
-        `CHECK_SEC` in a commit of its own, made before the server starts."""
+        """A `git clone` of this factory whose check interval and drain are
+        cut to `CHECK_SEC` and `DRAIN_SEC` in a commit of its own, made
+        before the server starts."""
         checkout = self.root / "factory"
         git(self.root, "clone", "-q", str(ROOT), str(checkout))
         watch = checkout / "holophyte" / "serve" / "serve_watch.py"
         text = watch.read_text()
-        self.assertIn(INTERVAL, text)
-        watch.write_text(text.replace(INTERVAL,
-                                      f"\nCODE_CHECK_SEC = {CHECK_SEC}\n"))
-        git(checkout, "commit", "-q", "-am", "check interval")
+        for line, cut in CUTS.items():
+            self.assertIn(line, text)
+            text = text.replace(line, cut)
+        watch.write_text(text)
+        git(checkout, "commit", "-q", "-am", "check interval and drain")
         return checkout
 
-    def test_a_new_commit_in_the_clone_exits_0_within_the_check_interval(self):
-        self.checkout = self.clone()
-        server = self.start()
-
+    def assert_exits_0_after_a_commit(self, server, within):
         (self.checkout / "moved.txt").write_text("B\n")
         git(self.checkout, "add", "moved.txt")
         git(self.checkout, "commit", "-q", "-m", "B")
         committed = time.monotonic()
         try:
-            code = server.wait(timeout=CHECK_SEC + SHUTDOWN_SEC)
+            code = server.wait(timeout=within)
         except subprocess.TimeoutExpired:
-            self.fail(f"still serving {CHECK_SEC + SHUTDOWN_SEC}s after the"
-                      " commit")
+            self.fail(f"still serving {within}s after the commit")
         elapsed = time.monotonic() - committed
 
         self.assertEqual(code, 0, server.communicate())
-        self.assertLessEqual(elapsed, CHECK_SEC + SHUTDOWN_SEC)
+        self.assertLessEqual(elapsed, within)
+
+    def test_a_new_commit_in_the_clone_exits_0_within_the_check_interval(self):
+        server = self.start()
+
+        self.assert_exits_0_after_a_commit(server, CHECK_SEC + SHUTDOWN_SEC)
+
+    def test_a_stalled_request_holds_the_exit_no_longer_than_the_drain(self):
+        server = self.start()
+        stalled = socket.create_connection(("127.0.0.1", self.port))
+        self.addCleanup(stalled.close)
+        stalled.sendall(b"POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                        b"Authorization: Bearer " + TOKEN.encode() +
+                        b"\r\nContent-Type: application/json\r\n"
+                        b"Content-Length: 1000\r\n\r\n{")
+
+        self.assert_exits_0_after_a_commit(
+            server, CHECK_SEC + DRAIN_SEC + SHUTDOWN_SEC)
 
 
 if __name__ == "__main__":
