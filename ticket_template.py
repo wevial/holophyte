@@ -59,6 +59,7 @@ UI_CHANGE_VALUES = ("major", "minor")
 MOCKUP_URL_RE = re.compile(
     r"https://claude\.ai/(?:code/)?artifact/[\w-]+"
     r"|https://lotuspod(?:\.[A-Za-z0-9-]+)+/[\w.-]+\.html")
+URL_TOKEN_RE = re.compile(r"(?<![\w+.-])[A-Za-z][\w+.-]*://\S*")
 APPROVED_RE = re.compile(r"^(?:[-*+]\s+)?Approved \d{4}-\d{2}-\d{2}:\s*\S")
 EVIDENCE_STATES_FOR_MOCKUP = 3
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
@@ -517,11 +518,20 @@ def _ui_change_problems(t):
     return [f"'**UI change:**' must read major or minor, not {t.ui_change!r}"]
 
 
+def _mockup_urls(text):
+    urls = []
+    for token in URL_TOKEN_RE.findall(text):
+        url = token.rstrip(".,;:!?`*>\"'")
+        if url.endswith(")") and "(" not in url:
+            url = url[:-1].rstrip(".,;:!?`*>\"'")
+        urls.append(url)
+    return urls
+
+
 def _mockup_problems(t):
     if "Mock-up" not in t.order:
         return []
-    urls = [url.rstrip(".,;:")
-            for url in re.findall(r"https?://[^\s<>()\[\]`*]+", t.mockup)]
+    urls = _mockup_urls(t.mockup)
     approvals = [line for line in t.mockup.splitlines()
                  if APPROVED_RE.match(line.strip())]
     problems = [f"'## Mock-up' link is not a claude.ai artifact or a Lotuspod "

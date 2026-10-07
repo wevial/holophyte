@@ -1089,6 +1089,17 @@ class MockupTests(unittest.TestCase):
                 self.assertEqual(len([p for p in tt.blocking(problems)
                                       if "'## Mock-up'" in p]), 1)
 
+    def test_a_second_url_of_any_scheme_or_a_suffixed_url_is_blocking(self):
+        for mockup in (
+                "https://claude.ai/artifact/3f2a9c\nHTTPS://example.com/mock.png",
+                "https://claude.ai/artifact/3f2a9c\nftp://example.com/mock.png",
+                "`https://claude.ai/artifact/3f2a9c(extra)`"):
+            with self.subTest(mockup=mockup):
+                problems = tt.validate(tt.parse(
+                    with_ui_change("major", f"{mockup}\n\n{APPROVAL}")))
+                self.assertTrue([p for p in tt.blocking(problems)
+                                 if "'## Mock-up'" in p], problems)
+
     def test_the_template_placeholders_left_in_are_blocking(self):
         ticket = tt.parse(with_ui_change(
             "major", "<https://claude.ai/artifact/ID>\n\n"
