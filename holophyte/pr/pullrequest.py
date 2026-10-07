@@ -182,7 +182,8 @@ def _without_changes(text):
 def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
                     beat_s, wt, budget_min, pull, answered, *, sha=None):
     """A refused turn never overwrites the existing prose."""
-    if sha and pr_activity.latest(conn, run_id, "pr_text_sha") == sha:
+    written = bool(sha) and pr_activity.latest(conn, run_id, "pr_text_sha") == sha
+    if written and not merge_config(project).ui_paths:
         return
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
@@ -193,8 +194,9 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
             project, wt, task_id, evidence,
             evidence_states=ticket_template.parse(ticket).evidence_states,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
-    text = _refreshed_prose(project, conn, run_id, task_id, task, branch, ticket,
-                            beat_s, wt, budget_min, own, answered)
+    text = None if written else _refreshed_prose(
+        project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
+        budget_min, own, answered)
     if text is None and section is None:
         return
     with heartbeat_while(conn, run_id, beat_s):

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import sys
+from contextlib import closing
 from pathlib import Path
 from time import monotonic
 from unittest.mock import patch
@@ -20,6 +21,7 @@ import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_media  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
+import store  # noqa: E402 - after the sys.path insert above
 import ticket_template  # noqa: E402 - after the sys.path insert above
 from holophyte.loop import implement  # noqa: E402
 
@@ -179,6 +181,32 @@ class PullRequestRefreshTests(MergeModeFixture):
         self.assertIn(f"Captured at {a}\n\n", evidence)
         self.assertEqual(self.captures.read_text().split(),
                          [self.git("rev-parse", "HEAD").strip()])
+
+    def test_prose_written_at_head_still_takes_the_reviewed_recapture(self):
+        a = self.captured_pr()
+        head = self.git("rev-parse", "HEAD").strip()
+        seen = holophyte.pr.pr_media.prepare(
+            self.project, self.target, "KO-131", evidence_states=
+            ticket_template.parse(self.BODY).evidence_states)
+        conn = self.enterContext(closing(store.open(str(self.db))))
+        project = store.tickets.ensure_project(conn, "team", str(self.target))
+        run = store.claim(conn, project, store.tickets.mirror_ticket(
+            conn, project, "issue", "KO-131", "add a thing",
+            acceptance_criteria=["works"], verification_commands=["true"]))
+        store.record_event(conn, run, "pr_text_sha", head)
+        with patch.object(implement, "_timed") as turn:
+            holophyte.pr.pullrequest.refresh_pr_text(
+                self.project, conn, run, "KO-131", "add a thing", BRANCH,
+                self.BODY, 60, self.target, 5,
+                holophyte.pr.pr_status.parse_pr_url(self.URL), "answered",
+                sha=head)
+        turn.assert_not_called()
+        body = self.pr_body.read_text()
+        self.assertTrue(body.startswith("Old.\n\n"))
+        self.assertEqual(holophyte.pr.github.split_pr_body(body)[2].rstrip(),
+                         seen.rstrip())
+        self.assertIn(f"Captured at {a}\n\n", seen)
+        self.assertEqual(self.captures.read_text().split(), [head])
 
     def test_a_failed_recapture_keeps_the_old_evidence_marked_stale(self):
         a = self.captured_pr(exit_code=3)
