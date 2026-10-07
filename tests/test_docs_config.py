@@ -72,7 +72,8 @@ class ConfigReferenceTests(unittest.TestCase):
         verify = sections((DOCS / "config.md").read_text())["verify"]
         row = re.search(r"^\| `timeout_sec` \|.*$", verify, re.MULTILINE)
         self.assertIsNotNone(row, "[verify] needs a key row: timeout_sec")
-        for term in ("baseline", "every ticket's verify commands"):
+        for term in ("baseline", "every run of a ticket's verify commands",
+                     "trim", "babysitter", "reproduction keeps its own"):
             with self.subTest(term=term):
                 self.assertIn(term, row.group())
 

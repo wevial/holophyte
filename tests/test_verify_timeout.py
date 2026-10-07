@@ -10,9 +10,10 @@ from unittest.mock import patch
 
 import store
 import store.tickets
+from holophyte.babysit import babysitter
 from holophyte.config.project import Project
-from holophyte.loop import merge_gate, review_round, trim
-from holophyte.loop.gates import RunFailure
+from holophyte.loop import merge_gate, review_round
+from holophyte.loop.gates import RunFailure, run_verify
 from holophyte.loop.runs import open_store
 
 TICKET = "# A ticket\n\n## Acceptance criteria\n\n- [ ] it works\n"
@@ -55,15 +56,18 @@ class TicketVerifyTimeoutTests(unittest.TestCase):
         store.set_phase(conn, run_id, "working")
         return project, conn, run_id
 
-    def open_project_after_trim(self, timeout_sec):
-        """Trim's green check runs first, recording a pass at the same head."""
+    def open_project_after_reproduction(self, timeout_sec):
+        """Reproduction's verify, under its own default cap, passes at the same head."""
         project, conn, run_id = self.open_project(timeout_sec)
-        self.assertTrue(trim._green(project, conn, run_id, 60, self.repo, SLOW, ()))
+        ok, _ = run_verify(SLOW, self.repo, conn=conn, run_id=run_id,
+                           project=project, rerun=False)
+        self.assertTrue(ok)
         return project, conn, run_id
 
-    def review(self, timeout_sec, after_trim=False):
+    def review(self, timeout_sec, after_reproduction=False):
         """One review round whose reviewer approves; return result and prompts."""
-        project, conn, run_id = (self.open_project_after_trim if after_trim
+        project, conn, run_id = (self.open_project_after_reproduction
+                                 if after_reproduction
                                  else self.open_project)(timeout_sec)
         prompts = []
 
@@ -87,9 +91,10 @@ class TicketVerifyTimeoutTests(unittest.TestCase):
                 result = failure
         return result, prompts
 
-    def merge(self, timeout_sec, after_trim=False):
+    def merge(self, timeout_sec, after_reproduction=False):
         """The merge gate's verify on the reviewed sha; return result and output."""
-        project, conn, run_id = (self.open_project_after_trim if after_trim
+        project, conn, run_id = (self.open_project_after_reproduction
+                                 if after_reproduction
                                  else self.open_project)(timeout_sec)
         for phase in ("verifying", "reviewing"):
             store.set_phase(conn, run_id, phase)
@@ -129,14 +134,31 @@ class TicketVerifyTimeoutTests(unittest.TestCase):
         self.assertEqual(result, (True, self.sha))
         self.assertIn("verify ok before merge", out)
 
-    def test_a_pass_recorded_at_trim_does_not_satisfy_review_under_a_shorter_cap(self):
-        result, prompts = self.review(2, after_trim=True)
+    def babysitter_refresh(self, timeout_sec):
+        project, conn, run_id = self.open_project(timeout_sec)
+        return babysitter._refresh_verify(project, conn, run_id, 60, self.repo,
+                                          self.sha, SLOW, ())
+
+    def test_babysitter_refresh_verify_times_out_at_the_configured_cap(self):
+        ok, out = self.babysitter_refresh(2)
+
+        self.assertFalse(ok)
+        self.assertIn("verify timed out after 2s", str(out))
+
+    def test_babysitter_refresh_verify_passes_under_a_cap_above_its_runtime(self):
+        ok, out = self.babysitter_refresh(5)
+
+        self.assertTrue(ok)
+        self.assertNotIn("timed out", str(out))
+
+    def test_a_default_cap_pass_does_not_satisfy_review_under_a_shorter_cap(self):
+        result, prompts = self.review(2, after_reproduction=True)
 
         self.assertIsInstance(result, RunFailure)
         self.assertIn("verify timed out after 2s", prompts[0])
 
-    def test_a_pass_recorded_at_trim_does_not_satisfy_merge_under_a_shorter_cap(self):
-        result, out = self.merge(2, after_trim=True)
+    def test_a_default_cap_pass_does_not_satisfy_merge_under_a_shorter_cap(self):
+        result, out = self.merge(2, after_reproduction=True)
 
         self.assertIsInstance(result, RunFailure)
         self.assertIn("verify timed out after 2s", out)
