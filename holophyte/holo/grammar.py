@@ -150,8 +150,11 @@ SHELLS = ("bash", "zsh", "fish")
 HELPER = "__complete"
 FOLLOW = Command(("follow",), None, "one line per run event as it is written",
                  flags=(JSON, SINCE, EVERY))
+MCP_HTTP = Flag("--http", "HOST:PORT", const="127.0.0.1:7711")
 MCP = Command(("mcp",), None,
-              "serve the factory's reads to an agent as MCP tools over stdio")
+              "serve the factory's tools to an agent over MCP: on stdio, or"
+              " with --http on HOST:PORT behind the host's machine token",
+              flags=(MCP_HTTP,))
 
 SHOW = "show"
 SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
@@ -253,6 +256,10 @@ def add_commands(parser):
     shell.set_defaults(command=COMPLETION, leaf=shell)
     _add_leaf(top, "follow", FOLLOW, FOLLOW.does)
     server = top.add_parser("mcp", help=MCP.does, description=MCP.does)
+    server.add_argument(MCP_HTTP.name, dest=MCP_HTTP.dest, nargs="?",
+                        const=MCP_HTTP.const, metavar=MCP_HTTP.metavar,
+                        help=f"serve POST /mcp over HTTP; {MCP_HTTP.const}"
+                             " when no address is given")
     server.set_defaults(command=MCP, leaf=server)
     return parser
 

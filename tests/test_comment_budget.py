@@ -111,6 +111,7 @@ PINNED = {
     "holophyte/holo/completion.py": 2,
     "holophyte/holo/follow.py": 3,
     "holophyte/holo/grammar.py": 2,
+    "holophyte/holo/mcp_http.py": 1,
     "holophyte/holo/mcp_server.py": 1,
     "holophyte/holo/mcp_tools.py": 1,
     "holophyte/holo/reads.py": 0,

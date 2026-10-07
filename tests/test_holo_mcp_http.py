@@ -1,0 +1,412 @@
+"""`holo mcp --http`: the stdio server's tools at `POST /mcp` over the SDK's
+Streamable HTTP transport, behind the host's machine token, driven by the
+SDK's own client and by a plain HTTP client against a real subprocess.
+
+Run: python3 -m unittest discover -s tests -p 'test_holo_mcp_http.py' -v
+"""
+import http.client
+import json
+import os
+import shutil
+import signal
+import socket
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import anyio
+import httpx2
+from mcp import ClientSession, MCPError
+from mcp.client.streamable_http import streamable_http_client
+
+import holophyte.cli.entry
+from holophyte.config.project import Project
+from tests.host_fixture import git
+from tests.test_holo_mcp import ROOT, TOOLS
+from tests.test_holo_mcp_writes import AUTHOR, WRITES, WriteCase
+
+TOKEN = "machine-secret"
+FIXTURE = ROOT / "tests" / "fixtures" / "serve" / "mcp-tools-list.json"
+NAME = "alpha"
+CHECK_SEC = 2
+# Uvicorn's graceful stop and the interpreter's exit, after the check fires.
+SHUTDOWN_SEC = 1
+DRAIN_SEC = 2
+# `os._exit` and the reap, after the drain's timer fires.
+EXIT_SLACK_SEC = 0.5
+CUTS = {"\nCODE_CHECK_SEC = 15\n": f"\nCODE_CHECK_SEC = {CHECK_SEC}\n",
+        "\nDRAIN_SEC = 20\n": f"\nDRAIN_SEC = {DRAIN_SEC}\n"}
+START_WAIT_SEC = 30
+REQUEUE = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+           "params": {"name": "requeue",
+                      "arguments": {"project": NAME, "ticket": "HOLO-1",
+                                    "note": "rerun", "author": AUTHOR}}}
+
+
+def free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def listening(port):
+    with socket.socket() as probe:
+        return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+class HttpCase(WriteCase):
+    """A temporary home whose `host.toml` registers `alpha`, a native board
+    holding HOLO-1 with a failed run, and names a machine token file; the
+    server runs from `checkout` with `[serve] actions` set by `ACTIONS`."""
+
+    ACTIONS = True
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name).resolve()
+        self.home = self.root / "home"
+        self.outside = self.root / "outside"
+        self.outside.mkdir()
+        self.enterContext(patch.dict(os.environ,
+                                     {"HOLOPHYTE_HOME": str(self.home)}))
+        self.repo = self.root / NAME
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        target = Project.locate(self.repo, adopt=False)
+        target.holo_dir.mkdir(parents=True)
+        target.config_path.write_text('[board]\nkind = "native"\n'
+                                      'prefix = "HOLO"\n'
+                                      f'[serve]\nname = "{NAME}"\n')
+        self.store_path = target.store_path
+        with open(os.devnull, "w") as quiet, patch("sys.stdout", quiet):
+            self.assertFalse(holophyte.cli.entry.cli(
+                ["project", "add", str(self.repo)]))
+        self.seed()
+        token = self.home / "machine.token"
+        token.write_text(TOKEN + "\n")
+        token.chmod(0o600)
+        self.serve_table(f'machine_token_file = "machine.token"\n'
+                         f'actions = {str(self.ACTIONS).lower()}\n')
+        self.checkout = ROOT
+        self.port = free_port()
+        self.url = f"http://127.0.0.1:{self.port}/mcp"
+
+    def serve_table(self, text):
+        registry = self.home / "host.toml"
+        registry.write_text(registry.read_text() + "\n[serve]\n" + text)
+
+    def environment(self, **extra):
+        env = super().environment(**extra)
+        env.pop("HOLO_PROJECT")
+        return {**env, "PYTHONPATH": str(self.checkout)}
+
+    def start(self, stdout=subprocess.PIPE):
+        server = subprocess.Popen(
+            [sys.executable, "-m", "holophyte.holo", "mcp", "--http",
+             f"127.0.0.1:{self.port}"], cwd=self.outside,
+            env=self.environment(), stdin=subprocess.DEVNULL,
+            stdout=stdout, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.stop, server)
+        deadline = time.monotonic() + START_WAIT_SEC
+        while not listening(self.port):
+            if server.poll() is not None or time.monotonic() > deadline:
+                self.fail(f"the server never listened: {server.communicate()}")
+            time.sleep(0.05)
+        return server
+
+    def stop(self, server):
+        if server.poll() is None:
+            server.terminate()
+        server.communicate(timeout=30)
+
+    def over_http(self, use):
+        """`use(session, initialized)` on an SDK client session over HTTP
+        presenting the machine token; its return value."""
+        async def run():
+            with anyio.fail_after(60):
+                async with httpx2.AsyncClient(
+                        headers={"Authorization": f"Bearer {TOKEN}"}) as http:
+                    async with streamable_http_client(
+                            self.url, http_client=http) as streams:
+                        async with ClientSession(streams[0],
+                                                 streams[1]) as client:
+                            initialized = await client.initialize()
+                            return await use(client, initialized)
+        return anyio.run(run)
+
+    def post(self, method="POST", body=REQUEUE, **headers):
+        """A plain HTTP request to `/mcp`: its status and decoded body."""
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        try:
+            conn.request(method, "/mcp", json.dumps(body).encode(), {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream", **headers})
+            reply = conn.getresponse()
+            return reply.status, reply.read()
+        finally:
+            conn.close()
+
+
+async def tools(client, _):
+    return (await client.list_tools()).tools
+
+
+class ActionsTests(HttpCase):
+    def setUp(self):
+        super().setUp()
+        self.start()
+
+    def test_the_sdk_client_initializes_with_the_tools_capability(self):
+        async def use(_, initialized):
+            return initialized
+
+        self.assertIsNotNone(self.over_http(use).capabilities.tools)
+
+    def test_it_lists_what_the_stdio_server_lists(self):
+        over_http = self.over_http(tools)
+        on_stdio = self.session(tools)
+
+        self.assertEqual({tool.name for tool in over_http}, TOOLS | WRITES)
+        self.assertEqual([tool.model_dump() for tool in over_http],
+                         [tool.model_dump() for tool in on_stdio])
+
+    def test_the_tools_list_reply_is_the_pinned_fixture(self):
+        status, body = self.post(
+            body={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            Authorization=f"Bearer {TOKEN}")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), json.loads(FIXTURE.read_text()))
+
+    def test_requeue_runs_on_the_host_and_records_the_author_via_mcp(self):
+        (self.home / "client.toml").write_text('host = "seat.invalid"\n')
+
+        async def use(client, _):
+            return await client.call_tool("requeue", {
+                "project": NAME, "ticket": "HOLO-1",
+                "note": "rerun after the fix", "author": AUTHOR})
+        result = self.over_http(use)
+
+        self.assertIs(result.is_error, False, result.content)
+        self.assertEqual(self.status("HOLO-1"), "ready")
+        self.assertEqual(self.interventions()[-1],
+                         (result.structured_content["recorded"], "requeue",
+                          "test seat via MCP: rerun after the fix"))
+
+
+class GuardTests(HttpCase):
+    def setUp(self):
+        super().setUp()
+        self.start()
+
+    def test_no_bearer_or_a_wrong_one_is_401_with_an_empty_body(self):
+        before = self.dump()
+        for headers in ({}, {"Authorization": "Bearer not-the-token"},
+                        {"Authorization": TOKEN}):
+            with self.subTest(headers=headers):
+                self.assertEqual(self.post(**headers), (401, b"{}"))
+        self.assertEqual(self.dump(), before)
+
+    def test_an_origin_is_403_and_a_get_is_405(self):
+        before = self.dump()
+        bearer = {"Authorization": f"Bearer {TOKEN}"}
+
+        status, _ = self.post(Origin="https://example.test", **bearer)
+        self.assertEqual(status, 403)
+        status, _ = self.post("GET", **bearer)
+        self.assertEqual(status, 405)
+        self.assertEqual(self.dump(), before)
+
+
+class ReadsOnlyTests(HttpCase):
+    ACTIONS = False
+
+    def test_only_the_reads_are_listed_and_a_write_is_unknown(self):
+        self.start()
+        before = self.dump()
+
+        async def use(client, _):
+            listed = await tools(client, _)
+            try:
+                await client.call_tool("requeue", REQUEUE["params"]["arguments"])
+            except MCPError as refused:
+                return listed, refused
+            return listed, None
+        listed, refused = self.over_http(use)
+
+        self.assertEqual({tool.name for tool in listed}, TOOLS)
+        self.assertIsNotNone(refused, "requeue answered")
+        self.assertEqual(refused.error.code, -32602)
+        self.assertEqual(self.dump(), before)
+
+
+class StartupTests(HttpCase):
+    def test_no_machine_token_file_exits_1_naming_it_and_nothing_listens(self):
+        registry = self.home / "host.toml"
+        registry.write_text(registry.read_text().replace(
+            'machine_token_file = "machine.token"\n', ""))
+
+        done = subprocess.run(
+            [sys.executable, "-m", "holophyte.holo", "mcp", "--http",
+             f"127.0.0.1:{self.port}"], cwd=self.outside,
+            env=self.environment(), stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, timeout=60)
+
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        self.assertIn("[serve] machine_token_file", done.stderr)
+        self.assertNotIn("serving", done.stdout)
+
+
+class CodeFollowTests(HttpCase):
+    def setUp(self):
+        super().setUp()
+        self.checkout = self.clone()
+
+    def clone(self):
+        """A `git clone` of a temporary repository holding the factory's
+        tracked files as they stand, with the check interval and drain cut
+        to `CHECK_SEC` and `DRAIN_SEC`, made before the server starts."""
+        source = self.root / "source"
+        for name in filter(None, git(ROOT, "ls-files", "-z").split("\0")):
+            if (ROOT / name).is_file():
+                (source / name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / name, source / name)
+        watch = source / "holophyte" / "serve" / "serve_watch.py"
+        text = watch.read_text()
+        for line, cut in CUTS.items():
+            self.assertIn(line, text)
+            text = text.replace(line, cut)
+        watch.write_text(text)
+        git(source, "init", "-q")
+        git(source, "add", "-A")
+        git(source, "commit", "-q", "-m", "the factory, its interval and drain cut")
+        checkout = self.root / "factory"
+        git(self.root, "clone", "-q", str(source), str(checkout))
+        return checkout
+
+    def commit(self):
+        (self.checkout / "moved.txt").write_text("B\n")
+        git(self.checkout, "add", "moved.txt")
+        git(self.checkout, "commit", "-q", "-m", "B")
+        return time.monotonic()
+
+    def test_a_new_commit_in_the_clone_exits_0_within_the_check_interval(self):
+        server = self.start()
+        within = CHECK_SEC + SHUTDOWN_SEC
+
+        committed = self.commit()
+        try:
+            code = server.wait(timeout=within)
+        except subprocess.TimeoutExpired:
+            self.fail(f"still serving {within}s after the commit")
+
+        self.assertEqual(code, 0, server.communicate())
+        self.assertLessEqual(time.monotonic() - committed, within)
+
+    def start_logged(self):
+        """The server, its stdout written to a file read by `seen`."""
+        log = self.root / "server.out"
+        with log.open("w") as out:
+            return self.start(stdout=out), log
+
+    def seen(self, log):
+        """When the server's line saying it saw the move is first read."""
+        deadline = time.monotonic() + CHECK_SEC + SHUTDOWN_SEC
+        while "moved to" not in log.read_text():
+            if time.monotonic() > deadline:
+                self.fail(f"the move was not seen: {log.read_text()}")
+            time.sleep(0.01)
+        return time.monotonic()
+
+    def assert_drains(self, server, log):
+        """A commit is seen within the interval; the server then stops
+        taking connections while still running, and exits 0 no later than
+        `DRAIN_SEC` after it saw the move."""
+        self.commit()
+        seen = self.seen(log)
+        while listening(self.port):
+            self.assertLess(time.monotonic() - seen, SHUTDOWN_SEC,
+                            "still taking connections after the move")
+            time.sleep(0.01)
+        self.assertIsNone(server.poll(), "exited before refusing connections")
+        try:
+            code = server.wait(timeout=DRAIN_SEC + EXIT_SLACK_SEC)
+        except subprocess.TimeoutExpired:
+            self.fail(f"still running {DRAIN_SEC}s after it saw the move")
+
+        self.assertEqual(code, 0, server.communicate())
+        self.assertLessEqual(time.monotonic() - seen,
+                             DRAIN_SEC + EXIT_SLACK_SEC)
+
+    def send(self, body, length=None):
+        """Bytes of an authenticated `POST /mcp` sent on a socket left open
+        and never read; `length` declares more body than is sent."""
+        conn = socket.create_connection(("127.0.0.1", self.port))
+        self.addCleanup(conn.close)
+        conn.sendall(b"POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                     b"Authorization: Bearer " + TOKEN.encode() +
+                     b"\r\nContent-Type: application/json\r\n"
+                     b"Accept: application/json, text/event-stream\r\n"
+                     b"Content-Length: %d\r\n\r\n" % (length or len(body))
+                     + body)
+
+    def children(self, server):
+        """The pids of `server`'s child processes once it has one; each is
+        killed at cleanup."""
+        deadline = time.monotonic() + START_WAIT_SEC
+        while time.monotonic() < deadline:
+            found = subprocess.run(["pgrep", "-P", str(server.pid)],
+                                   capture_output=True, text=True).stdout
+            if found.split():
+                pids = [int(pid) for pid in found.split()]
+                self.addCleanup(lambda: [self.kill(pid) for pid in pids])
+                return pids
+            time.sleep(0.05)
+        self.fail("no tool ran")
+
+    def kill(self, pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def running(self, pid):
+        """Whether `pid` lives: neither gone nor a zombie left unreaped."""
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text()
+        except FileNotFoundError:
+            return False
+        return stat.rsplit(")", 1)[1].split()[0] != "Z"
+
+    def test_a_stalled_request_holds_the_exit_no_longer_than_the_drain(self):
+        server, log = self.start_logged()
+        self.send(b"{", length=1000)
+
+        self.assert_drains(server, log)
+
+    def test_a_blocked_tool_call_is_cut_off_at_the_drain_and_lands_nothing(self):
+        server, log = self.start_logged()
+        before = self.dump()
+        writer = sqlite3.connect(self.store_path, isolation_level=None)
+        self.addCleanup(writer.close)
+        writer.execute("BEGIN IMMEDIATE")
+        self.send(json.dumps(REQUEUE).encode())
+        tools = self.children(server)
+
+        self.assert_drains(server, log)
+        deadline = time.monotonic() + SHUTDOWN_SEC
+        while any(self.running(pid) for pid in tools):
+            self.assertLess(time.monotonic(), deadline,
+                            "the cut-off tool call is still running")
+            time.sleep(0.01)
+        writer.execute("ROLLBACK")
+        self.assertEqual(self.dump(), before)
+
+
+if __name__ == "__main__":
+    unittest.main()

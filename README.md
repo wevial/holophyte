@@ -67,6 +67,7 @@ holo status [--json]                             # one project when -p, HOLO_PRO
 holo status --watch [SECONDS]                    # the status page redrawn every SECONDS (default 5) until Ctrl-C
 holo follow [--since AGO] [--every SECONDS] [--json] -p NAME|PATH # one line per run event and ledger entry as it is written, and one when a heartbeat goes stale
 holo mcp                                         # an MCP server on stdio whose read-only tools run the holo reads; see docs/reference/cli.md#holo
+holo mcp --http [HOST:PORT]                      # the same tools at POST /mcp behind the host's machine token, 127.0.0.1:7711 by default; see docs/reference/http.md#post-mcp
 holo requeue KEY "note" -p NAME|PATH             # factory.py --requeue KEY --note "note" PATH; -p takes a [serve] name or a path, and without it the project is found as for status
 holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an alias of each ticket verb
 holo approve KEY ["note"] -p NAME|PATH           # each ticket verb takes the factory mode's arguments, the note last; see docs/reference/cli.md#holo

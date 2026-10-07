@@ -9,7 +9,8 @@ on a writer host, to copy under `~/.config/systemd/user/` and enable by hand.
 The factory has two Python dependencies, both pinned in `requirements.txt`:
 `tomlkit`, which the daemon's `PUT /config` uses to edit a project's config
 in place without losing comments and `project add` uses to rewrite
-`host.toml`, and `mcp`, which only `holo mcp` needs. On the writer host,
+`host.toml`, and `mcp`, which only `holo mcp` (and so
+`holophyte-mcp.service`) needs. On the writer host,
 before enabling the host units:
 
 ```
@@ -83,6 +84,26 @@ journalctl --user -u holophyte-sweep.service -u holophyte-serve.service -f
 
 Each unit's `WorkingDirectory` is `%h`-relative and names one checkout
 layout; adjust it before enabling if the factory lives elsewhere.
+
+## The MCP unit
+
+- `deploy/holophyte-mcp.service` — `python3 -m holophyte.holo mcp --http`,
+  the MCP tools over HTTP at `POST /mcp`, its own process beside the host
+  daemon: port 7711 next to the daemon's 7710, on `127.0.0.1` unless the
+  host's private-network address is appended (`--http HOST:7711`). Every
+  request, on every bind including loopback, carries `host.toml`'s `[serve]
+  machine_token_file` as `Authorization: Bearer`; the write tools are served
+  only under `[serve] actions = true`. On a factory `HEAD` move it exits 0,
+  and `Restart=always` (`RestartSec=5`) starts it on the new code. Not wanted
+  by `holophyte.target` and not `PartOf` it: it needs the `mcp` package, so
+  enable it by hand once `/usr/bin/python3 -c 'import mcp'` succeeds, and a
+  host without the SDK never loops on a failing unit.
+
+```
+cp deploy/holophyte-mcp.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now holophyte-mcp.service
+```
 
 ## The loop unit
 

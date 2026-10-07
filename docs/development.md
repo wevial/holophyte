@@ -75,8 +75,15 @@ Each module, one line:
   parses; and the read rows, `run show N` among them.
 - `holophyte/holo/mcp_server.py` — `holo mcp`: the MCP SDK's low-level
   `Server` on stdio, listing the tool table's rows and answering a call by
-  running its `holo` command; the SDK is imported only here, and without it
-  `holo mcp` exits 1 naming the package and its install command.
+  running its `holo` command; the SDK is imported only here and in the
+  HTTP form below, and without it `holo mcp` exits 1 naming the package and
+  its install command.
+- `holophyte/holo/mcp_http.py` — `holo mcp --http`: the same server as the
+  SDK's stateless Streamable HTTP app under uvicorn, a process of its own, not
+  the daemon; a guard before it demands the host's machine token (401 `{}`),
+  refuses an `Origin` (403) and every method but `POST` (405); the writes are
+  listed only under `host.toml`'s `[serve] actions`, and it exits 0 when the
+  checkout's `HEAD` moves.
 - `holophyte/holo/mcp_tools.py` — the `holo mcp` tool table: each tool's
   name, input schema, tier and the `holo ... --json` argv it runs as a
   subprocess with a timeout, and its result, a JSON object or text, or an
