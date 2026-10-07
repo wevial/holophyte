@@ -1008,7 +1008,9 @@ runs:
 
 Like the daemon, it follows the code: every `CODE_CHECK_SEC` (15 s) it
 compares the factory checkout's `HEAD` with the one it started from and
-exits 0 on a move, and its unit starts the new code.
+exits 0 on a move, and its unit starts the new code. It stops accepting at
+once and waits at most `DRAIN_SEC` (20 s) for requests and tool calls in
+flight; a call still running then is left, its reply lost.
 
 ## Static files
 
