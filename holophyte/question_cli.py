@@ -80,7 +80,7 @@ def launch(argv, cwd):
     try:
         process = subprocess.Popen(
             argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, start_new_session=True)
+            stderr=subprocess.PIPE, start_new_session=True)
     except OSError as error:
         return -1, str(error)
     try:
@@ -92,7 +92,7 @@ def launch(argv, cwd):
             pass
         process.communicate()
         return None, ""
-    return process.returncode, stdout
+    return process.returncode, stdout.decode(errors="replace")
 
 
 def answer(route, question, state, config):

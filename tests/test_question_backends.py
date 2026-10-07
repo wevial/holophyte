@@ -35,7 +35,9 @@ with open(here / (name + ".log"), "a") as log:
 sleep = here / f"{{name}}.{{mode}}.sleep"
 if sleep.exists():
     time.sleep(float(sleep.read_text()))
-sys.stdout.write((here / f"{{name}}.{{mode}}.out").read_text())
+output = (here / f"{{name}}.{{mode}}.out").read_bytes()
+sys.stdout.buffer.write(output)
+sys.stderr.buffer.write(output)
 code = here / f"{{name}}.{{mode}}.exit"
 sys.exit(int(code.read_text()) if code.exists() else 0)
 """
@@ -87,7 +89,8 @@ class QuestionBackendTests(unittest.TestCase):
         self.run_id = store.claim(self.conn, project, ticket)
 
     def fake(self, name, mode, output, exit_code=0, sleep=None):
-        (self.bin / f"{name}.{mode}.out").write_text(output)
+        out = self.bin / f"{name}.{mode}.out"
+        out.write_bytes(output) if isinstance(output, bytes) else out.write_text(output)
         (self.bin / f"{name}.{mode}.exit").write_text(str(exit_code))
         if sleep is not None:
             (self.bin / f"{name}.{mode}.sleep").write_text(str(sleep))
@@ -189,6 +192,8 @@ class QuestionBackendTests(unittest.TestCase):
             ("codex", (FIXTURES / "codex_signed_out.jsonl").read_text(), 1, None,
              "service_error"),
             ("codex", codex_output("fix", -0.1), 0, None, "invalid_response"),
+            ("claude", b"\xff" + printed.encode(), 2, None, "service_error"),
+            ("codex", b"\xff" + printed.encode(), 2, None, "service_error"),
         )
         for backend, output, code, sleep, reason in cases:
             with self.subTest(backend=backend, reason=reason, code=code), \
