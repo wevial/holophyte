@@ -1070,9 +1070,11 @@ def with_ui_change(value, mockup=None, states=()):
 
 
 class MockupTests(unittest.TestCase):
-    def test_an_accepted_link_with_an_approval_line_validates(self):
+    def test_an_accepted_link_bare_in_code_or_in_bold_validates(self):
         for url in ("https://claude.ai/artifact/3f2a9c",
-                    "https://lotuspod.example.org/onboarding-flow.html"):
+                    "https://lotuspod.example.org/onboarding-flow.html",
+                    "`https://claude.ai/artifact/3f2a9c`",
+                    "**https://claude.ai/artifact/3f2a9c**"):
             with self.subTest(url=url):
                 ticket = tt.parse(with_ui_change("major", f"{url}\n\n{APPROVAL}"))
                 self.assertEqual(tt.validate(ticket), [])
@@ -1086,13 +1088,6 @@ class MockupTests(unittest.TestCase):
                 problems = tt.validate(tt.parse(with_ui_change("major", mockup)))
                 self.assertEqual(len([p for p in tt.blocking(problems)
                                       if "'## Mock-up'" in p]), 1)
-
-    def test_a_url_in_code_or_bold_is_read_without_its_markers(self):
-        for url in ("`https://claude.ai/artifact/3f2a9c`",
-                    "**https://claude.ai/artifact/3f2a9c**"):
-            with self.subTest(url=url):
-                ticket = tt.parse(with_ui_change("major", f"{url}\n\n{APPROVAL}"))
-                self.assertEqual(tt.validate(ticket), [])
 
     def test_the_template_placeholders_left_in_are_blocking(self):
         ticket = tt.parse(with_ui_change(
