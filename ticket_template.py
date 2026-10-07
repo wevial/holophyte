@@ -282,6 +282,8 @@ def _labeled_texts(t):
             yield label, v
     if t.reproduce:
         yield "Reproduce", t.reproduce
+    if t.mockup:
+        yield "Mock-up", t.mockup
     lists = (("In scope", t.in_scope), ("Out of scope", t.out_of_scope),
              ("Acceptance criteria", t.acceptance),
              ("Implementation notes", t.notes), ("Evidence", t.evidence_states))
@@ -519,7 +521,7 @@ def _mockup_problems(t):
     if "Mock-up" not in t.order:
         return []
     urls = [url.rstrip(".,;:")
-            for url in re.findall(r"https?://[^\s<>()\[\]]+", t.mockup)]
+            for url in re.findall(r"https?://[^\s<>()\[\]`*]+", t.mockup)]
     approvals = [line for line in t.mockup.splitlines()
                  if APPROVED_RE.match(line.strip())]
     problems = [f"'## Mock-up' link is not a claude.ai artifact or a Lotuspod "

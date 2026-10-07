@@ -995,9 +995,11 @@ class StorySectionTests(unittest.TestCase):
 
 class EvidenceTests(unittest.TestCase):
     def body(self, states):
-        return FILLED.replace("## Implementation notes",
-                              "## Evidence\n\n" + "\n".join(states)
-                              + "\n\n## Implementation notes")
+        declared = FILLED.replace("**How:**",
+                                  "**UI change:** minor\n\n**How:**")
+        return declared.replace("## Implementation notes",
+                                "## Evidence\n\n" + "\n".join(states)
+                                + "\n\n## Implementation notes")
 
     def test_optional_ordered_states_and_limit(self):
         self.assertEqual(tt.parse(FILLED).evidence_states, [])
@@ -1005,7 +1007,7 @@ class EvidenceTests(unittest.TestCase):
         states = ["Orders page empty", "Export dialog open", "Export complete"]
         ticket = tt.parse(self.body(states))
         self.assertEqual(ticket.evidence_states, states)
-        self.assertEqual(tt.blocking(tt.validate(ticket)), [])
+        self.assertEqual(tt.validate(ticket), [])
         problems = tt.validate(tt.parse(self.body(states * 2 + ["Seventh"])))
         self.assertTrue(any("Evidence" in p and "6" in p for p in problems))
 
@@ -1033,7 +1035,7 @@ class EvidenceTests(unittest.TestCase):
             "Orders page empty", "Export dialog open", "Export complete",
             "Orders refreshed", "Confirmation dismissed", "Plain state",
         ])
-        self.assertEqual(tt.blocking(tt.validate(ticket)), [])
+        self.assertEqual(tt.validate(ticket), [])
 
     def test_claim_freezes_evidence_and_live_edit_is_drift(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1091,6 +1093,21 @@ class MockupTests(unittest.TestCase):
             with self.subTest(mockup=mockup):
                 self.assertEqual(
                     len(mockup_blockers(with_ui_change("major", mockup))), 1)
+
+    def test_a_url_in_code_or_bold_is_read_without_its_markers(self):
+        for url in ("`https://claude.ai/artifact/3f2a9c`",
+                    "**https://claude.ai/artifact/3f2a9c**"):
+            with self.subTest(url=url):
+                ticket = with_ui_change("major", f"{url}\n\n{APPROVAL}")
+                self.assertEqual(tt.validate(ticket), [])
+
+    def test_the_template_placeholders_left_in_are_blocking(self):
+        ticket = with_ui_change(
+            "major", "<https://claude.ai/artifact/ID>\n\n"
+                     "Approved 2026-10-07: <what was approved>")
+        self.assertIn("unfilled template placeholder in Mock-up: "
+                      "<https://claude.ai/artifact/ID>",
+                      tt.blocking(tt.validate(ticket)))
 
     def test_a_declaration_other_than_major_or_minor_is_blocking(self):
         self.assertEqual(
