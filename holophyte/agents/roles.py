@@ -343,7 +343,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         # Recorded before launch, so a turn the budget kills still leaves it.
         import store
         store.record_agent_session(conn, run_id, session_id, role, "primary")
-    code, out = launcher.launch(launcher.route_for(project), cwd,
+    code, out = launcher.launch(launcher.turn_route(project, cmd), cwd,
                                  launcher.environment(project), cmd,
                                  timeout=cap, runner=run_capped, project=project,
                                  keep_session=True, **hook)

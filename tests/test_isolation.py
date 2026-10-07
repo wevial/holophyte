@@ -446,7 +446,7 @@ class IsolationTests(GoRaceCases, IsolationCase):
             launcher.container_command(
                 launcher.route_for(self.target), worktree, {}, ["codex"], "n")
 
-    def test_a_codex_trimmer_mounts_the_host_release_beside_a_claude_implementer(self):
+    def test_a_codex_trimmer_mounts_codex_for_its_own_launches_only(self):
         from holophyte.isolation import launcher
 
         _, worktree = self.make_worktree()
@@ -458,10 +458,14 @@ class IsolationTests(GoRaceCases, IsolationCase):
                                         "implementer": {"harness": "claude"},
                                         key: trimmer}
                 with patch.dict(os.environ, {"PATH": str(release)}):
-                    command, _ = launcher.container_command(
-                        launcher.route_for(self.target), worktree, {},
-                        ["codex"], "n")
-                mounts = [command[i + 1] for i, part in enumerate(command)
+                    implement, _ = launcher.container_command(
+                        launcher.turn_route(self.target, ["claude", "-p"]),
+                        worktree, {}, ["claude", "-p"], "n")
+                    trim, _ = launcher.container_command(
+                        launcher.turn_route(self.target, ["codex", "exec"]),
+                        worktree, {}, ["codex", "exec"], "n")
+                self.assertNotIn("codex", " ".join(implement))
+                mounts = [trim[i + 1] for i, part in enumerate(trim)
                           if part == "--volume"]
                 self.assertIn(f"{release}/codex:/opt/codex/bin/codex:ro", mounts)
 

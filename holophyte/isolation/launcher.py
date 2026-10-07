@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
 import review_runner
@@ -61,9 +61,13 @@ def route_for(project):
     credential = table.get("implementer_credential", {})
     validate_credential(credential)
     codex = any(runs_codex(table.get(key))
-                for key in ("implementer", "implementer_fallback", "trimmer",
-                            "trimmer_fallback"))
+                for key in ("implementer", "implementer_fallback"))
     return Route(backend, image, credential, memory, writable, codex)
+
+
+def turn_route(project, argv):
+    route = route_for(project)
+    return replace(route, codex=route.codex or argv[:1] == ["codex"])
 
 
 def validate_credential(value):
