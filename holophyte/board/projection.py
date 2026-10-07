@@ -176,14 +176,15 @@ def body_problem(task, repo=None, on_pull_request=False):
 VALIDATION_HEADING = "Not claimed: this ticket's body fails the template"
 
 
-def note_problems(conn, ticket_id, kind, body, problems, text=None):
+def note_problems(conn, ticket_id, kind, body, problems, text=None,
+                  salt=None):
     if text is None:
         bullets = "\n".join(f"* {problem}" for problem in problems)
         text = f"**{VALIDATION_HEADING}**\n\n{bullets}"
     digest = hashlib.sha256(
         "\0".join([body or "", *problems]).encode()).hexdigest()
-    return store.record_note(conn, ticket_id, kind, comment_body(text),
-                             f"{kind}:{digest}")
+    key = f"{kind}:{digest}" + ("" if salt is None else f":{salt}")
+    return store.record_note(conn, ticket_id, kind, comment_body(text), key)
 
 
 def merge_drift(conn, run_id, provider, issue_id):

@@ -324,6 +324,41 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
                          [sha])
 
+    def adopt(self, evidence):
+        """Push and adopt the branch's open pull request at `URL`, whose
+        body reads `evidence`, with a prepared text carrying newer Evidence;
+        answer the pull request's body afterwards."""
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(open_pr=self.URL)
+        self.git("branch", BRANCH)
+        link = "Linear: KO-131 (https://linear.app/example/KO-131)\n"
+        self.pr_body.write_text(f"Earlier prose.\n\n{evidence}\n\n{link}")
+        prepared = ("Newer prose.\n\n## Evidence\n\nCaptured at 2500d82ac13c\n\n"
+                    "![one](https://example/one.png)\n\n"
+                    "![two](https://example/two.png)\n\n" + link)
+        url = holophyte.pr.pullrequest._push_and_open(
+            self.project, None, None, BRANCH, "title", prepared, 60)
+        self.assertEqual(url, self.URL)
+        self.assertFalse(any(c.startswith("gh pr create")
+                             for c in self.recorded()))
+        return self.pr_body.read_text()
+
+    def test_adopting_an_open_pull_request_replaces_only_its_evidence(self):
+        body = self.adopt("## Evidence\n\nCaptured at 657e8529c357\n\n"
+                          "![one](https://example/old.png)")
+        self.assertEqual(
+            body, "Earlier prose.\n\n## Evidence\n\nCaptured at 2500d82ac13c\n\n"
+            "![one](https://example/one.png)\n\n"
+            "![two](https://example/two.png)\n\n"
+            "Linear: KO-131 (https://linear.app/example/KO-131)\n")
+
+    def test_adopting_a_pull_request_with_the_same_evidence_edits_nothing(self):
+        self.adopt("## Evidence\n\nCaptured at 2500d82ac13c\n\n"
+                   "![one](https://example/one.png)\n\n"
+                   "![two](https://example/two.png)")
+        self.assertFalse(any(c.startswith("gh pr edit")
+                             for c in self.recorded()))
+
     def test_an_open_pull_request_is_adopted_through_a_slashed_origin(self):
         """An `origin` ending in `/` -- `https://github.com/example/repo/`
         is a URL `git remote add` accepts -- must still reach GitHub:

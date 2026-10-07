@@ -90,12 +90,12 @@ class ApproveCliTests(unittest.TestCase):
         park_run(self.conn, self.run, "awaiting_merge_approval",
                    now=T0 + 2 * MINUTE, pr_url=pr_url)
 
-    def park_at_pull_request(self):
-        """`park(PULL)` under `[merge] mode = "pr"` and `approve = "human"`,
+    def park_at_pull_request(self, approve="human"):
+        """`park(PULL)` under `[merge] mode = "pr"` and `approve`,
         its branch pushed to a real bare `origin` at the parked candidate;
         GitHub's API answers through `self.github`, ready until told not."""
         with self.target.config_path.open("a") as config:
-            config.write('[merge]\nmode = "pr"\napprove = "human"\n')
+            config.write(f'[merge]\nmode = "pr"\napprove = "{approve}"\n')
         origin = self.root / "origin.git"
         git(self.root, "init", "--bare", "-b", "main", str(origin))
         git(self.repo, "init", "-b", BRANCH)
@@ -244,6 +244,30 @@ class ApproveCliTests(unittest.TestCase):
             "forced past readiness: review_not_approved"), note)
         self.assertIn("teammate approved in chat", note)
         self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+
+    def test_an_auto_approve_pull_request_park_is_released_unread(self):
+        self.park_at_pull_request(approve="auto")
+        self.github.review = None
+
+        out, _ = self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn(f"KO-1 approved: run {self.run}", out)
+        self.assertEqual(self.interventions(), [(self.run, "approve")])
+        self.assertEqual(self.intervention_note(), "ok")
+        self.assertEqual(self.run_row()[2], "merge_gate")
+        self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+        self.assertEqual(self.github.calls, [])
+
+    def test_force_on_an_auto_approve_park_records_the_note_as_given(self):
+        self.park_at_pull_request(approve="auto")
+        self.github.review = None
+
+        self.cli("--approve", "KO-1", "--force", "--note", "ok")
+
+        self.assertEqual(self.interventions(), [(self.run, "approve")])
+        self.assertEqual(self.intervention_note(), "ok")
+        self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+        self.assertEqual(self.github.calls, [])
 
     def test_force_without_a_note_is_an_argparse_error_writing_nothing(self):
         self.park_at_pull_request()

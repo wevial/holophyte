@@ -182,7 +182,8 @@ def _without_changes(text):
 def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
                     beat_s, wt, budget_min, pull, answered, *, sha=None):
     """A refused turn never overwrites the existing prose."""
-    if sha and pr_activity.latest(conn, run_id, "pr_text_sha") == sha:
+    written = bool(sha) and pr_activity.latest(conn, run_id, "pr_text_sha") == sha
+    if written and not merge_config(project).ui_paths:
         return
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
@@ -193,8 +194,9 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
             project, wt, task_id, evidence,
             evidence_states=ticket_template.parse(ticket).evidence_states,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
-    text = _refreshed_prose(project, conn, run_id, task_id, task, branch, ticket,
-                            beat_s, wt, budget_min, own, answered)
+    text = None if written else _refreshed_prose(
+        project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
+        budget_min, own, answered)
     if text is None and section is None:
         return
     with heartbeat_while(conn, run_id, beat_s):
@@ -273,7 +275,22 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
                 if adopted else f"pull request open: {url}")
             # The PR is the run's `prUrl` from now, even for a run that never parks.
             store.set_pull_request(conn, run_id, url)
+    if adopted:
+        with heartbeat_while(conn, run_id, beat_s):
+            _adopt_evidence(project, url, text)
     return url
+
+
+def _adopt_evidence(project, url, text):
+    section = github.split_pr_body(text)[2]
+    if not section:
+        return
+    pull = pr_status.parse_pr_url(url)
+    body = github.rest(project, pull, "GET",
+                       f"repos/{pull.repo}/pulls/{pull.number}")["body"] or ""
+    if github.split_pr_body(body)[2].rstrip() != section.rstrip():
+        github.edit_pr_body(project, pull,
+                            github.replace_pr_evidence(body, section))
 
 
 def _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,

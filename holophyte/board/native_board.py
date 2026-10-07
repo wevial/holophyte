@@ -151,11 +151,17 @@ class NativeBoard:
         return [], []
 
     def move(self, identifier, column, revision, note=None):
+        from holophyte.review.freshness import recheck_move, stale_parked
         conn, project_id = self._write()
         with closing(conn):
+            parked = column == "ready" and stale_parked(
+                conn, project_id, identifier, columns=("ready", "backlog"))
+            if parked:
+                return recheck_move(self.project, conn, project_id, self,
+                                    parked[0], revision, note)
             return store.board.move_ticket(conn, project_id, identifier,
                                            column, revision, author="cli",
-                                           note=note)
+                                           note=note), True, None
 
     def cancel(self, identifier, revision, note):
         conn, project_id = self._write()
