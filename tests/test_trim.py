@@ -113,6 +113,12 @@ class Remove(Commit):
         return f"removed {self.path}"
 
 
+class MakeExecutable(Commit):
+    def play(self, cwd, turn):
+        (cwd / self.path).chmod(0o755)
+        return super().play(cwd, turn)
+
+
 class ObservedApproval:
     """The review turn, noting the worktree it was handed."""
 
@@ -223,6 +229,18 @@ class TrimLoopTests(LoopFixture):
         self.assertEqual(self.review_candidates(fake), [self.shas()["trim: merge"]])
         [result] = self.results()
         self.assertEqual(result["outcome"], "kept")
+
+    def test_an_import_swap_that_also_changes_the_files_mode_is_reverted(self):
+        self.on_main("helpers.py", "from a import x\n")
+        fake = self.trimmed(
+            WORK, Commits(MakeExecutable("trim: merge", "helpers.py",
+                                         "from b import x\n")),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn("helpers.py outside the run's diff", result["reason"])
 
     def assert_failed_turn_reverted(self, failure, named):
         review = ObservedApproval()

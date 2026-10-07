@@ -117,12 +117,17 @@ def _scoped(wt, base_sha, sha, commits):
 
 def _imports_only(wt, parent, commit, path):
     diff = subprocess.run(
-        ["git", "--literal-pathspecs", "diff", "--no-renames", "--text", "-U0",
-         parent, commit, "--", path], cwd=wt, capture_output=True, check=True,
+        ["git", "--literal-pathspecs", "diff", "--patch-with-raw", "--no-renames",
+         "--text", "-U0", parent, commit, "--", path], cwd=wt,
+        capture_output=True, check=True,
     ).stdout.decode(errors="replace")
-    changed = [line[1:].strip() for line in diff.partition("\n@@")[2].splitlines()
+    raw, _, hunks = diff.partition("\n@@")
+    modes = {mode.lstrip(":") for line in raw.splitlines() if line.startswith(":")
+             for mode in line.split()[:2]} - {"000000"}
+    changed = [line[1:].strip() for line in hunks.splitlines()
                if line.startswith(("+", "-"))]
-    return bool(changed) and all(line.startswith(IMPORT_LINE) for line in changed)
+    return (len(modes) == 1 and bool(changed)
+            and all(line.startswith(IMPORT_LINE) for line in changed))
 
 
 def _green_prefix(wt, commits, green, untracked):
