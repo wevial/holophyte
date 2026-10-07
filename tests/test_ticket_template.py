@@ -995,11 +995,7 @@ class StorySectionTests(unittest.TestCase):
 
 class EvidenceTests(unittest.TestCase):
     def body(self, states):
-        declared = FILLED.replace("**How:**",
-                                  "**UI change:** minor\n\n**How:**")
-        return declared.replace("## Implementation notes",
-                                "## Evidence\n\n" + "\n".join(states)
-                                + "\n\n## Implementation notes")
+        return with_ui_change("minor", states=states)
 
     def test_optional_ordered_states_and_limit(self):
         self.assertEqual(tt.parse(FILLED).evidence_states, [])
@@ -1070,11 +1066,11 @@ def with_ui_change(value, mockup=None, states=()):
         body = body.replace("## Implementation notes",
                             "## Evidence\n\n" + "\n".join(states)
                             + "\n\n## Implementation notes")
-    return tt.parse(body)
+    return body
 
 
-def mockup_blockers(ticket):
-    return [p for p in tt.blocking(tt.validate(ticket)) if "'## Mock-up'" in p]
+def mockup_blockers(body):
+    return [p for p in tt.blocking(tt.validate(tt.parse(body))) if "'## Mock-up'" in p]
 
 
 class MockupTests(unittest.TestCase):
@@ -1082,7 +1078,7 @@ class MockupTests(unittest.TestCase):
         for url in ("https://claude.ai/artifact/3f2a9c",
                     "https://lotuspod.example.org/onboarding-flow.html"):
             with self.subTest(url=url):
-                ticket = with_ui_change("major", f"{url}\n\n{APPROVAL}")
+                ticket = tt.parse(with_ui_change("major", f"{url}\n\n{APPROVAL}"))
                 self.assertEqual(tt.validate(ticket), [])
 
     def test_a_foreign_wrapped_or_unapproved_link_is_blocking(self):
@@ -1098,20 +1094,20 @@ class MockupTests(unittest.TestCase):
         for url in ("`https://claude.ai/artifact/3f2a9c`",
                     "**https://claude.ai/artifact/3f2a9c**"):
             with self.subTest(url=url):
-                ticket = with_ui_change("major", f"{url}\n\n{APPROVAL}")
+                ticket = tt.parse(with_ui_change("major", f"{url}\n\n{APPROVAL}"))
                 self.assertEqual(tt.validate(ticket), [])
 
     def test_the_template_placeholders_left_in_are_blocking(self):
-        ticket = with_ui_change(
+        ticket = tt.parse(with_ui_change(
             "major", "<https://claude.ai/artifact/ID>\n\n"
-                     "Approved 2026-10-07: <what was approved>")
+                     "Approved 2026-10-07: <what was approved>"))
         self.assertIn("unfilled template placeholder in Mock-up: "
                       "<https://claude.ai/artifact/ID>",
                       tt.blocking(tt.validate(ticket)))
 
     def test_a_declaration_other_than_major_or_minor_is_blocking(self):
         self.assertEqual(
-            [p for p in tt.blocking(tt.validate(with_ui_change("huge")))
+            [p for p in tt.blocking(tt.validate(tt.parse(with_ui_change("huge"))))
              if "'**UI change:**'" in p],
             ["'**UI change:**' must read major or minor, not 'huge'"])
         for line, value in (("UI change: Major", "Major"),
@@ -1125,11 +1121,11 @@ class MockupTests(unittest.TestCase):
     def test_three_undeclared_evidence_states_get_one_advisory(self):
         states = ("Onboarding step one", "Onboarding step two",
                   "Onboarding done")
-        problems = tt.validate(with_ui_change(None, states=states))
+        problems = tt.validate(tt.parse(with_ui_change(None, states=states)))
         self.assertEqual(len(problems), 1)
         self.assertTrue(problems[0].startswith(tt.ADVISORY_PREFIX))
         self.assertIn("**UI change:**", problems[0])
-        self.assertEqual(tt.validate(with_ui_change("minor", states=states)),
-                         [])
-        self.assertEqual(tt.validate(with_ui_change(None, states=states[:2])),
-                         [])
+        self.assertEqual(
+            tt.validate(tt.parse(with_ui_change("minor", states=states))), [])
+        self.assertEqual(
+            tt.validate(tt.parse(with_ui_change(None, states=states[:2]))), [])
