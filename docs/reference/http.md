@@ -31,10 +31,11 @@ those writing routes. A project with no store answers 503.
   "active_routes": {"implementer": {"command": "claude"},
                     "reviewer": {"command": "claude", "fallback": "claude"},
                     "adjudicator": {"command": "codex"},
-                    "writer": {"command": null}},
+                    "writer": {"command": null},
+                    "trimmer": {"command": null}},
   "route_labels": {"implementer": "claude opus", "reviewer": "codex gpt-5.6-sol",
                    "reviewer_fallback": null, "adjudicator": "codex gpt-5.6-sol",
-                   "writer": "claude opus"},
+                   "writer": "claude opus", "trimmer": "claude opus"},
   "workers_on_previous_build": 0,
   "host": "writer-1",
   "now": 1788450534491,
@@ -109,9 +110,9 @@ and `PUT /config`; the console's settings sheet is read-only, naming the
 key, while it is `false`. `route_labels` names what each seat is configured
 to run, labelled as a recorded turn is: the command's first word plus its
 `-m`/`--model` value. A seat left unset shows the default the loop
-dispatches, an unset `writer` the implementer's label, and an unset
+dispatches, an unset `writer` or `trimmer` the implementer's label, and an unset
 `reviewer_fallback` null. `active_routes` holds one entry per seat
-(`implementer`, `reviewer`, `adjudicator`, `writer`) naming what the seat
+(`implementer`, `reviewer`, `adjudicator`, `writer`, `trimmer`) naming what the seat
 runs now: `command` is the executable alone, never its arguments, null for
 a seat left unset in `[agents]`; while a running loop has switched the seat
 to its fallback, `command` is the fallback's and the entry also carries

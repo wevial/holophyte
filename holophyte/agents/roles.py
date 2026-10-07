@@ -45,6 +45,7 @@ from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
 from holophyte.redact import known_secrets, outbound
 
 REVIEW_TIMEOUT = 1800
+WRITING_ROLES = ("implement", "trim")
 
 
 def agent_route(project, role):
@@ -58,10 +59,10 @@ def agent_route(project, role):
 
 
 def effective_role(project, role):
-    if role == "trim":
-        return "implement"
-    if role == "write" and (routes(project).writer_failed
-                            or agent_command(project, role, "") is None):
+    failed = {"write": routes(project).writer_failed,
+              "trim": routes(project).trimmer_failed}
+    if role in failed and (failed[role]
+                           or agent_command(project, role, "") is None):
         return "implement"
     return role
 
@@ -294,15 +295,15 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                         shlex.join(cmd[:-1]) if cmd is not None else
                         DEFAULT_IMPLEMENTER)
     if cmd is None:
-        if role != "implement":
+        if role not in WRITING_ROLES:
             return container_review(project, role, goal, cwd, base_sha,
                                     candidate_sha, conn, run_id, switched,
                                     review_round)
         cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
-    elif role != "implement":
+    elif role not in WRITING_ROLES:
         publish_review_refs(Path(cwd), base_sha, candidate_sha, run_id=run_id)
-    if role != "implement":
+    if role not in WRITING_ROLES:
         # runs imports agent_route: importing it at load would be a cycle.
         from holophyte.loop.runs import heartbeat_while
         from holophyte.review.review_session import prepare_environment, record_session

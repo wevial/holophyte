@@ -15,6 +15,9 @@
     },
     "writer": {
       "command": null
+    },
+    "trimmer": {
+      "command": null
     }
   },
   "route_labels": {
@@ -22,7 +25,8 @@
     "reviewer": "codex gpt-6-astra",
     "reviewer_fallback": null,
     "adjudicator": "codex gpt-6-astra",
-    "writer": "claude opus"
+    "writer": "claude opus",
+    "trimmer": "claude opus"
   },
   "workers_on_previous_build": 0,
   "host": "writer",

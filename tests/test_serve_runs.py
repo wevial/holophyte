@@ -818,19 +818,22 @@ class RouteLabelsTests(ServeTestCase):
                 "reviewer": "codex gpt-6-astra",
                 "reviewer_fallback": None,
                 "adjudicator": "codex gpt-6-astra",
-                "writer": "claude-implement opus"})
+                "writer": "claude-implement opus",
+                "trimmer": "claude-implement opus"})
 
     def test_configured_seats_show_their_command_and_model(self):
         self.assertEqual(self.labels(
             'reviewer = "codex-review -m gpt-6-astra"\n'
             'reviewer_fallback = "devin --model swe-1"\n'
             'adjudicator = "codex-adjudicate --model gpt-6-astra"\n'
-            'writer = "claude-write --model sonnet"\n'), {
+            'writer = "claude-write --model sonnet"\n'
+            'trimmer = "claude-trim --model haiku"\n'), {
                 "implementer": "claude opus",
                 "reviewer": "codex-review gpt-6-astra",
                 "reviewer_fallback": "devin swe-1",
                 "adjudicator": "codex-adjudicate gpt-6-astra",
-                "writer": "claude-write sonnet"})
+                "writer": "claude-write sonnet",
+                "trimmer": "claude-trim haiku"})
 
 
 class MigrationFeedTests(ServeTestCase):

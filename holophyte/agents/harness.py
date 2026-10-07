@@ -10,7 +10,8 @@ from dataclasses import dataclass
 import review_runner
 from ticket_template import ORCHESTRATION_MODES
 
-TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic")
+TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic", "trimmer")
+WRITING_ROLES = ("implementer", "trimmer")
 TABLE_KEYS = ("harness", "model", "effort")
 IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
 
@@ -47,7 +48,7 @@ class Adapter:
 
 class Claude(Adapter):
     name = "claude"
-    roles = frozenset({"implementer", "critic"})
+    roles = frozenset({"implementer", "trimmer", "critic"})
     orchestrations = frozenset({"subagents", "workflow"})
 
     def turn(self, binary, options, role):
@@ -70,7 +71,8 @@ class Claude(Adapter):
 class Codex(Adapter):
     """The sandbox fails under PrivateTmp; a throwaway checkout bounds writes."""
     name = "codex"
-    roles = frozenset({"implementer", "reviewer", "adjudicator", "critic"})
+    roles = frozenset({"implementer", "trimmer", "reviewer", "adjudicator",
+                       "critic"})
     efforts = review_runner.EFFORTS
     orchestrations = frozenset({"subagents"})
     BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
@@ -78,7 +80,7 @@ class Codex(Adapter):
                    "--skip-git-repo-check"]
 
     def turn(self, binary, options, role):
-        if role == "implementer":
+        if role in WRITING_ROLES:
             return [binary, "exec", *self.IMPLEMENTER, *self.route(options)]
         return [binary, "exec", *self.route(options),
                 "--dangerously-bypass-approvals-and-sandbox"]
@@ -87,7 +89,7 @@ class Codex(Adapter):
         return None
 
     def resume(self, binary, options, session, role):
-        if role == "implementer":
+        if role in WRITING_ROLES:
             return [binary, "exec", "resume", session, *self.IMPLEMENTER,
                     *self.route(options)]
         return [binary, "exec", "resume", *self.route(options),
@@ -115,7 +117,7 @@ class Codex(Adapter):
 
 class Devin(Adapter):
     name = "devin"
-    roles = frozenset({"implementer", "reviewer", "adjudicator"})
+    roles = frozenset({"implementer", "trimmer", "reviewer", "adjudicator"})
     requires = frozenset({"model"})
     refuses = frozenset({"effort"})
     orchestrations = frozenset({"subagents"})
@@ -126,7 +128,7 @@ class Devin(Adapter):
                    "dangerous"]
 
     def turn(self, binary, options, role):
-        if role == "implementer":
+        if role in WRITING_ROLES:
             return [binary, *self.IMPLEMENTER, "--model", options["model"],
                     "-p", "--"]
         return [binary, *self.route(options), "-p"]
@@ -135,7 +137,7 @@ class Devin(Adapter):
         return None
 
     def resume(self, binary, options, session, role):
-        if role == "implementer":
+        if role in WRITING_ROLES:
             return [binary, *self.IMPLEMENTER, "--model", options["model"],
                     "-r", session, "-p", "--"]
         return [binary, *self.route(options), "-r", session, "-p"]
@@ -354,7 +356,7 @@ def seat(target, role, *, fallback=False):
     from holophyte.isolation.launcher import route_for
     binary = adapter.binary
     # A container implementer's binary comes from the image, not `[harnesses]`.
-    if role != "implement" or route_for(target).backend != "container":
+    if role not in ("implement", "trim") or route_for(target).backend != "container":
         paths = config_table(target, "harnesses")
         check_paths(where, paths)
         binary = paths.get(adapter.name, binary)

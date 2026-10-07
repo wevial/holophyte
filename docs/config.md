@@ -67,6 +67,7 @@ implementer's command and isolation settings.
 | `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` `"codex"` and optional `model` and `effort` (default `"gpt-6-astra"`, `"high"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"cursor"` or `"devin"` with a required `model` and no `effort`; override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
+| `trimmer` | Default: Active implementer route | Non-empty command string, or the table `[agents.trimmer]` with `harness` `"claude"`, `"codex"` or `"devin"` and the same `model` and `effort` rules as `[agents.implementer]` (no `orchestration`); set it to run the trim turn (`[trim]` below) on a cheaper model or another harness. The turn launches like an implementer turn, in the task worktree and under `implementer_isolation`, with the trim goal as the last argument, and records no session. Probed at startup; when it and `trimmer_fallback` both fail, startup prints "trimmer route down; runs skip trim" and each run's trim records `skipped`, without stopping the loop. |
 | `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default, or `"claude"`), `model` and `effort` (`codex`: default `"gpt-6-luna"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`; `claude`: default `"opus"`, `"high"`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
 | `review_model` | Default: `"gpt-6-astra"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"high"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
@@ -84,6 +85,7 @@ implementer's command and isolation settings.
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
 | `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary, or a non-empty list of them; set for a probed backup reviewer. A list is probed in order when the primary fails, and the first entry that passes is recorded and used. |
 | `adjudicator_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup adjudicator. |
+| `trimmer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from `trimmer`; set for a probed backup trimmer. Startup activates it when the trimmer's probe fails and its own passes, and a trim turn whose output carries an outage line switches to it; a trimmer that fails with no fallback, or a fallback that fails its probe, reverts that run's trim. |
 
 ```toml
 [agents]
@@ -111,10 +113,10 @@ budget_scale = 1.5
 ```
 
 A role can instead be a table naming a harness adapter in
-`holophyte/agents/harness.py`. Only `implementer`, `reviewer`, `adjudicator` and
-`critic` may be tables, and only for a role the harness supports; today that
-is `claude` for `implementer` and `critic`, `codex` for `implementer`, `reviewer`,
-`adjudicator` and `critic`, `devin` for `implementer`, `reviewer` and
+`holophyte/agents/harness.py`. Only `implementer`, `reviewer`, `adjudicator`,
+`critic` and `trimmer` may be tables, and only for a role the harness supports; today that
+is `claude` for `implementer`, `trimmer` and `critic`, `codex` for `implementer`, `trimmer`, `reviewer`,
+`adjudicator` and `critic`, `devin` for `implementer`, `trimmer`, `reviewer` and
 `adjudicator`, and `cursor` for `reviewer` and `adjudicator`. Unknown keys, an unknown harness, a role the harness does not
 serve, or an option the harness requires or refuses are startup errors.
 `[agents.implementer] harness = "claude"`
@@ -1409,8 +1411,8 @@ A `witness_sec` or `max_parallel` that is not a positive integer, or a
 
 The trim step: one agent turn after the implement turn and before the first
 review round that makes the run's diff smaller. It runs the vendored trim
-procedure (`holophyte/loop/trim_brief.py`) on the active implementer route,
-and the factory keeps only commits whose subjects are `trim: delete`,
+procedure (`holophyte/loop/trim_brief.py`) on the `[agents] trimmer` seat, or
+the active implementer route when none is set, and the factory keeps only commits whose subjects are `trim: delete`,
 `trim: merge`, `trim: flatten`, `trim: comments` or `trim: tests`, and only
 while verify stays green.
 

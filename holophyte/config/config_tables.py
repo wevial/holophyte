@@ -3,7 +3,7 @@ import math
 import re
 
 AGENT_FALLBACK_KEYS = ("implementer_fallback", "reviewer_fallback",
-                       "adjudicator_fallback")
+                       "adjudicator_fallback", "trimmer_fallback")
 
 HEARTBEAT_STALE_MS = 5 * 60 * 1000
 STALE_STRIKES = 2

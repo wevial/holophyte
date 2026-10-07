@@ -150,7 +150,7 @@ def probe_route(project, role, fallback, timeout, entry):
                     timeout=cap, verdicts=None,
                     service_tier=review_tier(project, fallback=fallback))
                 code = 0
-            elif role == "implement":
+            elif role in ("implement", "trim"):
                 code, out = launcher.launch(
                     replace(launcher.route_for(project), writable=False), scratch,
                     launcher.environment(project), cmd, timeout=cap,

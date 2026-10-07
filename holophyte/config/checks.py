@@ -126,8 +126,8 @@ def check_agent_commands(project):
         argv = agent_command(project, role, "")
         if role == "write" and argv is not None:
             check_command_path(project, key, argv[0])
-        # The critic is advice: its live probe, not the host, settles it.
-        if role in ("write", "critic") or (role == "implement" and isolated):
+        # The critic and trimmer are optional: their probes, not the host, settle them.
+        if role in ("write", "critic", "trim") or (role == "implement" and isolated):
             continue
         if argv is None:
             if agent_command(project, role, "", fallback=True) is not None:

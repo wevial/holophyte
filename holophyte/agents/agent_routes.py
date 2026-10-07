@@ -61,6 +61,7 @@ class ActiveRoutes:
         self.project_id = None
         self.failed = False
         self.writer_failed = False
+        self.trimmer_failed = False
         self.critic_failed = False
         self.stream = None
         self.project = project
