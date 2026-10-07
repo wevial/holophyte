@@ -68,6 +68,14 @@ class ConfigReferenceTests(unittest.TestCase):
                     self.assertIsNotNone(row, f"[{table}] needs a key row: {key}")
                     self.assertIn("default", row.group().lower())
 
+    def test_verify_timeout_caps_ticket_commands_and_the_baseline(self):
+        verify = sections((DOCS / "config.md").read_text())["verify"]
+        row = re.search(r"^\| `timeout_sec` \|.*$", verify, re.MULTILINE)
+        self.assertIsNotNone(row, "[verify] needs a key row: timeout_sec")
+        for term in ("baseline", "every ticket's verify commands"):
+            with self.subTest(term=term):
+                self.assertIn(term, row.group())
+
     def test_removed_entry_names_missing_key_even_if_mentioned_elsewhere(self):
         document = (DOCS / "config.md").read_text()
         removed, count = re.subn(r"^\| `media_repo` \|.*\n", "", document,

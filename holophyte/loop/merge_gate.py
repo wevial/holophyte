@@ -6,7 +6,7 @@ import store
 import store.read
 from holophyte.babysit.babysitter import _babysit
 from holophyte.board.projection import block_ticket, ledger, merge_drift, mirror_task
-from holophyte.config.config_tables import merge_config, sweep_config
+from holophyte.config.config_tables import merge_config, sweep_config, verify_config
 from holophyte.environment_git import refuse_environment_history
 from holophyte.loop import run as run_state
 from holophyte.loop.claim import _resolve_merge_conflict, reuse_leftover
@@ -238,8 +238,9 @@ def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
                                      branch, wt, sha, beat_s, ticket,
                                      budget_min)
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id,
-                             project=project)
+        ok, out = run_verify(verify_cmd, wt, contracts,
+                             verify_config(project).timeout_sec, conn=conn,
+                             run_id=run_id, project=project)
         ok, out = with_baseline(project, wt, verify_cmd, ok, out,
                                conn, run_id, before_merge=True)
     stop_if_requested(conn, run_id, "merge_gate")

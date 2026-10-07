@@ -728,13 +728,13 @@ from the name the new prefix gives it.
 | --- | --- | --- |
 | `always` | Default: `[]` | List of non-empty shell command strings; set fast baseline checks required at every verify gate. |
 | `before_merge` | Default: `[]` | List of non-empty shell command strings; set additional, expensive checks needed at the merge gate. |
-| `timeout_sec` | Default: `300` seconds | Finite positive number; increase the per-command baseline timeout for slower checks. |
+| `timeout_sec` | Default: `300` seconds | Finite positive number; increase the per-command timeout of the baseline and of every ticket's verify commands for slower checks. |
 
 The default empty tiers add no checks. Ticket verify commands run first,
 then `always`; at the merge gate `before_merge` runs last. Commands run in
 order in the task worktree and stop at the first failure. These baselines
-supplement the ticket's exact commands; `timeout_sec` applies to baseline
-commands, not to the ticket's commands or worktree setup.
+supplement the ticket's exact commands; `timeout_sec` caps each baseline
+command and each of the ticket's verify commands, not worktree setup.
 
 Every line of an instrumented simple newline verify block must pass, and the
 run stops at the first failure. Parseable top-level `&&` chains also stop at
