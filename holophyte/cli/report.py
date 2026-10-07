@@ -115,6 +115,29 @@ def trim_lines(conn):
             + f" · net {net:+d} lines"]
 
 
+def calls(n):
+    return f"{n} call" if n == 1 else f"{n} calls"
+
+
+def question_lines(conn):
+    asked = [json.loads(payload) for (payload,) in conn.execute(
+        "SELECT payload FROM runEvents WHERE kind = 'question'")]
+    if not asked:
+        return []
+    parts = [calls(len(asked))]
+    for backend in sorted({event["backend"] for event in asked}):
+        mine = [event for event in asked if event["backend"] == backend]
+        inputs, outputs, costs = ([event[key] for event in mine
+                                   if event.get(key) is not None]
+                                  for key in ("input_tokens", "output_tokens",
+                                              "cost_usd"))
+        tokens = (f"{sum(inputs)} in / {sum(outputs)} out tokens"
+                  if inputs or outputs else "tokens not reported")
+        cost = f"${sum(costs):.4f}" if costs else "cost not reported"
+        parts.append(f"{backend} {calls(len(mine))}, {tokens}, {cost}")
+    return ["questions: " + " · ".join(parts)]
+
+
 TOIL_WINDOWS = (("24h", 24 * 3_600_000), ("7d", 7 * 24 * 3_600_000))
 
 
@@ -169,6 +192,7 @@ def report_lines(conn, target=None):
         live += failure_lines(conn)
         live += flaky_lines(conn)
         live += trim_lines(conn)
+        live += question_lines(conn)
         live += toil_lines(conn, now)
         live.append("gap layers: " + ", ".join(
             f"{layer} {count}"
