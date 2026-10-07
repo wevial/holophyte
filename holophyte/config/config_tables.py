@@ -161,6 +161,29 @@ def story_config(project):
     return StoryConfig(**values)
 
 
+TRIM_KEYS = {"enabled": True, "budget_min": 15}
+TrimConfig = collections.namedtuple("TrimConfig", TRIM_KEYS)
+
+
+def trim_config(project):
+    table = project.config().get("trim", {})
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [trim] must be a table, got "
+            f"{type(table).__name__}")
+    enabled = table.get("enabled", TRIM_KEYS["enabled"])
+    if not isinstance(enabled, bool):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [trim] enabled must be a boolean "
+            f"(true or false), got {enabled!r}")
+    budget = table.get("budget_min", TRIM_KEYS["budget_min"])
+    if isinstance(budget, bool) or not isinstance(budget, int) or budget < 1:
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [trim] budget_min must be an "
+            f"integer of at least 1, got {budget!r}")
+    return TrimConfig(enabled=enabled, budget_min=budget)
+
+
 BOARD_KEYS = {
     "project_id": None,
     "team": None,

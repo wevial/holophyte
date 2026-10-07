@@ -14,6 +14,7 @@ from holophyte.config.config_tables import (
     REPORT_KEYS,
     STORY_KEYS,
     SUPERVISOR_KEYS,
+    TRIM_KEYS,
 )
 
 
@@ -77,6 +78,7 @@ KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS) | frozenset(
     {"capture_env_source", "capture_env_allow"})
 KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
 KNOWN_KEYS["story"] = frozenset(STORY_KEYS)
+KNOWN_KEYS["trim"] = frozenset(TRIM_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
 KNOWN_KEYS["questions"] = frozenset(("url", "key_env", "min_confidence"))
 KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)

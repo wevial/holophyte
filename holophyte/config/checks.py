@@ -21,6 +21,7 @@ from holophyte.config.config_tables import (
     report_config,
     story_config,
     sweep_config,
+    trim_config,
     verify_config,
 )
 from holophyte.config.reader import (
@@ -80,6 +81,7 @@ def check_config(project):
     loop_config(project)
     report_config(project)
     story_config(project)
+    trim_config(project)
     console_config(project)
     serve_config(project)
 

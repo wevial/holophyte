@@ -82,27 +82,30 @@ def _open_findings(conn, run_id):
     return "; ".join(items) if items else "none on record"
 
 
-def _check_run_cap(project, conn, run_id, budget_min, sha):
-    """Refuse a turn that would take agent work past timeBoxMs × scale × run_cap."""
+def run_cap_reason(project, conn, run_id, budget_min, sha):
+    """Why a turn would take agent work past timeBoxMs × scale × run_cap, or None."""
     if conn is None or run_id is None:
-        return
+        return None
     run = store.read.run_snapshot(conn, run_id)
     if run is None or not run.timeBoxMs or not budget_min:
-        return
+        return None
     scale = budget_scale(project)
     cap = sweep_config(project).run_cap
     box_ms = run.timeBoxMs * scale
     spent_ms = agent_work(run, int(time() * 1000))
-    if spent_ms is None:
-        return
-    if spent_ms + budget_min * scale * 60000 <= box_ms * cap:
-        return
-    reason = (f"out of time: {spent_ms / 60000:.1f} min of agent work against a "
-              f"{box_ms / 60000:.0f} min box (cap {cap:g}x); candidate "
-              f"preserved at {sha[:12]}; open findings: "
-              f"{_open_findings(conn, run_id)}")
-    store.record_event(conn, run_id, "run_cap", reason)
-    raise RunFailure(reason, "budget")
+    if spent_ms is None or spent_ms + budget_min * scale * 60000 <= box_ms * cap:
+        return None
+    return (f"out of time: {spent_ms / 60000:.1f} min of agent work against a "
+            f"{box_ms / 60000:.0f} min box (cap {cap:g}x); candidate "
+            f"preserved at {sha[:12]}; open findings: "
+            f"{_open_findings(conn, run_id)}")
+
+
+def _check_run_cap(project, conn, run_id, budget_min, sha):
+    reason = run_cap_reason(project, conn, run_id, budget_min, sha)
+    if reason is not None:
+        store.record_event(conn, run_id, "run_cap", reason)
+        raise RunFailure(reason, "budget")
 
 
 OUTPUT_TAIL = 4000
