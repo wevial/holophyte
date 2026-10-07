@@ -329,8 +329,8 @@ Each module, one line:
   moves it to Backlog. The claim reads a `main` just fetched from origin. On
   a native board `recheck_stale()`, called from `sync_board()` on every pass,
   returns a ticket parked for stale landmarks (not one the critic parked) to
-  `ready` once none of its reasons holds, and `--move KEY-n ready` re-checks
-  it the same way.
+  `ready` (or `blocked_on_deps`) once none of its reasons holds, and
+  `--move KEY-n ready` re-checks it the same way.
 - `holophyte/environment_git.py` — excludes the filtered `.env` from Git
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from

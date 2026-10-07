@@ -269,22 +269,27 @@ def _refreshed(target, conn):
     from holophyte.loop.gates import InfraFailure
     try:
         refresh_main(target, conn=conn, before="the stale re-check")
-    except InfraFailure as e:
-        return str(e)
+    except (InfraFailure, RuntimeError) as e:
+        return " ".join(str(e).split())
     return None
 
 
-def _rederive(conn, project_id, parked, revision):
+def _rederive(target, conn, project_id, parked, revision, note=None):
     ticket_id, identifier, _, body, _, note_id = parked
     revision = store.board.edit_ticket(conn, project_id, identifier, body,
                                        revision, author="factory")
     status = store_status(conn, ticket_id)
     if status != "needs_spec":
+        head = subprocess.run(
+            ["git", "-C", str(target.path), "rev-parse", "--short=12", "main"],
+            capture_output=True, text=True).stdout.strip()
         now = int(time.time() * 1000)
         store.record_note(
             conn, ticket_id, "recheck",
-            f"Re-checked against main: none of the stale landmarks holds any"
-            f" more, so {identifier} is {status} at revision {revision}.",
+            f"Re-checked against main at {head}: every landmark the stale park"
+            f" named is there now, so {identifier} went from needs_spec to"
+            f" {status} (revision {revision})."
+            + (f"\n\n{note}" if note else ""),
             f"recheck:{note_id}:{now}", now=now)
     return revision, status
 
@@ -295,14 +300,15 @@ def recheck_stale(target, conn, project_id, provider):
         return
     failure = _refreshed(target, conn)
     if failure is not None:
-        print(f"[holo2] main not refreshed, so {len(parked)} stale-parked"
-              f" tickets are not re-checked this pass: {failure}")
+        print(f"[holo2] main not refreshed, so no stale-parked ticket"
+              f" ({len(parked)}) is re-checked this pass: {failure}")
         return
     for row in parked:
         if stale_reasons(target.path, row[3], conn, provider):
             continue
         try:
-            revision, status = _rederive(conn, project_id, row, row[2])
+            revision, status = _rederive(target, conn, project_id, row,
+                                         row[2])
         except (ValueError, store.RevisionMoved) as e:
             print(f"[holo2] {row[1]} not re-checked: {e}")
             continue
@@ -327,7 +333,8 @@ def recheck_move(target, conn, project_id, provider, parked, revision, note):
         revision = store.board.move_ticket(conn, project_id, identifier,
                                            "ready", revision, author="cli",
                                            note=note)
-    revision, status = _rederive(conn, project_id, parked, revision)
+    revision, status = _rederive(target, conn, project_id, parked, revision,
+                                 None if moved else note)
     return revision, moved, status
 
 
