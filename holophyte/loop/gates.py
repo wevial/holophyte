@@ -394,7 +394,7 @@ def record_flaky(conn, run_id, report):
 _PASSES = set()
 
 
-def _pass_key(run_id, cmd, cwd):
+def _pass_key(run_id, cmd, cwd, timeout):
     if run_id is None:
         return None
     try:
@@ -407,7 +407,8 @@ def _pass_key(run_id, cmd, cwd):
             cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError, ValueError):
         return None
-    return None if dirty else (run_id, str(Path(cwd).resolve()), head, main, cmd)
+    return None if dirty else (run_id, str(Path(cwd).resolve()), head, main, cmd,
+                               VERIFY_TIMEOUT if timeout is None else timeout)
 
 
 def _verify_command(project, command, cwd, timeout):
@@ -430,7 +431,7 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, project=None,
               if contracts else "")
     if not cmd:
         return True, passed + "(no verify command)"
-    key = _pass_key(run_id, cmd, cwd)
+    key = _pass_key(run_id, cmd, cwd, timeout)
     if key in _PASSES:
         return True, passed + (
             "[verify] not run again: passed earlier in this run at head"

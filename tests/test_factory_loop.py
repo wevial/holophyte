@@ -1381,7 +1381,7 @@ class RunLandingTests(MergeModeFixture):
 class VerifyTimeoutRoundTests(LoopFixture):
     """A round whose verify ran past its cap (KO-673).
 
-    The verify is a real chain under a 1 s cap, so the report the loop
+    The verify is a real chain under a configured 1 s cap, so the report the loop
     reads is the one `run_verify()` writes when a ticket's command runs
     long, not a scripted string.
     """
@@ -1389,8 +1389,8 @@ class VerifyTimeoutRoundTests(LoopFixture):
     TASK = dict(a_task(), verify="echo started && sleep 5")
 
     def run_capped_loop(self, *script):
-        with patch.object(holophyte.loop.gates, "VERIFY_TIMEOUT", 1.0):
-            return self.loop(*script, provider=StubProvider(self.TASK))
+        self.configure("[verify]\ntimeout_sec = 1\n")
+        return self.loop(*script, provider=StubProvider(self.TASK))
 
     def test_an_approved_round_that_only_timed_out_fails_without_a_fix_turn(self):
         fake, _ = self.run_capped_loop(Commit("work"), APPROVE)

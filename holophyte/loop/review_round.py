@@ -10,7 +10,7 @@ from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import review_mode
-from holophyte.config.config_tables import loop_config
+from holophyte.config.config_tables import loop_config, verify_config
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import (
     InfraFailure,
@@ -171,9 +171,9 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             ok, out = pending.get("ok", False), pending.get("out", "")
         else:
             with heartbeat_while(conn, run_id, beat_s):
-                ok, out = run_verify(verify_cmd, wt, contracts, conn=conn,
-                                     run_id=run_id,
-                                 project=project)
+                ok, out = run_verify(verify_cmd, wt, contracts,
+                                     verify_config(project).timeout_sec,
+                                     conn=conn, run_id=run_id, project=project)
                 ok, out = with_baseline(project, wt, verify_cmd, ok, out,
                                        conn, run_id)
             if ok:

@@ -39,7 +39,7 @@ from holophyte.babysit.thread_text import (  # noqa: F401
     where,
 )
 from holophyte.board.projection import ledger
-from holophyte.config.config_tables import merge_config
+from holophyte.config.config_tables import merge_config, verify_config
 from holophyte.loop.gates import (
     InfraFailure,
     RunFailure,
@@ -156,8 +156,9 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
 def _refresh_verify(project, conn, run_id, beat_s, wt, sha, command, contracts):
     started = int(time() * 1000)
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(command, wt, contracts, conn=conn, run_id=run_id,
-                             project=project)
+        ok, out = run_verify(command, wt, contracts,
+                             verify_config(project).timeout_sec, conn=conn,
+                             run_id=run_id, project=project)
         ok, out = with_baseline(project, wt, command, ok, out, conn, run_id)
     out.results = [dict(row, output=f"Tree {sha}\n{row['output']}")
                    for row in out.results]
@@ -474,8 +475,9 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
               " before its review")
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id,
-                             project=project)
+        ok, out = run_verify(verify_cmd, wt, contracts,
+                             verify_config(project).timeout_sec, conn=conn,
+                             run_id=run_id, project=project)
         ok, out = with_baseline(project, wt, verify_cmd, ok, out,
                                conn, run_id)
     stop_if_requested(conn, run_id, "merge_gate")
@@ -859,8 +861,9 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                          f" {branch} preserved at {fixed[:12]}")
     fixed = maintainer_notes.cite_commits(wt, sha, fixed, addressed, sh)
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn, run_id=run_id,
-                             project=project)
+        ok, out = run_verify(verify_cmd, wt, contracts,
+                             verify_config(project).timeout_sec, conn=conn,
+                             run_id=run_id, project=project)
         ok, out = with_baseline(project, wt, verify_cmd, ok, out,
                                conn, run_id)
     boundary(conn, run_id, "merge_gate", **saved)
