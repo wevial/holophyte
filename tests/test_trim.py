@@ -134,7 +134,7 @@ class ObservedApproval:
         return APPROVE.text
 
 
-class TrimLoopTests(LoopFixture):
+class TrimFixture(LoopFixture):
     def trimmed(self, *script, config=TRIMMED, task=None):
         self.configure(config)
         fake, _ = self.loop(*script, provider=StubProvider(task or a_task()))
@@ -160,6 +160,8 @@ class TrimLoopTests(LoopFixture):
     def review_candidates(self, fake):
         return [turn.candidate_sha for turn in fake.turns if turn.role == "review"]
 
+
+class TrimLoopTests(TrimFixture):
     def test_kept_passes_are_the_first_reviews_candidate_and_trim_runs_once(self):
         fake = self.trimmed(
             WORK,
