@@ -525,3 +525,33 @@ class ClaimRefreshTests(LoopFixture):
             "SELECT outcomeClass, outcomeReason FROM runs")
         self.assertEqual(outcome_class, "infra")
         self.assertIn("git fetch origin failed", reason)
+
+    def naming_the_fixture(self):
+        self.task = dict(self.task, body=notes_body(
+            f"Read `{FIXTURE}` for the dependency's fixture."))
+
+    def test_a_landmark_merged_on_origin_admits_the_ticket_naming_it(self):
+        self.naming_the_fixture()
+        merged = self.merge_on_origin()
+
+        admitted, out = self.admit([])
+
+        self.assertIsNotNone(admitted, out)
+        self.assertEqual(self.git("rev-parse", "main").strip(), merged)
+        self.assertNotEqual(self.status(), [("needs_spec",)])
+
+    def test_a_failed_fetch_parks_no_ticket_on_a_landmark_and_fails_as_infra(self):
+        self.naming_the_fixture()
+        self.merge_on_origin()
+        self.git("remote", "set-url", "origin",
+                 str(self.target.parent / "missing.git"))
+
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=StubProvider(self.task),
+                      fake=FakeAgent(CheckoutCritic(self.target, [])))
+
+        self.assertNotEqual(self.status(), [("needs_spec",)])
+        ((outcome_class, reason),) = self.read(
+            "SELECT outcomeClass, outcomeReason FROM runs")
+        self.assertEqual(outcome_class, "infra")
+        self.assertIn("git fetch origin failed", reason)

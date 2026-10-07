@@ -48,6 +48,7 @@ def sync_board(target, conn, project, provider, now=None,
     from holophyte.host.supervisor import linear_budget_low
     from holophyte.loop.dispatch import _mirror_queue
     if getattr(provider, "native", False) is True:
+        freshness.recheck_stale(target, conn, project, provider)
         with store.transaction(conn):
             store.board.resolve_dependencies(conn, project)
         return SYNCED
