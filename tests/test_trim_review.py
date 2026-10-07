@@ -21,7 +21,6 @@ TRADE_OFFS = (
     "  Trade-off: the second retry branch survives -- guarded by"
     " test_retry_once",
 )
-PROOF = "Proof: test_parse_twice -- test_parse_reads_lines hits the same branch"
 BLOCKER = ("A trade-off on a trust boundary, an auth check, a data-loss path"
            " or a money path is a blocker.")
 
@@ -33,7 +32,7 @@ class TrimReviewTests(TrimFixture):
         return next(turn.goal for turn in fake.turns if turn.role == "review")
 
     def test_round_one_names_each_trim_commit_and_quotes_its_trade_offs(self):
-        tests_message = "trim: tests\n\n" + "\n".join((*TRADE_OFFS, PROOF))
+        tests_message = "trim: tests\n\n" + "\n".join(TRADE_OFFS)
         prompt = self.first_review_prompt(
             WORK,
             Commits(Commit("trim: delete", "work.txt", lines(40)),
