@@ -62,6 +62,7 @@ from holophyte.review.briefs import (
     criteria_brief,
     evidence_brief,
     main_merge_base,
+    pr_description_brief,
     scope_brief,
     scope_files,
     stale_approval_brief,
@@ -418,11 +419,14 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
     covered = reviewed or base_sha
     scope = scope_files(wt, ticket, covered, sha, candidate_only=True)
     with heartbeat_while(conn, run_id, beat_s):
+        evidence = evidence_brief(project, wt, task_id,
+                                  ticket_template.parse(ticket).evidence_states)
+        described = pr_description_brief(project, pull, bool(evidence))
         verdict, decision, first_reply = _review_reply(project,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
             f"{review_refs(run_id)[0]} as the frozen base and {review_refs(run_id)[1]} "
             "as the candidate in this repo against the ticket below. The "
-            + covering_scope(wt, reviewed, sha, pull.url)
+            + covering_scope(wt, reviewed, sha, pull.url) + described
             + "The ticket is "
             "the contract, acceptance criteria included: a candidate that "
             "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
@@ -432,8 +436,7 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
             + stale_approval_brief(stale)
             + tests_brief(wt)
             + scope_brief(wt, ticket, covered, sha, candidate_only=True)
-            + evidence_brief(project, wt, task_id,
-                                 ticket_template.parse(ticket).evidence_states)
+            + evidence
             + "Do not modify anything. End your reply with exactly one "
             "line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"

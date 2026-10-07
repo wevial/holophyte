@@ -6,12 +6,12 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import holophyte.config.project
 import holophyte.loop.implement
 import holophyte.loop.review_round
+import holophyte.pr.github
 import holophyte.pr.pullrequest
 import store
 import store.tickets
@@ -130,12 +130,16 @@ class StaleApprovalRereviewTests(unittest.TestCase):
         reviewer, fixer, babysit_fixer = self.agents(replies)
         with (reviewer, fixer, babysit_fixer,
               patch.object(holophyte.pr.pullrequest, "refresh_pr_text"),
+              patch.object(holophyte.pr.github, "rest",
+                           return_value={"body": "Fixed the load."}),
               patch.object(holophyte.pr.pullrequest, "_park_on_pr",
                            side_effect=Parked)):
             return babysitter._review_fix(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
                 self.root, self.head, self.approved, 30,
-                SimpleNamespace(url="https://example.test/pull/1"), TICKET,
+                holophyte.pr.github.PullRequest(
+                    "example.test", "o", "n", 1, "https://example.test/pull/1"),
+                TICKET,
                 "true", (), CRITERIA, fix_note=fix_note, budget_min=10)
 
     def rereview_events(self):

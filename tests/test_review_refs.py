@@ -13,6 +13,7 @@ from holophyte.agents import review_workspace, roles
 from holophyte.loop import adjudicate, dispatch, pipeline, review_round
 from holophyte.loop.dispatch import MergeParked
 from holophyte.loop.gates import InfraFailure, RunFailure
+from holophyte.pr import github
 from holophyte.pr.github import Thread
 
 
@@ -171,6 +172,8 @@ class ReviewRefsTests(unittest.TestCase):
             stack.enter_context(
                 patch.object(review_round, "merge_conflicts", return_value=[]))
             stack.enter_context(patch.object(babysitter, "_next_round", return_value=1))
+            stack.enter_context(
+                patch.object(github, "rest", return_value={"body": "Fixed it."}))
             for module in (review_round, adjudicate, babysitter):
                 stack.enter_context(
                     patch.object(module, "run_verify", return_value=(True, "ok"))
@@ -185,8 +188,8 @@ class ReviewRefsTests(unittest.TestCase):
                 )
             with self.assertRaises(Captured):
                 babysitter._review_fix(
-                    **common, reviewed=self.base, pull=SimpleNamespace(url="pull")
-                )
+                    **common, reviewed=self.base,
+                    pull=github.PullRequest("github.com", "o", "n", 7, "pull"))
             with self.assertRaises(Captured):
                 babysitter._answer_threads(
                     **common,
