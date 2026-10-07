@@ -162,9 +162,8 @@ def body_problems(task, repo=None, on_pull_request=False):
     problems = ticket_template.blocking(ticket_template.validate(ticket, repo=repo))
     if repo:
         from holophyte.config.project import Project
-        from holophyte.pr.pr_media import evidence_problems
-        problems += evidence_problems(Project.locate(repo, adopt=False),
-                                      ticket.evidence_states)
+        from holophyte.pr.pr_media import project_problems
+        problems += project_problems(Project.locate(repo, adopt=False), ticket)
     return problems
 
 

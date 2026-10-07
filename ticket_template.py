@@ -6,12 +6,14 @@ import sys
 from pathlib import Path
 
 TEMPLATE_ORDER = [
-    "Summary", "What / Why / How", "Reproduce", "In scope", "Out of scope",
+    "Summary", "What / Why / How", "Reproduce", "Mock-up", "In scope",
+    "Out of scope",
     "Acceptance criteria", "Verify command(s)", "Contract checks", "Evidence",
     "Implementation notes", "Story", "Estimate & dependencies",
     "Open questions",
 ]
-OPTIONAL_SECTIONS = {"Reproduce", "Contract checks", "Evidence", "Story"}
+OPTIONAL_SECTIONS = {"Reproduce", "Mock-up", "Contract checks", "Evidence",
+                     "Story"}
 SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
 MAX_ESTIMATE_MIN = 90
 MAX_CRITERIA = 10
@@ -51,7 +53,14 @@ UNCHECKED_RE = re.compile(rf"^{BULLET}\s+\[ \]\s*(.*)$")
 CHECKED_RE = re.compile(rf"^{BULLET}\s+\[[xX]\]\s*(.*)$")
 LIST_ITEM_RE = re.compile(rf"^(?:{BULLET}|\d+[.)])\s+(.*)$")
 # Linear rewrites "**What:**" as "**What: **" on every body patch.
-BOLD_KEY_RE = re.compile(r"^(?:\*\*)?(What|Why|How):(?:[ \t]*\*\*)?\s*(.*)$")
+BOLD_KEY_RE = re.compile(
+    r"^(?:\*\*)?(What|Why|How|UI change):(?:[ \t]*\*\*)?\s*(.*)$")
+UI_CHANGE_VALUES = ("major", "minor")
+MOCKUP_URL_RE = re.compile(
+    r"https://claude\.ai/(?:code/)?artifact/[\w-]+"
+    r"|https://lotuspod(?:\.[A-Za-z0-9-]+)+/[\w.-]+\.html")
+APPROVED_RE = re.compile(r"^(?:[-*+]\s+)?Approved \d{4}-\d{2}-\d{2}:\s*\S")
+EVIDENCE_STATES_FOR_MOCKUP = 3
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
 ORCHESTRATION_RE = re.compile(r"^Orchestration:\s*(.*?)\s*$")
 ORCHESTRATION_MODES = ("off", "subagents", "workflow")
@@ -185,6 +194,8 @@ class Ticket:
         self.stray_h1s = []
         self.summary = ""
         self.what = self.why = self.how = ""
+        self.ui_change = None
+        self.mockup = ""
         self.in_scope = []
         self.out_of_scope = []
         self.acceptance = []
@@ -233,7 +244,9 @@ def parse(text):
         if m:
             kv[m.group(1)] = _clean(m.group(2))
     t.what, t.why, t.how = kv.get("What", ""), kv.get("Why", ""), kv.get("How", "")
+    t.ui_change = kv.get("UI change")
     t.reproduce = COMMENT_RE.sub("", t.sections.get("Reproduce", "")).strip()
+    t.mockup = COMMENT_RE.sub("", t.sections.get("Mock-up", "")).strip()
     t.in_scope = _list_items(t.sections.get("In scope", ""))
     t.out_of_scope = _list_items(t.sections.get("Out of scope", ""))
     (t.acceptance, t.acceptance_done, t.acceptance_other,
@@ -496,6 +509,44 @@ def _schema_version_advisories(t):
             if SCHEMA_VERSION_RE.search(line)]
 
 
+def _ui_change_problems(t):
+    if t.ui_change is None or t.ui_change.lower() in UI_CHANGE_VALUES:
+        return []
+    return [f"'**UI change:**' must read major or minor, not {t.ui_change!r}"]
+
+
+def _mockup_problems(t):
+    if "Mock-up" not in t.order:
+        return []
+    urls = [url.rstrip(".,;:")
+            for url in re.findall(r"https?://[^\s<>()\[\]]+", t.mockup)]
+    approvals = [line for line in t.mockup.splitlines()
+                 if APPROVED_RE.match(line.strip())]
+    problems = [f"'## Mock-up' link is not a claude.ai artifact or a Lotuspod "
+                f"page: {url}"
+                for url in urls if not MOCKUP_URL_RE.fullmatch(url)]
+    if not urls:
+        problems.append("'## Mock-up' has no link to the approved mock-up; write "
+                        "the URL bare, since a markdown link keeps only its text")
+    elif len(urls) > 1:
+        problems.append(f"'## Mock-up' holds {len(urls)} links; give exactly one")
+    if len(approvals) != 1:
+        problems.append(f"'## Mock-up' needs exactly one 'Approved YYYY-MM-DD: "
+                        f"what' line; it has {len(approvals)}")
+    return problems
+
+
+def _mockup_advisories(t):
+    states = [state for state in t.evidence_states if state]
+    if (len(states) < EVIDENCE_STATES_FOR_MOCKUP or t.ui_change is not None
+            or "Mock-up" in t.order):
+        return []
+    return [f"{ADVISORY_PREFIX}'Evidence' lists {len(states)} states and no "
+            f"'**UI change:**' line; declare '**UI change:** major' and link "
+            f"the approved design under '## Mock-up', or declare "
+            f"'**UI change:** minor'"]
+
+
 def _discover_pattern(tokens):
     """The pattern names a file in the -s start directory, not the repository root."""
     for i in range(len(tokens) - 2):
@@ -748,6 +799,9 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
     p.extend(_suite_advisories(t))
     p.extend(_schema_version_advisories(t))
     p.extend(_operator_witness_advisories(t))
+    p.extend(_ui_change_problems(t))
+    p.extend(_mockup_problems(t))
+    p.extend(_mockup_advisories(t))
     if repo is not None:
         p.extend(_gitignored_path_problems(t, repo))
         p.extend(_repository_problems(t, repo))

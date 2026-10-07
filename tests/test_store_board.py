@@ -24,11 +24,15 @@ from holophyte.config.project import Project  # noqa: E402 - after the sys.path 
 
 
 def body(title="Add export endpoint", depends="none", what=True,
-         evidence=False):
+         evidence=False, ui_change=None, mockup=False):
     what_line = ("**What:** GET /orders.csv streams the current user's orders"
                  " as CSV.\n\n") if what else ""
     evidence_section = ("## Evidence\n\n- The orders page with its Export"
                         " button.\n\n") if evidence else ""
+    ui_line = f"**UI change:** {ui_change}\n\n" if ui_change else ""
+    mockup_section = ("## Mock-up\n\nhttps://claude.ai/artifact/3f2a9c\n\n"
+                      "Approved 2026-10-07: the orders page with its Export"
+                      " button\n\n") if mockup else ""
     return f"""\
 # {title}
 
@@ -40,9 +44,9 @@ Add a CSV export endpoint for the orders list.
 
 {what_line}**Why:** Ops needs orders in spreadsheets without database access.
 
-**How:** Reuse the orders query service and stream via the csv module.
+{ui_line}**How:** Reuse the orders query service and stream via the csv module.
 
-## In scope
+{mockup_section}## In scope
 
 - CSV serialization of the orders list
 
@@ -240,6 +244,24 @@ class StoreBoardTests(unittest.TestCase):
                                     body("Export again", evidence=True))
         self.assertIn("[merge] mode", str(refused.exception))
         self.assertEqual(self.ticket_count(), 1)
+
+    def test_a_major_ui_change_files_only_with_a_mock_up_where_ui_paths_set(self):
+        self.configure('mode = "pr"\nui_capture = "true"\nui_paths = ["web/**"]')
+        with self.assertRaises(store.board.FilingRefused) as refused:
+            store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                    body(ui_change="major"))
+        self.assertIn("## Mock-up", str(refused.exception))
+        self.assertEqual((self.ticket_count(), self.seq()), (0, 0))
+
+        filed = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                        body(ui_change="major", mockup=True))
+        self.assertEqual(self.row(filed)[1], "ready")
+
+    def test_a_major_ui_change_needs_no_mock_up_without_ui_paths(self):
+        self.configure('mode = "pr"')
+        filed = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                        body(ui_change="major"))
+        self.assertEqual(self.row(filed)[1], "ready")
 
 
 if __name__ == "__main__":

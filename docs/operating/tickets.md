@@ -10,9 +10,13 @@ operator's job.
 `ticketTemplate.md` is the canonical structure and `ticket_template.py`
 validates it. Sections, in order: an H1 title; Summary; What / Why / How
 (the bold keys `**What:**`, `**Why:**`, `**How:**`, plain `What:` also
-accepted); optional Reproduce (a bug's steps and where it was seen;
-its presence makes the first turn a reproduce turn that commits a failing
-test before any fix); In scope (at most six entries); Out of scope; Acceptance
+accepted, and an optional `**UI change:** major` or `**UI change:** minor`
+declaring the size of a UI change); optional Reproduce (a bug's steps and
+where it was seen; its presence makes the first turn a reproduce turn that
+commits a failing test before any fix); optional Mock-up (one bare link to
+the approved mock-up, a `https://claude.ai/artifact/ID`,
+`https://claude.ai/code/artifact/ID` or `https://lotuspod.DOMAIN/NAME.html`
+page, and one `Approved YYYY-MM-DD: what` line); In scope (at most six entries); Out of scope; Acceptance
 criteria (at most ten, each `Given … when … then …`); Verify command(s)
 (a fenced block of relative-path, non-interactive commands; exit 0 is
 pass); optional Contract checks (`relative/path: exact literal`); optional
@@ -40,10 +44,14 @@ Advisories print and let it through.
 | A path a criterion names that the project repository gitignores | KO-166 named a rendered file under a gitignored `artifacts/`; the reviewer's export cannot contain it and the implementer force-tracked it. |
 | A `Depends on` that is not a ticket id or `none` | dependencies are machine-checked through Linear `blocks` relations |
 | Open questions not exactly `- None` | an open question is not a frozen contract |
+| `**UI change:**` other than `major` or `minor`, or a `## Mock-up` without exactly one accepted bare URL and one `Approved YYYY-MM-DD: what` line | a markdown link keeps only its text, and an unnamed approval is no agreement |
+| `**UI change:** major` with no `## Mock-up`, on a project whose `[merge]` sets `ui_paths` (`--file-ticket` and the claim) | a layout agreed before the run is cheaper than one corrected after the Evidence screenshots |
 
 Advisories: a `What:` that chains two deliverables; a bare `python3` in a
 verify command on a project with a venv; a criterion that reads as an
-operator or post-merge witness.
+operator or post-merge witness; an Evidence section of three or more states
+with no `**UI change:**` line and no Mock-up (declare `major` and link the
+mock-up, or declare `minor`).
 
 ## What the reviewer can witness
 

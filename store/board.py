@@ -33,9 +33,8 @@ def ticket_problems(text, repo):
     if repo:
         # Deferred: holophyte imports this module.
         from holophyte.config.project import Project
-        from holophyte.pr.pr_media import evidence_problems
-        problems += evidence_problems(Project.locate(repo, adopt=False),
-                                      ticket.evidence_states)
+        from holophyte.pr.pr_media import project_problems
+        problems += project_problems(Project.locate(repo, adopt=False), ticket)
     return problems
 
 
