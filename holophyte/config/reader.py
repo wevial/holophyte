@@ -47,6 +47,7 @@ AGENT_CONFIG_KEYS = {
     "review": "reviewer",
     "adjudicate": "adjudicator",
     "write": "writer",
+    "trim": "trimmer",
     "critic": "critic",
 }
 

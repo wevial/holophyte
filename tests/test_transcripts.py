@@ -162,6 +162,16 @@ class SessionPairingTests(unittest.TestCase):
                           ('implement', 'fallback', 'impl-fallback'),
                           ('implement', 'primary', 'impl-primary')])
 
+    def test_trim_turn_lists_between_implement_and_review_without_a_session(self):
+        self.assertEqual(paired(session('implement', 'primary', 'impl'),
+                                turn('implement', 'primary'),
+                                turn('trim', 'primary'),
+                                session('review', 'primary', 'review'),
+                                turn('review', 'primary')),
+                         [('implement', 'primary', 'impl'),
+                          ('trim', 'primary', None),
+                          ('review', 'primary', 'review')])
+
 
 class ContainerRunTurnsTests(unittest.TestCase):
     def setUp(self):

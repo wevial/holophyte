@@ -45,13 +45,17 @@ def route_labels(project):
             argv = default_argv(project, role)
         return outbound(argv_label(argv), secrets)
 
+    def seat_or_implementer(role):
+        return (implementer if agent_command(project, role, "") is None
+                else label(role))
+
     implementer = label("implement")
     return {"implementer": implementer,
             "reviewer": label("review"),
             "reviewer_fallback": label("review", fallback=True),
             "adjudicator": label("adjudicate"),
-            "writer": (implementer if agent_command(project, "write", "") is None
-                       else label("write"))}
+            "writer": seat_or_implementer("write"),
+            "trimmer": seat_or_implementer("trim")}
 
 
 def recorded_turn(project, role, routed_role, conn, run_id, launch):

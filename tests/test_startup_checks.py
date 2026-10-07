@@ -4,6 +4,7 @@ Run: python3 -m unittest discover -s tests -p 'test_startup_checks*' -v
 """
 import contextlib
 import io
+import json
 import os
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import ANY, patch
 
 import holophyte.cli.board_verbs
@@ -309,12 +311,15 @@ class StartupCheckTests(ConfigTestCase):
     def test_a_relative_program_path_is_refused_rather_than_guessed_at(self):
         # It would resolve inside a task worktree that does not exist yet, so
         # startup cannot check the file the round would actually run.
-        self.locate('[agents]\nreviewer = "./review.sh --diff"\n')
+        for key in ("reviewer", "trimmer"):
+            with self.subTest(key=key):
+                self.locate(f'[agents]\n{key} = "./{key}.sh --diff"\n')
 
-        with self.assertRaises(SystemExit) as raised:
-            holophyte.config.checks.check_agent_commands(self.project)
+                with self.assertRaises(SystemExit) as raised:
+                    holophyte.config.checks.check_agent_commands(self.project)
 
-        self.assertIn("relative", str(raised.exception))
+                self.assertIn("relative", str(raised.exception))
+                self.assertIn(f"[agents] {key}:", str(raised.exception))
 
     def test_the_check_reuses_the_parse_a_round_would_use(self):
         # An unquotable or wrongly-typed command is caught here too, with the
@@ -647,6 +652,84 @@ class SupervisorSpawnTests(StartupCheckTests):
         main.assert_not_called()
         probe.assert_not_called()
         self.popen.assert_not_called()
+
+
+class TrimmerStartupTests(ConfigTestCase):
+    """The trimmer is probed at startup, and its failure never stops the loop."""
+
+    def setUp(self):
+        self.locate()
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        self.launches = self.root / "launches"
+
+    def route(self, name, *, ready):
+        script = self.bin / name
+        script.write_text(
+            "#!/bin/sh\nfor last; do :; done\n"
+            f'printf "%s %s\\n" {name} "$last" >> {self.launches}\n'
+            + ("echo ready\n" if ready else "exit 1\n"))
+        script.chmod(0o755)
+        return script
+
+    def start(self, agents):
+        from holophyte.agents.agent_routes import reset
+        from holophyte.agents.fallback import startup_routes
+        self.write_config(f"[agents]\n{agents}")
+        self.addCleanup(reset, self.project)
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            started = startup_routes(self.project, SimpleNamespace(team="test"))
+        return started, printed.getvalue()
+
+    def launched(self):
+        return self.launches.read_text().splitlines()
+
+    def test_a_failed_trimmer_switches_to_a_passing_fallback_for_the_next_turn(self):
+        import holophyte.agents.roles
+        import store
+        from holophyte.agents.probes import PROBE_GOAL
+        down = self.route("trimmer", ready=False)
+        spare = self.route("spare", ready=True)
+        started, printed = self.start(
+            f'trimmer = "{down}"\ntrimmer_fallback = "{spare}"\n')
+        self.assertTrue(started)
+        self.assertIn(f"using fallback: {spare}", printed)
+        conn = store.open(self.project.store_path)
+        self.addCleanup(conn.close)
+        [(guidance,)] = conn.execute(
+            "SELECT guidance FROM interventions WHERE action='route_fallback'")
+        evidence = json.loads(guidance)
+        self.assertEqual((evidence["seat"], evidence["command"]),
+                         ("trimmer", str(spare)))
+        self.assertIn("trimmer probe failed", evidence["reason"])
+        holophyte.agents.roles.agent(self.project, "trim", "trim the diff",
+                                     self.root)
+        self.assertEqual(self.launched(), [f"trimmer {PROBE_GOAL}",
+                                           f"spare {PROBE_GOAL}",
+                                           "spare trim the diff"])
+
+    def test_a_trimmer_and_fallback_both_down_still_start_the_loop(self):
+        started, printed = self.start(
+            f'trimmer = "{self.route("trimmer", ready=False)}"\n'
+            f'trimmer_fallback = "{self.route("spare", ready=False)}"\n')
+        self.assertTrue(started)
+        self.assertIn("[holo2] trimmer route down; runs skip trim", printed)
+        self.assertEqual(len(self.launched()), 2)
+
+    def test_status_reports_a_trimmer_down_at_startup_as_down_not_its_command(self):
+        from holophyte.serve.serve_runs import active_routes
+        self.start(f'trimmer = "{self.route("trimmer", ready=False)}"\n')
+        self.assertEqual(active_routes(self.project)["trimmer"],
+                         {"command": None, "down": True})
+
+    def test_without_a_trimmer_only_the_implementer_is_probed(self):
+        from holophyte.agents.probes import PROBE_GOAL
+        started, printed = self.start(
+            f'implementer = "{self.route("implementer", ready=True)}"\n')
+        self.assertTrue(started)
+        self.assertEqual(self.launched(), [f"implementer {PROBE_GOAL}"])
+        self.assertNotIn("trimmer", printed)
 
 
 if __name__ == "__main__":
