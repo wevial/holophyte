@@ -36,13 +36,17 @@ import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert abo
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.review.freshness  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.board  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.agents.agent_routes import reset, routes  # noqa: E402
+from holophyte.board.board_sync import owed  # noqa: E402
+from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.review.freshness import (  # noqa: E402
     critic_brief,
     park_stale,
     parse_freshness,
 )
+from provider import board_for  # noqa: E402
 from tests.phase_fixture import finish_run  # noqa: E402
 
 # The fake codex: records its cwd, the HEAD there and whether HEAD is
@@ -359,6 +363,51 @@ class CriticClaimTests(LoopFixture):
         self.assertIs(run, holophyte.loop.claim.HELD)
         self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(0,)])
 
+    def native_filed_long_ago(self):
+        """NAT-1, filed 13 hours ago on a native board with a critic seat;
+        the board, the store connection, the project id and the ticket."""
+        probe = self.target.parent / "critic-probe"
+        self.configure(f'[agents.critic]\n[harnesses]\ncodex = "{probe}"\n'
+                       '[loop]\ncritic_after_hours = 12\n'
+                       '[board]\nkind = "native"\nkey = "NAT"\n')
+        board = board_for(self.project)
+        conn = holophyte.loop.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = tickets.ensure_project(conn, board.team, self.target)
+        store.board.file_ticket(conn, project_id, "NAT", VALID_BODY,
+                                now=int((time.time() - 13 * 3600) * 1000))
+        return board, conn, project_id, board.fetch_task("NAT-1")
+
+    def sweep(self, board, conn, project_id):
+        with patch.object(sys, "stdout", io.StringIO()):
+            return owed(self.project, conn, project_id, board, 0,
+                        io.StringIO(), sweep_config(self.project))
+
+    def test_a_native_ticket_the_critic_parked_stays_parked_through_the_sweep(self):
+        board, conn, project_id, task = self.native_filed_long_ago()
+        fake = FakeAgent(Critic("FRESHNESS: STALE already done by NAT-0"))
+
+        with patch.object(holophyte.loop.review_round, "agent", fake), \
+                patch.object(sys, "stdout", io.StringIO()):
+            admitted = holophyte.loop.claim._admit_ticket(
+                self.project, conn, project_id, board, task, SEEN)
+        pairs = self.sweep(board, conn, project_id)
+
+        self.assertIsNone(admitted)
+        self.assertEqual(pairs, [])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("needs_spec",)])
+
+    def test_a_critic_park_recorded_as_a_stale_note_stays_parked(self):
+        board, conn, project_id, task = self.native_filed_long_ago()
+        with patch.object(sys, "stdout", io.StringIO()):
+            park_stale(self.project, conn, project_id, board, task,
+                       ["critic: stale \u2014 already done by NAT-0"],
+                       admitted=True, kind="stale")
+
+        self.assertEqual(self.sweep(board, conn, project_id), [])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("needs_spec",)])
 
 SEEN = SimpleNamespace(trips=[], watched=[])
 

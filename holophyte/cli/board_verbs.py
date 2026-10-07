@@ -44,9 +44,13 @@ def _board_verb(args, board, out=None):
     identifier = args.move[0] if args.move else args.cancel
     try:
         if args.move:
-            revision = board.move(identifier, args.move[1], args.revision,
-                                  args.note)
-            line = f"moved {identifier} to {args.move[1]} (revision {revision})"
+            revision, moved, status = board.move(
+                identifier, args.move[1], args.revision, args.note)
+            line = (f"moved {identifier} to {args.move[1]} (revision {revision})"
+                    if moved else f"re-checked {identifier} against main:"
+                                  f" {status} (revision {revision})")
+            if moved and status is not None:
+                line += f"; re-checked against main: {status}"
         else:
             revision, run, closed = board.cancel(identifier, args.revision,
                                                  args.note)

@@ -1,9 +1,11 @@
+import json
 import re
 import subprocess
 import time
 from pathlib import Path
 
 import store
+import store.board
 import store.read
 import ticket_template
 from holophyte.agents.agent_routes import routes
@@ -193,30 +195,32 @@ def skip_labelled_stale(conn, project_id, task):
 
 
 def park_stale(project, conn, project_id, provider, task, reasons, why=None,
-               admitted=False):
+               admitted=False, kind="stale"):
     issue_id = mirror_key(task)
     with lease_turn(project), store.transaction(conn):
         row = conn.execute(
-            "SELECT activeRunId, status, revision FROM tickets"
+            "SELECT activeRunId, status, revision, id FROM tickets"
             " WHERE linearIssueId = ? AND projectId = ?",
             (issue_id, project_id)).fetchone()
         taken = row is not None and (
             row[0] is not None or (admitted and row[1] != "ready"))
         moved = row is not None and task.get("store_revision") not in (
             None, row[2])
+        store_mode = getattr(provider, "store_mode", False) is True
         if not (taken or moved):
+            salt = None if row is None else _other_park_note(conn, row[3],
+                                                             kind)
             ticket_id = mirror_task(conn, project_id, task, specced=False)
+            if store_mode:
+                note_problems(conn, ticket_id, kind, task.get("body"),
+                              reasons, stale_comment(reasons), salt=salt)
     if taken or moved:
         why = ("another loop claimed or parked it" if taken
                else "it changed on the board")
         print(f"[holo2] {task['id']} skipped: {why} while it was judged;"
               " this verdict is dropped")
         return
-    store_mode = getattr(provider, "store_mode", False) is True
-    if store_mode:
-        note_problems(conn, ticket_id, "stale", task.get("body"), reasons,
-                      stale_comment(reasons))
-    else:
+    if not store_mode:
         try:
             provider.comment(issue_id, comment_body(stale_comment(reasons)))
         except Exception as e:
@@ -244,6 +248,124 @@ def _label_and_move(conn, provider, task, issue_id, ticket_id, store_mode):
             warn(conn, ticket_id, f"moving stale {task['id']} to"
                                   f" {BACKLOG_STATE} failed ({e}); the board"
                                   " still lists it ready")
+
+
+_NEWEST_PARK_NOTE = (
+    "SELECT id FROM ticketNotes WHERE ticketId = {}"
+    " AND kind IN ('stale', 'critic', 'validation')"
+    " ORDER BY at DESC, id DESC LIMIT 1")
+
+
+def _other_park_note(conn, ticket_id, kind):
+    row = conn.execute(
+        "SELECT id FROM ticketNotes WHERE ticketId = ?"
+        " AND kind IN ('stale', 'critic', 'validation')"
+        " AND CASE WHEN kind = 'stale' AND text LIKE '%* critic: %'"
+        " THEN 'critic' ELSE kind END != ?"
+        " ORDER BY at DESC, id DESC LIMIT 1", (ticket_id, kind)).fetchone()
+    return None if row is None else row[0]
+
+
+def stale_parked(conn, project_id, identifier=None, columns=("ready",)):
+    return conn.execute(
+        "SELECT t.id, t.linearIdentifier, t.revision, t.body, t.boardColumn,"
+        " n.id FROM tickets t JOIN ticketNotes n ON n.id = ("
+        + _NEWEST_PARK_NOTE.format("t.id") + ")"
+        " WHERE t.projectId = ? AND t.status = 'needs_spec'"
+        " AND t.activeRunId IS NULL AND t.goneSince IS NULL"
+        " AND t.boardColumn IN (SELECT value FROM json_each(?))"
+        " AND n.kind = 'stale' AND n.text NOT LIKE '%* critic: %'"
+        " AND (? IS NULL OR t.linearIdentifier = ?)"
+        " ORDER BY t.id",
+        (project_id, json.dumps(list(columns)), identifier,
+         identifier)).fetchall()
+
+
+def _refreshed(target, conn):
+    from holophyte.loop.claim import refresh_main
+    from holophyte.loop.gates import InfraFailure
+    try:
+        refresh_main(target, conn=conn, before="the stale re-check")
+    except (InfraFailure, RuntimeError) as e:
+        return " ".join(str(e).split())
+    return None
+
+
+def _still_parked(conn, project_id, parked, columns):
+    ticket_id, identifier, _, _, _, note_id = parked
+    if [row[5] for row in stale_parked(conn, project_id, identifier,
+                                       columns)] != [note_id]:
+        raise store.board.FilingRefused([
+            f"{identifier} was claimed, edited or parked again while it was"
+            " re-checked; nothing changed"])
+
+
+def _rederive(target, conn, project_id, parked, revision, note=None):
+    ticket_id, identifier, _, body, _, _ = parked
+    revision = store.board.edit_ticket(conn, project_id, identifier, body,
+                                       revision, author="factory")
+    status = store_status(conn, ticket_id)
+    if status != "needs_spec":
+        head = subprocess.run(
+            ["git", "-C", str(target.path), "rev-parse", "--short=12", "main"],
+            capture_output=True, text=True).stdout.strip()
+        now = int(time.time() * 1000)
+        store.record_note(
+            conn, ticket_id, "recheck",
+            f"Re-checked against main at {head}: every landmark the stale park"
+            f" named is there now, so {identifier} went from needs_spec to"
+            f" {status} (revision {revision})."
+            + (f"\n\n{note}" if note else ""),
+            f"recheck:{ticket_id}:{now}", now=now)
+    return revision, status
+
+
+def recheck_stale(target, conn, project_id, provider):
+    parked = stale_parked(conn, project_id)
+    if not parked:
+        return
+    failure = _refreshed(target, conn)
+    if failure is not None:
+        print(f"[holo2] main not refreshed, so no stale-parked ticket"
+              f" ({len(parked)}) is re-checked this pass: {failure}")
+        return
+    for row in parked:
+        if stale_reasons(target.path, row[3], conn, provider):
+            continue
+        try:
+            with lease_turn(target), store.transaction(conn):
+                _still_parked(conn, project_id, row, ("ready",))
+                revision, status = _rederive(target, conn, project_id, row,
+                                             row[2])
+        except (ValueError, store.RevisionMoved) as e:
+            print(f"[holo2] {row[1]} not re-checked: {e}")
+            continue
+        print(f"[holo2] re-checked {row[1]} against main: {status}"
+              f" (revision {revision})")
+
+
+def recheck_move(target, conn, project_id, provider, parked, revision, note):
+    _, identifier, current, body, column, _ = parked
+    if current != revision:
+        raise store.RevisionMoved(identifier, revision, current)
+    failure = _refreshed(target, conn)
+    if failure is not None:
+        raise store.board.FilingRefused([f"main not refreshed, so {identifier}"
+                                         f" is not re-checked: {failure}"])
+    reasons = stale_reasons(target.path, body, conn, provider)
+    if reasons:
+        raise store.board.FilingRefused([f"{identifier} stays parked: "
+                                         + "; ".join(reasons)])
+    moved = column != "ready"
+    with lease_turn(target), store.transaction(conn):
+        _still_parked(conn, project_id, parked, ("ready", "backlog"))
+        if moved:
+            revision = store.board.move_ticket(conn, project_id, identifier,
+                                               "ready", revision,
+                                               author="cli", note=note)
+        revision, status = _rederive(target, conn, project_id, parked,
+                                     revision, None if moved else note)
+    return revision, moved, status
 
 
 def critic_due(project, task):
@@ -347,7 +469,8 @@ def critic_admits(project, conn, project_id, provider, task):
         return True
     park_stale(project, conn, project_id, provider, task,
                [f"critic: {verdict} \u2014 {reason}"],
-               why=f"the critic answered {verdict.upper()}", admitted=True)
+               why=f"the critic answered {verdict.upper()}", admitted=True,
+               kind="critic")
     return False
 
 
