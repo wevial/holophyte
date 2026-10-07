@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 import sys
+import threading
 
 from holophyte.holo.mcp_server import build, sdk_missing
 from holophyte.holo.mcp_tools import READS, TOOLS
@@ -93,7 +94,19 @@ async def follow_code(server, watch, interval, out, serving):
         except Moved as moved:
             print(f"[holo2] the factory checkout moved to {moved}; holo mcp"
                   " --http exits for the new code", file=out, flush=True)
+            leave_after(DRAIN_SEC, out)
             server.should_exit = True
+
+
+def leave_after(seconds, out):
+    def leave():
+        print(f"[holo2] holo mcp --http leaves the tool calls still running"
+              f" after the {seconds}s drain", file=out, flush=True)
+        sys.stderr.flush()
+        os._exit(0)
+    timer = threading.Timer(seconds, leave)
+    timer.daemon = True
+    timer.start()
 
 
 async def run(server, watch, interval, out, serving):

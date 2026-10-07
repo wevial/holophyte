@@ -7,7 +7,9 @@ Run: python3 -m unittest discover -s tests -p 'test_holo_mcp_http.py' -v
 import http.client
 import json
 import os
+import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -296,17 +298,58 @@ class CodeFollowTests(HttpCase):
 
         self.assert_exits_0_after_a_commit(server, CHECK_SEC + SHUTDOWN_SEC)
 
+    def send(self, body, length=None):
+        """Bytes of an authenticated `POST /mcp` sent on a socket left open
+        and never read; `length` declares more body than is sent."""
+        conn = socket.create_connection(("127.0.0.1", self.port))
+        self.addCleanup(conn.close)
+        conn.sendall(b"POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                     b"Authorization: Bearer " + TOKEN.encode() +
+                     b"\r\nContent-Type: application/json\r\n"
+                     b"Accept: application/json, text/event-stream\r\n"
+                     b"Content-Length: %d\r\n\r\n" % (length or len(body))
+                     + body)
+
+    def children(self, server):
+        """The pids of `server`'s child processes once it has one; each is
+        killed at cleanup, after the server has gone."""
+        deadline = time.monotonic() + START_WAIT_SEC
+        while time.monotonic() < deadline:
+            found = subprocess.run(["pgrep", "-P", str(server.pid)],
+                                   capture_output=True, text=True).stdout
+            if found.split():
+                pids = [int(pid) for pid in found.split()]
+                self.addCleanup(lambda: [self.kill(pid) for pid in pids])
+                return pids
+            time.sleep(0.05)
+        self.fail("no tool ran")
+
+    def kill(self, pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
     def test_a_stalled_request_holds_the_exit_no_longer_than_the_drain(self):
         server = self.start()
-        stalled = socket.create_connection(("127.0.0.1", self.port))
-        self.addCleanup(stalled.close)
-        stalled.sendall(b"POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-                        b"Authorization: Bearer " + TOKEN.encode() +
-                        b"\r\nContent-Type: application/json\r\n"
-                        b"Content-Length: 1000\r\n\r\n{")
+        self.send(b"{", length=1000)
 
         self.assert_exits_0_after_a_commit(
             server, CHECK_SEC + DRAIN_SEC + SHUTDOWN_SEC)
+
+    def test_a_tool_blocked_on_the_store_holds_the_exit_no_longer_than_the_drain(self):
+        server = self.start()
+        writer = sqlite3.connect(self.store_path, isolation_level=None)
+        self.addCleanup(writer.close)
+        writer.execute("BEGIN IMMEDIATE")
+        self.addCleanup(writer.execute, "ROLLBACK")
+        self.send(json.dumps(REQUEUE).encode())
+        tools = self.children(server)
+
+        self.assert_exits_0_after_a_commit(
+            server, CHECK_SEC + DRAIN_SEC + SHUTDOWN_SEC)
+        for pid in tools:
+            os.kill(pid, 0)
 
 
 if __name__ == "__main__":
