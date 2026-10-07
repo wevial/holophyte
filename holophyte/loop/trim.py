@@ -8,7 +8,7 @@ from pathlib import Path
 import store
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.fallback import outage_reason
-from holophyte.config.config_tables import trim_config
+from holophyte.config.config_tables import trim_config, verify_config
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import InfraFailure, run_verify, sh, with_baseline
 from holophyte.loop.implement import (
@@ -96,7 +96,8 @@ def _turn(project, conn, run_id, beat_s, wt, budget_min, goal):
 
 def _green(project, conn, run_id, beat_s, wt, verify_cmd, contracts):
     with heartbeat_while(conn, run_id, beat_s):
-        ok, out = run_verify(verify_cmd, wt, contracts, conn=conn,
+        ok, out = run_verify(verify_cmd, wt, contracts,
+                             verify_config(project).timeout_sec, conn=conn,
                              run_id=run_id, project=project)
         ok, _ = with_baseline(project, wt, verify_cmd, ok, out, conn, run_id)
     return ok
