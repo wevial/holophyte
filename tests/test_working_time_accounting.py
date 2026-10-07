@@ -248,7 +248,8 @@ class WorkingTimeTests(SweepTestCase):
                                      ('record_round', None),
                                      ('merge_conflicts', []),
                                      ('scope_files', []),
-                                     ('scope_brief', '')):
+                                     ('scope_brief', ''),
+                                     ('trim_brief', '')):
                     if hasattr(module, name):
                         stack.enter_context(patch.object(module, name,
                                                          return_value=result))
