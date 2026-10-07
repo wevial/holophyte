@@ -27,6 +27,7 @@ import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.adjudicate  # noqa: E402
 import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
+import holophyte.review.freshness  # noqa: E402
 import linear_provider  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
@@ -34,7 +35,7 @@ from holophyte.board.board_sync import owed  # noqa: E402
 from holophyte.board.native_board import NativeBoard  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
-from holophyte.review.freshness import stale_reasons  # noqa: E402
+from holophyte.review.freshness import park_stale, stale_reasons  # noqa: E402
 from provider import FileProvider, board_for  # noqa: E402
 
 NATIVE = '[board]\nkind = "native"\nkey = "NAT"\n'
@@ -220,3 +221,50 @@ class NativeLoopTests(LoopFixture):
 
         self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
         self.assertEqual(self.notes(ticket_id), before)
+
+    def commit_later(self):
+        (self.target / "docs").mkdir()
+        (self.target / LATER).write_text("# Later\n")
+        self.git("add", LATER)
+        self.git("commit", "-q", "-m", "add the later doc")
+
+    def edit(self, body):
+        (revision,) = self.read("SELECT revision FROM tickets")[0]
+        store.board.edit_ticket(self.conn, self.project_id, "NAT-1", body,
+                                revision)
+
+    def critic_park(self):
+        with patch.object(sys, "stdout", io.StringIO()):
+            park_stale(self.project, self.conn, self.project_id, self.board,
+                       self.board.fetch_task("NAT-1"),
+                       ["critic: stale \u2014 already done"], admitted=True,
+                       kind="critic")
+
+    def test_a_stale_park_after_a_critic_park_is_re_checked(self):
+        ticket_id = self.parked_on_later()
+        self.edit(VALID_BODY)
+        self.critic_park()
+        self.edit(NAMING_LATER)
+        out = self.run_loop()
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"}, out)
+        self.commit_later()
+
+        self.assertEqual([ticket for ticket, _ in self.sweep()], [ticket_id])
+        self.assertEqual(self.statuses(), {"NAT-1": "ready"})
+
+    def test_a_critic_park_landing_mid_re_check_is_kept(self):
+        ticket_id = self.parked_on_later()
+        self.commit_later()
+        judged = holophyte.review.freshness.stale_reasons
+
+        def critic_parks_first(*args, **kwargs):
+            self.edit(NAMING_LATER)
+            self.critic_park()
+            return judged(*args, **kwargs)
+
+        with patch.object(holophyte.review.freshness, "stale_reasons",
+                          critic_parks_first):
+            self.assertEqual(self.sweep(), [])
+
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
+        self.assertNotIn(("recheck",), self.notes(ticket_id))
