@@ -10,6 +10,7 @@ import contextlib
 import io
 import os
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -23,7 +24,11 @@ import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
+from holophyte.review.freshness import park_stale, stale_reasons  # noqa: E402
+from provider import board_for  # noqa: E402
 from tests.test_cli_native_update import LINEAR, NATIVE, body  # noqa: E402
+
+LATER = "docs/later.md"
 
 
 def no_linear(*args, **kwargs):
@@ -142,3 +147,61 @@ class NativeMoveCliTests(ConfigTestCase):
                       self.usage_error("--move", "NAT-1", "done",
                                        "--revision", "1"))
         self.assertEqual(self.ticket("NAT-1"), ("ready", 1, "ready"))
+
+    def git(self, *args):
+        subprocess.run(["git", "-c", "user.name=Test",
+                        "-c", "user.email=test@example.invalid", *args],
+                       cwd=self.target, check=True, capture_output=True)
+
+    def parked_on_later(self):
+        """NAT-1, naming `LATER` in its notes, parked by the claim's
+        freshness check while main lacks it; its revision."""
+        self.native(0)
+        self.git("init", "-q", "-b", "main")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        path = self.root / "T.md"
+        path.write_text(body("Thing").replace(
+            "- None worth noting.", f"- Extend `{LATER}` with the thing."))
+        self.assertEqual(self.cli("--file-ticket", str(path))[0], 0)
+        board = board_for(self.project)
+        task = board.fetch_task("NAT-1")
+        reasons = stale_reasons(self.target, task["body"])
+        self.assertEqual(len(reasons), 1)
+        with contextlib.closing(open_store(self.project)) as conn, \
+                contextlib.redirect_stdout(io.StringIO()):
+            project_id = conn.execute("SELECT id FROM projects").fetchone()[0]
+            park_stale(self.project, conn, project_id, board, task, reasons)
+        column, revision, status = self.ticket("NAT-1")
+        self.assertEqual((column, status), ("ready", "needs_spec"))
+        return revision
+
+    def test_a_move_to_ready_re_checks_a_stale_park_main_now_satisfies(self):
+        revision = self.parked_on_later()
+        (self.target / "docs").mkdir()
+        (self.target / LATER).write_text("# Later\n")
+        self.git("add", LATER)
+        self.git("commit", "-q", "-m", "add the later doc")
+
+        self.assertEqual(
+            self.cli("--move", "NAT-1", "ready", "--revision", str(revision)),
+            (0, f"[holo2] re-checked NAT-1 against main: ready"
+                f" (revision {revision})\n"))
+        self.assertEqual(self.ticket("NAT-1"), ("ready", revision, "ready"))
+
+    def test_a_move_to_ready_keeps_a_stale_park_main_still_lacks(self):
+        revision = self.parked_on_later()
+
+        status, printed = self.cli("--move", "NAT-1", "ready",
+                                   "--revision", str(revision))
+
+        self.assertEqual(status, 1)
+        self.assertIn(f"`{LATER}` (named in Implementation notes) is not on"
+                      " main", printed)
+        self.assertEqual(self.ticket("NAT-1"),
+                         ("ready", revision, "needs_spec"))
+
+    def test_a_ready_ticket_no_park_holds_is_already_in_ready(self):
+        self.native(1)
+        self.assertEqual(self.cli("--move", "NAT-1", "ready", "--revision", "1"),
+                         (1, "[holo2] NAT-1 is already in ready\n"))

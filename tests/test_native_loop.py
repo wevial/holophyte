@@ -42,6 +42,10 @@ DEPENDENT = VALID_BODY.replace("Depends on: none", "Depends on: NAT-1")
 EVIDENCE = VALID_BODY.replace(
     "## Implementation notes",
     "## Evidence\n\n- The thing on its page.\n\n## Implementation notes")
+LATER = "docs/later.md"
+NAMING_LATER = VALID_BODY.replace(
+    "## Implementation notes\n\n* None.\n",
+    f"## Implementation notes\n\n* Extend `{LATER}` with the thing.\n")
 CAPTURE = '[merge]\nmode = "pr"\nui_capture = "true"\nui_paths = ["web/**"]\n'
 
 
@@ -175,3 +179,44 @@ class NativeLoopTests(LoopFixture):
             "SELECT id FROM tickets WHERE linearIdentifier = 'NAT-2'")
         self.assertEqual([ticket for ticket, _ in pairs], [second[0]])
         self.assertEqual(self.statuses()["NAT-2"], "ready")
+
+    def parked_on_later(self):
+        """NAT-1, naming `LATER`, parked by the loop while main lacks it."""
+        self.assertEqual(self.file(NAMING_LATER), "NAT-1")
+        out = self.run_loop()
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"}, out)
+        self.assertIn("out of date with main", out)
+        return self.read("SELECT id FROM tickets")[0][0]
+
+    def sweep(self):
+        board = UnlistedBoard(self.project, "NAT", self.board.team)
+        with closing(open_store(self.project)) as conn:
+            return owed(self.project, conn, self.project_id, board, 0,
+                        io.StringIO(), sweep_config(self.project))
+
+    def notes(self, ticket_id):
+        return self.read(f"SELECT kind FROM ticketNotes WHERE ticketId ="
+                         f" {ticket_id} ORDER BY id")
+
+    def test_the_sweep_returns_a_stale_park_to_ready_once_main_has_it(self):
+        ticket_id = self.parked_on_later()
+        (self.target / "docs").mkdir()
+        (self.target / LATER).write_text("# Later\n")
+        self.git("add", LATER)
+        self.git("commit", "-q", "-m", "add the later doc")
+
+        pairs = self.sweep()
+
+        self.assertEqual(self.statuses(), {"NAT-1": "ready"})
+        self.assertEqual([ticket for ticket, _ in pairs], [ticket_id])
+        self.assertEqual(self.notes(ticket_id)[-1], ("recheck",))
+
+    def test_the_sweep_leaves_a_stale_park_while_main_still_lacks_it(self):
+        ticket_id = self.parked_on_later()
+        before = self.notes(ticket_id)
+
+        self.assertEqual(self.sweep(), [])
+        self.assertEqual(self.sweep(), [])
+
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
+        self.assertEqual(self.notes(ticket_id), before)

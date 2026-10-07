@@ -1,9 +1,11 @@
+import json
 import re
 import subprocess
 import time
 from pathlib import Path
 
 import store
+import store.board
 import store.read
 import ticket_template
 from holophyte.agents.agent_routes import routes
@@ -193,7 +195,7 @@ def skip_labelled_stale(conn, project_id, task):
 
 
 def park_stale(project, conn, project_id, provider, task, reasons, why=None,
-               admitted=False):
+               admitted=False, kind="stale"):
     issue_id = mirror_key(task)
     with lease_turn(project), store.transaction(conn):
         row = conn.execute(
@@ -214,7 +216,7 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
         return
     store_mode = getattr(provider, "store_mode", False) is True
     if store_mode:
-        note_problems(conn, ticket_id, "stale", task.get("body"), reasons,
+        note_problems(conn, ticket_id, kind, task.get("body"), reasons,
                       stale_comment(reasons))
     else:
         try:
@@ -244,6 +246,89 @@ def _label_and_move(conn, provider, task, issue_id, ticket_id, store_mode):
             warn(conn, ticket_id, f"moving stale {task['id']} to"
                                   f" {BACKLOG_STATE} failed ({e}); the board"
                                   " still lists it ready")
+
+
+def stale_parked(conn, project_id, identifier=None, columns=("ready",)):
+    return conn.execute(
+        "SELECT t.id, t.linearIdentifier, t.revision, t.body, t.boardColumn,"
+        " n.id FROM tickets t JOIN ticketNotes n ON n.id = ("
+        " SELECT id FROM ticketNotes WHERE ticketId = t.id"
+        " AND kind IN ('stale', 'critic', 'validation')"
+        " ORDER BY at DESC, id DESC LIMIT 1)"
+        " WHERE t.projectId = ? AND t.status = 'needs_spec'"
+        " AND t.activeRunId IS NULL AND t.goneSince IS NULL"
+        " AND t.boardColumn IN (SELECT value FROM json_each(?))"
+        " AND n.kind = 'stale' AND (? IS NULL OR t.linearIdentifier = ?)"
+        " ORDER BY t.id",
+        (project_id, json.dumps(list(columns)), identifier,
+         identifier)).fetchall()
+
+
+def _refreshed(target, conn):
+    from holophyte.loop.claim import refresh_main
+    from holophyte.loop.gates import InfraFailure
+    try:
+        refresh_main(target, conn=conn, before="the stale re-check")
+    except InfraFailure as e:
+        return str(e)
+    return None
+
+
+def _rederive(conn, project_id, parked, revision):
+    ticket_id, identifier, _, body, _, note_id = parked
+    revision = store.board.edit_ticket(conn, project_id, identifier, body,
+                                       revision, author="factory")
+    status = store_status(conn, ticket_id)
+    if status != "needs_spec":
+        now = int(time.time() * 1000)
+        store.record_note(
+            conn, ticket_id, "recheck",
+            f"Re-checked against main: none of the stale landmarks holds any"
+            f" more, so {identifier} is {status} at revision {revision}.",
+            f"recheck:{note_id}:{now}", now=now)
+    return revision, status
+
+
+def recheck_stale(target, conn, project_id, provider):
+    parked = stale_parked(conn, project_id)
+    if not parked:
+        return
+    failure = _refreshed(target, conn)
+    if failure is not None:
+        print(f"[holo2] main not refreshed, so {len(parked)} stale-parked"
+              f" tickets are not re-checked this pass: {failure}")
+        return
+    for row in parked:
+        if stale_reasons(target.path, row[3], conn, provider):
+            continue
+        try:
+            revision, status = _rederive(conn, project_id, row, row[2])
+        except (ValueError, store.RevisionMoved) as e:
+            print(f"[holo2] {row[1]} not re-checked: {e}")
+            continue
+        print(f"[holo2] re-checked {row[1]} against main: {status}"
+              f" (revision {revision})")
+
+
+def recheck_move(target, conn, project_id, provider, parked, revision, note):
+    _, identifier, current, body, column, _ = parked
+    if current != revision:
+        raise store.RevisionMoved(identifier, revision, current)
+    failure = _refreshed(target, conn)
+    if failure is not None:
+        raise store.board.FilingRefused([f"main not refreshed, so {identifier}"
+                                         f" is not re-checked: {failure}"])
+    reasons = stale_reasons(target.path, body, conn, provider)
+    if reasons:
+        raise store.board.FilingRefused([f"{identifier} stays parked: "
+                                         + "; ".join(reasons)])
+    moved = column != "ready"
+    if moved:
+        revision = store.board.move_ticket(conn, project_id, identifier,
+                                           "ready", revision, author="cli",
+                                           note=note)
+    revision, status = _rederive(conn, project_id, parked, revision)
+    return revision, moved, status
 
 
 def critic_due(project, task):
@@ -347,7 +432,8 @@ def critic_admits(project, conn, project_id, provider, task):
         return True
     park_stale(project, conn, project_id, provider, task,
                [f"critic: {verdict} \u2014 {reason}"],
-               why=f"the critic answered {verdict.upper()}", admitted=True)
+               why=f"the critic answered {verdict.upper()}", admitted=True,
+               kind="critic")
     return False
 
 

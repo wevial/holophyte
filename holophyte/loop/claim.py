@@ -383,6 +383,7 @@ def skip_line(identifier, strikes, pr_url, question, park_kind=None):
 
 
 def _admit_ticket(project, conn, project_id, provider, task, seen):
+    _UNREFRESHED.pop(task["id"], None)
     pr = on_pull_request(conn, project_id, task)
     problems = body_problems(task, project.path, on_pull_request=pr)
     if problems:
@@ -394,7 +395,9 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
         return None
     if skip_labelled_stale(conn, project_id, task):
         return None
-    stale = [] if pr else stale_reasons(project.path, task.get("body"), conn, provider)
+    refreshed = not pr and _refresh_for(project, conn, task)
+    stale = (stale_reasons(project.path, task.get("body"), conn, provider)
+             if refreshed else [])
     if stale:
         park_stale(project, conn, project_id, provider, task, stale)
         return None
@@ -428,22 +431,22 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
               f" not claimable ({verdict.reason}); skipping it")
         mirror_push(conn, ticket_id, provider)
         return None
-    if not (pr or _critic_admits(project, conn, project_id, provider, task)):
+    if refreshed and not freshness.critic_admits(project, conn, project_id,
+                                                 provider, task):
         return None
     return ticket_id
 
 
-def _critic_admits(project, conn, project_id, provider, task):
-    _UNREFRESHED.pop(task["id"], None)
+def _refresh_for(project, conn, task):
     try:
         refresh_main(project, conn=conn)
     except InfraFailure as e:
         freshness.WARNINGS.pop(task["id"], None)
         _UNREFRESHED[task["id"]] = e
-        print(f"[holo2] {task['id']}: main not refreshed, so the critic is"
-              f" not asked; the run fails at the cut: {e}")
-        return True
-    return freshness.critic_admits(project, conn, project_id, provider, task)
+        print(f"[holo2] {task['id']}: main not refreshed, so neither the stale"
+              f" check nor the critic is asked; the run fails at the cut: {e}")
+        return False
+    return True
 
 
 class _Held:
