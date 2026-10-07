@@ -119,6 +119,22 @@ class MakeExecutable(Commit):
         return super().play(cwd, turn)
 
 
+class MoveGitlink:
+    """A trim pass that repoints a submodule's gitlink and commits it."""
+
+    role = "implement"
+
+    def __init__(self, path, sha):
+        self.path, self.sha = path, sha
+
+    def play(self, cwd, turn):
+        subprocess.run(["git", "update-index", "--cacheinfo",
+                        f"160000,{self.sha},{self.path}"], cwd=cwd, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "trim: merge"], cwd=cwd,
+                       check=True)
+        return "trimmed"
+
+
 class ObservedApproval:
     """The review turn, noting the worktree it was handed."""
 
@@ -258,6 +274,17 @@ class TrimLoopTests(TrimFixture):
         self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
         [result] = self.results()
         self.assertIn("helpers.py outside the run's diff", result["reason"])
+
+    def test_an_ignored_submodule_does_not_hide_an_outside_gitlink_move(self):
+        self.git("config", "diff.ignoreSubmodules", "all")
+        self.git("update-index", "--add", "--cacheinfo",
+                 f"160000,{'1' * 40},vendor")
+        self.git("commit", "-q", "-m", "add vendor")
+        fake = self.trimmed(WORK, MoveGitlink("vendor", "2" * 40), APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
+        [result] = self.results()
+        self.assertIn("vendor outside the run's diff", result["reason"])
 
     def assert_failed_turn_reverted(self, failure, named):
         review = ObservedApproval()

@@ -11,7 +11,8 @@ from holophyte.loop.trim_brief import pass_name
 
 def _changed_files(root, approved, sha):
     changed = subprocess.run(
-        ["git", "diff", "--name-only", "--no-renames", "-z", f"{approved}..{sha}"],
+        ["git", "diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z",
+         f"{approved}..{sha}"],
         cwd=root, capture_output=True, check=True).stdout.split(b"\0")
     return {os.fsdecode(path) for path in changed if path}
 
