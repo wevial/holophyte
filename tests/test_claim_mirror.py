@@ -230,3 +230,37 @@ class SentBackMirrorTests(LoopFixture):
         """No run on a pull request: the missing path is the body's
         problem, and the mirror lands it in `needs_spec` as before."""
         self.assertEqual(self.mirror(None), [("needs_spec",)])
+
+
+class StoreListing(StubProvider):
+    """A native board: the mirror reads `listing()` and notes refusals."""
+
+    store_mode = True
+
+    def listing(self):
+        return [dict(task, blocked_by=[]) for task in self.queue]
+
+
+class MockupMirrorTests(LoopFixture):
+    """A major UI change with no mock-up is not claimable where ui_paths is set."""
+
+    BODY = VALID_BODY.replace("**How:**", "**UI change:** major\n\n**How:**")
+
+    def test_a_major_ui_change_without_a_mock_up_needs_spec(self):
+        self.configure('[merge]\nmode = "pr"\nui_capture = "true"\n'
+                       'ui_paths = ["web/**"]\n')
+        provider = StoreListing(dict(a_task(), body=self.BODY))
+        conn = holophyte.loop.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+
+        with patch.object(sys, "stdout", io.StringIO()):
+            holophyte.loop.dispatch._mirror_queue(
+                self.project, conn, project_id, provider)
+        conn.commit()
+
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("needs_spec",)])
+        (note,) = self.read("SELECT text FROM ticketNotes"
+                            " WHERE kind = 'validation'")
+        self.assertIn("## Mock-up", note[0])

@@ -1035,6 +1035,11 @@ capture would run reruns the capture at the same commit and counts as
 fix-round progress. Numbered images receive state captions; missing images
 are marked "not captured" in the PR and reviewer prompt.
 Tickets without the section keep the default capture.
+On a project that sets `ui_paths`, a ticket declaring `**UI change:** major`
+under What / Why / How must carry a `## Mock-up` section linking the approved
+mock-up; `--file-ticket` refuses it and the claim leaves it unclaimed until it
+does. A project without `ui_paths` never needs the section, and a ticket
+declaring `minor`, or nothing, is unaffected.
 
 A Playwright project can name the factory's own runner as `ui_capture`
 instead of shipping a capture script: `python3 HOLOPHYTE/holophyte/capture_playwright.py`

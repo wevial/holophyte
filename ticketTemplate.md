@@ -12,6 +12,11 @@
 
 **How:** <Intended technical direction, important constraints, and existing patterns to reuse — without over-specifying incidental implementation details.>
 
+<!-- OPTIONAL: `**UI change:** major` for a new or reworked layout, which
+     needs an approved mock-up under "Mock-up" below on a project that sets
+     [merge] ui_paths; `**UI change:** minor` for copy, a button style or
+     spacing. Leave the line out when the ticket changes no UI. -->
+
 ## Reproduce
 
 <!-- OPTIONAL: keep only for a bug report; its presence makes this a bug
@@ -19,6 +24,18 @@
      Delete the whole section otherwise. -->
 
 <Steps that show the reported behaviour, and where it was seen: the deployment, URL or commit.>
+
+## Mock-up
+
+<!-- OPTIONAL: keep only when What / Why / How declares
+     `**UI change:** major`. Give the approved mock-up as one bare URL
+     (https://claude.ai/artifact/ID, https://claude.ai/code/artifact/ID or
+     a Lotuspod page, https://lotuspod.DOMAIN/NAME.html) and one approval
+     line. Delete the whole section otherwise. -->
+
+<https://claude.ai/artifact/ID>
+
+Approved <YYYY-MM-DD>: <what was approved>
 
 ## In scope
 

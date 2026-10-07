@@ -995,9 +995,7 @@ class StorySectionTests(unittest.TestCase):
 
 class EvidenceTests(unittest.TestCase):
     def body(self, states):
-        return FILLED.replace("## Implementation notes",
-                              "## Evidence\n\n" + "\n".join(states)
-                              + "\n\n## Implementation notes")
+        return with_ui_change("minor", states=states)
 
     def test_optional_ordered_states_and_limit(self):
         self.assertEqual(tt.parse(FILLED).evidence_states, [])
@@ -1053,3 +1051,85 @@ class EvidenceTests(unittest.TestCase):
                 store.run_contract(conn, run),
                 store.contract_snapshot(*holophyte.board.projection.task_contract(task))),
                 ("evidenceStates",))
+
+
+APPROVAL = "Approved 2026-10-07: the three-step onboarding flow"
+
+
+def with_ui_change(value, mockup=None, states=()):
+    body = FILLED if value is None else FILLED.replace(
+        "**How:**", f"**UI change:** {value}\n\n**How:**")
+    if mockup is not None:
+        body = body.replace("## In scope",
+                            f"## Mock-up\n\n{mockup}\n\n## In scope")
+    if states:
+        body = body.replace("## Implementation notes",
+                            "## Evidence\n\n" + "\n".join(states)
+                            + "\n\n## Implementation notes")
+    return body
+
+
+class MockupTests(unittest.TestCase):
+    def test_an_accepted_link_bare_in_code_or_in_bold_validates(self):
+        for url in ("https://claude.ai/artifact/3f2a9c",
+                    "https://lotuspod.example.org/onboarding-flow.html",
+                    "`https://claude.ai/artifact/3f2a9c`",
+                    "**https://claude.ai/artifact/3f2a9c**"):
+            with self.subTest(url=url):
+                ticket = tt.parse(with_ui_change("major", f"{url}\n\n{APPROVAL}"))
+                self.assertEqual(tt.validate(ticket), [])
+
+    def test_a_foreign_wrapped_or_unapproved_link_is_blocking(self):
+        for mockup in (
+                f"https://example.com/mock.png\n\n{APPROVAL}",
+                f"[the mock-up](https://claude.ai/artifact/3f2a9c)\n\n{APPROVAL}",
+                "https://claude.ai/artifact/3f2a9c"):
+            with self.subTest(mockup=mockup):
+                problems = tt.validate(tt.parse(with_ui_change("major", mockup)))
+                self.assertEqual(len([p for p in tt.blocking(problems)
+                                      if "'## Mock-up'" in p]), 1)
+
+    def test_a_second_url_of_any_scheme_or_a_suffixed_url_is_blocking(self):
+        for mockup in (
+                "https://claude.ai/artifact/3f2a9c\nHTTPS://example.com/mock.png",
+                "https://claude.ai/artifact/3f2a9c\nftp://example.com/mock.png",
+                "https://claude.ai/artifact/3f2a9c\ndata:text/html,hello",
+                "`https://claude.ai/artifact/3f2a9c(extra)`"):
+            with self.subTest(mockup=mockup):
+                problems = tt.validate(tt.parse(
+                    with_ui_change("major", f"{mockup}\n\n{APPROVAL}")))
+                self.assertTrue([p for p in tt.blocking(problems)
+                                 if "'## Mock-up'" in p], problems)
+
+    def test_the_template_placeholders_left_in_are_blocking(self):
+        ticket = tt.parse(with_ui_change(
+            "major", "<https://claude.ai/artifact/ID>\n\n"
+                     "Approved 2026-10-07: <what was approved>"))
+        self.assertIn("unfilled template placeholder in Mock-up: "
+                      "<https://claude.ai/artifact/ID>",
+                      tt.blocking(tt.validate(ticket)))
+
+    def test_a_declaration_other_than_major_or_minor_is_blocking(self):
+        self.assertEqual(
+            [p for p in tt.blocking(tt.validate(tt.parse(with_ui_change("huge"))))
+             if "'**UI change:**'" in p],
+            ["'**UI change:**' must read major or minor, not 'huge'"])
+        for line, value in (("UI change: Major", "Major"),
+                            ("**UI change: **MINOR", "MINOR")):
+            with self.subTest(line=line):
+                ticket = tt.parse(FILLED.replace(
+                    "**How:**", f"{line}\n\n**How:**"))
+                self.assertEqual(ticket.ui_change, value)
+                self.assertEqual(tt.validate(ticket), [])
+
+    def test_three_undeclared_evidence_states_get_one_advisory(self):
+        states = ("Onboarding step one", "Onboarding step two",
+                  "Onboarding done")
+        problems = tt.validate(tt.parse(with_ui_change(None, states=states)))
+        self.assertEqual(len(problems), 1)
+        self.assertTrue(problems[0].startswith(tt.ADVISORY_PREFIX))
+        self.assertIn("**UI change:**", problems[0])
+        self.assertEqual(
+            tt.validate(tt.parse(with_ui_change("minor", states=states))), [])
+        self.assertEqual(
+            tt.validate(tt.parse(with_ui_change(None, states=states[:2]))), [])

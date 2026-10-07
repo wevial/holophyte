@@ -99,6 +99,27 @@ def evidence_problems(project, evidence_states):
     return []
 
 
+def project_problems(project, ticket):
+    return (evidence_problems(project, ticket.evidence_states)
+            + _mockup_requirement(project, ticket))
+
+
+def _mockup_requirement(project, ticket):
+    if (ticket.ui_change or "").lower() != "major" or "Mock-up" in ticket.order:
+        return []
+    try:
+        cfg = merge_config(project)
+    except SystemExit as error:
+        return [f"'**UI change:** major' needs '## Mock-up' checked against"
+                f" [merge], which is malformed: {error}"]
+    if not cfg.ui_paths:
+        return []
+    return ["'**UI change:** major' needs a '## Mock-up' section: [merge]"
+            f" ui_paths is set in {project.config_path}; link the approved"
+            " mock-up with an 'Approved YYYY-MM-DD: what' line, or declare"
+            " '**UI change:** minor'"]
+
+
 def media_url(repo, branch, name, private):
     """Images use the raw host only when public; videos always link to blobs."""
     path = f'{repo}/{quote(branch)}/{quote(name)}'
