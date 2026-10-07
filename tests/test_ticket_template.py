@@ -1069,10 +1069,6 @@ def with_ui_change(value, mockup=None, states=()):
     return body
 
 
-def mockup_blockers(body):
-    return [p for p in tt.blocking(tt.validate(tt.parse(body))) if "'## Mock-up'" in p]
-
-
 class MockupTests(unittest.TestCase):
     def test_an_accepted_link_with_an_approval_line_validates(self):
         for url in ("https://claude.ai/artifact/3f2a9c",
@@ -1087,8 +1083,9 @@ class MockupTests(unittest.TestCase):
                 f"[the mock-up](https://claude.ai/artifact/3f2a9c)\n\n{APPROVAL}",
                 "https://claude.ai/artifact/3f2a9c"):
             with self.subTest(mockup=mockup):
-                self.assertEqual(
-                    len(mockup_blockers(with_ui_change("major", mockup))), 1)
+                problems = tt.validate(tt.parse(with_ui_change("major", mockup)))
+                self.assertEqual(len([p for p in tt.blocking(problems)
+                                      if "'## Mock-up'" in p]), 1)
 
     def test_a_url_in_code_or_bold_is_read_without_its_markers(self):
         for url in ("`https://claude.ai/artifact/3f2a9c`",
