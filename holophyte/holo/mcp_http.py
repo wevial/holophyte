@@ -2,8 +2,10 @@
 import asyncio
 import json
 import os
+import signal
 import sys
 import threading
+from pathlib import Path
 
 from holophyte.holo.mcp_server import build, sdk_missing
 from holophyte.holo.mcp_tools import READS, TOOLS
@@ -98,10 +100,30 @@ async def follow_code(server, watch, interval, out, serving):
             server.should_exit = True
 
 
+def children():
+    mine = str(os.getpid())
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            parent = stat.read_text().rsplit(")", 1)[1].split()[1]
+        except (OSError, IndexError):
+            continue
+        if parent == mine:
+            yield int(stat.parent.name)
+
+
+def cut_off(pids):
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
 def leave_after(seconds, out):
     def leave():
-        print(f"[holo2] holo mcp --http leaves the tool calls still running"
+        print(f"[holo2] holo mcp --http cuts off the tool calls still running"
               f" after the {seconds}s drain", file=out, flush=True)
+        cut_off(list(children()))
         sys.stderr.flush()
         os._exit(0)
     timer = threading.Timer(seconds, leave)

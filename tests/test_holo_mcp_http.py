@@ -7,6 +7,7 @@ Run: python3 -m unittest discover -s tests -p 'test_holo_mcp_http.py' -v
 import http.client
 import json
 import os
+import shutil
 import signal
 import socket
 import sqlite3
@@ -35,7 +36,9 @@ NAME = "alpha"
 CHECK_SEC = 2
 # Uvicorn's graceful stop and the interpreter's exit, after the check fires.
 SHUTDOWN_SEC = 1
-DRAIN_SEC = 1
+DRAIN_SEC = 2
+# `os._exit` and the reap, after the drain's timer fires.
+EXIT_SLACK_SEC = 0.5
 CUTS = {"\nCODE_CHECK_SEC = 15\n": f"\nCODE_CHECK_SEC = {CHECK_SEC}\n",
         "\nDRAIN_SEC = 20\n": f"\nDRAIN_SEC = {DRAIN_SEC}\n"}
 START_WAIT_SEC = 30
@@ -102,12 +105,12 @@ class HttpCase(WriteCase):
         env.pop("HOLO_PROJECT")
         return {**env, "PYTHONPATH": str(self.checkout)}
 
-    def start(self):
+    def start(self, stdout=subprocess.PIPE):
         server = subprocess.Popen(
             [sys.executable, "-m", "holophyte.holo", "mcp", "--http",
              f"127.0.0.1:{self.port}"], cwd=self.outside,
             env=self.environment(), stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout=stdout, stderr=subprocess.PIPE, text=True)
         self.addCleanup(self.stop, server)
         deadline = time.monotonic() + START_WAIT_SEC
         while not listening(self.port):
@@ -265,38 +268,80 @@ class CodeFollowTests(HttpCase):
         self.checkout = self.clone()
 
     def clone(self):
-        """A `git clone` of this factory whose check interval and drain are
-        cut to `CHECK_SEC` and `DRAIN_SEC` in a commit of its own, made
-        before the server starts."""
-        checkout = self.root / "factory"
-        git(self.root, "clone", "-q", str(ROOT), str(checkout))
-        watch = checkout / "holophyte" / "serve" / "serve_watch.py"
+        """A `git clone` of a temporary repository holding the factory's
+        tracked files as they stand, with the check interval and drain cut
+        to `CHECK_SEC` and `DRAIN_SEC`, made before the server starts."""
+        source = self.root / "source"
+        for name in filter(None, git(ROOT, "ls-files", "-z").split("\0")):
+            if (ROOT / name).is_file():
+                (source / name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / name, source / name)
+        watch = source / "holophyte" / "serve" / "serve_watch.py"
         text = watch.read_text()
         for line, cut in CUTS.items():
             self.assertIn(line, text)
             text = text.replace(line, cut)
         watch.write_text(text)
-        git(checkout, "commit", "-q", "-am", "check interval and drain")
+        git(source, "init", "-q")
+        git(source, "add", "-A")
+        git(source, "commit", "-q", "-m", "the factory, its interval and drain cut")
+        checkout = self.root / "factory"
+        git(self.root, "clone", "-q", str(source), str(checkout))
         return checkout
 
-    def assert_exits_0_after_a_commit(self, server, within):
+    def commit(self):
         (self.checkout / "moved.txt").write_text("B\n")
         git(self.checkout, "add", "moved.txt")
         git(self.checkout, "commit", "-q", "-m", "B")
-        committed = time.monotonic()
+        return time.monotonic()
+
+    def test_a_new_commit_in_the_clone_exits_0_within_the_check_interval(self):
+        server = self.start()
+        within = CHECK_SEC + SHUTDOWN_SEC
+
+        committed = self.commit()
         try:
             code = server.wait(timeout=within)
         except subprocess.TimeoutExpired:
             self.fail(f"still serving {within}s after the commit")
-        elapsed = time.monotonic() - committed
 
         self.assertEqual(code, 0, server.communicate())
-        self.assertLessEqual(elapsed, within)
+        self.assertLessEqual(time.monotonic() - committed, within)
 
-    def test_a_new_commit_in_the_clone_exits_0_within_the_check_interval(self):
-        server = self.start()
+    def start_logged(self):
+        """The server, its stdout written to a file read by `seen`."""
+        log = self.root / "server.out"
+        with log.open("w") as out:
+            return self.start(stdout=out), log
 
-        self.assert_exits_0_after_a_commit(server, CHECK_SEC + SHUTDOWN_SEC)
+    def seen(self, log):
+        """When the server's line saying it saw the move is first read."""
+        deadline = time.monotonic() + CHECK_SEC + SHUTDOWN_SEC
+        while "moved to" not in log.read_text():
+            if time.monotonic() > deadline:
+                self.fail(f"the move was not seen: {log.read_text()}")
+            time.sleep(0.01)
+        return time.monotonic()
+
+    def assert_drains(self, server, log):
+        """A commit is seen within the interval; the server then stops
+        taking connections while still running, and exits 0 no later than
+        `DRAIN_SEC` after it saw the move."""
+        self.commit()
+        seen = self.seen(log)
+        while listening(self.port):
+            self.assertLess(time.monotonic() - seen, SHUTDOWN_SEC,
+                            "still taking connections after the move")
+            time.sleep(0.01)
+        self.assertIsNone(server.poll(), "exited before refusing connections")
+        try:
+            code = server.wait(timeout=DRAIN_SEC + EXIT_SLACK_SEC)
+        except subprocess.TimeoutExpired:
+            self.fail(f"still running {DRAIN_SEC}s after it saw the move")
+
+        self.assertEqual(code, 0, server.communicate())
+        self.assertLessEqual(time.monotonic() - seen,
+                             DRAIN_SEC + EXIT_SLACK_SEC)
 
     def send(self, body, length=None):
         """Bytes of an authenticated `POST /mcp` sent on a socket left open
@@ -312,7 +357,7 @@ class CodeFollowTests(HttpCase):
 
     def children(self, server):
         """The pids of `server`'s child processes once it has one; each is
-        killed at cleanup, after the server has gone."""
+        killed at cleanup."""
         deadline = time.monotonic() + START_WAIT_SEC
         while time.monotonic() < deadline:
             found = subprocess.run(["pgrep", "-P", str(server.pid)],
@@ -330,26 +375,37 @@ class CodeFollowTests(HttpCase):
         except ProcessLookupError:
             pass
 
+    def running(self, pid):
+        """Whether `pid` lives: neither gone nor a zombie left unreaped."""
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text()
+        except FileNotFoundError:
+            return False
+        return stat.rsplit(")", 1)[1].split()[0] != "Z"
+
     def test_a_stalled_request_holds_the_exit_no_longer_than_the_drain(self):
-        server = self.start()
+        server, log = self.start_logged()
         self.send(b"{", length=1000)
 
-        self.assert_exits_0_after_a_commit(
-            server, CHECK_SEC + DRAIN_SEC + SHUTDOWN_SEC)
+        self.assert_drains(server, log)
 
-    def test_a_tool_blocked_on_the_store_holds_the_exit_no_longer_than_the_drain(self):
-        server = self.start()
+    def test_a_blocked_tool_call_is_cut_off_at_the_drain_and_lands_nothing(self):
+        server, log = self.start_logged()
+        before = self.dump()
         writer = sqlite3.connect(self.store_path, isolation_level=None)
         self.addCleanup(writer.close)
         writer.execute("BEGIN IMMEDIATE")
-        self.addCleanup(writer.execute, "ROLLBACK")
         self.send(json.dumps(REQUEUE).encode())
         tools = self.children(server)
 
-        self.assert_exits_0_after_a_commit(
-            server, CHECK_SEC + DRAIN_SEC + SHUTDOWN_SEC)
-        for pid in tools:
-            os.kill(pid, 0)
+        self.assert_drains(server, log)
+        deadline = time.monotonic() + SHUTDOWN_SEC
+        while any(self.running(pid) for pid in tools):
+            self.assertLess(time.monotonic(), deadline,
+                            "the cut-off tool call is still running")
+            time.sleep(0.01)
+        writer.execute("ROLLBACK")
+        self.assertEqual(self.dump(), before)
 
 
 if __name__ == "__main__":
