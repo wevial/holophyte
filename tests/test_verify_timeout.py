@@ -11,7 +11,7 @@ from unittest.mock import patch
 import store
 import store.tickets
 from holophyte.config.project import Project
-from holophyte.loop import merge_gate, review_round
+from holophyte.loop import merge_gate, review_round, trim
 from holophyte.loop.gates import RunFailure
 from holophyte.loop.runs import open_store
 
@@ -55,9 +55,16 @@ class TicketVerifyTimeoutTests(unittest.TestCase):
         store.set_phase(conn, run_id, "working")
         return project, conn, run_id
 
-    def review(self, timeout_sec):
-        """One review round whose reviewer approves; return result and prompts."""
+    def open_project_after_trim(self, timeout_sec):
+        """Trim's green check runs first, recording a pass at the same head."""
         project, conn, run_id = self.open_project(timeout_sec)
+        self.assertTrue(trim._green(project, conn, run_id, 60, self.repo, SLOW, ()))
+        return project, conn, run_id
+
+    def review(self, timeout_sec, after_trim=False):
+        """One review round whose reviewer approves; return result and prompts."""
+        project, conn, run_id = (self.open_project_after_trim if after_trim
+                                 else self.open_project)(timeout_sec)
         prompts = []
 
         def reviewer(target, role, goal, *args, **kwargs):
@@ -80,9 +87,10 @@ class TicketVerifyTimeoutTests(unittest.TestCase):
                 result = failure
         return result, prompts
 
-    def merge(self, timeout_sec):
+    def merge(self, timeout_sec, after_trim=False):
         """The merge gate's verify on the reviewed sha; return result and output."""
-        project, conn, run_id = self.open_project(timeout_sec)
+        project, conn, run_id = (self.open_project_after_trim if after_trim
+                                 else self.open_project)(timeout_sec)
         for phase in ("verifying", "reviewing"):
             store.set_phase(conn, run_id, phase)
         out = io.StringIO()
@@ -120,6 +128,18 @@ class TicketVerifyTimeoutTests(unittest.TestCase):
 
         self.assertEqual(result, (True, self.sha))
         self.assertIn("verify ok before merge", out)
+
+    def test_a_pass_recorded_at_trim_does_not_satisfy_review_under_a_shorter_cap(self):
+        result, prompts = self.review(2, after_trim=True)
+
+        self.assertIsInstance(result, RunFailure)
+        self.assertIn("verify timed out after 2s", prompts[0])
+
+    def test_a_pass_recorded_at_trim_does_not_satisfy_merge_under_a_shorter_cap(self):
+        result, out = self.merge(2, after_trim=True)
+
+        self.assertIsInstance(result, RunFailure)
+        self.assertIn("verify timed out after 2s", out)
 
 
 if __name__ == "__main__":
