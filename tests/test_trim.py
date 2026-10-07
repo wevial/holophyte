@@ -113,6 +113,28 @@ class Remove(Commit):
         return f"removed {self.path}"
 
 
+class MakeExecutable(Commit):
+    def play(self, cwd, turn):
+        (cwd / self.path).chmod(0o755)
+        return super().play(cwd, turn)
+
+
+class MoveGitlink:
+    """A trim pass that repoints a submodule's gitlink and commits it."""
+
+    role = "implement"
+
+    def __init__(self, path, sha):
+        self.path, self.sha = path, sha
+
+    def play(self, cwd, turn):
+        subprocess.run(["git", "update-index", "--cacheinfo",
+                        f"160000,{self.sha},{self.path}"], cwd=cwd, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "trim: merge"], cwd=cwd,
+                       check=True)
+        return "trimmed"
+
+
 class ObservedApproval:
     """The review turn, noting the worktree it was handed."""
 
@@ -128,7 +150,7 @@ class ObservedApproval:
         return APPROVE.text
 
 
-class TrimLoopTests(LoopFixture):
+class TrimFixture(LoopFixture):
     def trimmed(self, *script, config=TRIMMED, task=None):
         self.configure(config)
         fake, _ = self.loop(*script, provider=StubProvider(task or a_task()))
@@ -154,6 +176,8 @@ class TrimLoopTests(LoopFixture):
     def review_candidates(self, fake):
         return [turn.candidate_sha for turn in fake.turns if turn.role == "review"]
 
+
+class TrimLoopTests(TrimFixture):
     def test_kept_passes_are_the_first_reviews_candidate_and_trim_runs_once(self):
         fake = self.trimmed(
             WORK,
@@ -174,11 +198,11 @@ class TrimLoopTests(LoopFixture):
         self.assertTrue(self.trim_summaries()[0].startswith("trim kept"))
 
     def test_a_pass_that_turns_verify_red_is_dropped_and_its_elders_kept(self):
-        task = dict(a_task(), verify="test ! -e red.txt")
+        task = dict(a_task(), verify="grep -qvx red work.txt")
         fake = self.trimmed(
             WORK,
             Commits(Commit("trim: delete", "work.txt", lines(40)),
-                    Commit("trim: tests", "red.txt", "breaks verify\n")),
+                    Commit("trim: tests", "work.txt", "red\n")),
             APPROVE, task=task)
         self.assert_merged()
         self.assertEqual(self.review_candidates(fake), [self.shas()["trim: delete"]])
@@ -189,6 +213,78 @@ class TrimLoopTests(LoopFixture):
         self.assertIn("verify was red at trim: tests", result["reason"])
         [summary] = self.trim_summaries()
         self.assertIn("reverted tests", summary)
+
+    def on_main(self, path, body):
+        (self.target / path).write_text(body)
+        self.git("add", path)
+        self.git("commit", "-q", "-m", f"add {path}")
+
+    def test_a_pass_that_edits_a_module_outside_the_runs_diff_is_reverted(self):
+        self.on_main("helpers.py", "def helper():\n    return 1\n")
+        fake = self.trimmed(
+            WORK,
+            Commits(Commit("trim: delete", "work.txt", lines(40)),
+                    Commit("trim: merge", "helpers.py",
+                           "def helper():\n    return 2\n")),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: delete"]])
+        self.assertNotIn("trim: merge", self.shas())
+        [summary] = self.trim_summaries()
+        self.assertTrue(summary.startswith("trim partial; kept delete; reverted merge"))
+        self.assertIn("trim: merge changed helpers.py outside the run's diff", summary)
+
+    def test_a_pass_that_only_swaps_an_import_outside_the_runs_diff_is_kept(self):
+        self.on_main("helpers.py", "from a import x\n\n\ndef helper():\n"
+                                   "    return x\n")
+        fake = self.trimmed(
+            WORK,
+            Commits(Commit("trim: merge", "helpers.py",
+                           "from b import x\n\n\ndef helper():\n"
+                           "    return x\n")),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: merge"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
+
+    def test_an_import_swap_that_also_changes_the_files_mode_is_reverted(self):
+        self.on_main("helpers.py", "from a import x\n")
+        fake = self.trimmed(
+            WORK, Commits(MakeExecutable("trim: merge", "helpers.py",
+                                         "from b import x\n")),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn("helpers.py outside the run's diff", result["reason"])
+
+    def test_a_textconv_driver_does_not_hide_an_outside_edit(self):
+        self.git("config", "diff.imports.textconv", "grep -E '^(import|from) '")
+        self.on_main(".gitattributes", "helpers.py diff=imports\n")
+        self.on_main("helpers.py", "from a import x\n\n\ndef helper():\n"
+                                   "    return 1\n")
+        fake = self.trimmed(
+            WORK, Commits(Commit("trim: merge", "helpers.py",
+                                 "from b import x\n\n\ndef helper():\n"
+                                 "    return 2\n")),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
+        [result] = self.results()
+        self.assertIn("helpers.py outside the run's diff", result["reason"])
+
+    def test_an_ignored_submodule_does_not_hide_an_outside_gitlink_move(self):
+        self.git("config", "diff.ignoreSubmodules", "all")
+        self.git("update-index", "--add", "--cacheinfo",
+                 f"160000,{'1' * 40},vendor")
+        self.git("commit", "-q", "-m", "add vendor")
+        fake = self.trimmed(WORK, MoveGitlink("vendor", "2" * 40), APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
+        [result] = self.results()
+        self.assertIn("vendor outside the run's diff", result["reason"])
 
     def assert_failed_turn_reverted(self, failure, named):
         review = ObservedApproval()

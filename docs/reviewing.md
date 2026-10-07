@@ -98,6 +98,16 @@ preflight identity or write rejection fails, the Codex tool host cannot
 execute a local command, the container times out, or the staged repository
 fingerprint changes.
 
+A review prompt whose range from the frozen base holds commits from the
+[trim step](loop.md) gets a trim section, read from git on every round,
+resumed runs included. It lists each `trim:` pass commit by short sha and
+subject and quotes every `Trade-off:` line of their bodies. It tells the
+reviewer that a trim commit must not change behavior, that a test a
+`trim: tests` commit deleted needs a `Proof:` line, and that a trade-off on
+a trust boundary, an auth check, a data-loss path or a money path is a
+blocker. A range with no pass commit, such as an implementer's `trim
+whitespace` commit, gets no section, and the prompt is unchanged.
+
 Configured `[agents] reviewer` and `adjudicator` commands heartbeat the run
 while they execute, like the implementer, every half heartbeat stale interval.
 
