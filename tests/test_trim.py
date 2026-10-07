@@ -69,6 +69,7 @@ class LeaveDirtyThen(Commits):
         (cwd / "work.txt").write_text("uncommitted edit\n")
         (cwd / "stray.txt").write_text("a file the turn created\n")
         subprocess.run(["git", "init", "-q", "nested"], cwd=cwd, check=True)
+        (cwd / "artifact.log").write_text("an ignored file the turn created\n")
         if self.failure == "timeout":
             block_until_killed(cwd, "cut short")
         raise holophyte.loop.gates.InfraFailure("the implementer route did not start")
@@ -83,12 +84,25 @@ class CommitThenExit(Commits):
 
 
 class WorkWithUntracked(Commit):
-    """The implement turn, leaving an untracked file of its own behind."""
+    """The implement turn, leaving an untracked and an ignored file behind."""
 
     def play(self, cwd, turn):
+        (cwd / ".gitignore").write_text("*.log\n")
         reply = super().play(cwd, turn)
         (cwd / "keep.txt").write_text("there before the trim\n")
+        (cwd / "carried.log").write_text("carried before the trim\n")
         return reply
+
+
+class UnrelatedCommit:
+    """Points the branch at a commit that shares no history with it."""
+
+    def play(self, cwd, turn):
+        def git(*args):
+            return subprocess.run(["git", *args], cwd=cwd, check=True,
+                                  capture_output=True, text=True).stdout.strip()
+        orphan = git("commit-tree", git("write-tree"), "-m", "refactor helpers")
+        git("reset", "-q", "--hard", orphan)
 
 
 class Remove(Commit):
@@ -108,9 +122,9 @@ class ObservedApproval:
         self.status = None
 
     def play(self, cwd, turn):
-        self.status = subprocess.run(
-            ["git", "status", "--porcelain"], cwd=cwd, capture_output=True,
-            text=True, check=True).stdout.strip()
+        self.status = set(subprocess.run(
+            ["git", "status", "--porcelain", "--ignored"], cwd=cwd,
+            capture_output=True, text=True, check=True).stdout.splitlines())
         return APPROVE.text
 
 
@@ -184,7 +198,7 @@ class TrimLoopTests(LoopFixture):
             review)
         self.assert_merged()
         self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
-        self.assertEqual(review.status, "?? keep.txt")
+        self.assertEqual(review.status, {"?? keep.txt", "!! carried.log"})
         [result] = self.results()
         self.assertEqual(result["outcome"], "reverted")
         self.assertIn(named, result["reason"])
@@ -220,6 +234,9 @@ class TrimLoopTests(LoopFixture):
         self.assert_malformed_turn_reverted(
             Commit("refactor helpers", "work.txt", lines(30)),
             "'refactor helpers' is not a trim pass")
+
+    def test_a_head_with_no_shared_history_reverts_every_pass(self):
+        self.assert_malformed_turn_reverted(UnrelatedCommit(), "rewrote history")
 
     def test_a_pass_made_twice_reverts_every_pass(self):
         self.assert_malformed_turn_reverted(

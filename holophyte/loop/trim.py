@@ -1,6 +1,7 @@
 """The trim step: one turn that shrinks the diff, kept only while verify is green."""
 import json
 import shutil
+import subprocess
 from functools import partial
 from pathlib import Path
 
@@ -106,8 +107,7 @@ def _green_prefix(wt, commits, green, untracked):
 
 
 def _untracked(wt):
-    return set(sh(["git", "ls-files", "-z", "--others", "--exclude-standard"],
-                  cwd=wt).split("\0")) - {""}
+    return set(sh(["git", "ls-files", "-z", "--others"], cwd=wt).split("\0")) - {""}
 
 
 def _land(wt, target, untracked):
@@ -132,7 +132,8 @@ def _commits(wt, sha):
 
 
 def _malformed(wt, sha, commits):
-    if sh(["git", "merge-base", sha, "HEAD"], cwd=wt) != sha:
+    if subprocess.run(["git", "merge-base", "--is-ancestor", sha, "HEAD"],
+                      cwd=wt, capture_output=True).returncode:
         return f"the turn rewrote history below {sha[:12]}"
     merges = sh(["git", "rev-list", "--merges", f"{sha}..HEAD"], cwd=wt)
     if merges:
