@@ -124,7 +124,7 @@ def check_agent_commands(project):
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
         argv = agent_command(project, role, "")
-        if role == "write" and argv is not None:
+        if role in ("write", "trim") and argv is not None:
             check_command_path(project, key, argv[0])
         # The critic and trimmer are optional: their probes, not the host, settle them.
         if role in ("write", "critic", "trim") or (role == "implement" and isolated):

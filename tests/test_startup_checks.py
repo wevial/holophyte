@@ -311,12 +311,15 @@ class StartupCheckTests(ConfigTestCase):
     def test_a_relative_program_path_is_refused_rather_than_guessed_at(self):
         # It would resolve inside a task worktree that does not exist yet, so
         # startup cannot check the file the round would actually run.
-        self.locate('[agents]\nreviewer = "./review.sh --diff"\n')
+        for key in ("reviewer", "trimmer"):
+            with self.subTest(key=key):
+                self.locate(f'[agents]\n{key} = "./{key}.sh --diff"\n')
 
-        with self.assertRaises(SystemExit) as raised:
-            holophyte.config.checks.check_agent_commands(self.project)
+                with self.assertRaises(SystemExit) as raised:
+                    holophyte.config.checks.check_agent_commands(self.project)
 
-        self.assertIn("relative", str(raised.exception))
+                self.assertIn("relative", str(raised.exception))
+                self.assertIn(f"[agents] {key}:", str(raised.exception))
 
     def test_the_check_reuses_the_parse_a_round_would_use(self):
         # An unquotable or wrongly-typed command is caught here too, with the
