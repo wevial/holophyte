@@ -168,5 +168,23 @@ class TrimmerRouteLoopTests(LoopFixture):
         self.assertNotIn("trim: comments", self.subjects())
 
 
+    def test_a_trimmer_gone_after_its_probe_reverts_the_trim_and_the_run_goes_on(self):
+        trimmer = script(self.scripts() / "trimmer", PROBE_ANSWER)
+
+        class WorkThenRemoveTrimmer(Commit):
+            def play(self, cwd, turn):
+                trimmer.unlink()
+                return super().play(cwd, turn)
+
+        fake, result = self.run_loop(
+            f'trimmer = "{trimmer}"\n',
+            TrimmerOnly(WorkThenRemoveTrimmer("work", "work.txt", lines(60)),
+                        APPROVE))
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn("could not start", result["reason"])
+        self.assertIn(str(trimmer), result["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()

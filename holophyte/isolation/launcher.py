@@ -61,7 +61,8 @@ def route_for(project):
     credential = table.get("implementer_credential", {})
     validate_credential(credential)
     codex = any(runs_codex(table.get(key))
-                for key in ("implementer", "implementer_fallback"))
+                for key in ("implementer", "implementer_fallback", "trimmer",
+                            "trimmer_fallback"))
     return Route(backend, image, credential, memory, writable, codex)
 
 

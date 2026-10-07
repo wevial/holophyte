@@ -81,6 +81,8 @@ def _turn(project, conn, run_id, beat_s, wt, budget_min, goal):
     except InfraFailure as error:
         return (getattr(error, "output", "") or str(error),
                 f"the route failed: {error}")
+    except (OSError, RuntimeError) as error:
+        return str(error), f"the route could not start: {error}"
     if timed_out:
         return out, "the turn timed out"
     outage = outage_reason(getattr(out, "command", ""), out)

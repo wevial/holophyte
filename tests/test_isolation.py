@@ -446,6 +446,25 @@ class IsolationTests(GoRaceCases, IsolationCase):
             launcher.container_command(
                 launcher.route_for(self.target), worktree, {}, ["codex"], "n")
 
+    def test_a_codex_trimmer_mounts_the_host_release_beside_a_claude_implementer(self):
+        from holophyte.isolation import launcher
+
+        _, worktree = self.make_worktree()
+        release = self.fake_codex_release()
+        for key, trimmer in (("trimmer", {"harness": "codex"}),
+                             ("trimmer_fallback", "codex exec -m model")):
+            with self.subTest(key=key):
+                self.table["agents"] = {"implementer_isolation": "container",
+                                        "implementer": {"harness": "claude"},
+                                        key: trimmer}
+                with patch.dict(os.environ, {"PATH": str(release)}):
+                    command, _ = launcher.container_command(
+                        launcher.route_for(self.target), worktree, {},
+                        ["codex"], "n")
+                mounts = [command[i + 1] for i, part in enumerate(command)
+                          if part == "--volume"]
+                self.assertIn(f"{release}/codex:/opt/codex/bin/codex:ro", mounts)
+
     def test_quoted_codex_program_is_a_codex_implementer(self):
         from holophyte.isolation.launcher import route_for
 
