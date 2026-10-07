@@ -247,7 +247,7 @@ class TrimLoopTests(LoopFixture):
             [(0,)])
 
 
-class TrimSessionTests(unittest.TestCase):
+class TrimStepTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -309,6 +309,24 @@ class TrimSessionTests(unittest.TestCase):
                          ["implement", "trim"])
         [result] = self.payloads("trim_result")
         self.assertEqual(result["outcome"], "nothing")
+
+    def test_an_unresolved_merge_is_left_for_the_conflict_guard(self):
+        self.git("checkout", "-q", "main")
+        (self.repo / "work.txt").write_text("main's own work\n")
+        self.git("add", "work.txt")
+        self.git("commit", "-qm", "main moved on")
+        self.git("checkout", "-q", "task")
+        head = self.git("rev-parse", "HEAD")
+        subprocess.run(["git", "merge", "-q", "main"], cwd=self.repo,
+                       capture_output=True)
+        trim(self.target, self.conn, self.run, 60, self.repo,
+             self.git("rev-parse", "main"), head, "true", [])
+        self.assertEqual(self.git("diff", "--name-only", "--diff-filter=U"),
+                         "work.txt")
+        self.assertEqual(self.payloads("agent_turn"), [])
+        [result] = self.payloads("trim_result")
+        self.assertEqual((result["outcome"], result["reason"]),
+                         ("skipped", "the worktree is mid-merge with main"))
 
 
 if __name__ == "__main__":

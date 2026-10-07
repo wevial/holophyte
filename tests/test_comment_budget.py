@@ -159,6 +159,8 @@ PINNED = {
     "holophyte/loop/run.py": 1,
     "holophyte/loop/runs.py": 11,
     "holophyte/loop/stop.py": 5,
+    "holophyte/loop/trim.py": 3,
+    "holophyte/loop/trim_brief.py": 0,
     "holophyte/loop/task_worktree.py": 5,
 
     "holophyte/media_store.py": 1,

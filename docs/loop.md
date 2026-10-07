@@ -89,17 +89,18 @@ machines it walks. Back to the [README](index.md).
 
    **Trim step.** Between the implement turn and the verify gate before the
    first review round, a run that implemented trims its own diff once. The
-   step is skipped, recording a `trim` event naming why, when the diff is
-   under 50 changed lines, when verify is red at the implementer's head, or
-   when the run cap would refuse a `[trim] budget_min` turn; `[trim] enabled
+   step is skipped, recording a `trim` event naming why, when the worktree
+   is mid-merge with main, when the diff is under 50 changed lines, when
+   verify is red at the implementer's head, or when the run cap would refuse
+   a `[trim] budget_min` turn; `[trim] enabled
    = false` turns it off. Otherwise one turn on the active implementer route
    runs the vendored trim procedure: five passes (delete, merge, flatten,
    comments, tests), one commit each, subject `trim:` and the pass name. The
    factory then discards whatever the turn left uncommitted, removing only
    the untracked files the turn created, and judges the new commits. A
-   timeout, a killed turn, a route failure, a merge commit, a subject that
-   is not a pass or a pass made twice resets the branch to the pre-trim
-   head. Verify green at the new head keeps every pass; red keeps the passes
+   timeout, a killed turn, a route failure, a merge commit, rewritten
+   history, a subject that is not a pass or a pass made twice resets the
+   branch to the pre-trim head. Verify green at the new head keeps every pass; red keeps the passes
    before the first one verify fails on. The `trim` event names the outcome
    (`skipped`, `nothing`, `kept`, `partial` or `reverted`), and a failed trim
    never fails the run: the review sees the untrimmed diff. Resumed runs, the

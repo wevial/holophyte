@@ -5,6 +5,7 @@ from pathlib import Path
 
 import store
 from holophyte.config.config_tables import trim_config
+from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import InfraFailure, run_verify, sh, with_baseline
 from holophyte.loop.implement import (
     OUTPUT_TAIL,
@@ -31,7 +32,7 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
     before = _changed_lines(wt)
     green = partial(_green, project, conn, run_id, beat_s, wt, verify_cmd,
                     contracts)
-    reason = _skip_reason(project, conn, run_id, config.budget_min, sha,
+    reason = _skip_reason(project, conn, run_id, wt, config.budget_min, sha,
                           before, green)
     if reason:
         _record(project, conn, run_id, "skipped", reason, [], [], before, before)
@@ -55,7 +56,9 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
     return sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
 
-def _skip_reason(project, conn, run_id, budget_min, sha, lines, green):
+def _skip_reason(project, conn, run_id, wt, budget_min, sha, lines, green):
+    if merge_conflicts(wt):
+        return "the worktree is mid-merge with main"
     if lines < LINE_FLOOR:
         return f"diff of {lines} changed lines is under {LINE_FLOOR}"
     if not green():
