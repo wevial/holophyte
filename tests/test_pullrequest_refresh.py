@@ -20,6 +20,7 @@ import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_media  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
+import ticket_template  # noqa: E402 - after the sys.path insert above
 from holophyte.loop import implement  # noqa: E402
 
 
@@ -165,6 +166,19 @@ class PullRequestRefreshTests(MergeModeFixture):
         self.assertFalse(self.captures.exists())
         self.assertEqual(holophyte.pr.github.split_pr_body(body)[2].rstrip(),
                          self.old_evidence)
+
+    def test_a_recapture_at_the_same_commit_replaces_the_evidence(self):
+        a = self.captured_pr()
+        seen = holophyte.pr.pr_media.prepare(
+            self.project, self.target, "KO-131", evidence_states=
+            ticket_template.parse(self.BODY).evidence_states)
+        self.assertNotEqual(seen.rstrip(), self.old_evidence)
+        self.refresh(("TITLE: Ignored\nNew description.", False))
+        evidence = holophyte.pr.github.split_pr_body(self.pr_body.read_text())[2]
+        self.assertEqual(evidence.rstrip(), seen.rstrip())
+        self.assertIn(f"Captured at {a}\n\n", evidence)
+        self.assertEqual(self.captures.read_text().split(),
+                         [self.git("rev-parse", "HEAD").strip()])
 
     def test_a_failed_recapture_keeps_the_old_evidence_marked_stale(self):
         a = self.captured_pr(exit_code=3)

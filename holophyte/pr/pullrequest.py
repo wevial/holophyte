@@ -273,7 +273,22 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
                 if adopted else f"pull request open: {url}")
             # The PR is the run's `prUrl` from now, even for a run that never parks.
             store.set_pull_request(conn, run_id, url)
+    if adopted:
+        with heartbeat_while(conn, run_id, beat_s):
+            _adopt_evidence(project, url, text)
     return url
+
+
+def _adopt_evidence(project, url, text):
+    section = github.split_pr_body(text)[2]
+    if not section:
+        return
+    pull = pr_status.parse_pr_url(url)
+    body = github.rest(project, pull, "GET",
+                       f"repos/{pull.repo}/pulls/{pull.number}")["body"] or ""
+    if github.split_pr_body(body)[2].rstrip() != section.rstrip():
+        github.edit_pr_body(project, pull,
+                            github.replace_pr_evidence(body, section))
 
 
 def _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,

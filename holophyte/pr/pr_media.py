@@ -477,10 +477,8 @@ def _stamp(section, sha):
                            f'## Evidence\n\nCaptured at {sha[:12]}\n\n', 1)
 
 
-def _prepare(project, wt, task_id, record_note, evidence_states):
+def _receipt(project, wt, task_id, evidence_states):
     cfg = merge_config(project)
-    if not cfg.ui_paths or not matches(wt, cfg.ui_paths):
-        return '', ''
     revisions = sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt)
     identity = [RECEIPT_VERSION, revisions,
                 task_id, cfg.ui_paths, cfg.ui_capture, github.origin_url(project),
@@ -490,7 +488,14 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
                 capture_spec_digest(project, wt, task_id, evidence_states)]
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
-    receipt = git_dir / f'pr-media-{key}.txt'
+    return git_dir / f'pr-media-{key}.txt', revisions.split()[0]
+
+
+def _prepare(project, wt, task_id, record_note, evidence_states):
+    cfg = merge_config(project)
+    if not cfg.ui_paths or not matches(wt, cfg.ui_paths):
+        return '', ''
+    receipt, head = _receipt(project, wt, task_id, evidence_states)
     note = receipt.with_suffix('.note')
     failed = receipt.with_suffix('.failed')
     if not receipt.exists():
@@ -510,7 +515,7 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
         failed.unlink(missing_ok=True)
         if failure:
             failed.write_text(failure)
-        receipt.write_text(_stamp(section, revisions.split()[0]))
+        receipt.write_text(_stamp(section, head))
     if record_note is not None and note.exists():
         record_note(note.read_text())
     return receipt.read_text(), failed.read_text() if failed.exists() else ''
@@ -526,13 +531,21 @@ def _touched(wt, captured, patterns):
                for path in paths.split('\0') for pattern in patterns)
 
 
+def _seen(project, wt, task_id, evidence, evidence_states):
+    receipt, _ = _receipt(project, wt, task_id, evidence_states)
+    if not receipt.exists() or receipt.with_suffix('.failed').exists():
+        return None
+    section = receipt.read_text()
+    return section if section.rstrip() != evidence.rstrip() else None
+
+
 def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()):
     cfg = merge_config(project)
     if not cfg.ui_paths:
         return None
     captured = CAPTURED.search(evidence)
     if captured and not _touched(wt, captured[1], cfg.ui_paths):
-        return None
+        return _seen(project, wt, task_id, evidence, evidence_states)
     section, failure = _prepare(project, wt, task_id, record_note, evidence_states)
     if not section:
         return None
