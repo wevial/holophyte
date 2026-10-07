@@ -58,6 +58,8 @@ def agent_route(project, role):
 
 
 def effective_role(project, role):
+    if role == "trim":
+        return "implement"
     if role == "write" and (routes(project).writer_failed
                             or agent_command(project, role, "") is None):
         return "implement"

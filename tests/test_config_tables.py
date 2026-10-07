@@ -555,3 +555,20 @@ class MergeConfigTests(ConfigTestCase):
                 message = refused(self, f"[merge]\n{line}\n")
                 self.assertIn("[merge]", message)
                 self.assertIn(key, message)
+
+
+class TrimConfigTests(ConfigTestCase):
+    """`[trim] enabled`, a boolean, and `budget_min`, an integer of at least 1."""
+
+    def test_an_absent_table_trims_on_a_fifteen_minute_budget(self):
+        self.locate()
+
+        config = config_tables.trim_config(self.project)
+        self.assertEqual((config.enabled, config.budget_min), (True, 15))
+
+    def test_a_bad_value_or_an_unknown_key_is_a_startup_error_naming_it(self):
+        for line, named in (('enabled = "yes"', "[trim] enabled must be"),
+                            ("budget_min = 0", "[trim] budget_min must be"),
+                            ("max_lines = 50", "[trim] max_lines: unknown key")):
+            with self.subTest(line=line):
+                self.assertIn(named, refused(self, f"[trim]\n{line}\n"))

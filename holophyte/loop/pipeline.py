@@ -32,6 +32,7 @@ from holophyte.loop.merge_gate import (
 from holophyte.loop.review_round import _review_cap, _review_rounds
 from holophyte.loop.runs import RunSwept
 from holophyte.loop.stop import Aborted, continuation
+from holophyte.loop.trim import trim
 from holophyte.pr.pullrequest import _prepare_pr, _push_and_open
 from holophyte.redact import safe_print as print
 from holophyte.review import reproduce
@@ -111,6 +112,9 @@ def _run_stages(run, task):
             budget_min, conflicts=conflicts,
             opening=maintainer_notes.requeue_context(conn, run_id)
             + (test.opening() if test else ""))
+        if not unreproduced:
+            sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
+                       verify_cmd, contracts)
 
     cap = _review_cap(project, conn, run_id, provider, task_id, wt)
     sha, rnd, approved = (reproduce.review_rounds if unreproduced else _review_rounds)(

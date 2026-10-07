@@ -45,7 +45,7 @@ absent means every default below stays in place, which is how the factory runs
 against itself. A file that exists but does not parse is a startup error naming
 the file and the line — a config the operator wrote is never silently ignored.
 Tables this version does not know are left alone. Inside a table it does read
-(`[agents]`, `[verify]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`, `[console]`, `[serve]`, `[story]`), a key it does
+(`[agents]`, `[verify]`, `[worktree]`, `[supervisor]`, `[loop]`, `[report]`, `[board]`, `[merge]`, `[console]`, `[serve]`, `[story]`, `[trim]`), a key it does
 not read is
 a startup
 error naming the file, the table, the key and the keys the table accepts:
@@ -1404,3 +1404,26 @@ dependency_ready = "merged"
 
 A `witness_sec` or `max_parallel` that is not a positive integer, or a
 `dependency_ready` other than `merged`, is a startup error naming the key.
+
+## `[trim]`
+
+The trim step: one agent turn after the implement turn and before the first
+review round that makes the run's diff smaller. It runs the vendored trim
+procedure (`holophyte/loop/trim_brief.py`) on the active implementer route,
+and the factory keeps only commits whose subjects are `trim: delete`,
+`trim: merge`, `trim: flatten`, `trim: comments` or `trim: tests`, and only
+while verify stays green.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | Default: `true` | Boolean; `false` turns the step off for the project, with no turn and no `trim` event. |
+| `budget_min` | Default: `15` minutes | Integer of at least 1; the trim turn's budget, scaled by `budget_scale` like every turn. A run cap that would refuse a turn this long skips the step. |
+
+```toml
+[trim]
+enabled = true
+budget_min = 15
+```
+
+An `enabled` that is not a boolean, a `budget_min` that is not an integer of
+at least 1, or any other key is a startup error naming the key.

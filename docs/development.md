@@ -266,6 +266,10 @@ Each module, one line:
   order, from the worktree to the merge or the pull request.
 - `holophyte/loop/implement.py` — the implement stage and the timed agent turn
   under its scaled budget, the run cap and the transport retry.
+- `holophyte/loop/trim.py` — the trim step between the implement turn and
+  the first review: one turn, its commits judged by subject and verify.
+- `holophyte/loop/trim_brief.py` — `TRIM_BRIEF`, the vendored trim procedure
+  the trim turn is sent.
 - `holophyte/loop/review_round.py` — the review rounds: verify, review and a fix
   turn per round, up to the cap the candidate's size earns.
 - `holophyte/loop/adjudicate.py` — the terminal adjudication once the review

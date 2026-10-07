@@ -120,6 +120,16 @@ class DevelopmentDocTests(unittest.TestCase):
         self.assertRegex(text, r"\babove 12\b")
 
 
+class LoopDocTests(unittest.TestCase):
+    def test_the_trim_step_sits_between_implement_and_the_verify_gate(self):
+        text = (DOCS / "loop.md").read_text()
+        step = text.split("\n3. Implementer agent", 1)[1]
+        step = step.split("\n4. Verify gate", 1)[0]
+        self.assertIn("**Trim step.**", step)
+        self.assertIn("[trim] enabled", step)
+        self.assertIn("[trim] budget_min", step)
+
+
 class LinkTests(unittest.TestCase):
     def test_every_relative_link_resolves_to_a_file_and_an_anchor(self):
         broken = []
