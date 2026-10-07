@@ -59,9 +59,9 @@ def agent_route(project, role):
 
 
 def effective_role(project, role):
-    state = routes(project)
-    failed = {"write": state.writer_failed, "trim": state.trimmer_failed}
-    if role in failed and (failed[role] or agent_command(project, role, "") is None):
+    down = {"write": "writer_failed", "trim": "trimmer_failed"}.get(role)
+    if down and (getattr(routes(project), down)
+                 or agent_command(project, role, "") is None):
         return "implement"
     return role
 
