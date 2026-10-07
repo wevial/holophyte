@@ -7,7 +7,6 @@ Run: HOLOPHYTE_LIVE_QUESTIONS=claude (or codex) python3 -m unittest discover
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,14 +38,14 @@ class LiveQuestionTests(unittest.TestCase):
         question_cli.ROUTES.clear()
         self.addCleanup(question_cli.ROUTES.clear)
         outputs = []
-        real_run = subprocess.run
+        real_launch = question_cli.launch
 
-        def recorded(*args, **kwargs):
-            done = real_run(*args, **kwargs)
-            outputs.append(done.stdout)
-            return done
+        def recorded(argv, cwd):
+            status, output = real_launch(argv, cwd)
+            outputs.append(output)
+            return status, output
 
-        with patch.object(question_cli.subprocess, "run", side_effect=recorded):
+        with patch.object(question_cli, "launch", side_effect=recorded):
             answer = questions.ask(
                 thread_mentions.MENTION_INTENT,
                 {"comment": "fix: rename this helper to load_config"},

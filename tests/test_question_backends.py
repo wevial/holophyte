@@ -212,10 +212,11 @@ class QuestionBackendTests(unittest.TestCase):
             with self.subTest(backend=backend):
                 self.fake(backend, "question", claude_output("question", 0.9)
                           if backend == "claude" else codex_output("question", 0.9))
-                thread = self.thread(f"Why read {secret} here?", f"src/{secret}.py")
-                result = thread_mentions.triage(
-                    thread, f"Rotate {secret}", {"questions": {"backend": backend}})
-                self.assertEqual(result["decision"], "question")
+                state = {"comment": f"Why read {secret} here?",
+                         "file": f"src/{secret}.py", "ticket_title": f"Rotate {secret}"}
+                answer = questions.ask(thread_mentions.MENTION_INTENT, state,
+                                       config={"questions": {"backend": backend}})
+                self.assertEqual(answer, questions.Answer("question", 0.9))
                 call = self.calls(backend)[-1]
                 self.assertIn("Why read", call["argv"][-1])
                 self.assertNotIn(secret, json.dumps(call["argv"]))
@@ -290,6 +291,7 @@ class QuestionBackendTests(unittest.TestCase):
             ({"backend": "jev", "model": "haiku"}, "model"),
             ({"backend": "codex", "effort": "max"}, "effort"),
             ({"backend": "claude", "backend_fallback": "gpt"}, "backend_fallback"),
+            ({"backend_fallback": "claude"}, "backend_fallback"),
         ):
             with self.subTest(table=table), self.assertRaisesRegex(
                     ValueError, rf"\[questions\] {key}\b"):

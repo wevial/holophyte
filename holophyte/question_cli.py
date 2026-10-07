@@ -1,10 +1,12 @@
 import json
+import os
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
 
 from holophyte import questions, redact
-from holophyte.agents.fallback import outage_reason
+from holophyte.agents.fallback import OUTAGE_SIGNATURES
 from store import agent_routes
 
 TIMEOUT = 60
@@ -76,13 +78,21 @@ def codex_argv(route, schema_file, text):
 
 def launch(argv, cwd):
     try:
-        done = subprocess.run(argv, cwd=cwd, stdin=subprocess.DEVNULL,
-                              capture_output=True, text=True, timeout=TIMEOUT)
-    except subprocess.TimeoutExpired:
-        return None, ""
+        process = subprocess.Popen(
+            argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, start_new_session=True)
     except OSError as error:
         return -1, str(error)
-    return done.returncode, done.stdout
+    try:
+        stdout, _ = process.communicate(timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.communicate()
+        return None, ""
+    return process.returncode, stdout
 
 
 def answer(route, question, state, config):
@@ -202,11 +212,8 @@ def probe(route, config, options):
         return None
     why = (result.reason if isinstance(result, questions.Failure)
            else f"answered {result.choice!r}")
-    shown = command(route)
-    outage = outage_reason(shown, output)
-    lines = [f"[holo2] questions probe failed ({why}): {shown}"]
-    if outage:
-        outage = redact.redact_prose(outage, redact.known_secrets(config))
-        lines.append(f"[holo2]   | {outage}")
-    redact.safe_print("\n".join(lines))
-    return outage or why
+    outage = next((signature for signature in OUTAGE_SIGNATURES.get(route.backend, ())
+                   if signature in output), None)
+    reason = f"{why}: {outage}" if outage else why
+    redact.safe_print(f"[holo2] questions probe failed ({reason}): {command(route)}")
+    return reason

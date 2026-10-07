@@ -21,8 +21,9 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
     from holophyte.babysit import babysitter
     from holophyte.loop.review_round import agent, sh
     from holophyte.pr.pullrequest import _park_on_pr
-    threads = tuple(thread_mentions.triaged(threads, ticket, target.config(),
-                                            conn, run_id))
+    with heartbeat_while(conn, run_id, beat_s):
+        threads = tuple(thread_mentions.triaged(threads, ticket, target.config(),
+                                                conn, run_id))
     asks = tuple(t for t in threads if not maintainer_notes.is_note(t)
                  and t.classification == "MENTIONED"
                  and t.intent == "ask")

@@ -65,6 +65,8 @@ def settings(config):
     if not probability(values["min_confidence"]):
         raise ValueError("[questions] min_confidence must be a number in [0, 1]")
     values |= route_settings(table, "backend", "model", "effort")
+    if "backend_fallback" in table and values["backend"] == "jev":
+        raise ValueError("[questions] backend_fallback needs a claude or codex backend")
     if "backend_fallback" in table:
         values |= route_settings(table, *FALLBACK_KEYS)
     else:

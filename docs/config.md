@@ -1388,17 +1388,18 @@ or Codex CLI.
 | `backend` | Default: `jev` | `jev` (the HTTP service), `claude` (`claude -p`) or `codex` (`codex exec`). |
 | `model` | Default: `haiku` for `claude`, `gpt-6-luna` for `codex` | Model of a CLI backend; refused beside `jev`. |
 | `effort` | Default: `high` for `claude`, `low` for `codex` | Effort of a CLI backend: `low`, `medium`, `high`, `xhigh`, or for `claude` also `max`; refused beside `jev`. |
-| `backend_fallback` | Default: none | Backend used when `backend` fails its probe; any of the three. |
-| `fallback_model` | Default: as `model`, for the fallback backend | Model of a CLI fallback. |
-| `fallback_effort` | Default: as `effort`, for the fallback backend | Effort of a CLI fallback. |
+| `backend_fallback` | Default: none | Backend used when a `claude` or `codex` backend fails its probe; any of the three. Refused beside `jev`. |
+| `fallback_model` | Default: the fallback backend's own `model` default | Model of a CLI fallback. |
+| `fallback_effort` | Default: the fallback backend's own `effort` default | Effort of a CLI fallback. |
 
 The key is read from that environment variable for each request. Missing keys,
 service failures, unclear answers and answers below the floor use the read-only
 answer path. Only a confident `fix` requests implementation; explicit `ask:`
 and `fix:` markers bypass triage.
 
-A CLI backend runs in an empty temporary directory with stdin closed, no tools
-and, for `codex`, a read-only sandbox. It sends the same instructions and
+A CLI backend runs in an empty temporary directory with stdin closed: `claude`
+with no tools, MCP servers or settings, `codex` in a read-only sandbox with
+its shell tool disabled. It sends the same instructions and
 options, then the redacted thread as a JSON record framed as data, not
 instructions, and reads one choice and a confidence from the CLI's structured
 output. That confidence is the model's own rating from 0 to 1 that its choice
