@@ -1,6 +1,7 @@
 import json
 import statistics
 import time
+from collections import Counter
 from datetime import datetime, timezone
 
 import store.read
@@ -99,6 +100,21 @@ def flaky_lines(conn):
     return [f"verify flaky: {count}"] if count else []
 
 
+TRIM_OUTCOMES = ("kept", "partial", "reverted", "skipped", "nothing")
+
+
+def trim_lines(conn):
+    results = [json.loads(payload) for (payload,) in conn.execute(
+        "SELECT payload FROM runEvents WHERE kind = 'trim_result'")]
+    if not results:
+        return []
+    counts = Counter(result["outcome"] for result in results)
+    net = sum(result["lines_after"] - result["lines_before"] for result in results)
+    return [f"trim: {len(results)} runs · "
+            + " · ".join(f"{outcome} {counts[outcome]}" for outcome in TRIM_OUTCOMES)
+            + f" · net {net:+d} lines"]
+
+
 TOIL_WINDOWS = (("24h", 24 * 3_600_000), ("7d", 7 * 24 * 3_600_000))
 
 
@@ -152,6 +168,7 @@ def report_lines(conn, target=None):
         live += approval_lines(conn)
         live += failure_lines(conn)
         live += flaky_lines(conn)
+        live += trim_lines(conn)
         live += toil_lines(conn, now)
         live.append("gap layers: " + ", ".join(
             f"{layer} {count}"

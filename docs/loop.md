@@ -100,8 +100,14 @@ machines it walks. Back to the [README](index.md).
    the untracked files the turn created, and judges the new commits. A
    timeout, a killed or failed turn, a route failure, a merge commit, rewritten
    history, a subject that is not a pass or a pass made twice resets the
-   branch to the pre-trim head. Verify green at the new head keeps every pass; red keeps the passes
-   before the first one verify fails on. The `trim` event names the outcome
+   branch to the pre-trim head. A scope gate then reads each pass, oldest
+   first, against the run's diff (the files changed from the base to the
+   pre-trim head): a pass that changes a file outside it by anything but
+   added or removed single-line `import ` or `from ` lines resets the
+   branch to the pass before it, and the reason names the pass and the
+   file; that pass and every later one are reverted and never verified.
+   Verify green at the remaining head keeps every pass left; red keeps the
+   passes before the first one verify fails on. The `trim` event names the outcome
    (`skipped`, `nothing`, `kept`, `partial` or `reverted`), and a failed trim
    never fails the run: the review sees the untrimmed diff. Resumed runs, the
    not-reproduced path, fix rounds, the merge gate and babysit passes do not

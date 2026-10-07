@@ -97,3 +97,11 @@ mutation> -- guarded by <the kept test>`.
 End your reply with the net line delta, then one line per raised item
 saying why it was not applied.
 """
+
+
+PASSES = ("delete", "merge", "flatten", "comments", "tests")
+
+
+def pass_name(subject):
+    name = subject.removeprefix("trim: ")
+    return name if name in PASSES and subject == f"trim: {name}" else None

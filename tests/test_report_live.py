@@ -1,5 +1,6 @@
 """The read-only report shows unfinished work before its finished history."""
 import io
+import json
 import os
 import subprocess
 import sys
@@ -56,6 +57,24 @@ class LiveReportTests(ReportStoreCase):
             sweep_report(Project.locate(self.target), conn=self.conn, out=out, now=NOW)
         for line in expected:
             self.assertIn(line, out.getvalue().splitlines())
+
+    def test_trim_outcomes_are_counted_on_one_line_only_once_trims_ran(self):
+        def trim_lines():
+            return [line for line in report.report_lines(self.conn)
+                    if line.startswith("trim:")]
+
+        self.assertEqual(trim_lines(), [])
+        for number, (outcome, before, after) in enumerate(
+                (("kept", 120, 90), ("partial", 80, 70), ("reverted", 60, 60),
+                 ("skipped", 30, 30)), 30):
+            run = self.live_run(number, NOW - 1000, "working")
+            store.record_event(self.conn, run, "trim_result", f"trim {outcome}",
+                               level="detail", payload=json.dumps({
+                                   "outcome": outcome, "lines_before": before,
+                                   "lines_after": after}))
+        self.assertEqual(trim_lines(), [
+            "trim: 4 runs · kept 1 · partial 1 · reverted 1 · skipped 1"
+            " · nothing 0 · net -40 lines"])
 
     def test_operator_commands_allow_bucket_without_credentials(self):
         (self.db.parent / "config.toml").write_text(

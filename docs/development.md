@@ -155,8 +155,8 @@ Each module, one line:
   configured reviewer or the critic runs in.
 - `holophyte/agents/agent_output.py` — a turn's text with its route, exit status
   and transport failure.
-- `holophyte/review/briefs.py` — the scope, criteria, tests and evidence briefs a
-  reviewer is sent, with the git scope they read.
+- `holophyte/review/briefs.py` — the scope, criteria, tests, trim and evidence
+  briefs a reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
   witness checks and a verdict.
 - `holophyte/review/stale_approval.py` — a review left only stale cited
@@ -267,9 +267,10 @@ Each module, one line:
 - `holophyte/loop/implement.py` — the implement stage and the timed agent turn
   under its scaled budget, the run cap and the transport retry.
 - `holophyte/loop/trim.py` — the trim step between the implement turn and
-  the first review: one turn, its commits judged by subject and verify.
+  the first review: one turn, its commits judged by subject, file scope and
+  verify.
 - `holophyte/loop/trim_brief.py` — `TRIM_BRIEF`, the vendored trim procedure
-  the trim turn is sent.
+  the trim turn is sent, and the `trim:` pass subjects it commits under.
 - `holophyte/loop/review_round.py` — the review rounds: verify, review and a fix
   turn per round, up to the cap the candidate's size earns.
 - `holophyte/loop/adjudicate.py` — the terminal adjudication once the review

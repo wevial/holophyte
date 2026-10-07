@@ -37,6 +37,7 @@ from holophyte.review.briefs import (
     scope_files,
     stale_approval_brief,
     tests_brief,
+    trim_brief,
     verified_brief,
 )
 from holophyte.review.reply_parsing import (
@@ -112,6 +113,7 @@ def _review(project, conn, run_id, task_id, wt, beat_s, base_sha, sha, ticket,
             + verified_brief(mode)
             + tests_brief(wt)
             + scope_brief(wt, ticket, base_sha, sha)
+            + trim_brief(wt, base_sha, sha)
             + evidence_brief(project, wt, task_id,
                              ticket_template.parse(ticket).evidence_states)
             + "Do not modify anything. End your reply with exactly one "

@@ -18,12 +18,13 @@ from holophyte.loop.implement import (
 )
 from holophyte.loop.review_round import _changed_lines
 from holophyte.loop.runs import heartbeat_while
-from holophyte.loop.trim_brief import TRIM_BRIEF
+from holophyte.loop.trim_brief import TRIM_BRIEF, pass_name
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
+from holophyte.review.briefs import _changed_files
 
-PASSES = ("delete", "merge", "flatten", "comments", "tests")
 LINE_FLOOR = 50
+IMPORT_LINE = ("import ", "from ")
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
@@ -46,10 +47,9 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
     _land(wt, "HEAD", untracked)
     commits = _commits(wt, sha)
     reason = reason or _malformed(wt, sha, commits)
-    kept = [] if reason else _green_prefix(wt, commits, green, untracked)
+    kept, reason = (([], reason) if reason else
+                    _judge(wt, base_sha, sha, commits, green, untracked))
     dropped = commits[len(kept):]
-    if dropped and not reason:
-        reason = f"verify was red at trim: {_passes(dropped)[0]['pass']}"
     _land(wt, kept[-1][0] if kept else sha, untracked)
     outcome = ("partial" if kept and dropped else "kept" if kept
                else "reverted" if reason else "nothing")
@@ -92,6 +92,37 @@ def _green(project, conn, run_id, beat_s, wt, verify_cmd, contracts):
                              run_id=run_id, project=project)
         ok, _ = with_baseline(project, wt, verify_cmd, ok, out, conn, run_id)
     return ok
+
+
+def _judge(wt, base_sha, sha, commits, green, untracked):
+    scoped, stray = _scoped(wt, base_sha, sha, commits)
+    if stray:
+        _land(wt, scoped[-1][0] if scoped else sha, untracked)
+    kept = _green_prefix(wt, scoped, green, untracked)
+    red = scoped[len(kept):]
+    return kept, "; ".join(filter(None, (
+        stray, red and f"verify was red at trim: {_passes(red)[0]['pass']}"))) or None
+
+
+def _scoped(wt, base_sha, sha, commits):
+    own = _changed_files(wt, base_sha, sha)
+    parent = sha
+    for n, (commit, subject) in enumerate(commits):
+        for path in sorted(_changed_files(wt, parent, commit) - own):
+            if not _imports_only(wt, parent, commit, path):
+                return commits[:n], f"{subject} changed {path} outside the run's diff"
+        parent = commit
+    return commits, None
+
+
+def _imports_only(wt, parent, commit, path):
+    diff = subprocess.run(
+        ["git", "--literal-pathspecs", "diff", "--no-renames", "--text", "-U0",
+         parent, commit, "--", path], cwd=wt, capture_output=True, check=True,
+    ).stdout.decode(errors="replace")
+    changed = [line[1:].strip() for line in diff.partition("\n@@")[2].splitlines()
+               if line.startswith(("+", "-"))]
+    return bool(changed) and all(line.startswith(IMPORT_LINE) for line in changed)
 
 
 def _green_prefix(wt, commits, green, untracked):
@@ -140,8 +171,8 @@ def _malformed(wt, sha, commits):
         return f"the turn made a merge commit {merges.split()[0][:12]}"
     seen = set()
     for _, subject in commits:
-        name = subject.removeprefix("trim: ")
-        if name not in PASSES or subject != f"trim: {name}":
+        name = pass_name(subject)
+        if name is None:
             return f"subject {subject!r} is not a trim pass"
         if name in seen:
             return f"pass {name!r} appears twice"
