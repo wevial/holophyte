@@ -19,7 +19,8 @@ from tests.test_trim import TRIMMED, WORK, Commits, lines  # noqa: E402
 TRADE_OFFS = (
     "Trade-off: parse() returning None on a blank file survives -- guarded by"
     " test_parse_reads_lines",
-    "Trade-off: the second retry branch survives -- guarded by test_retry_once",
+    "  Trade-off: the second retry branch survives -- guarded by"
+    " test_retry_once",
 )
 PROOF = "Proof: test_parse_twice -- test_parse_reads_lines hits the same branch"
 BLOCKER = ("A trade-off on a trust boundary, an auth check, a data-loss path"

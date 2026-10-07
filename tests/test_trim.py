@@ -242,6 +242,21 @@ class TrimLoopTests(LoopFixture):
         self.assertEqual(result["outcome"], "reverted")
         self.assertIn("helpers.py outside the run's diff", result["reason"])
 
+    def test_a_textconv_driver_does_not_hide_an_outside_edit(self):
+        self.git("config", "diff.imports.textconv", "grep -E '^(import|from) '")
+        self.on_main(".gitattributes", "helpers.py diff=imports\n")
+        self.on_main("helpers.py", "from a import x\n\n\ndef helper():\n"
+                                   "    return 1\n")
+        fake = self.trimmed(
+            WORK, Commits(Commit("trim: merge", "helpers.py",
+                                 "from b import x\n\n\ndef helper():\n"
+                                 "    return 2\n")),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
+        [result] = self.results()
+        self.assertIn("helpers.py outside the run's diff", result["reason"])
+
     def assert_failed_turn_reverted(self, failure, named):
         review = ObservedApproval()
         fake = self.trimmed(

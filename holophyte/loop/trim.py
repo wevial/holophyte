@@ -118,8 +118,8 @@ def _scoped(wt, base_sha, sha, commits):
 def _imports_only(wt, parent, commit, path):
     diff = subprocess.run(
         ["git", "--literal-pathspecs", "diff", "--patch-with-raw", "--no-renames",
-         "--text", "-U0", parent, commit, "--", path], cwd=wt,
-        capture_output=True, check=True,
+         "--no-textconv", "--no-ext-diff", "--text", "-U0", parent, commit,
+         "--", path], cwd=wt, capture_output=True, check=True,
     ).stdout.decode(errors="replace")
     raw, _, hunks = diff.partition("\n@@")
     modes = {mode.lstrip(":") for line in raw.splitlines() if line.startswith(":")

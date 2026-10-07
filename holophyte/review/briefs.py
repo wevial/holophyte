@@ -138,9 +138,9 @@ def trim_brief(root, base_sha, sha):
     if not trims:
         return ""
     listed = "\n".join(f"- {short} {subject}" for short, subject, _ in trims)
-    trade_offs = "\n".join(f"> {line.strip()}" for _, _, body in trims
+    trade_offs = "\n".join(f"> {line}" for _, _, body in trims
                             for line in body.splitlines()
-                            if line.strip().startswith("Trade-off:"))
+                            if line.lstrip().startswith("Trade-off:"))
     return ("Trim commits in this range, made by the factory's trim turn after "
             f"the implementer's:\n{listed}\n"
             "A trim commit must not change behavior: outputs, errors, log "
