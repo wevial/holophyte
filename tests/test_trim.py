@@ -29,6 +29,7 @@ from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+from holophyte.agents.agent_output import ImplementerOutput  # noqa: E402
 from holophyte.agents.roles import agent  # noqa: E402
 from holophyte.loop.trim import trim  # noqa: E402
 from tests.test_harness import CONFIG, FAKE_CLAUDE  # noqa: E402
@@ -67,9 +68,18 @@ class LeaveDirtyThen(Commits):
         super().play(cwd, turn)
         (cwd / "work.txt").write_text("uncommitted edit\n")
         (cwd / "stray.txt").write_text("a file the turn created\n")
+        subprocess.run(["git", "init", "-q", "nested"], cwd=cwd, check=True)
         if self.failure == "timeout":
             block_until_killed(cwd, "cut short")
         raise holophyte.loop.gates.InfraFailure("the implementer route did not start")
+
+
+class CommitThenExit(Commits):
+    """A trim turn that commits a pass, then exits unsuccessfully."""
+
+    def play(self, cwd, turn):
+        super().play(cwd, turn)
+        return ImplementerOutput("gave up", 1, "fake")
 
 
 class WorkWithUntracked(Commit):
@@ -184,6 +194,16 @@ class TrimLoopTests(LoopFixture):
 
     def test_a_route_failure_is_undone_and_the_run_goes_on(self):
         self.assert_failed_turn_reverted("infra", "the route failed")
+
+    def test_a_turn_that_exits_unsuccessfully_is_undone(self):
+        fake = self.trimmed(
+            WORK, CommitThenExit(Commit("trim: delete", "work.txt", lines(40))),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn("exited with status 1", result["reason"])
 
     def assert_malformed_turn_reverted(self, second, named):
         fake = self.trimmed(

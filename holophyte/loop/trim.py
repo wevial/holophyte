@@ -1,5 +1,6 @@
 """The trim step: one turn that shrinks the diff, kept only while verify is green."""
 import json
+import shutil
 from functools import partial
 from pathlib import Path
 
@@ -79,6 +80,8 @@ def _turn(project, conn, run_id, beat_s, wt, budget_min, goal):
         return out, "the turn timed out"
     if _killed_by_signal(out, timed_out):
         return out, f"the turn was killed by a signal (exit {out.exit_code})"
+    if getattr(out, "exit_code", 0):
+        return out, f"the turn exited with status {out.exit_code}"
     return out, None
 
 
@@ -115,7 +118,11 @@ def _land(wt, target, untracked):
     sh(["git", "reset", "-q", target], cwd=wt)
     sh(["git", "reset", "-q", "--hard"], cwd=wt)
     for name in _untracked(wt) - untracked:
-        Path(wt, name).unlink(missing_ok=True)
+        path = Path(wt, name)
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
 
 
 def _commits(wt, sha):

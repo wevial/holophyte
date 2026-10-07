@@ -98,7 +98,7 @@ machines it walks. Back to the [README](index.md).
    comments, tests), one commit each, subject `trim:` and the pass name. The
    factory then discards whatever the turn left uncommitted, removing only
    the untracked files the turn created, and judges the new commits. A
-   timeout, a killed turn, a route failure, a merge commit, rewritten
+   timeout, a killed or failed turn, a route failure, a merge commit, rewritten
    history, a subject that is not a pass or a pass made twice resets the
    branch to the pre-trim head. Verify green at the new head keeps every pass; red keeps the passes
    before the first one verify fails on. The `trim` event names the outcome
