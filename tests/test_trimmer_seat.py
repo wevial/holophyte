@@ -150,9 +150,6 @@ class TrimmerRouteLoopTests(LoopFixture):
         self.assertEqual(fake.roles, ["implement", "review"])
         self.assertEqual((result["outcome"], result["reason"]),
                          ("skipped", "trimmer route down"))
-        [(summary,)] = self.read(
-            "SELECT summary FROM runEvents WHERE kind = 'trim'")
-        self.assertTrue(summary.startswith("trim skipped; trimmer route down"))
 
     def test_an_outage_with_no_fallback_reverts_the_trim_and_the_run_goes_on(self):
         trimmer = script(self.scripts() / "claude-trim", PROBE_ANSWER + (

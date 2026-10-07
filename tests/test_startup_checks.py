@@ -651,7 +651,6 @@ class SupervisorSpawnTests(StartupCheckTests):
         self.popen.assert_not_called()
 
 
-
 class TrimmerStartupTests(ConfigTestCase):
     """The trimmer is probed at startup, and its failure never stops the loop."""
 
@@ -681,8 +680,6 @@ class TrimmerStartupTests(ConfigTestCase):
         return started, printed.getvalue()
 
     def launched(self):
-        if not self.launches.exists():
-            return []
         return self.launches.read_text().splitlines()
 
     def test_a_failed_trimmer_switches_to_a_passing_fallback_for_the_next_turn(self):
