@@ -93,7 +93,7 @@ def is_gate_conflict(reason):
         and " conflicted on: " in reason
 
 
-def requeue(conn, ticket_id, note, now=None, source="human"):
+def requeue(conn, ticket_id, note, now=None, source="human", force=False):
     """Walk a failed, rejected or aborted ticket back to ready; return its last run."""
     with _transaction(conn):
         row = conn.execute(
@@ -114,6 +114,18 @@ def requeue(conn, ticket_id, note, now=None, source="human"):
                if last_run_id is not None else None)
         unreproduced = _requeue_admits(identifier, status, last_run_id, run,
                                        _aborted(conn, last_run_id))
+        relaunched = _relaunches(conn, ticket_id)
+        if len(relaunched) >= RELAUNCH_LIMIT and not force:
+            newest, older = relaunched[0], relaunched[1]
+            raise RequeueRefused(
+                f"{identifier} was relaunched {len(relaunched)} times against"
+                f" one failure since a human last acted on it (runs {older}"
+                f" and {newest} each failed and were requeued); another"
+                " relaunch needs a written diagnosis, not another run: write"
+                " the diagnosis as the note and requeue with --force"
+                ' ("force": true over HTTP)')
+        if len(relaunched) >= RELAUNCH_LIMIT:
+            note = f"forced past {len(relaunched)} relaunches: {note}"
         record_intervention(conn, last_run_id, "requeue", note, source=source,
                             now=now)
         if unreproduced:
@@ -125,6 +137,21 @@ def requeue(conn, ticket_id, note, now=None, source="human"):
                      " WHERE id = ?", (last_run_id,))
         walk_ticket(conn, ticket_id, "ready")
     return last_run_id
+
+
+RELAUNCH_LIMIT = 2
+
+
+def _relaunches(conn, ticket_id):
+    rows = conn.execute(
+        'SELECT i.runId FROM interventions i JOIN runs r ON r.id = i.runId'
+        " WHERE r.ticketId = ? AND i.\"action\" = 'requeue'"
+        " AND r.outcome IN ('failed', 'rejected')"
+        " AND i.id > COALESCE((SELECT MAX(h.id) FROM interventions h"
+        "  JOIN runs hr ON hr.id = h.runId WHERE hr.ticketId = ?"
+        "  AND h.source = 'human' AND h.\"action\" != 'requeue'), 0)"
+        " ORDER BY i.id DESC", (ticket_id, ticket_id)).fetchall()
+    return [run_id for (run_id,) in rows]
 
 
 def _aborted(conn, run_id):

@@ -81,9 +81,10 @@ def label_names(text):
 
 
 def _note_checks(parser, args):
-    if args.force and args.approve is None:
-        parser.error("--force belongs to --approve")
-    if args.force and not (args.note or "").strip():
+    if args.force and args.approve is None and args.requeue is None:
+        parser.error("--force belongs to --approve or --requeue")
+    if args.force and args.approve is not None \
+            and not (args.note or "").strip():
         parser.error("--approve --force releases a pull request GitHub would "
                      "not merge; say why with --note TEXT")
     if args.requeue is not None and not (args.note or "").strip():
@@ -198,7 +199,9 @@ def build_parser():
              "accepts in_flight or blocked_on_operator after a failed or "
              "rejected run, or a not_reproduced park (ended abandoned, no "
              "strike); refuses live runs, other states or outcomes and other "
-             "parks (use --approve or --babysit); refusals write nothing")
+             "parks (use --approve or --babysit); refusals write nothing; "
+             "refuses a ticket relaunched twice against one failure since a "
+             "human last acted on it unless --force")
     modes.add_argument(
         "--approve", metavar="KO-n",
         help="release the ticket parked awaiting merge approval: records an "
@@ -216,7 +219,10 @@ def build_parser():
         "--force", action="store_true",
         help="with --approve, required --note: release the run although its "
              "pull request is not ready to merge, recording 'forced past "
-             "readiness: REASON' ahead of the note")
+             "readiness: REASON' ahead of the note; with --requeue, --note "
+             "the written diagnosis: requeue a ticket already relaunched "
+             "twice against one failure, recording 'forced past N "
+             "relaunches: ' ahead of the note")
     modes.add_argument(
         "--babysit", metavar="KO-n",
         help="send the ticket parked on its pull request ([merge] mode = "

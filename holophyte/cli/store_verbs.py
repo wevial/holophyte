@@ -30,7 +30,7 @@ def _store_verb(args, target, board):
         return True
     if args.requeue is not None:
         requeue(target, args.requeue, args.note,
-                provider=require_board(target, board))
+                provider=require_board(target, board), force=args.force)
         return True
     if args.approve is not None:
         require_board(target, board)

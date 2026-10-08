@@ -105,6 +105,9 @@ def requeue_action(project, body):
     note = body.get("note", DEFAULT_REQUEUE_NOTE)
     if not isinstance(note, str) or not note.strip():
         note = DEFAULT_REQUEUE_NOTE
+    force = body.get("force", False)
+    if not isinstance(force, bool):
+        return 400, {"error": "force must be true or false"}
     identifier = identifier.strip()
     if not project.store_path.exists():
         return 503, no_store(project)
@@ -127,7 +130,7 @@ def requeue_action(project, body):
                          "detail": f"run {requested} is not {identifier}'s latest"
                                    f" attempt; run {latest} is"}
         try:
-            run_id = store.requeue(conn, ticket.id, note)
+            run_id = store.requeue(conn, ticket.id, note, force=force)
         except (store.RequeueRefused, ValueError) as refused:
             return 200, {"action": action, "ok": False, "ticket": identifier,
                          "detail": str(refused)}

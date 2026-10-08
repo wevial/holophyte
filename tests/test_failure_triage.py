@@ -199,6 +199,33 @@ class FailureQuestionTests(LoopFixture):
         store.release(conn, run, "failed", reason=reason)
         return conn, run, ticket
 
+    def test_a_third_failure_after_two_human_requeues_is_refused_not_requeued(self):
+        self.configure(REQUEUE)
+        self.claude.answer("infra", 0.95)
+        conn, run, ticket = self.failed_run("verify timed out")
+        (project,) = conn.execute("SELECT projectId FROM tickets").fetchone()
+        for _ in range(2):
+            store.requeue(conn, ticket, "the verify host was down")
+            store.tickets.transition(conn, ticket, "in_flight")
+            run = store.claim(conn, project, ticket)
+            store.release(conn, run, "failed", reason="verify timed out")
+
+        with patch("sys.stdout"):
+            triage_failure(self.project, conn, run, ticket)
+
+        self.assertEqual(conn.execute("SELECT status FROM tickets").fetchone(),
+                         ("in_flight",))
+        self.assertEqual(conn.execute(
+            "SELECT COUNT(*) FROM interventions WHERE \"action\" = 'requeue'"
+            " AND source = 'factory'").fetchone(), (0,))
+        (payload,) = conn.execute(
+            "SELECT payload FROM runEvents WHERE kind = 'failure_triage'"
+            " AND runId = ?", (run,)).fetchone()
+        payload = json.loads(payload)
+        self.assertIs(payload["requeued"], False)
+        self.assertTrue(payload["why"].startswith("requeue refused:"),
+                        payload["why"])
+
     def test_a_registered_secret_in_the_reason_never_reaches_the_cli(self):
         secret = "sk-live-4f9a2c71e3b8"
         self.configure(FAILURES)
