@@ -35,11 +35,11 @@ class LeverTests(ServeTestCase):
         super().setUp()
         self.seed()
 
-    def start_actions(self, on=True):
+    def start_actions(self, on=True, board=""):
         path = self.root / "serve.token"
         path.write_text(self.TOKEN + "\n")
         path.chmod(0o600)
-        self.start(f'[serve]\ntoken_file = "{path}"\n'
+        self.start(f'{board}[serve]\ntoken_file = "{path}"\n'
                    + ("actions = true\n" if on else ""))
 
     def post(self, action, **body):
@@ -146,11 +146,8 @@ class LeverTests(ServeTestCase):
         self.assertEqual(self.dump(), before)
 
     def test_each_lever_answers_the_id_of_the_row_it_wrote(self):
-        path = self.root / "serve.token"
-        path.write_text(self.TOKEN + "\n")
-        path.chmod(0o600)
-        self.start('[board]\nteam = "team-1"\nproject_id = "project-1"\n'
-                   f'[serve]\ntoken_file = "{path}"\nactions = true\n')
+        self.start_actions(
+            board='[board]\nteam = "team-1"\nproject_id = "project-1"\n')
         answers = {"hold": self.post("hold", note="deploying"),
                    "release_hold": self.post("release-hold", note="deployed"),
                    "pause": self.post("pause", run=self.run, note="reboot")}
