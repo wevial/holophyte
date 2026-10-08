@@ -1,16 +1,29 @@
 # Holophyte
 
-A minimal, Linear-driven software factory. Tickets live in a Linear
-project; `main` is the only integration point. Each claimed ticket is
-implemented in an isolated sibling worktree by an implementer agent, held to
-the ticket's own verify command, reviewed by an independent reviewer inside a
-hardened container, and merged only when the verify gate and the review both
-pass. Stdlib Python and SQLite; no frameworks.
+A minimal software factory. Tickets live on a board, either a native board
+kept in the factory's own store or a Linear project; `main` is the only
+integration point. Each claimed ticket is implemented in an isolated sibling
+worktree by an implementer agent, held to the ticket's own verify command,
+and reviewed by an independent reviewer, by default inside a hardened
+container. When the verify gate and the review both pass, the candidate lands
+by a local `--no-ff` merge or, under `[merge] mode = "pr"`, through a pull
+request the babysitter watches through its checks and review threads;
+`[merge] approve = "human"` parks it for an operator either way. Python and
+SQLite, with two pinned runtime dependencies.
+
+A ticket can belong to a [story](storyTemplate.md) ([`[story]`](docs/config.md#story)), and where
+`[merge] ui_paths` is set one declaring a major UI change needs an approved mock-up
+([The shape](docs/operating/tickets.md#the-shape)). A run can pass a [trim step](docs/config.md#trim)
+before review, have a failure's cause triaged ([`[questions.failures]`](docs/config.md#questionsfailures))
+and answer bare pull request mentions as [typed questions](docs/config.md#questions). The [console and
+host daemon](docs/operating.md#serving) serve it and the [host sweep](docs/operating.md#the-host-sweep) supervises it.
 
 ## Install
 
-Python 3.11+ and Git on the host, Docker for the reviewer container, and
-`LINEAR_API_KEY` in the environment or a `.env` beside `linear_provider.py`.
+Python 3.11+ and Git on the host, and Docker for the reviewer container and,
+under `[agents] implementer_isolation = "container"`, the implementer's turns.
+A Linear board, and only a Linear board, needs `LINEAR_API_KEY` in the
+environment or a `.env` beside `linear_provider.py`.
 `ruff` is the one developer tool (`pip install --user ruff`). `tomlkit` and `mcp` are the runtime dependencies, pinned in
 `requirements.txt` (`python3 -m pip install --user -r requirements.txt`);
 the daemon needs `tomlkit` to edit a config in place and exits naming it
@@ -63,10 +76,10 @@ python3 factory.py --cancel KEY-n --revision N --note TEXT /path/to/repo # cance
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
 python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
 holo --version                                   # the package version and the checkout's short HEAD
-holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode has a holo command
+holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode but the internal --worker has a holo command
 holo status --watch [SECONDS]                    # the status page redrawn every SECONDS (default 5) until Ctrl-C
 holo follow [--since AGO] [--every SECONDS] [--json] -p NAME|PATH # one line per run event and ledger entry as it is written, and one when a heartbeat goes stale
-holo mcp                                         # an MCP server on stdio whose read-only tools run the holo reads; see docs/reference/cli.md#holo
+holo mcp                                         # an MCP server on stdio: tools for the holo reads and five signed writes (file_ticket, send_back, babysit, requeue, hold); see docs/reference/cli.md#holo
 holo mcp --http [HOST:PORT]                      # the same tools at POST /mcp behind the host's machine token, 127.0.0.1:7711 by default; see docs/reference/http.md#post-mcp
 holo requeue KEY "note" -p NAME|PATH             # factory.py --requeue KEY --note "note" PATH; -p takes a [serve] name or a path, and without it the project is found as for status
 holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an alias of each ticket verb
@@ -75,9 +88,22 @@ holo hold "note" -p NAME|PATH                    # and holo release "note"
 holo send-back RUN "note" -p NAME|PATH           # the console's send-back of run RUN; no factory.py equivalent
 holo start ["note"] [--foreground] -p NAME|PATH  # start the project's loop unit and return; the note releases a hold
 holo stop [--now] "note" -p NAME|PATH            # hold the project: the loop ends after its live runs; --now aborts them
-holo sweep [--act] | board diff | board import | store import PATH --dry-run | report -p NAME|PATH
+holo sweep [--act] | board diff | board import -p NAME|PATH
+holo store import PATH --dry-run -p NAME|PATH     # factory.py --import-store PATH --dry-run
+holo report [--since WINDOW] [--notes] [--json] -p NAME|PATH # the window's counts, read from the store
+holo file TICKET.md [--backlog] [--priority P] ["note" [--author NAME]] -p NAME|PATH # factory.py --file-ticket; --update KEY [--revision N] replaces the body
+holo move KEY ready|backlog --revision N ["note"] -p NAME|PATH # factory.py --move
+holo cancel KEY --revision N "note" -p NAME|PATH  # factory.py --cancel
+holo babysit KEY ["note" [--author NAME]] -p NAME|PATH # factory.py --babysit
+holo repoint KEY SHA "note" -p NAME|PATH         # factory.py --repoint
+holo pause KEY "note" -p NAME|PATH               # factory.py --pause; holo resume KEY "note" is --resume
+holo abort KEY "note" [--close-pr] -p NAME|PATH  # factory.py --abort
+holo close KEY URL ["note"] -p NAME|PATH         # factory.py --close KEY --landed URL
+holo gap KEY LAYER "note" [--carried-by KEY] [--found-by F] -p NAME|PATH # factory.py --gap-layer
+holo loop start|stop ...                         # the same as holo start and holo stop
 holo story file|approve|witness|decide ... -p NAME|PATH # the story modes
-holo supervise [--once] | serve [ADDR] [-p NAME|PATH] # the host forms when no source names a project
+holo supervise [--once] [-p NAME|PATH]           # the host form when no source names a project
+holo serve [ADDR] [-p NAME|PATH]                 # likewise the host daemon
 holo project add|remove|list|enable|hold|disable   # factory.py project, unchanged
 holo completion bash|zsh|fish                     # the shell's completion script; see docs/reference/cli.md#holo
 holo runs [--limit N] [--json] -p NAME|PATH      # recent runs; --json prints GET /runs's body
