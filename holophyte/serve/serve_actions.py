@@ -170,11 +170,10 @@ def send_back_action(project, run_id, note, author):
     try:
         event_id = send_back(conn, run_id, note, author)
     except (store.ApproveRefused, ValueError) as refused:
-        return 200, {"action": "send-back", "ok": False,
-                     "detail": str(refused)}
+        return 200, {"ok": False, "detail": str(refused)}
     finally:
         conn.close()
-    return 200, {"action": "send-back", "ok": True, "run": run_id, "event_id": event_id,
+    return 200, {"ok": True, "run": run_id, "event_id": event_id,
                  "detail": f"Sent back with operator_note event {event_id}"}
 
 
