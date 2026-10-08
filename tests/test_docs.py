@@ -195,7 +195,6 @@ class UsageTests(unittest.TestCase):
 
 
 def holo_command_words():
-    """The top-level command words of the parser `holo` builds."""
     (commands,) = [action for action in build_parser()._actions
                    if isinstance(action, argparse._SubParsersAction)]
     return sorted(commands.choices)
