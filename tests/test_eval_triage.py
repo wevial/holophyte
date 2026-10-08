@@ -18,7 +18,7 @@ class EvalTriageTests(unittest.TestCase):
         lookup = {r["comment"]: r["label"] for r in rows}
         lookup[rows[0]["comment"]] = "question"
 
-        def service(question, state, *, config):
+        def service(question, state, *, config, conn=None, run_id=None):
             return questions.Answer(lookup[state["comment"]], 0.9)
 
         for floor, status in (("0.8", 0), ("1.0", 1)):

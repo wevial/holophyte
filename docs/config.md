@@ -1377,22 +1377,68 @@ key.
 
 ## `[questions]`
 
-Typed triage of bare PR mentions.
+Typed triage of bare PR mentions, answered by TypeSafe's Jev or by the Claude
+or Codex CLI.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `url` | Default: `https://api.typesafe.ai/v1/systemone` | Typed-question HTTP(S) endpoint. |
 | `key_env` | Default: `TYPESAFE_API_KEY` | Environment variable holding the bearer key. |
 | `min_confidence` | Default: `0.6` | Confidence floor, a number from 0 to 1. |
+| `backend` | Default: `jev` | `jev` (the HTTP service), `claude` (`claude -p`) or `codex` (`codex exec`). |
+| `model` | Default: `haiku` for `claude`, `gpt-6-luna` for `codex` | Model of a CLI backend; refused beside `jev`. |
+| `effort` | Default: `high` for `claude`, `low` for `codex` | Effort of a CLI backend: `low`, `medium`, `high`, `xhigh`, or for `claude` also `max`; refused beside `jev`. |
+| `backend_fallback` | Default: none | Backend used when a `claude` or `codex` backend fails its probe; any of the three. Refused beside `jev`. |
+| `fallback_model` | Default: the fallback backend's own `model` default | Model of a CLI fallback. |
+| `fallback_effort` | Default: the fallback backend's own `effort` default | Effort of a CLI fallback. |
+
+```toml
+[questions]
+# jev (the HTTP service), claude or codex. Optional; the default is jev.
+backend = "claude"
+# Model and effort of a CLI backend; refused beside jev.
+model = "haiku"
+effort = "high"
+# Probed only when the backend fails its own probe. Optional.
+backend_fallback = "codex"
+fallback_model = "gpt-6-luna"
+fallback_effort = "low"
+# Answers below this confidence take the read-only answer path.
+min_confidence = 0.6
+```
 
 The key is read from that environment variable for each request. Missing keys,
 service failures, unclear answers and answers below the floor use the read-only
 answer path. Only a confident `fix` requests implementation; explicit `ask:`
 and `fix:` markers bypass triage.
 
+A CLI backend runs in an empty temporary directory with stdin closed: `claude`
+with no tools, MCP servers or settings, `codex` in a read-only sandbox with
+its shell tool disabled. It sends the same instructions and
+options, then the redacted thread as a JSON record framed as data, not
+instructions, and reads one choice and a confidence from the CLI's structured
+output. The record is capped at 96 KiB, the oldest earlier comments dropped
+first, so the prompt fits one command-line argument. That confidence is the model's own rating from 0 to 1 that its choice
+is right, not a calibrated probability like Jev's; `min_confidence` gates it
+the same way.
+
+The first CLI question in a process probes the backend with a fixed question.
+When the probe fails, `backend_fallback` is probed; if it passes, the switch is
+printed and recorded as a `route_fallback` intervention for seat `questions`.
+When no route passes, every question in that process fails safe as
+`route_down` without launching anything. A CLI that fails after its probe
+passed fails that one question; it does not switch.
+
+Each question asked during a run records a detail `question` event with the
+backend, model, effort, outcome, latency, tokens and, where the backend reports
+it (`claude`), the cost. `--report` totals them on a `questions:` line.
+
 Run `python3 scripts/eval_triage.py --config PATH --min-accuracy 0.8` to replay
-the labelled fixture against the real service. It prints counts, accuracy and
-misses, and exits nonzero below the floor. Unit tests replace the service.
+the labelled fixture against the configured backend. It prints counts, accuracy
+and misses, and exits nonzero below the floor. Unit tests replace the service
+and the CLIs. Run `HOLOPHYTE_LIVE_QUESTIONS=claude` (or `codex`) with
+`tests/test_questions_live.py` on a host where that CLI is signed in before a
+project opts in.
 
 ## `[story]`
 

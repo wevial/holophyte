@@ -398,6 +398,8 @@ Each module, one line:
 - `holophyte/babysit/thread_answers.py` — read-only mention answers and thread replies.
 - `holophyte/babysit/thread_mentions.py` — mention markers and typed intent triage.
 - `holophyte/questions.py` — typed choice requests and safe service failures.
+- `holophyte/question_cli.py` — typed questions through the `claude` or `codex`
+  CLI: prompt, schema, parsing, usage, and the probe with its fallback.
 - `holophyte/babysit/thread_findings.py` — structured PR findings, bounded originals,
   and read-only normalization of legacy thread rows.
 - `holophyte/babysit/babysit_steps.py` — records PR babysitting step changes without

@@ -177,6 +177,7 @@ PINNED = {
     "holophyte/pr/pr_status.py": 13,
     "holophyte/pr/pullrequest.py": 10,
 
+    "holophyte/question_cli.py": 0,
     "holophyte/questions.py": 1,
     "holophyte/redact.py": 14,
 

@@ -111,11 +111,12 @@ MENTION_INTENT = questions.Question(
             "asking a clear question or requesting a clear change"
         ),
     },
+    "mention_intent",
 )
 FIX_HINT = "Reply with `fix:` to request a code change."
 
 
-def triage(thread, ticket_title, config):
+def triage(thread, ticket_title, config, conn=None, run_id=None):
     # Register before truncating too: a cut through a credential must not leak it.
     try:
         key = os.environ.get(questions.settings(config)["key_env"], "")
@@ -134,7 +135,8 @@ def triage(thread, ticket_title, config):
         line=thread.line,
         ticket_title=redact.outbound(ticket_title, secrets),
     )
-    answer = questions.ask(MENTION_INTENT, state, config=config)
+    answer = questions.ask(MENTION_INTENT, state, config=config, conn=conn,
+                           run_id=run_id)
     if isinstance(answer, questions.Failure):
         return dict(
             decision="unclear", confidence=None, route="answer", reason=answer.reason
@@ -149,7 +151,7 @@ def triage(thread, ticket_title, config):
     )
 
 
-def triaged(threads, ticket, config):
+def triaged(threads, ticket, config, conn=None, run_id=None):
     from holophyte.babysit.maintainer_notes import is_note
     from holophyte.config.config_tables import MERGE_KEYS
 
@@ -165,7 +167,7 @@ def triaged(threads, ticket, config):
             and not bot_author(latest.author, bots, latest.author_kind)
             and thread.triage is None
         ):
-            result = triage(thread, title, config)
+            result = triage(thread, title, config, conn, run_id)
             thread = replace(
                 thread,
                 triage=result,
