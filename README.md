@@ -11,10 +11,10 @@ request the babysitter watches through its checks and review threads;
 `[merge] approve = "human"` parks it for an operator either way. Python and
 SQLite, with two pinned runtime dependencies.
 
-A ticket can belong to a [story](storyTemplate.md) ([`[story]`](docs/config.md#story)), and where
+A ticket can belong to a [story](storyTemplate.md) ([its config](docs/config.md#story)), and where
 `[merge] ui_paths` is set one declaring a major UI change needs an approved mock-up
 ([The shape](docs/operating/tickets.md#the-shape)). A run can pass a [trim step](docs/config.md#trim)
-before review, have a failure's cause triaged ([`[questions.failures]`](docs/config.md#questionsfailures))
+before review, have a failure's cause [triaged](docs/config.md#questionsfailures)
 and answer bare pull request mentions as [typed questions](docs/config.md#questions). The [console and
 host daemon](docs/operating.md#serving) serve it and the [host sweep](docs/operating.md#the-host-sweep) supervises it.
 
@@ -96,7 +96,8 @@ holo move KEY ready|backlog --revision N ["note"] -p NAME|PATH # factory.py --mo
 holo cancel KEY --revision N "note" -p NAME|PATH  # factory.py --cancel
 holo babysit KEY ["note" [--author NAME]] -p NAME|PATH # factory.py --babysit
 holo repoint KEY SHA "note" -p NAME|PATH         # factory.py --repoint
-holo pause KEY "note" -p NAME|PATH               # factory.py --pause; holo resume KEY "note" is --resume
+holo pause KEY "note" -p NAME|PATH               # factory.py --pause
+holo resume KEY "note" -p NAME|PATH              # factory.py --resume
 holo abort KEY "note" [--close-pr] -p NAME|PATH  # factory.py --abort
 holo close KEY URL ["note"] -p NAME|PATH         # factory.py --close KEY --landed URL
 holo gap KEY LAYER "note" [--carried-by KEY] [--found-by F] -p NAME|PATH # factory.py --gap-layer
