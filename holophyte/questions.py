@@ -172,7 +172,8 @@ def ask(question, state, *, config, conn=None, run_id=None, seat=None):
     redact.register_values([os.environ.get(options["key_env"], "")])
     from holophyte import question_cli
 
-    route = question_cli.active_route(options, config, conn, run_id)
+    label = "questions" if seat is None else f"questions.{seat}"
+    route = question_cli.active_route(options, config, conn, run_id, label)
     started = time.monotonic()
     if route is None:
         route = Route(options["backend"], options["model"], options["effort"])

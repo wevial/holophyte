@@ -186,10 +186,7 @@ class FailureQuestionTests(LoopFixture):
         super().setUp()
         self.claude = FakeClaude(self)
 
-    def test_a_registered_secret_in_the_reason_never_reaches_the_cli(self):
-        secret = "sk-live-4f9a2c71e3b8"
-        self.configure(FAILURES)
-        self.claude.answer("code", 0.9)
+    def failed_run(self, reason):
         conn = store.open(self.db)
         self.addCleanup(conn.close)
         store.init(conn)
@@ -199,8 +196,14 @@ class FailureQuestionTests(LoopFixture):
             acceptance_criteria=["works"], verification_commands=["true"])
         store.tickets.transition(conn, ticket, "in_flight")
         run = store.claim(conn, project, ticket)
-        store.release(conn, run, "failed",
-                      reason=f"push refused: token {secret} expired")
+        store.release(conn, run, "failed", reason=reason)
+        return conn, run, ticket
+
+    def test_a_registered_secret_in_the_reason_never_reaches_the_cli(self):
+        secret = "sk-live-4f9a2c71e3b8"
+        self.configure(FAILURES)
+        self.claude.answer("code", 0.9)
+        conn, run, ticket = self.failed_run(f"push refused: token {secret} expired")
         self.assertIn(secret, conn.execute(
             "SELECT outcomeReason FROM runs").fetchone()[0])
 
@@ -214,6 +217,23 @@ class FailureQuestionTests(LoopFixture):
         state = json.loads(record.group(1))
         self.assertEqual(set(state), STATE_KEYS)
         self.assertIn("push refused: token", state["reason"])
+
+    def test_a_failures_route_fallback_is_recorded_against_its_own_seat(self):
+        self.configure(FAILURES + 'backend_fallback = "codex"\n')
+        self.claude.down()
+        self.claude.codex_fallback("code", 0.9)
+        conn, run, ticket = self.failed_run("verify failed")
+
+        with patch("sys.stdout"):
+            triage_failure(self.project, conn, run, ticket)
+
+        (guidance,) = conn.execute(
+            "SELECT guidance FROM interventions WHERE action = 'route_fallback'"
+            " AND runId = ?", (run,)).fetchone()
+        self.assertEqual(json.loads(guidance)["seat"], "questions.failures")
+        (payload,) = conn.execute(
+            "SELECT payload FROM runEvents WHERE kind = 'failure_triage'").fetchone()
+        self.assertEqual(json.loads(payload)["backend"], "codex")
 
     def test_config_refusals_name_the_key_and_an_empty_table_has_defaults(self):
         for text, key in (("requeue_confidence = 1.5\n", "requeue_confidence"),

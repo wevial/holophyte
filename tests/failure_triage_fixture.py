@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from holophyte import question_cli
 from tests.fake_agent import AGENT_BINARIES, SpawnGuard
-from tests.test_question_backends import FAKE, claude_output
+from tests.test_question_backends import FAKE, claude_output, codex_output
 
 FAILURES = '[questions.failures]\nbackend = "claude"\n'
 REQUEUE = FAILURES + "requeue = true\n"
@@ -38,6 +38,13 @@ class FakeClaude:
 
     def answer(self, choice, confidence):
         self.reply("question", claude_output(choice, confidence))
+
+    def codex_fallback(self, choice, confidence):
+        path = self.bin / "codex"
+        path.write_text(FAKE)
+        path.chmod(0o755)
+        (self.bin / "codex.probe.out").write_text(codex_output("ready", 0.99))
+        (self.bin / "codex.question.out").write_text(codex_output(choice, confidence))
 
     def down(self):
         for mode in ("probe", "question"):
