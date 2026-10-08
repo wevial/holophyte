@@ -5,7 +5,10 @@ Run: python3 -m unittest discover -s tests -p 'test_trim_review.py' -v
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
+import tempfile
+import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -13,6 +16,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 
+from holophyte.review.briefs import trim_brief  # noqa: E402
 from tests.test_trim import WORK, Commits, TrimFixture, lines  # noqa: E402
 
 TRADE_OFFS = (
@@ -22,6 +26,10 @@ TRADE_OFFS = (
     " test_retry_once",
 )
 PROOF = "Proof: test_parse_blank duplicated test_parse_reads_lines"
+FINAL_STATE = ("Judge behavior at the range's final state: a change a later"
+               " commit in the range already undid is not a finding.")
+NO_REWRITE = ("a finding asks for a new commit and never asks to squash, amend,"
+              " rebase or rework an existing commit.")
 BLOCKER = ("A trade-off on a trust boundary, an auth check, a data-loss path"
            " or a money path is a blocker.")
 
@@ -54,3 +62,33 @@ class TrimReviewTests(TrimFixture):
             Idle("nothing worth trimming"), APPROVE)
         self.assertNotIn("Trim commits", prompt)
         self.assertNotIn(BLOCKER, prompt)
+
+
+class TrimBriefTests(unittest.TestCase):
+    def test_a_restored_trim_brief_judges_at_head_and_never_asks_a_rewrite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def git(*args):
+                return subprocess.run(
+                    ["git", "-c", "user.name=Test",
+                     "-c", "user.email=test@example.invalid", *args],
+                    cwd=root, capture_output=True, text=True,
+                    check=True).stdout.strip()
+
+            git("init", "-q")
+            work = root / "work.txt"
+            work.write_text(lines(60))
+            git("add", "work.txt")
+            git("commit", "-qm", "work")
+            base = git("rev-parse", "HEAD")
+            work.write_text(lines(40))
+            git("commit", "-qam", "trim: delete")
+            work.write_text(lines(60))
+            git("commit", "-qam", "restore what the trim removed")
+            head = git("rev-parse", "HEAD")
+            self.assertEqual(git("diff", base, head), "")
+            brief = " ".join(trim_brief(root, base, head).split())
+        self.assertRegex(brief, r"- [0-9a-f]{7,} trim: delete ")
+        self.assertIn(FINAL_STATE, brief)
+        self.assertIn(NO_REWRITE, brief)

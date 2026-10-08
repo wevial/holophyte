@@ -52,7 +52,10 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
         'blocker — fix now), FOLLOW_UP (valid but out of scope — name '
         'it in the commit message), or DECLINE (invalid/out-of-scope — '
         'state the rationale in the commit message). Then fix only the '
-        'ADDRESS items and commit.')
+        'ADDRESS items and commit. Never amend, rebase or squash commits '
+        'already on the branch: the factory only fast-forwards it. A '
+        'finding that asks for that is DECLINE for that reason; fix '
+        'anything still wrong at HEAD in a new commit.')
     fresh = ('A reviewer left findings on your work. The ticket you '
              'are held to, acceptance criteria included:\n\n'
              f'{ticket}\n\n' + findings)
