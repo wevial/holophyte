@@ -25,7 +25,7 @@ class FixSessionCases:
         reviewer = FakeAgent(REQUEST_CHANGES, APPROVE)
 
         def runner(cmd, cwd, timeout, **kwargs):
-            if "ready" in cmd[-1]:
+            if cmd[-1] in (probes.PROBE_GOAL, probes.REVIEW_PROBE_GOAL):
                 return 0, "ready"
             calls.append((cmd, timeout, kwargs))
             if fail and cmd[0] == 'resume-cli':
