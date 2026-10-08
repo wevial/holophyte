@@ -46,7 +46,7 @@ class FixSessionCases:
         def budget(*args):
             checks.append(True)
             if cap_retry and len(checks) == 3:
-                with patch.object(implement, 'effective_work', return_value=100000000):
+                with patch.object(implement, 'agent_work', return_value=100000000):
                     return real_cap(*args)
             return real_cap(*args)
 
@@ -105,7 +105,11 @@ class FixSessionCases:
         calls, events, _ = self.exercise_fix(fail=True, cap_retry=True)
         self.assertEqual(len(calls), 2)
         self.assertEqual(events[0]['reason'], 'resume exited 3')
-        self.assertEqual(self.read('SELECT outcome FROM runs'), [('failed',)])
+        self.assertEqual(self.read('SELECT outcome, failureKind FROM runs'),
+                         [('failed', 'budget')])
+        [(summary,)] = self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'run_cap'")
+        self.assertIn('out of time', summary)
 
     def test_default_keeps_fresh_turn_without_event(self):
         calls, events, _ = self.exercise_fix(mode=None)
