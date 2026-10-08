@@ -209,6 +209,7 @@ def probed(primary, fallback, config, options, conn, run_id):
 def probe(route, config, options):
     result, _, output = questions.answer_on(route, PROBE, {}, config, options)
     if isinstance(result, questions.Answer) and result.choice == "ready":
+        redact.safe_print(f"[holo2] questions probe passed: {command(route)}")
         return None
     why = (result.reason if isinstance(result, questions.Failure)
            else f"answered {result.choice!r}")

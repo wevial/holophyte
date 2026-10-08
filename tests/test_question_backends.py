@@ -149,7 +149,12 @@ class QuestionBackendTests(unittest.TestCase):
         self.assertFalse(Path(call["cwd"]).exists())
 
     def test_codex_runner_is_boxed_and_reads_the_last_agent_message(self):
-        self.fake("codex", "question", (FIXTURES / "codex_answer.jsonl").read_text())
+        lines = (FIXTURES / "codex_answer.jsonl").read_text().splitlines()
+        last = next(i for i, line in enumerate(lines) if "agent_message" in line)
+        earlier = json.loads(lines[last])
+        earlier["item"]["text"] = json.dumps({"choice": "question", "confidence": 0.7})
+        lines.insert(last, json.dumps(earlier))
+        self.fake("codex", "question", "\n".join(lines) + "\n")
         config = {"questions": {"backend": "codex", "model": "gpt-6-luna",
                                 "effort": "low"}}
         result = thread_mentions.triage(self.thread(), "Title", config)
@@ -240,6 +245,7 @@ class QuestionBackendTests(unittest.TestCase):
         self.assertEqual([c["mode"] for c in self.calls("codex")],
                          ["probe", "question"])
         self.assertIn("questions probe failed (service_error): claude", out.getvalue())
+        self.assertIn("questions probe passed: codex exec", out.getvalue())
         self.assertIn("using fallback: codex exec", out.getvalue())
         (guidance,) = self.conn.execute(
             "SELECT guidance FROM interventions WHERE action = 'route_fallback'"
