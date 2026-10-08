@@ -25,6 +25,9 @@ CLI_EFFORTS = {
     "codex": REVIEW_EFFORTS,
 }
 FALLBACK_KEYS = ("backend_fallback", "fallback_model", "fallback_effort")
+FAILURE_CLI_DEFAULTS = CLI_DEFAULTS | {"claude": ("sonnet", "medium")}
+FAILURE_DEFAULTS = dict(requeue=False, requeue_confidence=0.85)
+FAILURE_KEYS = ("backend", "model", "effort", *FALLBACK_KEYS, *FAILURE_DEFAULTS)
 
 
 @dataclass(frozen=True)
@@ -64,34 +67,61 @@ def settings(config):
         raise ValueError("[questions] key_env must be an environment variable name")
     if not probability(values["min_confidence"]):
         raise ValueError("[questions] min_confidence must be a number in [0, 1]")
-    values |= route_settings(table, "backend", "model", "effort")
+    values |= routes(table, "[questions]", "jev", CLI_DEFAULTS)
+    return values | dict(failures=failure_settings(table.get("failures"), values))
+
+
+def failure_settings(table, values):
+    label = "[questions.failures]"
+    if table is None:
+        return None
+    if not isinstance(table, dict):
+        raise ValueError(f"{label} must be a table")
+    for key in table:
+        if key not in FAILURE_KEYS:
+            raise ValueError(f"{label} {key}: unknown key; {label} accepts: "
+                             f"{', '.join(sorted(FAILURE_KEYS))}")
+    options = FAILURE_DEFAULTS | table
+    if type(options["requeue"]) is not bool:
+        raise ValueError(f"{label} requeue must be true or false")
+    if not probability(options["requeue_confidence"]):
+        raise ValueError(f"{label} requeue_confidence must be a number in [0, 1]")
+    return (values | routes(table, label, "claude", FAILURE_CLI_DEFAULTS)
+            | dict(requeue=options["requeue"],
+                   requeue_confidence=float(options["requeue_confidence"])))
+
+
+def routes(table, label, default, defaults):
+    values = route_settings(table, label, default, defaults,
+                            "backend", "model", "effort")
     if "backend_fallback" not in table:
         for key in FALLBACK_KEYS[1:]:
             if key in table:
-                raise ValueError(f"[questions] {key} needs backend_fallback")
+                raise ValueError(f"{label} {key} needs backend_fallback")
         return values | dict.fromkeys(FALLBACK_KEYS)
     if values["backend"] == "jev":
-        raise ValueError("[questions] backend_fallback needs a claude or codex backend")
-    return values | route_settings(table, *FALLBACK_KEYS)
+        raise ValueError(f"{label} backend_fallback needs a claude or codex backend")
+    return values | route_settings(table, label, default, defaults, *FALLBACK_KEYS)
 
 
-def route_settings(table, backend_key, model_key, effort_key):
-    backend = table.get(backend_key, "jev")
+def route_settings(table, label, default, defaults, backend_key, model_key,
+                   effort_key):
+    backend = table.get(backend_key, default)
     if not isinstance(backend, str) or backend not in BACKENDS:
         raise ValueError(
-            f"[questions] {backend_key} must be one of {', '.join(BACKENDS)}")
+            f"{label} {backend_key} must be one of {', '.join(BACKENDS)}")
     if backend == "jev":
         for key in (model_key, effort_key):
             if key in table:
                 raise ValueError(
-                    f"[questions] {key} applies only to the claude and codex backends")
+                    f"{label} {key} applies only to the claude and codex backends")
         return {backend_key: backend, model_key: None, effort_key: None}
-    model, effort = CLI_DEFAULTS[backend]
+    model, effort = defaults[backend]
     model, effort = table.get(model_key, model), table.get(effort_key, effort)
     if not isinstance(model, str) or not model.strip():
-        raise ValueError(f"[questions] {model_key} must be a non-empty model name")
+        raise ValueError(f"{label} {model_key} must be a non-empty model name")
     if not isinstance(effort, str) or effort not in CLI_EFFORTS[backend]:
-        raise ValueError(f"[questions] {effort_key} for {backend} must be one of "
+        raise ValueError(f"{label} {effort_key} for {backend} must be one of "
                          f"{', '.join(CLI_EFFORTS[backend])}")
     return {backend_key: backend, model_key: model, effort_key: effort}
 
@@ -129,16 +159,21 @@ def parse(document, question):
     return Failure("invalid_response")
 
 
-def ask(question, state, *, config, conn=None, run_id=None):
+def ask(question, state, *, config, conn=None, run_id=None, seat=None):
     """Read/register the key at call time; never include remote errors in logs."""
     try:
         options = settings(config)
     except ValueError:
         return Failure("invalid_config")
+    if seat is not None:
+        options = options[seat]
+        if options is None:
+            return Failure("invalid_config")
     redact.register_values([os.environ.get(options["key_env"], "")])
     from holophyte import question_cli
 
-    route = question_cli.active_route(options, config, conn, run_id)
+    label = "questions" if seat is None else f"questions.{seat}"
+    route = question_cli.active_route(options, config, conn, run_id, label)
     started = time.monotonic()
     if route is None:
         route = Route(options["backend"], options["model"], options["effort"])

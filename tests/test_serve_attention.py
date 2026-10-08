@@ -13,7 +13,9 @@ import linear_provider
 import store
 import store.read
 import store.tickets
+from holophyte.loop.failure_triage import triage_failure
 from provider import LinearBoard
+from tests.failure_triage_fixture import REQUEUE, FakeClaude
 from tests.phase_fixture import advance_phase, park_run
 from tests.serve_fixture import MIN, ServeTestCase
 
@@ -162,6 +164,28 @@ class FailedAttentionTests(ServeTestCase):
                 self.assertEqual(self.conn.execute(
                     "SELECT COUNT(*) FROM interventions").fetchone()[0], count)
                 self.assertEqual(list(self.conn.iterdump()), before)
+
+
+class TriagedFailureAttentionTests(ServeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.seed()
+        FakeClaude(self).answer("infra", 0.6)
+        self.conn = store.open(str(self.db))
+        self.addCleanup(self.conn.close)
+        store.release(self.conn, self.run, "failed", reason="verify red",
+                      now=self.now - MIN)
+        self.start(config=REQUEUE)
+        ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
+        triage_failure(self.project, self.conn, self.run, ticket.id)
+
+    def test_the_failed_item_carries_the_runs_classification(self):
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        (item,) = [item for item in body["items"] if item["kind"] == "failed"]
+        self.assertEqual((item["run"], item["triage"]), (self.run, {
+            "choice": "infra", "confidence": 0.6, "backend": "claude",
+            "model": "sonnet", "requeued": False}))
 
 
 class StrandedAttentionTests(ServeTestCase):

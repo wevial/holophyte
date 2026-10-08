@@ -23,6 +23,7 @@ import store.tickets
 from holophyte.config.project import Project
 from holophyte.holo.cli import main
 from holophyte.host.registry import Host, settings
+from holophyte.loop.failure_triage import triage_failure
 from holophyte.serve.serve_host import HostServer, host_tokens
 from holophyte.serve.serve_runs import (
     run_detail,
@@ -32,6 +33,7 @@ from holophyte.serve.serve_runs import (
     runs,
 )
 from holophyte.serve.views import attention, board, ticket_detail
+from tests.failure_triage_fixture import REQUEUE, FakeClaude
 from tests.host_fixture import HostFixture
 from tests.phase_fixture import finish_run, park_run
 from tests.test_store_board import body as ticket_body
@@ -253,6 +255,24 @@ class AttentionReadTests(StoreReadsCase):
                           items["blocked"]["question"]), ("KO-8", "which API?"))
         self.assertEqual((items["stale_run"]["ticket"],
                           items["stale_run"]["run"]), ("KO-7", self.live))
+
+    def test_a_classified_failure_line_ends_in_its_classification(self):
+        FakeClaude(self).answer("infra", 0.6)
+        self.project.config_path.write_text(REQUEUE)
+        project = Project.locate(self.target, adopt=False)
+        conn = store.open(str(project.store_path))
+        try:
+            run = self.ended["KO-2"]
+            (ticket_id,) = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
+                                        (run,)).fetchone()
+            triage_failure(project, conn, run, ticket_id)
+        finally:
+            conn.close()
+        with frozen_now():
+            out = self.read("attention")
+        (line,) = [line for line in out.splitlines() if line.startswith("failed")]
+        self.assertIn(f"KO-2 run {run}", line)
+        self.assertTrue(line.endswith("[infra 0.6]"), line)
 
     def test_runs_against_a_project_with_no_store_exits_one_naming_it(self):
         bare = self.root / "bare"

@@ -83,7 +83,7 @@ KNOWN_KEYS["trim"] = frozenset(TRIM_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
 KNOWN_KEYS["questions"] = frozenset((
     "url", "key_env", "min_confidence", "backend", "model", "effort",
-    "backend_fallback", "fallback_model", "fallback_effort"))
+    "backend_fallback", "fallback_model", "fallback_effort", "failures"))
 KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
 
 BUDGET_SCALE = 1.0

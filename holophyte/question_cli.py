@@ -191,31 +191,31 @@ def parse_codex(output, question):
     return checked(document, question), tokens
 
 
-def active_route(options, config, conn, run_id):
+def active_route(options, config, conn, run_id, seat="questions"):
     primary = questions.Route(options["backend"], options["model"], options["effort"])
     if primary.backend == "jev":
         return primary
     fallback = None
     if options["backend_fallback"] is not None:
         fallback = questions.Route(*(options[key] for key in questions.FALLBACK_KEYS))
-    key = (primary, fallback)
+    key = (seat, primary, fallback)
     if key not in ROUTES:
-        ROUTES[key] = probed(primary, fallback, config, options, conn, run_id)
+        ROUTES[key] = probed(primary, fallback, config, options, conn, run_id, seat)
     return ROUTES[key]
 
 
-def probed(primary, fallback, config, options, conn, run_id):
+def probed(primary, fallback, config, options, conn, run_id, seat):
     reason = probe(primary, config, options)
     if reason is None:
         return primary
     if fallback is None or probe(fallback, config, options) is not None:
         return None
-    evidence = {"seat": "questions", "reason": reason, "command": command(fallback)}
+    evidence = {"seat": seat, "reason": reason, "command": command(fallback)}
     if conn is not None and run_id is not None:
         (project,) = conn.execute("SELECT projectId FROM runs WHERE id = ?",
                                   (run_id,)).fetchone()
         agent_routes.switched(conn, project, evidence, run_id)
-    redact.safe_print(f"[holo2] questions route down ({reason}); "
+    redact.safe_print(f"[holo2] {seat} route down ({reason}); "
                       f"using fallback: {evidence['command']}")
     return fallback
 

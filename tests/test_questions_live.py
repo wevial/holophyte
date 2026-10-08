@@ -16,8 +16,10 @@ import store
 import store.tickets
 from holophyte import question_cli, questions
 from holophyte.babysit import thread_mentions
+from holophyte.loop.failure_triage import FAILURE_CAUSE
 
 LIVE = os.environ.get("HOLOPHYTE_LIVE_QUESTIONS", "")
+LABELLED = Path(__file__).resolve().parent / "fixtures" / "failures" / "labelled.jsonl"
 
 
 @unittest.skipUnless(LIVE, "set HOLOPHYTE_LIVE_QUESTIONS=claude or codex")
@@ -60,6 +62,24 @@ class LiveQuestionTests(unittest.TestCase):
                      for output in outputs for line in output.splitlines()
                      if line.startswith("{")]
             self.assertNotIn("command_execution", items)
+
+    def test_real_cli_classifies_the_labelled_failures(self):
+        self.assertIsNotNone(shutil.which(LIVE), f"{LIVE} is not on PATH")
+        question_cli.ROUTES.clear()
+        self.addCleanup(question_cli.ROUTES.clear)
+        failures = {} if LIVE == "claude" else {"backend": LIVE}
+        config = {"questions": {"failures": failures}}
+        answers = {}
+        for line in LABELLED.read_text().splitlines():
+            row = json.loads(line)
+            answer = questions.ask(FAILURE_CAUSE, row["state"], config=config,
+                                   seat="failures")
+            self.assertIsInstance(answer, questions.Answer, row["run"])
+            self.assertIn(answer.choice, FAILURE_CAUSE.criteria)
+            print(f"{row['ticket']} run {row['run']} ({row['label']}):"
+                  f" {answer.choice} {answer.confidence}")
+            answers[row["ticket"], row["run"]] = answer.choice
+        self.assertEqual(answers["HOLO-164", 1019], "infra")
 
 
 if __name__ == "__main__":

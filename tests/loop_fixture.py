@@ -220,19 +220,20 @@ class LoopFixture(unittest.TestCase):
         (self.db.parent / "config.toml").write_text(toml)
         self.project = holophyte.config.project.Project.locate(self.target)
 
-    def loop(self, *script, provider=None, fake=None):
+    def loop(self, *script, provider=None, fake=None, guard=None):
         """Run `main()` over the queued tasks with the script answering agents.
 
         Returns the fake and the spawn guard; `main()`'s return code lands
         in `self.rc`. A test that needs the fake before the loop runs --
         a step that reads the turn the loop asks for -- builds it and
-        passes it as `fake`; `script` is then unused.
+        passes it as `fake`; `script` is then unused. `guard` replaces the
+        default spawn guard, for a test whose fake CLI is on PATH.
         """
         fake = fake or FakeAgent(*script)
         provider = provider or StubProvider(a_task())
         self.last_provider = provider
         self.last_fake = fake
-        with no_agent_processes() as guard:
+        with no_agent_processes(guard) as guard:
             with patch.dict(sys.modules, {"linear_provider": provider}):
                 with patch.object(holophyte.loop.implement, "agent", fake), \
                         patch.object(holophyte.loop.review_round, "agent", fake), \

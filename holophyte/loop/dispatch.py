@@ -16,6 +16,7 @@ from holophyte.board.projection import (
 )
 from holophyte.host.supervisor import linear_budget_low, sweep
 from holophyte.host.sweep_report import SWEEP_HINT, sweep_lines
+from holophyte.loop.failure_triage import triage_failure
 from holophyte.loop.gates import MergeParked, RunFailure, outcome_class_of
 from holophyte.redact import safe_print as print
 from holophyte.review.findings import refresh_findings
@@ -168,11 +169,12 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
         else:
             # Its own failure must not replace the one in flight; the lease stays.
             try:
-                close_out_failure(target, conn, run_id, ticket_id,
-                                  reason,
-                                  provider=provider,
-                                  outcome_class=outcome_class,
-                                  refresh=refresh, failure_kind=failure_kind)
+                if close_out_failure(target, conn, run_id, ticket_id,
+                                     reason,
+                                     provider=provider,
+                                     outcome_class=outcome_class,
+                                     refresh=refresh, failure_kind=failure_kind):
+                    triage_failure(target, conn, run_id, ticket_id)
             except Exception as close_err:
                 print(f"[holo2] close-out failed: {close_err}")
     return merged

@@ -101,7 +101,15 @@ def item_line(item):
     said = next((item[key] for key in ("question", "reason", "note", "phase",
                                        "state", "error", "detail")
                  if item.get(key)), "")
-    return f"{item['kind']}  {subject}  {said}".rstrip()
+    return f"{item['kind']}  {subject}  {said}{triage_text(item)}".rstrip()
+
+
+def triage_text(item):
+    triage = item.get("triage")
+    if not triage or triage.get("choice") is None:
+        return ""
+    requeued = ", requeued" if triage.get("requeued") else ""
+    return f"  [{triage['choice']} {round(triage['confidence'], 2):g}{requeued}]"
 
 
 def attention_lines(body):
