@@ -80,7 +80,7 @@ holo status [--json]                             # one project when -p, HOLO_PRO
 holo status --watch [SECONDS]                    # the status page redrawn every SECONDS (default 5) until Ctrl-C
 holo follow [--since AGO] [--every SECONDS] [--json] -p NAME|PATH # one line per run event and ledger entry as it is written, and one when a heartbeat goes stale
 holo mcp                                         # an MCP server on stdio: tools for the holo reads and five signed writes (file_ticket, send_back, babysit, requeue, hold); see docs/reference/cli.md#holo
-holo mcp --http [HOST:PORT]                      # the same tools at POST /mcp behind the host's machine token, 127.0.0.1:7711 by default; see docs/reference/http.md#post-mcp
+holo mcp --http [HOST:PORT]                      # the same tools at POST /mcp when [serve] actions = true, else the reads only; behind the host's machine token, 127.0.0.1:7711 by default; see docs/reference/http.md#post-mcp
 holo requeue KEY "note" -p NAME|PATH             # factory.py --requeue KEY --note "note" PATH; -p takes a [serve] name or a path, and without it the project is found as for status
 holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an alias of each ticket verb
 holo approve KEY ["note"] -p NAME|PATH           # each ticket verb takes the factory mode's arguments, the note last; see docs/reference/cli.md#holo
@@ -103,7 +103,8 @@ holo close KEY URL ["note"] -p NAME|PATH         # factory.py --close KEY --land
 holo gap KEY LAYER "note" [--carried-by KEY] [--found-by F] -p NAME|PATH # factory.py --gap-layer
 holo loop start|stop ...                         # the same as holo start and holo stop
 holo story file|approve|witness|decide ... -p NAME|PATH # the story modes
-holo supervise [--once] [-p NAME|PATH]           # the host form when no source names a project
+holo supervise [--once]                          # the host form when no source names a project; --once is one run
+holo supervise -p NAME|PATH                      # the project form, without --once
 holo serve [ADDR] [-p NAME|PATH]                 # likewise the host daemon
 holo project add|remove|list|enable|hold|disable   # factory.py project, unchanged
 holo completion bash|zsh|fish                     # the shell's completion script; see docs/reference/cli.md#holo
