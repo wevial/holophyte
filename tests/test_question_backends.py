@@ -158,6 +158,21 @@ class QuestionBackendTests(unittest.TestCase):
         self.assertTrue(call["cwd"].startswith(os.path.realpath(tempfile.gettempdir())))
         self.assertFalse(Path(call["cwd"]).exists())
 
+    def test_long_thread_prompt_fits_one_argument_and_keeps_the_newest(self):
+        self.fake("claude", "question", (FIXTURES / "claude_answer.json").read_text())
+        replies = tuple(github.Comment("writer", f"reply-{n:03d} " + "x" * 990)
+                        for n in range(200))
+        thread = github.Thread("1", "app.py", 7, "writer", "opening", "",
+                               replies=replies + (github.Comment("writer", "Why?"),))
+        result = thread_mentions.triage(thread, "Title", {"questions": {
+            "backend": "claude"}})
+        self.assertEqual((result["decision"], result["route"]), ("question", "answer"))
+        text = self.calls("claude")[-1]["argv"][-1]
+        self.assertLess(len(text.encode()), 128 * 1024)
+        self.assertIn("Why?", text)
+        self.assertIn("reply-199", text)
+        self.assertNotIn("opening", text)
+
     def test_codex_runner_is_boxed_and_the_last_agent_message_wins(self):
         capture = (FIXTURES / "codex_answer.jsonl").read_text().splitlines()
         signed_out = (FIXTURES / "codex_signed_out.jsonl").read_text().splitlines()

@@ -1392,6 +1392,21 @@ or Codex CLI.
 | `fallback_model` | Default: the fallback backend's own `model` default | Model of a CLI fallback. |
 | `fallback_effort` | Default: the fallback backend's own `effort` default | Effort of a CLI fallback. |
 
+```toml
+[questions]
+# jev (the HTTP service), claude or codex. Optional; the default is jev.
+backend = "claude"
+# Model and effort of a CLI backend; refused beside jev.
+model = "haiku"
+effort = "high"
+# Probed only when the backend fails its own probe. Optional.
+backend_fallback = "codex"
+fallback_model = "gpt-6-luna"
+fallback_effort = "low"
+# Answers below this confidence take the read-only answer path.
+min_confidence = 0.6
+```
+
 The key is read from that environment variable for each request. Missing keys,
 service failures, unclear answers and answers below the floor use the read-only
 answer path. Only a confident `fix` requests implementation; explicit `ask:`
@@ -1402,7 +1417,8 @@ with no tools, MCP servers or settings, `codex` in a read-only sandbox with
 its shell tool disabled. It sends the same instructions and
 options, then the redacted thread as a JSON record framed as data, not
 instructions, and reads one choice and a confidence from the CLI's structured
-output. That confidence is the model's own rating from 0 to 1 that its choice
+output. The record is capped at 96 KiB, the oldest earlier comments dropped
+first, so the prompt fits one command-line argument. That confidence is the model's own rating from 0 to 1 that its choice
 is right, not a calibrated probability like Jev's; `min_confidence` gates it
 the same way.
 
