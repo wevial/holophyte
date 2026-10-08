@@ -45,6 +45,7 @@ MOVED_HEADINGS = (
 HEADING = re.compile(r"^(#{1,6}) +(.+?)\s*$", re.MULTILINE)
 # Markdown links, `[text](target)`; images and bare URLs are not links here.
 LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")
+USAGE = re.compile(r"## Usage\n+```\n(.*?)```", re.DOTALL)
 
 
 def headings(text, level=None):
@@ -183,7 +184,7 @@ class SingleMachineTests(unittest.TestCase):
 class UsageTests(unittest.TestCase):
     def test_readme_usage_names_every_mode_the_parser_registers(self):
         text = README.read_text()
-        block = re.search(r"## Usage\n+```\n(.*?)```", text, re.DOTALL)
+        block = USAGE.search(text)
         self.assertIsNotNone(block, "README has no usage block")
         missing = [opt for opt in parser_option_strings()
                    if opt not in block.group(1)]
@@ -202,8 +203,7 @@ def holo_command_words():
 
 class HoloUsageTests(unittest.TestCase):
     def test_readme_usage_names_every_holo_command_word(self):
-        block = re.search(r"## Usage\n+```\n(.*?)```", README.read_text(),
-                          re.DOTALL).group(1)
+        block = USAGE.search(README.read_text()).group(1)
         missing = [word for word in holo_command_words()
                    if not re.search(rf"\bholo {re.escape(word)}(?![\w-])",
                                     block)]
