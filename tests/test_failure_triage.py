@@ -109,23 +109,22 @@ class FailureTriageLoopTests(LoopFixture):
         self.assertEqual((payload["requeued"], payload["why"]),
                          (False, "requeue off"))
 
-    def test_code_and_spec_answers_are_never_requeued(self):
-        for choice in ("code", "spec"):
-            with self.subTest(choice=choice):
-                if choice == "spec":
-                    self.tearDown()
-                    self.doCleanups()
-                    self.setUp()
-                self.configure(REQUEUE)
-                self.claude.answer(choice, 0.95)
+    def assert_not_infra_is_never_requeued(self, choice):
+        self.configure(REQUEUE)
+        self.claude.answer(choice, 0.95)
 
-                self.loop(*FAILS_A_FIX_ROUND, guard=question_guard())
+        self.loop(*FAILS_A_FIX_ROUND, guard=question_guard())
 
-                self.assertEqual(self.ticket_status(), [("in_flight",)])
-                self.assertEqual(self.interventions(), [])
-                (payload,) = self.triage()
-                self.assertEqual((payload["choice"], payload["why"]),
-                                 (choice, "not infra"))
+        self.assertEqual(self.ticket_status(), [("in_flight",)])
+        self.assertEqual(self.interventions(), [])
+        (payload,) = self.triage()
+        self.assertEqual((payload["choice"], payload["why"]), (choice, "not infra"))
+
+    def test_a_code_answer_is_never_requeued(self):
+        self.assert_not_infra_is_never_requeued("code")
+
+    def test_a_spec_answer_is_never_requeued(self):
+        self.assert_not_infra_is_never_requeued("spec")
 
     def test_a_down_route_strands_the_run_as_today(self):
         self.configure(REQUEUE)
