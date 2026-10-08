@@ -65,16 +65,14 @@ def settings(config):
     if not probability(values["min_confidence"]):
         raise ValueError("[questions] min_confidence must be a number in [0, 1]")
     values |= route_settings(table, "backend", "model", "effort")
-    if "backend_fallback" in table and values["backend"] == "jev":
-        raise ValueError("[questions] backend_fallback needs a claude or codex backend")
-    if "backend_fallback" in table:
-        values |= route_settings(table, *FALLBACK_KEYS)
-    else:
+    if "backend_fallback" not in table:
         for key in FALLBACK_KEYS[1:]:
             if key in table:
                 raise ValueError(f"[questions] {key} needs backend_fallback")
-        values |= dict.fromkeys(FALLBACK_KEYS)
-    return values
+        return values | dict.fromkeys(FALLBACK_KEYS)
+    if values["backend"] == "jev":
+        raise ValueError("[questions] backend_fallback needs a claude or codex backend")
+    return values | route_settings(table, *FALLBACK_KEYS)
 
 
 def route_settings(table, backend_key, model_key, effort_key):

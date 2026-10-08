@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import signal
@@ -86,10 +87,8 @@ def launch(argv, cwd):
     try:
         stdout, _ = process.communicate(timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         process.communicate()
         return None, ""
     return process.returncode, stdout.decode(errors="replace")

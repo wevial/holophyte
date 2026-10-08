@@ -104,11 +104,6 @@ class QuestionBackendTests(unittest.TestCase):
     def thread(self, comment="Could this read the config once?", path="app.py"):
         return github.Thread("1", path, 7, "writer", comment, "")
 
-    def question_events(self):
-        return [json.loads(payload) for (payload,) in self.conn.execute(
-            "SELECT payload FROM runEvents WHERE kind = 'question'"
-            " AND level = 'detail' ORDER BY seq")]
-
     def test_default_backend_asks_jev_and_launches_neither_cli(self):
         response = {"answers": {"q": {
             "choice": "question", "confidence": 0.9,
@@ -283,7 +278,9 @@ class QuestionBackendTests(unittest.TestCase):
             questions.ask(thread_mentions.MENTION_INTENT, {"comment": "x"},
                           config={"questions": {"backend": backend}},
                           conn=self.conn, run_id=self.run_id)
-        claude, codex = self.question_events()
+        claude, codex = [json.loads(payload) for (payload,) in self.conn.execute(
+            "SELECT payload FROM runEvents WHERE kind = 'question'"
+            " AND level = 'detail' ORDER BY seq")]
         for event in (claude, codex):
             self.assertIsInstance(event.pop("latency_ms"), int)
         self.assertEqual(claude, {
