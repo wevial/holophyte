@@ -129,7 +129,7 @@ class QuestionBackendTests(unittest.TestCase):
         config = {"questions": {"backend": "claude", "model": "haiku",
                                 "effort": "high"}}
         result = thread_mentions.triage(self.thread(), "Title", config)
-        self.assertEqual((result["decision"], result["confidence"]), ("question", 0.8))
+        self.assertEqual((result["decision"], result["confidence"]), ("question", 0.93))
         probe, call = self.calls("claude")
         self.assertEqual((probe["mode"], call["mode"]), ("probe", "question"))
         argv = call["argv"]
@@ -148,17 +148,21 @@ class QuestionBackendTests(unittest.TestCase):
         self.assertTrue(call["cwd"].startswith(os.path.realpath(tempfile.gettempdir())))
         self.assertFalse(Path(call["cwd"]).exists())
 
-    def test_codex_runner_is_boxed_and_reads_the_last_agent_message(self):
-        lines = (FIXTURES / "codex_answer.jsonl").read_text().splitlines()
-        last = next(i for i, line in enumerate(lines) if "agent_message" in line)
-        earlier = json.loads(lines[last])
-        earlier["item"]["text"] = json.dumps({"choice": "question", "confidence": 0.7})
-        lines.insert(last, json.dumps(earlier))
+    def test_codex_runner_is_boxed_and_skips_warnings_for_the_last_agent_message(self):
+        answer = (FIXTURES / "codex_answer.jsonl").read_text().splitlines()
+        signed_out = (FIXTURES / "codex_signed_out.jsonl").read_text().splitlines()
+        warnings = [line for line in signed_out if json.loads(line)["type"] == "error"
+                    or json.loads(line).get("item", {}).get("type") == "error"]
+        self.assertTrue(warnings)
+        last = next(i for i, line in enumerate(answer) if "agent_message" in line)
+        earlier = json.loads(answer[last])
+        earlier["item"]["text"] = json.dumps({"choice": "fix", "confidence": 0.9})
+        lines = answer[:last] + warnings + [json.dumps(earlier)] + answer[last:]
         self.fake("codex", "question", "\n".join(lines) + "\n")
         config = {"questions": {"backend": "codex", "model": "gpt-6-luna",
                                 "effort": "low"}}
         result = thread_mentions.triage(self.thread(), "Title", config)
-        self.assertEqual((result["decision"], result["confidence"]), ("fix", 0.9))
+        self.assertEqual((result["decision"], result["confidence"]), ("question", 0.99))
         argv = self.calls("codex")[-1]["argv"]
         self.assertEqual(argv[:15], [
             "exec", "--json", "-s", "read-only", "--skip-git-repo-check",
@@ -284,15 +288,15 @@ class QuestionBackendTests(unittest.TestCase):
             self.assertIsInstance(event.pop("latency_ms"), int)
         self.assertEqual(claude, {
             "question": "mention_intent", "backend": "claude", "model": "haiku",
-            "effort": "high", "outcome": "question", "input_tokens": 1159,
-            "output_tokens": 155, "cost_usd": 0.0003091})
+            "effort": "high", "outcome": "question", "input_tokens": 1416,
+            "output_tokens": 139, "cost_usd": 0.0003525})
         self.assertEqual(codex, {
             "question": "mention_intent", "backend": "codex", "model": "gpt-6-luna",
-            "effort": "low", "outcome": "fix", "input_tokens": 19143,
+            "effort": "low", "outcome": "question", "input_tokens": 18099,
             "output_tokens": 21, "cost_usd": None})
         self.assertIn(
-            "questions: 2 calls · claude 1 call, 1159 in / 155 out tokens, $0.0003"
-            " · codex 1 call, 19143 in / 21 out tokens, cost not reported",
+            "questions: 2 calls · claude 1 call, 1416 in / 139 out tokens, $0.0004"
+            " · codex 1 call, 18099 in / 21 out tokens, cost not reported",
             report.report_lines(self.conn))
 
     def test_config_refusals_name_the_key_and_claude_defaults(self):
