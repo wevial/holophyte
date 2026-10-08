@@ -31,7 +31,11 @@ FINAL_STATE = ("Judge behavior at the range's final state: a change a later"
 NO_REWRITE = ("a finding asks for a new commit and never asks to squash, amend,"
               " rebase or rework an existing commit.")
 BLOCKER = ("A trade-off on a trust boundary, an auth check, a data-loss path"
-           " or a money path is a blocker.")
+           " or a money path is a blocker while what it gave up is still"
+           " missing at the range's final state.")
+PROOF_AT_HEAD = ("A test a `trim: tests` commit deleted that is still absent at"
+                 " the range's final state needs a `Proof:` line")
+RESTORED_NEEDS_NONE = "a deleted test a later commit restored needs none."
 
 
 class TrimReviewTests(TrimFixture):
@@ -65,7 +69,7 @@ class TrimReviewTests(TrimFixture):
 
 
 class TrimBriefTests(unittest.TestCase):
-    def test_a_restored_trim_brief_judges_at_head_and_never_asks_a_rewrite(self):
+    def restored_trim_brief(self, subject):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
 
@@ -83,12 +87,21 @@ class TrimBriefTests(unittest.TestCase):
             git("commit", "-qm", "work")
             base = git("rev-parse", "HEAD")
             work.write_text(lines(40))
-            git("commit", "-qam", "trim: delete")
+            git("commit", "-qam", subject)
             work.write_text(lines(60))
             git("commit", "-qam", "restore what the trim removed")
             head = git("rev-parse", "HEAD")
             self.assertEqual(git("diff", base, head), "")
             brief = " ".join(trim_brief(root, base, head).split())
-        self.assertRegex(brief, r"- [0-9a-f]{7,} trim: delete ")
+        self.assertRegex(brief, rf"- [0-9a-f]{{7,}} {subject} ")
+        return brief
+
+    def test_a_restored_trim_brief_judges_at_head_and_never_asks_a_rewrite(self):
+        brief = self.restored_trim_brief("trim: delete")
         self.assertIn(FINAL_STATE, brief)
         self.assertIn(NO_REWRITE, brief)
+
+    def test_a_restored_test_deletion_needs_no_proof_line(self):
+        brief = self.restored_trim_brief("trim: tests")
+        self.assertIn(PROOF_AT_HEAD, brief)
+        self.assertIn(RESTORED_NEEDS_NONE, brief)
