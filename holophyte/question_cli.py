@@ -161,9 +161,7 @@ def parse_codex(output, question):
     found = list(events(output))
     usage = next((e.get("usage") for e in reversed(found)
                   if e.get("type") == "turn.completed"), None)
-    usage = usage if isinstance(usage, dict) else {}
-    tokens = dict(input_tokens=questions.count(usage.get("input_tokens")),
-                  output_tokens=questions.count(usage.get("output_tokens")))
+    tokens = questions.tokens(usage)
     if any(e.get("type") == "turn.failed" for e in found):
         return questions.Failure("service_error"), tokens
     texts = [e["item"].get("text") for e in found

@@ -182,8 +182,7 @@ def count(value):
     return value if type(value) is int and value >= 0 else None
 
 
-def jev_usage(document):
-    usage = document.get("usage") if isinstance(document, dict) else None
+def tokens(usage):
     if not isinstance(usage, dict):
         return {}
     return dict(input_tokens=count(usage.get("input_tokens")),
@@ -222,7 +221,8 @@ def ask_jev(question, state, config, options):
             if len(payload) > MAX_RESPONSE_BYTES:
                 return Failure("response_too_large"), {}
             document = json.loads(payload)
-            return parse(document, question), jev_usage(document)
+            usage = document.get("usage") if isinstance(document, dict) else None
+            return parse(document, question), tokens(usage)
     except TimeoutError:
         return Failure("timeout"), {}
     except urllib.error.URLError as error:
