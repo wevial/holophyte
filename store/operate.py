@@ -120,7 +120,8 @@ def requeue(conn, ticket_id, note, now=None, source="human", force=False):
             raise RequeueRefused(
                 f"{identifier} was relaunched {len(relaunched)} times against"
                 f" one failure since a human last acted on it (runs {older}"
-                f" and {newest} each failed and were requeued); another"
+                f" and {newest} each ended failed or rejected and was"
+                " requeued); another"
                 " relaunch needs a written diagnosis, not another run: write"
                 " the diagnosis as the note and requeue with --force"
                 ' ("force": true over HTTP)')

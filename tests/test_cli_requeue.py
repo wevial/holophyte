@@ -102,6 +102,7 @@ class RequeueTarget(unittest.TestCase):
         # the requeued ticket's lease label off it (KO-351), and the stub
         # records the call instead of reaching for the network.
         self.board = StubBoard.instance = None
+        self.err = err
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
                 patch.object(holophyte.cli.entry, "board_for", stub_board_for):
             holophyte.cli.entry.cli([str(self.repo), *args])
@@ -379,6 +380,8 @@ class RelaunchLimitTests(RequeueTarget):
         with self.assertRaises(SystemExit) as raised:
             self.cli("--report", "--force")
         self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--force belongs to --approve or --requeue",
+                      self.err.getvalue())
 
     def test_a_second_relaunch_needs_no_force(self):
         self.relaunch()
@@ -425,6 +428,7 @@ class RelaunchLimitTests(RequeueTarget):
 
         self.assertIn("--force", str(raised.exception))
         self.assertEqual(self.status(), "in_flight")
+
 
 class RequeuedClaimTests(LoopFixture):
     """KO-718: the claim after a requeue opens the implement prompt with the
