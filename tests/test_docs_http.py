@@ -4,6 +4,9 @@ import re
 import unittest
 from pathlib import Path
 
+from holophyte.serve.server import window_report
+from tests.test_holo_report import WindowReportCase
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 REFERENCE = ROOT / "docs" / "reference" / "http.md"
@@ -81,6 +84,21 @@ class HttpReferenceTests(unittest.TestCase):
                         "GET /attention does not name parkKind")
         self.assertFalse("whose question opens with" in text,
                          "GET /attention still classifies by question wording")
+
+
+class ReportReferenceTests(WindowReportCase):
+    def test_report_section_names_every_key_but_the_counted_names(self):
+        self.send_back_both_notes()
+        code, body = window_report(self.project, "")
+        self.assertEqual(code, 200, body)
+        self.assertTrue(body["runs"] and body["notes"])
+        body["failures"] = {}
+        body["gaps"].update(layers={}, found_by={})
+        body["hands_on"]["by_action"] = {}
+        text = section(REFERENCE.read_text(), "`GET /report")
+        missing = sorted(key for key in keys(body) if f"`{key}`" not in text
+                         and f'"{key}"' not in text)
+        self.assertEqual(missing, [])
 
 
 if __name__ == "__main__":

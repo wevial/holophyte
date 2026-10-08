@@ -341,6 +341,91 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertNotIn("ready", after[0])
         self.assertEqual(after[1], [])
 
+    def interventions(self, action=None):
+        conn = store.read.open_readonly(self.db)
+        try:
+            if action is None:
+                return conn.execute(
+                    "SELECT * FROM interventions ORDER BY id").fetchall()
+            return [row for (row,) in conn.execute(
+                "SELECT id FROM interventions WHERE action = ? ORDER BY id",
+                (action,))]
+        finally:
+            conn.close()
+
+    def test_a_unit_action_answers_the_id_of_the_row_it_wrote(self):
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            store.tickets.ensure_project(conn, "team-1", self.target)
+        finally:
+            conn.close()
+        self.start(self.token_config("actions = true\n"))
+        with patch.object(subprocess, "run") as run:
+            run.side_effect = lambda argv, **kw: self.completed(argv)
+            _, _, on_project = self.request("POST", "/actions/launch-loop",
+                                            self.BEARER)
+            self.seed()
+            _, _, restart = self.request("POST", "/actions/restart-supervisor",
+                                         self.BEARER)
+            _, _, launch = self.request("POST", "/actions/launch-loop",
+                                        self.BEARER)
+        project_row, run_row = self.interventions("launch_loop")
+        (restart_row,) = self.interventions("restart_supervisor")
+        self.assertNotIn(self.run, (project_row, run_row, restart_row))
+        self.assertEqual(
+            [(body["ok"], body["recorded"])
+             for body in (on_project, restart, launch)],
+            [(True, project_row), (True, restart_row), (True, run_row)])
+
+    def test_requeue_and_send_back_answer_the_row_each_wrote(self):
+        self.seed()
+        self.seed_ended()
+        with store.open(str(self.db)) as conn:
+            for phase in ("verifying", "reviewing", "merge_gate"):
+                store.set_phase(conn, self.run, phase)
+            store.park(conn, self.run, "awaiting_merge_approval",
+                       pr_url="https://example.test/org/repo/pull/1")
+            ticket = store.read.ticket_by_identifier(conn, "KO-7").id
+            store.tickets.transition(conn, ticket, "blocked_on_operator")
+        self.start(self.token_config("actions = true\n"))
+        _, _, requeued = self.request("POST", "/actions/requeue", self.BEARER,
+                                      body={"ticket": "KO-2"})
+        _, _, sent = self.request("POST", "/actions/send-back", self.BEARER,
+                                  body={"run": self.run, "note": "rename it"})
+        (requeue_row,) = self.interventions("requeue")
+        (note_row,) = self.interventions("operator_note")
+        for body, action, row in ((requeued, "requeue", requeue_row),
+                                  (sent, "send-back", note_row)):
+            with self.subTest(action=action):
+                self.assertEqual((body["action"], body["ok"], body["recorded"]),
+                                 (action, True, row), body)
+                self.assertTrue(body["detail"])
+
+    def test_a_refused_action_answers_recorded_null_and_writes_no_row(self):
+        self.seed()
+        with store.open(str(self.db)) as conn:
+            store.release(conn, self.run, "failed", reason="verify red")
+            ticket = store.read.ticket_by_identifier(conn, "KO-7").id
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            newer = store.claim(conn, project, ticket, now=self.now)
+        self.assertNotEqual(newer, self.run)
+        self.start(self.token_config("actions = true\n"))
+        before = self.interventions()
+        refusals = (("requeue", {"ticket": "KO-99"}),
+                    ("send-back", {"run": self.run, "note": "rename it"}),
+                    ("pause", {"run": self.run, "note": "reboot"}))
+        for action, body in refusals:
+            with self.subTest(action=action):
+                code, _, reply = self.request("POST", f"/actions/{action}",
+                                              self.BEARER, body=body)
+                self.assertEqual(code, 200, reply)
+                self.assertEqual(
+                    (reply["action"], reply["ok"], reply["recorded"]),
+                    (action, False, None), reply)
+                self.assertTrue(reply["detail"])
+        self.assertEqual(self.interventions(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

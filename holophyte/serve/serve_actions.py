@@ -6,6 +6,7 @@ import traceback
 
 import store.read
 from holophyte.admission import project_of
+from holophyte.holo.results import newest_in
 from holophyte.loop.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.loop.runs import open_store
 from holophyte.redact import known_secrets, outbound
@@ -17,9 +18,12 @@ UNIT_ACTIONS = {
     "restart-supervisor": ("restart", SUPERVISOR_UNIT, "restart_supervisor"),
     "launch-loop": ("start", LOOP_UNIT, "launch_loop")}
 REQUEUE_ACTION = "requeue"
-ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION, "send-back", "hold",
-                                     "release-hold", "pause", "resume",
-                                     "abort", "merge"}
+RECORDS = {**{action: (row,) for action, (*_, row) in UNIT_ACTIONS.items()},
+           REQUEUE_ACTION: ("requeue",), "send-back": ("operator_note",),
+           "merge": ("approve",), "hold": ("hold",),
+           "release-hold": ("release_hold",), "pause": ("pause",),
+           "resume": ("resume",), "abort": ("abort", "abort_close")}
+ACTIONS = frozenset(RECORDS)
 # The store refuses an empty requeue note.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
 MAX_BODY = 64 * 1024
@@ -45,21 +49,20 @@ def unit_action(project, action, unit_name, asked=None):
     unit = template + unit_name
     who, route = asked or ("the daemon", f"POST /actions/{action}")
     note = f"operator asked {who} to {verb} {unit} ({route})"
-    recorded = record_action_intervention(project, intervention, note)
-    written = recorded is not None or (
+    on_run = record_action_intervention(project, intervention, note)
+    written = on_run is not None or (
         action == "launch-loop"
         and record_on_project(project, intervention, note) is not None)
     if not written:
         detail = ("the store holds no run to record the intervention"
                   " against; nothing run")
         return 200, {"action": action, "ok": False, "detail": detail,
-                     "unit": unit, "recorded": None}
+                     "unit": unit}
     if action == "launch-loop":
         _, ok, detail = start_loop(unit_name)
     else:
         ok, detail = systemctl_user(verb, unit)
-    return 200, {"action": action, "ok": ok, "detail": detail,
-                 "unit": unit, "recorded": recorded}
+    return 200, {"action": action, "ok": ok, "detail": detail, "unit": unit}
 
 
 def record_action_intervention(project, action, note):
@@ -74,6 +77,26 @@ def record_action_intervention(project, action, note):
     finally:
         conn.close()
     return run_id
+
+
+def newest_row(project):
+    return newest_in(project.store_path) if project.store_path.exists() else 0
+
+
+def written_row(project, before, action):
+    if not project.store_path.exists():
+        return None
+    names = RECORDS[action]
+    conn = store.read.open_readonly(project.store_path)
+    try:
+        (row,) = conn.execute(
+            "SELECT MAX(id) FROM interventions WHERE id > ?"
+            " AND source = 'human'"
+            f" AND action IN ({','.join('?' * len(names))})",
+            (before, *names)).fetchone()
+    finally:
+        conn.close()
+    return row
 
 
 def record_on_project(project, action, note):
@@ -147,10 +170,11 @@ def send_back_action(project, run_id, note, author):
     try:
         event_id = send_back(conn, run_id, note, author)
     except (store.ApproveRefused, ValueError) as refused:
-        return 200, {"ok": False, "detail": str(refused)}
+        return 200, {"action": "send-back", "ok": False,
+                     "detail": str(refused)}
     finally:
         conn.close()
-    return 200, {"ok": True, "run": run_id, "event_id": event_id,
+    return 200, {"action": "send-back", "ok": True, "run": run_id, "event_id": event_id,
                  "detail": f"Sent back with operator_note event {event_id}"}
 
 

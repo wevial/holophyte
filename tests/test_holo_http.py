@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -27,11 +28,18 @@ from holophyte.config.project import Project
 from holophyte.holo.transport import HTTP_ROUTES
 from holophyte.host.registry import Host, settings
 from holophyte.serve.serve_host import HostHandler, HostServer, host_tokens
+from tests.phase_fixture import finish_run
 from tests.test_holo_grammar import T0
 
 ROOT = Path(__file__).resolve().parent.parent
 MACHINE = "machine-token-value"
 WRONG = "not-the-machine-token"
+
+RECORDING_SYSTEMCTL = '''#!{python}
+import json, sys
+with open({record!r}, "a") as stream:
+    stream.write(json.dumps(sys.argv[1:]) + "\\n")
+'''
 
 RECORDING_SSH = '''#!{python}
 import json, sys
@@ -41,6 +49,7 @@ sys.exit(255)
 '''
 
 COVERED = {
+    ("report",): ["report"],
     ("runs",): ["runs"],
     ("run",): ["run", "1", "--ledger"],
     ("attention",): ["attention"],
@@ -189,6 +198,31 @@ class ReadTests(HttpCase):
         self.assertEqual([entry["ticket"] for column in local["columns"]
                           for entry in column["tickets"]], ["HOLO-1"])
 
+    def test_report_over_http_is_the_local_report_and_draws_its_counts(self):
+        now = int(time.time() * 1000)
+        for key, outcome, ago in (("HOLO-1", "merged", 60 * 60_000),
+                                  ("HOLO-2", "failed", 2 * 24 * 60 * 60_000)):
+            run = self.claim(key)
+            finish_run(self.conn, run, outcome, "ended", now=now - ago)
+        reports = []
+        for home in (self.host, self.seat):
+            completed = self.holo("report", "--json", "-p", "alpha", home=home)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            body = json.loads(completed.stdout)
+            for moment in ("now_ms", "from_ms"):
+                body["window"].pop(moment)
+            reports.append(body)
+        local, remote = reports
+        self.assertEqual(remote, {**local, "transport": "http"})
+        self.assertEqual((local["shipped"]["merged"], local["shipped"]["failed"]),
+                         (1, 1))
+        page = self.holo("report", "-p", "alpha")
+        self.assertEqual(page.returncode, 0, page.stderr)
+        self.assertIn("Shipped   1 merged · 0 abandoned · 1 failed",
+                      page.stdout)
+        self.assertEqual(self.requests, [("GET", "/projects/alpha/report")] * 2)
+        self.assertFalse(self.record.exists())
+
     def test_every_route_table_row_is_one_the_running_daemon_serves(self):
         run = self.failed_run("HOLO-1")
         for words, route in HTTP_ROUTES.items():
@@ -222,6 +256,39 @@ class WriteTests(HttpCase):
         ).fetchall(), [(run, "rerun")])
         (line,) = completed.stdout.splitlines()
         self.assertTrue(line.startswith("✓ HOLO-1"), line)
+
+    def test_requeue_and_start_print_their_words_and_the_rows_written(self):
+        run = self.failed_run("HOLO-1")
+        for note in ("an earlier hand", "another earlier hand"):
+            store.record_intervention(self.conn, run, "approve", note, now=T0)
+        systemctl = self.bin / "systemctl"
+        systemctl.write_text(RECORDING_SYSTEMCTL.format(
+            python=sys.executable, record=str(self.root / "systemctl.jsonl")))
+        systemctl.chmod(0o755)
+        self.enterContext(patch.dict(
+            os.environ, {"PATH": f"{self.bin}:{os.environ['PATH']}"}))
+        replies = []
+        for argv in (["requeue", "HOLO-1", "rerun"], ["start"]):
+            completed = self.holo(*argv, "--json", "-p", "alpha")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            replies.append(json.loads(completed.stdout))
+        page = self.holo("start", "-p", "alpha")
+        self.assertEqual(page.returncode, 0, page.stderr)
+        (requeued,), = self.conn.execute(
+            "SELECT id FROM interventions WHERE action = 'requeue'")
+        launched = [row for (row,) in self.conn.execute(
+            "SELECT id FROM interventions WHERE action = 'launch_loop'"
+            " ORDER BY id")]
+        self.assertEqual(len(launched), 2)
+        self.assertNotIn(run, [requeued, *launched])
+        self.assertEqual(
+            [(reply["action"], reply["recorded"], reply["ok"])
+             for reply in replies],
+            [("requeue", requeued, True), ("start", launched[0], True)])
+        self.assertIn(f"intervention {launched[1]} recorded", page.stdout)
+        calls = (self.root / "systemctl.jsonl").read_text().splitlines()
+        self.assertEqual([json.loads(call)[:2] for call in calls],
+                         [["--user", "start"]] * 2)
 
     def test_pause_over_http_reads_the_tickets_run_then_pauses_that_run(self):
         self.failed_run("HOLO-1")

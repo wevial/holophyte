@@ -532,6 +532,56 @@ or kinds other than `intervention`; it is included for unfiltered requests.
 Launch-loop interventions at or after an ongoing outage's start are suppressed
 from history.
 
+## `GET /report?since=SPAN`
+
+```json
+{"project": "/home/op/repo",
+ "window": {"since": "7d", "from_ms": 1788000000000, "now_ms": 1788604800000},
+ "shipped": {"merged": 3, "abandoned": 1, "failed": 2,
+             "median_min": 16.0, "median_estimate_min": 30.0},
+ "failures": {"verify": 1, "review": 1},
+ "gaps": {"open": 2, "layers": {"none": 2, "test": 1},
+          "found_by": {"review": 3}},
+ "hands_on": {"interventions": 4, "by_action": {"requeue": 3, "pause": 1},
+              "send_backs": 1},
+ "runs": [
+  {"run": 312, "ticket": "KO-241", "actual_min": 8.4, "agent_min": 6.1,
+   "verify_min": 2.3, "estimate_min": 10.0, "ratio": 0.84, "rounds": 1,
+   "outcome": "merged", "host": "writer-1", "ended_ms": 1788478953000,
+   "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f", "wall_min": 9.0}
+ ],
+ "notes": [
+  {"run": 310, "ticket": "KO-240", "round": 2, "event_id": 881,
+   "author": "maintainer", "note": "name the window in the header",
+   "consumed_ms": 1788470000000}
+ ]}
+```
+
+`holo report --json`, the weekly report, as the daemon reads it from the
+store, so `holo report` runs over `transport = "http"`. `since` is the
+window: `Nh`, `Nd` or `all`, `7d` when absent; any other form is 400
+naming the forms. `project` is the repository the daemon serves, as a
+path. `window` echoes `since` and gives the window's start, `from_ms`
+(null for `all`), and the read's moment, `now_ms`, both epoch
+milliseconds. `shipped` counts the runs that ended in the window by
+outcome, `merged`, `abandoned` and `failed`, with `median_min`, the
+median actual minutes of the merged runs, and `median_estimate_min`, the
+median of their estimates; both null with no merged run. `failures`
+counts the window's failed runs by failure kind, most first. `gaps` is the
+store's whole gap ledger, not the window's: `open`, the gaps with no
+layer yet, `layers`, the count per layer, and `found_by`, the count per
+finder. `hands_on` counts the window's interventions: `interventions`,
+the total less send-backs, `by_action`, the count per action, and
+`send_backs`, the `operator_note` rows. `runs` are the window's ended
+runs, each as a `/runs` row without `ticket_url`: `agent_min` and
+`verify_min` are its agent's and its verify's minutes, and `wall_min` its
+wall-clock minutes.
+`notes` are the send-back notes a run consumed in the window, newest
+first: the `run` and `ticket`, the `round` that consumed it, the
+`event_id` of the `operator_note` event, its `author` and `note`, and
+`consumed_ms`. `holo report` prints its notes only with `--notes`; the
+body always holds them.
+
 ## `GET /attention`
 
 What needs the operator, computed where the store is:
@@ -1115,7 +1165,7 @@ each behind the machine token alone.
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
+| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
 | 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and, on a host daemon, `/tickets`, `/tickets/ID/move` and `/tickets/ID/cancel`, and `PUT` outside `/config` and, on a host daemon, `/tickets/ID`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |

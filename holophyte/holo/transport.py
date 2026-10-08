@@ -323,6 +323,7 @@ class Route(NamedTuple):
 
 
 HTTP_ROUTES = {
+    ("report",): Route("GET", "/report"),
     ("runs",): Route("GET", "/runs"),
     ("run",): Route("GET", "/runs/{N}"),
     ("attention",): Route("GET", "/attention"),
@@ -470,8 +471,9 @@ def read_over(args, daemon, prefix, route, timezone):
     named = quote(getattr(args, "arg0", None) or "", safe="")
     path = route.path.format(N=named, KEY=named)
     path += "".join(f"/{part}" for part in parts)
-    limit = getattr(args, "limit", None)
-    query = f"?{urlencode({'limit': limit[-1]})}" if limit else ""
+    given = {name: values[-1] for name in ("limit", "since")
+             if (values := getattr(args, name, None))}
+    query = f"?{urlencode(given)}" if given else ""
     code, body = daemon.call("GET", prefix + path + query)
     if code == 200:
         body.update(route.local)
@@ -481,6 +483,9 @@ def read_over(args, daemon, prefix, route, timezone):
                   timezone)
     elif args.json:
         print(json.dumps({**body, "transport": HTTP}))
+    elif code == 200 and args.command.mode == "--report":
+        from holophyte.holo.report_page import show_body
+        return show_body(args, body, timezone)
     else:
         show(args, f"GET {path}", code == 200, body)
     return exit_code(code)
@@ -510,12 +515,12 @@ def write_over(args, daemon, prefix, route, known):
                      2 if code == 400 else 1)
     from holophyte.holo.render import colour_on
     ok = bool(reply.get("ok"))
-    shown = {"action": " ".join(args.command.words), "recorded": None,
-             **reply, "ok": ok}
+    shown = {"recorded": None, **reply,
+             "action": " ".join(args.command.words), "ok": ok}
     lines = [line.removeprefix(PREFIX)
              for line in str(reply.get("detail") or "").splitlines()]
     if args.json:
-        print(json.dumps({**reply, "transport": HTTP}))
+        print(json.dumps({**shown, "transport": HTTP}))
     else:
         out = sys.stdout if ok else sys.stderr
         print(human_line(shown, lines, colour_on(out)), file=out)

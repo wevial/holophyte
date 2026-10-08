@@ -4,17 +4,21 @@ holding all of them.
 
 Run: python3 -m unittest discover -s tests -p 'test_holo_report.py' -v
 """
+import http.client
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import holophyte.serve.server
 import store
 import store.tickets
 from holophyte.config.project import Project
+from holophyte.holo.report_page import FORMS
 from store.operator_notes import consume, send_back
 from tests.phase_fixture import finish_run, park_run
 from tests.test_holo_reads import holo
@@ -213,6 +217,54 @@ class EdgeTests(ReportCase):
         out = self.read()
         self.assertIn("Shipped   nothing shipped in the last 7 days", out)
         self.assertNotIn("Runs", out)
+
+
+class DaemonTests(ReportCase):
+    def serve(self, project):
+        server = holophyte.serve.server.make_server(
+            project, "127.0.0.1", 0, console_dir=self.target / "no-console")
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        return server.server_address[1]
+
+    def get(self, port, path):
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        try:
+            connection.request("GET", path)
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            connection.close()
+
+    def test_report_route_counts_the_runs_ended_inside_its_window(self):
+        self.run_ended("KO-1", "merged", 12, 30, 60 * MIN)
+        self.run_ended("KO-2", "failed", 20, 30, 3 * DAY, "verify")
+        port = self.serve(self.project)
+        windows = {}
+        for query in ("?since=24h", ""):
+            code, body = self.get(port, "/report" + query)
+            self.assertEqual(code, 200, body)
+            windows[query] = (body["window"]["since"],
+                              body["shipped"]["merged"],
+                              body["shipped"]["failed"])
+        self.assertEqual(windows, {"?since=24h": ("24h", 1, 0),
+                                   "": ("7d", 1, 1)})
+
+    def test_report_route_refuses_a_bad_window_and_answers_503_with_no_store(self):
+        empty = Project.locate(self.target.parent / "empty", adopt=False)
+        empty.holo_dir.mkdir(parents=True)
+        port = self.serve(empty)
+        code, body = self.get(port, "/report")
+        self.assertEqual((code, body["error"]), (503, "no store"))
+        conn = store.open(str(empty.store_path))
+        store.init(conn)
+        conn.close()
+        code, body = self.get(port, "/report?since=7x")
+        self.assertEqual(code, 400)
+        self.assertEqual(body["error"], f"since takes {FORMS}, not '7x'")
 
 
 if __name__ == "__main__":

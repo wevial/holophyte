@@ -12,10 +12,12 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from time import time
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
+import store.read
 from holophyte.config.config_tables import split_address
 from holophyte.config.serve_settings import console_config, serve_config
+from holophyte.holo.report_page import DEFAULT_SINCE, FORMS, report, window_ms
 from holophyte.host.supervisor import factory_revision
 from holophyte.loop.reexec import reexec_self
 from holophyte.serve.serve_actions import (
@@ -24,10 +26,12 @@ from holophyte.serve.serve_actions import (
     MAX_BODY,
     REQUEUE_ACTION,
     action_failure,
+    newest_row,
     parse_action_body,
     requeue_action,
     send_back_action,
     unit_action,
+    written_row,
 )
 from holophyte.serve.serve_config import (
     CONFIG_PATH,
@@ -49,6 +53,7 @@ from holophyte.serve.serve_runs import (
     RUN_TRANSCRIPT_PATH,
     RUN_TURNS_PATH,
     ledger,
+    no_store,
     run_detail,
     run_files,
     run_ledger,
@@ -98,7 +103,7 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
 OCTET_STREAM = "application/octet-stream"
 TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger",
-                        "/attention", "/board"})
+                        "/attention", "/board", "/report"})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
     "Scope", ("project", "token", "action_token", "actions", "config_edit",
@@ -222,6 +227,26 @@ SHAPED_ROUTES = (
 )
 
 
+def window_report(project, query):
+    since = parse_qs(query, keep_blank_values=True).get("since",
+                                                        [DEFAULT_SINCE])[-1]
+    try:
+        window_ms(since)
+    except ValueError:
+        return 400, {"error": f"since takes {FORMS}, not {since!r}"}
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
+    try:
+        return 200, report(conn, project, since, int(time() * 1000))
+    finally:
+        conn.close()
+
+
+QUERY_ROUTES = {"/runs": runs, "/shipped": shipped, "/ledger": ledger,
+                "/report": window_report}
+
+
 def shaped_route(path):
     for shape, handler in SHAPED_ROUTES:
         match = shape.match(path)
@@ -281,12 +306,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             if scope.prefix is not None and code == 200:
                 body.update(actions=scope.actions,
                             config_edit=scope.config_edit)
-        elif path == "/runs":
-            code, body = runs(project, query)
-        elif path == "/shipped":
-            code, body = shipped(project, query)
-        elif path == "/ledger":
-            code, body = ledger(project, query)
+        elif path in QUERY_ROUTES:
+            code, body = QUERY_ROUTES[path](project, query)
         elif path == "/attention":
             code, body = attention(project, **beat)
         elif path == "/board":
@@ -331,19 +352,28 @@ class StatusHandler(BaseHTTPRequestHandler):
     def act(self, scope, action, body):
         project = scope.project
         try:
-            if action == "send-back":
-                return send_back_action(
-                    project, body.get("run"), body.get("note"),
-                    body.get("author", "maintainer"))
-            if action == REQUEUE_ACTION:
-                return requeue_action(project, body)
-            if action == MERGE_ACTION:
-                return merge_action(project, body)
-            if action in LEVERS:
-                return LEVERS[action](project, body)
-            return unit_action(project, action, scope.unit_name)
+            before = newest_row(project)
+            code, reply = self.run_action(scope, action, body)
+            if code != 200:
+                return code, reply
+            return code, {"action": action, **reply,
+                          "recorded": written_row(project, before, action)}
         except (Exception, SystemExit) as failure:
             return self.act_failed(scope, action, failure)
+
+    def run_action(self, scope, action, body):
+        project = scope.project
+        if action == "send-back":
+            return send_back_action(
+                project, body.get("run"), body.get("note"),
+                body.get("author", "maintainer"))
+        if action == REQUEUE_ACTION:
+            return requeue_action(project, body)
+        if action == MERGE_ACTION:
+            return merge_action(project, body)
+        if action in LEVERS:
+            return LEVERS[action](project, body)
+        return unit_action(project, action, scope.unit_name)
 
     def act_failed(self, scope, action, failure):
         return action_failure(scope.project, action, failure)

@@ -27,7 +27,6 @@ class UnitActionCases:
         self.assertEqual(argv, ["systemctl", "--user", "restart",
                                 "holophyte-supervise@writer-a"])
         self.assertEqual(run.call_args.kwargs["timeout"], 20)
-        self.assertEqual(body["recorded"], self.run)
         # The row lands before the unit is touched: a human
         # `restart_supervisor` intervention on the store's newest run, its
         # ledger copy naming the unit and the route.

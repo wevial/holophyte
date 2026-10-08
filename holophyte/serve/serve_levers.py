@@ -58,9 +58,8 @@ def pause_action(target, body):
         return 400, {"error": "run must be a positive integer"}
 
     def act(conn, reason):
-        request = store.pause(conn, run_id, reason)
-        return True, f"pause requested for run {run_id}", {
-            "run": run_id, "recorded": request}
+        store.pause(conn, run_id, reason)
+        return True, f"pause requested for run {run_id}", {"run": run_id}
     return lever("pause", target, body, act)
 
 
