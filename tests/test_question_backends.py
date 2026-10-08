@@ -3,8 +3,10 @@
 import io
 import json
 import os
+import signal
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -19,7 +21,7 @@ from holophyte.pr import github
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "questions"
 CRITERIA = ["fix", "question", "unclear"]
 FAKE = f"""#!{sys.executable}
-import json, os, sys, time
+import json, os, subprocess, sys, time
 from pathlib import Path
 here = Path(__file__).resolve().parent
 name = Path(sys.argv[0]).name
@@ -32,6 +34,12 @@ mode = "probe" if '"ready"' in schema else "question"
 with open(here / (name + ".log"), "a") as log:
     log.write(json.dumps(dict(argv=argv, cwd=os.getcwd(), entries=os.listdir("."),
                               schema=schema, mode=mode)) + "\\n")
+detach = here / f"{{name}}.{{mode}}.detach"
+if detach.exists():
+    held = subprocess.Popen([sys.executable, "-c", "import time, sys; "
+                             "time.sleep(float(sys.argv[1]))", detach.read_text()],
+                            start_new_session=True)
+    (here / f"{{name}}.detached.pid").write_text(str(held.pid))
 sleep = here / f"{{name}}.{{mode}}.sleep"
 if sleep.exists():
     time.sleep(float(sleep.read_text()))
@@ -94,6 +102,14 @@ class QuestionBackendTests(unittest.TestCase):
         (self.bin / f"{name}.{mode}.exit").write_text(str(exit_code))
         if sleep is not None:
             (self.bin / f"{name}.{mode}.sleep").write_text(str(sleep))
+
+    def kill_detached(self, name):
+        pid = self.bin / f"{name}.detached.pid"
+        if pid.exists():
+            try:
+                os.kill(int(pid.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
     def calls(self, name):
         log = self.bin / f"{name}.log"
@@ -213,6 +229,34 @@ class QuestionBackendTests(unittest.TestCase):
                                  ("answer", reason))
                 for remote in (printed, "Not logged in", "Unauthorized"):
                     self.assertNotIn(remote, answer.reason)
+
+    def test_timeout_returns_while_a_detached_descendant_holds_the_pipes(self):
+        self.fake("claude", "question", claude_output("fix", 0.9), sleep=30)
+        (self.bin / "claude.question.detach").write_text("30")
+        self.addCleanup(self.kill_detached, "claude")
+        started = time.monotonic()
+        with patch.object(question_cli, "TIMEOUT", 1):
+            answer = questions.ask(thread_mentions.MENTION_INTENT, {"comment": "x"},
+                                   config={"questions": {"backend": "claude"}})
+        self.assertEqual(answer, questions.Failure("timeout"))
+        self.assertTrue((self.bin / "claude.detached.pid").exists())
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_question_key_reaches_neither_cli_when_asked_directly(self):
+        for backend in ("claude", "codex"):
+            for key_env in ("TYPESAFE_API_KEY", "OTHER_QUESTION_KEY"):
+                key = f"{backend}-{key_env}-sentinel"
+                with self.subTest(backend=backend, key_env=key_env), \
+                        patch.dict(os.environ, {key_env: key}):
+                    self.fake(backend, "question", claude_output("question", 0.9)
+                              if backend == "claude" else codex_output("question", 0.9))
+                    answer = questions.ask(
+                        thread_mentions.MENTION_INTENT, {"comment": f"Use {key}?"},
+                        config={"questions": {"backend": backend, "key_env": key_env}})
+                    self.assertEqual(answer, questions.Answer("question", 0.9))
+                    argv = self.calls(backend)[-1]["argv"]
+                    self.assertIn("Use ", argv[-1])
+                    self.assertNotIn(key, json.dumps(argv))
 
     def test_registered_secret_reaches_neither_cli_argv_nor_schema(self):
         secret = "question-backend-sentinel"

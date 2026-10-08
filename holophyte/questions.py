@@ -135,6 +135,7 @@ def ask(question, state, *, config, conn=None, run_id=None):
         options = settings(config)
     except ValueError:
         return Failure("invalid_config")
+    redact.register_values([os.environ.get(options["key_env"], "")])
     from holophyte import question_cli
 
     route = question_cli.active_route(options, config, conn, run_id)
@@ -191,7 +192,6 @@ def ask_jev(question, state, config, options):
     key = os.environ.get(options["key_env"], "")
     if not key:
         return Failure("missing_key: " + options["key_env"]), {}
-    redact.register_values([key])
     secrets = redact.known_secrets(config)
     body = safe(
         dict(

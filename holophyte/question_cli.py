@@ -89,7 +89,9 @@ def launch(argv, cwd):
     except subprocess.TimeoutExpired:
         with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-        process.communicate()
+        process.wait()
+        process.stdout.close()
+        process.stderr.close()
         return None, ""
     return process.returncode, stdout.decode(errors="replace")
 
