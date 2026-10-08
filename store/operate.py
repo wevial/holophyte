@@ -93,7 +93,7 @@ def is_gate_conflict(reason):
         and " conflicted on: " in reason
 
 
-def requeue(conn, ticket_id, note, now=None):
+def requeue(conn, ticket_id, note, now=None, source="human"):
     """Walk a failed, rejected or aborted ticket back to ready; return its last run."""
     with _transaction(conn):
         row = conn.execute(
@@ -114,7 +114,8 @@ def requeue(conn, ticket_id, note, now=None):
                if last_run_id is not None else None)
         unreproduced = _requeue_admits(identifier, status, last_run_id, run,
                                        _aborted(conn, last_run_id))
-        record_intervention(conn, last_run_id, "requeue", note, now=now)
+        record_intervention(conn, last_run_id, "requeue", note, source=source,
+                            now=now)
         if unreproduced:
             release(conn, last_run_id, "abandoned",
                     "not reproduced; requeued for another attempt", now=now)

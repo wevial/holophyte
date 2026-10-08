@@ -400,6 +400,9 @@ Each module, one line:
 - `holophyte/questions.py` — typed choice requests and safe service failures.
 - `holophyte/question_cli.py` — typed questions through the `claude` or `codex`
   CLI: prompt, schema, parsing, usage, and the probe with its fallback.
+- `holophyte/loop/failure_triage.py` — a failed run's cause question
+  (`infra`, `code` or `spec`) after close-out, its `failure_triage` event, and
+  the one factory requeue a confident `infra` answer earns.
 - `holophyte/babysit/thread_findings.py` — structured PR findings, bounded originals,
   and read-only normalization of legacy thread rows.
 - `holophyte/babysit/babysit_steps.py` — records PR babysitting step changes without

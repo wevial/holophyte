@@ -548,7 +548,8 @@ What needs the operator, computed where the store is:
   {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
    "pr_url": null, "level": "attention"},
   {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "attempt": 2,
-   "pr_url": null, "level": "attention"},
+   "pr_url": null, "triage": {"choice": "infra", "confidence": 0.92, "backend": "claude",
+   "model": "sonnet", "requeued": true}, "level": "attention"},
   {"kind": "supervisor", "state": "stale", "heartbeat_age_ms": 1200000, "level": "attention"}
 ]}
 ```
@@ -575,7 +576,12 @@ title (`runs.prSeenChecks`, `prSeenReview`, `prSeenThreads`,
 `prSeenTitle`); all four facts are null for a run never polled. The
 item's own `title` is the ticket's title, which the console shows when
 `pr.title` is null. A `failed` item's `attempt` is the run's 1-based
-attempt number. Every item that names a `run` carries its `pr_url`: the
+attempt number. Its `triage` is the run's cause question under
+`[questions.failures]` (see `docs/config.md`): `choice` (`infra`, `code` or
+`spec`), `confidence`, the `backend` and `model` asked, and `requeued`, true
+when the factory requeued the ticket on that answer; `choice` and
+`confidence` are null when the question failed, and `triage` is null for a
+run never asked. Every item that names a `run` carries its `pr_url`: the
 pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
 null when it opened none, so a console can link the parked question to
 the PR it waits on. `project` is the project path, as on `/status`.

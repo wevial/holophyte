@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 
@@ -359,35 +360,37 @@ class RecentFailedRun:
     prUrl: str | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
+    triage: dict | None = None
+
+
+FAILED_RUN_COLUMNS = (
+    "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
+    " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url, t.boardState,"
+    " (SELECT e.payload FROM runEvents e WHERE e.runId = r.id"
+    "  AND e.kind = 'failure_triage' ORDER BY e.seq DESC LIMIT 1)"
+    " FROM runs r JOIN tickets t ON t.id = r.ticketId")
+
+
+def _failed_run(row):
+    return RecentFailedRun(id=row[0], linearIdentifier=row[1],
+                           outcomeReason=row[2], endedAt=row[3],
+                           ticketStatus=row[4], attempt=row[5],
+                           prUrl=row[6], lastRunId=row[7], activeRunId=row[8],
+                           ticketUrl=row[9], boardState=row[10],
+                           triage=json.loads(row[11]) if row[11] else None)
 
 
 def recent_failed_runs(conn, since_ms):
     rows = conn.execute(
-        "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
-        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url, t.boardState"
-        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE r.outcome = 'failed' AND r.endedAt > ?"
+        FAILED_RUN_COLUMNS + " WHERE r.outcome = 'failed' AND r.endedAt > ?"
         " ORDER BY r.endedAt, r.id", (since_ms,)).fetchall()
-    return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
-                            outcomeReason=row[2], endedAt=row[3],
-                            ticketStatus=row[4], attempt=row[5],
-                            prUrl=row[6], lastRunId=row[7], activeRunId=row[8],
-                            ticketUrl=row[9], boardState=row[10])
-            for row in rows]
+    return [_failed_run(row) for row in rows]
 
 
 def stranded_runs(conn):
     """No window: a failed run's ticket waits in flight for a human however old."""
     rows = conn.execute(
-        "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
-        " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url, t.boardState"
-        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE t.status = 'in_flight' AND t.activeRunId IS NULL"
+        FAILED_RUN_COLUMNS + " WHERE t.status = 'in_flight' AND t.activeRunId IS NULL"
         " AND r.id = t.lastRunId AND r.outcome = 'failed'"
         " ORDER BY r.endedAt, r.id").fetchall()
-    return [RecentFailedRun(id=row[0], linearIdentifier=row[1],
-                            outcomeReason=row[2], endedAt=row[3],
-                            ticketStatus=row[4], attempt=row[5],
-                            prUrl=row[6], lastRunId=row[7], activeRunId=row[8],
-                            ticketUrl=row[9], boardState=row[10])
-            for row in rows]
+    return [_failed_run(row) for row in rows]

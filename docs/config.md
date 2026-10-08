@@ -1391,6 +1391,7 @@ or Codex CLI.
 | `backend_fallback` | Default: none | Backend used when a `claude` or `codex` backend fails its probe; any of the three. Refused beside `jev`. |
 | `fallback_model` | Default: the fallback backend's own `model` default | Model of a CLI fallback. |
 | `fallback_effort` | Default: the fallback backend's own `effort` default | Effort of a CLI fallback. |
+| `failures` | Default: Absent (failed runs are not classified) | Table described under [questions.failures](#questionsfailures) below; set to classify each failed run. |
 
 ```toml
 [questions]
@@ -1439,6 +1440,53 @@ and misses, and exits nonzero below the floor. Unit tests replace the service
 and the CLIs. Run `HOLOPHYTE_LIVE_QUESTIONS=claude` (or `codex`) with
 `tests/test_questions_live.py` on a host where that CLI is signed in before a
 project opts in.
+
+## `[questions.failures]`
+
+The cause question a failed loop run gets right after close-out: `infra` (a
+tool, network, vendor, CI-host or factory-configuration problem outside the
+change), `code` (the change is wrong) or `spec` (the ticket is wrong). With the
+table absent, nothing is asked. A run that parks or that the supervisor sweeps
+is never asked.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `backend` | Default: `claude` | `jev`, `claude` or `codex`, as in `[questions]`; not inherited from it. |
+| `model` | Default: `sonnet` for `claude`, `gpt-6-luna` for `codex` | Model of a CLI backend; refused beside `jev`. |
+| `effort` | Default: `medium` for `claude`, `low` for `codex` | Effort of a CLI backend; refused beside `jev`. |
+| `backend_fallback` | Default: none | Backend used when the backend fails its probe, as in `[questions]`. |
+| `fallback_model` | Default: the fallback backend's own `model` default | Model of a CLI fallback. |
+| `fallback_effort` | Default: the fallback backend's own `effort` default | Effort of a CLI fallback. |
+| `requeue` | Default: `false` | Requeue a confident `infra` failure once, on its preserved branch. |
+| `requeue_confidence` | Default: `0.85` | Confidence floor for that requeue, a number from 0 to 1. |
+
+```toml
+[questions.failures]
+backend = "claude"
+model = "sonnet"
+effort = "medium"
+# Off by default: the answer is recorded and shown, never acted on.
+requeue = true
+requeue_confidence = 0.85
+```
+
+A `jev` backend reads `url` and `key_env` from `[questions]`. The question
+sees the ticket's title, the run's failure reason (its first 2000
+characters), failure kind, outcome class and attempt, and the run's last
+review verdict and findings (their first 700 characters), each redacted. Its
+usage lands in the run's `question` event, and the decision in one detail
+`failure_triage` event whose payload holds `choice`, `confidence`, `backend`,
+`model`, `requeued` and `why`.
+
+The factory requeues only when `requeue` is `true`, the answer is `infra` at
+or above `requeue_confidence`, no earlier run of the ticket was requeued this
+way, and close-out left the ticket `in_flight` with no live run. The requeue
+is the operator's `--requeue` with a `factory` intervention whose note starts
+`failure triage:`; the next claim reuses the leftover worktree, so the branch
+survives. A factory requeue is not a human intervention, so a second failure
+escalates to `blocked_on_operator` under the usual strike rule. Every other
+answer, and a question that fails, leaves the run stranded as before, and
+`/attention` shows the classification on its `failed` item.
 
 ## `[story]`
 

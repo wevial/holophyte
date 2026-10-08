@@ -125,6 +125,13 @@ def parked_item(ticket):
             "pr_url": ticket.prUrl, "level": "attention"}
 
 
+def triage_view(triage):
+    if triage is None:
+        return None
+    return {key: triage.get(key) for key in
+            ("choice", "confidence", "backend", "model", "requeued")}
+
+
 def attention(project, now=None, beat_stale_ms=None):
     """Never `critical`, a client's level for a daemon it cannot reach."""
     now = int(time() * 1000) if now is None else now
@@ -158,7 +165,8 @@ def attention(project, now=None, beat_stale_ms=None):
                   "ticket": run.linearIdentifier,
                   "ticket_url": run.ticketUrl, "reason": run.outcomeReason,
                   "ended_ms": run.endedAt, "attempt": run.attempt,
-                  "pr_url": run.prUrl, "level": "attention"}
+                  "pr_url": run.prUrl, "triage": triage_view(run.triage),
+                  "level": "attention"}
                  for run in failed if run.id == run.lastRunId
                  and run.activeRunId is None
                  and run.ticketStatus in ("ready", "in_flight", "blocked_on_operator")
