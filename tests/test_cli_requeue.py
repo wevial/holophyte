@@ -376,6 +376,16 @@ class RelaunchLimitTests(RequeueTarget):
         self.assertEqual(self.requeue_notes()[-1],
                          "forced past 2 relaunches: the lock is stale")
 
+    def test_a_forced_requeue_with_a_blank_diagnosis_is_refused(self):
+        self.relaunched_twice()
+        before = self.interventions()
+
+        with self.assertRaisesRegex(store.RequeueRefused, "diagnosis"):
+            store.requeue(self.conn, self.ticket, "  ", force=True)
+
+        self.assertEqual(self.interventions(), before)
+        self.assertEqual(self.status(), "in_flight")
+
     def test_force_without_approve_or_requeue_is_a_usage_error(self):
         with self.assertRaises(SystemExit) as raised:
             self.cli("--report", "--force")

@@ -125,6 +125,11 @@ def requeue(conn, ticket_id, note, now=None, source="human", force=False):
                     " needs a written diagnosis, not another run: write the"
                     " diagnosis as the note and requeue with --force"
                     ' ("force": true over HTTP)')
+            if not isinstance(note, str) or not note.strip():
+                raise RequeueRefused(
+                    f"{identifier}: a requeue forced past"
+                    f" {len(relaunched)} relaunches carries the written"
+                    " diagnosis as its note; the note is blank")
             note = f"forced past {len(relaunched)} relaunches: {note}"
         record_intervention(conn, last_run_id, "requeue", note, source=source,
                             now=now)

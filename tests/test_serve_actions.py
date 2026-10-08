@@ -298,6 +298,20 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertEqual(code, 400)
         self.assertIn("ticket", body["error"])
 
+    def test_an_unforced_requeue_with_no_note_records_the_console_default(self):
+        self.seed_ended()
+        self.start(self.token_config("actions = true\n"), host="0.0.0.0")
+
+        code, _, body = self.request("POST", "/actions/requeue", self.BEARER,
+                                     body={"ticket": "KO-2"})
+
+        self.assertEqual((code, body["ok"]), (200, True), body)
+        with store.open(str(self.db)) as conn:
+            (note,) = conn.execute(
+                "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
+            ).fetchone()
+        self.assertEqual(note, "requeued from the console")
+
     def test_requeue_after_two_relaunches_is_refused_unless_forced(self):
         self.seed_ended()
         conn = store.open(str(self.db))
@@ -325,6 +339,12 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertIn("--force", body["detail"])
         code, _, body = requeue(force="yes")
         self.assertEqual((code, body), (400, {"error": "force must be true or false"}))
+        for note in ({}, {"note": "  "}):
+            code, _, body = self.request(
+                "POST", "/actions/requeue", self.BEARER,
+                body={"ticket": "KO-2", "force": True, **note})
+            self.assertEqual(code, 400, body)
+            self.assertIn("note", body["error"])
         with store.open(str(self.db)) as conn:
             self.assertEqual(list(conn.iterdump()), before)
 

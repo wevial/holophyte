@@ -117,8 +117,9 @@ alone.
 Body: a JSON object with `ticket` (required, the Linear identifier, `KO-n`),
 `note` (optional, why the ticket goes back in the queue; a fixed note
 saying it came from the console when absent) and `force` (optional
-boolean, default `false`; `true` is `--force`). The daemon does exactly what
-`factory.py PROJECT --requeue KO-n --note TEXT` does: the store's one
+boolean, default `false`; `true` is `--force` and requires a non-blank
+`note`, the written diagnosis, with no console default). The daemon does
+exactly what `factory.py PROJECT --requeue KO-n --note TEXT` does: the store's one
 `requeue` transaction, a `requeue` interventions row carrying the note on
 the failed run and the ticket walked to `ready`. The reply carries
 `ticket` and, on success, `run`, the failed run it was requeued after.
@@ -130,9 +131,8 @@ acted on it), is 200 with `ok: false` and the refusal in `detail`; nothing
 is written. The relaunch refusal asks for a diagnosis: `"force": true`
 with the diagnosis as the `note` requeues the ticket anyway, its note
 recorded as `forced past N relaunches: NOTE`. A body that is not a JSON
-object, one with no `ticket`, or a `force` that is not a boolean is 400
-naming it.
-A project with no store is 503.
+object, one with no `ticket`, a `force` that is not a boolean, or
+`"force": true` without a non-blank `note` is 400 naming it. A project with no store is 503.
 
 ## `POST /actions/merge`
 
@@ -336,7 +336,7 @@ reading GitHub.
 
 | Status | When |
 | --- | --- |
-| 400 | the body is not a JSON object, or `requeue` has no `ticket` or a non-boolean `force`, or `merge` has no positive integer `run`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value; a `patch` that is not an object, or with a key the daemon cannot apply |
+| 400 | the body is not a JSON object, or `requeue` has no `ticket`, a non-boolean `force`, or `"force": true` without a non-blank `note`, or `merge` has no positive integer `run`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value; a `patch` that is not an object, or with a key the daemon cannot apply |
 | 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
 | 404 | `[serve] actions` is not `true`, or the action is not one of this page's; `/config` without `[serve] config_edit = true`; on a host daemon, `restart-supervisor`, a project name outside the registry, and any root action but `run-sweep` |
 | 405 | `POST` on any path outside `/actions/`; `PUT` on any path but `/config` |
