@@ -51,26 +51,21 @@ sys.exit(int(code.read_text()) if code.exists() else 0)
 """
 
 
-def claude_output(choice, confidence, result="", usage=(), cost=None):
+def claude_output(choice, confidence, result=""):
     document = json.loads((FIXTURES / "claude_answer.json").read_text())
     document["structured_output"] = {"choice": choice, "confidence": confidence}
     document["result"] = result or json.dumps(document["structured_output"])
-    document["usage"].update(usage)
-    if cost is not None:
-        document["total_cost_usd"] = cost
     return json.dumps(document)
 
 
-def codex_output(choice, confidence, usage=()):
+def codex_output(choice, confidence):
     lines = (FIXTURES / "codex_answer.jsonl").read_text().splitlines()
     for index, line in enumerate(lines):
         event = json.loads(line)
         if event.get("item", {}).get("type") == "agent_message":
             event["item"]["text"] = json.dumps(
                 {"choice": choice, "confidence": confidence})
-        if event["type"] == "turn.completed":
-            event["usage"].update(usage)
-        lines[index] = json.dumps(event)
+            lines[index] = json.dumps(event)
     return "\n".join(lines) + "\n"
 
 
