@@ -151,7 +151,7 @@ def triage(thread, ticket_title, config, conn=None, run_id=None):
     )
 
 
-def triaged(threads, ticket, config, conn=None, run_id=None):
+def triaged(threads, ticket, config, conn, run_id):
     from holophyte.babysit.maintainer_notes import is_note
     from holophyte.config.config_tables import MERGE_KEYS
 
