@@ -1,5 +1,6 @@
 """Typed questions through fake `claude` and `codex` executables on PATH."""
 
+import contextlib
 import io
 import json
 import os
@@ -106,10 +107,8 @@ class QuestionBackendTests(unittest.TestCase):
     def kill_detached(self, name):
         pid = self.bin / f"{name}.detached.pid"
         if pid.exists():
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(int(pid.read_text()), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
 
     def calls(self, name):
         log = self.bin / f"{name}.log"
