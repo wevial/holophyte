@@ -6,6 +6,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -22,6 +23,7 @@ from loop_fixture import BRANCH, LoopFixture, MergeModeFixture  # noqa: E402
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte import redact  # noqa: E402 - after the sys.path insert above
+from holophyte.board.projection import close_out_failure  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.loop.failure_triage import triage_failure  # noqa: E402
 from holophyte.serve.views import attention  # noqa: E402
@@ -137,6 +139,34 @@ class FailureTriageLoopTests(LoopFixture):
         (payload,) = self.triage()
         self.assertEqual((payload["requeued"], payload["why"]),
                          (False, "route_down"))
+
+    def test_a_run_swept_before_a_store_write_is_not_triaged(self):
+        self.configure(REQUEUE)
+        self.claude.answer("infra", 0.95)
+        real = store.set_review_round_cap
+
+        def swept_first(conn, run_id, cap):
+            other = store.open(self.db)
+            try:
+                (ticket_id,) = other.execute(
+                    "SELECT ticketId FROM runs WHERE id = ?", (run_id,)).fetchone()
+                close_out_failure(
+                    self.project, other, run_id, ticket_id,
+                    "swept by the supervisor in phase working: time_box",
+                    failure_kind="swept")
+            finally:
+                other.close()
+            return real(conn, run_id, cap)
+
+        with patch.object(store, "set_review_round_cap", swept_first):
+            self.loop(*FAILS_A_FIX_ROUND, guard=question_guard())
+
+        self.assertEqual(self.read("SELECT failureKind FROM runs"), [("swept",)])
+        self.assertEqual(self.ticket_status(), [("in_flight",)])
+        self.assertEqual(self.interventions(), [])
+        self.assertEqual(self.triage(), [])
+        self.assertEqual([call for call in self.claude.calls()
+                          if call["mode"] == "question"], [])
 
     def test_without_the_table_nothing_is_asked_or_recorded(self):
         self.claude.answer("infra", 0.95)

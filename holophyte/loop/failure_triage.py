@@ -29,10 +29,15 @@ NOTE_PREFIX = "failure triage:"
 def triage_failure(target, conn, run_id, ticket_id):
     try:
         options = questions.settings(target.config())["failures"]
-        if options is not None:
+        if options is not None and not swept(conn, run_id):
             decide(target.config(), options, conn, run_id, ticket_id)
     except Exception as error:
         print(f"[holo2] failure triage skipped: {error}")
+
+
+def swept(conn, run_id):
+    return conn.execute("SELECT failureKind FROM runs WHERE id = ?",
+                        (run_id,)).fetchone() == ("swept",)
 
 
 def decide(config, options, conn, run_id, ticket_id):
