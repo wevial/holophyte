@@ -115,17 +115,16 @@ def requeue(conn, ticket_id, note, now=None, source="human", force=False):
         unreproduced = _requeue_admits(identifier, status, last_run_id, run,
                                        _aborted(conn, last_run_id))
         relaunched = _relaunches(conn, ticket_id)
-        if len(relaunched) >= RELAUNCH_LIMIT and not force:
-            newest, older = relaunched[0], relaunched[1]
-            raise RequeueRefused(
-                f"{identifier} was relaunched {len(relaunched)} times against"
-                f" one failure since a human last acted on it (runs {older}"
-                f" and {newest} each ended failed or rejected and was"
-                " requeued); another"
-                " relaunch needs a written diagnosis, not another run: write"
-                " the diagnosis as the note and requeue with --force"
-                ' ("force": true over HTTP)')
         if len(relaunched) >= RELAUNCH_LIMIT:
+            if not force:
+                raise RequeueRefused(
+                    f"{identifier} was relaunched {len(relaunched)} times"
+                    " against one failure since a human last acted on it"
+                    f" (runs {relaunched[1]} and {relaunched[0]} each ended"
+                    " failed or rejected and was requeued); another relaunch"
+                    " needs a written diagnosis, not another run: write the"
+                    " diagnosis as the note and requeue with --force"
+                    ' ("force": true over HTTP)')
             note = f"forced past {len(relaunched)} relaunches: {note}"
         record_intervention(conn, last_run_id, "requeue", note, source=source,
                             now=now)
