@@ -432,7 +432,7 @@ seven, in this order, each its `name`, whether it holds (`ok`) and a
 When `parked` or `human_approval` fails the daemon asks GitHub nothing:
 the five GitHub facts are `ok: false` with a `detail` saying they were
 not read. `reason` is null when `ready`, else the first failing fact's
-reason, one of `not_parked`, `not_human_approval`,
+reason (a `REVIEW_REQUIRED` review only when no other fact fails), one of `not_parked`, `not_human_approval`,
 `review_not_approved`, `review_bypassable`, `checks_pending`,
 `checks_failing`, `conflicting`, `mergeable_unknown` (GitHub has not
 computed `mergeable` yet), `threads_unresolved`, `head_moved` and
@@ -443,7 +443,8 @@ branch head, null when it was not read. `ticket` and `pr_url` are the
 run's.
 
 `review_bypassable` is a `REVIEW_REQUIRED` review the host's GitHub user
-may bypass. On that decision the daemon reads main's rules
+may bypass. On that decision, and only once every other fact holds, the
+daemon reads main's rules
 (`GET repos/OWNER/REPO/rules/branches/main`) and, for each `pull_request`
 rule that asks for a review (one or more approving reviews, a code
 owner's review, approval of the most recent push, or a non-empty
@@ -457,10 +458,12 @@ asks for and the bypass value:
 GitHub's review decision is REVIEW_REQUIRED; the host's GitHub user may bypass it: ruleset human-review asks 1 approving review, current_user_can_bypass pull_requests_only
 ```
 
-Any other failing fact is the answer's `reason` before it, so checks,
-conflicts, open threads and a moved head still read as themselves. The
-bypass fails closed: an unreadable rules or ruleset answer, a value that
-cannot be made out, a ruleset answering `never` or anything else, or no
+While any other fact fails the bypass is not read and that fact is the
+answer's `reason`, so checks, conflicts, open threads and a moved head
+read as themselves before a `REVIEW_REQUIRED` review, bypassable or not.
+The bypass fails closed: an unreadable rules or ruleset answer, a rule or
+value that cannot be made out, a ruleset answering `never` or anything
+else, or no
 ruleset asking for a review (classic branch protection) keeps
 `review_not_approved`, its `detail` ending `no bypass: ` and what stopped
 it. A `CHANGES_REQUESTED` review is never bypassable.

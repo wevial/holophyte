@@ -386,7 +386,12 @@ class BypassMergeTests(MergeCase):
                 ("no bypass answer", lambda: self.github.rulesets.update(
                     {24: {"name": "human-review"}}),
                  "ruleset human-review answers current_user_can_bypass"
-                 " nothing")):
+                 " nothing"),
+                ("a rule with no type", lambda: setattr(
+                    self.github, "rules", [*self.github.rules, {
+                        "ruleset_id": 25, "parameters": {
+                            "required_approving_review_count": 1}}]),
+                 "a rule on main cannot be made out")):
             with self.subTest(case=case):
                 self.bypassable()
                 change()
@@ -394,7 +399,7 @@ class BypassMergeTests(MergeCase):
                                            bypass_review=True)
                 self.assertIn(f"no bypass: {stopped}", body["detail"])
 
-    def test_every_other_gap_still_blocks_a_bypassable_review(self):
+    def test_every_other_gap_blocks_a_bypassable_review_unread(self):
         def push():
             self.commit("pushed after the park")
             git(self.target, "push", "origin", BRANCH)
@@ -412,7 +417,11 @@ class BypassMergeTests(MergeCase):
             with self.subTest(reason=reason):
                 self.bypassable()
                 change()
+                self.github.calls.clear()
                 self.assert_refused(reason, bypass_review=True)
+                self.assertEqual(self.github.rules_reads, 1)
+                self.assertEqual([call for call in self.github.calls
+                                  if "/rulesets/" in call[-1]], [])
 
     def test_a_bypass_flag_that_is_not_a_boolean_is_400_and_asks_nothing(
             self):

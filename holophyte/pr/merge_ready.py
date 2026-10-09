@@ -26,12 +26,13 @@ class Readiness:
     park: store.read.ParkFacts | None
     facts: tuple
     head_sha: str | None
+    yielding: frozenset = frozenset()
 
     @property
     def failing(self):
         failing = [fact for fact in self.facts if not fact[1]]
         return next((fact for fact in failing
-                     if fact[3] != REVIEW_BYPASSABLE),
+                     if fact[0] not in self.yielding),
                     failing[0] if failing else None)
 
     @property
@@ -166,7 +167,9 @@ def _review_rulesets(rules):
         raise NoBypass("the rules on main cannot be made out")
     asking = {}
     for rule in rules:
-        if not isinstance(rule, dict) or rule.get("type") != "pull_request":
+        if not isinstance(rule, dict) or not isinstance(rule.get("type"), str):
+            raise NoBypass("a rule on main cannot be made out")
+        if rule["type"] != "pull_request":
             continue
         asked = _asked_reviews(rule)
         ruleset = rule.get("ruleset_id")
@@ -223,11 +226,17 @@ def _github_facts(project, park, reads):
                  UNREADABLE) for name, _ in GITHUB_FACTS]
     facts = [(name, reason is None, detail, reason) for name, check
              in GITHUB_FACTS for detail, reason in [check(park, reads)]]
-    if (reads.state.review or "").upper() != REVIEW_REQUIRED:
+    others_hold = all(ok for name, ok, _, _ in facts if name != REVIEW_FACT)
+    if not _review_required(reads) or not others_hold:
         return facts
     detail, reason = _review_bypass(project, park)
     return [(name, False, detail, reason) if name == REVIEW_FACT
             else (name, *rest) for name, *rest in facts]
+
+
+def _review_required(reads):
+    return reads is not None and reads.state is not None \
+        and (reads.state.review or "").upper() == REVIEW_REQUIRED
 
 
 def read_github(project, park):
@@ -256,4 +265,6 @@ def readiness(project, run_id):
         reads = read_github(project, park)
     facts.extend(_github_facts(project, park, reads))
     return Readiness(run_id, park, tuple(facts),
-                     reads.remote if reads is not None else None)
+                     reads.remote if reads is not None else None,
+                     frozenset({REVIEW_FACT}) if _review_required(reads)
+                     else frozenset())
