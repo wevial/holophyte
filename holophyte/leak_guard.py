@@ -145,7 +145,7 @@ def with_findings(verdict, findings):
             + "\n".join(f"- {finding['message']}" for finding in findings))
 
 
-def ticket_problems(repo, text, problems=()):
+def ticket_problems(repo, text, problems):
     """Every problem comes back redacted of the patterns and what they matched."""
     from holophyte.config.project import Project
     from ticket_template import H1_RE, H2_RE
