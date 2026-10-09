@@ -74,7 +74,7 @@ def read_scope(output):
     lines = [line.strip() for line in str(output).splitlines() if line.strip()]
     answer = _ANSWER.fullmatch(lines[-1]) if lines else None
     if answer is not None:
-        return Scope(answer[1], answer[2].strip(), False)
+        return Scope(answer[1], answer[2], False)
     if not any(line.startswith("SCOPE:") for line in lines):
         return _default("the reply has no SCOPE: line")
     return _default(f"the reply's last line is not a scope verdict:"
