@@ -36,6 +36,7 @@ import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
+import holophyte.review.freshness  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
 # from `factory`'s slug rule: an expectation computed by the code under test
@@ -132,6 +133,18 @@ def a_task(n=1):
     return {"id": f"KO-13{n}", "issue_id": f"iss-13{n}", "title": "add a thing",
             "verify": "echo ok", "budget_min": 5, "contracts": [],
             "criteria": ["Given the thing, when it runs, then it works"]}
+
+
+def unverified_main():
+    """`main^{commit}` fails to verify; every other git call is real."""
+    real = holophyte.review.freshness._git
+
+    def fails_verify(repo, *args):
+        if args == ("rev-parse", "--verify", "-q", "main^{commit}"):
+            return False
+        return real(repo, *args)
+
+    return patch.object(holophyte.review.freshness, "_git", fails_verify)
 
 
 # A body `ticket_template.validate()` accepts, in the shape the Linear

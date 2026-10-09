@@ -440,6 +440,8 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
 def _refresh_for(project, conn, task):
     try:
         refresh_main(project, conn=conn)
+        if not freshness.main_verified(project.path):
+            raise InfraFailure(freshness.UNVERIFIED_MAIN)
     except InfraFailure as e:
         freshness.WARNINGS.pop(task["id"], None)
         _UNREFRESHED[task["id"]] = e

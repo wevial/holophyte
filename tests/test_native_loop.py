@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
-from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
+from loop_fixture import VALID_BODY, LoopFixture, unverified_main  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.adjudicate  # noqa: E402
@@ -189,11 +189,12 @@ class NativeLoopTests(LoopFixture):
         self.assertIn("out of date with main", out)
         return self.read("SELECT id FROM tickets")[0][0]
 
-    def sweep(self):
+    def sweep(self, out=None):
         board = UnlistedBoard(self.project, "NAT", self.board.team)
         with closing(open_store(self.project)) as conn:
             return owed(self.project, conn, self.project_id, board, 0,
-                        io.StringIO(), sweep_config(self.project))
+                        io.StringIO() if out is None else out,
+                        sweep_config(self.project))
 
     def notes(self, ticket_id):
         return self.read(f"SELECT kind FROM ticketNotes WHERE ticketId ="
@@ -280,24 +281,13 @@ class NativeLoopTests(LoopFixture):
         self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
         self.assertNotIn(("recheck",), self.notes(ticket_id))
 
-    def unverified_main(self):
-        """`main^{commit}` fails to verify; every other git call is real."""
-        real = holophyte.review.freshness._git
-
-        def fails_verify(repo, *args):
-            if args == ("rev-parse", "--verify", "-q", "main^{commit}"):
-                return False
-            return real(repo, *args)
-
-        return patch.object(holophyte.review.freshness, "_git", fails_verify)
-
     def test_an_unverifiable_main_leaves_a_stale_park_untouched(self):
         ticket_id = self.parked_on_later()
         before = self.notes(ticket_id)
 
         out = io.StringIO()
-        with self.unverified_main(), patch.object(sys, "stdout", out):
-            self.assertEqual(self.sweep(), [])
+        with unverified_main():
+            self.assertEqual(self.sweep(out), [])
 
         self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
         self.assertEqual(self.notes(ticket_id), before)
