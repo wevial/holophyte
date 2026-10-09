@@ -50,6 +50,9 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
+      readyEvent: timelineItems(last: 1, itemTypes: [READY_FOR_REVIEW_EVENT]) {
+        nodes { ... on ReadyForReviewEvent { createdAt } }
+      }
       id isDraft state merged headRefOid mergeable mergeCommit { oid } updatedAt title
       reviewDecision
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
@@ -219,6 +222,7 @@ def pr_state(target, pull):
     comments = pull_comments(target, pull, first_page, _pull_request_page)
     threads.extend(conversation_threads(target, pull, comments))
     runs, required = _check_reads(target, pull, first_page.get("headRefOid"))
+    runs = _started_since_ready(runs, first_page)
     if runs is not None:
         try:
             runs += status_contexts_of(target, pull, first_page, graphql)
@@ -399,6 +403,25 @@ def _iso_ms(text):
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return int(parsed.timestamp() * 1000)
+
+
+def _ready_ms(node):
+    events = node.get("readyEvent")
+    events = events.get("nodes") if isinstance(events, dict) else None
+    last = events[-1] if isinstance(events, list) and events else None
+    return _iso_ms(last.get("createdAt")) if isinstance(last, dict) else None
+
+
+def _started_before(run, ready):
+    started = _iso_ms(run.get("started_at")) if isinstance(run, dict) else None
+    return started is not None and started < ready
+
+
+def _started_since_ready(runs, node):
+    ready = _ready_ms(node)
+    if runs is None or ready is None:
+        return runs
+    return [run for run in runs if not _started_before(run, ready)]
 
 
 def _state_of(node, threads, runs, required, awaited=()):

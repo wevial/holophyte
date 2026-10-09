@@ -227,6 +227,63 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual(self._state_with_rest(rest).checks, "success")
 
 
+    READY_AT = "2026-10-09T12:00:00Z"
+    BEFORE_READY = "2026-10-09T11:59:00Z"
+    AFTER_READY = "2026-10-09T12:00:05Z"
+
+    @staticmethod
+    def e2e_required(*runs):
+        """Main's rules require `e2e-ok`; the head's check runs are `runs`."""
+        def rest(target, pull, method, path, payload=None):
+            if "check-runs" in path:
+                return {"total_count": len(runs), "check_runs": list(runs)}
+            if path.endswith("/rules/branches/main"):
+                return [{"type": "required_status_checks", "parameters": {
+                    "required_status_checks": [{"context": "e2e-ok"}]}}]
+            return {}
+        return rest
+
+    @staticmethod
+    def check_run(name, started_at, status="completed", conclusion="success"):
+        return {"name": name, "status": status, "started_at": started_at,
+                "conclusion": conclusion if status == "completed" else None}
+
+    def test_a_required_run_started_before_the_ready_event_is_missing(self):
+        state = self._state_with_rest(self.e2e_required(
+            self.check_run("e2e-ok", self.BEFORE_READY)), ready_at=self.READY_AT)
+        self.assertEqual((state.checks, state.missing_checks),
+                         ("pending", ("e2e-ok",)))
+
+    def test_a_required_run_started_after_the_ready_event_counts(self):
+        running = self._state_with_rest(self.e2e_required(
+            self.check_run("e2e-ok", self.AFTER_READY, status="in_progress")),
+            ready_at=self.READY_AT)
+        self.assertEqual((running.checks, running.missing_checks),
+                         ("pending", ()))
+        done = self._state_with_rest(self.e2e_required(
+            self.check_run("e2e-ok", self.AFTER_READY)), ready_at=self.READY_AT)
+        self.assertEqual(done.checks, "success")
+
+    def test_a_red_unrequired_run_from_before_the_ready_event_is_not_counted(
+            self):
+        state = self._state_with_rest(self.e2e_required(
+            self.check_run("e2e-ok", self.AFTER_READY),
+            self.check_run("lint", self.BEFORE_READY, conclusion="failure")),
+            ready_at=self.READY_AT)
+        self.assertEqual((state.checks, state.failed_checks),
+                         ("success", ()))
+
+    def test_without_a_ready_event_or_a_readable_start_a_run_is_kept(self):
+        early = self._state_with_rest(self.e2e_required(
+            self.check_run("e2e-ok", self.BEFORE_READY)))
+        self.assertEqual(early.checks, "success")
+        for started_at in (None, "not a time"):
+            for ready_at in (None, self.READY_AT):
+                with self.subTest(started_at=started_at, ready_at=ready_at):
+                    state = self._state_with_rest(self.e2e_required(
+                        self.check_run("e2e-ok", started_at)), ready_at=ready_at)
+                    self.assertEqual(state.checks, "success")
+
     def test_a_ticket_edited_during_the_fix_round_is_not_merged(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),

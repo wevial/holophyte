@@ -90,6 +90,12 @@ def _human_approval(project, run_id, park):
     return '[merge] approve is "human"', None
 
 
+def _ready_for_review(park, reads):
+    if reads.state.draft:
+        return "the pull request is a draft", "draft"
+    return "the pull request is ready for review", None
+
+
 def _review(park, reads):
     decision = (reads.state.review or "none").upper()
     return (f"GitHub's review decision is {decision}",
@@ -134,7 +140,8 @@ def _head(park, reads):
 
 
 LOCAL_FACTS = (("parked", _parked), ("human_approval", _human_approval))
-GITHUB_FACTS = ((REVIEW_FACT, _review), ("checks_passed", _checks),
+GITHUB_FACTS = (("ready_for_review", _ready_for_review),
+                (REVIEW_FACT, _review), ("checks_passed", _checks),
                 ("mergeable", _mergeable), ("threads_resolved", _threads),
                 ("head_unchanged", _head))
 

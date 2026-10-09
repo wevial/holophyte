@@ -403,6 +403,7 @@ contents or diff hunks and writes nothing to the repository.
  "facts": [
   {"name": "parked", "ok": true, "detail": "run 52 is KO-219's newest run, parked awaiting_merge_approval on https://github.com/example/repo/pull/31"},
   {"name": "human_approval", "ok": true, "detail": "[merge] approve is \"human\""},
+  {"name": "ready_for_review", "ok": true, "detail": "the pull request is ready for review"},
   {"name": "review_approved", "ok": true, "detail": "GitHub's review decision is APPROVED"},
   {"name": "checks_passed", "ok": false, "detail": "the required checks are pending: vitest"},
   {"name": "mergeable", "ok": true, "detail": "GitHub's mergeable is MERGEABLE"},
@@ -416,24 +417,25 @@ console reads to draw a Merge button or say why not. The same answer
 `POST /actions/merge` ([The daemon's actions](daemon.md#post-actionsmerge))
 computes again at call time before it releases anything; nothing is
 cached. `ready` is true when every fact holds. `facts` is always these
-seven, in this order, each its `name`, whether it holds (`ok`) and a
+eight, in this order, each its `name`, whether it holds (`ok`) and a
 `detail` in words:
 
 | `name` | Holds when |
 | --- | --- |
 | `parked` | the run is its ticket's newest run, in phase `awaiting_merge_approval`, the ticket `blocked_on_operator` with no live run, and the run recorded a pull request and a branch |
 | `human_approval` | `[merge] approve` is `"human"` |
+| `ready_for_review` | the pull request is not a draft (`isDraft: false`); a draft fails with reason `draft` |
 | `review_approved` | GitHub's `reviewDecision` is `APPROVED`; a bypassable review (below) stays `ok: false` |
-| `checks_passed` | the required checks fold to success, as the babysitter folds them |
+| `checks_passed` | the required checks fold to success, as the babysitter folds them; a check run that started before the pull request's latest ready-for-review event is not counted, so a required check whose only run is from the draft reads missing |
 | `mergeable` | GitHub's `mergeable` is `MERGEABLE` |
 | `threads_resolved` | no review thread is open, as the babysitter counts them |
 | `head_unchanged` | the branch head on `origin`, read with `git ls-remote` from the project's checkout, and the pull request's `headRefOid` are the same commit, and it is the run's `candidateSha` or its `approvedSha` |
 
 When `parked` or `human_approval` fails the daemon asks GitHub nothing:
-the five GitHub facts are `ok: false` with a `detail` saying they were
+the six GitHub facts are `ok: false` with a `detail` saying they were
 not read. `reason` is null when `ready`, else the first failing fact's
 reason (a `REVIEW_REQUIRED` review only when no other fact fails), one of `not_parked`, `not_human_approval`,
-`review_not_approved`, `review_bypassable`, `checks_pending`,
+`draft`, `review_not_approved`, `review_bypassable`, `checks_pending`,
 `checks_failing`, `conflicting`, `mergeable_unknown` (GitHub has not
 computed `mergeable` yet), `threads_unresolved`, `head_moved` and
 `github_unreadable` (a GitHub read or the `ls-remote` failed); `detail`

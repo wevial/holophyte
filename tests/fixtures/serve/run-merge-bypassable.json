@@ -18,6 +18,11 @@
       "detail": "[merge] approve is \"human\""
     },
     {
+      "name": "ready_for_review",
+      "ok": true,
+      "detail": "the pull request is ready for review"
+    },
+    {
       "name": "review_approved",
       "ok": false,
       "detail": "GitHub's review decision is REVIEW_REQUIRED; the host's GitHub user may bypass it: ruleset human-review asks 1 approving review, current_user_can_bypass pull_requests_only"

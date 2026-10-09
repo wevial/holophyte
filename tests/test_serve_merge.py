@@ -42,8 +42,9 @@ TOKEN = "merge-action-token"
 BEARER = {"Authorization": f"Bearer {TOKEN}"}
 BRANCH = "task/ko-7-ticket-7"
 URL = "https://github.com/example/repo/pull/31"
-FACT_NAMES = ["parked", "human_approval", "review_approved", "checks_passed",
-              "mergeable", "threads_resolved", "head_unchanged"]
+FACT_NAMES = ["parked", "human_approval", "ready_for_review",
+              "review_approved", "checks_passed", "mergeable",
+              "threads_resolved", "head_unchanged"]
 
 
 def review_rule(ruleset_id, count):
@@ -67,6 +68,7 @@ class FakeGithub:
         self.review, self.checks, self.mergeable = "APPROVED", "SUCCESS", \
             "MERGEABLE"
         self.threads, self.head, self.unreachable = (), None, False
+        self.draft = False
         self.while_reading = None
         self.rules, self.rulesets = [], {}
         self.later_rules_failure, self.rules_reads = None, 0
@@ -80,7 +82,8 @@ class FakeGithub:
                                " <urlopen error [Errno 111] Connection refused>")
         return loop_fixture.MergeModeFixture.pr_state(
             threads=self.threads, checks=self.checks, head=self.head,
-            mergeable=self.mergeable, review=self.review)["data"]
+            mergeable=self.mergeable, review=self.review,
+            draft=self.draft)["data"]
 
     def rest(self, target, pull, method, path, payload=None):
         """`later_rules_failure` is raised by a rules read after the one
@@ -313,6 +316,14 @@ class GithubRefusalTests(MergeCase):
         self.github.unreachable = True
         self.assert_refused("github_unreadable")
 
+    def test_an_otherwise_ready_draft_is_refused_as_draft(self):
+        self.github.draft = True
+        body = self.assert_refused("draft")
+        self.assertEqual(body["detail"], "the pull request is a draft")
+        self.assertEqual(body["facts"][2], {
+            "name": "ready_for_review", "ok": False,
+            "detail": "the pull request is a draft"})
+
 
 class BypassMergeTests(MergeCase):
     """A `REVIEW_REQUIRED` pull request whose only review-asking ruleset,
@@ -435,6 +446,14 @@ class BypassMergeTests(MergeCase):
                 self.assertEqual([call for call in self.github.calls
                                   if "/rulesets/" in call[-1]], [])
 
+    def test_a_bypassable_draft_is_refused_as_draft_reading_no_ruleset(self):
+        self.github.draft = True
+        self.github.calls.clear()
+        self.assert_refused("draft", bypass_review=True)
+        self.assertEqual(self.github.rules_reads, 1)
+        self.assertEqual([call for call in self.github.calls
+                          if "/rulesets/" in call[-1]], [])
+
     def test_a_bypass_flag_that_is_not_a_boolean_is_400_and_asks_nothing(
             self):
         before = dump(self.db)
@@ -501,7 +520,7 @@ class UnparkedTests(MergeCase):
         self.start_actions(approve="auto")
         body = self.assert_refused_unread("not_human_approval")
         self.assertEqual([f["ok"] for f in body["facts"]],
-                         [True] + [False] * 6)
+                         [True] + [False] * 7)
 
 
 class GateTests(MergeCase):
