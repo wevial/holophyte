@@ -83,7 +83,7 @@ class CommitThenExit(Commits):
         return ImplementerOutput("gave up", 1, "fake")
 
 
-class WorkWithUntracked(Commit):
+class WorkWithIgnored(Commit):
     """The implement turn, leaving an ignored file behind."""
 
     def play(self, cwd, turn):
@@ -288,7 +288,7 @@ class TrimLoopTests(TrimFixture):
     def assert_failed_turn_reverted(self, failure, named):
         review = ObservedApproval()
         fake = self.trimmed(
-            WorkWithUntracked("work", "work.txt", lines(60)),
+            WorkWithIgnored("work", "work.txt", lines(60)),
             LeaveDirtyThen(failure, Commit("trim: delete", "work.txt", lines(40))),
             review, task=dict(a_task(), verify="echo verified > keep.txt"))
         self.assert_merged()

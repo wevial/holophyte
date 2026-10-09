@@ -111,6 +111,22 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual(self.git("show", f"{backup}:b.txt"), "branch b\nmain b")
         self.assertIn("<<<<<<<", self.git("show", f"{backup}:a.txt"))
 
+    def test_a_conflicted_merge_with_a_staged_then_re_edited_file_is_aborted(self):
+        def stage_then_re_edit():
+            self.merge_main()
+            self.write("b.txt", "branch b\nmain b\n")
+            self.git("add", "b.txt")
+            self.write("b.txt", "edited after staging\n")
+        self.turn(stage_then_re_edit)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual((self.target / "b.txt").read_text(), "branch b\n")
+        ((kind, summary),) = self.sweep_events()
+        self.assertEqual(kind, "merge_aborted")
+        (backup,) = re.findall(r"\b[0-9a-f]{40}\b", summary)
+        self.assertEqual(self.git("show", f"{backup}:b.txt"), "edited after staging")
+
     def test_a_clean_turn_leaves_head_and_the_record_alone(self):
         self.turn(lambda: None)
 

@@ -251,7 +251,6 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
                   f" on {branch} at {head[:12]}")
         return
     backup = _backup_resolution(project, wt, task_id)
-    sh(["git", "merge", "--abort"], cwd=wt)
     reproduce._discard_leftovers(project, wt)
     _announce(conn, run_id, "merge_aborted",
               f"the turn left the merge on {branch} unresolved in"
