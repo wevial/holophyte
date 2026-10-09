@@ -123,6 +123,10 @@ DOCUMENTED_COLUMNS = {
     "storyDecisions": {"id", "storyId", "ticketId", "kind", "question",
                        "options", "defaultOption", "answer", "answeredBy",
                        "answeredAt", "at"},
+    # A fix commit's FOLLOW_UP line, pending until its run merges.
+    "followUps": {"id", "runId", "ticketId", "commitSha", "kind", "kindGiven",
+                  "text", "path", "line", "fingerprint", "createdAt",
+                  "settledAt", "filedAs", "duplicateOf", "error"},
 }
 
 

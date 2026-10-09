@@ -466,6 +466,8 @@ class AdmissionMigrationTests(unittest.TestCase):
 
 
 STORY_TABLES = ('stories', 'storyChildren', 'witnessResults', 'storyDecisions')
+# Tables newer than version 26, left empty by its migration.
+EMPTY_TABLES = (*STORY_TABLES, 'followUps')
 
 
 class Version26EnumMigrationTests(unittest.TestCase):
@@ -508,7 +510,7 @@ class Version26EnumMigrationTests(unittest.TestCase):
                 for table in dict.fromkeys(t for t, _ in store.enums.CONSTRAINED_COLUMNS
                                            if t not in ('ticketRevisions',
                                                         'gapLayers',
-                                                        *STORY_TABLES))}
+                                                        *EMPTY_TABLES))}
 
     def test_rows_survive_and_each_enum_still_rejects_invalid_inserts(self):
         conn = store.open(self.path)
@@ -543,8 +545,8 @@ class Version26EnumMigrationTests(unittest.TestCase):
                         'linearIssueId': "'new-issue'", 'attempt': '999',
                         'round': '999', 'seq': '999', 'revision': '999'}
         for table, column in store.enums.CONSTRAINED_COLUMNS:
-            if table in STORY_TABLES:
-                continue  # empty; test_store_stories_schema inserts into them
+            if table in EMPTY_TABLES:
+                continue  # empty; their own tests insert into them
             columns = [r[1] for r in conn.execute(f'PRAGMA table_info("{table}")')]
             expressions = ["?" if c == column else replacements.get(c, f'"{c}"')
                            for c in columns]
@@ -766,3 +768,40 @@ class RebuildKeepsForeignKeysTests(unittest.TestCase):
         self.addCleanup(raw.close)
         self.assertEqual(raw.execute("PRAGMA journal_mode").fetchone(),
                          ("delete",))
+
+
+class FollowUpsMigrationTests(unittest.TestCase):
+    def test_a_version_41_store_gains_follow_ups_and_keeps_its_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "store.db"
+            conn = store.open(path)
+            project = store.tickets.ensure_project(conn, "team-1", "/repos/h")
+            ticket = store.tickets.mirror_ticket(
+                conn, project, linear_issue_id="issue-1",
+                linear_identifier="KO-1", title="ticket 1")
+            store.claim(conn, project, ticket, now=1_700_000_000_000)
+            before = {table: conn.execute(f"SELECT * FROM {table}").fetchall()
+                      for table in ("projects", "tickets", "runs")}
+            conn.close()
+            raw = sqlite3.connect(path)
+            raw.executescript("DROP TABLE followUps;\nPRAGMA user_version = 41;\n")
+            raw.close()
+
+            conn = store.open(path)
+            self.addCleanup(conn.close)
+
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                             (store.schema.SCHEMA_VERSION,))
+            self.assertEqual(store.schema.READABLE_FROM, 41)
+            self.assertEqual(
+                {table: conn.execute(f"SELECT * FROM {table}").fetchall()
+                 for table in before}, before)
+            conn.execute(
+                "INSERT INTO followUps (runId, ticketId, commitSha, kind,"
+                " kindGiven, text, fingerprint, createdAt)"
+                " VALUES (1, 1, 'c', 'guardrail', 1, 't', 'f', 1)")
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    "INSERT INTO followUps (runId, ticketId, commitSha, kind,"
+                    " kindGiven, text, fingerprint, createdAt)"
+                    " VALUES (1, 1, 'c', 'bogus', 1, 't', 'g', 1)")

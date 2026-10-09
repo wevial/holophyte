@@ -440,6 +440,28 @@ CREATE TABLE IF NOT EXISTS storyDecisions (
     answeredAt    INTEGER,
     at            INTEGER NOT NULL
 );
+
+-- followUps: a fix commit's FOLLOW_UP line, pending until its run merges; a
+-- settled guardrail row is a findings-ledger entry.
+CREATE TABLE IF NOT EXISTS followUps (
+    id          INTEGER PRIMARY KEY,
+    runId       INTEGER NOT NULL REFERENCES runs (id),
+    ticketId    INTEGER NOT NULL REFERENCES tickets (id),
+    commitSha   TEXT    NOT NULL,
+    kind        TEXT    NOT NULL
+        {_enums.check_clause('kind', _enums.FollowUpKind)},
+    kindGiven   INTEGER NOT NULL,
+    text        TEXT    NOT NULL,
+    path        TEXT,
+    line        INTEGER,
+    fingerprint TEXT    NOT NULL,
+    createdAt   INTEGER NOT NULL,
+    settledAt   INTEGER,
+    filedAs     TEXT,
+    duplicateOf TEXT,
+    error       TEXT,
+    UNIQUE (runId, fingerprint)
+);
 """
 
 

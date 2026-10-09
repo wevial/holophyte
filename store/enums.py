@@ -218,6 +218,11 @@ class GapFinder(str, Enum):
     WITNESS = 'witness'
 
 
+class FollowUpKind(str, Enum):
+    FEATURE = 'feature'
+    GUARDRAIL = 'guardrail'
+
+
 # Line breaks are part of the existing sqlite_master SQL contract.
 _WRAPPING = {
     TicketStatus: {4: 26},
@@ -256,6 +261,7 @@ CONSTRAINED_COLUMNS = {
     ('witnessResults', 'redKind'): RedKind,
     ('witnessResults', 'verifier'): WitnessVerifier,
     ('storyDecisions', 'kind'): DecisionKind,
+    ('followUps', 'kind'): FollowUpKind,
 }
 
 

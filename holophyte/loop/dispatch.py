@@ -17,6 +17,7 @@ from holophyte.board.projection import (
 from holophyte.host.supervisor import linear_budget_low, sweep
 from holophyte.host.sweep_report import SWEEP_HINT, sweep_lines
 from holophyte.loop.failure_triage import triage_failure
+from holophyte.loop.follow_ups import settle as settle_follow_ups
 from holophyte.loop.gates import MergeParked, RunFailure, outcome_class_of
 from holophyte.redact import safe_print as print
 from holophyte.review.findings import refresh_findings
@@ -162,6 +163,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
         elif merged:
             release_run(conn, run_id, True,
                         merge_sha=merged if isinstance(merged, str) else None)
+            settle_follow_ups(target, conn, run_id)
             mirror_status(conn, ticket_id, "merged", provider)
             release_lease_label(target, conn, ticket_id, provider, run_id)
             if refresh:

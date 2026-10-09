@@ -20,6 +20,11 @@ for the operator.
 * On review findings, adjudicate each one in the fix commit's message:
   `ADDRESS` (fix now), `FOLLOW_UP` (valid, out of scope) or `DECLINE` (with
   the reason). Fix only the `ADDRESS` items. The factory records the rounds.
+  Write each `FOLLOW_UP` as one unwrapped line,
+  `FOLLOW_UP(feature): TEXT @ PATH:LINE` or
+  `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` (the tail optional): when the run
+  merges, a feature becomes a Backlog draft and a guardrail a findings-ledger
+  row.
 * Commit messages carry no AI attribution or co-author lines.
 * A reviewer changes nothing, and no agent reviews its own candidate.
 

@@ -9,6 +9,7 @@ from holophyte.agents.session_arms import select_arm
 from holophyte.config.checks import check_command_path
 from holophyte.config.config_tables import loop_config
 from holophyte.config.reader import config_table
+from holophyte.loop.follow_ups import capture as capture_follow_ups
 from holophyte.loop.gates import sh
 
 
@@ -55,7 +56,15 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
         'ADDRESS items and commit. Never amend, rebase or squash commits '
         'already on the branch: the factory only fast-forwards it. A '
         'finding that asks for that is DECLINE for that reason; fix '
-        'anything still wrong at HEAD in a new commit.')
+        'anything still wrong at HEAD in a new commit.\n\n'
+        'Write each FOLLOW_UP as one unwrapped line of the commit message, '
+        'in one of two forms:\n'
+        'FOLLOW_UP(feature): TEXT @ PATH:LINE\n'
+        'FOLLOW_UP(guardrail): TEXT @ PATH:LINE\n'
+        'feature is a capability or behavior change for a later ticket; '
+        'guardrail is a check, test, prompt rule or review rule that would '
+        'catch this class of problem next time. The " @ PATH:LINE" tail is '
+        'optional, and so is ":LINE" within it.')
     fresh = ('A reviewer left findings on your work. The ticket you '
              'are held to, acceptance criteria included:\n\n'
              f'{ticket}\n\n' + findings)
@@ -86,4 +95,6 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
     if retry:
         check_cap(target, conn, run_id, budget_min, sha)
         output, timed_out = timed(*args, fresh)
+    if conn is not None:
+        capture_follow_ups(conn, run_id, wt, sha)
     return output, timed_out

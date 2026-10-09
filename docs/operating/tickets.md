@@ -120,7 +120,12 @@ move its tickets in Linear.
 
 Every run leaves a comment on its ticket: the rounds, their findings, the
 adjudications (`ADDRESS`, `FOLLOW_UP`, `DECLINE`), and any operator step
-taken after the merge with its time. The store holds the rows;
+taken after the merge with its time. A fix commit writes each `FOLLOW_UP`
+as one unwrapped line, `FOLLOW_UP(feature): TEXT @ PATH:LINE` or
+`FOLLOW_UP(guardrail): TEXT @ PATH:LINE`, the ` @ PATH:LINE` tail optional;
+when the run merges, a feature is filed as a `Draft follow-up:` ticket in
+Backlog, unless an open draft already has its fingerprint, and a guardrail
+is kept as a findings-ledger row in the store's `followUps` table. The store holds the rows;
 `FINDINGS.md`, in a project that opts in, renders the window; the ledger is
 the narrative. A contract
 revision is recorded there too, with what was wrong and why, so a rerun's
