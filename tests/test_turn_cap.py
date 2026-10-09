@@ -17,6 +17,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     CommitThenTimeout,
+    IdleThenTimeout,
     LoopFixture,
     StubProvider,
     a_task,
@@ -76,6 +77,21 @@ class TurnCapLoopTests(LoopFixture):
             " = 20) under a 90 min box; work kept on "), reason)
         self.assertEqual(self.timeouts(), [
             {"role": "implement", "limit": "turn_cap", "seconds": 1200}])
+
+    def test_an_empty_turn_cap_timeout_discards_the_branch_and_names_the_cap(self):
+        self.configure("[agents]\nturn_cap_min = 20\n")
+
+        self.loop(IdleThenTimeout("nothing yet"),
+                  provider=StubProvider(dict(a_task(), budget_min=90)))
+
+        ((kind, reason),) = self.read(
+            "SELECT failureKind, outcomeReason FROM runs")
+        self.assertEqual(kind, "budget")
+        self.assertEqual(reason, (
+            "implementer made no commits; the empty branch and worktree were"
+            " discarded; the turn exceeded the 1200 s turn cap ([agents]"
+            " turn_cap_min = 20) under a 90 min box"))
+        self.assertFalse((self.worktrees / "ko-131-add-a-thing").exists())
 
     def test_a_time_box_timeout_names_the_box(self):
         self.loop(CommitThenTimeout("late work"),

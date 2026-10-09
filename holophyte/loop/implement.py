@@ -321,14 +321,16 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         print(f"[holo2] implementer made no commits for: {task}")
         _record_implementer_output(conn, run_id, out,
                                    known_secrets(project.config()))
+        fired = (f"; the turn exceeded the "
+                 f"{_limit_text(project, limit, budget_min)}" if timed_out else "")
         if fresh:
             sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
             sh(["git", "branch", "-D", branch], project.path)
             raise RunFailure("implementer made no commits; the empty branch"
-                             " and worktree were discarded",
+                             f" and worktree were discarded{fired}",
                              "budget" if timed_out else "no_commits")
         raise RunFailure(f"implementer made no new commits; preserved work"
-                         f" kept on {branch} at {start_sha[:12]}",
+                         f" kept on {branch} at {start_sha[:12]}{fired}",
                          "budget" if timed_out else "no_commits")
     if head == start_sha:
         note = (f"candidate carried from a prior run; implementer added"
