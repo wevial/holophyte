@@ -215,11 +215,12 @@ defaults to the review container on the reviewer's model pair. It sees the items
 as `F1`, `F2` and so on and replies with `MERGE: Fa INTO Fb — reason` lines,
 one `ORDER: Fx, Fy, ...` line and the final line `CONSOLIDATED`. The factory
 applies the reply itself: a merge keeps the higher severity, the stronger
-evidence, both reviewers and both messages; ids missing from `ORDER` follow in
+evidence, both reviewers and both messages, a message merged from another
+location prefixed with its `PATH:LINE`; ids missing from `ORDER` follow in
 their pass-1 order; a line naming an unknown id, merging an item into itself,
 closing a cycle, or a second `ORDER` line is set aside. A failed route or a
 reply without `CONSOLIDATED` hands on the pass-1 list and the run goes on; the
-seat has no fallback and no startup probe.
+seat has no fallback, no startup probe and no startup check.
 
 Every blocking item goes to the fix turn, and of the concerns the first three
 in the final order; the rest are held, and on a round that approves every
@@ -227,7 +228,8 @@ concern is held. The fix turn gets one numbered list, each entry giving its
 location, severity, evidence and reviewers, a concern marked to be answered
 ADDRESS, FOLLOW_UP or DECLINE and never blocking. Each such round records a
 `consolidation` detail event with `round`, `pass1_in`, `pass1_out`, `pass2`
-(`merged`, `unchanged`, `skipped`, `unavailable` or `malformed`), `merges`
+(`merged` when pass 2 applied a merge, `unchanged` when it applied none,
+`skipped`, `unavailable` or `malformed`), `merges`
 (`from`, `into`, `reason`), `ignored`, `sent_concerns` and `held_concerns`, and
 the held concerns go into one ledger note. The `adversary_round` event and the
 `reviewRounds` row keep each reviewer's raw findings.
@@ -241,7 +243,8 @@ update it. Under `mode = "local"` the ledger note is the record.
 A concern, sent or held, whose path matches `BASE_HIGH_PATHS` or
 `[review] high_paths` is raised once per run, however many passes report it
 again: a ledger note starting `Concern on a high-blast-radius path:` and a
-`concern_raised` detail event.
+`concern_raised` detail event. The rule reads each concern as the adversary
+reported it, before any merge.
 
 ## PR rounds
 

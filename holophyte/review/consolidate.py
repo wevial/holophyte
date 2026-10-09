@@ -54,6 +54,7 @@ def _item(finding, found_by, evidence, order):
             "severity": severity if severity in SEVERITIES else "p2",
             "evidence": evidence if evidence in EVIDENCE else "concern",
             "found_by": [found_by], "messages": [_body(finding)],
+            "places": [(finding["path"], finding.get("line") or None)],
             "order": order}
 
 
@@ -82,6 +83,7 @@ def _absorb(into, other, messages):
                         if who in into["found_by"] + other["found_by"]]
     if messages:
         into["messages"] = into["messages"] + other["messages"]
+        into["places"] = into["places"] + other["places"]
 
 
 def _rank(item):
@@ -115,20 +117,30 @@ def exact(found):
     return ordered(merged)
 
 
-def location(item):
-    if item["path"].startswith(UNPARSED_PATH):
+def _where(path, line):
+    if path.startswith(UNPARSED_PATH):
         return "(no location)"
-    return f"{item['path']}:{item['line']}" if item["line"] else item["path"]
+    return f"{path}:{line}" if line else path
+
+
+def location(item):
+    return _where(item["path"], item["line"])
+
+
+def _texts(item):
+    return [message if tuple(place) == _place(item)
+            else f"{_where(*place)}: {message}"
+            for message, place in zip(item["messages"], item["places"])]
 
 
 def _entry(n, item, prefix):
     head = (f"{prefix}{n}. {location(item)} [{item['severity']}] evidence "
             f"{item['evidence']}, found by {' and '.join(item['found_by'])}")
-    if concern(item):
+    if concern(item) and not prefix:
         head += (" -- a concern: answer it ADDRESS, FOLLOW_UP or DECLINE; "
                  "it never blocks")
     lines = [head]
-    for message in item["messages"]:
+    for message in _texts(item):
         lines += ["    " + line for line in message.splitlines() if line.strip()]
     return "\n".join(lines)
 
@@ -209,7 +221,12 @@ def apply(merged, reply):
 def second_pass(merged, ask):
     try:
         reply = ask(brief(merged))
-    except (InfraFailure, subprocess.TimeoutExpired, OSError) as failure:
+        failure = ("timed out" if getattr(reply, "timed_out", False) else
+                   getattr(reply, "exit_code", 0) and
+                   f"exited {reply.exit_code}")
+    except (InfraFailure, subprocess.TimeoutExpired, OSError) as failed:
+        failure = failed
+    if failure:
         print(f"[holo2] consolidator route failed ({failure}); "
               "the fix turn gets the exact merge")
         return merged, {"pass2": "unavailable", "merges": [], "ignored": []}
@@ -259,7 +276,7 @@ def adversary_findings(conn, run_id, rnd):
 def _recorded(item, rnd):
     return {"path": item["path"], "line": item["line"],
             "severity": item["severity"], "evidence": item["evidence"],
-            "found_by": item["found_by"], "message": "\n".join(item["messages"]),
+            "found_by": item["found_by"], "message": "\n".join(_texts(item)),
             "round": rnd}
 
 
@@ -286,10 +303,10 @@ def bullet(held):
             f"{' '.join(held['message'].split())} (round {held['round']})")
 
 
-def raise_concerns(project, conn, run_id, provider, task_id, rnd, final):
+def raise_concerns(project, conn, run_id, provider, task_id, rnd, found):
     raised = {(event["path"], said(event["message"]))
               for event in _events(conn, run_id, "concern_raised")}
-    for item in filter(concern, final):
+    for item in filter(concern, found):
         record = _recorded(item, rnd)
         key = (item["path"], said(record["message"]))
         pattern = high_path(project, item["path"])
@@ -328,5 +345,5 @@ def handed_on(project, conn, run_id, provider, task_id, rnd, primary,
                "(non-blocking):\n"
                + "\n".join(f"- {bullet(item)}" for item in record["held_concerns"]),
                provider)
-    raise_concerns(project, conn, run_id, provider, task_id, rnd, final)
+    raise_concerns(project, conn, run_id, provider, task_id, rnd, found)
     return fix_list(sent) if fix and sent else None

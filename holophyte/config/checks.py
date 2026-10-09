@@ -125,7 +125,7 @@ def check_agent_commands(project):
     from holophyte.isolation.launcher import route_for
     isolated = route_for(project).backend == "container"
     review_route(project)
-    unused = (() if review_config(project).adversary
+    unused = (("consolidate",) if review_config(project).adversary
               else ("adversary", "consolidate"))
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():

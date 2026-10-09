@@ -84,6 +84,9 @@ class PassTwoTests(unittest.TestCase):
              ["load() returns None", "the caller indexes a None"]))
         self.assertEqual(record["merges"], [
             {"from": "F2", "into": "F1", "reason": "same null return"}])
+        self.assertIn("    load() returns None\n"
+                      "    src/app.py:9: the caller indexes a None",
+                      consolidate.fix_list(final))
         self.assertEqual(record["pass2"], "merged")
 
     def test_unknown_and_self_merges_are_set_aside_and_nothing_weakens(self):
