@@ -140,7 +140,6 @@ def _board(target):
 
 
 def settle_row(conn, row, origin, board_of):
-    """One pending row's route: the board, a duplicate or the ledger."""
     if row.kind == "guardrail":
         store.follow_ups.settle_ledger(conn, row.id)
         return
