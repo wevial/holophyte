@@ -192,11 +192,6 @@ def story_verb(args, target, board, out=None):
 
 
 def _file_story(args, target, board, out):
-    if args.update is not None and not getattr(board, "native", False):
-        print("[holo2] --file-story --update changes a story on a native "
-              "board only; a Linear story's children are edited on Linear",
-              file=out)
-        raise SystemExit(1)
     if not getattr(board, "store_mode", False):
         print("[holo2] --file-story files on a native board or a Linear "
               "board in store mode ([board] mode = \"store\")", file=out)
