@@ -141,6 +141,11 @@ class PushTests(PrivateText, RealGit):
         self.assertIn(f"tests/test_api.py:2 ({KEY})", message)
         self.assertIn("nothing pushed", message)
 
+    def test_a_path_holding_the_match_is_blanked_from_the_refusal(self):
+        self.commit("Add the client test", "tests/build-host.lan.py",
+                    f"URL = '{LEAK}'\n")
+        self.assertIn(f":1 ({KEY})", self.refused_push())
+
     def test_a_match_after_a_form_feed_is_found_on_its_own_line(self):
         self.commit("Add the client test",
                     text=f"# page one\x0cURL = '{LEAK}'\nURL = '{LEAK}'\n")
@@ -326,7 +331,7 @@ class TicketFilingTests(PrivateText, ConfigTestCase):
             status = ticket_template.main(["--repo", str(self.target), str(path)])
         self.assertRefused(status, out.getvalue(), f", line {line},")
 
-    def test_a_backlog_draft_that_matches_is_refused_by_the_store(self):
+    def backlog_refusals(self):
         clean, _ = self.ticket("clean.md", f"- The API lives at {CLEAN}.")
         self.assertEqual(self.cli(clean)[0], 0)
         conn = store.open(str(self.project.store_path))
@@ -344,9 +349,34 @@ class TicketFilingTests(PrivateText, ConfigTestCase):
                           conn, project_id, "NAT-2", text, 1)):
             with self.assertRaises(store.board.FilingRefused) as raised:
                 write()
-            self.assertIn(KEY, str(raised.exception))
             self.assertPrivateAbsent(str(raised.exception))
+            yield str(raised.exception)
         self.assertEqual(self.rows(), filed)
+
+    def test_a_backlog_draft_that_matches_is_refused_by_the_store(self):
+        for refusal in self.backlog_refusals():
+            self.assertIn(KEY, refusal)
+
+    def test_an_unreadable_pattern_list_refuses_a_backlog_draft(self):
+        clean, _ = self.ticket("clean.md", f"- The API lives at {CLEAN}.")
+        self.assertEqual(self.cli(clean)[0], 0)
+        filed = self.rows()
+        self.write_config(NATIVE + "[merge]\nprivate_patterns = '(?i)build-host'\n")
+        conn = store.open(str(self.project.store_path))
+        self.addCleanup(conn.close)
+        (project_id,) = conn.execute("SELECT id FROM projects").fetchone()
+        with self.assertRaises(store.board.FilingRefused) as raised:
+            store.board.file_ticket(conn, project_id, "NAT", clean.read_text(),
+                                    column="backlog")
+        self.assertIn("private_patterns must be a list", str(raised.exception))
+        self.assertPrivateAbsent(str(raised.exception))
+        self.assertEqual(self.rows(), filed)
+
+    def test_a_pattern_blanking_the_refusal_wording_still_refuses_a_draft(self):
+        self.write_config(NATIVE + "[merge]\nprivate_patterns = ['private_patterns',"
+                          r" '(?i)\bbuild-host\.lan\b']" "\n")
+        for refusal in self.backlog_refusals():
+            self.assertNotIn("private_patterns", refusal)
 
 
 class Amend(Commit):
@@ -366,8 +396,8 @@ class ReviewRoundTests(PrivateText, LoopFixture):
             APPROVE,
             Amend(path="tests/test_api.py",
                   body=f"def test_api():\n    URL = '{CLEAN}'\n"),
-            APPROVE, provider=StubProvider(dict(a_task(), verify=(
-                "cat tests/test_api.py && ! grep -q Build tests/test_api.py"))))
+            APPROVE, provider=StubProvider(dict(a_task(),
+                                                verify="cat tests/test_api.py")))
 
         fix_goal = self.last_fake.turns[2].goal
         self.assertIn(f"tests/test_api.py:2 holds text the project does not"

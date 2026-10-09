@@ -24,14 +24,19 @@ class Leak(NamedTuple):
         return f"{self.location} ({KEY} #{self.index})"
 
 
+class PrivateProblem(str):
+    pass
+
+
 class PrivateMatch(InfraFailure):
     def __init__(self, surface, leaks, preserved):
         self.leaks = tuple(leaks)
         named = "; ".join(leak.describe() for leak in self.leaks[:SHOWN])
         if len(self.leaks) > SHOWN:
             named += f"; and {len(self.leaks) - SHOWN} more"
-        super().__init__(f"{surface} holds text the project does not publish:"
-                         f" {named}; {preserved}")
+        super().__init__(redact_values(
+            f"{surface} holds text the project does not publish:"
+            f" {named}; {preserved}"))
 
 
 def patterns(project):
@@ -43,6 +48,11 @@ def _search(compiled, line):
         if found := [match.group() for match in pattern.finditer(line)]:
             register_values(found)
             yield index
+
+
+def _register(compiled, text):
+    register_values([match.group() for pattern in compiled
+                     for match in pattern.finditer(text)])
 
 
 def scan_text(compiled, text):
@@ -96,6 +106,7 @@ def scan_commits(compiled, wt, commits):
                     "--no-prefix", sha)
         for path, number, text in _added_lines(diff, len(parents)):
             for index in _search(compiled, text):
+                _register(compiled, path)
                 yield Leak(f"{path}:{number}", index, path, number)
 
 
@@ -152,7 +163,7 @@ def ticket_problems(repo, text, problems):
     try:
         compiled = patterns(Project.locate(Path(repo).resolve(), adopt=False))
     except SystemExit as refused:
-        return [*problems, str(refused)]
+        return [*problems, PrivateProblem(redact_values(str(refused)))]
     private, section, headings = [], "the preamble", 0
     for number, line in enumerate(text.split("\n"), 1):
         found = list(_search(compiled, line))
@@ -164,7 +175,8 @@ def ticket_problems(repo, text, problems):
             section = "the title"
         private += [f"{section}, line {number}, holds text the project does"
                     f" not publish ({KEY} #{index})" for index in found]
-    return [redact_values(problem) for problem in [*problems, *private]]
+    return ([redact_values(problem) for problem in problems]
+            + [PrivateProblem(redact_values(problem)) for problem in private])
 
 
 def record(conn, run_id, leaks):

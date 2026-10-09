@@ -44,9 +44,9 @@ def ticket_problems(text, repo):
 
 
 def _blocks_filing(problems, column):
-    from holophyte.leak_guard import KEY
-    return bool(problems) and (column != "backlog"
-                               or any(KEY in problem for problem in problems))
+    from holophyte.leak_guard import PrivateProblem
+    return bool(problems) and (column != "backlog" or any(
+        isinstance(problem, PrivateProblem) for problem in problems))
 
 
 def file_ticket(conn, project_id, key, text, column="ready", priority=None,
