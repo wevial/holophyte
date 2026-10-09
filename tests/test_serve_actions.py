@@ -500,6 +500,11 @@ class ActionsTests(UnitActionCases, ServeTestCase):
             ticket = store.read.ticket_by_identifier(conn, "KO-7").id
             project = store.tickets.ensure_project(conn, "team-1", self.target)
             newer = store.claim(conn, project, ticket, now=self.now)
+            for phase in ("working", "verifying", "reviewing", "merge_gate"):
+                store.set_phase(conn, newer, phase)
+            store.park(conn, newer, "awaiting_merge_approval",
+                       pr_url="https://example.test/org/repo/pull/1")
+            store.tickets.transition(conn, ticket, "blocked_on_operator")
         self.assertNotEqual(newer, self.run)
         self.start(self.token_config("actions = true\n"))
         before = self.interventions()
