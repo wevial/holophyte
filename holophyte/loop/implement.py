@@ -347,8 +347,8 @@ def _crashed(project, conn, run_id, out):
 def _retry_crashed(project, conn, run_id, beat_s, wt, branch, task_id, goal,
                    out, deadline, budget_min, limit, start_sha):
     _crashed(project, conn, run_id, out)
-    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    subject = sh(["git", "log", "-1", "--format=%s"], cwd=wt)
+    head, _, subject = sh(["git", "log", "-1", "--format=%H %s"],
+                          cwd=wt).partition(" ")
     wip = (head if head != start_sha
            and subject == _wip_subject("crashed", task_id) else None)
     note = (f"Your previous turn on this task was killed by a signal (exit"
@@ -358,7 +358,7 @@ def _retry_crashed(project, conn, run_id, beat_s, wt, branch, task_id, goal,
             + " Continue the task and commit your work.")
     remaining = deadline - retry_clock()
     _check_run_cap(project, conn, run_id, remaining / (budget_scale(project) * 60),
-                   sh(["git", "rev-parse", "HEAD"], cwd=wt))
+                   head)
     argv, _ = resume_argv(project, conn, run_id)
     out, timed_out = _transport_timed(
         project, conn, run_id, beat_s, wt, budget_min,

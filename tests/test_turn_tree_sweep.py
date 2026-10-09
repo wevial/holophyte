@@ -79,10 +79,7 @@ class TurnTreeSweepTests(SweepTestCase):
             self.write("new.txt", "a file the turn created\n")
         self.turn(edit)
 
-        self.assertEqual(self.git("rev-list", f"{self.tip}..HEAD"),
-                         self.git("rev-parse", "HEAD"))
-        self.assertTrue(self.git("log", "-1", "--format=%s").startswith("WIP:"))
-        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assert_one_wip_and_clean()
         self.assertEqual(self.git("show", "HEAD:new.txt"), "a file the turn created")
 
     def test_a_turn_that_exits_failing_still_has_its_edits_committed(self):
@@ -91,10 +88,7 @@ class TurnTreeSweepTests(SweepTestCase):
             return ImplementerOutput("gave up", 1, "fake")
         self.turn(edit_then_fail)
 
-        self.assertEqual(self.git("rev-list", f"{self.tip}..HEAD"),
-                         self.git("rev-parse", "HEAD"))
-        self.assertTrue(self.git("log", "-1", "--format=%s").startswith("WIP:"))
-        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assert_one_wip_and_clean()
 
     def test_a_turn_ended_by_a_swept_run_still_has_its_edits_committed(self):
         def edit_then_get_swept():
