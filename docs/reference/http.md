@@ -472,6 +472,37 @@ it. A `CHANGES_REQUESTED` review is never bypassable.
 is 404 carrying `run`. The route writes nothing; a GitHub read that fails
 is `github_unreadable` with 200.
 
+## `GET /runs/N/asks`
+
+```json
+{"run": 53, "ticket": "KO-219",
+ "pr_url": "https://github.com/example/repo/pull/31",
+ "asks": [
+  {"id": 812, "question": "Why is the guest keyed by name?",
+   "author": "maintainer", "asked_ms": 1788451661675,
+   "answered_ms": 1788451781675,
+   "url": "https://github.com/example/repo/pull/31#issuecomment-901",
+   "answer": "Names are unique per party: src/app.py:30."},
+  {"id": 840, "question": "Can a guest be renamed?", "author": "reviewer",
+   "asked_ms": 1788452021675, "answered_ms": null, "url": null,
+   "answer": null}
+ ]}
+```
+
+The questions asked about run N's pull request from the console
+([`POST /actions/ask`](daemon.md#post-actionsask)), oldest first. `ticket`
+and `pr_url` are run N's. `asks` holds every console ask recorded on any
+run of N's ticket with N's pull request URL, so the run the loop re-parks
+after answering lists the asks made on the run before it. Each ask is its
+event `id`, its `question` and `author`, and `asked_ms`, when it was
+recorded. Once the babysitter has posted its answer on the pull request,
+`answered_ms` is when, `url` the posted comment's `html_url` (null if
+GitHub answered none) and `answer` the answer text as posted, redacted;
+until then the three are null. A run with no pull request answers an empty
+list. `N` parses as on `/runs/N`: a non-integer is 400, an integer with no
+run is 404 carrying `run`. The route writes nothing and asks GitHub
+nothing.
+
 ## `GET /runs/N/ledger`
 
 ```json

@@ -27,12 +27,17 @@ def refuse(target, pull, thread, conn=None, run_id=None, beat_s=1):
 
 
 def refused(thread, handle, accounts):
-    return (not authorized(thread.comments[-1].author, accounts)
+    from holophyte.babysit.maintainer_notes import is_console_ask
+    return (not is_console_ask(thread)
+            and not authorized(thread.comments[-1].author, accounts)
             and classify(thread, handle).classification == "MENTIONED")
 
 
 def classify(thread, handle, accounts=()):
     """Only the latest comment can address the factory."""
+    from holophyte.babysit.maintainer_notes import is_console_ask
+    if is_console_ask(thread):
+        return thread
     if not authorized(thread.comments[-1].author, accounts):
         return replace(thread, classification="", request="",
                        intent="unmarked", triage=None)

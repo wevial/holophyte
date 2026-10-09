@@ -162,9 +162,9 @@ class BabysitHelpers:
             path.unlink()
         self.serve(*states)
 
-    def conversation_state(self, author, body, next_cursor=None):
+    def conversation_state(self, author, body, next_cursor=None, **fields):
         state = self.pr_state()
-        comment = dict(self.comment(1, author, body), id="IC_1")
+        comment = dict(self.comment(1, author, body), id="IC_1", **fields)
         state["data"]["repository"]["pullRequest"]["comments"] = {
             "nodes": [comment], "pageInfo": {
                 "hasNextPage": next_cursor is not None, "endCursor": next_cursor}}

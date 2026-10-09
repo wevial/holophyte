@@ -31,6 +31,12 @@ from holophyte.serve.serve_actions import (
     send_back_action,
     unit_action,
 )
+from holophyte.serve.serve_ask import (
+    ASK_ACTION,
+    RUN_ASKS_PATH,
+    ask_action,
+    run_asks,
+)
 from holophyte.serve.serve_config import (
     CONFIG_PATH,
     read_config,
@@ -221,6 +227,7 @@ SHAPED_ROUTES = (
     (RUN_TRANSCRIPT_PATH, run_transcript),
     (RUN_LEDGER_PATH, run_ledger),
     (RUN_MERGE_PATH, run_merge),
+    (RUN_ASKS_PATH, run_asks),
     (TICKET_PATH, ticket_detail),
 )
 
@@ -366,6 +373,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             return requeue_action(project, body)
         if action == MERGE_ACTION:
             return merge_action(project, body)
+        if action == ASK_ACTION:
+            return ask_action(project, body)
         if action in LEVERS:
             return LEVERS[action](project, body)
         return unit_action(project, action, scope.unit_name)

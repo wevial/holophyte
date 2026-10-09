@@ -1,14 +1,18 @@
 import re
 
+from holophyte.babysit.maintainer_notes import is_console_ask
 from holophyte.babysit.thread_mentions import REFUSAL, classify, refuse, refused
 from holophyte.config.config_tables import merge_config
 from holophyte.pr.github import Thread, acknowledged
 from holophyte.redact import known_secrets, outbound
 
 ASK_REPLY_MARKER = "<!-- holophyte:ask-answered -->"
+CONSOLE_ASK_RE = re.compile(rf"{re.escape(ASK_REPLY_MARKER)}\n"
+                            r"<!-- holophyte:console-ask (\d+) -->\n")
 
 REPLY_RE = re.compile(
-    r"(> \[Request by @[^\n]+\]\([^\n]+\)\n>\n> .*?)"
+    r"(> \[(?:Request by @|Asked from the console by )[^\n]+\]\([^\n]+\)"
+    r"\n>\n> .*?)"
     r"\n\n---- Comment by [^\n]+ ----\n\n"
     rf"(?:Addressed in [0-9a-f]{{40}}: .+|{re.escape(ASK_REPLY_MARKER)}\n.+|"
     rf"{re.escape(REFUSAL)})",
@@ -21,15 +25,35 @@ def _reply_quote(comment):
     return match[1] if match else None
 
 
-def conversation_threads(target, pull, node, read_page):
+def console_ask_mark(event_id):
+    return f"{ASK_REPLY_MARKER}\n<!-- holophyte:console-ask {event_id} -->"
+
+
+def console_answers(comments):
+    answers = {}
+    for comment in comments:
+        match = (CONSOLE_ASK_RE.search(comment["body"])
+                 if comment.get("viewerDidAuthor") is True
+                 and _reply_quote(comment) is not None else None)
+        if match and int(match[1]) not in answers:
+            answers[int(match[1])] = (comment.get("url"),
+                                      comment["body"][match.end():])
+    return tuple((event_id, url, answer)
+                 for event_id, (url, answer) in answers.items())
+
+
+def pull_comments(target, pull, node, read_page):
     comments = []
     while True:
         page = node.get("comments") or {}
         comments.extend(page.get("nodes") or ())
         info = page.get("pageInfo") or {}
         if not (info.get("hasNextPage") and info.get("endCursor")):
-            break
+            return comments
         node = read_page(target, pull, None, info["endCursor"])
+
+
+def conversation_threads(target, pull, comments):
     if not comments:
         return
     merge = merge_config(target)
@@ -66,4 +90,6 @@ def _instruction(comment, pull, merge):
 
 def quote_request(thread):
     quote = "\n".join("> " + line for line in thread.body.splitlines())
-    return f"> [Request by @{thread.author}]({thread.url})\n>\n{quote}"
+    asker = (f"Asked from the console by {' '.join(thread.author.split())}"
+             if is_console_ask(thread) else f"Request by @{thread.author}")
+    return f"> [{asker}]({thread.url})\n>\n{quote}"
