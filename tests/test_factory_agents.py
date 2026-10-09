@@ -312,7 +312,7 @@ class AgentRouteTests(unittest.TestCase):
                 "claude", "-p", "make the focused change",
                 "--model", "opus", "--effort", "high",
             ],
-            self.worktree, 1800,
+            self.worktree, 5400,
         )
 
     @patch.object(holophyte.agents.roles, "run_capped")
@@ -327,7 +327,7 @@ class AgentRouteTests(unittest.TestCase):
                                timeout=7200)
 
         self.assertEqual([c.args[2] for c in run_capped.call_args_list],
-                         [300, 1800])
+                         [300, 5400])
 
 
     @patch.object(review_runner, "run_review")

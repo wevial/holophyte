@@ -13,7 +13,7 @@ from holophyte.agents.agent_routes import routes
 from holophyte.agents.fix_session import resume_argv
 from holophyte.agents.harness import ORCHESTRATION_BRIEFS, implementer_orchestrations
 from holophyte.agents.roles import agent, record_session
-from holophyte.config.agent_settings import budget_scale
+from holophyte.config.agent_settings import budget_scale, turn_cap, turn_cap_min
 from holophyte.config.config_tables import sweep_config, verify_config
 from holophyte.config.reader import config_table
 from holophyte.environment_git import (
@@ -40,21 +40,51 @@ def _scale_note(project, budget_min):
     return f" ({budget_min * scale:g} min at scale {scale:g})"
 
 
+def _armed(project, requested):
+    cap = turn_cap(project)
+    return min(cap, requested), "turn_cap" if cap < requested else "time_box"
+
+
+def implement_arming(project, conn, run_id, budget_min):
+    scale = budget_scale(project)
+    run = (store.read.run_snapshot(conn, run_id)
+           if conn is not None and run_id is not None else None)
+    spent_ms = agent_work(run, int(time() * 1000)) if run is not None else None
+    floor = min(10, budget_min) * 60 * scale
+    return _armed(project, max(floor, budget_min * 60 * scale
+                               - (spent_ms or 0) // 1000))
+
+
+def _limit_text(project, limit, budget_min):
+    if limit == "turn_cap":
+        return (f"{round(turn_cap(project))} s turn cap ([agents] turn_cap_min"
+                f" = {turn_cap_min(project)}) under a {budget_min} min box"
+                f"{_scale_note(project, budget_min)}")
+    return f"{budget_min} min budget{_scale_note(project, budget_min)}"
+
+
 def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
-           role="implement", argv=None):
+           role="implement", argv=None, seconds=None, limit=None):
     """Return `(output, timed_out)`; a timeout or a sweep kills the turn's group."""
     session_role = role
+    armed, named = _armed(project, budget_min * budget_scale(project) * 60
+                          if seconds is None else seconds)
+    limit = limit or named
     kill = GroupKill()
     with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
         try:
-            output = agent(project, role, goal, wt,
-                           timeout=budget_min * budget_scale(project) * 60,
+            output = agent(project, role, goal, wt, timeout=armed,
                            on_start=kill.arm, conn=conn, run_id=run_id,
                            **({"argv": argv} if argv is not None else {}))
             timed_out = False
         except subprocess.TimeoutExpired as expired:
-            print(f"[holo2] task exceeded {budget_min} min budget"
-                  f"{_scale_note(project, budget_min)}")
+            text = _limit_text(project, limit, budget_min)
+            print(f"[holo2] task exceeded {text}")
+            if conn is not None and run_id is not None:
+                store.record_event(
+                    conn, run_id, "turn_timeout", f"{role} turn exceeded {text}",
+                    level="detail", payload=json.dumps(
+                        {"role": role, "limit": limit, "seconds": round(armed)}))
             partial = expired.output or ""
             if isinstance(partial, bytes):
                 partial = partial.decode("utf-8", "replace")
@@ -121,14 +151,15 @@ def _record_implementer_output(conn, run_id, out, secrets=()):
 
 
 def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal,
-                     argv=None):
+                     argv=None, *, seconds=None, limit=None):
     """Retry transport loss once, sharing the original turn's wall-clock cap."""
-    scale = budget_scale(project)
-    deadline = retry_clock() + budget_min * scale * 60
-    remaining = budget_min
+    remaining, named = _armed(project, budget_min * budget_scale(project) * 60
+                              if seconds is None else seconds)
+    limit = limit or named
+    deadline = retry_clock() + remaining
     for attempt in range(2):
-        out, timed_out = _timed(project, conn, run_id, beat_s, wt,
-                                remaining, goal, argv=argv)
+        out, timed_out = _timed(project, conn, run_id, beat_s, wt, budget_min,
+                                goal, argv=argv, seconds=remaining, limit=limit)
         signature = transport_failure(getattr(out, "exit_code", 0), out)
         if timed_out or signature is None or _killed_by_signal(out, timed_out):
             return out, timed_out
@@ -143,7 +174,7 @@ def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal,
             store.record_event(conn, run_id, "transport_retry", note)
         with heartbeat_while(conn, run_id, beat_s):
             sleep(min(30, max(0, deadline - retry_clock())))
-        remaining = (deadline - retry_clock()) / (scale * 60)
+        remaining = deadline - retry_clock()
         if remaining <= 0:
             raise InfraFailure(f"{reason}; retry budget exhausted; branch preserved")
 
@@ -193,20 +224,21 @@ def _crashed(project, conn, run_id, wt, branch, task_id, out):
 
 
 def _retry_crashed(project, conn, run_id, beat_s, wt, branch, task_id, goal,
-                   out, deadline):
+                   out, deadline, budget_min, limit):
     wip = _crashed(project, conn, run_id, wt, branch, task_id, out)
     note = (f"Your previous turn on this task was killed by a signal (exit"
             f" {out.exit_code}) before it finished."
             + (f" A WIP commit {wip[:12]} on {branch} holds the edits it had"
                " not committed; build on it." if wip else "")
             + " Continue the task and commit your work.")
-    remaining = (deadline - retry_clock()) / (budget_scale(project) * 60)
-    _check_run_cap(project, conn, run_id, remaining,
+    remaining = deadline - retry_clock()
+    _check_run_cap(project, conn, run_id, remaining / (budget_scale(project) * 60),
                    sh(["git", "rev-parse", "HEAD"], cwd=wt))
     argv, _ = resume_argv(project, conn, run_id)
     out, timed_out = _transport_timed(
-        project, conn, run_id, beat_s, wt, remaining,
-        note if argv is not None else f"{note}\n\n{goal}", argv=argv)
+        project, conn, run_id, beat_s, wt, budget_min,
+        note if argv is not None else f"{note}\n\n{goal}", argv=argv,
+        seconds=remaining, limit=limit)
     if _killed_by_signal(out, timed_out):
         _crashed(project, conn, run_id, wt, branch, task_id, out)
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
@@ -265,12 +297,15 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             "co-author lines for an AI." + orchestration
             + _capture_brief(project, ticket, task_id) + blast_radius.BRIEF
             + reproduce.BRIEF)
-    deadline = retry_clock() + budget_min * budget_scale(project) * 60
+    seconds, limit = implement_arming(project, conn, run_id, budget_min)
+    deadline = retry_clock() + seconds
     out, timed_out = _transport_timed(project, conn, run_id, beat_s, wt,
-                                      budget_min, goal)
+                                      budget_min, goal, seconds=seconds,
+                                      limit=limit)
     if _killed_by_signal(out, timed_out):
         out, timed_out = _retry_crashed(project, conn, run_id, beat_s, wt,
-                                        branch, task_id, goal, out, deadline)
+                                        branch, task_id, goal, out, deadline,
+                                        budget_min, limit)
     blast_radius.record_declared(conn, run_id, out)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
@@ -302,7 +337,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "carried_candidate", note)
     if timed_out:
-        raise RunFailure(f"implementer exceeded the {budget_min} min budget"
-                         f"{_scale_note(project, budget_min)}; work kept on "
-                         f"{branch} at {head[:12]}", "budget")
+        raise RunFailure(f"implementer exceeded the "
+                         f"{_limit_text(project, limit, budget_min)}; work kept"
+                         f" on {branch} at {head[:12]}", "budget")
     return sh(["git", "rev-parse", "HEAD"], cwd=wt), reproduce.declared(out)

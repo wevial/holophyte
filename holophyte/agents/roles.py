@@ -26,9 +26,9 @@ from holophyte.agents.review_workspace import (
 )
 from holophyte.config.agent_settings import (
     agent_command,
-    budget_scale,
     review_route,
     review_tier,
+    turn_cap,
 )
 from holophyte.config.config_tables import sweep_config
 from holophyte.config.reader import (
@@ -36,7 +36,6 @@ from holophyte.config.reader import (
     DEFAULT_IMPLEMENTER,
     IMPL_EFFORT,
     IMPL_MODEL,
-    IMPL_TIMEOUT,
     SHA_ROLES,
     review_profile,
 )
@@ -345,7 +344,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         finally:
             check_review_refs(cwd, run_id, base_sha, candidate_sha)
     # A caller's timeout already carries budget_scale; the ceiling stretches too.
-    cap = IMPL_TIMEOUT * budget_scale(project)
+    cap = turn_cap(project)
     if timeout is not None:
         cap = min(timeout, cap)
     hook = {"on_start": on_start} if on_start is not None else {}

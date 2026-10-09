@@ -3,6 +3,7 @@ import tomllib
 from pathlib import Path
 
 import review_runner
+import ticket_template
 from holophyte.agents import harness
 from holophyte.config.config_tables import (
     AGENT_FALLBACK_KEYS,
@@ -36,7 +37,6 @@ VERIFY_TIMEOUT = 300  # per-command wall-clock cap, verify and worktree setup
 
 IMPL_MODEL = "opus"
 IMPL_EFFORT = "high"
-IMPL_TIMEOUT = 1800  # hard wall-clock cap on one implementer turn, seconds
 REVIEW_MODEL = review_runner.MODEL
 REVIEW_EFFORT = review_runner.EFFORT
 REVIEW_EFFORTS = review_runner.EFFORTS
@@ -71,6 +71,7 @@ KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
               | frozenset(REVIEW_FALLBACK_KEYS) | frozenset(REVIEW_TIER_KEYS)
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
+                  "turn_cap_min",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",
                   "implementer_resume", "review_mode", "adversary_credential"}),
@@ -95,6 +96,7 @@ KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
 
 BUDGET_SCALE = 1.0
 BUDGET_SCALE_RANGE = (1.0, 3.0)
+TURN_CAP_MIN = ticket_template.MAX_ESTIMATE_MIN
 REVIEW_MODES = ("single", "verified")
 
 

@@ -12,6 +12,7 @@ from holophyte.config.agent_settings import (
     implementer_session,
     review_mode,
     review_route,
+    turn_cap_min,
 )
 from holophyte.config.config_tables import (
     BOARD_PREFIX_ALIAS,
@@ -68,6 +69,7 @@ def check_config(project):
     board_alias_notice(project)
     harness.check_target(project)
     budget_scale(project)
+    turn_cap_min(project)
     review_mode(project)
     implementer_session(project)
     from holophyte.agents.fix_session import resume_template
