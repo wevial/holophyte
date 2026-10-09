@@ -410,6 +410,11 @@ the parked head. The console draws a Merge button when it is ready, and a
 "Merge (bypass review)" button when its readiness is `review_bypassable`,
 each behind an in-row confirm; the bypass confirm names the bypassed
 ruleset and posts `"bypass_review": true`.
+Beside it the console draws Ask from [`GET /runs/N/asks`](http.md#get-runsnasks):
+an in-row question box whose Send posts [`POST /actions/ask`](#post-actionsask)
+with the row's `run` and the `question`. While the latest ask is unanswered
+the row shows it as waiting and offers no Ask; once answered, the row links
+the answer comment and shows the answer.
 `--approve KO-n` on the writer host releases a parked candidate without
 reading GitHub.
 

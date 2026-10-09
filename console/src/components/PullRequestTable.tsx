@@ -7,6 +7,7 @@ import { hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
 import { TICK_MS, type Fetch } from "../lib/poll";
 import { prLabel } from "../lib/shipped";
 import { groupByProject } from "../lib/runs";
+import { AskAction } from "./AskAction";
 import { MergeAction } from "./MergeAction";
 import { PullRequestDetail } from "./PullRequestDetail";
 import { RowActions } from "./RowActions";
@@ -92,8 +93,10 @@ export function PullRequestTable({ hosts, project, now, actionFetch, polls = 0, 
                     <RowActions kind="pr_open" actions={description.actions} ticket={description.ticket}
                       prUrl={item.pr_url} runId={typeof item.run === "number" ? item.run : undefined}
                       daemon={host ? { base: host.base, actions: host.status?.actions === true, fetch: actionFetch } : undefined} />
-                    {host?.status?.actions === true && typeof item.run === "number" && <MergeAction base={host.base}
-                      runId={item.run} prUrl={item.pr_url} polls={polls} deps={deps} fetch={actionFetch} />}
+                    {host?.status?.actions === true && typeof item.run === "number" && <>
+                      <MergeAction base={host.base} runId={item.run} prUrl={item.pr_url} polls={polls} deps={deps} fetch={actionFetch} />
+                      <AskAction base={host.base} runId={item.run} prUrl={item.pr_url} polls={polls} deps={deps} fetch={actionFetch} />
+                    </>}
                   </div></td>
                 </tr>
                 {open && host && typeof item.run === "number" && <tr id={detailId} className="border-t border-line">

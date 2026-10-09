@@ -153,3 +153,11 @@ export const mergeReadinessSchema = z.looseObject({
   ready: z.boolean(), reason: z.string().nullable(), detail: z.string().nullable(),
   facts: z.array(z.looseObject({ name: z.string(), ok: z.boolean(), detail: z.string() })),
 });
+// `GET /runs/N/asks`: the console's questions on run N's pull request,
+// oldest first; `answer` and `url` stay null until the babysitter answers.
+export const runAsksSchema = z.looseObject({
+  run: z.number(), pr_url: z.string().nullable(),
+  asks: z.array(z.looseObject({
+    id: z.number(), question: z.string(), url: z.string().nullable(), answer: z.string().nullable(),
+  })),
+});
