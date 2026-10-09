@@ -214,17 +214,11 @@ class ContainerReviewSessionTests(unittest.TestCase):
             (self.run_id, kind))]
 
     def test_a_refused_adversary_exit_is_returned_as_its_reply(self):
-        with patch.dict(os.environ, {"STUB_PROVIDER_ERROR": REFUSAL}):
-            output = roles.agent(
-                self.project, "adversary", "attack the candidate",
-                self.project.path, base_sha=self.sha, candidate_sha=self.sha,
-                conn=self.conn, run_id=self.run_id, review_round=1)
+        output = self.turn("adversary", {"STUB_PROVIDER_ERROR": REFUSAL})
 
         self.assertTrue(adversary.refused(output))
-        turns = [json.loads(payload) for (payload,) in self.conn.execute(
-            "SELECT payload FROM runEvents WHERE runId=? AND kind='agent_turn'",
-            (self.run_id,))]
-        self.assertEqual([t["exit_status"] for t in turns], [1])
+        self.assertEqual([t["exit_status"] for t in self.events("agent_turn")],
+                         [1])
 
     def test_a_refused_adversary_exit_settles_as_refused_with_no_fallback(self):
         self.project.config_path.write_text(
