@@ -97,7 +97,7 @@ class StoryProposalTests(LoopFixture):
         path = self.target.parent / name
         path.write_text(ROUTE.format(
             python=sys.executable, calls=str(self.calls), name=name,
-            probe=probes.REVIEW_PROBE_GOAL, replies=str(self.replies)))
+            probe=PROBE_GOAL, replies=str(self.replies)))
         path.chmod(0o755)
         return str(path)
 
