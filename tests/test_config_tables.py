@@ -398,7 +398,8 @@ class MergeConfigTests(ConfigTestCase):
         config = config_tables.merge_config(self.project)
         self.assertTrue(config.strip_attribution)
         self.assertEqual(config[1:],
-                         ("auto", "local", 5, 10, "merge", 180, 300, 1800, 600, False,
+                         ((), "auto", "local", 5, 10, "merge", 180, 300, 1800,
+                          600, False,
                           True, "", False, False,
                           (), "", "e2e/capture", False, "", None, 10, 20, "park",
                           "act", (), "holophyte", (), (), ("devin-ai-integration",

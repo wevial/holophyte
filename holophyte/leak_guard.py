@@ -5,7 +5,7 @@ from typing import NamedTuple
 
 import store
 from holophyte.commit_hygiene import _unpublished
-from holophyte.config.config_tables import merge_config
+from holophyte.config.config_tables import private_patterns
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import redact_values, register_values
 
@@ -35,7 +35,7 @@ class PrivateMatch(InfraFailure):
 
 
 def patterns(project):
-    return [re.compile(p) for p in merge_config(project).private_patterns]
+    return [re.compile(p) for p in private_patterns(project)]
 
 
 def _search(compiled, line):

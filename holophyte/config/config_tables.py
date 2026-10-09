@@ -426,20 +426,29 @@ def _attribution_patterns(project, value):
     return tuple(value)
 
 
+def private_patterns(project):
+    table = project.config().get("merge", {})
+    if not isinstance(table, dict):
+        return ()
+    return _private_patterns(project, table.get("private_patterns", ()))
+
+
 def _private_patterns(project, value):
     from holophyte.redact import register_values
-    where = f"[holo2] {project.config_path}: [merge] private_patterns"
+
+    def refuse(problem):
+        raise SystemExit(f"[holo2] {project.config_path}: [merge]"
+                         f" private_patterns {problem}")
     if not isinstance(value, (list, tuple)):
-        raise SystemExit(f"{where} must be a list of regular expressions")
+        refuse("must be a list of regular expressions")
     register_values([p for p in value if isinstance(p, str)])
     for index, pattern in enumerate(value):
         if not isinstance(pattern, str):
-            raise SystemExit(f"{where} #{index} is not a string")
+            refuse(f"#{index} is not a string")
         try:
             re.compile(pattern)
         except re.error:
-            raise SystemExit(f"{where} #{index} is not a valid regular"
-                             " expression") from None
+            refuse(f"#{index} is not a valid regular expression")
     return tuple(value)
 
 
