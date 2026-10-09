@@ -45,6 +45,8 @@ FEATURE = "FOLLOW_UP(feature): Cache the board read @ provider.py:185"
 GUARDRAIL = "- FOLLOW_UP(guardrail): Lint ticket checks for slash patterns"
 LEGACY = "FOLLOW_UP: legacy wording"
 FIX = f"address the review\n\nADDRESS: fixed the blocker\n{FEATURE}\n{GUARDRAIL}\n"
+RETRY = "FOLLOW_UP(feature): Retry the label write @ provider.py:90"
+SECOND_FIX = f"address the review again\n\nADDRESS: fixed it\n{RETRY}\n"
 URL = "https://github.com/example/repo/pull/12"
 
 
@@ -261,6 +263,60 @@ class NativeMergeTests(NativeProject):
         self.assertEqual([e["key"] for e in self.store_events("follow_up_filed")],
                          [key])
         self.assertEqual(len(self.store_events("follow_up_ledger")), 1)
+
+    def test_a_merge_settles_rows_past_a_parked_run_and_a_bare_failure(self):
+        self.configure(NATIVE + '[merge]\napprove = "human"\n')
+        store.board.file_ticket(self.conn, self.project_id, "NAT", VALID_BODY)
+        self.run_loop(Commit("the work"), REQUEST_CHANGES, Commit(FIX),
+                      REQUEST_CHANGES, Idle(), board=self.board)
+        (ticket_id,) = self.read("SELECT id FROM tickets")[0]
+        store.requeue(self.conn, ticket_id, "run it again")
+        self.run_loop(Commit("more work"), REQUEST_CHANGES, Commit(SECOND_FIX),
+                      APPROVE, board=self.board)
+        store.approve(self.conn, ticket_id, "merge it")
+        [worktree] = self.worktrees.iterdir()
+        (worktree / "stray.txt").write_text("left behind\n")
+        self.run_loop(board=self.board)
+        store.requeue(self.conn, ticket_id, "run it once more")
+        (worktree / "stray.txt").unlink()
+        self.configure(NATIVE)
+
+        out = self.run_loop(Commit("final work"), APPROVE,
+                            board=self.board)
+
+        self.assertEqual(self.read(
+            "SELECT outcome, resumePhase FROM runs ORDER BY id"),
+            [("failed", "addressing"), ("abandoned", "merge_gate"),
+             ("failed", None), ("merged", None)], out)
+        rows = self.read("SELECT runId, kind, filedAs, settledAt IS NOT NULL"
+                         " FROM followUps ORDER BY id")
+        drafts = self.read("SELECT title, linearIdentifier FROM tickets"
+                           " WHERE title LIKE 'Draft follow-up: %' ORDER BY id")
+        self.assertEqual([title for title, _ in drafts],
+                         ["Draft follow-up: Cache the board read",
+                          "Draft follow-up: Retry the label write"], rows)
+        [(_, cache), (_, retry)] = drafts
+        self.assertEqual(rows, [(1, "feature", cache, 1),
+                                (1, "guardrail", None, 1),
+                                (2, "feature", retry, 1)])
+
+    def test_a_merge_leaves_another_ticket_s_failed_rows_pending(self):
+        store.board.file_ticket(self.conn, self.project_id, "NAT", VALID_BODY)
+        self.run_loop(Commit("the work"), REQUEST_CHANGES, Commit(FIX),
+                      REQUEST_CHANGES, Idle(), board=self.board)
+        store.board.file_ticket(self.conn, self.project_id, "NAT", VALID_BODY)
+
+        out = self.run_loop(Commit("other work"), REQUEST_CHANGES,
+                            Commit(SECOND_FIX), APPROVE, board=self.board)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("failed",), ("merged",)], out)
+        [(key,)] = self.read("SELECT linearIdentifier FROM tickets"
+                             " WHERE title LIKE 'Draft follow-up: %'")
+        self.assertEqual(self.read(
+            "SELECT runId, kind, filedAs, settledAt IS NOT NULL FROM followUps"
+            " ORDER BY id"), [(1, "feature", None, 0), (1, "guardrail", None, 0),
+                              (2, "feature", key, 1)])
 
 class NativeSettleTests(NativeProject):
     """Settled over the store with real git commits; the merge is recorded."""

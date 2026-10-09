@@ -70,17 +70,14 @@ def record_follow_up(conn, run_id, commit_sha, kind, kind_given, text,
 
 
 def pending_follow_ups(conn, run_id):
-    """Pending rows of the run and of each parked run whose candidate it carried."""
+    """Pending rows of the run and of each earlier unmerged run of its ticket."""
     return [FollowUp(*row[:5], bool(row[5]), *row[6:]) for row in conn.execute(
-        "WITH RECURSIVE carried(id) AS (SELECT ? UNION"
-        " SELECT parked.id FROM carried JOIN runs run ON run.id = carried.id"
-        " JOIN runs parked ON parked.id = (SELECT id FROM runs"
-        "   WHERE ticketId = run.ticketId AND attempt < run.attempt"
-        "   ORDER BY attempt DESC LIMIT 1)"
-        " WHERE parked.resumePhase IN ('merge_gate', 'merging')"
-        " AND parked.outcome IS NOT 'merged')"
-        f" SELECT {_COLUMNS} FROM followUps WHERE runId IN carried"
-        " AND settledAt IS NULL ORDER BY id", (run_id,))]
+        f"SELECT {_COLUMNS} FROM followUps WHERE settledAt IS NULL"
+        " AND (runId = ? OR runId IN (SELECT earlier.id FROM runs earlier"
+        "   JOIN runs merging ON merging.id = ?"
+        "   WHERE earlier.ticketId = merging.ticketId"
+        "   AND earlier.outcome IS NOT 'merged'))"
+        " ORDER BY id", (run_id, run_id))]
 
 
 def filed_drafts(conn, follow_up_id):
