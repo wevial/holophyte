@@ -56,6 +56,7 @@ class ReviewBoundaryError(RuntimeError):
     line = None
     tail = None
     exit_status = None
+    provider_error = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,7 @@ def _run(
         )
         error.returncode = result.returncode
         error.output = f"{result.stdout}{result.stderr}"
+        error.provider_error = provider_error(result.stdout)
         raise error
     return result
 
@@ -333,6 +335,24 @@ def codex_events(output: str):
             error.line = "".join(ch for ch in line if ch.isprintable())[
                 :EVIDENCE_LINE]
             raise error from exc
+
+
+def provider_error(output: str) -> str | None:
+    messages: list[str] = []
+    for line in output.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        failed = event.get("error")
+        message = (event.get("message") if event.get("type") == "error" else
+                   failed.get("message") if event.get("type") == "turn.failed"
+                   and isinstance(failed, dict) else None)
+        if isinstance(message, str) and message not in messages:
+            messages.append(message)
+    return "\n".join(messages) or None
 
 
 def parse_codex_output(
