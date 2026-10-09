@@ -287,13 +287,19 @@ class NativeMoveCliTests(ConfigTestCase):
                          ("ready", revision, "needs_spec"))
         self.assertEqual(self.interventions(), [])
 
-    def test_a_critic_park_note_names_the_native_steps_that_re_ready_it(self):
-        self.parked_on_later(kind="critic")
+    def assert_park_note_names_the_native_steps(self, kind):
+        self.parked_on_later(kind=kind)
         note_kind, text = self.newest_note()
-        self.assertEqual(note_kind, "critic")
+        self.assertEqual(note_kind, kind)
         self.assertIn("--file-ticket --update", text)
         self.assertIn("--move", text)
         self.assertNotIn("move the issue back to Todo", text)
+
+    def test_a_stale_park_note_names_the_native_steps_that_re_ready_it(self):
+        self.assert_park_note_names_the_native_steps("stale")
+
+    def test_a_critic_park_note_names_the_native_steps_that_re_ready_it(self):
+        self.assert_park_note_names_the_native_steps("critic")
 
     def test_a_move_to_ready_re_readies_a_critic_park_with_a_clean_body(self):
         revision = self.critic_parked()

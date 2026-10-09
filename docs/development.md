@@ -356,8 +356,10 @@ Each module, one line:
   `ready` (or `blocked_on_deps`) once none of its reasons holds, and
   `--move KEY-n ready` re-checks it the same way. The move also re-readies a
   critic park, running only the deterministic checks, and records a
-  `requeue` intervention for either kind. A native park keeps its column,
-  and its note names `--file-ticket --update` and `--move KEY-n ready`.
+  `requeue` intervention for either kind. A move to Ready of a ticket already
+  in Ready is refused naming its status (`KEY-n is already in ready at status
+  ready; nothing changed`). A native park keeps its column, and its note
+  names `--file-ticket --update` and `--move KEY-n ready`.
 - `holophyte/environment_git.py` — excludes the filtered `.env` from Git
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from
