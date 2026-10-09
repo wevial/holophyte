@@ -48,6 +48,8 @@ class UpdatingLinear(FakeLinear):
         return issue["id"]
 
     def blockers_of(self, identifier):
+        if identifier == self.board.shared.blockers_fail_for:
+            raise RuntimeError("Linear refused the relations read")
         names = {issue["id"]: name for name, issue in self.board.issues.items()}
         return [names[relation["issue"]["id"]] for relation in
                 self.board.issues[identifier]["inverseRelations"]["nodes"]
@@ -83,6 +85,7 @@ class LinearStoryUpdateTests(ConfigTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.calls, self.issues, self.update_fails_at = [], {}, None
+        self.blockers_fail_for = None
         board = UpdatingBoard("p-1", "T", shared=self)
         for patcher in (
                 patch.object(provider, "LinearBoard",
@@ -309,6 +312,23 @@ class LinearStoryUpdateTests(ConfigTestCase):
             self.assertEqual(self.ticket(identifier)[3],
                              self.board_body(self.child(name)))
             self.assertIn("- Quote every field.", self.ticket(identifier)[3])
+
+    def test_an_edit_whose_blocker_read_fails_is_named_as_updated(self):
+        for name in ("02-a", "03-b"):
+            self.edit(self.child(name), "- Keep the CSV header.",
+                      "- Quote every field.")
+        before = self.snapshot()
+        self.blockers_fail_for = "REL-3"
+
+        status, lines = self.update()
+
+        self.assertEqual(status, 1)
+        self.assertIn("Linear refused the relations read", lines[0])
+        self.assertEqual(self.issues["REL-3"]["description"],
+                         self.board_body(self.child("03-b")))
+        self.assertIn("[holo2] already updated on the board: REL-2, REL-3",
+                      lines)
+        self.assertEqual(self.snapshot(), before)
 
     def test_a_linear_board_in_mirror_mode_is_refused_naming_store_mode(self):
         self.write_config(LABELLED.replace('mode = "store"', 'mode = "mirror"'))

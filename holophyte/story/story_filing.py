@@ -297,13 +297,25 @@ def _board_writes(board, project, directory, identifier, text, children,
 
 def _board_update(board, identifier, body, written, kept):
     ticket = ticket_template.parse(body)
-    _added, extra = board.update(identifier, ticket.title, body,
-                                 ticket.estimate_min,
-                                 blockers=ticket.depends_on or [])
+    try:
+        _added, extra = board.update(identifier, ticket.title, body,
+                                     ticket.estimate_min,
+                                     blockers=ticket.depends_on or [])
+    except Exception:
+        if _body_landed(board, identifier, body):
+            written["updated"].append(identifier)
+        raise
     written["updated"].append(identifier)
     kept.extend(f"{blocker} still blocks {identifier} on the board; remove "
                 "that relation on Linear" for blocker in extra)
     return board.fetch_task(identifier)
+
+
+def _body_landed(board, identifier, body):
+    try:
+        return board.stored_body(identifier) == body
+    except Exception:
+        return True
 
 
 def _mirror_update(conn, project_id, directory, identifier, revision, text,
