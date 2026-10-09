@@ -30,7 +30,7 @@ def ask(conn, run_id, question, author):
             raise AskRefused("ask_pending",
                              f"console ask event {waiting[0]['id']} on {pr_url}"
                              " is not answered yet")
-        if outcome is not None:
+        if outcome not in (None, "paused"):
             raise AskRefused("finished", f"run {run_id} has ended {outcome}")
 
         def record_ask():

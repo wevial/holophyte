@@ -117,16 +117,23 @@ class ConsoleAskRouteTests(ServeTestCase):
         _, local = self.parked("KO-2", pr_url=None)
         _, merged = self.claimed("KO-3")
         _, live = self.claimed("KO-4")
+        _, paused = self.claimed("KO-5")
         with store.open(str(self.db)) as conn:
             store.set_pull_request(conn, merged, PR_URL.replace("31", "33"))
             finish_run(conn, merged, "merged")
             store.set_pull_request(conn, live, PR_URL.replace("31", "34"))
+            store.set_pull_request(conn, paused, PR_URL.replace("31", "35"))
+            store.set_phase(conn, paused, "working")
+            store.pause(conn, paused, "hold for the demo")
+            store.release(conn, paused, "paused", "paused by the operator",
+                          resume_phase="working")
         cases = [("blank", parked, {"question": "   "}, "empty_question"),
                  ("missing", parked, {}, "empty_question"),
                  ("local", local, {"question": QUESTION}, "no_pull_request"),
                  ("second", parked, {"question": "And why?"}, "ask_pending"),
                  ("merged", merged, {"question": QUESTION}, "finished"),
-                 ("live", live, {"question": QUESTION}, "not_parked")]
+                 ("live", live, {"question": QUESTION}, "not_parked"),
+                 ("paused", paused, {"question": QUESTION}, "not_parked")]
         for name, run, body, reason in cases:
             if name == "second":
                 self.assertTrue(self.ask(parked, question=QUESTION)[1]["ok"])
