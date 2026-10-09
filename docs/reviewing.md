@@ -179,7 +179,11 @@ reply without it that carries the provider's refusal line, "This content was
 flagged for possible cybersecurity risk", is not asked again: the pass records
 outcome `refused` with no findings or concerns, writes a ledger note, and the
 round stands on the primary review alone. A refusal is about the content, not
-the route, so no fallback is switched.
+the route, so no fallback is switched. This covers a Codex turn that exits
+non-zero on the refusal: when the Codex CLI's own `error` or `turn.failed`
+event carries the refusal line, the exit comes back as the adversary's reply
+and is recorded the same way. The line counts only from those CLI events,
+never from a message or command output that quotes it.
 
 A reproduced or traced finding blocks the round: it is not approved, its
 `reviewRounds` row has verdict `changes_requested` and holds the finding with
