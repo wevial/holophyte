@@ -203,7 +203,7 @@ def probe_adversary_claude(project, timeout=None):
 
 
 def container_fallback_profile(project, role):
-    if (role not in SHA_ROLES
+    if (role not in SHA_ROLES or role == "consolidate"
             or AGENT_CONFIG_KEYS[role] in (project.config().get("agents") or {})):
         return None
     pair = review_route(project, fallback=True)

@@ -54,8 +54,9 @@ AGENT_CONFIG_KEYS = {
     "trim": "trimmer",
     "critic": "critic",
     "adversary": "adversary",
+    "consolidate": "consolidator",
 }
-SHA_ROLES = ("review", "adjudicate", "adversary")
+SHA_ROLES = ("review", "adjudicate", "adversary", "consolidate")
 
 REVIEW_ROUTE_KEYS = ("review_model", "review_effort")
 REVIEW_FALLBACK_KEYS = ("review_fallback_model", "review_fallback_effort")

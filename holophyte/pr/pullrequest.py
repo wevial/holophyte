@@ -16,6 +16,7 @@ from holophyte.loop.runs import heartbeat_while, set_phase
 from holophyte.loop.stop import resume_babysit_fix, stop_if_requested
 from holophyte.pr import github, merge_queue, pr_activity, pr_media, pr_status
 from holophyte.redact import safe_print as print
+from holophyte.review import consolidate
 
 
 def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
@@ -245,7 +246,15 @@ def _prepare_pr(project, conn, run_id, task_id, task, branch, body, beat_s,
                                    budget_min, issue_url)
     if lead:
         text = f"{lead}\n\n{text}"
-    return title, pr_media.append(text, evidence)
+    return title, _with_concerns(pr_media.append(text, evidence), conn, run_id)
+
+
+def _with_concerns(text, conn, run_id):
+    held = consolidate.held_concerns(conn, run_id)
+    if not held:
+        return text
+    return (f"{text.rstrip()}\n\n## Other concerns ({len(held)})\n"
+            + "\n".join(f"- {consolidate.bullet(item)}" for item in held))
 
 
 def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
