@@ -7,7 +7,7 @@ from pathlib import Path
 import review_runner
 from holophyte.agents.agent_output import AgentOutput, ImplementerOutput
 from holophyte.agents.agent_routes import routes, safe_command
-from holophyte.agents.agent_turns import recorded_turn
+from holophyte.agents.agent_turns import family_label, recorded_turn
 from holophyte.agents.fallback import (
     activate_fallback,
     outage_reason,
@@ -115,7 +115,7 @@ def critic_turn(project, goal, cwd, timeout):
 
 def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
-          review_round=None):
+          review_round=None, family_route=None):
     from store.working import working
 
     requested_role = role
@@ -132,13 +132,15 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,
                       run_id=run_id, argv=argv, review_round=review_round,
-                      session=requested_role == "implement")
+                      session=requested_role == "implement",
+                      family_route=family_route)
 
         def launch():
             try:
                 return recorded_turn(
                     project, requested_role, role, conn, run_id,
-                    lambda: _agent(project, role, goal, cwd, **kwargs))
+                    lambda: _agent(project, role, goal, cwd, **kwargs),
+                    family_route)
             except InfraFailure as failure:
                 record_review_boundary(conn, run_id, role, failure)
                 raise
@@ -163,7 +165,8 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 
 
 def route_down(project, role, failure):
-    reason = outage_reason(agent_route(project, role),
+    reason = outage_reason(getattr(failure, "command", None)
+                           or agent_route(project, role),
                            getattr(failure, "output", ""))
     if reason:
         return reason
@@ -217,12 +220,16 @@ def kept_session(project, role, conn, run_id, review_round, sessions):
 
 
 def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
-                     run_id, switched, review_round=None, timeout=None):
+                     run_id, switched, review_round=None, timeout=None,
+                     family_route=None):
     from holophyte.loop.runs import heartbeat_while
     from holophyte.review.review_session import record_review_session
     model, effort = review_route(project, fallback=switched)
     tier = review_tier(project, fallback=switched)
     profile = review_profile(model, effort)
+    turn = {"model": model, "effort": effort, "profile": profile}
+    if family_route is not None and not switched:
+        turn, profile, tier = family_route, family_label(family_route), None
     cap = REVIEW_TIMEOUT if timeout is None else timeout
     options = {} if tier is None else {"service_tier": tier}
     if role == "adversary":
@@ -240,13 +247,11 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 base_sha=base_sha,
                 candidate_sha=candidate_sha,
                 prompt=goal,
-                model=model,
-                effort=effort,
-                profile=profile,
                 timeout=cap,
                 verdicts=None,
                 carry=carry_directories(project),
                 on_start=kill.arm,
+                **turn,
                 **options,
                 **kept,
             ), profile)
@@ -261,6 +266,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         failure = InfraFailure(f"reviewer route failed for {role}:"
                                f" {e}", "review_route")
         failure.output = getattr(e, "output", "")
+        failure.command = profile
         failure.service_tier = tier
         raise failure from e
     except subprocess.TimeoutExpired as e:
@@ -278,7 +284,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
 
 def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
-          review_round=None, session=False):
+          review_round=None, session=False, family_route=None):
     if role not in AGENT_CONFIG_KEYS:
         raise ValueError(role)
     if role in SHA_ROLES and not (base_sha and candidate_sha):
@@ -301,7 +307,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         if role not in WRITING_ROLES:
             return container_review(project, role, goal, cwd, base_sha,
                                     candidate_sha, conn, run_id, switched,
-                                    review_round, timeout)
+                                    review_round, timeout, family_route)
         cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role not in WRITING_ROLES:

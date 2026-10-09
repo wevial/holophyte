@@ -560,6 +560,21 @@ class ContainerCommandTests(unittest.TestCase):
         self.assertEqual(adversary[adversary.index("--enable") + 1], "multi_agent")
         self.assertEqual(adversary[1:3], ["/opt/codex/bin/codex", "exec"])
 
+    def test_a_claude_script_shares_the_preflight_and_takes_no_codex_tier(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "codex").mkdir()
+            (Path(tmp) / "claude").mkdir()
+            codex = self._rendered(Path(tmp) / "codex")
+            claude = self._rendered(Path(tmp) / "claude", harness="claude",
+                                    credential="TOKEN", model="opus",
+                                    service_tier="priority", multi_agent=True)
+        scripts = [command[command.index("-c") + 1].splitlines()
+                   for command in (codex, claude)]
+        copy = scripts[0].index("cp -a /workspace /home/reviewer/candidate")
+        self.assertEqual(scripts[1][:copy + 1], scripts[0][:copy + 1])
+        self.assertNotIn("codex", "\n".join(scripts[1][copy + 1:]))
+        self.assertEqual(claude[-4:], ["review", "review", "opus", "high"])
+
     def test_workspace_stays_read_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             command = self._rendered(Path(tmp))

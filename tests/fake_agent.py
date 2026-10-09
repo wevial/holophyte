@@ -207,6 +207,7 @@ class Turn:
     # really starts a process hands it over, so the loop's sweep-time kill
     # reaches it the way it reaches a real implementer.
     on_start: object = None
+    family_route: object = None
 
 
 def block_until_killed(cwd, printed="", timeout=1):
@@ -245,7 +246,7 @@ class FakeAgent:
 
     def __call__(self, target, role, goal, cwd, *, base_sha=None, conn=None,
                  candidate_sha=None, timeout=None, on_start=None, run_id=None,
-                 review_round=None):
+                 review_round=None, family_route=None):
         # Like agent(), dispatch the requested turn through its effective seat.
         from holophyte.agents.roles import effective_role
         role = effective_role(target, role)
@@ -270,7 +271,8 @@ class FakeAgent:
                 raise ScriptError(f"{role!r} turn #{n} arrived without an exact"
                                   f" base_sha and candidate_sha")
             self.turns.append(Turn(role, goal, Path(cwd), base_sha,
-                                   candidate_sha, timeout, on_start))
+                                   candidate_sha, timeout, on_start,
+                                   family_route))
         reply = step.play(Path(cwd), n)
         if role == "review":
             reply = answer_scope(goal, reply)

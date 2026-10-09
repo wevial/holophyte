@@ -30,6 +30,7 @@ from holophyte.config.reader import (
     DEFAULT_REVIEWER,
     DOCKER_PROBE_TIMEOUT,
     KNOWN_KEYS,
+    adversary_credential,
 )
 from holophyte.config.review_settings import review_config
 from holophyte.config.serve_settings import console_config, serve_config
@@ -78,6 +79,7 @@ def check_config(project):
             "[merge] ui_capture requires [agents] implementer_isolation "
             "writable = true for its worktree output directory")
     check_agent_fallbacks(project)
+    adversary_credential(project)
     sweep_config(project)
     loop_config(project)
     report_config(project)

@@ -41,6 +41,7 @@ DOCKERFILE_PATH = "docker/reviewer.Dockerfile"
 RUNNER_PATH = "review_runner.py"
 IMAGE_LINE = re.compile(r'^IMAGE = "([^"\s]+)"$', re.MULTILINE)
 CODEX_FILES = ("codex", "codex-code-mode-host")
+CREDENTIAL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 REVIEW_VERDICTS = ("APPROVE", "REQUEST_CHANGES")
 ADJUDICATION_VERDICTS = ("PASS", "FAIL")
@@ -203,12 +204,16 @@ def stage_candidate(
     return StagedCandidate(stage, base, candidate, _fingerprint(stage, run_id))
 
 
-def _prepare_runtime(root: Path, auth: Path, codex: Path) -> tuple[Path, Path]:
+def _prepare_runtime(root: Path, auth: Path,
+                     codex: Path | None) -> tuple[Path, Path]:
     home = root / "home"
     codex_home = home / ".codex"
     toolchain = root / "toolchain"
-    codex_home.mkdir(parents=True, mode=0o700)
+    home.mkdir()
     toolchain.mkdir(mode=0o700)
+    if codex is None:
+        return home, toolchain
+    codex_home.mkdir(mode=0o700)
 
     auth = auth.expanduser().resolve(strict=True)
     shutil.copyfile(auth, codex_home / "auth.json")
@@ -221,6 +226,13 @@ def _prepare_runtime(root: Path, auth: Path, codex: Path) -> tuple[Path, Path]:
             raise ReviewBoundaryError(f"Codex release is missing executable: {source}")
         shutil.copy2(source, toolchain / name)
     return home, toolchain
+
+
+CODEX_EXEC = r'''exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
+  -m "$2" -c "$3" ${4+-c "$4"} \
+  -s danger-full-access --SWITCH multi_agent "$1"'''
+CLAUDE_EXEC = '''cd /home/reviewer/candidate
+exec /opt/claude/bin/claude -p --model "$2" --effort "$3" --output-format json "$1"'''
 
 
 def hardening_flags(uid: int, gid: int, memory: str = "2g") -> list[str]:
@@ -245,6 +257,8 @@ def container_command(
     run_id: int | None = None,
     service_tier: str | None = None,
     multi_agent: bool = False,
+    harness: str = "codex",
+    credential: str | None = None,
 ) -> list[str]:
     """Prompt, model, effort and tier are positional arguments, never interpolated."""
     from holophyte.agents.review_workspace import review_refs
@@ -270,10 +284,8 @@ fi
 test ! -e /var/run/docker.sock
 echo "PREFLIGHT_OK candidate=$actual" >&2
 cp -a /workspace /home/reviewer/candidate
-exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
-  -m "$2" -c "$3" ${4+-c "$4"} \
-  -s danger-full-access --SWITCH multi_agent "$1"
-'''.strip().replace("SWITCH", "enable" if multi_agent else "disable")
+'''.strip() + "\n" + (CLAUDE_EXEC if harness == "claude" else CODEX_EXEC.replace(
+        "SWITCH", "enable" if multi_agent else "disable"))
 
     command = [
         "docker",
@@ -284,6 +296,7 @@ exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
         *hardening_flags(uid, gid),
         "--env=HOME=/home/reviewer",
         f"--env=HOLOPHYTE_REVIEW_CANDIDATE={review_refs(run_id)[1]}",
+        *([f"--env={credential}"] if harness == "claude" else []),
         "--tmpfs",
         f"/tmp:rw,nosuid,nodev,noexec,size=256m,uid={uid},gid={gid},mode=1777",
     ]
@@ -291,8 +304,10 @@ exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
         command.extend(["--volume", mount])
     tier = [] if service_tier is None else [
         f"service_tier={json.dumps(service_tier, ensure_ascii=False)}"]
+    turn = ([model, effort] if harness == "claude" else
+            [model, f'model_reasoning_effort="{effort}"', *tier])
     return command + [image, "/bin/sh", "-eu", "-c", preflight, "review", prompt,
-                      model, f'model_reasoning_effort="{effort}"', *tier]
+                      *turn]
 
 
 def terminal_verdict(message: str, verdicts: Sequence[str] = REVIEW_VERDICTS) -> str:
@@ -342,6 +357,30 @@ def parse_codex_output(
     if verdicts is None:
         return message, None
     return message, terminal_verdict(message, verdicts)
+
+
+def parse_claude_output(
+    output: str, verdicts: Sequence[str] | None = REVIEW_VERDICTS
+) -> tuple[str, str | None]:
+    try:
+        reply = json.loads(output)
+    except json.JSONDecodeError:
+        reply = None
+    if not (isinstance(reply, dict) and reply.get("is_error") is False
+            and isinstance(reply.get("result"), str)):
+        detail = reply.get("result") if isinstance(reply, dict) else None
+        error = ReviewBoundaryError(
+            f"Claude turn failed: {detail}" if detail
+            else "Claude printed no JSON result")
+        error.output = output
+        raise error
+    message = reply["result"]
+    if verdicts is None:
+        return message, None
+    return message, terminal_verdict(message, verdicts)
+
+
+PARSERS = {"codex": parse_codex_output, "claude": parse_claude_output}
 
 
 def codex_session(output: str) -> str | None:
@@ -484,6 +523,21 @@ def stray_containers() -> list[str]:
     ]
 
 
+def _codex_release(harness: str, credential: str | None) -> Path | None:
+    if harness not in PARSERS:
+        raise ReviewBoundaryError(f"unknown review harness {harness!r}")
+    if harness == "claude":
+        if not (credential and CREDENTIAL_NAME.fullmatch(credential)
+                and os.environ.get(credential)):
+            raise ReviewBoundaryError(
+                f"Claude credential variable {credential} is unset or empty")
+        return None
+    codex = shutil.which("codex")
+    if not codex:
+        raise ReviewBoundaryError("Codex CLI is not installed")
+    return Path(codex)
+
+
 def run_review(
     *,
     repo: Path,
@@ -502,6 +556,8 @@ def run_review(
     transcripts: Path | None = None,
     on_session=None,
     multi_agent: bool = False,
+    harness: str = "codex",
+    credential: str | None = None,
 ) -> str:
     """`profile` must be what the model and effort compute to; another is refused."""
     if not model:
@@ -513,9 +569,7 @@ def run_review(
         raise ReviewBoundaryError(
             f"reviewer profile {profile} does not name the route "
             f"{model} at {effort} ({profile_for(model, effort)})")
-    codex = shutil.which("codex")
-    if not codex:
-        raise ReviewBoundaryError("Codex CLI is not installed")
+    codex = _codex_release(harness, credential)
 
     SCRATCH_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     scratch = tempfile.TemporaryDirectory(prefix=SCRATCH_PREFIX, dir=SCRATCH_ROOT)
@@ -526,7 +580,7 @@ def run_review(
             carry=carry, run_id=run_id)
         image, dockerfile = image_for(staged)
         _ensure_image(image, dockerfile, candidate=staged.candidate_sha)
-        home, toolchain = _prepare_runtime(root, CODEX_AUTH, Path(codex))
+        home, toolchain = _prepare_runtime(root, CODEX_AUTH, codex)
         name = "holophyte-" + root.name.replace(".", "-")
         command = container_command(
             image=image,
@@ -542,10 +596,13 @@ def run_review(
             run_id=run_id,
             service_tier=service_tier,
             multi_agent=multi_agent,
+            harness=harness,
+            credential=credential,
         )
         try:
             with _removing_on_signal(name):
-                result = _run(command, timeout=timeout, on_start=on_start)
+                result = _run(command, timeout=timeout, on_start=on_start,
+                              check=codex is not None)
         finally:
             _remove_container(name)
             if _fingerprint(staged.path, run_id) != staged.fingerprint:
@@ -553,13 +610,13 @@ def run_review(
         if "PREFLIGHT_OK" not in result.stderr:
             raise ReviewBoundaryError("review preflight did not complete")
         try:
-            message, _ = parse_codex_output(result.stdout, verdicts)
+            message, _ = PARSERS[harness](result.stdout, verdicts)
         except ReviewBoundaryError as error:
             error.tail = result.stdout[-EVIDENCE_TAIL:]
             error.exit_status = result.returncode
             raise
-        session = codex_session(result.stdout)
-        if (session and transcripts is not None and on_session is not None
+        if (transcripts is not None and on_session is not None
+                and (session := codex_session(result.stdout))
                 and keep_transcript(home, transcripts, session)):
             on_session(session)
         return message

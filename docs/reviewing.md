@@ -80,8 +80,8 @@ build, checksum-verified against its release manifest, on `PATH` under
 `/etc/claude-code/managed-settings.json` make `bypassPermissions` the default
 permission mode, so a Claude implementer turn under
 `implementer_isolation = "container"` runs its tools without asking; the
-container is its boundary. The reviewer carries no Claude credential, so the
-CLI is inert in a review. A change to the Dockerfile moves the tag so the
+container is its boundary. Only an adversary pass on the Claude family (below)
+gives it a credential; in any other review the CLI is inert. A change to the Dockerfile moves the tag so the
 next review rebuilds instead of reusing the cached image. The image follows
 the candidate: the runner reads the tag and the Dockerfile out of the candidate
 commit, so a candidate that changed either is reviewed in an image built from
@@ -97,6 +97,18 @@ creates on the writable reviewer home before preflight. A run fails closed if
 preflight identity or write rejection fails, the Codex tool host cannot
 execute a local command, the container times out, or the staged repository
 fingerprint changes.
+
+A Claude turn, the adversary's alternate family, runs in the same container:
+the same staging, preflight, write probe, `cp -a` copy, read-only workspace
+mount and hardening flags, with no Codex release and no Codex auth file
+mounted. From `/home/reviewer/candidate` it executes
+`/opt/claude/bin/claude -p --model MODEL --effort EFFORT --output-format json
+PROMPT`, model, effort and prompt passed as arguments to the script. Its
+credential is the variable `[agents] adversary_credential` names, handed over
+as `--env=NAME`. The reply is the `result` field of the CLI's JSON; output that
+is not JSON, or whose `is_error` is true, fails the turn with the output's
+tail, and an outage line (`You've hit your limit`, `Credit balance is too
+low`) goes through the outage path below.
 
 A review prompt whose range from the frozen base holds commits from the
 [trim step](loop.md) gets a trim section, read from git on every round,
@@ -122,6 +134,17 @@ container on the reviewer's model pair with Codex multi-agent on, so it can
 start subagents; the primary reviewer's container keeps
 `--disable multi_agent`. `[agents] adversary` and `adversary_fallback` route
 it like the reviewer.
+
+With `[agents] adversary_credential` set, the default route alternates between
+two model families so they can be compared: a run's passes are numbered from 0
+in the order they run, counted from its `adversary_round` events (a resumed
+run counts from the run it continues), and pass `k` of run `R` runs Claude
+Opus at effort `high` in the review container when `R + k` is odd, Codex
+otherwise. Without the key every pass runs Codex. A Claude turn whose output
+carries a Claude outage line switches to a configured `adversary_fallback`, or
+the reviewer's container fallback pair, probed and recorded as a
+`route_fallback` event; with neither, the run fails as `review_route` and no
+Codex turn stands in.
 
 The round's tier is the one its `blast_radius` event records. The first round
 of a run whose tier is `medium` or `high` gets a pass over the whole candidate,
@@ -154,8 +177,11 @@ A reproduced or traced finding blocks the round: it is not approved, its
 primary's findings under `Adversarial review findings (reproduced or traced):`.
 Concerns never block and stay out of `reviewRounds`; each pass's concerns go
 into one ledger note. Each pass records an `adversary_round` detail event with
-`round`, `tier`, `depth`, `scope`, `range`, `family`, `outcome`, `seconds`,
-`findings` (the blocking ones) and `concerns`.
+`round`, `tier`, `depth`, `scope`, `range`, `family` (`claude`, `codex`,
+`configured`, or `fallback` once the route switched), `model`, `effort`,
+`family_reason` when the family was forced (`no adversary_credential`),
+`outcome`, `seconds`, `findings` (the blocking ones) and `concerns`. The
+pass's `agent_turn` event labels a Claude turn `claude opus`.
 
 ## PR rounds
 

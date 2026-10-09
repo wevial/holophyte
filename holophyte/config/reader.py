@@ -1,3 +1,4 @@
+import re
 import tomllib
 from pathlib import Path
 
@@ -70,7 +71,7 @@ KNOWN_KEYS = {
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",
-                  "implementer_resume", "review_mode"}),
+                  "implementer_resume", "review_mode", "adversary_credential"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry", "env_source", "env_allow"}),
 }
@@ -93,6 +94,23 @@ KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
 BUDGET_SCALE = 1.0
 BUDGET_SCALE_RANGE = (1.0, 3.0)
 REVIEW_MODES = ("single", "verified")
+
+
+CREDENTIAL_ENV = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def adversary_credential(project):
+    value = config_table(project, "agents").get("adversary_credential")
+    if value is None:
+        return None
+    if not (isinstance(value, dict) and set(value) == {"env"}
+            and isinstance(value["env"], str)
+            and CREDENTIAL_ENV.fullmatch(value["env"])):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] adversary_credential "
+            'must be { env = "NAME" }, NAME a variable in the factory\'s '
+            "environment")
+    return value["env"]
 
 
 def config_table(project, name):

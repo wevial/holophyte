@@ -3,12 +3,15 @@ import contextvars
 import json
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import monotonic
 
 import store
+from holophyte.agents.agent_routes import routes
 from holophyte.agents.review_workspace import review_refs
 from holophyte.board.projection import ledger
+from holophyte.config.agent_settings import review_route
+from holophyte.config.reader import adversary_credential
 from holophyte.config.review_settings import review_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import safe_print as print
@@ -37,6 +40,29 @@ EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:[*`\s]*([^\s*`]*)",
 LEADING_PATH_RE = re.compile(
     r"^\s*(?:[-*+]|\d+[.)])\s+[`*_]*([\w.\-/]*\w):(\d+)(?![\w.])")
 SURFACES = "browser UI, HTTP or API, CLI, data and migrations"
+CLAUDE_ROUTE = {"harness": "claude", "model": "opus", "effort": "high"}
+
+
+@dataclass(frozen=True)
+class Family:
+    name: str
+    model: str | None = None
+    effort: str | None = None
+    reason: str | None = None
+    credential: str | None = None
+
+    def route(self):
+        if self.name != "claude":
+            return None
+        return dict(CLAUDE_ROUTE, credential=self.credential)
+
+    def record(self):
+        reason = {} if self.reason is None else {"family_reason": self.reason}
+        return {"family": self.name, "model": self.model,
+                "effort": self.effort, **reason}
+
+
+FALLBACK = Family("fallback")
 
 
 @dataclass(frozen=True)
@@ -48,6 +74,7 @@ class Pass:
     start: str
     sha: str
     concerns: tuple = ()
+    family: Family = Family("codex")
 
     @property
     def seconds(self):
@@ -69,6 +96,29 @@ def gated(project, root, start, sha):
 
 
 def planned(project, conn, run_id, root, base, sha, rnd):
+    plan = _scoped(project, conn, run_id, root, base, sha, rnd)
+    if plan is None:
+        return None
+    passes = len(_payloads(conn, run_id, "adversary_round", rnd - 1))
+    return replace(plan, family=choose_family(project, conn, run_id, passes))
+
+
+def choose_family(project, conn, run_id, passes):
+    if "adversary" in routes(project).commands:
+        return FALLBACK
+    if "adversary" in (project.config().get("agents") or {}):
+        return Family("configured")
+    model, effort = review_route(project)
+    credential = adversary_credential(project)
+    if credential is None:
+        return Family("codex", model, effort, "no adversary_credential")
+    if (continued_runs(conn, run_id)[0] + passes) % 2:
+        return Family("claude", CLAUDE_ROUTE["model"], CLAUDE_ROUTE["effort"],
+                      credential=credential)
+    return Family("codex", model, effort)
+
+
+def _scoped(project, conn, run_id, root, base, sha, rnd):
     if conn is None or run_id is None or not review_config(project).adversary:
         return None
     tiers = _payloads(conn, run_id, "blast_radius", rnd)
@@ -184,7 +234,8 @@ def attack(project, conn, run_id, wt, base, ticket, plan, run_agent):
     for _ in range(2):
         reply = run_agent(project, "adversary", goal, wt, base_sha=base,
                           candidate_sha=plan.sha, timeout=plan.seconds,
-                          conn=conn, run_id=run_id)
+                          conn=conn, run_id=run_id,
+                          family_route=plan.family.route())
         if finished(reply):
             return reply, round(monotonic() - started, 3)
         goal += (f"\n\nYour previous reply did not end with {DONE}. Your "
@@ -216,11 +267,6 @@ def beside(conn, run_id, primary, side):
     return result, outcome["value"]
 
 
-def _family(project):
-    return ("configured" if "adversary" in (project.config().get("agents") or {})
-            else "codex")
-
-
 def settle(project, conn, run_id, provider, task_id, plan, attacked):
     if plan is None:
         return []
@@ -230,13 +276,15 @@ def settle(project, conn, run_id, provider, task_id, plan, attacked):
     concerns = [f for f in found if f["evidence"] not in BLOCKING]
     outcome = ("malformed" if reply is None else
                "blocked" if blocking else "clear")
+    family = (FALLBACK if "adversary" in routes(project).commands
+              else plan.family)
     store.record_event(
         conn, run_id, "adversary_round",
         f"round {plan.round} adversary ({plan.depth}, {plan.scope}): {outcome}",
         level="detail", payload=json.dumps({
             "round": plan.round, "tier": plan.tier, "depth": plan.depth,
             "scope": plan.scope, "range": [plan.start, plan.sha],
-            "family": _family(project), "outcome": outcome, "seconds": seconds,
+            **family.record(), "outcome": outcome, "seconds": seconds,
             "findings": blocking, "concerns": concerns}))
     if concerns:
         ledger(conn, run_id, task_id, "note",
