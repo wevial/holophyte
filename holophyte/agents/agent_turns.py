@@ -10,14 +10,20 @@ from holophyte.config.reader import DEFAULT_IMPLEMENTER, IMPL_MODEL
 from holophyte.redact import known_secrets, outbound
 
 
-def turn_label(project, role):
+def turn_label(project, role, family_route=None):
     active = routes(project).commands.get(role)
     argv = shlex.split(active) if active else agent_command(project, role, "")
     if not active and argv is not None:
         argv = argv[:-1]  # The appended prompt is never label material.
+    if argv is None and family_route is not None:
+        return family_label(family_route)
     if argv is None:
         argv = default_argv(project, role)
     return outbound(argv_label(argv), known_secrets(project.config()))
+
+
+def family_label(family_route):
+    return argv_label([family_route["harness"], "--model", family_route["model"]])
 
 
 def default_argv(project, role):
@@ -58,10 +64,11 @@ def route_labels(project):
             "trimmer": seat_or_implementer("trim")}
 
 
-def recorded_turn(project, role, routed_role, conn, run_id, launch):
+def recorded_turn(project, role, routed_role, conn, run_id, launch,
+                  family_route=None):
     if conn is None or run_id is None:
         return launch()
-    payload = dict(role=role, label=turn_label(project, routed_role),
+    payload = dict(role=role, label=turn_label(project, routed_role, family_route),
                    route="fallback" if routed_role in routes(project).commands
                    else "primary", exit_status=None, timed_out=False)
     started = monotonic()

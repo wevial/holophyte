@@ -4,6 +4,7 @@ import threading
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.probes import (
     container_fallback_profile,
+    probe_adversary_claude,
     probe_critic,
     probe_diagnostic,
     probe_implementer,
@@ -12,6 +13,7 @@ from holophyte.agents.probes import (
 )
 from holophyte.config.agent_settings import fallback_entries
 from holophyte.config.reader import AGENT_CONFIG_KEYS
+from holophyte.config.review_settings import review_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import safe_print as print
 
@@ -108,7 +110,8 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
     table = project.config().get("agents") or {}
     for role, seat in AGENT_CONFIG_KEYS.items():
         has_fallback = seat + "_fallback" in table or (
-            role == "review" and container_fallback_profile(project, role))
+            container_pair_seat(project, role)
+            and container_fallback_profile(project, role))
         if role == "trim" or (role != "implement" and not has_fallback):
             continue
         probe = ((implementer_probe or probe_implementer)(project)
@@ -116,6 +119,8 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
                  probe_seat(project, role))
         if probe is None:
             continue
+        if role == "adversary" and probe.ok:
+            probe = probe_adversary_claude(project) or probe
         print(probe_diagnostic(project, probe))
         if not probe.ok and has_fallback:
             probe = startup_fallback(project, provider, role, probe, activate)
@@ -128,6 +133,11 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
         # Even a scheduler keeps `critic_failed`: its workers inherit it.
         probe_critic(project, activate=True)
     return True
+
+
+def container_pair_seat(project, role):
+    return role == "review" or (role == "adversary"
+                                and review_config(project).adversary)
 
 
 def startup_fallback(project, provider, role, probe, activate):

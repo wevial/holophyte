@@ -1,3 +1,4 @@
+import os
 import tomllib
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from holophyte.config.config_tables import (
     TRIM_KEYS,
 )
 from holophyte.config.review_settings import REVIEW_KEYS
+from holophyte.redact import register_values
 
 
 def load_config(path):
@@ -40,6 +42,7 @@ REVIEW_EFFORT = review_runner.EFFORT
 REVIEW_EFFORTS = review_runner.EFFORTS
 review_profile = review_runner.profile_for
 REVIEW_PROFILE = review_profile(REVIEW_MODEL, REVIEW_EFFORT)
+ADVERSARY_CLAUDE = ("opus", "high")
 CRITIC_MODEL = "gpt-6-luna"
 CRITIC_EFFORT = "medium"
 
@@ -70,7 +73,7 @@ KNOWN_KEYS = {
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",
-                  "implementer_resume", "review_mode"}),
+                  "implementer_resume", "review_mode", "adversary_credential"}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry", "env_source", "env_allow"}),
 }
@@ -93,6 +96,21 @@ KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
 BUDGET_SCALE = 1.0
 BUDGET_SCALE_RANGE = (1.0, 3.0)
 REVIEW_MODES = ("single", "verified")
+
+
+def adversary_credential(project):
+    value = config_table(project, "agents").get("adversary_credential")
+    if value is None:
+        return None
+    if not (isinstance(value, dict) and set(value) == {"env"}
+            and isinstance(value["env"], str)
+            and review_runner.CREDENTIAL_NAME.fullmatch(value["env"])):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] adversary_credential "
+            'must be { env = "NAME" }, NAME a variable in the factory\'s '
+            "environment")
+    register_values([os.environ.get(value["env"], "")])
+    return value["env"]
 
 
 def config_table(project, name):
