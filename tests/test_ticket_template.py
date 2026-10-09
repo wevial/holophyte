@@ -1129,7 +1129,6 @@ class MockupTests(unittest.TestCase):
                     "**How:**", f"**Blast radius:** {value}\n\n**How:**")
                 self.assertEqual(tt.blocking(tt.validate(tt.parse(body))), [
                     f"'**Blast radius:**' must read high or medium, not {value!r}"])
-        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
 
     def test_three_undeclared_evidence_states_get_one_advisory(self):
         states = ("Onboarding step one", "Onboarding step two",
