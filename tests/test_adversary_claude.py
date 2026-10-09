@@ -207,22 +207,6 @@ class FamilyTests(test_adversary.AdversaryFixture):
                          ("codex", "no adversary_credential"))
         self.assertEqual(configured["family"], "configured")
 
-    def test_an_unset_credential_fails_the_route_before_any_container(self):
-        self.configure(ON + CREDENTIAL)
-        environment = {name: value for name, value in os.environ.items()
-                       if name != KEY}
-        output = io.StringIO()
-        with patch.dict(os.environ, environment, clear=True), \
-                contextlib.redirect_stdout(output):
-            _, guard = self.loop(fake=RealAdversary(Change("poetry.lock"),
-                                                    APPROVE))
-
-        self.assertEqual(guard.spawned, [])
-        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
-                         [("failed", "review_route")])
-        self.assertIn(f"Claude credential variable {KEY} is unset",
-                      output.getvalue())
-
     def test_an_unset_credential_never_switches_to_the_container_fallback_pair(
             self):
         self.configure(ON + CREDENTIAL + 'review_fallback_model = "gpt-6-luna"\n'
@@ -236,9 +220,10 @@ class FamilyTests(test_adversary.AdversaryFixture):
             return real(prompt=prompt, candidate_sha=candidate_sha, **kwargs)
         environment = {name: value for name, value in os.environ.items()
                        if name != KEY}
+        output = io.StringIO()
         with patch.dict(os.environ, environment, clear=True), \
                 patch.object(review_runner, "run_review", side_effect=run_review), \
-                contextlib.redirect_stdout(io.StringIO()):
+                contextlib.redirect_stdout(output):
             _, guard = self.loop(fake=RealAdversary(Change("poetry.lock"),
                                                     APPROVE))
 
@@ -248,6 +233,8 @@ class FamilyTests(test_adversary.AdversaryFixture):
         self.assertEqual(self.read(
             "SELECT COUNT(*) FROM runEvents WHERE kind = 'route_fallback'"),
             [(0,)])
+        self.assertIn(f"Claude credential variable {KEY} is unset",
+                      output.getvalue())
 
     def test_a_claude_pass_keeps_its_credential_out_of_the_record(self):
         secret = "holophyte-adversary-credential-value"
