@@ -40,9 +40,12 @@ def _scale_note(project, budget_min):
     return f" ({budget_min * scale:g} min at scale {scale:g})"
 
 
-def _armed(project, requested):
-    cap, requested = turn_cap(project), round(requested)
-    return min(cap, requested), "turn_cap" if cap < requested else "time_box"
+def _armed(project, budget_min, seconds=None, limit=None):
+    cap = turn_cap(project)
+    requested = round(budget_min * budget_scale(project) * 60
+                      if seconds is None else seconds)
+    return min(cap, requested), limit or (
+        "turn_cap" if cap < requested else "time_box")
 
 
 def implement_arming(project, conn, run_id, budget_min):
@@ -51,8 +54,8 @@ def implement_arming(project, conn, run_id, budget_min):
            if conn is not None and run_id is not None else None)
     spent_ms = agent_work(run, int(time() * 1000)) if run is not None else None
     floor = min(10, budget_min) * 60 * scale
-    return _armed(project, max(floor, budget_min * 60 * scale
-                               - (spent_ms or 0) // 1000))
+    return _armed(project, budget_min, max(floor, budget_min * 60 * scale
+                                           - (spent_ms or 0) // 1000))
 
 
 def _limit_text(project, limit, budget_min):
@@ -67,9 +70,7 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
            role="implement", argv=None, seconds=None, limit=None):
     """Return `(output, timed_out)`; a timeout or a sweep kills the turn's group."""
     session_role = role
-    armed, named = _armed(project, budget_min * budget_scale(project) * 60
-                          if seconds is None else seconds)
-    limit = limit or named
+    armed, limit = _armed(project, budget_min, seconds, limit)
     kill = GroupKill()
     with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
         try:
@@ -153,9 +154,7 @@ def _record_implementer_output(conn, run_id, out, secrets=()):
 def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal,
                      argv=None, *, seconds=None, limit=None):
     """Retry transport loss once, sharing the original turn's wall-clock cap."""
-    remaining, named = _armed(project, budget_min * budget_scale(project) * 60
-                              if seconds is None else seconds)
-    limit = limit or named
+    remaining, limit = _armed(project, budget_min, seconds, limit)
     deadline = retry_clock() + remaining
     for attempt in range(2):
         out, timed_out = _timed(project, conn, run_id, beat_s, wt, budget_min,
