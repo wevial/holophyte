@@ -38,7 +38,7 @@ class PullRequestRefreshTests(MergeModeFixture):
         return turn.call_args.args[-1]
 
     def test_replace_preserves_production_evidence_in_either_position(self):
-        evidence = "## Evidence\n\nCaptured with `capture`.  \n\n![screen](https://example/screen.png)\n\n"
+        evidence = "## Evidence\n\nCaptured at 0123456789ab  \n\n![screen](https://example/screen.png)\n\n"
         link = "Linear: KO-131 (https://linear.app/example/KO-131)"
         tail = "\n\n<!-- bot -->\nAppended block.\n"
         base = holophyte.pr.github.pr_body_written(
@@ -120,7 +120,7 @@ class PullRequestRefreshTests(MergeModeFixture):
         edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
         self.assertEqual(edits, [f"gh pr edit {self.URL} --body-file -"] * 2)
 
-    def captured_pr(self, exit_code=0):
+    def captured_pr(self, exit_code=0, quoted=""):
         """Evidence at A; the capture logs its sha, then fails or writes one."""
         self.captures = (script := self.db.parent / "capture.py").with_name("log")
         script.write_text(
@@ -136,7 +136,7 @@ class PullRequestRefreshTests(MergeModeFixture):
                                        return_value=False))
         self.git("checkout", "-qb", BRANCH)
         a = self.commit_file("console/app.txt")[:12]
-        self.old_evidence = (f"## Evidence\n\nCaptured at {a}\n\n"
+        self.old_evidence = (f"## Evidence\n\nCaptured at {a}\n\n{quoted}"
                              f"![screen](https://example/{a}.png)")
         self.pr_body.write_text(holophyte.pr.pr_media.append(holophyte.pr.github.pr_body_written(
             "Old.", "KO-131", None), self.old_evidence))
@@ -218,6 +218,29 @@ class PullRequestRefreshTests(MergeModeFixture):
         self.assertEqual(f"## Evidence\n\n{rest}".rstrip(), self.old_evidence)
         for part in (a, b[:12], "failed (exit 3)"):
             self.assertIn(part, notice)
+
+    QUOTED = ("Captured with `python3 capture.py '--caption=`.\n/srv/x/spec.ts'`.\n\n"
+              "Media lives in an object bucket.\n\n")
+
+    def test_a_kept_evidence_drops_an_older_quoted_capture_command(self):
+        a = self.captured_pr(quoted=self.QUOTED)
+        self.commit_file("README.md")
+        self.refresh(("TITLE: Ignored\nNew description.", False))
+        evidence = holophyte.pr.github.split_pr_body(self.pr_body.read_text())[2]
+        self.assertFalse(self.captures.exists())
+        self.assertEqual(evidence.rstrip(), f"## Evidence\n\nCaptured at {a}\n\n"
+                         "Media lives in an object bucket.\n\n"
+                         f"![screen](https://example/{a}.png)")
+
+    def test_a_stale_evidence_drops_an_older_quoted_capture_command(self):
+        a = self.captured_pr(exit_code=3, quoted=self.QUOTED)
+        self.commit_file("console/app.txt")
+        self.refresh(("TITLE: Ignored\nNew description.", False))
+        evidence = holophyte.pr.github.split_pr_body(self.pr_body.read_text())[2]
+        self.assertIn("The UI capture failed (exit 3).", evidence)
+        self.assertNotIn("Captured with", evidence)
+        self.assertNotIn("/srv/x", evidence)
+        self.assertIn(f"Captured at {a}\n\nMedia lives in ", evidence)
 
     def test_refresh_refusal_leaves_body_untouched(self):
         self.configure('[merge]\nmode = "pr"\npr_changes_log = true\n')
