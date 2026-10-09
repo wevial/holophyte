@@ -1,6 +1,7 @@
 """The implement stage and the timed agent turn every stage runs under."""
 import json
 import os
+import sqlite3
 import subprocess
 from pathlib import Path
 from time import monotonic as retry_clock
@@ -69,9 +70,29 @@ def _limit_text(project, limit, budget_min):
     return f"{budget_min} min budget{_scale_note(project, budget_min)}"
 
 
+SWEPT_ROLES = ("implement", "trim")
+WIP_PREFIX = "WIP: implementer "
+
+
 def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
            role="implement", argv=None, seconds=None, limit=None, sweep=True):
     """Return `(output, timed_out)`; a timeout or a sweep kills the turn's group."""
+    swept = sweep and role in SWEPT_ROLES
+    try:
+        output, timed_out = _run_turn(project, conn, run_id, beat_s, wt,
+                                      budget_min, goal, role, argv, seconds,
+                                      limit)
+    except Exception:
+        if swept:
+            _sweep_quietly(project, conn, run_id, wt, "ended")
+        raise
+    if swept:
+        _sweep_quietly(project, conn, run_id, wt, _turn_end(output, timed_out))
+    return output, timed_out
+
+
+def _run_turn(project, conn, run_id, beat_s, wt, budget_min, goal, role, argv,
+              seconds, limit):
     session_role = role
     armed, limit = _armed(project, budget_min, seconds, limit)
     kill = GroupKill()
@@ -100,8 +121,6 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
         if not kill.wanted:
             record_session(project, conn, run_id, session_role, output, wt,
                            on_start=kill.arm)
-    if sweep and role == "implement":
-        _sweep_tree(project, conn, run_id, wt, _turn_end(output, timed_out))
     return output, timed_out
 
 
@@ -198,7 +217,7 @@ def _turn_end(out, timed_out):
 
 
 def _wip_subject(cause, task_id):
-    return f"WIP: implementer {cause} mid-edit ({task_id}); not verified"
+    return f"{WIP_PREFIX}{cause} mid-edit ({task_id}); not verified"
 
 
 def _task_key(conn, run_id, branch):
@@ -206,6 +225,14 @@ def _task_key(conn, run_id, branch):
            if conn is not None and run_id is not None else None)
     ticket = run and store.read.ticket_by_id(conn, run.ticketId)
     return ticket.linearIdentifier if ticket else branch
+
+
+def _sweep_quietly(project, conn, run_id, wt, cause):
+    try:
+        _sweep_tree(project, conn, run_id, wt, cause)
+    except (RuntimeError, OSError, ValueError, subprocess.SubprocessError,
+            sqlite3.Error) as failed:
+        print(f"[holo2] the turn-end sweep of {wt} failed: {failed}")
 
 
 def _sweep_tree(project, conn, run_id, wt, cause):

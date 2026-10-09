@@ -13,6 +13,7 @@ from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import InfraFailure, run_verify, sh, with_baseline
 from holophyte.loop.implement import (
     OUTPUT_TAIL,
+    WIP_PREFIX,
     _commands_brief,
     _killed_by_signal,
     _timed,
@@ -45,7 +46,7 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
     goal = TRIM_BRIEF.format(base=base_sha,
                              commands=_commands_brief(project, verify_cmd).strip())
     out, reason = _turn(project, conn, run_id, beat_s, wt, config.budget_min, goal)
-    _land(wt, "HEAD", untracked)
+    _land(wt, _below_swept_wip(wt, sha), untracked)
     commits = _commits(wt, sha)
     reason = reason or _malformed(wt, sha, commits)
     kept, reason = (([], reason) if reason else
@@ -168,6 +169,12 @@ def _land(wt, target, untracked):
             shutil.rmtree(path)
         else:
             path.unlink(missing_ok=True)
+
+
+def _below_swept_wip(wt, sha):
+    head, _, subject = sh(["git", "log", "-1", "--format=%H %s"],
+                          cwd=wt).partition(" ")
+    return f"{head}^" if head != sha and subject.startswith(WIP_PREFIX) else head
 
 
 def _commits(wt, sha):
