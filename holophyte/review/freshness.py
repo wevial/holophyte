@@ -285,10 +285,10 @@ def stale_parked(conn, project_id, identifier=None, columns=("ready",),
         " AND t.activeRunId IS NULL AND t.goneSince IS NULL"
         " AND t.boardColumn IN (SELECT value FROM json_each(?))"
         " AND (n.kind = 'stale' AND n.text NOT LIKE '%* critic: %'"
-        " OR ? AND n.kind = 'critic' OR ? AND n.kind = 'stale')"
+        " OR ? AND n.kind IN ('stale', 'critic'))"
         " AND (? IS NULL OR t.linearIdentifier = ?)"
         " ORDER BY t.id",
-        (project_id, json.dumps(list(columns)), critic, critic, identifier,
+        (project_id, json.dumps(list(columns)), critic, identifier,
          identifier)).fetchall()
 
 
