@@ -116,7 +116,7 @@ def build_and_swap(sources, dist, tree):
 
 
 def record_failure(home, out, reason, tried, served):
-    path = Path(home) / BUILD_RECORD
+    path = home / BUILD_RECORD
     temporary = path.with_name(f"{BUILD_RECORD}.{os.getpid()}.tmp")
     record = {"failed_ms": int(time() * 1000), "reason": reason,
               "tried": tried, "served": served}
@@ -135,7 +135,7 @@ def record_failure(home, out, reason, tried, served):
 
 
 def clear_failure(home, out):
-    path = Path(home) / BUILD_RECORD
+    path = home / BUILD_RECORD
     try:
         path.unlink(missing_ok=True)
     except OSError as bad:
@@ -144,14 +144,13 @@ def clear_failure(home, out):
 
 def read_failure(home):
     try:
-        record = json.loads((Path(home) / BUILD_RECORD).read_text("utf-8"))
+        record = json.loads((home / BUILD_RECORD).read_text("utf-8"))
     except (OSError, ValueError):
         return {}
     return record if isinstance(record, dict) else {}
 
 
 def console_state(dist, home):
-    dist = Path(dist)
     served = built_tree(dist)
     tree = source_tree(dist.parent)
     stale = tree is not None and tree != served
