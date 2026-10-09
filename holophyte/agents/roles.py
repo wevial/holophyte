@@ -114,7 +114,7 @@ def critic_turn(project, goal, cwd, timeout):
 
 def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
-          review_round=None):
+          review_round=None, substitute=True):
     from store.working import working
 
     requested_role = role
@@ -145,7 +145,8 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             output = launch()
         except InfraFailure as failure:
             reason = argv is None and route_down(project, role, failure)
-            if reason and activate_fallback(project, role, reason, conn, run_id):
+            if (substitute and reason
+                    and activate_fallback(project, role, reason, conn, run_id)):
                 return second_attempt(launch, failure)
             if timed_out(failure):
                 output = second_attempt(launch, failure)
@@ -155,7 +156,7 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 output = launch()
         command = getattr(output, "command", agent_route(project, role))
         reason = outage_reason(command, output)
-        if (argv is None and reason
+        if (argv is None and substitute and reason
                 and activate_fallback(project, role, reason, conn, run_id)):
             return launch()
         return output

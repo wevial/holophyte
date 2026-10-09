@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 from story_fixture import child_body, write_story  # noqa: E402
 
+import review_runner  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.follow_ups  # noqa: E402
@@ -51,6 +52,7 @@ WITNESSES = [
      "command": f"python3 -m unittest tests.test_{key}", "source": "pass\n"}
     for key in ("W1", "W2")]
 
+PROBE_GOAL = probes.REVIEW_PROBE_GOAL
 ROUTE = """#!{python}
 import json, subprocess, sys
 goal = sys.argv[-1]
@@ -111,10 +113,13 @@ class StoryProposalTests(LoopFixture):
         self.replies.write_text(json.dumps(
             {needle: [reply, code] for needle, (reply, code) in by_text.items()}))
 
-    def turns(self):
+    def turns(self, probes=False):
+        """The seat's scope turns, its probes too when asked."""
         if not self.calls.exists():
             return []
-        return [json.loads(line) for line in self.calls.read_text().splitlines()]
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        return [call for call in calls
+                if probes or call["goal"] != PROBE_GOAL]
 
     def file(self, body, column="backlog"):
         key = store.board.file_ticket(self.conn, self.project_id, "NAT", body,
@@ -320,9 +325,10 @@ class ScopeFallbackTests(StoryProposalTests):
 
         run_id = self.merged(self.merged_child, f"fix\n\n{FEATURE}")
 
-        self.assertEqual([(turn["route"], turn["goal"] ==
-                           probes.REVIEW_PROBE_GOAL) for turn in self.turns()],
-                         [("codex-adjudicator", False),
+        self.assertEqual([(turn["route"], turn["goal"] == PROBE_GOAL)
+                          for turn in self.turns(probes=True)],
+                         [("codex-adjudicator", True),
+                          ("codex-adjudicator", False),
                           ("devin-fallback", True),
                           ("devin-fallback", False)])
         self.assertEqual(self.read(
@@ -340,8 +346,8 @@ class ScopeFallbackTests(StoryProposalTests):
 
         run_id = self.merged(self.merged_child, f"fix\n\n{FEATURE}")
 
-        self.assertEqual([turn["route"] for turn in self.turns()],
-                         ["codex-adjudicator"])
+        self.assertEqual([turn["route"] for turn in self.turns(probes=True)],
+                         ["codex-adjudicator", "codex-adjudicator"])
         self.assertEqual(self.read(
             "SELECT COUNT(*) FROM runEvents WHERE kind = 'route_fallback'"),
             [(0,)])
@@ -351,14 +357,63 @@ class ScopeFallbackTests(StoryProposalTests):
         self.assertEqual(self.proposals(), [])
         self.assertEqual(len(self.drafts()), 1)
 
+    def test_a_failed_probe_with_no_fallback_defaults_before_any_turn(self):
+        self.approved_story()
+        self.reply(**{TEXT: (IN_STORY, 0)})
+        primary = self.target.parent / "codex-adjudicator"
+        primary.write_text(primary.read_text().replace(
+            "    sys.exit(0)\nfor needle", "    sys.exit(1)\nfor needle"))
+
+        run_id = self.merged(self.merged_child, f"fix\n\n{FEATURE}")
+
+        self.assertEqual([turn["goal"] for turn in self.turns(probes=True)],
+                         [PROBE_GOAL])
+        [(summary, payload)] = events(self.conn, run_id, "follow_up_scope")
+        self.assertEqual((payload["verdict"], payload["default"]),
+                         ("standalone", True))
+        self.assertIn("the adjudicator probe failed", summary)
+        self.assertEqual(self.proposals(), [])
+        self.assertEqual(len(self.drafts()), 1)
+
+    def test_the_reviewers_container_fallback_never_takes_the_scope_turn(self):
+        self.configure(f'{NATIVE}[agents]\nreview_model = "gpt-6-astra"\n'
+                       'review_effort = "medium"\n'
+                       'review_fallback_model = "gpt-5.6-sol"\n'
+                       'review_fallback_effort = "high"\n')
+        self.addCleanup(reset, self.project)
+        self.approved_story()
+        reviews = []
+
+        def run_review(*, candidate_sha, prompt, model, **_):
+            reviews.append((model, prompt == PROBE_GOAL))
+            if prompt == PROBE_GOAL:
+                return f"ready {candidate_sha}"
+            if model == "gpt-6-astra":
+                raise review_runner.ReviewBoundaryError(
+                    "container produced no events")
+            return IN_STORY
+
+        with patch.object(review_runner, "run_review", side_effect=run_review):
+            run_id = self.merged(self.merged_child, f"fix\n\n{FEATURE}")
+
+        self.assertEqual(reviews, [("gpt-6-astra", True),
+                                   ("gpt-6-astra", False)])
+        self.assertEqual(self.read(
+            "SELECT COUNT(*) FROM interventions"
+            " WHERE action = 'route_fallback'"), [(0,)])
+        [(_, payload)] = events(self.conn, run_id, "follow_up_scope")
+        self.assertEqual((payload["verdict"], payload["default"]),
+                         ("standalone", True))
+        self.assertEqual(self.proposals(), [])
+
     def test_an_outage_exiting_zero_with_a_scope_line_still_defaults(self):
         self.approved_story()
         self.reply(**{TEXT: (f"{OUTAGE}\n{IN_STORY}", 0)})
 
         run_id = self.merged(self.merged_child, f"fix\n\n{FEATURE}")
 
-        self.assertEqual([turn["route"] for turn in self.turns()],
-                         ["codex-adjudicator"])
+        self.assertEqual([turn["route"] for turn in self.turns(probes=True)],
+                         ["codex-adjudicator", "codex-adjudicator"])
         [(summary, payload)] = events(self.conn, run_id, "follow_up_scope")
         self.assertEqual((payload["verdict"], payload["default"]),
                          ("standalone", True))
@@ -390,7 +445,7 @@ class NoScopeCallTests(StoryProposalTests):
                              "FOLLOW_UP(feature): refused before @ b.py:9\n"
                              "FOLLOW_UP(feature): Drafted elsewhere @ a.py:5")
 
-        self.assertEqual(self.turns(), [])
+        self.assertEqual(self.turns(probes=True), [])
         self.assertEqual(self.ticket_count(), tickets)
         self.assertEqual(len(self.proposals()), 1)
         self.assertEqual([payload["key"] for _, payload in events(
@@ -406,7 +461,7 @@ class NoScopeCallTests(StoryProposalTests):
         loose = self.file(VALID_BODY, column="ready")
         self.merged(loose, "fix\n\nFOLLOW_UP(feature): Outside any story")
 
-        self.assertEqual(self.turns(), [])
+        self.assertEqual(self.turns(probes=True), [])
         drafts = self.drafts()
         self.assertEqual(len(drafts), 2)
         for _, body, parent in drafts:
