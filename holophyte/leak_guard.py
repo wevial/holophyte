@@ -156,8 +156,7 @@ def ticket_problems(repo, text, problems):
     private, section, headings = [], "the preamble", 0
     for number, line in enumerate(text.split("\n"), 1):
         found = list(_search(compiled, line))
-        heading = H2_RE.match(line)
-        if heading:
+        if heading := H2_RE.match(line):
             headings += 1
             section = (f"section #{headings}" if found
                        else f"section '{heading.group(1).strip()}'")
