@@ -76,8 +76,10 @@ def _verify_findings(verify_cmd, ok, out):
     status = facts.get("exit_status")
     title = (f"failing verify command: {command}"
              + (f" (exit {status})" if status is not None else ""))
+    last = facts.get("last_output_line")
     return [{"path": "verify", "line": facts.get("command_index") or None,
-             "severity": "p1", "title": title, "message": title}]
+             "severity": "p1", "title": title,
+             "message": f"{title}\n{last}" if last else title}]
 
 
 def _with_report(verdict, red, out):

@@ -203,9 +203,9 @@ finding), `concern`.
 
 A round whose verify failed for a reason other than a timeout also stores a
 finding naming the failing command, so it reads `changes_requested` even when
-the reviewer approved, and the fix turn is also handed the report of a failing
-verify after the verdict text or the merged list. A fix turn that still makes
-no progress fails with a reason naming that command.
+the reviewer approved, and the fix turn is also handed
+the report of a failing verify after the verdict text or the merged list. A fix
+turn that still makes no progress fails with a reason naming that command.
 
 Pass 1 is factory code. Two items with the same path, the same line (or
 neither) and the same message, whitespace collapsed and case folded once the
