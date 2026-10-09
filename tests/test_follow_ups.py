@@ -151,11 +151,10 @@ class NativeProject(LoopRuns):
         self.addCleanup(environ.stop)
         self.configure(NATIVE)
         self.board = board_for(self.project)
-        conn = open_store(self.project)
-        self.addCleanup(conn.close)
-        self.conn = conn
+        self.conn = open_store(self.project)
+        self.addCleanup(self.conn.close)
         self.project_id = store.tickets.ensure_project(
-            conn, self.board.team, self.project.path)
+            self.conn, self.board.team, self.project.path)
 
 
 class NativeMergeTests(NativeProject):

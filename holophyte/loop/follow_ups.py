@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import hashlib
 import re
 import subprocess
@@ -125,32 +126,25 @@ def draft_body(row, origin):
 
 
 def _origin(conn, run_id):
-    key, pr_url, merge_sha = conn.execute(
+    return Origin(*conn.execute(
         "SELECT t.linearIdentifier, r.prUrl, r.mergeSha FROM runs r"
         " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
-        (run_id,)).fetchone()
-    return Origin(key, pr_url, merge_sha)
+        (run_id,)).fetchone())
 
 
-class _Boards:
-    def __init__(self, target):
-        self.target = target
-        self._board = None
-
-    def get(self):
-        if self._board is None:
-            self._board = provider.board_for(self.target)
-            if self._board is None:
-                raise RuntimeError("the project has no board to file on")
-        return self._board
+def _board(target):
+    board = provider.board_for(target)
+    if board is None:
+        raise RuntimeError("the project has no board to file on")
+    return board
 
 
-def settle_row(conn, row, origin, boards):
+def settle_row(conn, row, origin, board_of):
     """One pending row's route: the board, a duplicate or the ledger."""
     if row.kind == "guardrail":
         store.follow_ups.settle_ledger(conn, row.id)
         return
-    board = boards.get()
+    board = board_of()
     filed = store.follow_ups.filed_drafts(conn, row.id)
     closed = board.closed_identifiers(filed) if filed else {}
     still_open = [key for key in filed if key not in closed]
@@ -165,11 +159,11 @@ def settle_row(conn, row, origin, boards):
 def settle(target, conn, run_id):
     """A merged run's pending rows; a failure is recorded, never raised."""
     try:
-        rows = store.follow_ups.pending_follow_ups(conn, run_id)
-        origin, boards = _origin(conn, run_id), _Boards(target)
-        for row in rows:
+        origin = _origin(conn, run_id)
+        board_of = functools.cache(lambda: _board(target))
+        for row in store.follow_ups.pending_follow_ups(conn, run_id):
             try:
-                settle_row(conn, row, origin, boards)
+                settle_row(conn, row, origin, board_of)
             except Exception as e:
                 print(f"[holo2] follow-up {row.id} not filed: {e}")
                 store.follow_ups.settle_unfiled(conn, row.id,
