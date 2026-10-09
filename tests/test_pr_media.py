@@ -682,7 +682,6 @@ class MediaTests(unittest.TestCase):
                 body = self.open()
                 self.assertIn("## Evidence", body)
                 self.assertIn(expected, body)
-                self.assertIn("python3 capture.py", body)
 
     def test_retry_replaces_media_and_video_is_a_link(self):
         self.candidate()
@@ -722,7 +721,7 @@ class MediaTests(unittest.TestCase):
         with patch("holophyte.pr.pr_media.CAPTURE_TIMEOUT", 0.5):
             body = self.open()
         self.assertTrue(marker.exists())
-        self.assertIn("Capture command `sh capture.sh` failed: timed out", body)
+        self.assertIn("The UI capture timed out", body)
 
     def test_capture_ignoring_term_is_killed_after_the_grace(self):
         self.candidate()
@@ -733,7 +732,7 @@ class MediaTests(unittest.TestCase):
               patch("holophyte.pr.pr_media.CAPTURE_GRACE", 0.5)):
             body = self.open()
         self.assertLess(monotonic() - started, 15)
-        self.assertIn("Capture command `sh capture.sh` failed: timed out", body)
+        self.assertIn("The UI capture timed out", body)
 
     def leave_child(self, trap):
         """A capture that starts a child running `trap`, then exits 0."""
@@ -810,7 +809,7 @@ class MediaTests(unittest.TestCase):
             ("raise SystemExit(3)", 300, "The UI capture failed (exit 3).", True),
             ("import time; time.sleep(30)", 0.05,
              "The UI capture timed out after 300 seconds.", True),
-            ("pass", 300, "The UI capture produced no media files.", False),
+            ("pass", 300, "The UI capture produced no media files.", True),
         ]:
             with (self.subTest(expected),
                   patch.object(pr_media, "CAPTURE_TIMEOUT", timeout)):
@@ -829,7 +828,7 @@ class MediaTests(unittest.TestCase):
         self.config["merge"]["ui_capture"] = "sh capture.sh"
         section, notes = self.prepare()
         tail = "\n".join(f"line {i}" for i in range(11, 31))
-        self.assertIn("Capture command `sh capture.sh` failed (exit 2).\n\n"
+        self.assertIn("The UI capture failed (exit 2).\n\n"
                       f"```\n{tail}\n```", section)
         self.assertNotIn("line 10\n", section)
         self.assertEqual(len(notes), 1)

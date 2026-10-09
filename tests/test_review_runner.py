@@ -793,7 +793,7 @@ class VisualEvidencePromptTests(unittest.TestCase):
         fixture.candidate(script='raise SystemExit(7)')
         brief = evidence_brief(fixture.target, fixture.repo, 'KO-505')
         body = fixture.open()
-        failure = 'Capture command `python3 capture.py` failed (exit 7).'
+        failure = 'The UI capture failed (exit 7).'
         self.assertIn(failure, body)
         self.assertIn(failure, brief)
         self.assertIn('counts against the candidate', brief)
