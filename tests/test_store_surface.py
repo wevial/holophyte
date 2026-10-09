@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import store
 import store.board
+import store.console_asks
 import store.follow_ups
 import store.gap_layers
 import store.operate
@@ -300,6 +301,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                  (store.gap_layers, ["gap_finder_counts",
                                                      "gap_layer_counts",
                                                      "record_gap_layer"]),
+                                 # HOLO-201: a console ask recorded with its
+                                 # park's release, read back and answered.
+                                 (store.console_asks, ["answered", "ask", "asks",
+                                                       "pending"]),
                                  # HOLO-174: a merged run's FOLLOW_UP rows,
                                  # captured pending and settled at the merge.
                                  (store.follow_ups, ["filed_drafts",

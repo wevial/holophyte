@@ -1,5 +1,6 @@
 import re
 
+from holophyte.babysit.maintainer_notes import is_console_ask
 from holophyte.babysit.thread_mentions import REFUSAL, classify, refuse, refused
 from holophyte.config.config_tables import merge_config
 from holophyte.pr.github import Thread, acknowledged
@@ -8,7 +9,8 @@ from holophyte.redact import known_secrets, outbound
 ASK_REPLY_MARKER = "<!-- holophyte:ask-answered -->"
 
 REPLY_RE = re.compile(
-    r"(> \[Request by @[^\n]+\]\([^\n]+\)\n>\n> .*?)"
+    r"(> \[(?:Request by @|Asked from the console by )[^\n]+\]\([^\n]+\)"
+    r"\n>\n> .*?)"
     r"\n\n---- Comment by [^\n]+ ----\n\n"
     rf"(?:Addressed in [0-9a-f]{{40}}: .+|{re.escape(ASK_REPLY_MARKER)}\n.+|"
     rf"{re.escape(REFUSAL)})",
@@ -66,4 +68,6 @@ def _instruction(comment, pull, merge):
 
 def quote_request(thread):
     quote = "\n".join("> " + line for line in thread.body.splitlines())
-    return f"> [Request by @{thread.author}]({thread.url})\n>\n{quote}"
+    asker = (f"Asked from the console by {' '.join(thread.author.split())}"
+             if is_console_ask(thread) else f"Request by @{thread.author}")
+    return f"> [{asker}]({thread.url})\n>\n{quote}"

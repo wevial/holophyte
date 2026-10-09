@@ -10,6 +10,7 @@ from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import github
 from holophyte.redact import known_secrets, outbound
 from holophyte.review import reply_parsing
+from store import console_asks
 from store.instructions import record_instruction_reply
 
 # A cited line on the end of a link target: `:92`, `:92-106` or `:92–106`.
@@ -45,11 +46,15 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
         body = f"{header}\n\n{ASK_REPLY_MARKER}\n{reply}"
         if thread.triage is not None:
             body += "\n\n" + thread_mentions.FIX_HINT
-        post(target, conn, run_id, beat_s, pull, thread, body, resolve=True,
-             instruction=dict(kind="instruction", path=thread.path or "(no file)",
-                              line=thread.line, author=thread.comments[-1].author,
-                              request=thread.request, url=thread.url,
-                              **({"triage": thread.triage} if thread.triage else {})))
+        url = post(
+            target, conn, run_id, beat_s, pull, thread, body, resolve=True,
+            instruction=dict(kind="instruction", path=thread.path or "(no file)",
+                             line=thread.line, author=thread.comments[-1].author,
+                             request=thread.request, url=thread.url,
+                             **({"triage": thread.triage} if thread.triage else {})))
+        if maintainer_notes.is_console_ask(thread):
+            console_asks.answered(conn, run_id, maintainer_notes.event_id(thread),
+                                  url, outbound(reply, known_secrets(target.config())))
     remaining = tuple(t for t in threads if t not in asks)
     if asks and not remaining:
         why = previous_park_reason(conn, run_id, branch)
@@ -117,10 +122,12 @@ def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=
          for key, value in instruction.items()}
         if instruction is not None else None
     )
+    url = None
     with heartbeat_while(conn, run_id, beat_s):
         if thread.kind == "conversation":
-            github.comment_on_pull(target, pull, outbound(
+            posted = github.comment_on_pull(target, pull, outbound(
                 f"{quote_request(thread)}\n\n{body}", secrets))
+            url = posted.get("html_url") if isinstance(posted, dict) else None
         else:
             github.reply_thread(target, pull, thread.id, body)
         if thread.classification == "MENTIONED":
@@ -136,3 +143,4 @@ def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=
             if conn is not None and run_id is not None:
                 store.record_event(conn, run_id, "pull_request",
                                    f"resolved thread {thread.url}")
+    return url

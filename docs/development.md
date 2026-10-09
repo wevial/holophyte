@@ -250,6 +250,9 @@ Each module, one line:
 - `holophyte/serve/serve_merge.py` — the daemon's `GET /runs/N/merge` and
   `POST /actions/merge`: a run parked for a human's merge read for
   readiness, and released through the store's `approve` only when ready.
+- `holophyte/serve/serve_ask.py` — the daemon's `POST /actions/ask` and
+  `GET /runs/N/asks`: a question on a parked run's pull request, recorded
+  with the park's release, and the console asks on that pull request.
 - `holophyte/agents/transcripts.py` — opted-in transcript location, rendering and turn event joins.
 - `holophyte/agents/transcript_config.py` — the daemon transcript root allow-list.
 - `holophyte/serve/serve_runs.py` — the daemon's run and ledger read routes
@@ -412,6 +415,9 @@ Each module, one line:
   babysitter threads, contract amendments, and commit event references.
 - `store/operator_notes.py` — atomic send-back and append-only note consumption
   evidence across attempts on the same pull request.
+- `store/console_asks.py` — a console ask recorded and its park released in one
+  transaction, the unanswered asks on a ticket's pull request, and each
+  answer's comment.
 - `holophyte/babysit/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/babysit/conversation_comments.py` — paged human conversation instructions
   and recognition of quoted factory replies.

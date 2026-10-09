@@ -459,8 +459,8 @@ def reply_thread(target, pull, thread_id, body):
 
 
 def comment_on_pull(target, pull, body):
-    rest(target, pull, "POST",
-         f"repos/{pull.repo}/issues/{pull.number}/comments", {"body": body})
+    return rest(target, pull, "POST",
+                f"repos/{pull.repo}/issues/{pull.number}/comments", {"body": body})
 
 
 def resolve_thread(target, pull, thread_id):

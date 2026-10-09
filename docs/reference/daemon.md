@@ -40,7 +40,8 @@ call) written before the action runs; an action that cannot be recorded
 does not run. `recorded` is that row's id, the one `holo --json` write
 results cite: the row the action itself inserted, never another
 writer's row of the same name (`restart_supervisor`, `launch_loop`,
-`requeue`, `operator_note` for `send-back`, `approve` for `merge`, `hold`,
+`requeue`, `operator_note` for `send-back`, `approve` for `merge`,
+`babysit` for `ask`, `hold`,
 `release_hold`, `pause`, `resume`, and `abort` or `abort_close`). It is
 null when the action wrote none: a refusal, `ok: false` before the
 write, or a `pause` or `abort` of a run whose request is already
@@ -203,6 +204,60 @@ project's own token is 401. A `run` that is not a positive integer is
 400, and so is a `bypass_review` that is not a boolean, before GitHub is
 read; a project with no store is 503. `--approve` and `holo approve` keep
 releasing without reading GitHub.
+
+## `POST /actions/ask`
+
+Body: a JSON object with `run` (required, a run parked on its pull
+request), `question` (required) and `author` (optional, default
+`maintainer`). The console's question about the pull request: the loop's
+next claim answers it there, without waiting for the host sweep to see new
+pull request activity.
+
+A `run` that is not a positive integer is 400, a run the store does not
+hold is 404 `no such run`, and a project with no store is 503. Other
+refusals are 200 with `ok: false`, a `reason` and a `detail`, and write
+nothing; they are checked in this order:
+
+| `reason` | When |
+| --- | --- |
+| `empty_question` | `question` is missing, not a string, or blank |
+| `no_pull_request` | the run has no pull request URL, as under `[merge] mode = "local"` |
+| `ask_pending` | an earlier console ask on the same ticket and pull request URL has no answer yet |
+| `finished` | the run has ended: merged, failed, abandoned or rejected |
+| `not_parked` | the run is open but is not its ticket's newest run parked in `awaiting_merge_approval`: it is live in the loop, or paused |
+
+```json
+{"action": "ask", "ok": false, "run": 52, "reason": "ask_pending",
+ "detail": "console ask event 812 on https://github.com/example/repo/pull/31 is not answered yet",
+ "recorded": null}
+```
+
+Accepted, one transaction records a `console_ask` event on the run (detail
+level, payload `{"question", "author"}`), writes a `babysit` interventions
+row with source `human` and the note `AUTHOR via the console: ask:
+QUESTION`, and releases the park as `send-back` does: the run ended
+`abandoned` with `resumePhase` `merge_gate`, and the ticket walked to
+`ready`. `event_id` is the ask's event and `recorded` the interventions
+row. The daemon calls no GitHub API.
+
+```json
+{"action": "ask", "ok": true, "run": 52, "ticket": "KO-219",
+ "event_id": 812, "recorded": 88,
+ "detail": "console ask event 812 recorded; the loop's next claim answers it on https://github.com/example/repo/pull/31"}
+```
+
+On that claim the babysitter treats each unanswered console ask on the
+ticket's pull request as an `@holophyte ask:` on its conversation, whatever
+`[merge] mention_accounts` lists: the adjudicator reads the checkout and the
+ticket and changes nothing. One conversation comment is posted, starting
+`> [Asked from the console by AUTHOR](PR_URL)` with the question quoted,
+then the answer under the factory's comment header; the babysitter never
+reads that comment back as an instruction. The answer records the usual
+`instruction` event (outcome `asked`) and a `console_ask_answered` event
+with payload `{"event_id", "url", "answer"}`, and the run parks again as
+before. [`GET /runs/N/asks`](http.md#get-runsnasks) lists the asks and
+their answers. A failed or empty answer fails the run, as an
+`@holophyte ask:` does, and the ask stays unanswered.
 
 ## The project's configuration: `GET /config` and `PUT /config`
 
