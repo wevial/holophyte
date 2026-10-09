@@ -401,9 +401,10 @@ Each module, one line:
 - `holophyte/question_cli.py` — typed questions through the `claude` or `codex`
   CLI: prompt, schema, parsing, usage, and the probe with its fallback.
 - `holophyte/loop/follow_ups.py` — a fix turn's `FOLLOW_UP` lines parsed
-  from its new commits and stored pending, and the merged run's settle step:
-  a feature filed as a Backlog draft or matched to an open one by its
-  fingerprint, a guardrail kept as a findings-ledger row.
+  from its new commits and stored pending, and the merged run's settle step,
+  one project's at a time under a file lock: a feature filed as a Backlog
+  draft or matched to an open one by its fingerprint, a guardrail kept as a
+  findings-ledger row.
 - `holophyte/loop/failure_triage.py` — a failed run's cause question
   (`infra`, `code` or `spec`) after close-out, its `failure_triage` event, and
   the one factory requeue a confident `infra` answer earns.
@@ -496,8 +497,9 @@ The store is its own package:
   a gap's lesson landed in, and `gap_layer_counts()` counts each gap's latest
   layer in ladder order.
 - `store/follow_ups.py` — `record_follow_up()` stores a pending
-  `followUps` row once per run and fingerprint, `pending_follow_ups()` and
-  `filed_drafts()` read them, and the four `settle_*()` writers settle a row
+  `followUps` row once per run and fingerprint, `pending_follow_ups()` reads
+  a run's pending rows with those of the parked runs whose candidate it
+  carried, `filed_drafts()` the drafts filed for a fingerprint, and the four `settle_*()` writers settle a row
   as filed, duplicate, ledger or unfiled, each with its run event.
 - `store/stories.py` — `file_story()` writes a story's rows for a parent
   and its children, `story()` reads one back from either, `approve_story()`

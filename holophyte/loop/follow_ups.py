@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import functools
 import hashlib
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -155,20 +157,39 @@ def settle_row(conn, row, origin, board_of):
     store.follow_ups.settle_filed(conn, row.id, key)
 
 
+@contextlib.contextmanager
+def _filing_turn(target):
+    # One settle per project at a time, its duplicate check through its filing:
+    # a file lock, not the store's, because it is held across a board call.
+    path = target.holo_dir / "follow-ups.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def settle(target, conn, run_id):
     """A merged run's pending rows; a failure is recorded, never raised."""
     try:
-        origin = _origin(conn, run_id)
-        board_of = functools.cache(lambda: _board(target))
-        for row in store.follow_ups.pending_follow_ups(conn, run_id):
-            try:
-                settle_row(conn, row, origin, board_of)
-            except Exception as e:
-                print(f"[holo2] follow-up {row.id} not filed: {e}")
-                store.follow_ups.settle_unfiled(conn, row.id,
-                                                f"{type(e).__name__}: {e}")
+        with _filing_turn(target):
+            _settle_rows(target, conn, run_id)
     except Exception as e:
         print(f"[holo2] follow-ups of run {run_id} not settled: {e}")
         with contextlib.suppress(Exception):
             store.record_event(conn, run_id, "follow_up_settle_failed",
                                f"follow-ups not settled: {e}", level="detail")
+
+
+def _settle_rows(target, conn, run_id):
+    origin = _origin(conn, run_id)
+    board_of = functools.cache(lambda: _board(target))
+    for row in store.follow_ups.pending_follow_ups(conn, run_id):
+        try:
+            settle_row(conn, row, origin, board_of)
+        except Exception as e:
+            print(f"[holo2] follow-up {row.id} not filed: {e}")
+            store.follow_ups.settle_unfiled(conn, row.id,
+                                            f"{type(e).__name__}: {e}")

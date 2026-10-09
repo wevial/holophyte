@@ -8,6 +8,7 @@ import io
 import json
 import os
 import sys
+import threading
 import unittest
 from contextlib import closing
 from pathlib import Path
@@ -33,6 +34,7 @@ import store.board  # noqa: E402
 import store.tickets  # noqa: E402
 import ticket_template  # noqa: E402
 from holophyte.agents.fix_session import fix_turn  # noqa: E402
+from holophyte.board.native_board import NativeBoard  # noqa: E402
 from holophyte.board.projection import release_run  # noqa: E402
 from holophyte.loop.follow_ups import capture, settle  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
@@ -195,10 +197,35 @@ class NativeMergeTests(NativeProject):
         self.assertEqual(len(self.store_events("follow_up_ledger")), 1)
 
 
+    def test_an_approved_resume_settles_the_parked_run_s_follow_ups(self):
+        self.configure(NATIVE + '[merge]\napprove = "human"\n')
+        store.board.file_ticket(self.conn, self.project_id, "NAT", VALID_BODY)
+        out = self.run_loop(Commit("the work"), REQUEST_CHANGES, Commit(FIX),
+                            APPROVE, board=self.board)
+        self.assertEqual(self.read("SELECT phase FROM runs"),
+                         [("awaiting_merge_approval",)], out)
+        (ticket_id,) = self.read("SELECT id FROM tickets")[0]
+        store.approve(self.conn, ticket_id, "merge it")
+
+        out = self.run_loop(board=self.board)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("abandoned",), ("merged",)], out)
+        [(key,)] = self.read("SELECT linearIdentifier FROM tickets"
+                             " WHERE title LIKE 'Draft follow-up: %'")
+        self.assertEqual(self.read(
+            "SELECT runId, kind, filedAs, settledAt IS NOT NULL FROM followUps"
+            " ORDER BY id"), [(1, "feature", key, 1), (1, "guardrail", None, 1)])
+
 class NativeSettleTests(NativeProject):
     """Settled over the store with real git commits; the merge is recorded."""
 
     def merged_run(self, *messages, pr_url=None):
+        run_id = self.merged_unsettled(*messages, pr_url=pr_url)
+        settle(self.project, self.conn, run_id)
+        return run_id
+
+    def merged_unsettled(self, *messages, pr_url=None):
         key = store.board.file_ticket(self.conn, self.project_id, "NAT",
                                       VALID_BODY)
         ticket = store.read.ticket_by_identifier(self.conn, key)
@@ -214,7 +241,6 @@ class NativeSettleTests(NativeProject):
             store.set_pull_request(self.conn, run_id, pr_url)
         release_run(self.conn, run_id, True,
                     merge_sha=self.git("rev-parse", "HEAD").strip())
-        settle(self.project, self.conn, run_id)
         return run_id
 
     def drafts(self):
@@ -258,6 +284,39 @@ class NativeSettleTests(NativeProject):
 
         self.assertEqual(len(self.drafts()), 2)
 
+
+    def test_two_workers_settling_one_finding_file_one_draft(self):
+        first = self.merged_unsettled(f"fix\n\n{FEATURE}")
+        second = self.merged_unsettled(f"fix\n\n{FEATURE}")
+        filing, release = threading.Event(), threading.Event()
+
+        class Gated(NativeBoard):
+            def file(board, *args, **kwargs):
+                if not filing.is_set():
+                    filing.set()
+                    release.wait(10)
+                return super().file(*args, **kwargs)
+
+        def worker(run_id):
+            with closing(open_store(self.project)) as conn:
+                settle(self.project, conn, run_id)
+
+        gated = Gated(self.project, "NAT", self.board.team)
+        with patch("provider.board_for", return_value=gated):
+            workers = [threading.Thread(target=worker, args=(run_id,))
+                       for run_id in (second, first)]
+            workers[0].start()
+            self.assertTrue(filing.wait(10))
+            workers[1].start()
+            workers[1].join(1)
+            release.set()
+            for thread in workers:
+                thread.join(10)
+
+        [(key, _)] = self.drafts()
+        self.assertEqual(self.read(
+            "SELECT runId, filedAs, duplicateOf FROM followUps ORDER BY runId"),
+            [(first, None, key), (second, key, None)])
 
 class LinearMergeTests(LoopRuns):
     """The default Linear-mode project, its board a recording stand-in."""

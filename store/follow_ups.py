@@ -70,18 +70,26 @@ def record_follow_up(conn, run_id, commit_sha, kind, kind_given, text,
 
 
 def pending_follow_ups(conn, run_id):
+    """Pending rows of the run and of each parked run whose candidate it carried."""
     return [FollowUp(*row[:5], bool(row[5]), *row[6:]) for row in conn.execute(
-        f"SELECT {_COLUMNS} FROM followUps WHERE runId = ?"
+        "WITH RECURSIVE carried(id) AS (SELECT ? UNION"
+        " SELECT parked.id FROM carried JOIN runs run ON run.id = carried.id"
+        " JOIN runs parked ON parked.id = (SELECT id FROM runs"
+        "   WHERE ticketId = run.ticketId AND attempt < run.attempt"
+        "   ORDER BY attempt DESC LIMIT 1)"
+        " WHERE parked.resumePhase IN ('merge_gate', 'merging')"
+        " AND parked.outcome IS NOT 'merged')"
+        f" SELECT {_COLUMNS} FROM followUps WHERE runId IN carried"
         " AND settledAt IS NULL ORDER BY id", (run_id,))]
 
 
 def filed_drafts(conn, follow_up_id):
-    """Keys earlier rows of this project filed for the fingerprint, newest first."""
+    """Keys other rows of this project filed for the fingerprint, newest first."""
     return [key for (key,) in conn.execute(
         "SELECT f.filedAs FROM followUps f JOIN runs r ON r.id = f.runId"
         " JOIN followUps this ON this.id = ?"
         " JOIN runs thisRun ON thisRun.id = this.runId"
-        " WHERE r.projectId = thisRun.projectId AND f.id < this.id"
+        " WHERE r.projectId = thisRun.projectId AND f.id <> this.id"
         " AND f.fingerprint = this.fingerprint AND f.kind = 'feature'"
         " AND f.filedAs IS NOT NULL ORDER BY f.id DESC", (follow_up_id,))]
 
