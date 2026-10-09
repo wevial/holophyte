@@ -71,14 +71,13 @@ def _limit_text(project, limit, budget_min):
     return f"{budget_min} min budget{_scale_note(project, budget_min)}"
 
 
-SWEPT_ROLES = ("implement", "trim")
 WIP_PREFIX = "WIP: implementer "
 
 
 def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
            role="implement", argv=None, seconds=None, limit=None, sweep=True):
     """Return `(output, timed_out)`; a timeout or a sweep kills the turn's group."""
-    swept = sweep and role in SWEPT_ROLES
+    swept = sweep and role in ("implement", "trim")
     try:
         output, timed_out = _run_turn(project, conn, run_id, beat_s, wt,
                                       budget_min, goal, role, argv, seconds,
