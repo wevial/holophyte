@@ -44,8 +44,8 @@ class TurnTreeSweepTests(SweepTestCase):
     def write(self, name, text):
         (self.target / name).write_text(text)
 
-    def merge_main(self):
-        subprocess.run(["git", "merge", "-q", "main"], cwd=self.target,
+    def merge_main(self, *flags):
+        subprocess.run(["git", "merge", "-q", *flags, "main"], cwd=self.target,
                        capture_output=True)
 
     def turn(self, play, role="implement"):
@@ -247,8 +247,7 @@ class TurnTreeSweepTests(SweepTestCase):
     def test_an_aborted_autostashed_merge_restores_the_stashed_edit(self):
         def edit_then_autostash_merge():
             self.write("a.txt", "edited before the merge\n")
-            subprocess.run(["git", "merge", "-q", "--autostash", "main"],
-                           cwd=self.target, capture_output=True)
+            self.merge_main("--autostash")
         self.turn(edit_then_autostash_merge)
 
         self.assertFalse(self.mid_merge())
@@ -267,8 +266,7 @@ class TurnTreeSweepTests(SweepTestCase):
         def autostash_merge_then_resolve():
             self.write("a.txt", "edited before the merge\n")
             self.write("c.txt", "edited before the merge\n")
-            subprocess.run(["git", "merge", "-q", "--autostash", "main"],
-                           cwd=self.target, capture_output=True)
+            self.merge_main("--autostash")
             self.write("a.txt", "branch a\nmain a\n")
             self.write("b.txt", "branch b\nmain b\n")
             self.git("add", "a.txt", "b.txt")

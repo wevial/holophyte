@@ -367,10 +367,8 @@ def _unwind_merge(wt, merged):
 
 
 def _staged_entries(project, wt):
-    listed = subprocess.run(["git", "ls-files", "-s", "-z"], cwd=wt, check=True,
-                            capture_output=True, text=True).stdout
     kept = []
-    for entry in filter(None, listed.split("\0")):
+    for entry in sorted(_listed(wt, "ls-files", "-s", "-z")):
         info, _, path = entry.partition("\t")
         mode, sha, stage = info.split()
         if stage in ("0", "2") and not (protected(project) and path == ".env"):
