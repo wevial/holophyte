@@ -394,8 +394,13 @@ One pass:
    That review reads what changed since the approval, not the whole
    candidate again. The reviewer is told to review the range from the
    approved sha to the candidate, those commits and whatever they touch;
-   the rest stands on the earlier approval. It still answers for every
-   criterion, and for one the range does not touch it may cite that
+   the rest stands on the earlier approval. When the range holds a merge
+   of `main`, the reviewer is told to review it as `git log -p
+   --remerge-diff` of the range less the merged `main`'s history: the
+   candidate's own commits and each merge's conflict resolution, with
+   none of the hunks a merge took cleanly from `main`, which were
+   reviewed on their own pull requests. The reviewer still answers for
+   every criterion, and for one the range does not touch it may cite that
    approval as `approval at SHA; tests/file.py::TestClass::test_name`,
    where `SHA` is the approved sha (a test that is not Python is named
    `path::"test name"` or `path::TestName`). The prompt lists the test

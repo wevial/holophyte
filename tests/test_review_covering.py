@@ -333,16 +333,16 @@ class CoveringAfterMainMergeTests(unittest.TestCase):
                                    self.approved, self.head, candidate_only=True)
         self.assertEqual(scope, ["shared.py"])
 
-    def test_range_instruction_limits_diff_to_candidate_files(self):
+    def test_range_command_adds_candidate_lines_and_not_main_lines(self):
         prompt = briefs.covering_scope(self.root, self.approved, self.head, "pr")
         instructions = prompt.split("BEGIN UNTRUSTED METADATA", 1)[0]
-        self.assertIn(
-            f"Review this range as `git --literal-pathspecs diff "
-            f"{self.approved}..{self.head} -- "
-            "shared.py`", instructions)
-        self.assertNotIn("other.py", instructions)
+        diff = range_command_output(prompt, self.root)
+        self.assertIn("task", added_lines(diff))
+        self.assertNotIn("main", added_lines(diff))
+        self.assertNotIn("other.py", diff)
         self.assertNotIn("those commits and whatever they touch", instructions)
-        self.assertIn("any other file came from a merge of `main`", instructions)
+        self.assertIn("came from a merge of `main`", instructions)
+        self.assertIn("are not blockers here", instructions)
 
 
 class CoveringAgainstLaggingMainTests(CoveringAfterMainMergeTests):
@@ -433,11 +433,7 @@ class CoveringAfterConflictedMainMergeTests(unittest.TestCase):
 
     def added_lines(self, head):
         prompt = briefs.covering_scope(self.root, self.approved, head, "pr")
-        command = re.search(r"Review this range as `([^`]+)`", prompt)
-        diff = subprocess.check_output(shlex.split(command.group(1)),
-                                       cwd=self.root, text=True)
-        return {line[1:] for line in diff.splitlines()
-                if line.startswith("+") and not line.startswith("+++")}
+        return added_lines(range_command_output(prompt, self.root))
 
     def test_range_diff_shows_resolution_and_not_main_hunks(self):
         self.assertEqual(self.git("rev-list", "--count", "--merges",
@@ -445,3 +441,23 @@ class CoveringAfterConflictedMainMergeTests(unittest.TestCase):
         added = self.added_lines(self.head)
         self.assertIn("resolved-fifteen", added)
         self.assertNotIn("main-two", added)
+
+    def test_range_after_merge_keeps_candidate_lines_on_both_sides_of_it(self):
+        lines = (self.root / "shared.txt").read_text().splitlines()
+        head = self.commit("fix after merge",
+                           {"shared.txt": self.edit(lines, {18: "fix-eighteen"})})
+        added = self.added_lines(head)
+        self.assertLessEqual(
+            {"task-fifteen", "resolved-fifteen", "fix-eighteen"}, added)
+        self.assertNotIn("main-two", added)
+
+
+def range_command_output(prompt, root):
+    command = re.search(r"Review this range as `([^`]+)`", prompt)
+    return subprocess.check_output(shlex.split(command.group(1)), cwd=root,
+                                   text=True)
+
+
+def added_lines(diff):
+    return {line[1:] for line in diff.splitlines()
+            if line.startswith("+") and not line.startswith("+++")}
