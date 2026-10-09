@@ -180,7 +180,8 @@ class BlockingTests(AdversaryFixture):
             finding("src/cli.py", 9, "an empty argv may crash"),
             finding("Dockerfile", 1, "the runtime runs as root"),
             finding("src/db.py", 2, "a lock may be skipped",
-                    "traced_but_unverified")))
+                    "traced_but_unverified"),
+            finding("src/io.py", 5, "a write may be lost", "reproduced_")))
         self.assertEqual(sorted(fake.roles), sorted([IMPLEMENT, "review",
                                                      ADVERSARY]))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
@@ -188,7 +189,8 @@ class BlockingTests(AdversaryFixture):
         self.assertEqual(event["findings"], [])
         self.assertEqual([(c["path"], c["evidence"]) for c in event["concerns"]],
                          [("src/app.py", "concern"), ("src/cli.py", "concern"),
-                          ("Dockerfile", "concern"), ("src/db.py", "concern")])
+                          ("Dockerfile", "concern"), ("src/db.py", "concern"),
+                          ("src/io.py", "concern")])
         [note] = [text for (text,) in self.read(
             "SELECT text FROM ledger WHERE kind = 'note'") if "symlink" in text]
         self.assertIn("an empty argv may crash", note)
