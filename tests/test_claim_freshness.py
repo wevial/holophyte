@@ -253,6 +253,8 @@ class ClaimSymbolAndDependencyTests(LoopFixture):
         self.assertEqual(len(comments), 1)
         self.assertIn("`_admit_ticket()`", comments[0])
         self.assertIn(CLAIM, comments[0])
+        self.assertTrue(comments[0].endswith(
+            "then move the issue back to Todo."), comments[0])
         self.assertIn("KO-131 skipped", out)
 
     def test_a_class_beginning_with_an_acronym_main_lacks_is_parked(self):

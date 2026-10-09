@@ -240,6 +240,17 @@ class NativeLoopTests(LoopFixture):
                        ["critic: stale \u2014 already done"], admitted=True,
                        kind="critic")
 
+    def test_the_sweep_leaves_a_critic_park_with_a_clean_body(self):
+        self.assertEqual(self.file(VALID_BODY), "NAT-1")
+        self.critic_park()
+        (ticket_id,) = self.read("SELECT id FROM tickets")[0]
+        before = self.notes(ticket_id)
+
+        self.assertEqual(self.sweep(), [])
+
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
+        self.assertEqual(self.notes(ticket_id), before)
+
     def test_a_stale_park_after_a_critic_park_is_re_checked(self):
         ticket_id = self.parked_on_later()
         self.edit(VALID_BODY)
