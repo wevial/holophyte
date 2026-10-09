@@ -162,19 +162,24 @@ the fix range and re-checks each concern earlier passes in the run recorded.
 | Depth | When | Attack subagents | Time box |
 | --- | --- | --- | --- |
 | `full` | `high` | one per surface the diff touches (browser UI, HTTP or API, CLI, data and migrations) plus one per risky module | 1800 seconds |
-| `light` | `medium`, and every fix pass | one per surface the diff touches, no per-module attackers | 900 seconds |
+| `light` | `medium`, and every fix pass | one per surface the diff touches, no per-module subagents | 900 seconds |
 
 Both briefs cap the pass at five subagents, give mechanical checks to a light
-model and attack reasoning and reproduction to a strong one, and keep a
+model and defect reasoning and reproduction to a strong one, and keep a
 reproduction read-only against the candidate.
 
-Each finding is one list item, `PATH:LINE [p0|p1|p2] what breaks`, then a line
+Each finding is one list item, `PATH:LINE [p0|p1|p2] what goes wrong`, then a line
 `EVIDENCE: reproduced` (the input and the observed bad result),
 `EVIDENCE: traced` (file:line for each step from the input to the harm) or
 `EVIDENCE: concern` (the scenario and why it cannot be shown yet). A finding
 with no `EVIDENCE:` line, or an unknown level, is a concern. The reply ends with
 exactly one line, `ADVERSARY: DONE`; a reply without it is asked again once, and
-a second miss fails the run as `review_route` with the candidate preserved.
+a second miss fails the run as `review_route` with the candidate preserved. A
+reply without it that carries the provider's refusal line, "This content was
+flagged for possible cybersecurity risk", is not asked again: the pass records
+outcome `refused` with no findings or concerns, writes a ledger note, and the
+round stands on the primary review alone. A refusal is about the content, not
+the route, so no fallback is switched.
 
 A reproduced or traced finding blocks the round: it is not approved, its
 `reviewRounds` row has verdict `changes_requested` and holds the finding with
@@ -187,7 +192,8 @@ into one ledger note. Each pass records an `adversary_round` detail event with
 `family_reason` when the family was forced (`no adversary_credential`, or
 for `fallback` the reason its switch recorded; a pass on the container
 fallback pair records that pair's `model` and `effort`),
-`outcome`, `seconds`, `findings` (the blocking ones) and `concerns`. The
+`outcome` (`clear`, `blocked`, `refused` or `malformed`), `seconds`,
+`findings` (the blocking ones) and `concerns`. The
 pass's `agent_turn` event labels a Claude turn `claude opus`.
 
 ## Consolidation and concerns

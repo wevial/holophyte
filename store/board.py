@@ -33,8 +33,11 @@ def ticket_problems(text, repo):
     if repo:
         # Deferred: holophyte imports this module.
         from holophyte.config.project import Project
+        from holophyte.isolation.launcher import container_docker_problems
         from holophyte.pr.pr_media import project_problems
-        problems += project_problems(Project.locate(repo, adopt=False), ticket)
+        project = Project.locate(repo, adopt=False)
+        problems += project_problems(project, ticket)
+        problems += container_docker_problems(project, ticket)
     return problems
 
 

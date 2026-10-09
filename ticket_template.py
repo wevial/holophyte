@@ -919,6 +919,10 @@ def main(argv):
             prefix = ADVISORY_PREFIX if ticket.depends_on else ""
             problems += [prefix + reason
                          for reason in landmark_reasons(repo, text)]
+            from holophyte.config.project import Project
+            from holophyte.isolation.launcher import container_docker_problems
+            problems += container_docker_problems(
+                Project.locate(repo, adopt=False), ticket)
         blockers = blocking(problems)
         if blockers:
             invalid += 1
