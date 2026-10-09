@@ -268,6 +268,9 @@ def replace_pr_evidence(body, section):
 
 
 def edit_pr_body(target, pull, body):
+    from holophyte.leak_guard import refuse_private_text
+
+    refuse_private_text(target, pull_request_body=body)
     body = outbound(body, known_secrets(target.config()))
     if shutil.which(GH) is None:
         rest(target, pull, "PATCH", f"repos/{pull.repo}/pulls/{pull.number}",
@@ -288,9 +291,11 @@ def edit_pr_body(target, pull, body):
 def push_branch(target, branch):
     from holophyte.commit_hygiene import strip_attribution
     from holophyte.environment_git import refuse_environment_history
+    from holophyte.leak_guard import refuse_private_history
 
     strip_attribution(target, target.path, branch)
     checked = refuse_environment_history(target, branch, action="push")
+    refuse_private_history(target, branch)
     refspec = f"{checked}:refs/heads/{branch}" if checked != branch else branch
     try:
         r = subprocess.run(["git", "push", REMOTE, refspec], cwd=target.path,
@@ -305,6 +310,10 @@ def push_branch(target, branch):
 
 
 def create_pull_request(target, branch, title, body):
+    from holophyte.leak_guard import refuse_private_text
+
+    refuse_private_text(target, pull_request_title=title,
+                        pull_request_body=body)
     secrets = known_secrets(target.config())
     title, body = outbound(title, secrets), outbound(body, secrets)
     if shutil.which(GH) is not None:

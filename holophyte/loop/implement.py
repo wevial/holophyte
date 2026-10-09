@@ -22,6 +22,7 @@ from holophyte.environment_git import (
     stage_work,
     unstage_environment,
 )
+from holophyte.leak_guard import register_matches
 from holophyte.loop.claim import conflict_brief
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
@@ -91,6 +92,7 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
             if isinstance(partial, bytes):
                 partial = partial.decode("utf-8", "replace")
             partial = partial.strip()
+            register_matches(project, partial)
             print(f"[holo2] {'writer' if role == 'write' else 'implementer'}"
                   " output before the budget fired:\n"
                   + (partial[-2000:] or "(no output before the budget fired)"))

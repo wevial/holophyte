@@ -77,6 +77,7 @@ def abort_requested(conn, run_id):
 
 
 def end_aborted(conn, run_id):
+    from holophyte.leak_guard import record_refusal
     from holophyte.loop.gates import InfraFailure
     from holophyte.pr import github
     branch, ticket_id, repo, pr_url, identifier = conn.execute(
@@ -109,6 +110,7 @@ def end_aborted(conn, run_id):
         try:
             github.push_branch(target, branch)
         except InfraFailure as refused:
+            record_refusal(conn, run_id, refused)
             store.record_event(conn, run_id, "warning", f"abort push: {refused}")
     # Closed after the run ends, so a reconcile never finds a parked run to reject.
     if pr_url and action == "abort_close":
