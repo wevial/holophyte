@@ -915,6 +915,7 @@ def main(argv):
         ticket = parse(text)
         problems = validate(ticket, repo=repo)
         if repo is not None:
+            from holophyte.leak_guard import ticket_problems
             from holophyte.review.freshness import landmark_reasons
             prefix = ADVISORY_PREFIX if ticket.depends_on else ""
             problems += [prefix + reason
@@ -923,6 +924,7 @@ def main(argv):
             from holophyte.isolation.launcher import container_docker_problems
             problems += container_docker_problems(
                 Project.locate(repo, adopt=False), ticket)
+            problems = ticket_problems(repo, text, problems)
         blockers = blocking(problems)
         if blockers:
             invalid += 1

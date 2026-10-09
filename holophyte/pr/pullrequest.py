@@ -6,6 +6,7 @@ from time import monotonic
 import store
 import store.read
 import ticket_template
+from holophyte import leak_guard
 from holophyte.babysit import babysitter
 from holophyte.board.projection import block_ticket, ledger
 from holophyte.config.config_tables import merge_config, sweep_config
@@ -153,8 +154,13 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     stop_if_requested(conn, run_id, "merge_gate")
     parsed = None if timed_out else github.parse_pr_text(reply)
     parsed = _with_own_key(parsed, task_id) if refresh is None else parsed
-    if parsed is None or not parsed[1]:
+    leaks = parsed and leak_guard.text_leaks(project, "written pull request text",
+                                             "\n".join(parsed))
+    leak_guard.record(conn, run_id, leaks)
+    if parsed is None or not parsed[1] or leaks:
         why = ("the turn ran out of time" if timed_out
+               else "the reply holds text the project does not publish"
+               if leaks
                else "the reply has no `TITLE:` line, an empty title, or a"
                f" title over {github.PR_TITLE_MAX} characters, or an empty body")
         if refresh is not None:
@@ -280,6 +286,8 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
                            f"pushing {branch} to {github.REMOTE} and opening its"
                            " pull request")
     adopted = False
+    leak_guard.refuse_private_text(project, pull_request_title=title,
+                                   pull_request_body=text)
     with heartbeat_while(conn, run_id, beat_s):
         github.push_branch(project, branch)
         print(f"[holo2] pushed {branch} to {github.REMOTE}")

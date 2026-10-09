@@ -16,6 +16,7 @@ from holophyte.board.projection import (
 )
 from holophyte.host.supervisor import linear_budget_low, sweep
 from holophyte.host.sweep_report import SWEEP_HINT, sweep_lines
+from holophyte.leak_guard import record_refusal
 from holophyte.loop.failure_triage import triage_failure
 from holophyte.loop.follow_ups import settle as settle_follow_ups
 from holophyte.loop.gates import MergeParked, RunFailure, outcome_class_of
@@ -146,6 +147,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
         merged = PARKED
         print(f"[holo2] run parked: {e}")
     except RunFailure as e:
+        record_refusal(conn, run_id, e)
         reason = e.reason
         failure_kind = e.failure_kind
         outcome_class = outcome_class_of(e)

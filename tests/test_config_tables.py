@@ -402,7 +402,7 @@ class MergeConfigTests(ConfigTestCase):
                           True, "", False, False,
                           (), "", "e2e/capture", False, "", None, 10, 20, "park",
                           "act", (), "holophyte", (), (), ("devin-ai-integration",
-                           "coderabbitai", "greptile-apps", "github-actions")))
+                           "coderabbitai", "greptile-apps", "github-actions"), ()))
 
     def test_bucket_validates_without_credentials_and_secrets_are_redacted(self):
         from holophyte.redact import known_secrets, redact_prose
