@@ -636,7 +636,7 @@ class AgentCommandTests(ConfigTestCase):
         run.assert_called_once_with(
             ["claude", "-p", "make the change",
              "--model", "opus", "--effort", "high"],
-            self.WORKTREE, 1800,
+            self.WORKTREE, 5400,
         )
         # The reviewer still goes through the hardened container, not argv.
         self.assertEqual(run_review.call_args.kwargs["profile"], "codex-astra-high")
@@ -656,7 +656,7 @@ class AgentCommandTests(ConfigTestCase):
         run.assert_called_once_with(
             ["claude", "--model", "sonnet", "--effort", "medium", "-p",
              "make the change"],
-            self.WORKTREE, 1800,
+            self.WORKTREE, 5400,
         )
 
     def test_a_reviewer_override_replaces_the_container_route(self):
@@ -788,18 +788,17 @@ class BudgetScaleTests(ConfigTestCase):
         report.assert_called_once_with(self.project)
 
     def test_the_scale_stretches_the_hard_cap_the_turn_is_held_under(self):
-        """`IMPL_TIMEOUT` becomes the scaled thirty minutes: a caller that
-        names no timeout gets the ceiling, and one that does is held under
-        the scaled one."""
+        """The `turn_cap_min` ceiling scales too: a caller that names a
+        timeout past the scaled ninety minutes is held under it."""
         self.locate("[agents]\nbudget_scale = 1.5\n")
 
         worktree = Path("/tmp/holophyte-scale")
         with patch.object(holophyte.agents.roles, "run_capped") as run:
             run.return_value = (0, "implemented")
             holophyte.agents.roles.agent(self.project, "implement", "make the change",
-                                   worktree, timeout=60 * 60)
+                                   worktree, timeout=3 * 60 * 60)
 
-        self.assertEqual(run.call_args.args[2], 45 * 60)
+        self.assertEqual(run.call_args.args[2], 135 * 60)
 
 
 class WorktreeSetupTests(ConfigTestCase):

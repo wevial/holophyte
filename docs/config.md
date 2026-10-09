@@ -85,6 +85,7 @@ implementer's command and isolation settings.
 | `implementer_resume` | Default: absent (disabled) | Command string containing `{session}`; the findings prompt is appended as the last argv element. Refused beside a table implementer, whose adapter builds the resume. |
 | `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. Refused beside a table implementer, whose adapter records the session. |
 | `budget_scale` | Default: `1.0` | Finite number from 1.0 to 3.0; increase for a slower implementer harness. |
+| `turn_cap_min` | Default: `90` minutes | Integer of at least 1; the ceiling on any one implement, fix or babysit turn, scaled by `budget_scale`. An implement turn is armed with its ticket's box less the run's agent work so far, floored at ten minutes (or the box, if smaller), and never past this ceiling. A timed-out turn names the limit that fired, this cap or the ticket's box, and records a `turn_timeout` run event with its `role`, `limit` (`turn_cap` or `time_box`) and armed `seconds`. |
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
 | `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary, or a non-empty list of them; set for a probed backup reviewer. A list is probed in order when the primary fails, and the first entry that passes is recorded and used. |
 | `adjudicator_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup adjudicator. |
@@ -110,8 +111,8 @@ review_fallback_model  = "gpt-5.6-sol"
 review_fallback_effort = "high"
 # Multiplier on the implementer turn's wall-clock budget: the ticket's
 # estimate times this is the cap each implementer turn is armed with, the
-# box the sweep and /status count the run against, and the hard ceiling the
-# thirty-minute cap scales to. Optional; 1.0 when absent, a number from
+# box the sweep and /status count the run against, and the turn_cap_min
+# ceiling scaled the same way. Optional; 1.0 when absent, a number from
 # 1.0 to 3.0 otherwise. Set it for a slower harness, not for a bigger task.
 budget_scale = 1.5
 ```
@@ -335,12 +336,13 @@ excluded. This records handles only; it does not resume sessions.
 
 `budget_scale` exists because the budget stops runaway turns, not because
 it selects a harness: an implementer that reads more and edits later can
-hit a thirty-minute cap on work it had nearly finished, and the answer is
-more wall clock, not a smaller ticket. The estimate, the ticket and the
+hit its time box on work it had nearly finished, and the answer is more
+wall clock, not a smaller ticket. The estimate, the ticket and the
 template's ceiling are untouched — the scale multiplies them only where the
 clock is armed, so a `budget_scale = 1.5` project arms a 45-minute turn for
 a 30-minute ticket, the timeout line names both figures, and the
-supervisor's time-box sweep allows for the scaled box. A value under 1.0
+supervisor's time-box sweep allows for the scaled box. The `turn_cap_min`
+ceiling, the ninety minutes by default, scales with it. A value under 1.0
 or over 3.0 — or a non-number — is a startup error naming the key and the
 range.
 
