@@ -1,5 +1,6 @@
 import re
 import subprocess
+from pathlib import Path
 from typing import NamedTuple
 
 import store
@@ -46,7 +47,7 @@ def _search(compiled, line):
 
 
 def scan_text(compiled, text):
-    for number, line in enumerate(text.splitlines(), 1):
+    for number, line in enumerate(text.split("\n"), 1):
         for index in _search(compiled, line):
             yield number, index
 
@@ -54,7 +55,8 @@ def scan_text(compiled, text):
 def _git(wt, *args):
     try:
         result = subprocess.run(
-            ["git", "-c", "core.quotePath=false", *args], cwd=wt,
+            ["git", "-c", "core.quotePath=false", "-c", "log.showSignature=false",
+             *args], cwd=wt,
             capture_output=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise InfraFailure(f"private pattern scan: git {args[0]}: {exc}") from exc
@@ -68,11 +70,12 @@ def _added_lines(diff, parents):
     """Yield path, line number and text of each line new against every parent."""
     width = max(parents, 1)
     path, number, header = None, 0, False
-    for line in diff.splitlines():
+    for line in diff.split("\n"):
         if line.startswith("diff "):
             path, header = None, True
         elif header and line.startswith("+++ "):
-            path = None if line[4:] == "/dev/null" else line[4:]
+            name = line[4:].rstrip("\t")
+            path = None if name == "/dev/null" else name
         elif HUNK.match(line):
             number, header = int(HUNK.match(line).group(1)), False
         elif header or path is None or "-" in line[:width] or line[:1] == "\\":
@@ -146,9 +149,12 @@ def with_findings(verdict, findings):
 def ticket_problems(repo, text):
     from holophyte.config.project import Project
     from ticket_template import H1_RE, H2_RE
-    compiled = patterns(Project.locate(repo, adopt=False))
+    try:
+        compiled = patterns(Project.locate(Path(repo).resolve(), adopt=False))
+    except SystemExit as refused:
+        return [str(refused)]
     problems, section = [], "the preamble"
-    for number, line in enumerate(text.splitlines(), 1):
+    for number, line in enumerate(text.split("\n"), 1):
         heading = H2_RE.match(line)
         if heading:
             section = heading.group(1).strip()

@@ -117,6 +117,7 @@ def _record_mode(conn, run_id, mode, rnd):
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=()):
     round_started = int(time() * 1000)
+    leaks = leak_guard.branch_leaks(project, wt, sha)
     scope = scope_files(wt, ticket, base_sha, sha)
     _record_mode(conn, run_id, mode, rnd)
     record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
@@ -153,7 +154,6 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                                 attacked)
     approved = cited_approval(verdict, wt, sha)
     red = _verify_findings(verify_cmd, ok, out)
-    leaks = leak_guard.branch_leaks(project, wt, sha)
     leak_guard.record(conn, run_id, leaks)
     private = leak_guard.review_findings(leaks)
     record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,

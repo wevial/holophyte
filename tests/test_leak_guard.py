@@ -54,6 +54,9 @@ class PrivateText:
 
 
 class PatternConfigTests(PrivateText, ConfigTestCase):
+    def setUp(self):
+        hold_redactions(self)
+
     def refusal(self, value):
         self.locate(f"[merge]\nprivate_patterns = {value}\n")
         with self.assertRaises(SystemExit) as raised:
@@ -140,6 +143,13 @@ class PushTests(PrivateText, RealGit):
         self.assertIn(f"tests/test_api.py:2 ({KEY})", message)
         self.assertIn("nothing pushed", message)
 
+    def test_a_match_after_a_form_feed_is_found_on_its_own_line(self):
+        self.commit("Add the client test",
+                    text=f"# page one\x0cURL = '{LEAK}'\nURL = '{LEAK}'\n")
+        message = self.refused_push()
+        self.assertIn(f"tests/test_api.py:1 ({KEY})", message)
+        self.assertIn(f"tests/test_api.py:2 ({KEY})", message)
+
     def test_a_matching_commit_message_is_refused_naming_the_commit(self):
         sha = self.commit(f"Add the client test\n\nRecorded against {LEAK}.",
                           text=f"URL = '{CLEAN}'\n")
@@ -164,6 +174,7 @@ class PushTests(PrivateText, RealGit):
         self.commit("Task work", "tests/test_other.py", f"URL = '{CLEAN}'\n")
         self.git("checkout", "main")
         self.commit("Main work", text=f"URL = '{LEAK}'\n")
+        self.git("push", "origin", "main")
         self.git("checkout", "task")
         self.git("merge", "--no-ff", "-m", "Merge main", "main")
         self.pushed()
@@ -268,8 +279,8 @@ class TicketFilingTests(PrivateText, ConfigTestCase):
         named = f"section 'Implementation notes', line {line},"
 
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            status = ticket_template.main(["--repo", str(self.target), str(leaked)])
+        with contextlib.redirect_stdout(out), contextlib.chdir(self.target):
+            status = ticket_template.main(["--repo", ".", str(leaked)])
         self.assertEqual(status, 1)
         self.assertIn(named, out.getvalue())
         self.assertIn(KEY, out.getvalue())
