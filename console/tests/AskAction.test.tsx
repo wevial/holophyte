@@ -12,7 +12,8 @@ const base = "http://writer:7710";
 const prUrl = "https://github.com/o/r/pull/2170";
 const [answered, unanswered] = pinned.asks;
 let listed: Record<string, unknown> | null = null;
-afterEach(() => { cleanup(); localStorage.clear(); listed = null; });
+let readFails = false;
+afterEach(() => { cleanup(); localStorage.clear(); listed = null; readFails = false; });
 
 /** `AskAction` for run 2 at poll count 0, reading its asks from `asks` (a
  *  body, or a Response for a refusal) and posting to `post`, both with the
@@ -27,9 +28,11 @@ async function show(asks: Record<string, unknown> | (() => Response), post = fak
   return { read: read.seen, post: post.seen, poll: async (polls: number) => { view.rerender(action(polls)); await act(settle); } };
 }
 
-/** `show` with no asks yet, or `listed` once set, and the question box opened. */
+/** `show` with no asks yet, or `listed` once set, failing while `readFails`,
+ *  and the question box opened. */
 async function openBox(post?: ReturnType<typeof fakeFetch>) {
-  const shown = await show(() => Response.json(listed ?? { ...pinned, asks: [] }), post);
+  const shown = await show(() => readFails ? new Response("unavailable", { status: 503 })
+    : Response.json(listed ?? { ...pinned, asks: [] }), post);
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Ask" })); });
   return shown;
 }
@@ -92,6 +95,27 @@ test("Send posts the question once with the bearer, closes the box and shows it 
   expect(screen.getByRole("status").textContent).toBe("asked");
   expect(screen.getByText("Asked: Why is the guest keyed by name?")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Ask" })).toBeNull();
+});
+
+test("a Send still in flight across a failed and recovered read cannot be posted again", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(done => { release = done; });
+  const { post, poll } = await openBox(fakeFetch({ ok: true, detail: "asked" }, gate));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Why is the guest keyed by name?" } });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send" })); await settle(); });
+  readFails = true;
+  await poll(6);
+  expect(screen.queryByRole("group")).toBeNull();
+  readFails = false;
+  await poll(12);
+  const sendButton = screen.getByRole("button", { name: "Send" }) as HTMLButtonElement;
+  expect(sendButton.disabled).toBe(true);
+  await act(async () => { fireEvent.click(sendButton); await settle(); });
+  expect(post).toHaveLength(1);
+  await act(async () => { release(); await settle(); });
+  expect(post).toHaveLength(1);
+  expect(screen.getByRole("status").textContent).toBe("asked");
+  expect(screen.getByText("Asked: Why is the guest keyed by name?")).toBeTruthy();
 });
 
 test("a question sent after an earlier answer stays waiting until a read lists a new ask", async () => {

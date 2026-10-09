@@ -71,7 +71,8 @@ export function AskAction({ base, runId, prUrl, polls, deps, fetch }: {
             onChange={event => setQuestion(event.target.value)}
             className="w-[280px] rounded border border-line bg-card p-2 text-[12px] text-ink" />
           <div className="flex gap-1.5">
-            <ActionButton onAct={send} disabled={!question.trim()} title="Write a question to send">Send</ActionButton>
+            <ActionButton onAct={send} disabled={posting || !question.trim()}
+              title={posting ? "Sending the question" : "Write a question to send"}>Send</ActionButton>
             <button type="button" disabled={posting} onClick={() => { setAsking(false); setQuestion(""); }}
               className="rounded-button px-2 py-1 text-[12px] text-muted disabled:opacity-60">Cancel</button>
           </div>
