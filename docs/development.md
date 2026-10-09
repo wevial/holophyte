@@ -462,7 +462,13 @@ Each module, one line:
   witness; `settle_owed()` keeps a story the lock kept from settling
   pending for the next pass at the same tip, and `rerun_owed()` keeps a
   red whose rerun did not run from parking `regressed` until the next
-  pass runs it again.
+  pass runs it again. Its close note names each open proposal.
+- `holophyte/story/proposal_decisions.py` — `--decide KEY-n pN` answers a
+  story's proposed child: accepting files it in Backlog through the board,
+  depending on the child that raised it with a `Role: scaffolding` line
+  (on Linear a sub-issue of the parent, mirrored into the store), then
+  `accept_proposal()` adds it to the story and its approved plan;
+  rejecting records the answer and files nothing.
 - `holophyte/host/reconcile.py` — the startup reconciles and the GitHub read
   budget: parked pull requests asked about on GitHub, mirrored tickets
   Linear closed walked to their terminal status, and the GraphQL budget
@@ -519,8 +525,9 @@ The store is its own package:
   as filed, duplicate, ledger or unfiled, each with its run event.
 - `store/story_proposals.py` — `record_proposal()` writes a story child's
   follow-up as a `proposed` `storyProposals` row and settles the follow-up,
-  `open_proposals()` reads a story's open proposals, and `story_duplicate()`
-  finds the child or proposal a follow-up repeats.
+  `open_proposals()` reads a story's open proposals, `story_duplicate()`
+  finds the child or proposal a follow-up repeats, and `accept_proposal()`
+  and `reject_proposal()` answer one with its `decide` intervention.
 - `store/stories.py` — `file_story()` writes a story's rows for a parent
   and its children, `story()` reads one back from either, `approve_story()`
   freezes its plan with one open story per project, and `abandon_story()`

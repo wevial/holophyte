@@ -459,6 +459,9 @@ def _supersede_decisions(conn, story_id, operation, now):
     conn.execute("UPDATE storyDecisions SET answer = 'superseded',"
                  " answeredBy = ?, answeredAt = ? WHERE storyId = ?"
                  " AND answer IS NULL", (operation, now, story_id))
+    conn.execute("UPDATE storyProposals SET state = 'superseded',"
+                 " decidedBy = ?, decidedAt = ? WHERE storyId = ?"
+                 " AND state = 'proposed'", (operation, now, story_id))
 
 
 def _backlog_unclaimed(conn, parent_id, note, author, now):

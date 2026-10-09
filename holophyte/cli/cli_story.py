@@ -14,6 +14,7 @@ from holophyte.story.witness import pass_refusal, witness_pass
 
 RED_KINDS = ("exception",)
 INTEGER = re.compile(r"-?[0-9]+")
+DECISION_ID = re.compile(r"-?[0-9]+|p[0-9]+")
 
 
 def add_story_arguments(parser, modes):
@@ -53,16 +54,21 @@ def add_story_arguments(parser, modes):
              "approved or parked, or a held project")
     modes.add_argument(
         "--decide", nargs="+", metavar=("KEY-n", "ID [OPTION]"),
-        help="answer decision ID of the parked story KEY-n with OPTION, the "
+        help="answer decision ID of the story KEY-n with OPTION, the "
              "option's number counting from 1 or 'default' (the default when "
              "left out), recording a 'decide' intervention carrying --note, "
-             "and apply it: abandon the story, accept the witness file at "
-             "main's tip as approved, re-approve the child's current edges, "
-             "rerun a witness pass, or return the story to planned for a "
-             "re-plan; an option asking a person to act first is recorded "
-             "only. With no decision left open the story is approved again. "
-             "An answered or unknown ID, or an option out of range, exits 1 "
-             "and writes nothing")
+             "and apply it. ID is N, a decision of the parked story: abandon "
+             "the story, accept the witness file at main's tip as approved, "
+             "re-approve the child's current edges, rerun a witness pass, or "
+             "return the story to planned for a re-plan; an option asking a "
+             "person to act first is recorded only. With no decision left "
+             "open the story is approved again. Or ID is pN, a proposed "
+             "child: 1 (the default) accepts it, filed in Backlog as a "
+             "scaffolding child depending on the child that raised it and "
+             "added to the plan; 2 rejects it. An answered or unknown ID, or "
+             "an option out of range, exits 1 and writes nothing; a store "
+             "refusal after the board filed the child names its key to "
+             "cancel")
     parser.add_argument(
         "--baseline-green", metavar="W", action="append", default=[],
         help="with --approve-story: approve although witness W is green at "
@@ -77,11 +83,13 @@ def add_story_arguments(parser, modes):
 def check_story_arguments(parser, args):
     _check_approval_arguments(parser, args)
     if args.decide is not None and not (
-            len(args.decide) in (2, 3) and INTEGER.fullmatch(args.decide[1])
+            len(args.decide) in (2, 3)
+            and DECISION_ID.fullmatch(args.decide[1])
             and (args.decide[2:] in ([], ["default"])
                  or INTEGER.fullmatch(args.decide[2]))):
-        parser.error("--decide takes KEY-n, the decision's ID and optionally "
-                     "the option's number or 'default'")
+        parser.error("--decide takes KEY-n, the ID of a decision (N) or of a "
+                     "proposed child (pN), and optionally the option's number "
+                     "or 'default'")
     if args.file_story is None:
         return
     if args.update is not None and args.revision is None:
@@ -158,7 +166,9 @@ def _decide(args, target, out):
     identifier, decision_id, *option = args.decide
     with closing(open_store(target)) as conn:
         try:
-            lines = decide(target, conn, identifier, int(decision_id),
+            lines = decide(target, conn, identifier,
+                           decision_id if decision_id.startswith("p")
+                           else int(decision_id),
                            option[0] if option else None, args.note)
         except DecisionRefused as refused:
             print(f"[holo2] {identifier}: {refused}", file=out)
