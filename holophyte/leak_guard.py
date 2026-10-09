@@ -7,7 +7,7 @@ import store
 from holophyte.commit_hygiene import _unpublished
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
-from holophyte.redact import register_values
+from holophyte.redact import redact_values, register_values
 
 KEY = "[merge] private_patterns"
 SHOWN = 5
@@ -40,8 +40,8 @@ def patterns(project):
 
 def _search(compiled, line):
     for index, pattern in enumerate(compiled):
-        if match := pattern.search(line):
-            register_values([match.group()])
+        if found := [match.group() for match in pattern.finditer(line)]:
+            register_values(found)
             yield index
 
 
@@ -145,24 +145,27 @@ def with_findings(verdict, findings):
             + "\n".join(f"- {finding['message']}" for finding in findings))
 
 
-def ticket_problems(repo, text):
+def ticket_problems(repo, text, problems=()):
+    """Problems found before the scan come back redacted of what it matched."""
     from holophyte.config.project import Project
     from ticket_template import H1_RE, H2_RE
     try:
         compiled = patterns(Project.locate(Path(repo).resolve(), adopt=False))
     except SystemExit as refused:
-        return [str(refused)]
-    problems, section = [], "the preamble"
+        return [*problems, str(refused)]
+    private, section, headings = [], "the preamble", 0
     for number, line in enumerate(text.split("\n"), 1):
+        found = list(_search(compiled, line))
         heading = H2_RE.match(line)
         if heading:
-            section = heading.group(1).strip()
+            headings += 1
+            section = (f"section #{headings}" if found
+                       else f"section {heading.group(1).strip()!r}")
         elif H1_RE.match(line):
             section = "the title"
-        problems += [f"section {section!r}, line {number}, holds text the"
-                     f" project does not publish ({KEY} #{index})"
-                     for index in _search(compiled, line)]
-    return problems
+        private += [f"{section}, line {number}, holds text the project does"
+                    f" not publish ({KEY} #{index})" for index in found]
+    return [redact_values(problem) for problem in problems] + private
 
 
 def record(conn, run_id, leaks):

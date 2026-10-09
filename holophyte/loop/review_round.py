@@ -115,9 +115,9 @@ def _record_mode(conn, run_id, mode, rnd):
 
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
-            ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=()):
+            ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=(),
+            leaks=()):
     round_started = int(time() * 1000)
-    leaks = leak_guard.branch_leaks(project, wt, sha)
     scope = scope_files(wt, ticket, base_sha, sha)
     _record_mode(conn, run_id, mode, rnd)
     record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
@@ -205,6 +205,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     rnd = pending.get("rnd", 1) - 1
     for rnd in range(pending.get("rnd", 1), cap + 1):
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
+        leaks = leak_guard.branch_leaks(project, wt, sha)
         if rnd == 1:
             unresolved = merge_conflicts(wt)
             if unresolved:
@@ -237,7 +238,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             verdict, decision, unwitnessed = _review(
                 project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                 ticket, verify_cmd, criteria, mode, rnd, ok, out,
-                pending.get("stale", ()))
+                pending.get("stale", ()), leaks)
             if ok and not unwitnessed and decision == "APPROVE":
                 stop_if_requested(conn, run_id, "merge_gate")
                 ledger(conn, run_id, task_id, "round",

@@ -36,7 +36,7 @@ def ticket_problems(text, repo):
         from holophyte.leak_guard import ticket_problems as private_problems
         from holophyte.pr.pr_media import project_problems
         problems += project_problems(Project.locate(repo, adopt=False), ticket)
-        problems += private_problems(repo, text)
+        problems = private_problems(repo, text, problems)
     return problems
 
 

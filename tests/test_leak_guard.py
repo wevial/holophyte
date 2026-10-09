@@ -150,6 +150,12 @@ class PushTests(PrivateText, RealGit):
         self.assertIn(f"tests/test_api.py:1 ({KEY})", message)
         self.assertIn(f"tests/test_api.py:2 ({KEY})", message)
 
+    def test_every_match_on_a_line_is_blanked_from_output(self):
+        line = f"URL = '{LEAK}'  # also build-host.LAN"
+        self.commit("Add the client test", text=line + "\n")
+        self.refused_push()
+        self.assertPrivateAbsent(holophyte.redact.outbound(line))
+
     def test_a_matching_commit_message_is_refused_naming_the_commit(self):
         sha = self.commit(f"Add the client test\n\nRecorded against {LEAK}.",
                           text=f"URL = '{CLEAN}'\n")
@@ -299,6 +305,18 @@ class TicketFilingTests(PrivateText, ConfigTestCase):
             *self.cli(leaked, "--update", "NAT-1", "--revision", "1"), named)
         self.assertEqual(self.rows(), filed)
 
+    def test_a_matching_heading_is_named_by_position(self):
+        path, _ = self.ticket("heading.md", "- None worth noting.")
+        text = path.read_text().replace("## Open questions",
+                                        "## Mirror on Build-Host.lan")
+        path.write_text(text)
+        line = text.splitlines().index("## Mirror on Build-Host.lan") + 1
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            status = ticket_template.main(["--repo", str(self.target), str(path)])
+        self.assertRefused(status, out.getvalue(), f"section #9, line {line},")
+
 
 class Amend(Commit):
     def play(self, cwd, turn):
@@ -321,7 +339,8 @@ class ReviewRoundTests(PrivateText, LoopFixture):
             APPROVE,
             Amend(path="tests/test_api.py",
                   body=f"def test_api():\n    URL = '{CLEAN}'\n"),
-            APPROVE, provider=StubProvider(dict(a_task(), verify="echo ok")))
+            APPROVE, provider=StubProvider(dict(a_task(), verify=(
+                "cat tests/test_api.py && ! grep -q Build tests/test_api.py"))))
 
         fix_goal = self.last_fake.turns[2].goal
         self.assertIn(f"tests/test_api.py:2 holds text the project does not"

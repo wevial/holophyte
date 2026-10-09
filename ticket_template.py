@@ -917,10 +917,10 @@ def main(argv):
         if repo is not None:
             from holophyte.leak_guard import ticket_problems
             from holophyte.review.freshness import landmark_reasons
-            problems += ticket_problems(repo, text)
             prefix = ADVISORY_PREFIX if ticket.depends_on else ""
             problems += [prefix + reason
                          for reason in landmark_reasons(repo, text)]
+            problems = ticket_problems(repo, text, problems)
         blockers = blocking(problems)
         if blockers:
             invalid += 1
