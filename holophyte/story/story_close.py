@@ -7,7 +7,6 @@ import subprocess
 from holophyte.board.projection import mirror_push
 from holophyte.loop.gates import MergeLockHeld, merge_lock
 from holophyte.redact import safe_print as print
-from holophyte.story import proposal_decisions
 from holophyte.story.story_claim import DRIFT_OPTIONS
 from provider import board_for
 from store.schema import transaction
@@ -167,15 +166,12 @@ def _identifier(conn, ticket_id):
 
 
 def decide(target, conn, identifier, decision_id, option, note):
+    from holophyte.story import proposal_decisions
     from holophyte.story.witness import pass_refusal, witness_pass
     story_id = _parent(conn, target, identifier)
     if isinstance(decision_id, str):
-        try:
-            return proposal_decisions.decide(target, conn, identifier,
-                                             story_id, decision_id, option,
-                                             note)
-        except proposal_decisions.ProposalRefused as refused:
-            raise DecisionRefused(str(refused)) from None
+        return proposal_decisions.decide(target, conn, identifier, story_id,
+                                         decision_id, option, note)
     decision = _decision(conn, story_id, identifier, decision_id)
     answer = _chosen(decision, decision_id, option)
     refusal = pass_refusal(conn, story_id) if answer == RERUN else None

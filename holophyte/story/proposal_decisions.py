@@ -3,6 +3,7 @@ import re
 
 import ticket_template
 from holophyte.board.projection import mirror_task
+from holophyte.story.story_close import DecisionRefused
 from provider import FiledWithoutBlockers, board_for
 from store.schema import transaction
 from store.stories import story
@@ -20,10 +21,6 @@ ESTIMATE_HEADING = "## Estimate & dependencies"
 STORY_SECTION = "## Story\n\nRole: scaffolding\n\n"
 
 
-class ProposalRefused(Exception):
-    pass
-
-
 def decide(target, conn, identifier, story_id, key, option, note):
     proposal = _proposal(conn, story_id, identifier, key)
     answer = _chosen(key, option)
@@ -34,7 +31,7 @@ def decide(target, conn, identifier, story_id, key, option, note):
         try:
             reject_proposal(conn, proposal["id"], "cli", note)
         except ValueError as refused:
-            raise ProposalRefused(str(refused)) from None
+            raise DecisionRefused(str(refused)) from None
     lines = [f"proposal {key} of story {identifier}: {answer}"]
     if filed is not None:
         lines.append(f"child {filed} filed in {BACKLOG}")
@@ -49,12 +46,12 @@ def _proposal(conn, story_id, identifier, key):
         " ON s.id = p.storyId WHERE p.id = ? AND p.storyId = ?",
         (int(key[1:]), story_id)).fetchone()
     if row is None:
-        raise ProposalRefused(f"story {identifier} holds no proposal {key}")
+        raise DecisionRefused(f"story {identifier} holds no proposal {key}")
     state = story(conn, story_id).state
     if state not in PROPOSABLE_STATES:
-        raise ProposalRefused(f"story {identifier} is {state}")
+        raise DecisionRefused(f"story {identifier} is {state}")
     if row[1] != "proposed":
-        raise ProposalRefused(f"proposal {key} is already {row[1]}")
+        raise DecisionRefused(f"proposal {key} is already {row[1]}")
     return dict(zip(("id", "state", "title", "body", "raiser", "raiserIssue",
                      "parentIssue", "projectId"), row))
 
@@ -63,7 +60,7 @@ def _chosen(key, option):
     if option is None or option == "default":
         return PROPOSAL_OPTIONS[0]
     if not 1 <= int(option) <= len(PROPOSAL_OPTIONS):
-        raise ProposalRefused(f"proposal {key} has {len(PROPOSAL_OPTIONS)}"
+        raise DecisionRefused(f"proposal {key} has {len(PROPOSAL_OPTIONS)}"
                               f" options; there is no option {option}")
     return PROPOSAL_OPTIONS[int(option) - 1]
 
@@ -78,7 +75,7 @@ def _child_body(body, raiser):
 def _accept(target, conn, proposal, note):
     board = board_for(target)
     if board is None:
-        raise ProposalRefused("the project has no board to file the child on")
+        raise DecisionRefused("the project has no board to file the child on")
     body = _child_body(proposal["body"], proposal["raiser"])
     estimate = ticket_template.parse(body).estimate_min
     native = getattr(board, "native", False)
@@ -87,11 +84,11 @@ def _accept(target, conn, proposal, note):
                            blockers=[] if native else [proposal["raiser"]],
                            parent=None if native else proposal["parentIssue"])
     except FiledWithoutBlockers as refused:
-        raise ProposalRefused(f"the board refused the child: {refused};"
+        raise DecisionRefused(f"the board refused the child: {refused};"
                               f" already created, to cancel on the board:"
                               f" {refused.identifier}") from None
     except Exception as refused:
-        raise ProposalRefused(f"the board refused the child: {refused}"
+        raise DecisionRefused(f"the board refused the child: {refused}"
                               ) from None
     try:
         task = None if native else board.fetch_task(filed)
@@ -102,7 +99,7 @@ def _accept(target, conn, proposal, note):
                             depends_on=[proposal["raiserIssue"]]))
             accept_proposal(conn, proposal["id"], child_id, "cli", note)
     except Exception as refused:
-        raise ProposalRefused(f"the child was not stored: {refused};"
+        raise DecisionRefused(f"the child was not stored: {refused};"
                               f" already created, to cancel on the board:"
                               f" {filed}") from None
     return filed
