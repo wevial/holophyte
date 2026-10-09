@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import store
 from holophyte.agents.agent_routes import routes, safe_command
@@ -108,9 +108,8 @@ def _turn(target, conn, run_id, goal, merge_sha):
     finally:
         cleanup_review_refs(target.path, None)
         record_pending_switch(target, "adjudicate", conn, run_id)
-    scope = read_scope(output)
-    return Scope(scope.verdict, scope.reason, scope.default,
-                 safe_command(target, getattr(output, "command", None)))
+    return replace(read_scope(output), route=safe_command(
+        target, getattr(output, "command", None)))
 
 
 def judge(target, conn, run_id, follow_up_id, goal, merge_sha):
