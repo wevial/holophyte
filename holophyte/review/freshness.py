@@ -323,8 +323,8 @@ def _rederive(target, conn, project_id, parked, revision, note=None):
         now = int(time.time() * 1000)
         store.record_note(
             conn, ticket_id, "recheck",
-            f"Re-checked against main at {head}: every landmark the stale park"
-            f" named is there now, so {identifier} went from needs_spec to"
+            f"Re-checked against main at {head}: every landmark the body"
+            f" names is there now, so {identifier} went from needs_spec to"
             f" {status} (revision {revision})."
             + (f"\n\n{note}" if note else ""),
             f"recheck:{ticket_id}:{now}", now=now)

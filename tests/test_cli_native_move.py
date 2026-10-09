@@ -203,12 +203,12 @@ class NativeMoveCliTests(ConfigTestCase):
                 " runId, note FROM interventions WHERE \"action\" != 'migrate'"
                 " ORDER BY id").fetchall()
 
-    def newest_note(self, kinds):
+    def newest_note(self, kinds=None):
         with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
             return conn.execute(
-                "SELECT kind, text FROM ticketNotes WHERE kind IN"
+                "SELECT kind, text FROM ticketNotes WHERE ? IS NULL OR kind IN"
                 " (SELECT value FROM json_each(?)) ORDER BY at DESC, id DESC"
-                " LIMIT 1", (json.dumps(kinds),)).fetchone()
+                " LIMIT 1", (kinds and json.dumps(kinds),) * 2).fetchone()
 
     def assert_requeued_from(self, kind):
         (row,) = self.interventions()
@@ -275,9 +275,7 @@ class NativeMoveCliTests(ConfigTestCase):
 
         self.assertEqual(status, "ready")
         self.assertEqual(self.ticket("NAT-1"), ("ready", revision, "ready"))
-        self.assertEqual(self.newest_note(
-            ["stale", "critic", "recheck", "move", "edit", "file"])[0],
-            "recheck")
+        self.assertEqual(self.newest_note()[0], "recheck")
         self.assert_requeued_from("critic")
 
     def test_a_move_to_ready_re_readies_a_critic_park_left_in_ready(self):
