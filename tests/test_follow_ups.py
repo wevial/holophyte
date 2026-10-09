@@ -106,6 +106,18 @@ class CaptureTests(LoopFixture):
             ("feature", 1, "Retry the label write", "provider.py", 90)])
 
 
+    def test_any_other_line_starting_with_the_marker_is_a_flagged_feature(self):
+        self.fix("fix\n\nFOLLOW_UP_extra: Cache the board read\n"
+                 "FOLLOW_UP [P2] Retry the label write\n"
+                 "FOLLOW_UP(bogus): Lint the verify block\n")
+
+        self.assertEqual([row[1:4] for row in self.rows()], [
+            ("feature", 0, "_extra: Cache the board read"),
+            ("feature", 0, "[P2] Retry the label write"),
+            ("feature", 0, "(bogus): Lint the verify block")])
+        self.assertEqual(len(events(self.conn, self.run_id,
+                                    "follow_up_kind_missing")), 3)
+
 class Recording(LinearBoard):
     """A Linear board that records each filing instead of calling Linear."""
 
