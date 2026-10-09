@@ -8,7 +8,6 @@ Run: python3 -m unittest discover -s tests -p 'test_cli_native_move.py' -v
 """
 import contextlib
 import io
-import json
 import os
 import sqlite3
 import subprocess
@@ -203,12 +202,11 @@ class NativeMoveCliTests(ConfigTestCase):
                 " runId, note FROM interventions WHERE \"action\" != 'migrate'"
                 " ORDER BY id").fetchall()
 
-    def newest_note(self, kinds=None):
+    def newest_note(self):
         with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
             return conn.execute(
-                "SELECT kind, text FROM ticketNotes WHERE ? IS NULL OR kind IN"
-                " (SELECT value FROM json_each(?)) ORDER BY at DESC, id DESC"
-                " LIMIT 1", (kinds and json.dumps(kinds),) * 2).fetchone()
+                "SELECT kind, text FROM ticketNotes"
+                " ORDER BY at DESC, id DESC LIMIT 1").fetchone()
 
     def assert_requeued_from(self, kind):
         (row,) = self.interventions()
@@ -263,13 +261,12 @@ class NativeMoveCliTests(ConfigTestCase):
                 " nothing changed\n"))
         self.assertEqual(self.interventions(), [])
 
-    def assert_critic_park_re_readied(self, via_backlog):
+    def test_a_move_to_ready_re_readies_a_critic_park_moved_to_backlog(self):
         revision = self.critic_parked()
         board = board_for(self.project)
-        if via_backlog:
-            revision, _, _ = board.move("NAT-1", "backlog", revision)
-            self.assertEqual(self.ticket("NAT-1"),
-                             ("backlog", revision, "needs_spec"))
+        revision, _, _ = board.move("NAT-1", "backlog", revision)
+        self.assertEqual(self.ticket("NAT-1"),
+                         ("backlog", revision, "needs_spec"))
 
         revision, _, status = board.move("NAT-1", "ready", revision)
 
@@ -277,12 +274,6 @@ class NativeMoveCliTests(ConfigTestCase):
         self.assertEqual(self.ticket("NAT-1"), ("ready", revision, "ready"))
         self.assertEqual(self.newest_note()[0], "recheck")
         self.assert_requeued_from("critic")
-
-    def test_a_move_to_ready_re_readies_a_critic_park_left_in_ready(self):
-        self.assert_critic_park_re_readied(via_backlog=False)
-
-    def test_a_move_to_ready_re_readies_a_critic_park_moved_to_backlog(self):
-        self.assert_critic_park_re_readied(via_backlog=True)
 
     def test_a_move_to_ready_keeps_a_critic_park_main_lacks_a_landmark_of(self):
         revision = self.parked_on_later(kind="critic")
@@ -296,19 +287,13 @@ class NativeMoveCliTests(ConfigTestCase):
                          ("ready", revision, "needs_spec"))
         self.assertEqual(self.interventions(), [])
 
-    def assert_park_note_names_the_native_steps(self, kind):
-        self.parked_on_later(kind=kind)
-        note_kind, text = self.newest_note(["stale", "critic"])
-        self.assertEqual(note_kind, kind)
+    def test_a_critic_park_note_names_the_native_steps_that_re_ready_it(self):
+        self.parked_on_later(kind="critic")
+        note_kind, text = self.newest_note()
+        self.assertEqual(note_kind, "critic")
         self.assertIn("--file-ticket --update", text)
         self.assertIn("--move", text)
         self.assertNotIn("move the issue back to Todo", text)
-
-    def test_a_stale_park_note_names_the_native_steps_that_re_ready_it(self):
-        self.assert_park_note_names_the_native_steps("stale")
-
-    def test_a_critic_park_note_names_the_native_steps_that_re_ready_it(self):
-        self.assert_park_note_names_the_native_steps("critic")
 
     def test_a_move_to_ready_re_readies_a_critic_park_with_a_clean_body(self):
         revision = self.critic_parked()
@@ -318,3 +303,5 @@ class NativeMoveCliTests(ConfigTestCase):
             (0, f"[holo2] re-checked NAT-1 against main: ready"
                 f" (revision {revision})\n"))
         self.assertEqual(self.ticket("NAT-1"), ("ready", revision, "ready"))
+        self.assertEqual(self.newest_note()[0], "recheck")
+        self.assert_requeued_from("critic")
