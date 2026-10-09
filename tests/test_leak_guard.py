@@ -41,24 +41,21 @@ CLEAN = "http://host.example/api"
 KEY = "[merge] private_patterns #1"
 
 
-def hold_redactions(case):
-    """Matches a test registers stay out of the modules that run after it."""
-    patcher = patch.object(holophyte.redact, "_environment_values",
-                           holophyte.redact._environment_values)
-    patcher.start()
-    case.addCleanup(patcher.stop)
-
-
 class PrivateText:
+    def setUp(self):
+        """Matches a test registers stay out of the modules that run after it."""
+        super().setUp()
+        patcher = patch.object(holophyte.redact, "_environment_values",
+                               holophyte.redact._environment_values)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def assertPrivateAbsent(self, text):
         self.assertNotIn("build-host", text.lower())
         self.assertNotIn(r"\bbuild", text)
 
 
 class PatternConfigTests(PrivateText, ConfigTestCase):
-    def setUp(self):
-        hold_redactions(self)
-
     def refusal(self, value):
         self.locate(f"[merge]\nprivate_patterns = {value}\n")
         with self.assertRaises(SystemExit) as raised:
@@ -83,7 +80,6 @@ class PatternConfigTests(PrivateText, ConfigTestCase):
 
 class RealGit(unittest.TestCase):
     def setUp(self):
-        hold_redactions(self)
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
@@ -250,7 +246,7 @@ def no_linear(*args, **kwargs):
 
 class TicketFilingTests(PrivateText, ConfigTestCase):
     def setUp(self):
-        hold_redactions(self)
+        super().setUp()
         env = {k: v for k, v in os.environ.items() if k != "LINEAR_API_KEY"}
         for patcher in (patch.dict(os.environ, env, clear=True),
                         patch.object(linear_provider, "_gql", no_linear)):
@@ -362,10 +358,6 @@ class Amend(Commit):
 
 
 class ReviewRoundTests(PrivateText, LoopFixture):
-    def setUp(self):
-        super().setUp()
-        hold_redactions(self)
-
     def test_an_approved_candidate_adding_a_match_gets_a_fix_turn(self):
         self.configure(CONFIG)
         out = self.main_output(
@@ -393,10 +385,6 @@ class ReviewRoundTests(PrivateText, LoopFixture):
 
 
 class PullRequestRunTests(PrivateText, MergeModeFixture):
-    def setUp(self):
-        super().setUp()
-        hold_redactions(self)
-
     def test_a_stub_body_that_matches_fails_the_run_before_the_push(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
                        f"private_patterns = {PATTERNS}\n")
