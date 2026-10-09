@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import shlex
 import subprocess
 from pathlib import Path, PurePosixPath
 
@@ -56,22 +55,22 @@ def covering_scope(root, reviewed, sha, url):
         "witnessed afresh."
         if changed_tests else
         "No test file changed in this range; approval citations stand.")
-    files = sorted(_candidate_files(root, reviewed, sha))
-    stat = sh(["git", "--literal-pathspecs", "diff", "--stat", span, "--",
-               *files], cwd=root) if files else ""
+    base = main_merge_base(root, sha)
+    if sh(["git", "rev-list", "--merges", span, f"^{base}"], cwd=root):
+        stat = sh(["git", "log", "--stat", "--remerge-diff", span, f"^{base}"],
+                  cwd=root)
+        review_range = (
+            f"Review this range as `git log -p --remerge-diff {span} ^{base}`, "
+            "the candidate's own commits and each merge's conflict resolution; "
+            "its other changes came from a merge of `main`, were reviewed on "
+            "their own pull requests, and are not blockers here; ")
+    else:
+        stat = sh(["git", "diff", "--stat", span], cwd=root)
+        review_range = (f"Review this range: {span}, those commits and "
+                        "whatever they touch; ")
     subjects = sh(["git", "log", "--format=%s", span, f"^{main_ref(root)}"],
                   cwd=root)
     metadata = json.dumps({"diff_stat": stat, "commit_subjects": subjects})
-    review_range = f"Review this range: {span}, those commits and whatever they touch; "
-    if set(files) != changed:
-        review_range = (
-            f"Review this range as `git --literal-pathspecs diff {span} -- "
-            f"{shlex.join(files)}`, "
-            "the candidate's own files; " if files else
-            f"This range, {span}, changes none of the candidate's own files; ")
-        review_range += ("its changes to any other file came from a merge of "
-                         "`main`, were reviewed on their own pull requests, and "
-                         "are not blockers here; ")
     return (f"candidate was approved at {reviewed} and has since been moved "
             f"by fix commits answering review threads on {url}. "
             f"{review_range}the rest was approved at {reviewed}. "
