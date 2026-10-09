@@ -312,7 +312,6 @@ class ScopeFallbackTests(StoryProposalTests):
     def test_an_outage_moves_the_turn_to_the_configured_fallback(self):
         self.seat("codex-adjudicator", "devin-fallback")
         self.approved_story()
-        self.reply(**{"devin-never": ("", 0)})
         fallback_reply = self.target.parent / "devin-fallback"
         fallback_reply.write_text(fallback_reply.read_text().replace(
             "for needle", f"if {TEXT!r} in goal:\n    print({IN_STORY!r})\n"
