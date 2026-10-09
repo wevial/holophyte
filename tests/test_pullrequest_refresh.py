@@ -220,7 +220,7 @@ class PullRequestRefreshTests(MergeModeFixture):
             self.assertIn(part, notice)
 
     def test_a_kept_evidence_drops_an_older_quoted_capture_command(self):
-        a = self.captured_pr(quoted="Captured with `capture --spec=/srv/x`.\n\n")
+        a = self.captured_pr(quoted="Captured with `capture\n--spec=/srv/x`.\n\n")
         self.commit_file("README.md")
         self.refresh(("TITLE: Ignored\nNew description.", False))
         evidence = holophyte.pr.github.split_pr_body(self.pr_body.read_text())[2]
@@ -229,12 +229,14 @@ class PullRequestRefreshTests(MergeModeFixture):
                          f"![screen](https://example/{a}.png)")
 
     def test_a_stale_evidence_drops_an_older_quoted_capture_command(self):
-        a = self.captured_pr(exit_code=3, quoted="Captured with `capture`.\n\n")
+        a = self.captured_pr(
+            exit_code=3, quoted="Captured with `capture\n--spec=/srv/x`.\n\n")
         self.commit_file("console/app.txt")
         self.refresh(("TITLE: Ignored\nNew description.", False))
         evidence = holophyte.pr.github.split_pr_body(self.pr_body.read_text())[2]
         self.assertIn("The UI capture failed (exit 3).", evidence)
         self.assertNotIn("Captured with", evidence)
+        self.assertNotIn("/srv/x", evidence)
         self.assertIn(f"Captured at {a}\n\n![screen]", evidence)
 
     def test_refresh_refusal_leaves_body_untouched(self):
