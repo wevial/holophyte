@@ -97,6 +97,7 @@ PINNED = {
     "holophyte/config/locks.py": 1,
     "holophyte/config/project.py": 6,
     "holophyte/config/reader.py": 3,
+    "holophyte/config/review_settings.py": 0,
     "holophyte/config/serve_settings.py": 2,
     "holophyte/config/worktree_settings.py": 1,
 
@@ -184,6 +185,7 @@ PINNED = {
     "holophyte/redact.py": 14,
 
     "holophyte/review/__init__.py": 0,
+    "holophyte/review/blast_radius.py": 1,
     "holophyte/review/briefs.py": 4,
     "holophyte/review/findings.py": 4,
     "holophyte/review/freshness.py": 2,

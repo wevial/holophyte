@@ -187,6 +187,14 @@ class RecordedRoundTests(LoopFixture):
         [first] = self.payloads("blast_radius")
         self.assertEqual((first["tier"], first["gated"]), ("high", ["poetry.lock"]))
 
+    def test_an_echoed_brief_template_is_no_declaration(self):
+        self.loop(CommitSaying(path="README.md", body="changed\n",
+                               reply="BLAST RADIUS: high|medium|low — reason"),
+                  APPROVE)
+        self.assertEqual(self.payloads("blast_radius_declared"), [])
+        [first] = self.payloads("blast_radius")
+        self.assertEqual(first["tier"], "low")
+
     def test_a_reverted_lockfile_keeps_the_second_round_high(self):
         fake, _ = self.loop(Commit(path="poetry.lock", body="lock\n"),
                             REQUEST_CHANGES, Remove("poetry.lock"), APPROVE)

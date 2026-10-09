@@ -27,13 +27,14 @@ TIERS = ("low", "medium", "high")
 RAISING_FIELD = ("high", "medium")
 UNCOUNTED_PREFIXES = ("tests/", "test/", "docs/")
 DECLARED_RE = re.compile(
-    r"^[\s>*`_-]*BLAST RADIUS:[*`_\s]*(high|medium|low)\b[\s*`_]*[—–:-]*\s*"
-    r"(.*?)[\s*`_]*$", re.IGNORECASE | re.MULTILINE)
+    r"^[ \t>*`_-]*BLAST RADIUS:[*`_ \t]*(high|medium|low)(?![\w|])[*`_ \t]*"
+    r"(?:[—–:-]+[ \t]*)?(.*?)[*`_ \t]*$", re.IGNORECASE | re.MULTILINE)
 IMPORT_RE = re.compile(r"^\s*import\s+(.+)$")
 FROM_RE = re.compile(r"^\s*from\s+([\w.]+)\s+import\s+(.+)$")
 IMPORT_LINE = r"^[[:space:]]*(import|from)[[:space:]]"
-BRIEF = ("\n\nInclude in your reply one line naming the riskiest thing the "
-         "change touches:\nBLAST RADIUS: high|medium|low — reason")
+BRIEF = ("\n\nInclude in your reply, before any closing line asked for "
+         "below, one line naming the riskiest thing the change touches:\n"
+         "BLAST RADIUS: high|medium|low — reason")
 
 
 @dataclass(frozen=True)
