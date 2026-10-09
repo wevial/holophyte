@@ -185,6 +185,7 @@ PINNED = {
     "holophyte/redact.py": 14,
 
     "holophyte/review/__init__.py": 0,
+    "holophyte/review/adversary.py": 2,
     "holophyte/review/blast_radius.py": 1,
     "holophyte/review/briefs.py": 4,
     "holophyte/review/findings.py": 4,

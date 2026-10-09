@@ -34,6 +34,8 @@ LEVELS = (*BLOCKING, "concern")
 HEADING = "Adversarial review findings (reproduced or traced):"
 EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:[*`_\s]*([A-Za-z]+)",
                          re.I | re.M)
+LEADING_PATH_RE = re.compile(
+    r"^\s*(?:[-*+]|\d+[.)])\s+[`*_]*([\w.\-/]*\w):(\d+)(?![\w.])")
 SURFACES = "browser UI, HTTP or API, CLI, data and migrations"
 
 
@@ -162,7 +164,8 @@ def parse(reply):
     findings = []
     for parts in _items(reply):
         block = "\n".join(parts)
-        match = FINDING_PATH_RE.search(citation(parts[0]))
+        match = (LEADING_PATH_RE.match(parts[0])
+                 or FINDING_PATH_RE.search(citation(parts[0])))
         if match is None and not EVIDENCE_RE.search(block):
             continue
         message = finding_message(block)
