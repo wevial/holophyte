@@ -16,6 +16,8 @@ export const ROUTES: Record<string, string> = {
   "Abort and close": "/actions/abort",
   // A confirm step (components/MergeAction.tsx), drawn only when ready.
   Merge: "/actions/merge",
+  // A question box (components/AskAction.tsx) on a parked pull request.
+  Ask: "/actions/ask",
 };
 
 /** The labels whose route is the daemon's own, not a project's. */

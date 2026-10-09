@@ -8,6 +8,7 @@ import { NeedsYou } from "../src/components/NeedsYou";
 import { tokenedFetch } from "../src/lib/poll";
 import { storeToken } from "../src/lib/token";
 import type { AttentionItem, Status, RunDetailBody } from "../src/lib/types";
+import asks from "../../tests/fixtures/serve/run-asks.json";
 import { fakeFetch } from "./actionFakes";
 import { fakeDeps, fixture, hostOf, settle } from "./harness";
 
@@ -91,6 +92,21 @@ test("table actions retain Open PR and the private send-back note across polls",
     expect(screen.getByRole("status").textContent).toBe("Sent back");
     expect(screen.queryByRole("textbox")).toBeNull();
   } finally { window.open = realOpen; }
+});
+
+test("a parked row offers Ask in its action cell only on a daemon that reports actions", async () => {
+  const deps = { fetch: async (url: string) => url === `${host.base}/runs/47/asks`
+    ? Response.json({ ...asks, run: 47, asks: [] }) : new Response("not found", { status: 404 }) };
+  const cell = () => within(screen.getAllByRole("row")[1]!).getAllByRole("cell")[4]!;
+  render(<PullRequestTable hosts={[host]} project="all" now={status.now} deps={deps} />);
+  await act(settle);
+  expect(within(cell()).getByRole("button", { name: "Ask" })).toBeTruthy();
+  cleanup();
+  const quiet = hostOf({ ...status, project: "/projects/repo" }, host.attention!);
+  render(<PullRequestTable hosts={[quiet]} project="all" now={status.now} deps={deps} />);
+  await act(settle);
+  expect(within(cell()).getByRole("button", { name: "Open PR" })).toBeTruthy();
+  expect(within(cell()).queryByRole("button", { name: "Ask" })).toBeNull();
 });
 
 const detail: RunDetailBody = {
@@ -181,7 +197,7 @@ test("detail is lazy, shows the latest findings and full facts, and rows stay in
     items: [{ ...item, ticket: "KO-8" }] }, "http://writer:7711");
   const seen: string[] = [];
   const deps = { fetch: async (url: string) => {
-    if (url.endsWith("/merge")) return new Response("not found", { status: 404 });
+    if (/\/(merge|asks)$/.test(url)) return new Response("not found", { status: 404 });
     seen.push(url);
     return Response.json(detail);
   } };
@@ -225,7 +241,7 @@ test("pending and failed detail stay inside the detail row and retry recovers", 
   let resolve!: (value: Response) => void;
   let calls = 0;
   const deps = { fetch: async (url: string) => {
-    if (url.endsWith("/merge")) return new Response("not found", { status: 404 });
+    if (/\/(merge|asks)$/.test(url)) return new Response("not found", { status: 404 });
     calls++;
     return calls === 1 ? new Promise<Response>(done => { resolve = done; }) : Response.json(detail);
   } };
