@@ -232,15 +232,14 @@ def update_story(board, project, slug, identifier, revision, priority=None):
 
 def _update_on_board(board, conn, project, project_id, directory, identifier,
                      revision, text, children, headers, priority):
+    stored = {name: conn.execute(
+        "SELECT body, linearIssueId FROM tickets WHERE projectId = ?"
+        " AND linearIdentifier = ?", (project_id, name)).fetchone()
+        for name in [identifier, *filter(None, headers.values())]}
     slugs = {child.slug for child in children}
-    issue_ids, stored = {}, {}
+    issue_ids = {}
     for child in children:
         issue_ids.update(_merged_issue_ids(conn, project_id, child, slugs))
-    for name in [identifier, *filter(None, headers.values())]:
-        stored[name] = conn.execute(
-            "SELECT body, linearIssueId FROM tickets WHERE projectId = ?"
-            " AND linearIdentifier = ?", (project_id, name)).fetchone()
-    for child in children:
         if headers[child.name]:
             issue_ids[child.slug] = stored[headers[child.name]][1]
     written = {"updated": [], "created": []}
@@ -316,20 +315,21 @@ def _mirror_update(conn, project_id, directory, identifier, revision, text,
         mirror_task(conn, project_id, touched[None], specced=False)
     lines, filed, rows = [], [], []
     for child in children:
-        if child.name in touched:
+        if child.name not in touched:
+            ticket_id = _ticket_id(conn, project_id, headers[child.name])
+        else:
             task, depends_on = touched[child.name]
             ticket_id = mirror_task(conn, project_id, task,
                                     depends_on=depends_on)
-        else:
-            ticket_id = _ticket_id(conn, project_id, headers[child.name])
-        if child.name in touched and headers[child.name] is None:
-            filed.append((child.name, task["id"]))
-            lines.append(f"filed {task['id']}: {child.ticket.title} "
-                         f"({child.role}, Backlog)")
-        elif child.name in touched:
-            (new,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
-                                  (ticket_id,)).fetchone()
-            lines.append(f"updated {task['id']} (revision {new})")
+            if headers[child.name] is None:
+                filed.append((child.name, task["id"]))
+                lines.append(f"filed {task['id']}: {child.ticket.title} "
+                             f"({child.role}, Backlog)")
+            else:
+                (new,) = conn.execute(
+                    "SELECT revision FROM tickets WHERE id = ?",
+                    (ticket_id,)).fetchone()
+                lines.append(f"updated {task['id']} (revision {new})")
         rows.append((ticket_id, child.role, child.witnesses))
     lines.extend(kept)
     lines.append(_replan(conn, parent_id, identifier, directory, text, rows,
