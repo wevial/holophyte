@@ -144,7 +144,7 @@ def turn_cap_min(project):
 
 
 def turn_cap(project):
-    return turn_cap_min(project) * 60 * budget_scale(project)
+    return round(turn_cap_min(project) * 60 * budget_scale(project))
 
 
 def review_mode(project):

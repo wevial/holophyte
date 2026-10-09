@@ -41,7 +41,7 @@ def _scale_note(project, budget_min):
 
 
 def _armed(project, requested):
-    cap = turn_cap(project)
+    cap, requested = turn_cap(project), round(requested)
     return min(cap, requested), "turn_cap" if cap < requested else "time_box"
 
 
@@ -57,7 +57,7 @@ def implement_arming(project, conn, run_id, budget_min):
 
 def _limit_text(project, limit, budget_min):
     if limit == "turn_cap":
-        return (f"{round(turn_cap(project))} s turn cap ([agents] turn_cap_min"
+        return (f"{turn_cap(project)} s turn cap ([agents] turn_cap_min"
                 f" = {turn_cap_min(project)}) under a {budget_min} min box"
                 f"{_scale_note(project, budget_min)}")
     return f"{budget_min} min budget{_scale_note(project, budget_min)}"
@@ -84,7 +84,7 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
                 store.record_event(
                     conn, run_id, "turn_timeout", f"{role} turn exceeded {text}",
                     level="detail", payload=json.dumps(
-                        {"role": role, "limit": limit, "seconds": round(armed)}))
+                        {"role": role, "limit": limit, "seconds": armed}))
             partial = expired.output or ""
             if isinstance(partial, bytes):
                 partial = partial.decode("utf-8", "replace")
