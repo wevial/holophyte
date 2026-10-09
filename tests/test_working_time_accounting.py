@@ -246,6 +246,7 @@ class WorkingTimeTests(SweepTestCase):
                                      ('main_merge_base', 'after'),
                                      ('ledger', None),
                                      ('record_round', None),
+                                     ('record_tier', None),
                                      ('merge_conflicts', []),
                                      ('scope_files', []),
                                      ('scope_brief', ''),

@@ -207,7 +207,7 @@ def _newest(conn, run_id, kind, before=None):
     return payloads[-1] if payloads else None
 
 
-def record_round(project, conn, run_id, root, base, sha, ticket, rnd):
+def record_tier(project, conn, run_id, root, base, sha, ticket, rnd):
     if conn is None or run_id is None:
         return
     found = assess(root, base, sha, review_config(project), ticket,
