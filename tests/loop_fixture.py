@@ -491,19 +491,23 @@ class MergeModeFixture(LoopFixture):
     def pr_state(cls, threads=(), checks="SUCCESS", merged=False,
                  head=HEAD, resolved=(), next_cursor=None,
                  mergeable="MERGEABLE", updated_at="2000-01-01T00:00:00Z",
-                 review=None, draft=False):
+                 review=None, draft=False, ready_at=None):
         """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
         tuple) open, `resolved` the same shape but resolved, the head's
         check rollup, whether the PR is merged, GitHub's `mergeable`
         answer (None for the lazy-computation `null`), `updated_at` the
         `updatedAt` ISO stamp, `review` the `reviewDecision` (None for a
         repository that requires no review), `draft` the `isDraft` answer,
-        and -- for a page that is not the last -- the cursor of the next."""
+        `ready_at` the `createdAt` of the latest ready-for-review event
+        (None for none), and -- for a page that is not the last -- the
+        cursor of the next."""
         nodes = [cls.thread(n, *t) for n, t in enumerate(threads, 1)]
         nodes += [cls.thread(n, *t[:4], resolved=True)
                   for n, t in enumerate(resolved, len(nodes) + 1)]
         return {"data": {"repository": {"pullRequest": {
             "id": cls.NODE_ID, "isDraft": draft,
+            "readyEvent": {"nodes": [{"createdAt": ready_at}]
+                           if ready_at else []},
             "state": "MERGED" if merged else "OPEN", "merged": merged,
             "headRefOid": head, "mergeable": mergeable,
             "updatedAt": updated_at, "reviewDecision": review,

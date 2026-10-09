@@ -18,6 +18,11 @@
       "detail": "[merge] approve is \"human\""
     },
     {
+      "name": "ready_for_review",
+      "ok": true,
+      "detail": "the pull request is ready for review"
+    },
+    {
       "name": "review_approved",
       "ok": true,
       "detail": "GitHub's review decision is APPROVED"

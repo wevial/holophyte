@@ -50,6 +50,9 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
+      readyEvent: timelineItems(last: 1, itemTypes: [READY_FOR_REVIEW_EVENT]) {
+        nodes { ... on ReadyForReviewEvent { createdAt } }
+      }
       id isDraft state merged headRefOid mergeable mergeCommit { oid } updatedAt title
       reviewDecision
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
@@ -218,13 +221,17 @@ def pr_state(target, pull):
         node = _pull_request_page(target, pull, info["endCursor"])
     comments = pull_comments(target, pull, first_page, _pull_request_page)
     threads.extend(conversation_threads(target, pull, comments))
-    runs, required = _check_reads(target, pull, first_page.get("headRefOid"))
+    every_run, required = _check_reads(target, pull,
+                                       first_page.get("headRefOid"))
+    runs = _started_since_ready(every_run, first_page)
+    rollup_stale = runs is not None and len(runs) < len(every_run)
     if runs is not None:
         try:
             runs += status_contexts_of(target, pull, first_page, graphql)
         except InfraFailure:
             runs = None
-    return replace(_state_of(first_page, threads, runs, required, pull.awaited),
+    return replace(_state_of(first_page, threads, runs, required, pull.awaited,
+                             rollup_stale),
                    console_answers=console_answers(comments))
 
 
@@ -401,10 +408,29 @@ def _iso_ms(text):
     return int(parsed.timestamp() * 1000)
 
 
-def _state_of(node, threads, runs, required, awaited=()):
+def _ready_ms(node):
+    events = node.get("readyEvent")
+    events = events.get("nodes") if isinstance(events, dict) else None
+    last = events[-1] if isinstance(events, list) and events else None
+    return _iso_ms(last.get("createdAt")) if isinstance(last, dict) else None
+
+
+def _started_before(run, ready):
+    started = _iso_ms(run.get("started_at")) if isinstance(run, dict) else None
+    return started is not None and started < ready
+
+
+def _started_since_ready(runs, node):
+    ready = _ready_ms(node)
+    if runs is None or ready is None:
+        return runs
+    return [run for run in runs if not _started_before(run, ready)]
+
+
+def _state_of(node, threads, runs, required, awaited=(), rollup_stale=False):
     commits = ((node.get("commits") or {}).get("nodes") or ())
     rollup = None
-    if commits and isinstance(commits[-1], dict):
+    if commits and isinstance(commits[-1], dict) and not rollup_stale:
         rollup = ((commits[-1].get("commit") or {})
                   .get("statusCheckRollup") or {}).get("state")
     checks = fold_checks(rollup, runs, None if required is None

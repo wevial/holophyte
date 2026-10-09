@@ -279,11 +279,11 @@ class BabysitHelpers:
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", self.MERGE_SHA)])
 
-    def _state_with_rest(self, rest):
+    def _state_with_rest(self, rest, ready_at=None, rollup="SUCCESS"):
         pull = holophyte.pr.pr_status.parse_pr_url(self.URL)
         with patch.object(holophyte.pr.pr_status, "graphql",
-                          lambda *a, **k: self.pr_state(checks="SUCCESS")
-                          ["data"]), \
+                          lambda *a, **k: self.pr_state(
+                              checks=rollup, ready_at=ready_at)["data"]), \
                 patch.object(holophyte.pr.pr_status, "rest", rest):
             return holophyte.pr.pr_status.pr_state(self.project, pull)
 

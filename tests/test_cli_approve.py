@@ -215,6 +215,18 @@ class ApproveCliTests(unittest.TestCase):
         self.assertIn("KO-1: review not approved", raised.exception.code)
         self.assertEqual(self.dump(), before)
 
+    def test_a_draft_pull_request_is_refused_naming_draft(self):
+        self.park_at_pull_request()
+        self.github.draft = True
+        before = self.dump()
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("KO-1: draft (the pull request is a draft)",
+                      str(raised.exception))
+        self.assertEqual(self.dump(), before)
+
     def test_an_unreadable_github_refuses_and_force_releases_past_it(self):
         self.park_at_pull_request()
         self.github.unreachable = True
