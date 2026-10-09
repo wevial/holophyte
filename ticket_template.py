@@ -404,26 +404,61 @@ def _prose_paths(text):
             yield span, paths[0]
 
 
-def _mask_code_spans(text):
-    return re.sub(r"`[^`\n]+`", lambda m: " " * len(m.group()), text)
+def _mask_code_spans(text, fill=" "):
+    return re.sub(r"`[^`\n]+`", lambda m: fill * len(m.group()), text)
 
 
 def _sentence_before(masked, end):
     return re.split(r"[.!?](?:\s|$)|\n\s*(?:\n|[-*+] )", masked[:end])[-1]
 
 
+PREPOSITIONS = frozenset(
+    "aboard about above across after against along alongside amid among"
+    " around as at atop before behind below beneath beside besides between"
+    " beyond by concerning despite during except excluding following for from"
+    " in including inside into like near of off on onto opposite out outside"
+    " over past per regarding respecting round since than through throughout"
+    " till to toward towards under underneath unlike until unto upon versus"
+    " via with within without".split())
+NEW_GAP_RE = re.compile(
+    r"\s*(?P<words>(?:\w[\w-]*\s+)*(?:\w[\w-]*)?)\s*[,:(]?\s*"
+    r"(?:\0+\s*(?:,\s*(?:(?:and|or)\s+)?|(?:and|or)\s+))*", re.I)
+
+
+def _declarable(path, directory):
+    return bool(PATH_TOKEN_RE.fullmatch(path)
+                and (_repo_paths(path) or directory))
+
+
+def _governing_new(text, marked, start, end):
+    news = list(re.finditer(r"\bnew\b", marked[start:end], re.I))
+    gap = news and NEW_GAP_RE.fullmatch(marked, start + news[-1].end(), end)
+    if not gap:
+        return None
+    words = gap.group("words").lower().split()
+    if len(words) > 3 or PREPOSITIONS.intersection(words):
+        return None
+    directory = any(re.fullmatch(r"director(?:y|ies)", w) for w in words)
+    listed = re.finditer(r"`([^`\n]+)`", text[gap.start():end])
+    if not all(_declarable(m.group(1), directory) for m in listed):
+        return None
+    return directory
+
+
 def _new_paths(t):
     files, directories = set(), set()
     for text in t.sections.values():
         masked = _mask_code_spans(text)
+        marked = _mask_code_spans(text, "\0")
         for span in re.finditer(r"`([^`\n]+)`", text):
             path = span.group(1)
             if not PATH_TOKEN_RE.fullmatch(path):
                 continue
             sentence = _sentence_before(masked, span.start())
-            directory = re.search(r"\bdirector(?:y|ies)\b", sentence, re.I)
-            if (re.search(r"\bnew\b", sentence, re.I)
-                    and (_repo_paths(path) or directory)):
+            directory = _governing_new(text, marked,
+                                       span.start() - len(sentence),
+                                       span.start())
+            if directory is not None and _declarable(path, directory):
                 normalized = str(Path(path))
                 files.add(normalized)
                 if path.endswith("/") or directory:
@@ -876,7 +911,14 @@ def main(argv):
     repo, paths = parsed
     invalid = 0
     for path in paths:
-        problems = validate(parse(Path(path).read_text()), repo=repo)
+        text = Path(path).read_text()
+        ticket = parse(text)
+        problems = validate(ticket, repo=repo)
+        if repo is not None:
+            from holophyte.review.freshness import landmark_reasons
+            prefix = ADVISORY_PREFIX if ticket.depends_on else ""
+            problems += [prefix + reason
+                         for reason in landmark_reasons(repo, text)]
         blockers = blocking(problems)
         if blockers:
             invalid += 1

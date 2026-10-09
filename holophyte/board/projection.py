@@ -478,6 +478,7 @@ def file_ticket(target, path, state, board, out=None, priority=None,
                 update=None, revision=None, labels=None, note=None,
                 author=None):
     from holophyte.loop.claim import refresh_before_filing
+    from holophyte.review.freshness import landmark_reasons
 
     out = out or sys.stdout
     refresh_before_filing(target, out)
@@ -486,6 +487,12 @@ def file_ticket(target, path, state, board, out=None, priority=None,
     problems = _ticket_problems(text, target.path)
     if problems:
         print(f"[holo2] {path}: {problems[0]}", file=out)
+        return 1
+    stale = landmark_reasons(target.path, text)
+    warning = "warning: " if ticket.depends_on else ""
+    for reason in stale:
+        print(f"[holo2] {path}: {warning}{reason}", file=out)
+    if stale and not ticket.depends_on:
         return 1
     refusals = (store.board.FilingRefused, store.RevisionMoved)
     if getattr(board, "native", False):

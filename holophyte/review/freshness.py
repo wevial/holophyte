@@ -98,17 +98,22 @@ def named_paths(body):
     return named
 
 
+def landmark_reasons(repo, body):
+    if body is None or not _git(repo, "rev-parse", "--verify", "-q",
+                                "main^{commit}"):
+        return []
+    t = ticket_template.parse(body)
+    reasons = [f"`{path}` (named in {label}) is not on main"
+               for label, path in named_paths(body)
+               if not _git(repo, "cat-file", "-e", f"main:{Path(path)}")]
+    return reasons + _missing_symbols(repo, t, ticket_template._new_paths(t))
+
+
 def stale_reasons(repo, body, conn=None, provider=None):
     if body is None:
         return []
-    t = ticket_template.parse(body)
-    reasons = []
-    if _git(repo, "rev-parse", "--verify", "-q", "main^{commit}"):
-        reasons += [f"`{path}` (named in {label}) is not on main"
-                    for label, path in named_paths(body)
-                    if not _git(repo, "cat-file", "-e", f"main:{Path(path)}")]
-        reasons += _missing_symbols(repo, t, ticket_template._new_paths(t))
-    return reasons + _unmerged_dependencies(t, conn, provider)
+    return (landmark_reasons(repo, body) + _unmerged_dependencies(
+        ticket_template.parse(body), conn, provider))
 
 
 def _named_symbols(item):

@@ -158,12 +158,12 @@ class NativeMoveCliTests(ConfigTestCase):
         `kind`: the freshness check's own reasons, or a critic verdict;
         its revision."""
         self.native(0)
-        self.git("init", "-q", "-b", "main")
-        self.git("add", "-A")
-        self.git("commit", "-q", "-m", "base")
         path = self.root / "T.md"
         path.write_text(text)
         self.assertEqual(self.cli("--file-ticket", str(path))[0], 0)
+        self.git("init", "-q", "-b", "main")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
         board = board_for(self.project)
         task = board.fetch_task("NAT-1")
         reasons = stale_reasons(self.target, task["body"])
