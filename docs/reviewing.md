@@ -183,9 +183,7 @@ the route, so no fallback is switched. This covers a Codex turn that exits
 non-zero on the refusal: when the Codex CLI's own `error` or `turn.failed`
 event carries the refusal line, the exit comes back as the adversary's reply
 and is recorded the same way. The line counts only from those CLI events,
-never from a message or command output that quotes it; any other non-zero
-exit of the adversary, and any non-zero exit of the primary reviewer, still
-fails the run as `review_route`.
+never from a message or command output that quotes it.
 
 A reproduced or traced finding blocks the round: it is not approved, its
 `reviewRounds` row has verdict `changes_requested` and holds the finding with
