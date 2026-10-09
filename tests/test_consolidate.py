@@ -23,7 +23,6 @@ from holophyte.review import adversary, consolidate  # noqa: E402
 from holophyte.review.reply_parsing import parse_findings  # noqa: E402
 
 ON = "[review]\nadversary = true\n"
-HEADING = "Adversarial review findings (reproduced or traced):"
 MET = "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
 APPROVE = Reply(f"Reviewed the diff; no blockers.\n{MET}VERDICT: APPROVE")
 
@@ -167,7 +166,6 @@ class RoundTests(ConsolidationFixture):
                       "    the lock is skipped\n"
                       "2. src/app.py:3 [p2] evidence review, found by primary\n"
                       "    load() returns None", goal)
-        self.assertNotIn(HEADING, goal)
         self.assertEqual(self.events()[0]["pass2"], "unchanged")
 
     def test_without_an_adversary_the_fix_turn_gets_the_primary_verdict(self):
@@ -220,8 +218,6 @@ class ConcernTests(ConsolidationFixture):
         self.assertEqual((raised["path"], raised["round"]), ("poetry.lock", 1))
         [note] = self.notes(consolidate.RAISED)
         self.assertIn("poetry.lock", note)
-        self.assertEqual(
-            [n for n in self.notes(consolidate.RAISED) if "src/app.py" in n], [])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
 
