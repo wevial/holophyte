@@ -506,10 +506,11 @@ class ContainerCommandTests(unittest.TestCase):
         self.assertIn("noexec", tmpfs.split(":", 1)[1].split(","))
 
     @staticmethod
-    def _rendered(root):
+    def _rendered(root, **switches):
         for name in ("candidate", "home", "toolchain"):
             (root / name).mkdir()
         return review_runner.container_command(
+            **switches,
             image="holophyte-reviewer:test",
             workspace=root / "candidate",
             reviewer_home=root / "home",
@@ -533,12 +534,15 @@ class ContainerCommandTests(unittest.TestCase):
         self.assertIn(" -C /home/reviewer/candidate", lines[run])
         self.assertNotIn("-C /workspace", lines[run])
 
-    def test_codex_keeps_its_session_and_runs_with_multi_agent_disabled(self):
+    def _exec_argv(self, **switches):
         with tempfile.TemporaryDirectory() as tmp:
-            command = self._rendered(Path(tmp))
+            command = self._rendered(Path(tmp), **switches)
         script = command[command.index("-c") + 1].replace("\\\n", " ")
         run = next(line for line in script.splitlines() if line.startswith("exec "))
-        argv = shlex.split(run)
+        return shlex.split(run)
+
+    def test_codex_keeps_its_session_and_runs_with_multi_agent_disabled(self):
+        argv = self._exec_argv()
 
         self.assertEqual(argv[1:3], ["/opt/codex/bin/codex", "exec"])
         self.assertNotIn("--ephemeral", argv)
@@ -547,6 +551,14 @@ class ContainerCommandTests(unittest.TestCase):
         disable = argv.index("--disable")
         self.assertEqual(argv[disable + 1], "multi_agent")
         self.assertLess(disable, argv.index("$1"))
+
+    def test_the_script_turns_codex_multi_agent_on_only_when_asked(self):
+        reviewer = self._exec_argv()
+        adversary = self._exec_argv(multi_agent=True)
+        self.assertIn("--disable", reviewer)
+        self.assertNotIn("--disable", adversary)
+        self.assertEqual(adversary[adversary.index("--enable") + 1], "multi_agent")
+        self.assertEqual(adversary[1:3], ["/opt/codex/bin/codex", "exec"])
 
     def test_workspace_stays_read_only(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -696,7 +696,7 @@ class TrimmerTableTests(unittest.TestCase):
             '[agents.trimmer]\nharness = "cursor"\nmodel = "gpt-6"\n')
         with self.assertRaisesRegex(
                 SystemExit, r"\[agents\.trimmer\] harness: 'cursor' supports "
-                            r"adjudicator, reviewer, not trimmer"):
+                            r"adjudicator, adversary, reviewer, not trimmer"):
             holophyte.config.checks.check_config(self.target)
 
     def test_a_container_trim_launches_the_image_binary_not_the_harness_path(self):

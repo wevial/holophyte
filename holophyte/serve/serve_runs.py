@@ -506,7 +506,8 @@ def active_routes(project):
              for key, value in (project.config().get("agents") or {}).items()
              if key in AGENT_CONFIG_KEYS.values() and isinstance(value, (str, dict))}
     return {seat: seat_route(fallback, table, seat)
-            for seat in AGENT_CONFIG_KEYS.values() if seat != "critic"}
+            for seat in AGENT_CONFIG_KEYS.values()
+            if seat not in ("critic", "adversary")}
 
 
 def seat_route(fallback, table, seat):

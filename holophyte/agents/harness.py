@@ -10,7 +10,8 @@ from dataclasses import dataclass
 import review_runner
 from ticket_template import ORCHESTRATION_MODES
 
-TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic", "trimmer")
+TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic", "trimmer",
+               "adversary")
 WRITING_ROLES = ("implementer", "trimmer")
 TABLE_KEYS = ("harness", "model", "effort")
 IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
@@ -72,7 +73,7 @@ class Codex(Adapter):
     """The sandbox fails under PrivateTmp; a throwaway checkout bounds writes."""
     name = "codex"
     roles = frozenset({"implementer", "trimmer", "reviewer", "adjudicator",
-                       "critic"})
+                       "critic", "adversary"})
     efforts = review_runner.EFFORTS
     orchestrations = frozenset({"subagents"})
     BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
@@ -117,7 +118,8 @@ class Codex(Adapter):
 
 class Devin(Adapter):
     name = "devin"
-    roles = frozenset({"implementer", "trimmer", "reviewer", "adjudicator"})
+    roles = frozenset({"implementer", "trimmer", "reviewer", "adjudicator",
+                       "adversary"})
     requires = frozenset({"model"})
     refuses = frozenset({"effort"})
     orchestrations = frozenset({"subagents"})
@@ -175,7 +177,7 @@ class Devin(Adapter):
 class Cursor(Adapter):
     name = "cursor"
     binary = "cursor-agent"
-    roles = frozenset({"reviewer", "adjudicator"})
+    roles = frozenset({"reviewer", "adjudicator", "adversary"})
     requires = frozenset({"model"})
     refuses = frozenset({"effort"})
     resumes = False

@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from holophyte.agents.agent_output import AgentOutput
 from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.loop.gates import InfraFailure, run_capped, sh
 from holophyte.redact import safe_print as print
+
+PUBLISHING = threading.Lock()
 
 
 def review_refs(run_id):
@@ -50,8 +53,9 @@ def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
                        candidate_sha], cwd=repo).returncode:
         raise review_runner.ReviewBoundaryError(
             f"base {base_sha} is not an ancestor of {candidate_sha}")
-    for name, sha in zip(review_refs(run_id), (base_sha, candidate_sha)):
-        sh(["git", "update-ref", name, sha], cwd=repo)
+    with PUBLISHING:
+        for name, sha in zip(review_refs(run_id), (base_sha, candidate_sha)):
+            sh(["git", "update-ref", name, sha], cwd=repo)
 
 
 @contextlib.contextmanager

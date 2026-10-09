@@ -244,6 +244,7 @@ def container_command(
     effort: str = EFFORT,
     run_id: int | None = None,
     service_tier: str | None = None,
+    multi_agent: bool = False,
 ) -> list[str]:
     """Prompt, model, effort and tier are positional arguments, never interpolated."""
     from holophyte.agents.review_workspace import review_refs
@@ -271,8 +272,8 @@ echo "PREFLIGHT_OK candidate=$actual" >&2
 cp -a /workspace /home/reviewer/candidate
 exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
   -m "$2" -c "$3" ${4+-c "$4"} \
-  -s danger-full-access --disable multi_agent "$1"
-'''.strip()
+  -s danger-full-access --SWITCH multi_agent "$1"
+'''.strip().replace("SWITCH", "enable" if multi_agent else "disable")
 
     command = [
         "docker",
@@ -500,6 +501,7 @@ def run_review(
     service_tier: str | None = None,
     transcripts: Path | None = None,
     on_session=None,
+    multi_agent: bool = False,
 ) -> str:
     """`profile` must be what the model and effort compute to; another is refused."""
     if not model:
@@ -539,6 +541,7 @@ def run_review(
             effort=effort,
             run_id=run_id,
             service_tier=service_tier,
+            multi_agent=multi_agent,
         )
         try:
             with _removing_on_signal(name):

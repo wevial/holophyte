@@ -123,13 +123,15 @@ def check_agent_commands(project):
     from holophyte.isolation.launcher import route_for
     isolated = route_for(project).backend == "container"
     review_route(project)
+    unused = () if review_config(project).adversary else ("adversary",)
     default_container_keys = []
     for role, key in AGENT_CONFIG_KEYS.items():
         argv = agent_command(project, role, "")
         if role in ("write", "trim") and argv is not None:
             check_command_path(project, key, argv[0])
         # The critic and trimmer are optional: their probes, not the host, settle them.
-        if role in ("write", "critic", "trim") or (role == "implement" and isolated):
+        if (role in ("write", "critic", "trim", *unused)
+                or (role == "implement" and isolated)):
             continue
         if argv is None:
             if agent_command(project, role, "", fallback=True) is not None:

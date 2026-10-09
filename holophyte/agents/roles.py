@@ -37,6 +37,7 @@ from holophyte.config.reader import (
     IMPL_EFFORT,
     IMPL_MODEL,
     IMPL_TIMEOUT,
+    SHA_ROLES,
     review_profile,
 )
 from holophyte.config.worktree_settings import carry_directories
@@ -216,13 +217,16 @@ def kept_session(project, role, conn, run_id, review_round, sessions):
 
 
 def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
-                     run_id, switched, review_round=None):
+                     run_id, switched, review_round=None, timeout=None):
     from holophyte.loop.runs import heartbeat_while
     from holophyte.review.review_session import record_review_session
     model, effort = review_route(project, fallback=switched)
     tier = review_tier(project, fallback=switched)
     profile = review_profile(model, effort)
-    tiered = {} if tier is None else {"service_tier": tier}
+    cap = REVIEW_TIMEOUT if timeout is None else timeout
+    options = {} if tier is None else {"service_tier": tier}
+    if role == "adversary":
+        options["multi_agent"] = True
     sessions = []
     kept = kept_session(project, role, conn, run_id, review_round, sessions)
     # A kill ends the container's client; the runner removes the container.
@@ -239,11 +243,11 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 model=model,
                 effort=effort,
                 profile=profile,
-                timeout=REVIEW_TIMEOUT,
+                timeout=cap,
                 verdicts=None,
                 carry=carry_directories(project),
                 on_start=kill.arm,
-                **tiered,
+                **options,
                 **kept,
             ), profile)
         output.service_tier = tier
@@ -261,10 +265,10 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         raise failure from e
     except subprocess.TimeoutExpired as e:
         e.service_tier = tier
-        if role != "review":
+        if role not in ("review", "adversary"):
             raise
         failure = InfraFailure(
-            f"review timed out after {REVIEW_TIMEOUT}s", "review_route")
+            f"{role} timed out after {cap}s", "review_route")
         failure.output = AgentOutput(str(failure), profile, timed_out=True)
         failure.service_tier = tier
         failure.tail = f"{e.output or ''}{e.stderr or ''}"[
@@ -277,7 +281,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           review_round=None, session=False):
     if role not in AGENT_CONFIG_KEYS:
         raise ValueError(role)
-    if role in ("review", "adjudicate") and not (base_sha and candidate_sha):
+    if role in SHA_ROLES and not (base_sha and candidate_sha):
         raise ValueError(f"{role} requires exact base_sha and candidate_sha")
     goal = outbound(goal, known_secrets(project.config()))
     switched = (role in routes(project).commands
@@ -297,7 +301,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         if role not in WRITING_ROLES:
             return container_review(project, role, goal, cwd, base_sha,
                                     candidate_sha, conn, run_id, switched,
-                                    review_round)
+                                    review_round, timeout)
         cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role not in WRITING_ROLES:

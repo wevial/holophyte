@@ -50,7 +50,9 @@ AGENT_CONFIG_KEYS = {
     "write": "writer",
     "trim": "trimmer",
     "critic": "critic",
+    "adversary": "adversary",
 }
+SHA_ROLES = ("review", "adjudicate", "adversary")
 
 REVIEW_ROUTE_KEYS = ("review_model", "review_effort")
 REVIEW_FALLBACK_KEYS = ("review_fallback_model", "review_fallback_effort")

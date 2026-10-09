@@ -1,7 +1,8 @@
 import collections
 from pathlib import PurePosixPath
 
-REVIEW_KEYS = {"high_paths": (), "medium_paths": (), "fan_in": 10, "packages": 3}
+REVIEW_KEYS = {"high_paths": (), "medium_paths": (), "fan_in": 10, "packages": 3,
+               "adversary": False}
 ReviewConfig = collections.namedtuple("ReviewConfig", REVIEW_KEYS)
 
 
@@ -24,6 +25,14 @@ def _floor(project, key, value):
     return value
 
 
+def _switch(project, key, value):
+    if not isinstance(value, bool):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [review] {key} must be true or "
+            f"false, got {value!r}")
+    return value
+
+
 def review_config(project):
     table = project.config().get("review", {})
     if not isinstance(table, dict):
@@ -35,4 +44,5 @@ def review_config(project):
         high_paths=_globs(project, "high_paths", values["high_paths"]),
         medium_paths=_globs(project, "medium_paths", values["medium_paths"]),
         fan_in=_floor(project, "fan_in", values["fan_in"]),
-        packages=_floor(project, "packages", values["packages"]))
+        packages=_floor(project, "packages", values["packages"]),
+        adversary=_switch(project, "adversary", values["adversary"]))

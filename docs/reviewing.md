@@ -111,6 +111,52 @@ whitespace` commit, gets no section, and the prompt is unchanged.
 Configured `[agents] reviewer` and `adjudicator` commands heartbeat the run
 while they execute, like the implementer, every half heartbeat stale interval.
 
+## Adversarial pass
+
+With `[review] adversary = true` (see [Config](config.md)) a second seat,
+`adversary`, tries to break the candidate while the primary reviewer checks it
+against the ticket. Its turn starts on its own thread just before the primary
+review turn, on the same base and candidate, and the round waits for both;
+neither brief holds the other's output. Its default route is the review
+container on the reviewer's model pair with Codex multi-agent on, so it can
+start subagents; the primary reviewer's container keeps
+`--disable multi_agent`. `[agents] adversary` and `adversary_fallback` route
+it like the reviewer.
+
+The round's tier is the one its `blast_radius` event records. The first round
+of a run whose tier is `medium` or `high` gets a pass over the whole candidate,
+`BASE..SHA` (scope `candidate`); a `low` round gets none. After a pass, a later
+round runs it again only when its fix range, from the previous round's recorded
+sha to this round's, changes a path matching `BASE_HIGH_PATHS` or
+`[review] high_paths`. That pass is `light` and has scope `fix`: it attacks only
+the fix range and re-checks each concern earlier passes in the run recorded.
+
+| Depth | When | Attack subagents | Time box |
+| --- | --- | --- | --- |
+| `full` | `high` | one per surface the diff touches (browser UI, HTTP or API, CLI, data and migrations) plus one per risky module | 1800 seconds |
+| `light` | `medium`, and every fix pass | one per surface the diff touches, no per-module attackers | 900 seconds |
+
+Both briefs cap the pass at five subagents, give mechanical checks to a light
+model and attack reasoning and reproduction to a strong one, and keep a
+reproduction read-only against the candidate.
+
+Each finding is one list item, `PATH:LINE [p0|p1|p2] what breaks`, then a line
+`EVIDENCE: reproduced` (the input and the observed bad result),
+`EVIDENCE: traced` (file:line for each step from the input to the harm) or
+`EVIDENCE: concern` (the scenario and why it cannot be shown yet). A finding
+with no `EVIDENCE:` line, or an unknown level, is a concern. The reply ends with
+exactly one line, `ADVERSARY: DONE`; a reply without it is asked again once, and
+a second miss fails the run as `review_route` with the candidate preserved.
+
+A reproduced or traced finding blocks the round: it is not approved, its
+`reviewRounds` row has verdict `changes_requested` and holds the finding with
+`reviewer` `adversary` and its `evidence`, and the fix turn gets it after the
+primary's findings under `Adversarial review findings (reproduced or traced):`.
+Concerns never block and stay out of `reviewRounds`; each pass's concerns go
+into one ledger note. Each pass records an `adversary_round` detail event with
+`round`, `tier`, `depth`, `scope`, `range`, `family`, `outcome`, `seconds`,
+`findings` (the blocking ones) and `concerns`.
+
 ## PR rounds
 
 Under `[merge] mode = "pr"` (see [Config](config.md)) the reviewer's approval

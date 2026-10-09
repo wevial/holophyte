@@ -66,6 +66,7 @@ implementer's command and isolation settings.
 | `implementer` | Default: Claude Code / Opus, high effort | Non-empty command string, or the table `[agents.implementer]` with `harness` (`"claude"` or `"codex"`) and optional `model` and `effort` (`claude`: default `"opus"`, `"high"`; `codex`: default `"gpt-6-astra"`, `"high"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"devin"` with a required `model` and no `effort`; override to select another implementer harness. A table's adapter builds the argv, records the session id (`claude` at dispatch, `codex` from its banner after the turn, `devin` from `devin list --format json` in the task worktree after the turn) and builds the resume argv. |
 | `reviewer` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.reviewer]` with `harness` `"codex"` and optional `model` and `effort` (default `"gpt-6-astra"`, `"high"`; effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`), or `harness` `"cursor"` or `"devin"` with a required `model` and no `effort`; override only to supply an independent review route outside the container. |
 | `adjudicator` | Default: Hardened Codex review container | Non-empty command string, or the table `[agents.adjudicator]` as for `reviewer`; change to supply a separate adjudication route. |
+| `adversary` | Default: Hardened Codex review container on the reviewer's model pair, with Codex multi-agent on | Non-empty command string, or the table `[agents.adversary]` with `harness` `"codex"`, `"cursor"` or `"devin"` as for `reviewer`; change to run the adversarial pass (`[review] adversary` below) on another route. Its event records `family` `"configured"` when set, `"codex"` otherwise. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
 | `trimmer` | Default: Active implementer route | Non-empty command string, or the table `[agents.trimmer]` with `harness` `"claude"`, `"codex"` or `"devin"` and the same `model` and `effort` rules as `[agents.implementer]` (no `orchestration`); set it to run the trim turn (`[trim]` below) on a cheaper model or another harness. The turn launches like an implementer turn, in the task worktree and under `implementer_isolation`, with the trim goal as the last argument, and records no session. Probed at startup; when it and `trimmer_fallback` both fail, startup prints "trimmer route down; runs skip trim" and each run's trim records `skipped`, without stopping the loop. |
 | `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default, or `"claude"`), `model` and `effort` (`codex`: default `"gpt-6-luna"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`; `claude`: default `"opus"`, `"high"`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
@@ -85,6 +86,7 @@ implementer's command and isolation settings.
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
 | `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary, or a non-empty list of them; set for a probed backup reviewer. A list is probed in order when the primary fails, and the first entry that passes is recorded and used. |
 | `adjudicator_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup adjudicator. |
+| `adversary_fallback` | Default: Absent (disabled) | Non-empty command string distinct from `adversary`; set for a probed backup adversary. When it is set startup probes the adversary seat, and an adversary turn whose output carries an outage line probes it and switches to it, as `reviewer_fallback` does. |
 | `trimmer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from `trimmer`; set for a probed backup trimmer. Startup activates it when the trimmer's probe fails and its own passes, and a trim turn whose output carries an outage line switches to it; a trimmer that fails with no fallback, or a fallback that fails its probe, reverts that run's trim. |
 
 ```toml
@@ -114,10 +116,10 @@ budget_scale = 1.5
 
 A role can instead be a table naming a harness adapter in
 `holophyte/agents/harness.py`. Only `implementer`, `reviewer`, `adjudicator`,
-`critic` and `trimmer` may be tables, and only for a role the harness supports; today that
+`critic`, `trimmer` and `adversary` may be tables, and only for a role the harness supports; today that
 is `claude` for `implementer`, `trimmer` and `critic`, `codex` for `implementer`, `trimmer`, `reviewer`,
-`adjudicator` and `critic`, `devin` for `implementer`, `trimmer`, `reviewer` and
-`adjudicator`, and `cursor` for `reviewer` and `adjudicator`. Unknown keys, an unknown harness, a role the harness does not
+`adjudicator`, `critic` and `adversary`, `devin` for `implementer`, `trimmer`, `reviewer`,
+`adjudicator` and `adversary`, and `cursor` for `reviewer`, `adjudicator` and `adversary`. Unknown keys, an unknown harness, a role the harness does not
 serve, or an option the harness requires or refuses are startup errors.
 `[agents.implementer] harness = "claude"`
 runs `claude -p --session-id U --model M --effort E PROMPT` with a fresh UUID
@@ -1529,6 +1531,7 @@ line and the run's previous round can raise the tier and never lower it.
 | `medium_paths` | Default: `[]` | List of repository-relative globs without `..`; a changed path matching one makes a round that is not `high` `medium`. |
 | `fan_in` | Default: `10` | Integer of at least 0; a changed Python module imported by at least this many other tracked `.py` files at the candidate makes the round `medium`. A module inside a package is also named from its top-most package, so `src/pkg/core.py` counts importers of `pkg.core`. `0` turns the signal off. |
 | `packages` | Default: `3` | Integer of at least 0; changed paths spanning at least this many first path segments make the round `medium`. Paths under `tests/`, `test/` or `docs/`, and paths ending `.md`, do not count; a root-level file counts as `.`. `0` turns the signal off. |
+| `adversary` | Default: `false` | `true` or `false`; `true` runs the adversarial pass described in [Reviewing](reviewing.md) beside the primary review on `medium` and `high` rounds, on the `[agents] adversary` seat. While it is `false` no adversary turn runs. |
 
 ```toml
 [review]
@@ -1536,11 +1539,13 @@ high_paths = ["app/auth/*"]
 medium_paths = ["src/parse/*"]
 fan_in = 10
 packages = 3
+adversary = true
 ```
 
 A `high_paths` or `medium_paths` that is not a list of such globs, a `fan_in` or
-`packages` that is not an integer of at least 0 (a boolean included), or an
-unknown key is a startup error naming the key.
+`packages` that is not an integer of at least 0 (a boolean included), an
+`adversary` that is not a boolean, or an unknown key is a startup error naming
+the key.
 
 ## `[trim]`
 
