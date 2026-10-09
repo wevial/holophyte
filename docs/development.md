@@ -354,7 +354,10 @@ Each module, one line:
   a native board `recheck_stale()`, called from `sync_board()` on every pass,
   returns a ticket parked for stale landmarks (not one the critic parked) to
   `ready` (or `blocked_on_deps`) once none of its reasons holds, and
-  `--move KEY-n ready` re-checks it the same way.
+  `--move KEY-n ready` re-checks it the same way. The move also re-readies a
+  critic park, running only the deterministic checks, and records a
+  `requeue` intervention for either kind. A native park keeps its column,
+  and its note names `--file-ticket --update` and `--move KEY-n ready`.
 - `holophyte/environment_git.py` — excludes the filtered `.env` from Git
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from

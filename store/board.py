@@ -101,12 +101,13 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
         now = int(time.time() * 1000)
     repo = _repo_path(conn, project_id)
     with _transaction(conn):
-        ticket_id, _status, _run, text = _open_ticket(
+        ticket_id, status, _run, text = _open_ticket(
             conn, project_id, identifier, expected_revision)
         (current,) = conn.execute("SELECT boardColumn FROM tickets"
                                   " WHERE id = ?", (ticket_id,)).fetchone()
         if current == column:
-            raise FilingRefused([f"{identifier} is already in {column}"])
+            raise FilingRefused([f"{identifier} is already in {column} at"
+                                 f" status {status}; nothing changed"])
         if column == "ready":
             problems = ticket_problems(text, repo)
             if problems:
