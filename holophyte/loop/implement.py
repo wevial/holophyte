@@ -1,6 +1,7 @@
 """The implement stage and the timed agent turn every stage runs under."""
 import json
 import os
+import re
 import sqlite3
 import subprocess
 from contextlib import suppress
@@ -270,8 +271,9 @@ def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
 
 
 def _sweep_merge(project, conn, run_id, wt, branch, task_id):
-    unmerged = unmerged_paths(wt)
-    if not unmerged:
+    tree, conflicted = _merge_tree(wt)
+    unresolved = unmerged_paths(wt) or _still_marked(wt, conflicted)
+    if not unresolved:
         stage_work(project, wt)
         sh(["git", *factory_identity(wt), "commit", "-q", "--no-edit"], cwd=wt)
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
@@ -279,11 +281,12 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
                   f"the turn left a resolved merge uncommitted; committed it"
                   f" on {branch} at {head[:12]}")
         return True
-    merged = _merge_paths(wt, unmerged)
+    merged = (_listed(wt, "diff", "--name-only", "--no-renames", "-z", "HEAD",
+                      tree) | conflicted | set(unresolved))
     backup = _backup_resolution(project, wt, task_id)
     _announce(conn, run_id, "merge_aborted",
               f"the turn left the merge on {branch} unresolved in"
-              f" {', '.join(unmerged)}; aborted it, its attempted resolution"
+              f" {', '.join(unresolved)}; aborted it, its attempted resolution"
               f" backed up at {backup}")
     _unwind_merge(wt, merged)
     return False
@@ -295,15 +298,23 @@ def _listed(wt, *args):
         capture_output=True, text=True).stdout.split("\0")))
 
 
-def _merge_paths(wt, unmerged):
+def _merge_tree(wt):
     merge = subprocess.run(["git", "merge-tree", "--write-tree", "--no-messages",
                             "--name-only", "-z", "HEAD", "MERGE_HEAD"], cwd=wt,
                            capture_output=True, text=True)
     if merge.returncode not in (0, 1):
         raise RuntimeError(f"git merge-tree failed:\n{merge.stderr}")
     tree, *conflicted = merge.stdout.split("\0")
-    return (_listed(wt, "diff", "--name-only", "--no-renames", "-z", "HEAD",
-                    tree) | set(filter(None, conflicted)) | set(unmerged))
+    return tree, set(filter(None, conflicted))
+
+
+CONFLICT_MARKER = re.compile(rb"^(<{7}|>{7})( |$)", re.MULTILINE)
+
+
+def _still_marked(wt, conflicted):
+    return sorted(path for path in conflicted
+                  if not Path(wt, path).is_symlink() and Path(wt, path).is_file()
+                  and CONFLICT_MARKER.search(Path(wt, path).read_bytes()))
 
 
 def _remove_file(wt, path):
@@ -314,7 +325,18 @@ def _remove_file(wt, path):
             os.removedirs(leftover.parent)
 
 
+def _take_autostash(wt):
+    ref = Path(wt, sh(["git", "rev-parse", "--git-path", "MERGE_AUTOSTASH"],
+                      cwd=wt))
+    if not ref.is_file():
+        return None
+    stash = ref.read_text().strip()
+    ref.unlink()
+    return stash
+
+
 def _unwind_merge(wt, merged):
+    autostash = _take_autostash(wt)
     sh(["git", "reset", "-q"], cwd=wt)
     kept = merged & _listed(wt, "ls-tree", "-r", "--name-only", "-z", "HEAD",
                             "--", *merged)
@@ -323,6 +345,9 @@ def _unwind_merge(wt, merged):
     if kept:
         sh(["git", "--literal-pathspecs", "checkout", "-q", "HEAD", "--",
             *sorted(kept)], cwd=wt)
+    if autostash and subprocess.run(["git", "stash", "apply", "-q", autostash],
+                                    cwd=wt, capture_output=True).returncode:
+        sh(["git", "stash", "store", "-m", "autostash", autostash], cwd=wt)
 
 
 def _staged_entries(project, wt):

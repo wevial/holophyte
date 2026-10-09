@@ -229,6 +229,35 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual((self.target / "bin.dat").read_bytes(), b"\0task")
         self.assertEqual(self.git("status", "--porcelain"), "")
 
+    def test_a_merge_staged_with_its_conflict_markers_is_backed_up_then_aborted(self):
+        def stage_the_markers():
+            self.merge_main()
+            self.git("add", "a.txt", "b.txt")
+        self.turn(stage_the_markers)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.tip)
+        self.assertEqual((self.target / "a.txt").read_text(), "branch a\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        ((kind, summary),) = self.sweep_events()
+        self.assertEqual(kind, "merge_aborted")
+        (backup,) = re.findall(r"\b[0-9a-f]{40}\b", summary)
+        self.assertIn("<<<<<<<", self.git("show", f"{backup}:a.txt"))
+
+    def test_an_aborted_autostashed_merge_restores_the_stashed_edit(self):
+        def edit_then_autostash_merge():
+            self.write("a.txt", "edited before the merge\n")
+            subprocess.run(["git", "merge", "-q", "--autostash", "main"],
+                           cwd=self.target, capture_output=True)
+        self.turn(edit_then_autostash_merge)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual((self.target / "a.txt").read_text(),
+                         "edited before the merge\n")
+        self.assertEqual((self.target / "b.txt").read_text(), "branch b\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(self.git("stash", "list"), "")
+
     def test_a_conflicted_merge_is_not_discarded_when_its_backup_is_not_recorded(self):
         def leave_conflicted():
             self.merge_main()
