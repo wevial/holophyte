@@ -101,16 +101,14 @@ def ordered(merged):
 
 
 def exact(found):
-    merged = []
+    merged = {}
     for item in found:
         key = (*_place(item), said(item["messages"][0]))
-        twin = next((kept for kept in merged
-                     if (*_place(kept), said(kept["messages"][0])) == key), None)
-        if twin is None:
-            merged.append(dict(item))
+        if key in merged:
+            _absorb(merged[key], item, messages=False)
         else:
-            _absorb(twin, item, messages=False)
-    return ordered(merged)
+            merged[key] = dict(item)
+    return ordered(list(merged.values()))
 
 
 def _where(path, line):
@@ -204,7 +202,7 @@ def apply(merged, reply):
             merges.append(done)
         elif wanted:
             order = wanted
-        elif merge or ordering or line.upper().startswith("MERGE"):
+        elif ordering or line.upper().startswith("MERGE"):
             ignored.append(line)
     kept = [name for name in ids if name not in into]
     final = [name for name in order or () if name in kept]
