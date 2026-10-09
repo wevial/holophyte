@@ -132,38 +132,30 @@ def blast_radius_lines(conn):
 ADVERSARY_FAMILIES = ("claude", "codex", "configured", "fallback")
 
 
-def adversary_counts(passes):
+def adversary_line(family, passes):
     depths = Counter(event["depth"] for event in passes)
     models = Counter(subagent["model"] for event in passes
                      for subagent in event.get("subagents", []))
     blocking = Counter(finding["evidence"] for event in passes
                        for finding in event["findings"])
-    return {
-        "passes": len(passes), "full": depths["full"], "light": depths["light"],
-        "models": sorted(models.items(), key=lambda item: (-item[1], item[0])),
-        "reproduced": blocking["reproduced"], "traced": blocking["traced"],
-        "concerns": sum(len(event["concerns"]) for event in passes),
-        "blocked": sum(1 for event in passes if event["findings"]),
-        "minutes": sum(event.get("seconds") or 0 for event in passes) / 60}
-
-
-def adversary_line(family, counts):
-    total = sum(count for _, count in counts["models"])
-    models = (" (" + " · ".join(f"{model} {count}"
-                                for model, count in counts["models"]) + ")"
-              if total else "")
-    return (f"adversary {family}: {counts['passes']} passes"
-            f" (full {counts['full']} · light {counts['light']})"
-            f" · {total} subagents{models}"
-            f" · reproduced {counts['reproduced']} · traced {counts['traced']}"
-            f" · concerns {counts['concerns']} · blocked {counts['blocked']}"
-            f" · {counts['minutes']:.1f} min")
+    listed = " · ".join(f"{model} {count}" for model, count in sorted(
+        models.items(), key=lambda item: (-item[1], item[0])))
+    minutes = sum(event.get("seconds") or 0 for event in passes) / 60
+    return (f"adversary {family}: {len(passes)} passes"
+            f" (full {depths['full']} · light {depths['light']})"
+            f" · {sum(models.values())} subagents"
+            + (f" ({listed})" if listed else "")
+            + f" · reproduced {blocking['reproduced']}"
+            f" · traced {blocking['traced']}"
+            f" · concerns {sum(len(event['concerns']) for event in passes)}"
+            f" · blocked {sum(1 for event in passes if event['findings'])}"
+            f" · {minutes:.1f} min")
 
 
 def adversary_lines(conn):
     passes = [json.loads(payload) for (payload,) in conn.execute(
         "SELECT payload FROM runEvents WHERE kind = 'adversary_round'")]
-    return [adversary_line(family, adversary_counts(mine))
+    return [adversary_line(family, mine)
             for family in ADVERSARY_FAMILIES
             if (mine := [event for event in passes
                          if event.get("family") == family])]
