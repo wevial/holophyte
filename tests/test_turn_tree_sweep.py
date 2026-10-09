@@ -350,6 +350,7 @@ class TurnTreeSweepTests(SweepTestCase):
         ((kind, summary),) = self.sweep_events()
         (backup,) = re.findall(r"\b[0-9a-f]{40}\b", summary)
         self.assertEqual(self.git("show", f"{backup}:d.txt"), "branch b\nmain b")
+        self.assertIn("d.txt", summary)
 
     def test_a_stash_clash_on_a_non_ascii_path_is_kept_out_of_the_tree(self):
         name = "café.txt"

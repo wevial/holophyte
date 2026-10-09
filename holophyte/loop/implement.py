@@ -287,17 +287,21 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
                   f"the turn left a resolved merge uncommitted; committed it"
                   f" on {branch} at {head[:12]}")
         return
-    merged = (_listed(wt, "diff", "--name-only", "--no-renames", "-z", "HEAD",
-                      tree) | _listed(wt, "diff", "--cached", "--name-only",
-                                      "--no-renames", "--diff-filter=A", "-z",
-                                      "HEAD")
-              | conflicted | set(unresolved))
+    brought = _listed(wt, "diff", "--name-only", "--no-renames", "-z", "HEAD",
+                      tree)
+    added = _listed(wt, "diff", "--cached", "--name-only", "--no-renames",
+                    "--diff-filter=A", "-z", "HEAD") - brought
     backup = _backup_resolution(project, wt, task_id)
     _announce(conn, run_id, "merge_aborted",
               f"the turn left the merge on {branch} unresolved in"
               f" {', '.join(unresolved)}; aborted it, its attempted resolution"
-              f" backed up at {backup}")
-    _unwind_merge(wt, merged)
+              f" backed up at {backup}" + _only_in_backup(added))
+    _unwind_merge(wt, brought | added | conflicted | set(unresolved))
+
+
+def _only_in_backup(added):
+    return (f"; the file(s) it staged as new, {', '.join(sorted(added))},"
+            f" are kept only there") if added else ""
 
 
 def _listed(wt, *args):
