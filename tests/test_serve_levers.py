@@ -11,6 +11,7 @@ import io
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -21,6 +22,7 @@ from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
+import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.loop.stop import stop_if_requested  # noqa: E402
 
 LEVER_ROUTES = ("hold", "release-hold", "pause", "resume")
@@ -34,11 +36,11 @@ class LeverTests(ServeTestCase):
         super().setUp()
         self.seed()
 
-    def start_actions(self, on=True):
+    def start_actions(self, on=True, board=""):
         path = self.root / "serve.token"
         path.write_text(self.TOKEN + "\n")
         path.chmod(0o600)
-        self.start(f'[serve]\ntoken_file = "{path}"\n'
+        self.start(f'{board}[serve]\ntoken_file = "{path}"\n'
                    + ("actions = true\n" if on else ""))
 
     def post(self, action, **body):
@@ -143,6 +145,59 @@ class LeverTests(ServeTestCase):
                     code, _, answer = self.post(action, **body)
                     self.assertEqual(code, 400, answer)
         self.assertEqual(self.dump(), before)
+
+    def test_each_lever_answers_the_id_of_the_row_it_wrote(self):
+        self.start_actions(
+            board='[board]\nteam = "team-1"\nproject_id = "project-1"\n')
+        answers = {"hold": self.post("hold", note="deploying"),
+                   "release_hold": self.post("release-hold", note="deployed"),
+                   "pause": self.post("pause", run=self.run, note="reboot")}
+        conn = store.open(str(self.db))
+        try:
+            with self.assertRaises(store.RunEnded):
+                stop_if_requested(conn, self.run, "working")
+        finally:
+            conn.close()
+        answers["resume"] = self.post("resume", ticket="KO-7", note="back")
+        conn = store.open(str(self.db))
+        try:
+            ticket = store.read.ticket_by_identifier(conn, "KO-7").id
+            store.tickets.transition(conn, ticket, "in_flight")
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            live = store.claim(conn, project, ticket)
+        finally:
+            conn.close()
+        answers["abort"] = self.post("abort", run=live, note="wrong approach")
+        rows = self.rows(
+            "SELECT action, id FROM interventions WHERE action IN"
+            " ('hold', 'release_hold', 'pause', 'resume', 'abort')")
+        written = dict(rows)
+        self.assertEqual(sorted(action for action, _ in rows), sorted(answers))
+        for row, (code, _, body) in answers.items():
+            with self.subTest(row=row):
+                self.assertEqual((code, body["ok"], body["recorded"]),
+                                 (200, True, written[row]), body)
+
+    def test_a_pause_cites_its_own_row_past_another_writers_later_one(self):
+        self.start_actions()
+        real_pause = store.pause
+
+        def pause_then_another_writer(conn, run_id, note):
+            request = real_pause(conn, run_id, note)
+            other = store.open(str(self.db))
+            try:
+                store.record_intervention(other, run_id, "pause", "elsewhere")
+            finally:
+                other.close()
+            return request
+        with patch.object(store, "pause", pause_then_another_writer):
+            code, _, body = self.post("pause", run=self.run, note="reboot")
+        (ours,), (theirs,) = self.rows(
+            "SELECT id FROM interventions WHERE action = 'pause' ORDER BY id")
+        self.assertEqual(self.rows("SELECT stopRequested FROM runs WHERE id = ?",
+                                   self.run), [(ours,)])
+        self.assertEqual((code, body["ok"], body["recorded"]), (200, True, ours))
+        self.assertLess(ours, theirs)
 
     def test_every_lever_is_404_with_actions_off(self):
         self.start_actions(on=False)

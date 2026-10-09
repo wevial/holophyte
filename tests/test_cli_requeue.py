@@ -24,6 +24,7 @@ from unittest.mock import patch
 import holophyte.board.projection
 import holophyte.cli.entry
 import holophyte.config.project
+import holophyte.loop.merge_gate
 import holophyte.loop.stop
 import linear_provider
 import store
@@ -59,7 +60,7 @@ def stub_board_for(target):
     return StubBoard(settings.team) if settings is not None else None
 
 
-class RequeueCliTests(unittest.TestCase):
+class RequeueTarget(unittest.TestCase):
     """A target with a store holding one ticket and its ended (or live) run."""
 
     def setUp(self):
@@ -101,6 +102,7 @@ class RequeueCliTests(unittest.TestCase):
         # the requeued ticket's lease label off it (KO-351), and the stub
         # records the call instead of reaching for the network.
         self.board = StubBoard.instance = None
+        self.err = err
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
                 patch.object(holophyte.cli.entry, "board_for", stub_board_for):
             holophyte.cli.entry.cli([str(self.repo), *args])
@@ -117,6 +119,8 @@ class RequeueCliTests(unittest.TestCase):
             "SELECT status FROM tickets WHERE id = ?",
             (self.ticket,)).fetchone()[0]
 
+
+class RequeueCliTests(RequeueTarget):
     def test_shelved_board_state_refuses_requeue_without_writes(self):
         self.fail_the_run()
         for state in ("Backlog", "Canceled", "Done"):
@@ -320,6 +324,120 @@ class RequeueCliTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as raised:
             self.cli("--report", "--note", "stray")
         self.assertEqual(raised.exception.code, 2)
+
+
+class RelaunchLimitTests(RequeueTarget):
+    """Two relaunches against one failure, then a written diagnosis."""
+
+    def relaunch(self, source="human", outcome="failed"):
+        store.release(self.conn, self.run, outcome, "verify failed",
+                      now=T0 + MINUTE)
+        store.requeue(self.conn, self.ticket, "try again", source=source)
+        self.claim_again()
+
+    def claim_again(self):
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
+        self.run = store.claim(self.conn, self.project_id, self.ticket, now=T0)
+        self.conn.commit()
+
+    def relaunched_twice(self):
+        first = self.run
+        self.relaunch()
+        second = self.run
+        self.relaunch()
+        self.fail_the_run()
+        return first, second
+
+    def requeue_notes(self):
+        return [note for (note,) in self.conn.execute(
+            "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
+            " ORDER BY id")]
+
+    def test_a_third_relaunch_is_refused_naming_both_runs_and_force(self):
+        first, second = self.relaunched_twice()
+        before = self.interventions()
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "once more")
+
+        self.assertNotEqual(raised.exception.code, 0)
+        message = str(raised.exception)
+        for named in (f"runs {first} and {second}", "--force"):
+            self.assertIn(named, message)
+        self.assertEqual(self.interventions(), before)
+        self.assertEqual(self.status(), "in_flight")
+
+    def test_force_requeues_past_the_limit_recording_the_diagnosis(self):
+        self.relaunched_twice()
+
+        self.cli("--requeue", "KO-1", "--force", "--note", "the lock is stale")
+
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes()[-1],
+                         "forced past 2 relaunches: the lock is stale")
+
+    def test_a_forced_requeue_with_a_blank_diagnosis_is_refused(self):
+        self.relaunched_twice()
+        before = self.interventions()
+
+        with self.assertRaisesRegex(store.RequeueRefused, "diagnosis"):
+            store.requeue(self.conn, self.ticket, "  ", force=True)
+
+        self.assertEqual(self.interventions(), before)
+        self.assertEqual(self.status(), "in_flight")
+
+    def test_force_without_approve_or_requeue_is_a_usage_error(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--report", "--force")
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--force belongs to --approve or --requeue",
+                      self.err.getvalue())
+
+    def test_a_second_relaunch_needs_no_force(self):
+        self.relaunch()
+        self.fail_the_run()
+
+        self.cli("--requeue", "KO-1", "--note", "again")
+
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes(), ["try again", "again"])
+
+    def test_a_human_redirect_starts_the_count_again(self):
+        self.relaunched_twice()
+        store.record_intervention(self.conn, self.run, "redirect",
+                                  "looked at it", question="which lock?")
+
+        self.cli("--requeue", "KO-1", "--note", "after the redirect")
+
+        self.assertEqual(self.status(), "ready")
+
+    def test_a_drift_requeue_is_not_a_relaunch(self):
+        live = {"id": "KO-1", "issue_id": "issue-1", "title": "a ticket",
+                "verify": "echo ok", "budget_min": 25, "contracts": [],
+                "criteria": ["Given a ticket, then it is worked, reworded"]}
+        with contextlib.redirect_stdout(io.StringIO()), \
+                self.assertRaises(holophyte.loop.merge_gate.DriftRequeued):
+            holophyte.loop.merge_gate._requeue_drift(
+                self.conn, self.run, None, "KO-1", live, ["criteria"],
+                "task/ko-1", "a" * 40)
+        self.claim_again()
+        self.relaunch()
+        self.fail_the_run()
+
+        self.cli("--requeue", "KO-1", "--note", "after drift")
+
+        self.assertEqual(self.status(), "ready")
+
+    def test_a_triage_requeue_counts_toward_the_limit(self):
+        self.relaunch(source="factory")
+        self.relaunch()
+        self.fail_the_run()
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "once more")
+
+        self.assertIn("--force", str(raised.exception))
+        self.assertEqual(self.status(), "in_flight")
 
 
 class RequeuedClaimTests(LoopFixture):

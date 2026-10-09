@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import subprocess
 import sys
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -298,6 +299,68 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertEqual(code, 400)
         self.assertIn("ticket", body["error"])
 
+    def test_an_unforced_requeue_with_no_note_records_the_console_default(self):
+        self.seed_ended()
+        self.start(self.token_config("actions = true\n"), host="0.0.0.0")
+
+        code, _, body = self.request("POST", "/actions/requeue", self.BEARER,
+                                     body={"ticket": "KO-2"})
+
+        self.assertEqual((code, body["ok"]), (200, True), body)
+        with store.open(str(self.db)) as conn:
+            (note,) = conn.execute(
+                "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
+            ).fetchone()
+        self.assertEqual(note, "requeued from the console")
+
+    def test_requeue_after_two_relaunches_is_refused_unless_forced(self):
+        self.seed_ended()
+        conn = store.open(str(self.db))
+        try:
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            ticket = store.read.ticket_by_identifier(conn, "KO-2").id
+            for _ in range(2):
+                store.requeue(conn, ticket, "the verify host was down")
+                store.tickets.transition(conn, ticket, "in_flight")
+                run = store.claim(conn, project, ticket)
+                store.release(conn, run, "failed", reason="verify timed out")
+            before = list(conn.iterdump())
+        finally:
+            conn.close()
+        self.start(self.token_config("actions = true\n"), host="0.0.0.0")
+
+        def requeue(**extra):
+            return self.request("POST", "/actions/requeue", self.BEARER,
+                                body={"ticket": "KO-2", "note": "diagnosed",
+                                      **extra})
+
+        code, _, body = requeue()
+        self.assertEqual(code, 200)
+        self.assertIs(body["ok"], False)
+        self.assertIn("--force", body["detail"])
+        code, _, body = requeue(force="yes")
+        self.assertEqual((code, body), (400, {"error": "force must be true or false"}))
+        for note in ({}, {"note": "  "}):
+            code, _, body = self.request(
+                "POST", "/actions/requeue", self.BEARER,
+                body={"ticket": "KO-2", "force": True, **note})
+            self.assertEqual(code, 400, body)
+            self.assertIn("note", body["error"])
+        with store.open(str(self.db)) as conn:
+            self.assertEqual(list(conn.iterdump()), before)
+
+        code, _, body = requeue(force=True)
+        self.assertEqual(code, 200)
+        self.assertIs(body["ok"], True, body)
+        with store.open(str(self.db)) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT status FROM tickets WHERE linearIdentifier = 'KO-2'"
+            ).fetchone(), ("ready",))
+            (note,) = conn.execute(
+                "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
+                " ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual(note, "forced past 2 relaunches: diagnosed")
+
     def test_requeue_refuses_an_identifier_the_store_holds_twice(self):
         # The CLI's `--requeue` refuses to pick one of two tickets named
         # alike; the route must refuse the same way, and neither may move.
@@ -340,6 +403,124 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertEqual(after, before)
         self.assertNotIn("ready", after[0])
         self.assertEqual(after[1], [])
+
+    def interventions(self, action=None):
+        conn = store.read.open_readonly(self.db)
+        try:
+            if action is None:
+                return conn.execute(
+                    "SELECT * FROM interventions ORDER BY id").fetchall()
+            return [row for (row,) in conn.execute(
+                "SELECT id FROM interventions WHERE action = ? ORDER BY id",
+                (action,))]
+        finally:
+            conn.close()
+
+    def test_a_unit_action_answers_the_id_of_the_row_it_wrote(self):
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            store.tickets.ensure_project(conn, "team-1", self.target)
+        finally:
+            conn.close()
+        self.start(self.token_config("actions = true\n"))
+        with patch.object(subprocess, "run") as run:
+            run.side_effect = lambda argv, **kw: self.completed(argv)
+            _, _, on_project = self.request("POST", "/actions/launch-loop",
+                                            self.BEARER)
+            self.seed()
+            _, _, restart = self.request("POST", "/actions/restart-supervisor",
+                                         self.BEARER)
+            _, _, launch = self.request("POST", "/actions/launch-loop",
+                                        self.BEARER)
+        project_row, run_row = self.interventions("launch_loop")
+        (restart_row,) = self.interventions("restart_supervisor")
+        self.assertNotIn(self.run, (project_row, run_row, restart_row))
+        self.assertEqual(
+            [(body["ok"], body["recorded"])
+             for body in (on_project, restart, launch)],
+            [(True, project_row), (True, restart_row), (True, run_row)])
+
+    def test_two_overlapping_restarts_each_answer_their_own_row(self):
+        self.seed()
+        self.start(self.token_config("actions = true\n"))
+        first_running, second_ran = threading.Event(), threading.Event()
+
+        def systemctl(argv, **kw):
+            if first_running.is_set():
+                second_ran.set()
+            else:
+                first_running.set()
+                second_ran.wait(timeout=1)
+            return self.completed(argv)
+        replies = {}
+
+        def restart(name):
+            replies[name] = self.request(
+                "POST", "/actions/restart-supervisor", self.BEARER)[2]
+        with patch.object(subprocess, "run", side_effect=systemctl):
+            first = threading.Thread(target=restart, args=("first",))
+            first.start()
+            first_running.wait(timeout=10)
+            restart("second")
+            first.join(timeout=10)
+        rows = self.interventions("restart_supervisor")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual((replies["first"]["recorded"],
+                          replies["second"]["recorded"]), tuple(rows))
+
+    def test_requeue_and_send_back_answer_the_row_each_wrote(self):
+        self.seed()
+        self.seed_ended()
+        with store.open(str(self.db)) as conn:
+            for phase in ("verifying", "reviewing", "merge_gate"):
+                store.set_phase(conn, self.run, phase)
+            store.park(conn, self.run, "awaiting_merge_approval",
+                       pr_url="https://example.test/org/repo/pull/1")
+            ticket = store.read.ticket_by_identifier(conn, "KO-7").id
+            store.tickets.transition(conn, ticket, "blocked_on_operator")
+        self.start(self.token_config("actions = true\n"))
+        _, _, requeued = self.request("POST", "/actions/requeue", self.BEARER,
+                                      body={"ticket": "KO-2"})
+        _, _, sent = self.request("POST", "/actions/send-back", self.BEARER,
+                                  body={"run": self.run, "note": "rename it"})
+        (requeue_row,) = self.interventions("requeue")
+        (note_row,) = self.interventions("operator_note")
+        for body, action, row in ((requeued, "requeue", requeue_row),
+                                  (sent, "send-back", note_row)):
+            with self.subTest(action=action):
+                self.assertEqual((body["action"], body["ok"], body["recorded"]),
+                                 (action, True, row), body)
+                self.assertTrue(body["detail"])
+
+    def test_a_refused_action_answers_recorded_null_and_writes_no_row(self):
+        self.seed()
+        with store.open(str(self.db)) as conn:
+            store.release(conn, self.run, "failed", reason="verify red")
+            ticket = store.read.ticket_by_identifier(conn, "KO-7").id
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            newer = store.claim(conn, project, ticket, now=self.now)
+            for phase in ("working", "verifying", "reviewing", "merge_gate"):
+                store.set_phase(conn, newer, phase)
+            store.park(conn, newer, "awaiting_merge_approval",
+                       pr_url="https://example.test/org/repo/pull/1")
+            store.tickets.transition(conn, ticket, "blocked_on_operator")
+        self.assertNotEqual(newer, self.run)
+        self.start(self.token_config("actions = true\n"))
+        before = self.interventions()
+        refusals = (("requeue", {"ticket": "KO-99"}),
+                    ("send-back", {"run": self.run, "note": "rename it"}),
+                    ("pause", {"run": self.run, "note": "reboot"}))
+        for action, body in refusals:
+            with self.subTest(action=action):
+                code, _, reply = self.request("POST", f"/actions/{action}",
+                                              self.BEARER, body=body)
+                self.assertEqual(code, 200, reply)
+                self.assertEqual(
+                    (reply["action"], reply["ok"], reply["recorded"]),
+                    (action, False, None), reply)
+                self.assertTrue(reply["detail"])
+        self.assertEqual(self.interventions(), before)
 
 
 if __name__ == "__main__":

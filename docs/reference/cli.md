@@ -17,7 +17,7 @@ command family, [below](#project-commands).
 | `--board-import [--dry-run] PROJECT` | copies every open issue of the project's Linear board, Backlog included, into its store by board id in one transaction, before the project moves to the native board: a row the store holds keeps its id, runs, ledger and `dependsOn`, a new one takes the issue's column and open blockers; prints `[holo2] KO-n: new`, `changed` (its revision moved) or `unchanged` per issue, then `[holo2] board import: N new, M changed, K unchanged; P pushes and Q notes pending for Linear`; a failure part-way rolls back and running it again is the restart; `--dry-run` prints the same and writes nothing; `[board] kind = "native"` is refused with exit 1 before Linear is asked | Linear (read), store |
 | `--supervise PROJECT` | the acting sweep every `sweep_interval_sec`, under the project's supervisor lock; runs the code it started with, and exits for its service manager to restart when a newer build has stamped the store; refused for a project `host.toml` lists, which the host sweep watches | store |
 | `--serve PORT PROJECT` | the JSON daemon on loopback (`--serve 7710` binds `127.0.0.1:7710`), which also serves the console at `/` from the built bundle; it reads by default and writes only through two opt-ins, `[serve] actions` (`POST /actions/...`) and `[serve] config_edit` (`PUT /config`) ([The daemon's actions](daemon.md)); `--serve HOST:PORT` binds the named address instead, and a non-loopback bind demands `[serve] token_file`, whose contents every JSON request but `/peers` must present as a bearer token (`/`, the console's files and `/peers` stay open; a loopback bind, `127.0.0.1:PORT` included, ignores the key for reads, but either write opt-in demands `[serve] token_file` on every bind, loopback included, and the routes it opens answer only to the bearer) | store, read-only by default; with `[serve] actions` the store and the systemd units, with `[serve] config_edit` the project's `config.toml` |
-| `--requeue KO-n --note TEXT PROJECT` | walks a failed ticket back to `ready` with an `interventions` row | store |
+| `--requeue KO-n --note TEXT [--force] PROJECT` | walks a failed ticket back to `ready` with an `interventions` row. A ticket already relaunched twice against one failure is refused: two `requeue` rows, from any source, on its runs that ended `failed` or `rejected`, recorded since its newest human intervention other than a requeue (an abort, a redirect, an operator note). A drift requeue, whose run ends `abandoned`, is not one. The refusal exits 1 naming the two newest relaunched runs and writes nothing, because a third failure needs a diagnosis rather than another run; `--force` with the diagnosis as the note requeues it anyway and records the note as `forced past N relaunches: NOTE`, and each further relaunch needs `--force` again until a human acts on the ticket otherwise | store |
 | `--approve KO-n [--note TEXT] [--force] PROJECT` | releases a ticket parked by `[merge] approve = "human"`: an `interventions` row with action `approve`, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim reuses the preserved worktree and branch, re-runs the pre-merge verify and merges with no implementer or reviewer -- under `[merge] mode = "pr"`, babysits the pull request once more and merges it through the API when green and quiet. Under `[merge] approve = "human"`, a run parked on a pull request is first read from GitHub with the readiness check the daemon's `POST /actions/merge` uses: not ready, including GitHub unreadable (`github_unreadable`), it exits 1 naming the ticket and the reason (`KO-n: review not approved`) and writes nothing; `--force`, which requires a non-blank `--note`, releases it anyway and records the intervention's note as `forced past readiness: REASON; NOTE`. A run parked with no pull request, or under `approve = "auto"`, is released without reading GitHub and its note recorded as given, `--force` or not; refuses any other state, naming it | store |
 | `--babysit KO-n [--note TEXT [--author NAME]] PROJECT` | sends a ticket parked on its pull request (`[merge] mode = "pr"`) back to the babysitter; a custom note, or any note with `--author`, is a maintainer instruction, like `holo send-back`'s, whose author is `--author` or the caller's login; otherwise the `interventions` row `store.babysit()` writes, the parked run ended with its resume point at the merge gate, the ticket walked to `ready`; the loop's next claim resumes the candidate on the PR and reads its threads and checks again, parking again under `approve = "human"` rather than merging; refuses any other state, naming it | store |
 | `--repoint KO-n SHA --note TEXT PROJECT` | moves a parked candidate to a rebuilt branch tip: an `interventions` row with action `repoint` carrying the note, a `runEvents` row naming the old and new shas, then `runs.candidateSha` set to `SHA` (a full 40-hex commit id); the run stays parked and the branch is not touched; the merge gate `--approve` resumes into holds the branch to the new sha; refuses a ticket not parked awaiting merge approval, one already approved (its release is in flight: requeue instead) or a malformed sha, naming it | store |
@@ -120,7 +120,7 @@ internal, spawned by the loop's pool.
 | `holo file FILE --update KEY [--revision N] [--labels a,b]` | `holo ticket file` | `--file-ticket FILE --update KEY [--revision N] [--labels a,b] PROJECT` |
 | `holo move KEY ready\|backlog --revision N [NOTE]` | `holo ticket move` | `--move KEY ready\|backlog --revision N [--note NOTE] PROJECT` |
 | `holo cancel KEY --revision N NOTE` | `holo ticket cancel` | `--cancel KEY --revision N --note NOTE PROJECT` |
-| `holo requeue KEY NOTE` | `holo ticket requeue` | `--requeue KEY --note NOTE PROJECT` |
+| `holo requeue KEY NOTE [--force]` | `holo ticket requeue` | `--requeue KEY --note NOTE [--force] PROJECT` |
 | `holo approve KEY [NOTE] [--force]` | `holo ticket approve` | `--approve KEY [--note NOTE] [--force] PROJECT` |
 | `holo babysit KEY [NOTE [--author NAME]]` | `holo ticket babysit` | `--babysit KEY [--note NOTE [--author NAME]] PROJECT` |
 | `holo send-back RUN NOTE [--author NAME]` | | none: the console's send-back of run `RUN`, its note by `--author`, or else the caller's login (over http, the daemon's `maintainer`) |
@@ -429,16 +429,21 @@ write command's `--json` result says so with `ok: false`.
 With `transport = "http"`, `holo` calls the host daemon's routes at `url`
 instead ([HTTP endpoints](http.md#the-host-daemon)), under
 `/projects/NAME/...`, `NAME` the project's `[serve] name`. The reads `runs`,
-`run N` (`--files`, `--ledger`, `--turns`), `attention`, `board` and `ticket
-KEY` print what the local command prints, `board`'s `editable` false as
-there; `attention` with no project is the root's. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`
+`run N` (`--files`, `--ledger`, `--turns`), `attention`, `board`, `ticket
+KEY` and `report` (`--since` sent as `since`, `--notes` drawn here from a
+body that always holds the notes) print what the local command prints,
+`board`'s `editable` false as there; `attention` with no project is the
+root's. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`
 and `start` post to `POST /projects/NAME/actions/...`
 ([The daemon's actions](daemon.md)): `release` to `release-hold`, `start` to
 `launch-loop`, which takes no note and releases no hold, and `pause` and `abort` first read the
 ticket's live run from `GET /tickets/KEY`. A write's result is the daemon's
-reply, printed as a `✓`/`✗` line or, with `--json`, as given. stderr says
-`via http to URL`, and a `--json` result gains `"transport": "http"`. Every
-other command, `status` and `report` included, has no route: it exits 1
+reply, printed as a `✓`/`✗` line or, with `--json`, as given but with the
+command's words as `action` (`start`, `release`), as locally; its
+`recorded` is the id of the interventions row the daemon wrote, as
+locally. stderr says `via http to URL`, and a `--json` result gains
+`"transport": "http"`. Every other command, `status` included, has no
+route: it exits 1
 saying so and, where ssh carries it, that `transport = "ssh"` runs it, and
 nothing is sent over either road. A redirect is not followed, so the token
 goes nowhere but `url`, and an answer that is not a JSON object exits 1. A 401 exits 1 naming `token_file`'s file; a 404 on an action
