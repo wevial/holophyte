@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 
 import store
 from holophyte.agents.agent_routes import routes, safe_command
-from holophyte.agents.fallback import record_pending_switch
+from holophyte.agents.fallback import outage_reason, record_pending_switch
 from holophyte.agents.review_workspace import cleanup_review_refs
 from holophyte.agents.roles import agent
 from holophyte.loop.gates import sh
@@ -108,8 +108,12 @@ def _turn(target, conn, run_id, goal, merge_sha):
     finally:
         cleanup_review_refs(target.path, None)
         record_pending_switch(target, "adjudicate", conn, run_id)
-    return replace(read_scope(output), route=safe_command(
-        target, getattr(output, "command", None)))
+    command = getattr(output, "command", None)
+    scope = read_scope(output)
+    down = not scope.default and outage_reason(command or "", output)
+    if down:
+        scope = _default(f"the adjudicator route is down: {down}")
+    return replace(scope, route=safe_command(target, command))
 
 
 def judge(target, conn, run_id, follow_up_id, goal, merge_sha):
