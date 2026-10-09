@@ -279,3 +279,62 @@ class NativeLoopTests(LoopFixture):
 
         self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
         self.assertNotIn(("recheck",), self.notes(ticket_id))
+
+    def unverified_main(self):
+        """`main^{commit}` fails to verify; every other git call is real."""
+        real = holophyte.review.freshness._git
+
+        def fails_verify(repo, *args):
+            if args == ("rev-parse", "--verify", "-q", "main^{commit}"):
+                return False
+            return real(repo, *args)
+
+        return patch.object(holophyte.review.freshness, "_git", fails_verify)
+
+    def test_an_unverifiable_main_leaves_a_stale_park_untouched(self):
+        ticket_id = self.parked_on_later()
+        before = self.notes(ticket_id)
+
+        out = io.StringIO()
+        with self.unverified_main(), patch.object(sys, "stdout", out):
+            self.assertEqual(self.sweep(), [])
+
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
+        self.assertEqual(self.notes(ticket_id), before)
+        self.assertIn("verif", out.getvalue().lower())
+
+    def re_park(self):
+        with patch.object(sys, "stdout", io.StringIO()):
+            park_stale(self.project, self.conn, self.project_id, self.board,
+                       self.board.fetch_task("NAT-1"),
+                       [f"`{LATER}` (named in Implementation notes) is not"
+                        " on main"])
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
+
+    def recheck_texts(self, ticket_id):
+        return [text for (text,) in self.read(
+            f"SELECT text FROM ticketNotes WHERE ticketId = {ticket_id}"
+            " AND kind = 'recheck' ORDER BY id")]
+
+    def test_a_repeated_recheck_verdict_writes_one_note_until_main_moves(self):
+        ticket_id = self.parked_on_later()
+        self.commit_later()
+        self.sweep()
+        first = self.recheck_texts(ticket_id)
+        self.re_park()
+
+        self.sweep()
+
+        self.assertEqual(self.statuses(), {"NAT-1": "ready"})
+        self.assertEqual(len(first), 1)
+        self.assertEqual(self.recheck_texts(ticket_id), first)
+        self.re_park()
+        (self.target / "docs" / "more.md").write_text("# More\n")
+        self.git("add", "docs/more.md")
+        self.git("commit", "-q", "-m", "add more")
+
+        self.sweep()
+
+        texts = self.recheck_texts(ticket_id)
+        self.assertEqual(len(texts), 2)
+        self.assertNotEqual(texts[0], texts[1])
