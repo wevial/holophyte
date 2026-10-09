@@ -48,7 +48,8 @@ def unit_action(project, action, unit_name, asked=None):
     unit = template + unit_name
     who, route = asked or ("the daemon", f"POST /actions/{action}")
     note = f"operator asked {who} to {verb} {unit} ({route})"
-    recorded = record_action_intervention(project, intervention, note)
+    written = record_on_newest_run(project, intervention, note)
+    recorded = None if written is None else written[1]
     if recorded is None and action == "launch-loop":
         recorded = record_on_project(project, intervention, note)
     if recorded is None:
@@ -65,13 +66,18 @@ def unit_action(project, action, unit_name, asked=None):
 
 
 def record_action_intervention(project, action, note):
+    written = record_on_newest_run(project, action, note)
+    return None if written is None else written[0]
+
+
+def record_on_newest_run(project, action, note):
     if not project.store_path.exists():
         return None
     conn = open_store(project)
     try:
         run_id = store.read.newest_run_id(conn)
-        return None if run_id is None else store.record_intervention(
-            conn, run_id, action, note, source="human", trigger="manual")
+        return None if run_id is None else (run_id, store.record_intervention(
+            conn, run_id, action, note, source="human", trigger="manual"))
     finally:
         conn.close()
 
