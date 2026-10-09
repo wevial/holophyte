@@ -32,7 +32,7 @@ DONE = "ADVERSARY: DONE"
 BLOCKING = ("reproduced", "traced")
 LEVELS = (*BLOCKING, "concern")
 HEADING = "Adversarial review findings (reproduced or traced):"
-EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:[*`_\s]*([A-Za-z]+)",
+EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:[*`_\s]*([^\s*`]*)",
                          re.I | re.M)
 LEADING_PATH_RE = re.compile(
     r"^\s*(?:[-*+]|\d+[.)])\s+[`*_]*([\w.\-/]*\w):(\d+)(?![\w.])")
@@ -140,7 +140,7 @@ def finished(reply):
 
 def _evidence(block):
     found = EVIDENCE_RE.search(block)
-    level = found.group(1).lower() if found else "concern"
+    level = found.group(1).rstrip(".,;:_").lower() if found else "concern"
     return level if level in LEVELS else "concern"
 
 
