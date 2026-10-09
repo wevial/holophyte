@@ -161,3 +161,18 @@ class GoverningNewTests(ConfigTestCase):
                       " `tests/test_other.py`."):
             with self.subTest(notes=notes):
                 self.assertEqual(self.reasons(notes), [])
+
+    def test_a_preposition_before_the_path_ends_the_declaration(self):
+        for word in ("regarding", "concerning"):
+            with self.subTest(word=word):
+                self.assertEqual(self.reasons(
+                    f"- Beside `refuse()`, add new tests {word}"
+                    " `tests/test_claims.py`."),
+                    ["`refuse()` (named in Implementation notes #1) is not in"
+                     " `tests/test_claims.py` on main"])
+
+    def test_a_list_entry_that_is_no_path_ends_the_declaration(self):
+        self.assertEqual(self.reasons(
+            "- Add a new helper `refuse()` and `tests/test_gone.py`."),
+            ["`tests/test_gone.py` (named in Implementation notes) is not on"
+             " main"])

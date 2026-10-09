@@ -413,19 +413,23 @@ def _sentence_before(masked, end):
 
 
 PREPOSITIONS = frozenset(
-    "about above across after against along alongside among around as at"
-    " before behind below beneath beside between beyond by during for from in"
-    " inside into near of off on onto out outside over past per since through"
-    " to toward towards under until upon via with within without".split())
+    "aboard about above across after against along alongside amid among"
+    " around as at atop before behind below beneath beside besides between"
+    " beyond by concerning despite during except excluding following for from"
+    " in including inside into like near of off on onto opposite out outside"
+    " over past per regarding respecting round since than through throughout"
+    " till to toward towards under underneath unlike until unto upon versus"
+    " via with within without".split())
 NEW_GAP_RE = re.compile(
     r"\s*(?P<words>(?:\w[\w-]*\s+)*(?:\w[\w-]*)?)\s*[,:(]?\s*"
     r"(?:\0+\s*(?:,\s*(?:(?:and|or)\s+)?|(?:and|or)\s+))*", re.I)
 
 
-def _governing_new(marked, start, end):
+def _governing_new(text, marked, start, end):
     news = list(re.finditer(r"\bnew\b", marked[start:end], re.I))
     gap = news and NEW_GAP_RE.fullmatch(marked, start + news[-1].end(), end)
-    if not gap:
+    if not gap or any(_repo_paths(m.group(1)) != [m.group(1)] for m in
+                      re.finditer(r"`([^`\n]+)`", text[gap.start():end])):
         return None
     words = gap.group("words").lower().split()
     if len(words) > 3 or PREPOSITIONS.intersection(words):
@@ -443,8 +447,8 @@ def _new_paths(t):
             if not PATH_TOKEN_RE.fullmatch(path):
                 continue
             sentence = _sentence_before(masked, span.start())
-            words = _governing_new(marked, span.start() - len(sentence),
-                                   span.start())
+            words = _governing_new(text, marked,
+                                   span.start() - len(sentence), span.start())
             directory = words is not None and any(
                 re.fullmatch(r"director(?:y|ies)", w) for w in words)
             if words is not None and (_repo_paths(path) or directory):
