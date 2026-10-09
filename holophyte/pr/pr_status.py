@@ -50,7 +50,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
-      state merged headRefOid mergeable mergeCommit { oid } updatedAt title
+      id isDraft state merged headRefOid mergeable mergeCommit { oid } updatedAt title
       reviewDecision
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
       comments(first: 100, after: $commentsAfter) {
@@ -431,7 +431,9 @@ def _state_of(node, threads, runs, required, awaited=()):
                                           and r.get("status") != "completed"),
                    failed_checks=_failed_checks(runs),
                    missing_checks=_missing_checks(runs, required),
-                   awaiting=_awaiting(runs, awaited))
+                   awaiting=_awaiting(runs, awaited),
+                   draft=node.get("isDraft") is True,
+                   node_id=node.get("id") or "")
 
 
 @dataclass(frozen=True)
