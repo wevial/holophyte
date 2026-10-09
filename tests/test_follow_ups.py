@@ -107,6 +107,22 @@ class CaptureTests(LoopFixture):
         self.assertEqual([row[1:6] for row in self.rows()], [
             ("feature", 1, "Retry the label write", "provider.py", 90)])
 
+    def test_a_verdict_word_wrapped_to_a_line_start_stores_nothing(self):
+        self.fix("fix one\n\n"
+                 "[P1] Required container witness is missing"
+                 " @ tests/test_image.py:59 --\n"
+                 "FOLLOW_UP. The finding is valid: the test has never\n"
+                 "run, so criterion 2 is still unwitnessed.\n\n"
+                 "FOLLOW_UP(guardrail): run a Docker verify command on a"
+                 " Docker-capable host @ tests/test_image.py:59\n",
+                 "fix two\n\nFOLLOW_UP, still valid: the witness needs Docker\n"
+                 "FOLLOW_UP; out of scope here\n")
+
+        self.assertEqual([row[1:6] for row in self.rows()], [
+            ("guardrail", 1, "run a Docker verify command on a Docker-capable"
+             " host", "tests/test_image.py", 59)])
+        self.assertEqual(events(self.conn, self.run_id,
+                                "follow_up_kind_missing"), [])
 
     def test_any_other_line_starting_with_the_marker_is_a_flagged_feature(self):
         self.fix("fix\n\nFOLLOW_UP_extra: Cache the board read\n"
