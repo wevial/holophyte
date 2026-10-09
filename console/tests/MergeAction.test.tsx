@@ -23,11 +23,13 @@ const bypassable = { ...bypassableReady, run: 47 };
 afterEach(() => { cleanup(); localStorage.clear(); });
 
 /** The table over `hosts` at poll count `polls`, reading readiness from
- *  `answer` and posting merges to `post`, both carrying the stored bearer. */
+ *  `answer` (and no asks) and posting merges to `post`, both carrying the
+ *  stored bearer. */
 async function show(answer: Record<string, unknown>, { post = fakeFetch({ ok: true, detail: "done" }), hosts = [host] } = {}) {
   storeToken(host.address, "test-token");
   const read = fakeFetch(answer);
-  const deps = { fetch: tokenedFetch(read.fetchImpl) };
+  const deps = { fetch: tokenedFetch(async (url, init) => url.endsWith("/asks")
+    ? new Response("not found", { status: 404 }) : read.fetchImpl(url, init)) };
   const table = (polls: number) => <PullRequestTable hosts={hosts} project="all" now={status.now}
     polls={polls} deps={deps} actionFetch={post.fetchImpl} />;
   const view = render(table(0));
