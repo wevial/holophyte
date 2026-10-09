@@ -40,8 +40,7 @@ def patterns(project):
 
 def _search(compiled, line):
     for index, pattern in enumerate(compiled):
-        match = pattern.search(line)
-        if match:
+        if match := pattern.search(line):
             register_values([match.group()])
             yield index
 
@@ -76,8 +75,8 @@ def _added_lines(diff, parents):
         elif header and line.startswith("+++ "):
             name = line[4:].rstrip("\t")
             path = None if name == "/dev/null" else name
-        elif HUNK.match(line):
-            number, header = int(HUNK.match(line).group(1)), False
+        elif hunk := HUNK.match(line):
+            number, header = int(hunk.group(1)), False
         elif header or path is None or "-" in line[:width] or line[:1] == "\\":
             continue
         else:
