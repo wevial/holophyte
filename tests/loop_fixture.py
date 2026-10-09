@@ -147,6 +147,27 @@ def unverified_main():
     return patch.object(holophyte.review.freshness, "_git", fails_verify)
 
 
+def origin_ahead(target):
+    """A bare origin for `target`, whose main is one commit ahead of
+    `target`'s; that commit."""
+    def git(*args, cwd=target):
+        return subprocess.run(
+            ["git", "-c", "user.name=Elsewhere",
+             "-c", "user.email=elsewhere@example.invalid", *args],
+            cwd=str(cwd), check=True, capture_output=True, text=True).stdout
+
+    origin, clone = target.parent / "origin.git", target.parent / "elsewhere"
+    git("init", "-q", "--bare", "-b", "main", str(origin))
+    git("remote", "add", "origin", str(origin))
+    git("push", "-q", "origin", "main")
+    git("clone", "-q", str(origin), str(clone))
+    (clone / "elsewhere.md").write_text("landed elsewhere\n")
+    git("add", "elsewhere.md", cwd=clone)
+    git("commit", "-q", "-m", "land elsewhere", cwd=clone)
+    git("push", "-q", "origin", "main", cwd=clone)
+    return git("rev-parse", "main", cwd=clone).strip()
+
+
 # A body `ticket_template.validate()` accepts, in the shape the Linear
 # provider hands over; the tests that route on the body use it.
 VALID_BODY = (

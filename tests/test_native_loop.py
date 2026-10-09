@@ -21,7 +21,12 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
-from loop_fixture import VALID_BODY, LoopFixture, unverified_main  # noqa: E402
+from loop_fixture import (  # noqa: E402
+    VALID_BODY,
+    LoopFixture,
+    origin_ahead,
+    unverified_main,
+)
 
 import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.adjudicate  # noqa: E402
@@ -284,11 +289,13 @@ class NativeLoopTests(LoopFixture):
     def test_an_unverifiable_main_leaves_a_stale_park_untouched(self):
         ticket_id = self.parked_on_later()
         before = self.notes(ticket_id)
+        fetched = origin_ahead(self.target)
 
         out = io.StringIO()
         with unverified_main():
             self.assertEqual(self.sweep(out), [])
 
+        self.assertEqual(self.git("rev-parse", "main").strip(), fetched)
         self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
         self.assertEqual(self.notes(ticket_id), before)
         self.assertIn("main could not be verified", out.getvalue())
