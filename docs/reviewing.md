@@ -178,8 +178,8 @@ a second miss fails the run as `review_route` with the candidate preserved.
 
 A reproduced or traced finding blocks the round: it is not approved, its
 `reviewRounds` row has verdict `changes_requested` and holds the finding with
-`reviewer` `adversary` and its `evidence`, and the fix turn gets it after the
-primary's findings under `Adversarial review findings (reproduced or traced):`.
+`reviewer` `adversary` and its `evidence`, and the fix turn gets it in the
+consolidated list below.
 Concerns never block and stay out of `reviewRounds`; each pass's concerns go
 into one ledger note. Each pass records an `adversary_round` detail event with
 `round`, `tier`, `depth`, `scope`, `range`, `family` (`claude`, `codex`,
@@ -189,6 +189,59 @@ for `fallback` the reason its switch recorded; a pass on the container
 fallback pair records that pair's `model` and `effort`),
 `outcome`, `seconds`, `findings` (the blocking ones) and `concerns`. The
 pass's `agent_turn` event labels a Claude turn `claude opus`.
+
+## Consolidation and concerns
+
+On a round with an adversarial pass, the primary's and the adversary's
+findings become one list before the fix turn sees them; a round without one
+hands the fix turn the primary's verdict text. The primary's items are the
+findings of a reply that asked for changes plus its unwitnessed criteria, or
+only the unwitnessed criteria when it approved; the adversary's are its
+blocking findings and its concerns. Each item carries `found_by` (`primary`,
+`adversary`) and an evidence rank: `reproduced`, `traced`, `review` (a primary
+finding), `concern`.
+
+Pass 1 is factory code. Two items with the same path, the same line (or
+neither) and the same message, whitespace collapsed and case folded once the
+bullet, location, severity tag and `EVIDENCE:` line are set aside, become one
+item with the higher severity (`p0`, `p1`, `p2`, `nit`), the stronger evidence
+and both reviewers. Different findings at one location all stay. The list puts
+blocking items before concerns, each by severity, then primary before
+adversary, then the order reported, items at one location kept together.
+
+Pass 2 runs only when the round goes to a fix turn and pass 1 left at least two
+items. The `consolidate` seat, `[agents] consolidator` (see [Config](config.md)),
+defaults to the review container on the reviewer's model pair. It sees the items
+as `F1`, `F2` and so on and replies with `MERGE: Fa INTO Fb — reason` lines,
+one `ORDER: Fx, Fy, ...` line and the final line `CONSOLIDATED`. The factory
+applies the reply itself: a merge keeps the higher severity, the stronger
+evidence, both reviewers and both messages; ids missing from `ORDER` follow in
+their pass-1 order; a line naming an unknown id, merging an item into itself,
+closing a cycle, or a second `ORDER` line is set aside. A failed route or a
+reply without `CONSOLIDATED` hands on the pass-1 list and the run goes on; the
+seat has no fallback and no startup probe.
+
+Every blocking item goes to the fix turn, and of the concerns the first three
+in the final order; the rest are held, and on a round that approves every
+concern is held. The fix turn gets one numbered list, each entry giving its
+location, severity, evidence and reviewers, a concern marked to be answered
+ADDRESS, FOLLOW_UP or DECLINE and never blocking. Each such round records a
+`consolidation` detail event with `round`, `pass1_in`, `pass1_out`, `pass2`
+(`merged`, `unchanged`, `skipped`, `unavailable` or `malformed`), `merges`
+(`from`, `into`, `reason`), `ignored`, `sent_concerns` and `held_concerns`, and
+the held concerns go into one ledger note. The `adversary_round` event and the
+`reviewRounds` row keep each reviewer's raw findings.
+
+Under `[merge] mode = "pr"` the body the factory opens with ends, after its
+`Linear:` line, with `## Other concerns (N)`: one bullet per distinct held
+concern of the run, `PATH:LINE [severity] message (round R)`. A run that held
+none gets no section. A description refresh keeps it; a babysit round does not
+update it. Under `mode = "local"` the ledger note is the record.
+
+A concern, sent or held, whose path matches `BASE_HIGH_PATHS` or
+`[review] high_paths` is raised once per run, however many passes report it
+again: a ledger note starting `Concern on a high-blast-radius path:` and a
+`concern_raised` detail event.
 
 ## PR rounds
 

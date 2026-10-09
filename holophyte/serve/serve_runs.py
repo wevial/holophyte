@@ -507,7 +507,7 @@ def active_routes(project):
              if key in AGENT_CONFIG_KEYS.values() and isinstance(value, (str, dict))}
     return {seat: seat_route(fallback, table, seat)
             for seat in AGENT_CONFIG_KEYS.values()
-            if seat not in ("critic", "adversary")}
+            if seat not in ("critic", "adversary", "consolidator")}
 
 
 def seat_route(fallback, table, seat):

@@ -23,6 +23,7 @@ from fake_agent import (  # noqa: E402
     ADVERSARY,
     APPROVE,
     REQUEST_CHANGES,
+    Consolidate,
     FakeAgent,
 )
 from loop_fixture import StubProvider, a_task  # noqa: E402
@@ -190,7 +191,7 @@ class FamilyTests(test_adversary.AdversaryFixture):
                            provider=StubProvider(a_task(1)))
         concern = finding("src/app.py", 4, "a symlink may slip by", "concern")
         even, _ = self.loop(Change("poetry.lock", "v2\n"), REQUEST_CHANGES,
-                            attack(concern), attack(),
+                            attack(concern), attack(), Consolidate(),
                             Change("poetry.lock", "v3\n"), APPROVE,
                             provider=StubProvider(a_task(2)))
 

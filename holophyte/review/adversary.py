@@ -17,7 +17,7 @@ from holophyte.config.reader import ADVERSARY_CLAUDE, adversary_credential
 from holophyte.config.review_settings import review_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import safe_print as print
-from holophyte.review.blast_radius import BASE_HIGH_PATHS, continued_runs, matching
+from holophyte.review.blast_radius import continued_runs, high_path
 from holophyte.review.briefs import _changed_files
 from holophyte.review.reply_parsing import (
     BLOCK_BREAK_RE,
@@ -36,7 +36,6 @@ MAX_SUBAGENTS = 5
 DONE = "ADVERSARY: DONE"
 BLOCKING = ("reproduced", "traced")
 LEVELS = (*BLOCKING, "concern")
-HEADING = "Adversarial review findings (reproduced or traced):"
 EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:[*`\s]*([^\s*`]*)",
                          re.I | re.M)
 LEADING_PATH_RE = re.compile(
@@ -89,9 +88,8 @@ def _payloads(conn, run_id, kind, rnd):
 
 
 def gated(project, root, start, sha):
-    patterns = (*BASE_HIGH_PATHS, *review_config(project).high_paths)
     return sorted(path for path in _changed_files(root, start, sha)
-                  if matching(path, patterns))
+                  if high_path(project, path))
 
 
 def fallback_family(project, conn, run_id):
@@ -319,7 +317,3 @@ def require_done(plan, attacked):
 
 def _bullets(findings):
     return "\n".join(f"- {f['message'].lstrip('-*+ ')}" for f in findings)
-
-
-def section(blocking):
-    return f"\n\n{HEADING}\n{_bullets(blocking)}" if blocking else ""
