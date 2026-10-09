@@ -24,7 +24,6 @@ BASE_HIGH_PATHS = (
     "*/alembic/*",
 )
 TIERS = ("low", "medium", "high")
-RAISING_FIELD = ("high", "medium")
 UNCOUNTED_PREFIXES = ("tests/", "test/", "docs/")
 DECLARED_RE = re.compile(
     r"^[ \t>*`_-]*BLAST RADIUS:[*`_ \t]*(high|medium|low)(?![\w|])[*`_ \t]*"
@@ -131,7 +130,7 @@ def assess(root, base, sha, config, ticket="", declared=None, earlier=None):
     tier, reasons, gated = diff_tier(root, base, sha, config)
     raised = []
     field = (ticket_template.parse(ticket).blast_radius or "").lower()
-    if field in RAISING_FIELD:
+    if field in ticket_template.BLAST_RADIUS_VALUES:
         raised.append((field, f"ticket: **Blast radius:** {field}"))
     if declared:
         raised.append((declared["tier"], f"implementer: {declared['tier']} — "
