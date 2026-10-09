@@ -116,8 +116,10 @@ null, `systemctl` not called. No body is read.
 Runs `systemctl --user start holophyte-loop@NAME`: one pass of the loop as
 the deploy template defines it, inactive again once the queue is down.
 Everything else is as `restart-supervisor`, the intervention a
-`launch_loop` row, except that a store with no run yet records it on the
-project's row, and `recorded` is that row's id; only a store with neither
+`launch_loop` row, except that a store with no run yet links the
+`launch_loop` intervention to the project instead
+(`store.record_project_intervention()`), and `recorded` is that
+interventions row's id, not the project's; only a store with neither
 leaves the unit alone.
 
 ## `POST /actions/requeue`
