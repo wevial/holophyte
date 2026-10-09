@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import (  # noqa: E402
+    IdleThenTimeout,
     LoopFixture,
     MergeModeFixture,
     StubProvider,
@@ -165,6 +166,17 @@ class PushTests(PrivateText, RealGit):
         message = self.refused_push()
         short = self.git("rev-parse", "--short", sha)
         self.assertIn(f"commit {short} message line 3 ({KEY})", message)
+
+    def test_a_matching_message_is_refused_whatever_the_log_encoding(self):
+        self.config["merge"]["private_patterns"].append(r"caf\u00e9\.internal")
+        self.git("config", "i18n.logOutputEncoding", "ISO-8859-1")
+        sha = self.commit("Add the client test\n\nRecorded against caf\u00e9.internal.",
+                          text=f"URL = '{CLEAN}'\n")
+        message = self.refused_push()
+        short = self.git("rev-parse", "--short", sha)
+        self.assertIn(f"commit {short} message line 3 ([merge] private_patterns #2)",
+                      message)
+        self.assertNotIn("caf\u00e9", message)
 
     def test_deleting_a_published_match_and_a_clean_branch_both_push(self):
         self.git("checkout", "main")
@@ -435,6 +447,22 @@ class PullRequestRunTests(PrivateText, MergeModeFixture):
         for text in (reason, out.getvalue(), *(s for (s,) in self.read(
                 "SELECT summary FROM runEvents"))):
             self.assertPrivateAbsent(text)
+
+    def test_a_timed_out_writer_printing_a_match_is_blanked_from_stdout(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       f"private_patterns = {PATTERNS}\n")
+        self.fake_route()
+        body = self.BODY.replace("The thing, added.",
+                                 f"The thing, served from {LEAK}.")
+        out = io.StringIO()
+        with patch.object(sys, "stdout", out):
+            self.loop(Commit("the scripted work"), APPROVE, IdleThenTimeout(
+                          f"TITLE: Point the client\n\nServed from {LEAK}."),
+                      provider=StubProvider(dict(a_task(), body=body)))
+
+        self.assertIn("output before the budget fired", out.getvalue())
+        self.assertIn("the turn ran out of time", out.getvalue())
+        self.assertPrivateAbsent(out.getvalue())
 
 
 if __name__ == "__main__":

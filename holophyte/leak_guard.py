@@ -55,6 +55,10 @@ def _register(compiled, text):
                      for match in pattern.finditer(text)])
 
 
+def register_matches(project, text):
+    _register(patterns(project), text)
+
+
 def scan_text(compiled, text):
     for number, line in enumerate(text.split("\n"), 1):
         for index in _search(compiled, line):
@@ -65,7 +69,7 @@ def _git(wt, *args):
     try:
         result = subprocess.run(
             ["git", "-c", "core.quotePath=false", "-c", "log.showSignature=false",
-             *args], cwd=wt,
+             "-c", "i18n.logOutputEncoding=UTF-8", *args], cwd=wt,
             capture_output=True, timeout=120)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise InfraFailure(f"private pattern scan: git {args[0]}: {exc}") from exc
