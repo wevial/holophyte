@@ -35,7 +35,7 @@ ANSWERS = "SELECT answer FROM storyDecisions ORDER BY id"
 class DecideFixture(StoryCloseFixture):
     def cli(self, *args):
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
             try:
                 status = holophyte.cli.entry.cli([str(self.target), *args]) or 0
             except SystemExit as exited:
@@ -177,6 +177,20 @@ class DecideTests(DecideFixture):
         self.assertEqual((self.read(ANSWERS), self.read(DECIDES)),
                          ([("file a follow-up child",)], [("first",)]))
         self.assertEqual(story(self.conn, parent).state, "approved")
+
+    def test_a_proposal_id_is_p_and_an_integer(self):
+        parent, child = self.tickets()
+        self.approve(parent, child, [witness("W1", W1_FILE)])
+
+        for option in ((), ("2",), ("default",)):
+            status, out = self.cli("--decide", "NAT-1", "p3", *option,
+                                   "--note", "x")
+            self.assertEqual(status, 1, out)
+            self.assertIn("story NAT-1 holds no proposal p3", out)
+        for args in (("p",), ("3p",), ("p3", "x")):
+            status, out = self.cli("--decide", "NAT-1", *args, "--note", "x")
+            self.assertEqual(status, 2, out)
+            self.assertIn("a decision (N) or of a proposed child (pN)", out)
 
     def test_rerun_on_a_held_project_exits_1_and_keeps_the_decision(self):
         parent, child = self.tickets()

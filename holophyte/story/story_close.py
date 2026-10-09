@@ -22,6 +22,7 @@ from store.stories import (
     story,
     witness_ledger,
 )
+from store.story_proposals import open_proposals
 
 UNMET_OPTIONS = ("file a follow-up child", "accept the changed witness file",
                  "amend the witness (re-plan)", "abandon the story")
@@ -122,8 +123,13 @@ def _plan(conn, found, sha):
 def _close(target, conn, found, sha):
     latest = main_ledger(conn, found.ticketId, sha)
     verdicts = ", ".join(f"{row.witnessKey} {row.verdict}" for row in latest)
-    close_story(conn, found.ticketId, sha,
-                f"Story closed on its witnesses at {sha}: {verdicts}.")
+    note = f"Story closed on its witnesses at {sha}: {verdicts}."
+    proposals = open_proposals(conn, found.ticketId)
+    if proposals:
+        note += " Open proposals: " + "; ".join(
+            f"p{proposal.id} from {proposal.raisedBy}: {proposal.text}"
+            for proposal in proposals)
+    close_story(conn, found.ticketId, sha, note)
     board = board_for(target)
     if board is not None:
         mirror_push(conn, found.ticketId, board)
@@ -160,8 +166,12 @@ def _identifier(conn, ticket_id):
 
 
 def decide(target, conn, identifier, decision_id, option, note):
+    from holophyte.story import proposal_decisions
     from holophyte.story.witness import pass_refusal, witness_pass
     story_id = _parent(conn, target, identifier)
+    if isinstance(decision_id, str):
+        return proposal_decisions.decide(target, conn, identifier, story_id,
+                                         decision_id, option, note)
     decision = _decision(conn, story_id, identifier, decision_id)
     answer = _chosen(decision, decision_id, option)
     refusal = pass_refusal(conn, story_id) if answer == RERUN else None

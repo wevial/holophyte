@@ -209,6 +209,7 @@ PINNED = {
     "holophyte/serve/views.py": 6,
 
     "holophyte/story/__init__.py": 0,
+    "holophyte/story/proposal_decisions.py": 1,
     "holophyte/story/story_approval.py": 4,
     "holophyte/story/story_claim.py": 5,
     "holophyte/story/story_close.py": 1,
