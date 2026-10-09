@@ -425,16 +425,24 @@ NEW_GAP_RE = re.compile(
     r"(?:\0+\s*(?:,\s*(?:(?:and|or)\s+)?|(?:and|or)\s+))*", re.I)
 
 
+def _declarable(path, directory):
+    return bool(PATH_TOKEN_RE.fullmatch(path)
+                and (_repo_paths(path) or directory))
+
+
 def _governing_new(text, marked, start, end):
     news = list(re.finditer(r"\bnew\b", marked[start:end], re.I))
     gap = news and NEW_GAP_RE.fullmatch(marked, start + news[-1].end(), end)
-    if not gap or any(_repo_paths(m.group(1)) != [m.group(1)] for m in
-                      re.finditer(r"`([^`\n]+)`", text[gap.start():end])):
+    if not gap:
         return None
     words = gap.group("words").lower().split()
     if len(words) > 3 or PREPOSITIONS.intersection(words):
         return None
-    return words
+    directory = any(re.fullmatch(r"director(?:y|ies)", w) for w in words)
+    listed = re.finditer(r"`([^`\n]+)`", text[gap.start():end])
+    if not all(_declarable(m.group(1), directory) for m in listed):
+        return None
+    return directory
 
 
 def _new_paths(t):
@@ -447,11 +455,10 @@ def _new_paths(t):
             if not PATH_TOKEN_RE.fullmatch(path):
                 continue
             sentence = _sentence_before(masked, span.start())
-            words = _governing_new(text, marked,
-                                   span.start() - len(sentence), span.start())
-            directory = words is not None and any(
-                re.fullmatch(r"director(?:y|ies)", w) for w in words)
-            if words is not None and (_repo_paths(path) or directory):
+            directory = _governing_new(text, marked,
+                                       span.start() - len(sentence),
+                                       span.start())
+            if directory is not None and _declarable(path, directory):
                 normalized = str(Path(path))
                 files.add(normalized)
                 if path.endswith("/") or directory:

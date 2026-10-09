@@ -176,3 +176,8 @@ class GoverningNewTests(ConfigTestCase):
             "- Add a new helper `refuse()` and `tests/test_gone.py`."),
             ["`tests/test_gone.py` (named in Implementation notes) is not on"
              " main"])
+
+    def test_every_directory_in_a_declared_list_covers_the_files_under_it(self):
+        self.assertEqual(self.reasons(
+            "- Add new directories `fixtures` and `outputs`, then write"
+            " `outputs/report.py`."), [])
