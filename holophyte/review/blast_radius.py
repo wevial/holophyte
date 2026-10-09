@@ -52,6 +52,10 @@ def matching(path, patterns):
                 None)
 
 
+def high_path(project, path):
+    return matching(path, (*BASE_HIGH_PATHS, *review_config(project).high_paths))
+
+
 def module_name(path):
     parts = path.removesuffix(".py").split("/")
     return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)

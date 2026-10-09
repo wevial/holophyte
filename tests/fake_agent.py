@@ -154,6 +154,23 @@ class Attack:
 
 
 @dataclass(frozen=True)
+class Consolidate:
+    """A consolidator turn: scripted text, or the route failure it raises."""
+
+    text: str = "CONSOLIDATED"
+    fails: bool = False
+
+    role = "consolidate"
+
+    def play(self, cwd, turn):
+        if self.fails:
+            from holophyte.loop.gates import InfraFailure
+            raise InfraFailure("reviewer route failed for consolidate: "
+                               "the container exited 125", "review_route")
+        return self.text
+
+
+@dataclass(frozen=True)
 class Critic:
     """The claim's critic turn (KO-715): scripted text handed back verbatim,
     or `raises` raised, the way a turn that failed would."""

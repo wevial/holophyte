@@ -31,7 +31,7 @@ from holophyte.loop.runs import (
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
-from holophyte.review import adversary
+from holophyte.review import adversary, consolidate
 from holophyte.review.blast_radius import record_tier
 from holophyte.review.briefs import (
     criteria_brief,
@@ -151,8 +151,16 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     if unwitnessed:
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed; treating as REQUEST_CHANGES")
-    return (verdict + adversary.section(blocking), decision,
-            unwitnessed + blocking)
+    findings = unwitnessed + blocking
+    adversarial = consolidate.adversary_findings(conn, run_id, rnd) if plan else None
+    handed = adversarial is not None and consolidate.handed_on(
+        project, conn, run_id, provider, task_id, rnd,
+        consolidate.primary_findings(verdict, decision, unwitnessed),
+        adversarial, consolidate.fixing(decision, findings, ok, out),
+        partial(agent, project, "consolidate", cwd=wt, base_sha=base_sha,
+                candidate_sha=sha, timeout=consolidate.TIMEOUT, conn=conn,
+                run_id=run_id))
+    return handed or verdict, decision, findings
 
 
 def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,

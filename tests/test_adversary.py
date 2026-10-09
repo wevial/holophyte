@@ -20,6 +20,7 @@ from fake_agent import (  # noqa: E402
     REQUEST_CHANGES,
     REVIEW_ROLES,
     Attack,
+    Consolidate,
     FakeAgent,
     _git,
 )
@@ -29,7 +30,6 @@ from holophyte.agents import probes, roles  # noqa: E402
 from holophyte.agents.agent_routes import reset  # noqa: E402
 
 ON = "[review]\nadversary = true\n"
-HEADING = "Adversarial review findings (reproduced or traced):"
 LEVELS = ("EVIDENCE: reproduced", "EVIDENCE: traced", "EVIDENCE: concern")
 
 
@@ -162,9 +162,8 @@ class BlockingTests(AdversaryFixture):
         self.assertEqual((found["path"], found["line"], found["evidence"]),
                          ("src/app.py", 3, evidence))
         fix = self.turns(fake, IMPLEMENT)[1].goal
-        self.assertIn(HEADING, fix)
-        self.assertIn("the rule skips re-exports",
-                      fix.split(HEADING, 1)[1])
+        self.assertIn(f"1. src/app.py:3 [p1] evidence {evidence}, found by "
+                      "adversary\n    the rule skips re-exports", fix)
         self.assertEqual(self.round_row(2)[0], "pass")
 
     def test_a_reproduced_finding_blocks_an_approved_round(self):
@@ -192,7 +191,8 @@ class BlockingTests(AdversaryFixture):
                           ("Dockerfile", "concern"), ("src/db.py", "concern"),
                           ("src/io.py", "concern")])
         [note] = [text for (text,) in self.read(
-            "SELECT text FROM ledger WHERE kind = 'note'") if "symlink" in text]
+            "SELECT text FROM ledger WHERE kind = 'note'")
+            if text.startswith("Round 1 adversary concerns")]
         self.assertIn("an empty argv may crash", note)
         self.assertIn("the runtime runs as root", note)
         verdict, findings = self.round_row(1)
@@ -205,14 +205,15 @@ class RerunTests(AdversaryFixture):
     def test_a_fix_outside_the_gated_paths_runs_no_second_pass(self):
         self.configure(ON)
         fake, _ = self.loop(Change("poetry.lock"), REQUEST_CHANGES,
-                            attack(self.CONCERN), Change("src/app.py"), APPROVE)
+                            attack(self.CONCERN), Consolidate(),
+                            Change("src/app.py"), APPROVE)
         self.assertEqual(len(self.turns(fake, ADVERSARY)), 1)
         self.assertEqual([event["round"] for event in self.events()], [1])
 
     def test_a_fix_touching_a_gated_path_runs_a_light_fix_pass(self):
         self.configure(ON)
         fake, _ = self.loop(Change("poetry.lock"), REQUEST_CHANGES,
-                            attack(self.CONCERN), attack(),
+                            attack(self.CONCERN), attack(), Consolidate(),
                             Change("poetry.lock", "relocked\n"), APPROVE)
         first, second = (turn.candidate_sha
                          for turn in self.turns(fake, "review"))

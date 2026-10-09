@@ -17,7 +17,7 @@ from holophyte.config.reader import ADVERSARY_CLAUDE, adversary_credential
 from holophyte.config.review_settings import review_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import safe_print as print
-from holophyte.review.blast_radius import BASE_HIGH_PATHS, continued_runs, matching
+from holophyte.review.blast_radius import continued_runs, high_path
 from holophyte.review.briefs import _changed_files
 from holophyte.review.reply_parsing import (
     BLOCK_BREAK_RE,
@@ -36,12 +36,14 @@ MAX_SUBAGENTS = 5
 DONE = "ADVERSARY: DONE"
 BLOCKING = ("reproduced", "traced")
 LEVELS = (*BLOCKING, "concern")
-HEADING = "Adversarial review findings (reproduced or traced):"
 EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:[*`\s]*([^\s*`]*)",
                          re.I | re.M)
 LEADING_PATH_RE = re.compile(
     r"^\s*(?:[-*+]|\d+[.)])\s+[`*_]*([\w.\-/]*\w):(\d+)(?![\w.])")
 SURFACES = "browser UI, HTTP or API, CLI, data and migrations"
+SUBAGENT_RE = re.compile(
+    r"^[ \t>*`_-]*SUBAGENT[*`_]*:[ \t*`_]*([^\s*`].*?)[*`_]*[ \t]+[—–-][ \t]+"
+    r"[*`_]*([^\s*`].*?)[ \t\r*`_]*$", re.I | re.M)
 
 
 @dataclass(frozen=True)
@@ -89,9 +91,8 @@ def _payloads(conn, run_id, kind, rnd):
 
 
 def gated(project, root, start, sha):
-    patterns = (*BASE_HIGH_PATHS, *review_config(project).high_paths)
     return sorted(path for path in _changed_files(root, start, sha)
-                  if matching(path, patterns))
+                  if high_path(project, path))
 
 
 def fallback_family(project, conn, run_id):
@@ -182,8 +183,14 @@ def brief(plan, ticket, run_id):
         "EVIDENCE: concern — give the scenario and why it cannot be shown "
         "yet.\n"
         "Reproduced and traced findings block the change; concerns are "
-        "recorded and do not. End your reply with exactly one line:\n"
-        f"{DONE}")
+        "recorded and do not. After the findings, list each attack subagent "
+        "you started on one line, `SUBAGENT: MODEL — SURFACE`. End "
+        f"your reply with exactly one line:\n{DONE}")
+
+
+def subagents(reply):
+    return [{"model": model, "surface": surface}
+            for model, surface in SUBAGENT_RE.findall(str(reply))]
 
 
 def finished(reply):
@@ -203,7 +210,7 @@ def _indent(block):
 
 def _items(reply):
     items, current = [], None
-    for block in finding_blocks(str(reply).replace(DONE, "")):
+    for block in finding_blocks(SUBAGENT_RE.sub("", str(reply)).replace(DONE, "")):
         nested = current is not None and _indent(block) > _indent(current[0])
         if nested or (current is not None and EVIDENCE_RE.match(block)):
             current.append(block)
@@ -286,6 +293,7 @@ def settle(project, conn, run_id, provider, task_id, plan, attacked):
         return []
     reply, seconds = attacked
     found = parse(reply) if reply is not None else []
+    started = subagents(reply) if reply is not None else []
     blocking = [f for f in found if f["evidence"] in BLOCKING]
     concerns = [f for f in found if f["evidence"] not in BLOCKING]
     outcome = ("malformed" if reply is None else
@@ -299,6 +307,7 @@ def settle(project, conn, run_id, provider, task_id, plan, attacked):
             "round": plan.round, "tier": plan.tier, "depth": plan.depth,
             "scope": plan.scope, "range": [plan.start, plan.sha],
             **family.record(), "outcome": outcome, "seconds": seconds,
+            "subagents": started, "over_cap": len(started) > MAX_SUBAGENTS,
             "findings": blocking, "concerns": concerns}))
     if concerns:
         ledger(conn, run_id, task_id, "note",
@@ -319,7 +328,3 @@ def require_done(plan, attacked):
 
 def _bullets(findings):
     return "\n".join(f"- {f['message'].lstrip('-*+ ')}" for f in findings)
-
-
-def section(blocking):
-    return f"\n\n{HEADING}\n{_bullets(blocking)}" if blocking else ""

@@ -167,6 +167,9 @@ Each module, one line:
 - `holophyte/review/adversary.py` — the adversarial pass beside the primary
   review: when a round runs it, its brief by depth and scope, the reply's
   evidence levels and the findings that block.
+- `holophyte/review/consolidate.py` — one findings list for a fix turn after an
+  adversarial pass: the exact merge, the consolidator's merges and order, the
+  three-concern cap, the held concerns and the high-path raise.
 - `holophyte/review/stale_approval.py` — a review left only stale cited
   approvals: the `stale_approval_rereview` event, and the failure when the
   review again at that head still cites one.
