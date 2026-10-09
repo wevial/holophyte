@@ -4,7 +4,11 @@ from urllib.parse import quote
 import store
 from holophyte.agents.roles import agent_route
 from holophyte.babysit import maintainer_notes, thread_mentions
-from holophyte.babysit.conversation_comments import ASK_REPLY_MARKER, quote_request
+from holophyte.babysit.conversation_comments import (
+    ASK_REPLY_MARKER,
+    console_ask_mark,
+    quote_request,
+)
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import github
@@ -43,18 +47,17 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
             model=agent_route(target, "adjudicate"))
         reply = github_links(
             reply, f"https://{pull.host}/{pull.owner}/{pull.name}", sha)
-        body = f"{header}\n\n{ASK_REPLY_MARKER}\n{reply}"
+        marker = (console_ask_mark(maintainer_notes.event_id(thread))
+                  if maintainer_notes.is_console_ask(thread) else ASK_REPLY_MARKER)
+        body = f"{header}\n\n{marker}\n{reply}"
         if thread.triage is not None:
             body += "\n\n" + thread_mentions.FIX_HINT
-        url = post(
-            target, conn, run_id, beat_s, pull, thread, body, resolve=True,
-            instruction=dict(kind="instruction", path=thread.path or "(no file)",
-                             line=thread.line, author=thread.comments[-1].author,
-                             request=thread.request, url=thread.url,
-                             **({"triage": thread.triage} if thread.triage else {})))
-        if maintainer_notes.is_console_ask(thread):
-            console_asks.answered(conn, run_id, maintainer_notes.event_id(thread),
-                                  url, outbound(reply, known_secrets(target.config())))
+        post(target, conn, run_id, beat_s, pull, thread, body, resolve=True,
+             instruction=dict(kind="instruction", path=thread.path or "(no file)",
+                              line=thread.line, author=thread.comments[-1].author,
+                              request=thread.request, url=thread.url,
+                              **({"triage": thread.triage} if thread.triage else {})),
+             answer=reply)
     remaining = tuple(t for t in threads if t not in asks)
     if asks and not remaining:
         why = previous_park_reason(conn, run_id, branch)
@@ -113,7 +116,8 @@ def previous_park_reason(conn, run_id, branch):
     return None
 
 
-def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=None):
+def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=None,
+         answer=None):
     from holophyte.babysit import babysitter
     secrets = known_secrets(target.config())
     body = outbound(body, secrets)
@@ -128,6 +132,9 @@ def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=
             posted = github.comment_on_pull(target, pull, outbound(
                 f"{quote_request(thread)}\n\n{body}", secrets))
             url = posted.get("html_url") if isinstance(posted, dict) else None
+            if maintainer_notes.is_console_ask(thread):
+                console_asks.answered(conn, run_id, maintainer_notes.event_id(thread),
+                                      url, outbound(answer, secrets))
         else:
             github.reply_thread(target, pull, thread.id, body)
         if thread.classification == "MENTIONED":

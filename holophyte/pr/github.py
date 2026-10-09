@@ -126,6 +126,7 @@ class PrState:
     failed_checks: tuple = ()
     missing_checks: tuple = ()
     awaiting: tuple = ()
+    console_answers: tuple = ()
 
 
 def origin_url(target):

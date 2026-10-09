@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
 import sys
 import unittest
 from pathlib import Path
@@ -252,6 +253,20 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
 
     def test_a_mention_in_an_answered_question_is_not_read_back(self):
         self.babysat_again(self.answered("Why not rename? @holophyte fix: rename it"))
+
+    def test_an_answer_posted_but_not_recorded_is_reused_not_posted_again(self):
+        body = self.answered(QUESTION)
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("DELETE FROM runEvents WHERE kind = ?",
+                         (console_asks.ANSWERED,))
+        conn.close()
+        self.babysat_again(body)
+        latest = self.read("SELECT MAX(id) FROM runs")[0][0]
+        (answer,) = run_asks(self.project, str(latest))[1]["asks"]
+        self.assertEqual(answer["url"], self.comment(1, "writer", body)["url"])
+        self.assertIn("src/app.py:30", answer["answer"])
+        self.assertNotIn(ASK_REPLY_MARKER, answer["answer"])
 
 
 if __name__ == "__main__":

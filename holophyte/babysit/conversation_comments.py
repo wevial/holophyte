@@ -7,6 +7,8 @@ from holophyte.pr.github import Thread, acknowledged
 from holophyte.redact import known_secrets, outbound
 
 ASK_REPLY_MARKER = "<!-- holophyte:ask-answered -->"
+CONSOLE_ASK_RE = re.compile(rf"{re.escape(ASK_REPLY_MARKER)}\n"
+                            r"<!-- holophyte:console-ask (\d+) -->\n")
 
 REPLY_RE = re.compile(
     r"(> \[(?:Request by @|Asked from the console by )[^\n]+\]\([^\n]+\)"
@@ -23,15 +25,34 @@ def _reply_quote(comment):
     return match[1] if match else None
 
 
-def conversation_threads(target, pull, node, read_page):
+def console_ask_mark(event_id):
+    return f"{ASK_REPLY_MARKER}\n<!-- holophyte:console-ask {event_id} -->"
+
+
+def console_answers(comments):
+    answers = {}
+    for comment in comments:
+        match = (CONSOLE_ASK_RE.search(comment["body"])
+                 if _reply_quote(comment) is not None else None)
+        if match and int(match[1]) not in answers:
+            answers[int(match[1])] = (comment.get("url"),
+                                      comment["body"][match.end():])
+    return tuple((event_id, url, answer)
+                 for event_id, (url, answer) in answers.items())
+
+
+def pull_comments(target, pull, node, read_page):
     comments = []
     while True:
         page = node.get("comments") or {}
         comments.extend(page.get("nodes") or ())
         info = page.get("pageInfo") or {}
         if not (info.get("hasNextPage") and info.get("endCursor")):
-            break
+            return comments
         node = read_page(target, pull, None, info["endCursor"])
+
+
+def conversation_threads(target, pull, comments):
     if not comments:
         return
     merge = merge_config(target)

@@ -76,12 +76,18 @@ def pending_state(conn, run_id, state, url):
                            n["author"], n["note"], "", author_kind="maintainer")
                     for n in operator_notes.notes(
                         conn, run_id, pending=True, pr_url=url))
-    asks = tuple(Thread(f"console_ask:{a['id']}", "", None, a["author"],
-                        a["question"], url, kind="conversation",
-                        classification="MENTIONED", request=a["question"],
-                        intent="ask")
-                 for a in console_asks.pending(conn, run_id, url))
-    return replace(state, threads=state.threads + threads + asks)
+    posted = {event_id: (at, answer)
+              for event_id, at, answer in state.console_answers}
+    asks = []
+    for a in console_asks.pending(conn, run_id, url):
+        if a["id"] in posted:
+            console_asks.answered(conn, run_id, a["id"], *posted[a["id"]])
+        else:
+            asks.append(Thread(f"console_ask:{a['id']}", "", None, a["author"],
+                               a["question"], url, kind="conversation",
+                               classification="MENTIONED", request=a["question"],
+                               intent="ask"))
+    return replace(state, threads=state.threads + threads + tuple(asks))
 
 
 def instruction(thread):
