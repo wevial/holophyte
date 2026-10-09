@@ -102,10 +102,12 @@ never disagree.
   is reclaimed under an `flock` on a sidecar. The host sweep takes the same
   kind of lock in the host's home, `HOLOPHYTE_HOME/supervisor.lock`, for
   each run, and skips a project whose own lock names a live pid.
-- Beside it, three host files no store owns: `host.toml`, the registry;
+- Beside it, four host files no store owns: `host.toml`, the registry;
   `sweep.json`, what the host sweep remembers between runs, rewritten whole
-  after every project; and `host-actions.jsonl`, the host daemon's
-  append-only ledger of `run-sweep` requests, written before it acts.
+  after every project; `host-actions.jsonl`, the host daemon's
+  append-only ledger of `run-sweep` requests, written before it acts; and
+  `console-build.json`, the host daemon's last failed startup console
+  build, removed by the next build that succeeds.
 - Review scratch directories under `~/.cache/holophyte/reviews/` are
   temporary; a review container whose directory is gone is a stray.
 

@@ -20,7 +20,7 @@ import store.schema
 import store.tickets
 from holophyte.host.supervisor_lock import supervisor_lock_path
 from holophyte.loop.gates import merge_lock_path
-from tests.host_fixture import HostFixture
+from tests.host_fixture import HostFixture, git
 from tests.phase_fixture import park_run
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase, Tripwire, no_network
 from tests.test_store_board import body
@@ -214,3 +214,44 @@ class HostStatusBackoffTests(HostFixture):
 
         self.assertIn(f"[{key}] last sweep: {self.OUTCOME}",
                       printed.splitlines())
+
+
+class HostStatusConsoleTests(HostFixture):
+    """A served console build in a checkout's `console` folder and a failed
+    startup build recorded in the home."""
+
+    REASON = "`bun install --frozen-lockfile` did not start: no bun"
+
+    def setUp(self):
+        super().setUp()
+        code, _ = self.cli("project", "add", str(self.repo("alpha")))
+        self.assertIsNone(code)
+        checkout = self.root / "factory"
+        (checkout / "console").mkdir(parents=True)
+        (checkout / "console" / "package.json").write_text("{}\n")
+        git(checkout, "init", "-q")
+        git(checkout, "add", "-A")
+        git(checkout, "commit", "-q", "-m", "console")
+        self.tree = git(checkout, "rev-parse", "HEAD:console")
+        self.dist = checkout / "console" / "dist"
+        self.dist.mkdir()
+        (self.home / "console-build.json").write_text(json.dumps(
+            {"reason": self.REASON}))
+        self.enterContext(patch.object(holophyte.cli.status, "CONSOLE_DIR",
+                                       self.dist))
+
+    def console_lines(self, served):
+        (self.dist / "source-tree").write_text(served + "\n")
+        _, printed = self.cli("--status")
+        return [line for line in printed.splitlines()
+                if line.startswith("console")]
+
+    def test_a_build_of_another_tree_prints_one_stale_line(self):
+        [line] = self.console_lines("0ld")
+        self.assertTrue(line.startswith("console stale:"), line)
+        for named in ("0ld", self.tree, self.REASON):
+            self.assertIn(named, line)
+
+    def test_a_build_of_the_checkouts_tree_prints_no_console_line(self):
+        self.assertEqual(self.console_lines(self.tree), [])
+

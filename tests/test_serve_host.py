@@ -454,7 +454,8 @@ class HostContractTests(HostServeCase):
         host = Host.locate()
         server = types.SimpleNamespace(
             host=host, settings=settings(host), started_ms=NOW,
-            actions=False, code_check=None)
+            actions=False, code_check=None,
+            console_dir=self.root / "no-console" / "dist")
         self.maxDiff = None
         for name, answer in (("host-status", host_status),
                              ("host-attention", host_attention)):

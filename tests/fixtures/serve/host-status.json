@@ -9,6 +9,14 @@
     "sweep": "abc1234",
     "head": "REVISION"
   },
+  "console": {
+    "served": null,
+    "tree": null,
+    "stale": false,
+    "reason": null,
+    "failed_ms": null,
+    "tried": null
+  },
   "sweep": {
     "started": 1749999970000,
     "ended": 1749999980000,

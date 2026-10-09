@@ -244,6 +244,33 @@ test("a linked run under a host daemon opens from its prefix; a path outside one
   window.location.hash = "";
 });
 
+const BUN_MISSING = "`bun install --frozen-lockfile` did not start: [Errno 2] No such file or directory: 'bun'";
+
+/** The page `App` renders against a host daemon answering `root`. */
+async function renderServedBy(root: HostStatus) {
+  const { fetch } = hostDaemon(root, {
+    alpha: { status: alphaStatus, attention: NO_ATTENTION },
+    beta: { status: betaStatus, attention: NO_ATTENTION },
+  });
+  render(<App base={ORIGIN} pollDeps={fakeDeps(fetch).deps} />);
+  await act(settle);
+}
+
+test("the serving daemon's stale console build is a banner naming the failed build's reason", async () => {
+  await renderServedBy({ ...host, console: { ...host.console!, stale: true, reason: BUN_MISSING } });
+  expect(screen.getByText(`This console is an older build: ${BUN_MISSING}`)).toBeTruthy();
+});
+
+test("a current console build, or a daemon that reports none, shows no older-build banner", async () => {
+  const { console: _console, ...older } = host;
+  for (const root of [{ ...host, console: { ...host.console!, stale: false } }, older]) {
+    await renderServedBy(root);
+    expect(screen.getByRole("region", { name: "Floor" })).toBeTruthy();
+    expect(screen.queryByText(/This console is an older build/)).toBeNull();
+    cleanup();
+  }
+});
+
 /** `entry` as the root lists a project whose config gives no name. */
 const unnamed = (entry: HostProject): HostProject => ({
   ...entry, name: null, store: null, project_row: null, supervisor: null, runs: [], schema_version: null, admission: null,

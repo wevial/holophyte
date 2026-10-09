@@ -7,6 +7,7 @@ Run: python3 -m unittest discover -s tests -p 'test_console_rebuild.py' -v
 """
 import http.client
 import io
+import json
 import os
 import re
 import shutil
@@ -19,7 +20,7 @@ from pathlib import Path
 from time import monotonic, sleep
 from unittest.mock import patch
 
-from holophyte.serve.console_build import refresh_console
+from holophyte.serve.console_build import BUILD_RECORD, refresh_console
 from tests.host_fixture import HostFixture, git
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -138,7 +139,7 @@ class StartupCheckTests(ConsoleCase):
     def test_a_changed_console_tree_is_rebuilt_once_and_swapped_in(self):
         self.change_sources()
         self.build_with(NEW_BUILD)
-        refresh_console(self.out, self.dist)
+        refresh_console(self.out, self.dist, self.home)
         calls = self.bun_calls()
         self.assertEqual(calls[0], "install --frozen-lockfile")
         self.assertEqual([c.split()[:2] for c in calls[1:]], [["run", "build"]])
@@ -151,14 +152,29 @@ class StartupCheckTests(ConsoleCase):
 
     def test_a_stamp_matching_the_tree_runs_no_build(self):
         self.build_with(NEW_BUILD)
-        refresh_console(self.out, self.dist)
+        refresh_console(self.out, self.dist, self.home)
         self.assertEqual(self.bun_calls(), [])
         self.assert_old_build_kept()
+        self.assertFalse((self.home / BUILD_RECORD).exists())
+
+    def test_a_failed_build_is_recorded_until_a_build_succeeds(self):
+        self.change_sources()
+        new_tree = git(self.repo, "rev-parse", "HEAD:console")
+        self.build_with(FAILING_BUILD)
+        refresh_console(self.out, self.dist, self.home)
+        record = json.loads((self.home / BUILD_RECORD).read_text())
+        self.assertIn("exited 1", record["reason"])
+        self.assertEqual(record["tried"], new_tree)
+        self.assertEqual(record["served"], self.old_tree)
+        self.build_with(NEW_BUILD)
+        refresh_console(self.out, self.dist, self.home)
+        self.assertEqual((self.dist / "index.html").read_text(), "new")
+        self.assertFalse((self.home / BUILD_RECORD).exists())
 
     def test_a_build_stamped_with_sources_that_moved_under_it_is_not_published(self):
         self.change_sources()
         self.build_with(SOURCES_MOVE)
-        refresh_console(self.out, self.dist)
+        refresh_console(self.out, self.dist, self.home)
         self.assert_old_build_kept()
         self.assertIn("console build failed", self.out.getvalue())
 
@@ -220,6 +236,34 @@ class DaemonStartupTests(ConsoleCase):
         self.assertIn("exited 1", log)
         self.assertIn("bundler line 39", log)
         self.assertNotIn("bundler line 0\n", log)
+
+    def test_a_build_that_cannot_start_bun_is_reported_on_root_status(self):
+        self.change_sources()
+        new_tree = git(self.repo, "rev-parse", "HEAD:console")
+        only_git = self.root / "only-git"
+        only_git.mkdir()
+        (only_git / "git").symlink_to(shutil.which("git"))
+        answers = []
+
+        def fetch(port):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            try:
+                for path in ("/", "/status"):
+                    conn.request("GET", path)
+                    response = conn.getresponse()
+                    answers.append((response.status, response.read()))
+            finally:
+                conn.close()
+        with patch.dict(os.environ, {"PATH": str(only_git)}):
+            self.serve(fetch, interval=60)
+        self.assertEqual(answers[0], (200, b"old"))
+        self.assertEqual(answers[1][0], 200)
+        console = json.loads(answers[1][1])["console"]
+        self.assertIs(console["stale"], True)
+        self.assertEqual(console["served"], self.old_tree)
+        self.assertEqual(console["tree"], new_tree)
+        self.assertIn("`bun install --frozen-lockfile` did not start",
+                      console["reason"])
 
     def test_a_factory_commit_during_the_build_moves_the_daemon_on(self):
         started = git(self.factory, "rev-parse", "HEAD")

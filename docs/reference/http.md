@@ -820,6 +820,9 @@ is 404, naming the `/projects/NAME` prefix. Tokens are in
   "now": 1788450534491,
   "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "build": {"daemon": "abc1234…", "sweep": "abc1234…", "head": "abc1234…"},
+  "console": {"served": "def5678…", "tree": "0a1b2c3…", "stale": true,
+              "reason": "`bun install --frozen-lockfile` did not start: …",
+              "failed_ms": 1788446935100, "tried": "0a1b2c3…"},
   "sweep": {"started": 1788450500000, "ended": 1788450512000,
             "revision": "abc1234…", "pid": 2801700, "exit": 0,
             "projects": {"holophyte": "ok", "lotuspod": "skipped: disabled"},
@@ -846,6 +849,16 @@ started (null when it runs from no git checkout); `sweep`, the revision the
 last host sweep ran; `head`, the checkout's `HEAD` now. The console flags
 any that differ. `actions` is whether `host.toml`'s `[serve] actions` is
 on.
+
+`console` is the console build this daemon serves. `served` is the
+`console` tree its build is stamped with and `tree` the checkout's
+`console` tree now, each null when unknown. `stale` is true when `tree`
+is known and differs from `served`. While it is, `reason`, `failed_ms`
+(epoch milliseconds) and `tried` (the tree the build started from) are
+the last failed startup build's, from `HOLOPHYTE_HOME/console-build.json`;
+otherwise, or with no such record, each is null. A successful startup
+build removes the record. The console shows a banner while the daemon
+that served it reports `stale`.
 
 `sweep` is `HOLOPHYTE_HOME/sweep.json` as the last run wrote it: `started`
 and `ended` (epoch milliseconds), `revision`, `pid`, `exit` (0, or 1 when a

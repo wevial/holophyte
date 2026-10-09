@@ -65,6 +65,7 @@ export function App({
   // Board's Shipped-today table read the same rows, so switching views
   // neither refetches nor forgets pages already loaded.
   const shipped = useShipped(shownHosts, polls, pollDeps);
+  const servedConsole = hosts.find((host) => rootOf(host.base) === base)?.host_status?.console;
   return (
     <div className="flex h-screen overflow-hidden bg-paper font-sans text-ink">
       <Rail
@@ -77,6 +78,11 @@ export function App({
         onTheme={chooseTheme}
       />
       <main className="min-w-0 flex-1 overflow-y-auto">
+        {servedConsole?.stale === true && (
+          <p data-console-stale role="alert" className="mx-6 mt-4 font-mono text-[12px] font-semibold text-bad-text">
+            {servedConsole.reason == null ? "This console is an older build." : `This console is an older build: ${servedConsole.reason}`}
+          </p>
+        )}
         {linkedRun != null ? (
           <section aria-label={`Run ${linkedRun.id}`} className="py-6">
             <a href="#" className="mx-6 text-link">Back to Now</a>
