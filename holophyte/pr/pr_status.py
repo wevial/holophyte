@@ -55,7 +55,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
       comments(first: 100, after: $commentsAfter) {
         pageInfo { hasNextPage endCursor }
-        nodes { id author { login __typename } body url
+        nodes { id author { login __typename } body url viewerDidAuthor
                 reactionGroups { content viewerHasReacted } }
       }
       reviewThreads(first: %d, after: $after) {

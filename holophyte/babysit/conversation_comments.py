@@ -33,7 +33,8 @@ def console_answers(comments):
     answers = {}
     for comment in comments:
         match = (CONSOLE_ASK_RE.search(comment["body"])
-                 if _reply_quote(comment) is not None else None)
+                 if comment.get("viewerDidAuthor") is True
+                 and _reply_quote(comment) is not None else None)
         if match and int(match[1]) not in answers:
             answers[int(match[1])] = (comment.get("url"),
                                       comment["body"][match.end():])
