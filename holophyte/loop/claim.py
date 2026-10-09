@@ -141,8 +141,9 @@ def mid_merge(wt):
 
 
 def unmerged_paths(wt):
-    return sh(["git", "diff", "--name-only", "--diff-filter=U"],
-              cwd=wt).splitlines()
+    return list(filter(None, sh(
+        ["git", "diff", "--name-only", "-z", "--diff-filter=U"],
+        cwd=wt).split("\0")))
 
 
 def merge_conflicts(wt):

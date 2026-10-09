@@ -276,7 +276,8 @@ def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
 
 def _sweep_merge(project, conn, run_id, wt, branch, task_id):
     tree, conflicted = _merge_tree(wt)
-    unresolved = unmerged_paths(wt) or _still_marked(wt, conflicted)
+    touched = conflicted | _changed_from(wt, tree)
+    unresolved = unmerged_paths(wt) or _still_marked(wt, touched)
     if not unresolved:
         stage_work(project, wt)
         sh(["git", *factory_identity(wt), "commit", "-q", "--no-edit"], cwd=wt)
@@ -287,7 +288,10 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
                   f" on {branch} at {head[:12]}")
         return
     merged = (_listed(wt, "diff", "--name-only", "--no-renames", "-z", "HEAD",
-                      tree) | conflicted | set(unresolved))
+                      tree) | _listed(wt, "diff", "--cached", "--name-only",
+                                      "--no-renames", "--diff-filter=A", "-z",
+                                      "HEAD")
+              | conflicted | set(unresolved))
     backup = _backup_resolution(project, wt, task_id)
     _announce(conn, run_id, "merge_aborted",
               f"the turn left the merge on {branch} unresolved in"
@@ -310,6 +314,11 @@ def _merge_tree(wt):
         raise RuntimeError(f"git merge-tree failed:\n{merge.stderr}")
     tree, *conflicted = merge.stdout.split("\0")
     return tree, set(filter(None, conflicted))
+
+
+def _changed_from(wt, tree):
+    return (_listed(wt, "diff", "--name-only", "--no-renames", "-z", tree)
+            | _listed(wt, "ls-files", "-o", "--exclude-standard", "-z"))
 
 
 def _marker_sizes(wt, paths):

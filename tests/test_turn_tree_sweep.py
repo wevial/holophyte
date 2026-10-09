@@ -177,6 +177,24 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual([kind for kind, _ in self.sweep_events()],
                          ["merge_aborted", "wip_committed"])
 
+    def test_an_aborted_merge_keeps_a_pre_merge_edit_staged_with_everything(self):
+        self.write("c.txt", "base c\n")
+        self.git("add", "c.txt")
+        self.git("commit", "-q", "-m", "add c")
+        self.tip = self.git("rev-parse", "HEAD")
+
+        def edit_merge_then_stage_all():
+            self.write("c.txt", "edited before the merge\n")
+            self.merge_main()
+            self.write("b.txt", "branch b\nmain b\n")
+            self.git("add", "-A")
+        self.turn(edit_merge_then_stage_all)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual((self.target / "a.txt").read_text(), "branch a\n")
+        self.assertEqual(self.git("show", "HEAD:c.txt"), "edited before the merge")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
     def test_an_aborted_merge_keeps_an_edit_to_a_file_both_sides_changed_alike(self):
         for branch in ("main", "task"):
             self.git("checkout", "-q", branch)
@@ -296,6 +314,72 @@ class TurnTreeSweepTests(SweepTestCase):
                          [self.tip, self.main])
         self.assertEqual((self.target / "a.txt").read_text(), "branch a\nmain a\n")
         self.assertEqual(self.git("show", "HEAD:c.txt"), "edited before the merge")
+        self.assertEqual(len(self.git("stash", "list").splitlines()), 1)
+
+    def test_markers_moved_to_a_renamed_path_still_abort_the_merge(self):
+        def rename_the_markers_then_resolve_the_rest():
+            self.merge_main()
+            (self.target / "a.txt").rename(self.target / "c.txt")
+            self.write("b.txt", "branch b\nmain b\n")
+            self.git("add", "-A")
+        self.turn(rename_the_markers_then_resolve_the_rest)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.tip)
+        self.assertEqual((self.target / "a.txt").read_text(), "branch a\n")
+        self.assertFalse((self.target / "c.txt").exists())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        ((kind, summary),) = self.sweep_events()
+        self.assertEqual(kind, "merge_aborted")
+        (backup,) = re.findall(r"\b[0-9a-f]{40}\b", summary)
+        self.assertIn("<<<<<<<", self.git("show", f"{backup}:c.txt"))
+
+    def test_an_aborted_merge_drops_a_resolution_staged_under_a_new_name(self):
+        def resolve_b_into_a_new_name():
+            self.merge_main()
+            self.write("d.txt", "branch b\nmain b\n")
+            (self.target / "b.txt").unlink()
+            self.git("add", "-A", "b.txt", "d.txt")
+        self.turn(resolve_b_into_a_new_name)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.tip)
+        self.assertEqual((self.target / "b.txt").read_text(), "branch b\n")
+        self.assertFalse((self.target / "d.txt").exists())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        ((kind, summary),) = self.sweep_events()
+        (backup,) = re.findall(r"\b[0-9a-f]{40}\b", summary)
+        self.assertEqual(self.git("show", f"{backup}:d.txt"), "branch b\nmain b")
+
+    def test_a_stash_clash_on_a_non_ascii_path_is_kept_out_of_the_tree(self):
+        name = "café.txt"
+        base = self.git("merge-base", "task", "main")
+        self.git("checkout", "-q", "-b", "with-cafe", base)
+        self.write(name, "c\n")
+        self.git("add", name)
+        self.git("commit", "-q", "-m", "add the file")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "with-cafe")
+        self.write(name, "main c\n")
+        self.git("commit", "-q", "-am", "main edits the file")
+        self.main = self.git("rev-parse", "main")
+        self.git("checkout", "-q", "task")
+        self.git("merge", "-q", "with-cafe")
+        self.tip = self.git("rev-parse", "HEAD")
+
+        def autostash_merge_then_resolve():
+            self.write(name, "edited before the merge\n")
+            self.merge_main("--autostash")
+            self.write("a.txt", "branch a\nmain a\n")
+            self.write("b.txt", "branch b\nmain b\n")
+            self.git("add", "a.txt", "b.txt")
+        self.turn(autostash_merge_then_resolve)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual(self.git("rev-parse", "HEAD^1", "HEAD^2").split(),
+                         [self.tip, self.main])
+        self.assertEqual((self.target / name).read_text(), "main c\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
         self.assertEqual(len(self.git("stash", "list").splitlines()), 1)
 
     def test_a_conflicted_merge_is_not_discarded_when_its_backup_is_not_recorded(self):
