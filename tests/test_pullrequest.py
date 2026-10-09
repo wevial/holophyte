@@ -508,6 +508,15 @@ class MergeModePullRequestTests(MergeModeFixture):
                 self.assertIn("ran out of time" if timeout else "no `TITLE:` line",
                               out.getvalue())
 
+    def test_a_written_title_citing_another_ticket_takes_the_runs_key(self):
+        turn = FakeAgent(Idle("TITLE: Fix the timeout (KO-9)\n\n"
+                              "Requests no longer hang.\n"))
+        with patch.object(implement, "agent", turn):
+            title, _ = holophyte.pr.pullrequest._written_pr_text(
+                self.project, None, None, "HOLO-9", "fix the timeout", BRANCH,
+                self.BODY, 60, self.target, monotonic(), 5, None)
+        self.assertEqual(title, "Fix the timeout (HOLO-9)")
+
     def test_a_written_pr_takes_the_turns_title_and_body(self):
         """After the approval one more implementer
         turn is given the diff, the ticket, the repository's `AGENTS.md`
