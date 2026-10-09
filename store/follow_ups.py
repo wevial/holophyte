@@ -13,9 +13,6 @@ from .schema import _transaction
 @dataclass(frozen=True)
 class FollowUp:
     id: int
-    runId: int
-    ticketId: int
-    commitSha: str
     kind: str
     kindGiven: bool
     text: str
@@ -24,8 +21,7 @@ class FollowUp:
     fingerprint: str
 
 
-_COLUMNS = ("id, runId, ticketId, commitSha, kind, kindGiven, text, path,"
-            " line, fingerprint")
+_COLUMNS = "id, kind, kindGiven, text, path, line, fingerprint"
 
 
 def _now(now):
@@ -70,7 +66,7 @@ def record_follow_up(conn, run_id, commit_sha, kind, kind_given, text,
 
 
 def pending_follow_ups(conn, run_id):
-    return [FollowUp(*row[:5], bool(row[5]), *row[6:]) for row in conn.execute(
+    return [FollowUp(*row[:2], bool(row[2]), *row[3:]) for row in conn.execute(
         f"SELECT {_COLUMNS} FROM followUps WHERE runId = ?"
         " AND settledAt IS NULL ORDER BY id", (run_id,))]
 
@@ -101,13 +97,12 @@ def _settle(conn, follow_up_id, event, summary, now, **columns):
             " WHERE id = ? AND settledAt IS NULL",
             (now, *columns.values(), follow_up_id)).rowcount
         if not changed:
-            return False
+            return
         key = columns.get("filedAs") or columns.get("duplicateOf")
         record_event(conn, run_id, event,
                      f"follow-up {follow_up_id}: {summary}", level="detail",
                      now=now, payload=_payload(follow_up_id, kind, fingerprint,
                                                key))
-    return True
 
 
 def settle_filed(conn, follow_up_id, key, now=None):
