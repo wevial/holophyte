@@ -54,8 +54,9 @@ CHECKED_RE = re.compile(rf"^{BULLET}\s+\[[xX]\]\s*(.*)$")
 LIST_ITEM_RE = re.compile(rf"^(?:{BULLET}|\d+[.)])\s+(.*)$")
 # Linear rewrites "**What:**" as "**What: **" on every body patch.
 BOLD_KEY_RE = re.compile(
-    r"^(?:\*\*)?(What|Why|How|UI change):(?:[ \t]*\*\*)?\s*(.*)$")
+    r"^(?:\*\*)?(What|Why|How|UI change|Blast radius):(?:[ \t]*\*\*)?\s*(.*)$")
 UI_CHANGE_VALUES = ("major", "minor")
+BLAST_RADIUS_VALUES = ("high", "medium")
 MOCKUP_URL_RE = re.compile(
     r"https://claude\.ai/(?:code/)?artifact/[\w-]+"
     r"|https://lotuspod(?:\.[A-Za-z0-9-]+)+/[\w.-]+\.html")
@@ -195,7 +196,7 @@ class Ticket:
         self.stray_h1s = []
         self.summary = ""
         self.what = self.why = self.how = ""
-        self.ui_change = None
+        self.ui_change = self.blast_radius = None
         self.mockup = ""
         self.in_scope = []
         self.out_of_scope = []
@@ -245,7 +246,7 @@ def parse(text):
         if m:
             kv[m.group(1)] = _clean(m.group(2))
     t.what, t.why, t.how = kv.get("What", ""), kv.get("Why", ""), kv.get("How", "")
-    t.ui_change = kv.get("UI change")
+    t.ui_change, t.blast_radius = kv.get("UI change"), kv.get("Blast radius")
     t.reproduce = COMMENT_RE.sub("", t.sections.get("Reproduce", "")).strip()
     t.mockup = COMMENT_RE.sub("", t.sections.get("Mock-up", "")).strip()
     t.in_scope = _list_items(t.sections.get("In scope", ""))
@@ -516,6 +517,12 @@ def _ui_change_problems(t):
     if t.ui_change is None or t.ui_change.lower() in UI_CHANGE_VALUES:
         return []
     return [f"'**UI change:**' must read major or minor, not {t.ui_change!r}"]
+
+
+def _blast_radius_problems(t):
+    if t.blast_radius is None or t.blast_radius.lower() in BLAST_RADIUS_VALUES:
+        return []
+    return [f"'**Blast radius:**' must read high or medium, not {t.blast_radius!r}"]
 
 
 def _mockup_urls(text):
@@ -812,6 +819,7 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
     p.extend(_schema_version_advisories(t))
     p.extend(_operator_witness_advisories(t))
     p.extend(_ui_change_problems(t))
+    p.extend(_blast_radius_problems(t))
     p.extend(_mockup_problems(t))
     p.extend(_mockup_advisories(t))
     if repo is not None:

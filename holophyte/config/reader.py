@@ -16,6 +16,7 @@ from holophyte.config.config_tables import (
     SUPERVISOR_KEYS,
     TRIM_KEYS,
 )
+from holophyte.config.review_settings import REVIEW_KEYS
 
 
 def load_config(path):
@@ -80,6 +81,7 @@ KNOWN_KEYS["merge"] = frozenset(MERGE_KEYS) | frozenset(
 KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
 KNOWN_KEYS["story"] = frozenset(STORY_KEYS)
 KNOWN_KEYS["trim"] = frozenset(TRIM_KEYS)
+KNOWN_KEYS["review"] = frozenset(REVIEW_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
 KNOWN_KEYS["questions"] = frozenset((
     "url", "key_env", "min_confidence", "backend", "model", "effort",

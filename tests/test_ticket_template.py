@@ -1122,6 +1122,14 @@ class MockupTests(unittest.TestCase):
                 self.assertEqual(ticket.ui_change, value)
                 self.assertEqual(tt.validate(ticket), [])
 
+    def test_a_blast_radius_other_than_high_or_medium_is_blocking(self):
+        for value in ("low", "extreme"):
+            with self.subTest(value=value):
+                body = FILLED.replace(
+                    "**How:**", f"**Blast radius:** {value}\n\n**How:**")
+                self.assertEqual(tt.blocking(tt.validate(tt.parse(body))), [
+                    f"'**Blast radius:**' must read high or medium, not {value!r}"])
+
     def test_three_undeclared_evidence_states_get_one_advisory(self):
         states = ("Onboarding step one", "Onboarding step two",
                   "Onboarding done")

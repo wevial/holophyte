@@ -17,6 +17,11 @@
      [merge] ui_paths; `**UI change:** minor` for copy, a button style or
      spacing. Leave the line out when the ticket changes no UI. -->
 
+<!-- OPTIONAL: `**Blast radius:** high` or `**Blast radius:** medium` when
+     the change is riskier than its diff shows. The factory sets each review
+     round's tier from the diff; this field can raise the tier and never
+     lower it. Leave the line out otherwise. -->
+
 ## Reproduce
 
 <!-- OPTIONAL: keep only for a bug report; its presence makes this a bug
