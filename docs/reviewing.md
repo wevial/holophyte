@@ -162,13 +162,13 @@ the fix range and re-checks each concern earlier passes in the run recorded.
 | Depth | When | Attack subagents | Time box |
 | --- | --- | --- | --- |
 | `full` | `high` | one per surface the diff touches (browser UI, HTTP or API, CLI, data and migrations) plus one per risky module | 1800 seconds |
-| `light` | `medium`, and every fix pass | one per surface the diff touches, no per-module attackers | 900 seconds |
+| `light` | `medium`, and every fix pass | one per surface the diff touches, no per-module subagents | 900 seconds |
 
 Both briefs cap the pass at five subagents, give mechanical checks to a light
-model and attack reasoning and reproduction to a strong one, and keep a
+model and defect reasoning and reproduction to a strong one, and keep a
 reproduction read-only against the candidate.
 
-Each finding is one list item, `PATH:LINE [p0|p1|p2] what breaks`, then a line
+Each finding is one list item, `PATH:LINE [p0|p1|p2] what goes wrong`, then a line
 `EVIDENCE: reproduced` (the input and the observed bad result),
 `EVIDENCE: traced` (file:line for each step from the input to the harm) or
 `EVIDENCE: concern` (the scenario and why it cannot be shown yet). A finding
