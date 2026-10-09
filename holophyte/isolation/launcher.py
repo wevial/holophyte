@@ -66,12 +66,6 @@ def route_for(project):
     return Route(backend, image, credential, memory, writable, codex)
 
 
-NO_DOCKER_IN_CONTAINER = (
-    "the project verifies inside the review container, which has no Docker,"
-    " so move this check to an operator witness noted in the criterion, or"
-    " to a CI job")
-
-
 def container_docker_problems(project, ticket):
     from ticket_template import _shell_commands
 
@@ -86,7 +80,9 @@ def container_docker_problems(project, ticket):
                 f" which is malformed: {error}"]
     if backend != "container":
         return []
-    return [f"verify command needs Docker: {line}; {NO_DOCKER_IN_CONTAINER}"
+    return [f"verify command needs Docker: {line}; the project verifies inside"
+            " the review container, which has no Docker, so move this check to"
+            " an operator witness noted in the criterion, or to a CI job"
             for line in lines]
 
 
