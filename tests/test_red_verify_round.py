@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fake_agent import APPROVE, Commit, Idle  # noqa: E402
+from fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle  # noqa: E402
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402
 
 RED = "test -e scripted-3.txt"
@@ -41,3 +41,25 @@ class RedVerifyRoundTests(LoopFixture):
         self.assertIn("1 findings open", reason)
         self.assertIn(RED, reason)
         self.assertNotIn("(none recorded)", reason)
+
+    def test_a_red_round_that_asked_for_changes_hands_on_both(self):
+        fake, _ = self.loop(Commit("work"), REQUEST_CHANGES,
+                            Commit("fix round 1"), APPROVE,
+                            provider=StubProvider(self.TASK))
+
+        fix_goal = fake.turns[2].goal
+        self.assertIn("Blocker: the scripted change is incomplete.", fix_goal)
+        self.assertIn("[verify] FAILED", fix_goal)
+
+
+class GreenVerifyRoundTests(LoopFixture):
+    def test_an_approved_green_round_merges_with_no_findings(self):
+        fake, _ = self.loop(Commit("work"), APPROVE,
+                            provider=StubProvider(dict(a_task(), verify="echo ok")))
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        ((verdict, findings),) = self.read(
+            "SELECT verdict, findings FROM reviewRounds WHERE round = 1")
+        self.assertEqual((verdict, json.loads(findings)), ("pass", []))
+        ((outcome,),) = self.read("SELECT outcome FROM runs")
+        self.assertEqual(outcome, "merged")
