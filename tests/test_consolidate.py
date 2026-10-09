@@ -23,6 +23,7 @@ from holophyte.review import adversary, consolidate  # noqa: E402
 from holophyte.review.reply_parsing import parse_findings  # noqa: E402
 
 ON = "[review]\nadversary = true\n"
+HEADING = "Adversarial review findings (reproduced or traced):"
 MET = "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
 APPROVE = Reply(f"Reviewed the diff; no blockers.\n{MET}VERDICT: APPROVE")
 
@@ -54,6 +55,17 @@ class PassOneTests(unittest.TestCase):
                          [("src/app.py", "load() returns None"),
                           ("src/app.py", "save() drops the file"),
                           ("src/cli.py", "the flag is ignored")])
+
+    def test_the_evidence_an_adversary_gave_reaches_the_fix_list(self):
+        primary = parse_findings("- src/app.py:3 [p2] load() returns None\n")
+        found = adversary.parse(
+            "- src/app.py:3 [p1] load() returns None\n"
+            'EVIDENCE: reproduced \u2014 input: load("empty.json"); '
+            "observed: TypeError\nADVERSARY: DONE")
+        merged = consolidate.exact(consolidate.items(primary, found))
+        self.assertEqual(len(merged), 1)
+        self.assertIn('    EVIDENCE: reproduced \u2014 input: load("empty.json"); '
+                      "observed: TypeError", consolidate.fix_list(merged))
 
 
 def pass_one():
@@ -164,8 +176,11 @@ class RoundTests(ConsolidationFixture):
         goal = self.fix_goal(fake)
         self.assertIn("1. src/db.py:7 [p1] evidence traced, found by adversary\n"
                       "    the lock is skipped\n"
+                      "    EVIDENCE: traced\n"
                       "2. src/app.py:3 [p2] evidence review, found by primary\n"
                       "    load() returns None", goal)
+        self.assertNotIn(HEADING, goal)
+        self.assertEqual(goal.count("the lock is skipped"), 1)
         self.assertEqual(self.events()[0]["pass2"], "unchanged")
 
     def test_without_an_adversary_the_fix_turn_gets_the_primary_verdict(self):

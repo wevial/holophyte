@@ -225,7 +225,9 @@ seat has no fallback, no startup probe and no startup check.
 Every blocking item goes to the fix turn, and of the concerns the first three
 in the final order; the rest are held, and on a round that approves every
 concern is held. The fix turn gets one numbered list, each entry giving its
-location, severity, evidence and reviewers, a concern marked to be answered
+location, severity, evidence and reviewers, then its messages and any
+`EVIDENCE:` lines the adversary wrote (kept out of the pass-1 match), a concern
+marked to be answered
 ADDRESS, FOLLOW_UP or DECLINE and never blocking. Each such round records a
 `consolidation` detail event with `round`, `pass1_in`, `pass1_out`, `pass2`
 (`merged` when pass 2 applied a merge, `unchanged` when it applied none,

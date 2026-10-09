@@ -21,8 +21,8 @@ CONCERN_CAP = 3
 TIMEOUT = 600
 DONE = "CONSOLIDATED"
 RAISED = "Concern on a high-blast-radius path:"
-TRAILER_RE = re.compile(
-    r"^[\s>*`_-]*(?:EVIDENCE[*`_]*|VERDICT):.*(?:\n|$)", re.I | re.M)
+VERDICT_RE = re.compile(r"^\s*VERDICT:.*(?:\n|$)", re.I | re.M)
+EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:", re.I | re.M)
 BULLET_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 SEVERITY_TAG_RE = re.compile(
     r"^[\s:]*[\[(]\s*(?:p0|p1|p2|nit|blocker)\s*[\])]\s*", re.I)
@@ -32,9 +32,14 @@ ORDER_RE = re.compile(r"^ORDER:\s*(.*)$", re.I)
 ID_RE = re.compile(r"F(\d+)", re.I)
 
 
+def _note(finding):
+    found = EVIDENCE_RE.search(finding["message"])
+    return finding["message"][found.start():].strip() if found else ""
+
+
 def _body(finding):
-    text = TRAILER_RE.sub("", finding["message"])
-    text = BULLET_RE.sub("", text, count=1).lstrip("`*_")
+    text = EVIDENCE_RE.split(finding["message"], maxsplit=1)[0]
+    text = BULLET_RE.sub("", VERDICT_RE.sub("", text), count=1).lstrip("`*_")
     line = finding.get("line")
     for place in (f"{finding['path']}:{line}" if line else None, finding["path"]):
         if place and text.startswith(place):
@@ -54,7 +59,8 @@ def _item(finding, found_by, evidence):
             "severity": severity if severity in SEVERITIES else "p2",
             "evidence": evidence if evidence in EVIDENCE else "concern",
             "found_by": [found_by], "messages": [_body(finding)],
-            "places": [(finding["path"], finding.get("line") or None)]}
+            "places": [(finding["path"], finding.get("line") or None)],
+            "notes": [note] if (note := VERDICT_RE.sub("", _note(finding))) else []}
 
 
 def items(primary, adversary):
@@ -78,6 +84,8 @@ def _absorb(into, other, messages):
                            key=EVIDENCE.index)
     into["found_by"] = [who for who in REVIEWERS
                         if who in into["found_by"] + other["found_by"]]
+    into["notes"] = into["notes"] + [note for note in other["notes"]
+                                     if note not in into["notes"]]
     if messages:
         into["messages"] = into["messages"] + other["messages"]
         into["places"] = into["places"] + other["places"]
@@ -134,7 +142,7 @@ def _entry(n, item, prefix):
         head += (" -- a concern: answer it ADDRESS, FOLLOW_UP or DECLINE; "
                  "it never blocks")
     lines = [head]
-    for message in _texts(item):
+    for message in _texts(item) + item["notes"]:
         lines += ["    " + line for line in message.splitlines() if line.strip()]
     return "\n".join(lines)
 
@@ -271,7 +279,7 @@ def _recorded(item, rnd):
     return {"path": item["path"], "line": item["line"],
             "severity": item["severity"], "evidence": item["evidence"],
             "found_by": item["found_by"], "message": "\n".join(_texts(item)),
-            "round": rnd}
+            "notes": item["notes"], "round": rnd}
 
 
 def _events(conn, run_id, kind):
