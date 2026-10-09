@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from holophyte.agents.agent_output import ImplementerOutput
 from holophyte.loop import implement
+from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import RunSwept
 from tests.sweep_fixture import SweepTestCase
 
@@ -398,6 +399,21 @@ class TurnTreeSweepTests(SweepTestCase):
         self.turn(lambda: None)
 
         self.assertEqual(self.git("rev-parse", "HEAD"), self.tip)
+        self.assertEqual(self.sweep_events(), [])
+
+    def test_no_wip_is_committed_on_a_branch_that_carries_the_environment(self):
+        source = self.root / "source.env"
+        source.write_text("PUBLIC=value\n")
+        self.configure(f'[worktree]\nenv_source = "{source}"\n')
+        self.write(".env", "PUBLIC=value\n")
+        self.git("add", "-f", ".env")
+        self.git("commit", "-q", "-m", "carries the environment")
+        carried = self.git("rev-parse", "HEAD")
+
+        with self.assertRaisesRegex(InfraFailure, r"\.env"):
+            self.turn(lambda: self.write("a.txt", "an uncommitted edit\n"))
+
+        self.assertEqual(self.git("rev-parse", "HEAD"), carried)
         self.assertEqual(self.sweep_events(), [])
 
 

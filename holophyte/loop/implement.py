@@ -24,16 +24,12 @@ from holophyte.environment_git import (
     factory_identity,
     paths,
     protected,
+    refuse_environment_history,
     stage_work,
     unstage_environment,
 )
 from holophyte.leak_guard import register_matches
-from holophyte.loop.claim import (
-    conflict_brief,
-    mid_merge,
-    unmerged_paths,
-    unresolved_merge,
-)
+from holophyte.loop.claim import conflict_brief, mid_merge, unmerged_paths
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.stop import boundary
@@ -82,7 +78,8 @@ WIP_PREFIX = "WIP: implementer "
 
 
 def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
-           role="implement", argv=None, seconds=None, limit=None, sweep=True):
+           role="implement", argv=None, seconds=None, limit=None, sweep=True,
+           merges=True):
     """Return `(output, timed_out)`; a timeout or a sweep kills the turn's group."""
     swept = sweep and role in ("implement", "trim")
     try:
@@ -91,10 +88,11 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
                                       limit)
     except Exception:
         if swept:
-            _sweep_quietly(project, conn, run_id, wt, "ended")
+            _sweep_quietly(project, conn, run_id, wt, "ended", merges)
         raise
     if swept:
-        _sweep_quietly(project, conn, run_id, wt, _turn_end(output, timed_out))
+        _sweep_quietly(project, conn, run_id, wt, _turn_end(output, timed_out),
+                       merges)
     return output, timed_out
 
 
@@ -184,13 +182,14 @@ def _record_implementer_output(conn, run_id, out, secrets=()):
 
 
 def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal,
-                     argv=None, *, seconds=None, limit=None):
+                     argv=None, *, seconds=None, limit=None, merges=True):
     """Retry transport loss once, sharing the original turn's wall-clock cap."""
     remaining, limit = _armed(project, budget_min, seconds, limit)
     deadline = retry_clock() + remaining
     for attempt in range(2):
         out, timed_out = _timed(project, conn, run_id, beat_s, wt, budget_min,
-                                goal, argv=argv, seconds=remaining, limit=limit)
+                                goal, argv=argv, seconds=remaining, limit=limit,
+                                merges=merges)
         signature = transport_failure(getattr(out, "exit_code", 0), out)
         if timed_out or signature is None or _killed_by_signal(out, timed_out):
             return out, timed_out
@@ -235,18 +234,18 @@ def _task_key(conn, run_id, branch):
     return ticket.linearIdentifier if ticket else branch
 
 
-def _sweep_quietly(project, conn, run_id, wt, cause):
+def _sweep_quietly(project, conn, run_id, wt, cause, merges):
     try:
-        _sweep_tree(project, conn, run_id, wt, cause)
+        _sweep_tree(project, conn, run_id, wt, cause, merges)
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError,
             sqlite3.Error) as failed:
         print(f"[holo2] the turn-end sweep of {wt} failed: {failed}")
 
 
-def _sweep_tree(project, conn, run_id, wt, cause):
+def _sweep_tree(project, conn, run_id, wt, cause, merges):
     if not Path(wt).is_dir() or subprocess.run(
             ["git", "rev-parse", "-q", "--verify", "HEAD"], cwd=wt,
-            capture_output=True).returncode:
+            capture_output=True).returncode or (mid_merge(wt) and not merges):
         return
     # The turn's process group is reaped, so a lock here is the dead turn's.
     lock = Path(wt, sh(["git", "rev-parse", "--git-path", "index.lock"], cwd=wt))
@@ -265,6 +264,7 @@ def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
                cwd=wt).splitlines()
     if not dirty:
         return
+    _refuse_environment(project, wt)
     stage_work(project, wt)
     sh(["git", *factory_identity(wt), "commit", "-q", "-m",
         _wip_subject(cause, task_id)], cwd=wt)
@@ -274,11 +274,17 @@ def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
               f" committed as WIP on {branch} at {head[:12]}")
 
 
+def _refuse_environment(project, wt):
+    refuse_environment_history(project, None, action="commit a turn's leftovers",
+                               commit=sh(["git", "rev-parse", "HEAD"], cwd=wt))
+
+
 def _sweep_merge(project, conn, run_id, wt, branch, task_id):
     tree, conflicted = _merge_tree(wt)
     touched = conflicted | _changed_from(wt, tree)
     unresolved = unmerged_paths(wt) or _still_marked(wt, touched)
     if not unresolved:
+        _refuse_environment(project, wt)
         stage_work(project, wt)
         sh(["git", *factory_identity(wt), "commit", "-q", "--no-edit"], cwd=wt)
         _drop_stash_clashes(wt)
@@ -460,7 +466,7 @@ def _retry_crashed(project, conn, run_id, beat_s, wt, branch, task_id, goal,
     out, timed_out = _transport_timed(
         project, conn, run_id, beat_s, wt, budget_min,
         note if argv is not None else f"{note}\n\n{goal}", argv=argv,
-        seconds=remaining, limit=limit)
+        seconds=remaining, limit=limit, merges=False)
     if _killed_by_signal(out, timed_out):
         _crashed(project, conn, run_id, out)
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
@@ -525,12 +531,11 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             "co-author lines for an AI." + orchestration
             + _capture_brief(project, ticket, task_id) + blast_radius.BRIEF
             + reproduce.BRIEF)
-    merging = conflicts and sh(["git", "rev-parse", "MERGE_HEAD"], cwd=wt)
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
     deadline = retry_clock() + seconds
     out, timed_out = _transport_timed(project, conn, run_id, beat_s, wt,
                                       budget_min, goal, seconds=seconds,
-                                      limit=limit)
+                                      limit=limit, merges=False)
     if _killed_by_signal(out, timed_out):
         out, timed_out = _retry_crashed(project, conn, run_id, beat_s, wt,
                                         branch, task_id, goal, out, deadline,
@@ -538,9 +543,6 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     blast_radius.record_declared(conn, run_id, out)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    if merging and subprocess.run(["git", "merge-base", "--is-ancestor",
-                                   merging, "HEAD"], cwd=wt).returncode:
-        raise unresolved_merge(branch, conflicts, head)
     added = head != start_sha and not _failed_wip_only(wt, out, timed_out,
                                                        start_sha, task_id)
     # A reused branch already ahead of main is the candidate, even if the

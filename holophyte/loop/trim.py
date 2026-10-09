@@ -77,7 +77,7 @@ def _skip_reason(project, conn, run_id, wt, budget_min, sha, lines, green):
 def _turn(project, conn, run_id, beat_s, wt, budget_min, goal):
     try:
         out, timed_out = _timed(project, conn, run_id, beat_s, wt, budget_min,
-                                goal, role="trim")
+                                goal, role="trim", merges=False)
     except InfraFailure as error:
         return (getattr(error, "output", "") or str(error),
                 f"the route failed: {error}")

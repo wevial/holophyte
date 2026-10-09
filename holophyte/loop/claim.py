@@ -153,14 +153,6 @@ def merge_conflicts(wt):
         ["git", "diff", "--name-only", "HEAD", "MERGE_HEAD"], cwd=wt).splitlines()
 
 
-def unresolved_merge(branch, conflicts, sha):
-    return RunFailure(f"preserved commits on {branch} conflict with a main"
-                      f" that moved on and the implementer left the merge"
-                      f" unresolved in {', '.join(conflicts)}; a human"
-                      f" resolves the merge before this ticket is run again;"
-                      f" branch {branch} preserved at {sha[:12]}")
-
-
 def conflict_brief(branch, conflicts):
     if not conflicts:
         return ""
