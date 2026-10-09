@@ -103,19 +103,21 @@ def probe_implementer(project, timeout=None):
     return probe_seat(project, "implement", timeout=timeout)
 
 
-def probe_seat(project, role, *, fallback=False, timeout=None):
+def probe_seat(project, role, *, fallback=False, timeout=None,
+               required=False):
     probe = None
     for entry in range(max(len(fallback_entries(project, role)), 1)
                        if fallback else 1):
         if probe is not None:
             print(probe_diagnostic(project, probe))
-        probe = probe_route(project, role, fallback, timeout, entry)
+        probe = probe_route(project, role, fallback, timeout, entry,
+                            required)
         if probe is None or probe.ok:
             break
     return probe
 
 
-def probe_route(project, role, fallback, timeout, entry):
+def probe_route(project, role, fallback, timeout, entry, required=False):
     goal = REVIEW_PROBE_GOAL if role in ("review", "adjudicate") else PROBE_GOAL
     cmd = agent_command(project, role, goal, fallback=fallback, entry=entry)
     default = cmd is None
@@ -129,7 +131,8 @@ def probe_route(project, role, fallback, timeout, entry):
     elif default:
         pair = (review_route(project, fallback=fallback)
                 if role in ("review", "adjudicate") else None)
-        if pair is None or not (fallback or container_fallback_profile(project, role)
+        if pair is None or not (required or fallback
+                                or container_fallback_profile(project, role)
                                 or agent_command(project, role, "", fallback=True)):
             return None
         cmd = ["default-review", review_profile(*pair)]

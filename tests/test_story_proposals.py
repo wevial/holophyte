@@ -47,6 +47,10 @@ TEXT = "Export the refund column"
 IN_STORY = "I read the story.\nSCOPE: in_story: completes W2's last case"
 STANDALONE = "SCOPE: standalone: a board concern, not the story's"
 OUTAGE = "ERROR: You've hit your usage limit"
+PRIMARY_MODEL = review_runner.MODEL
+REVIEW_PAIRS = (f'review_model = "{PRIMARY_MODEL}"\nreview_effort = "medium"\n'
+                'review_fallback_model = "gpt-5.6-sol"\n'
+                'review_fallback_effort = "high"\n')
 WITNESSES = [
     {"key": key, "criterion": f"outcome {key}", "file": f"tests/test_{key}.py",
      "command": f"python3 -m unittest tests.test_{key}", "source": "pass\n"}
@@ -375,35 +379,70 @@ class ScopeFallbackTests(StoryProposalTests):
         self.assertEqual(self.proposals(), [])
         self.assertEqual(len(self.drafts()), 1)
 
-    def test_the_reviewers_container_fallback_never_takes_the_scope_turn(self):
-        self.configure(f'{NATIVE}[agents]\nreview_model = "gpt-6-astra"\n'
-                       'review_effort = "medium"\n'
-                       'review_fallback_model = "gpt-5.6-sol"\n'
-                       'review_fallback_effort = "high"\n')
+    def container(self, agents="", probe_down=False):
+        """The default container adjudicator: its primary model's scope turn
+        fails, and `probe_down` fails its probe too; the review runner
+        records each (model, probe) launch in `self.reviews`."""
+        self.configure(f"{NATIVE}[agents]\n{agents}")
         self.addCleanup(reset, self.project)
-        self.approved_story()
-        reviews = []
+        self.reviews = []
 
         def run_review(*, candidate_sha, prompt, model, **_):
-            reviews.append((model, prompt == PROBE_GOAL))
-            if prompt == PROBE_GOAL:
-                return f"ready {candidate_sha}"
-            if model == "gpt-6-astra":
+            probe = prompt == PROBE_GOAL
+            self.reviews.append((model, probe))
+            if model == PRIMARY_MODEL and (probe_down or not probe):
                 raise review_runner.ReviewBoundaryError(
                     "container produced no events")
-            return IN_STORY
+            return f"ready {candidate_sha}" if probe else IN_STORY
+        return patch.object(review_runner, "run_review",
+                            side_effect=run_review)
 
-        with patch.object(review_runner, "run_review", side_effect=run_review):
+    def test_the_reviewers_container_fallback_never_takes_the_scope_turn(self):
+        with self.container(REVIEW_PAIRS):
+            self.approved_story()
             run_id = self.merged(self.merged_child, f"fix\n\n{FEATURE}")
 
-        self.assertEqual(reviews, [("gpt-6-astra", True),
-                                   ("gpt-6-astra", False)])
+        self.assertEqual(self.reviews, [(PRIMARY_MODEL, True),
+                                        (PRIMARY_MODEL, False)])
         self.assertEqual(self.read(
             "SELECT COUNT(*) FROM interventions"
             " WHERE action = 'route_fallback'"), [(0,)])
         [(_, payload)] = events(self.conn, run_id, "follow_up_scope")
         self.assertEqual((payload["verdict"], payload["default"]),
                          ("standalone", True))
+        self.assertEqual(self.proposals(), [])
+
+    def test_a_container_outage_is_answered_by_adjudicator_fallback_alone(self):
+        fallback = self.route("devin-fallback")
+        with self.container(f'{REVIEW_PAIRS}adjudicator_fallback = "{fallback}"\n'):
+            self.approved_story()
+            self.reply(**{TEXT: (STANDALONE, 0)})
+            run_id = self.merged(self.merged_child, f"fix\n\n{FEATURE}")
+
+        self.assertEqual(self.reviews, [(PRIMARY_MODEL, True),
+                                        (PRIMARY_MODEL, False)])
+        self.assertEqual([(turn["route"], turn["goal"] == PROBE_GOAL)
+                          for turn in self.turns(probes=True)],
+                         [("devin-fallback", True), ("devin-fallback", False)])
+        [(guidance,)] = self.read("SELECT guidance FROM interventions"
+                                  " WHERE action = 'route_fallback'")
+        self.assertEqual(json.loads(guidance)["command"], fallback)
+        [(_, payload)] = events(self.conn, run_id, "follow_up_scope")
+        self.assertEqual((payload["verdict"], payload["default"]),
+                         ("standalone", False))
+        self.assertIn("devin-fallback", payload["route"])
+
+    def test_a_default_container_seat_is_probed_and_a_failed_probe_defaults(self):
+        with self.container(probe_down=True):
+            self.approved_story()
+            run_id = self.merged(self.merged_child, f"fix\n\n{FEATURE}")
+
+        self.assertEqual(len(self.reviews), 1)
+        self.assertTrue(self.reviews[0][1])
+        [(summary, payload)] = events(self.conn, run_id, "follow_up_scope")
+        self.assertEqual((payload["verdict"], payload["default"]),
+                         ("standalone", True))
+        self.assertIn("the adjudicator probe failed", summary)
         self.assertEqual(self.proposals(), [])
 
     def test_an_outage_exiting_zero_with_a_scope_line_still_defaults(self):

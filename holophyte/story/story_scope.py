@@ -104,8 +104,10 @@ def _refusal(target, conn, fallbacks):
         return None if active in fallbacks else (
             f"the adjudicator is switched to {safe_command(target, active)},"
             " not to adjudicator_fallback")
-    probe = probe_seat(target, "adjudicate")
-    if probe is None or probe.ok:
+    probe = probe_seat(target, "adjudicate", required=True)
+    if probe is None:
+        return "the adjudicator has no route to probe"
+    if probe.ok:
         return None
     reason = probe_diagnostic(target, probe)
     if fallbacks and activate_fallback(target, "adjudicate", reason, conn):

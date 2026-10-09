@@ -281,8 +281,9 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     if role in ("review", "adjudicate") and not (base_sha and candidate_sha):
         raise ValueError(f"{role} requires exact base_sha and candidate_sha")
     goal = outbound(goal, known_secrets(project.config()))
-    switched = (role in routes(project).commands
-                and container_fallback_profile(project, role) is not None)
+    profile = container_fallback_profile(project, role)
+    switched = (profile is not None
+                and routes(project).commands.get(role) == profile)
     command = None if switched else routes(project).commands.get(role)
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(project, role, goal))
