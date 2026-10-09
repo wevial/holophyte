@@ -220,8 +220,7 @@ def kept_session(project, role, conn, run_id, review_round, sessions):
 
 def refused_exit(role, error):
     from holophyte.review.adversary import refused
-    return (role == "adversary" and error.provider_error is not None
-            and refused(error.provider_error))
+    return role == "adversary" and refused(error.provider_error)
 
 
 def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
