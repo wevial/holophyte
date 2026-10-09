@@ -80,10 +80,8 @@ class CoveringPromptTests(unittest.TestCase):
         self.candidate("a.py")
         self.git("checkout", "-q", "fix")
         self.git("merge", "--no-ff", "-qm", "merge main", "main")
-        command = re.search(r"Review this range as `([^`]+)`",
-                            self.instructions(self.git("rev-parse", "HEAD")))
-        diff = subprocess.check_output(shlex.split(command.group(1)),
-                                       cwd=self.root, text=True)
+        diff = range_command_output(
+            self.instructions(self.git("rev-parse", "HEAD")), self.root)
         self.assertIn("b/[ab].py", diff)
         self.assertNotIn("b/a.py", diff)
 
@@ -398,12 +396,12 @@ class CoveringAfterConflictedMainMergeTests(unittest.TestCase):
                      ("config", "user.email", "reviewer@example.test")):
             self.git(*args)
         lines = [f"line-{n}" for n in range(1, 21)]
-        self.commit("base", {"shared.txt": lines})
+        self.commit("base", {"shared.txt": self.edit(lines, {})})
         self.git("checkout", "-qb", "task")
-        self.approved = self.commit("candidate fix", {"holophyte/fix.py": ["x"]})
+        self.approved = self.commit("candidate fix", {"holophyte/fix.py": "x\n"})
         self.git("checkout", "-q", "main")
         self.commit("main moves on", {
-            "other.txt": ["main"],
+            "other.txt": "main\n",
             "shared.txt": self.edit(lines, {2: "main-two", 15: "main-fifteen"})})
         self.git("checkout", "-q", "task")
         self.commit("candidate touches shared",
@@ -413,23 +411,12 @@ class CoveringAfterConflictedMainMergeTests(unittest.TestCase):
         merged = self.edit(lines, {2: "main-two", 15: "resolved-fifteen"})
         self.head = self.commit("Merge main into task", {"shared.txt": merged})
 
-    def git(self, *args):
-        return subprocess.check_output(
-            ["git", *args], cwd=self.root, text=True, stderr=subprocess.PIPE
-        ).strip()
+    git = CoveringAfterMainMergeTests.git
+    commit = CoveringAfterMainMergeTests.commit
 
     @staticmethod
     def edit(lines, changes):
-        return [changes.get(n, line) for n, line in enumerate(lines, 1)]
-
-    def commit(self, subject, files):
-        for path, lines in files.items():
-            file = self.root / path
-            file.parent.mkdir(parents=True, exist_ok=True)
-            file.write_text("".join(f"{line}\n" for line in lines))
-        self.git("add", ".")
-        self.git("commit", "-qm", subject)
-        return self.git("rev-parse", "HEAD")
+        return "".join(f"{changes.get(n, line)}\n" for n, line in enumerate(lines, 1))
 
     def added_lines(self, head):
         prompt = briefs.covering_scope(self.root, self.approved, head, "pr")
