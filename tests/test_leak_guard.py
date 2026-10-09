@@ -267,6 +267,12 @@ class TicketFilingTests(PrivateText, ConfigTestCase):
                                               *map(str, args)])
         return status, out.getvalue()
 
+    def assertRefused(self, status, printed, named):
+        self.assertEqual(status, 1)
+        self.assertIn(named, printed)
+        self.assertIn(KEY, printed)
+        self.assertPrivateAbsent(printed)
+
     def rows(self):
         if not self.project.store_path.exists():
             return []
@@ -281,26 +287,16 @@ class TicketFilingTests(PrivateText, ConfigTestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.chdir(self.target):
             status = ticket_template.main(["--repo", ".", str(leaked)])
-        self.assertEqual(status, 1)
-        self.assertIn(named, out.getvalue())
-        self.assertIn(KEY, out.getvalue())
-        self.assertPrivateAbsent(out.getvalue())
+        self.assertRefused(status, out.getvalue(), named)
 
-        status, printed = self.cli(leaked)
-        self.assertEqual(status, 1)
-        self.assertIn(named, printed)
-        self.assertIn(KEY, printed)
-        self.assertPrivateAbsent(printed)
+        self.assertRefused(*self.cli(leaked), named)
         self.assertEqual(self.rows(), [])
 
         clean, _ = self.ticket("clean.md", f"- The API lives at {CLEAN}.")
         self.assertEqual(self.cli(clean)[0], 0)
         filed = self.rows()
-        status, printed = self.cli(leaked, "--update", "NAT-1", "--revision", "1")
-        self.assertEqual(status, 1)
-        self.assertIn(named, printed)
-        self.assertIn(KEY, printed)
-        self.assertPrivateAbsent(printed)
+        self.assertRefused(
+            *self.cli(leaked, "--update", "NAT-1", "--revision", "1"), named)
         self.assertEqual(self.rows(), filed)
 
 
