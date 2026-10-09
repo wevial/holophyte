@@ -233,6 +233,35 @@ class NativeMergeTests(NativeProject):
             "SELECT runId, kind, filedAs, settledAt IS NOT NULL FROM followUps"
             " ORDER BY id"), [(1, "feature", key, 1), (1, "guardrail", None, 1)])
 
+    def test_a_later_merge_settles_the_rows_of_the_ticket_s_failed_run(self):
+        store.board.file_ticket(self.conn, self.project_id, "NAT", VALID_BODY)
+        out = self.run_loop(Commit("the work"), REQUEST_CHANGES, Commit(FIX),
+                            REQUEST_CHANGES, Idle(), board=self.board)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)],
+                         out)
+        (ticket_id,) = self.read("SELECT id FROM tickets")[0]
+        store.requeue(self.conn, ticket_id, "run it again")
+
+        out = self.run_loop(Commit("more work"), APPROVE, board=self.board)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("failed",), ("merged",)], out)
+        [(merge_sha,)] = self.read("SELECT mergeSha FROM runs WHERE id = 2")
+        for (sha,) in self.read("SELECT commitSha FROM followUps"):
+            self.git("merge-base", "--is-ancestor", sha, "main")
+        rows = self.read("SELECT runId, kind, filedAs, settledAt IS NOT NULL"
+                         " FROM followUps ORDER BY id")
+        drafts = self.read("SELECT linearIdentifier, body FROM tickets"
+                           " WHERE title LIKE 'Draft follow-up: %'")
+        self.assertEqual(len(drafts), 1, rows)
+        [(key, body)] = drafts
+        self.assertIn(merge_sha, body)
+        self.assertEqual(rows, [(1, "feature", key, 1),
+                                (1, "guardrail", None, 1)])
+        self.assertEqual([e["key"] for e in self.store_events("follow_up_filed")],
+                         [key])
+        self.assertEqual(len(self.store_events("follow_up_ledger")), 1)
+
 class NativeSettleTests(NativeProject):
     """Settled over the store with real git commits; the merge is recorded."""
 
