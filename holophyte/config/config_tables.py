@@ -293,7 +293,6 @@ DEFAULT_STRIP_ATTRIBUTION = (
 )
 MERGE_KEYS = {
     "strip_attribution": DEFAULT_STRIP_ATTRIBUTION,
-    "private_patterns": (),
     "approve": "auto", "mode": "local",
     "pr_rounds": 5, "pr_main_refreshes": 10,
     "pr_merge_method": "merge",
@@ -311,6 +310,7 @@ MERGE_KEYS = {
     "mention_handle": "holophyte", "mention_accounts": (),
     "after": (), "bot_authors": ("devin-ai-integration", "coderabbitai",
                                "greptile-apps", "github-actions"),
+    "private_patterns": (),
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")

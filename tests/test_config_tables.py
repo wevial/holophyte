@@ -398,12 +398,11 @@ class MergeConfigTests(ConfigTestCase):
         config = config_tables.merge_config(self.project)
         self.assertTrue(config.strip_attribution)
         self.assertEqual(config[1:],
-                         ((), "auto", "local", 5, 10, "merge", 180, 300, 1800,
-                          600, False,
+                         ("auto", "local", 5, 10, "merge", 180, 300, 1800, 600, False,
                           True, "", False, False,
                           (), "", "e2e/capture", False, "", None, 10, 20, "park",
                           "act", (), "holophyte", (), (), ("devin-ai-integration",
-                           "coderabbitai", "greptile-apps", "github-actions")))
+                           "coderabbitai", "greptile-apps", "github-actions"), ()))
 
     def test_bucket_validates_without_credentials_and_secrets_are_redacted(self):
         from holophyte.redact import known_secrets, redact_prose
