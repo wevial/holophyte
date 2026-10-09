@@ -79,6 +79,10 @@ class RecordingBoard:
         self.calls.append("file")
         return "KO-9"
 
+    def update(self, *args, **kwargs):
+        self.calls.append("update")
+        return [], []
+
     def stored_body(self, identifier):
         return self.text
 
@@ -151,8 +155,13 @@ class DockerInContainerTests(unittest.TestCase):
         self.assert_refused(self.check(build, chain), build, chain)
 
     def test_a_project_without_the_container_backend_accepts_the_line(self):
-        self.configure('"none"')
-        self.assert_accepted(self.check(FLAG_LINE))
+        for config in ('"none"', None):
+            with self.subTest(config=config):
+                if config is None:
+                    self.target.config_path.unlink(missing_ok=True)
+                else:
+                    self.configure(config)
+                self.assert_accepted(self.check(FLAG_LINE))
 
     def test_docker_as_an_argument_or_an_unset_flag_is_accepted(self):
         self.configure('"container"')
@@ -169,20 +178,23 @@ class DockerInContainerTests(unittest.TestCase):
         self.assertIn("[agents]", result.stdout)
         self.assert_accepted(self.check("grep -q docker docs/reviewing.md"))
 
-    def test_filing_refuses_without_touching_the_board(self):
+    def test_filing_and_updating_refuse_without_touching_the_board(self):
         self.configure('"container"')
         text = TICKET.replace("VERIFY", FLAG_LINE)
         self.ticket.write_text(text)
-        board, out = RecordingBoard(text), io.StringIO()
-        with patch.object(holophyte.cli.entry, "board_for",
-                          return_value=board), \
-                contextlib.redirect_stdout(out):
-            status = holophyte.cli.entry.cli(
-                [str(self.repo), "--file-ticket", str(self.ticket)])
-        self.assertEqual(status, 1)
-        self.assertIn(FLAG_LINE, out.getvalue())
-        self.assertIn(REMEDY, out.getvalue())
-        self.assertEqual(board.calls, [])
+        for args in ((), ("--update", "KO-7000")):
+            with self.subTest(args=args):
+                board, out = RecordingBoard(text), io.StringIO()
+                with patch.object(holophyte.cli.entry, "board_for",
+                                  return_value=board), \
+                        contextlib.redirect_stdout(out):
+                    status = holophyte.cli.entry.cli(
+                        [str(self.repo), "--file-ticket", str(self.ticket),
+                         *args])
+                self.assertEqual(status, 1)
+                self.assertIn(FLAG_LINE, out.getvalue())
+                self.assertIn(REMEDY, out.getvalue())
+                self.assertEqual(board.calls, [])
 
 
 if __name__ == "__main__":
