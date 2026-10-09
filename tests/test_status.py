@@ -236,8 +236,7 @@ class HostStatusConsoleTests(HostFixture):
         self.dist = checkout / "console" / "dist"
         self.dist.mkdir()
         (self.home / "console-build.json").write_text(json.dumps(
-            {"failed_ms": 1, "reason": self.REASON, "tried": self.tree,
-             "served": "0ld"}))
+            {"reason": self.REASON}))
         self.enterContext(patch.object(holophyte.cli.status, "CONSOLE_DIR",
                                        self.dist))
 
