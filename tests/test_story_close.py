@@ -50,7 +50,12 @@ from holophyte.story.witness import (  # noqa: E402
     witness_step,
 )
 from provider import board_for  # noqa: E402
-from store.stories import approve_story, file_story, story  # noqa: E402
+from store.stories import (  # noqa: E402
+    abandon_story,
+    approve_story,
+    file_story,
+    story,
+)
 from store.story_proposals import record_proposal  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
 from tests.test_witness_runner import (  # noqa: E402
@@ -322,6 +327,15 @@ class OpenProposalCloseTests(StoryCloseFixture):
             f"SELECT text FROM ticketNotes WHERE ticketId = {parent}")
             if tip in text]
         self.assertIn(f"Open proposals: p1 from NAT-2: {PROPOSED}", note)
+        self.assertEqual(self.read(PROPOSALS), [("superseded",)])
+
+    def test_abandoning_supersedes_an_open_proposal(self):
+        parent, child = self.tickets()
+        self.approve(parent, child, [witness("W1", W1_FILE)])
+        self.propose(child)
+
+        abandon_story(self.conn, parent, "not worth it", "operator")
+
         self.assertEqual(self.read(PROPOSALS), [("superseded",)])
 
 

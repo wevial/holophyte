@@ -3,6 +3,7 @@ import re
 
 import ticket_template
 from holophyte.board.projection import mirror_task
+from holophyte.config.config_tables import board_config
 from holophyte.story.story_close import DecisionRefused
 from holophyte.story.story_filing import _ticket_id
 from provider import FiledWithoutBlockers, board_for
@@ -90,7 +91,7 @@ def _accept(target, conn, proposal, note):
         raise DecisionRefused(f"the board refused the child: {refused}"
                               ) from None
     try:
-        task = None if native else board.fetch_task(filed)
+        task = None if native else _labelled(target, board, filed)
         with transaction(conn):
             child_id = (
                 _ticket_id(conn, proposal["projectId"], filed) if native
@@ -104,3 +105,12 @@ def _accept(target, conn, proposal, note):
                               f" {filed}") from None
     return filed
 
+
+
+def _labelled(target, board, filed):
+    task = board.fetch_task(filed)
+    label = board_config(target).label
+    if label is None:
+        return task
+    board.label_issue(task["issue_id"], label)
+    return board.fetch_task(filed)

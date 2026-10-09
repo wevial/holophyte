@@ -218,17 +218,22 @@ class LinearAcceptTests(ProposalDecideFixture):
             self.conn, self.project_id, f"issue-{n}", f"KO-{n}", f"KO-{n}",
             board_state="Todo", board_column="ready") for n in (1, 2)]
 
-    def test_the_child_is_a_blocked_sub_issue_mirrored_into_the_store(self):
-        parent, child = self.proposed()
-        board = RecordingBoard("project-1", "team-1", store_mode=True)
+    def accept(self, label=None):
+        board = RecordingBoard("project-1", "team-1", label,
+                               store_mode=True)
         board.issues.update({"KO-1": {"id": "issue-1"},
                              "KO-2": {"id": "issue-2"}})
-
         with patch.object(provider, "LinearBoard", lambda *a, **k: board), \
                 patch.object(linear_provider, "_gql", board.answer):
             status, out = self.cli("--decide", "KO-1", "p1", "--note", "yes")
-
         self.assertEqual(status, 0, out)
+        return board
+
+    def test_the_child_is_a_blocked_sub_issue_mirrored_into_the_store(self):
+        parent, child = self.proposed()
+
+        board = self.accept()
+
         self.assertEqual(board.calls, [("file", draft_title(PROPOSED),
                                         "Backlog", "issue-1", ["KO-2"])])
         new = self.ticket_id("REL-3")
@@ -243,6 +248,21 @@ class LinearAcceptTests(ProposalDecideFixture):
         self.assertEqual(self.read(
             "SELECT state, childTicketId FROM storyProposals"),
             [("accepted", new)])
+
+    def test_on_a_labelled_board_the_child_carries_the_label_and_can_queue(
+            self):
+        self.configure(STORE_MODE + 'label = "holo"\n')
+        self.proposed()
+
+        board = self.accept(label="holo")
+
+        self.assertEqual(board.calls[1:], [("label", "issue-3", "holo")])
+        self.assertEqual(self.read("SELECT labels FROM tickets"
+                                   " WHERE linearIdentifier = 'REL-3'"),
+                         [(json.dumps(["holo"]),)])
+        board.issues["REL-3"]["state"] = {"name": "Todo", "type": "unstarted"}
+        with patch.object(linear_provider, "_gql", board.answer):
+            self.assertEqual(board.fetch_task("REL-3")["column"], "ready")
 
 
 if __name__ == "__main__":

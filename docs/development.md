@@ -466,7 +466,8 @@ Each module, one line:
 - `holophyte/story/proposal_decisions.py` — `--decide KEY-n pN` answers a
   story's proposed child: accepting files it in Backlog through the board,
   depending on the child that raised it with a `Role: scaffolding` line
-  (on Linear a sub-issue of the parent, mirrored into the store), then
+  (on Linear a sub-issue of the parent carrying the board's label,
+  mirrored into the store), then
   `accept_proposal()` adds it to the story and its approved plan;
   rejecting records the answer and files nothing.
 - `holophyte/host/reconcile.py` — the startup reconciles and the GitHub read
