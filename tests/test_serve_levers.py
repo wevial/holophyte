@@ -11,6 +11,7 @@ import io
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -176,6 +177,27 @@ class LeverTests(ServeTestCase):
             with self.subTest(row=row):
                 self.assertEqual((code, body["ok"], body["recorded"]),
                                  (200, True, written[row]), body)
+
+    def test_a_pause_cites_its_own_row_past_another_writers_later_one(self):
+        self.start_actions()
+        real_pause = store.pause
+
+        def pause_then_another_writer(conn, run_id, note):
+            request = real_pause(conn, run_id, note)
+            other = store.open(str(self.db))
+            try:
+                store.record_intervention(other, run_id, "pause", "elsewhere")
+            finally:
+                other.close()
+            return request
+        with patch.object(store, "pause", pause_then_another_writer):
+            code, _, body = self.post("pause", run=self.run, note="reboot")
+        (ours,), (theirs,) = self.rows(
+            "SELECT id FROM interventions WHERE action = 'pause' ORDER BY id")
+        self.assertEqual(self.rows("SELECT stopRequested FROM runs WHERE id = ?",
+                                   self.run), [(ours,)])
+        self.assertEqual((code, body["ok"], body["recorded"]), (200, True, ours))
+        self.assertLess(ours, theirs)
 
     def test_every_lever_is_404_with_actions_off(self):
         self.start_actions(on=False)

@@ -6,7 +6,6 @@ import traceback
 
 import store.read
 from holophyte.admission import project_of
-from holophyte.holo.results import newest_in
 from holophyte.loop.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.loop.runs import open_store
 from holophyte.redact import known_secrets, outbound
@@ -49,11 +48,10 @@ def unit_action(project, action, unit_name, asked=None):
     unit = template + unit_name
     who, route = asked or ("the daemon", f"POST /actions/{action}")
     note = f"operator asked {who} to {verb} {unit} ({route})"
-    on_run = record_action_intervention(project, intervention, note)
-    written = on_run is not None or (
-        action == "launch-loop"
-        and record_on_project(project, intervention, note) is not None)
-    if not written:
+    recorded = record_action_intervention(project, intervention, note)
+    if recorded is None and action == "launch-loop":
+        recorded = record_on_project(project, intervention, note)
+    if recorded is None:
         detail = ("the store holds no run to record the intervention"
                   " against; nothing run")
         return 200, {"action": action, "ok": False, "detail": detail,
@@ -62,7 +60,8 @@ def unit_action(project, action, unit_name, asked=None):
         _, ok, detail = start_loop(unit_name)
     else:
         ok, detail = systemctl_user(verb, unit)
-    return 200, {"action": action, "ok": ok, "detail": detail, "unit": unit}
+    return 200, {"action": action, "ok": ok, "detail": detail, "unit": unit,
+                 "recorded": recorded}
 
 
 def record_action_intervention(project, action, note):
@@ -71,31 +70,26 @@ def record_action_intervention(project, action, note):
     conn = open_store(project)
     try:
         run_id = store.read.newest_run_id(conn)
-        if run_id is not None:
-            store.record_intervention(conn, run_id, action, note,
-                                      source="human", trigger="manual")
+        return None if run_id is None else store.record_intervention(
+            conn, run_id, action, note, source="human", trigger="manual")
     finally:
         conn.close()
-    return run_id
 
 
-def newest_row(project):
-    return newest_in(project.store_path) if project.store_path.exists() else 0
+def action_store(project):
+    conn = open_store(project)
+    conn.execute("CREATE TEMP TABLE written (id INTEGER, action TEXT)")
+    conn.execute("CREATE TEMP TRIGGER note_written AFTER INSERT ON"
+                 " main.interventions BEGIN INSERT INTO written"
+                 " VALUES (NEW.id, NEW.action); END")
+    return conn
 
 
-def written_row(project, before, action):
-    if not project.store_path.exists():
-        return None
+def written_on(conn, action):
     names = RECORDS[action]
-    conn = store.read.open_readonly(project.store_path)
-    try:
-        (row,) = conn.execute(
-            "SELECT MAX(id) FROM interventions WHERE id > ?"
-            " AND source = 'human'"
-            f" AND action IN ({','.join('?' * len(names))})",
-            (before, *names)).fetchone()
-    finally:
-        conn.close()
+    (row,) = conn.execute(
+        "SELECT MAX(id) FROM temp.written"
+        f" WHERE action IN ({','.join('?' * len(names))})", names).fetchone()
     return row
 
 
@@ -131,7 +125,7 @@ def requeue_action(project, body):
     identifier = identifier.strip()
     if not project.store_path.exists():
         return 503, no_store(project)
-    conn = open_store(project)
+    conn = action_store(project)
     try:
         ticket = store.read.ticket_by_identifier(conn, identifier)
         if ticket is None:
@@ -154,11 +148,12 @@ def requeue_action(project, body):
         except (store.RequeueRefused, ValueError) as refused:
             return 200, {"action": action, "ok": False, "ticket": identifier,
                          "detail": str(refused)}
+        recorded = written_on(conn, action)
     finally:
         conn.close()
     return 200, {"action": action, "ok": True, "ticket": identifier,
                  "detail": f"{identifier} requeued after run {run_id}",
-                 "run": run_id}
+                 "run": run_id, "recorded": recorded}
 
 
 def send_back_action(project, run_id, note, author):
@@ -166,14 +161,16 @@ def send_back_action(project, run_id, note, author):
         return 400, {"error": "run must be a positive integer"}
     if not project.store_path.exists():
         return 503, no_store(project)
-    conn = open_store(project)
+    conn = action_store(project)
     try:
         event_id = send_back(conn, run_id, note, author)
+        recorded = written_on(conn, "send-back")
     except (store.ApproveRefused, ValueError) as refused:
         return 200, {"ok": False, "detail": str(refused)}
     finally:
         conn.close()
     return 200, {"ok": True, "run": run_id, "event_id": event_id,
+                 "recorded": recorded,
                  "detail": f"Sent back with operator_note event {event_id}"}
 
 

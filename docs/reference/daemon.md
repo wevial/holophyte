@@ -38,15 +38,13 @@ which is not a server error. Each action is an interventions row
 (`store.record_intervention()`, the operator ladder's record-before-acting
 call) written before the action runs; an action that cannot be recorded
 does not run. `recorded` is that row's id, the one `holo --json` write
-results cite: the newest human interventions row the action wrote, by its
-action name (`restart_supervisor`, `launch_loop`, `requeue`,
-`operator_note` for `send-back`, `approve` for `merge`, `hold`,
+results cite: the row the action itself inserted, never another
+writer's row of the same name (`restart_supervisor`, `launch_loop`,
+`requeue`, `operator_note` for `send-back`, `approve` for `merge`, `hold`,
 `release_hold`, `pause`, `resume`, and `abort` or `abort_close`). It is
 null when the action wrote none: a refusal, `ok: false` before the
 write, or a `pause` or `abort` of a run whose request is already
-pending. A daemon runs one action at a time per store, so two requests
-at once each cite their own row. A 400, 404 or 503 answers
-`{"error": ...}` instead.
+pending. A 400, 404 or 503 answers `{"error": ...}` instead.
 
 ## On a host daemon
 

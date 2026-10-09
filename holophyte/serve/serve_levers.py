@@ -3,9 +3,8 @@ from __future__ import annotations
 import store
 import store.read
 from holophyte.admission import held_line, set_hold
-from holophyte.loop.runs import open_store
 from holophyte.loop.stop import abort_run, resume_paused
-from holophyte.serve.serve_actions import tickets_named
+from holophyte.serve.serve_actions import action_store, tickets_named, written_on
 from holophyte.serve.serve_runs import no_store
 
 DEFAULT_AUTHOR = "maintainer"
@@ -32,14 +31,16 @@ def lever(action, target, body, act):
         return 400, {"error": "note must say why (non-blank text)"}
     if not target.store_path.exists():
         return 503, no_store(target)
-    conn = open_store(target)
+    conn = action_store(target)
     try:
         ok, detail, extra = act(conn, reason)
+        recorded = written_on(conn, action)
     except (ValueError, store.ResumeRefused) as refused:
         return 200, {"action": action, "ok": False, "detail": str(refused)}
     finally:
         conn.close()
-    return 200, {"action": action, "ok": ok, "detail": detail, **extra}
+    return 200, {"action": action, "ok": ok, "detail": detail, **extra,
+                 "recorded": recorded}
 
 
 def admission_action(action, holding):
