@@ -704,8 +704,8 @@ class CandidateImageTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v12_and_every_tracked_reference_names_it(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v12")
+    def test_image_tag_is_v13_and_every_tracked_reference_names_it(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v13")
         tracked = subprocess.run(
             ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
         ).stdout.decode().split("\0")
@@ -715,10 +715,10 @@ class ReviewerImageTests(unittest.TestCase):
             if (ROOT / path).is_file()
             for tag in re.findall(rb"ubuntu24\.04-v\d+", (ROOT / path).read_bytes())
         }
-        self.assertIn(("review_runner.py", "ubuntu24.04-v12"), references)
-        self.assertIn(("docs/reviewing.md", "ubuntu24.04-v12"), references)
+        self.assertIn(("review_runner.py", "ubuntu24.04-v13"), references)
+        self.assertIn(("docs/reviewing.md", "ubuntu24.04-v13"), references)
         self.assertEqual(
-            {ref for ref in references if ref[1] != "ubuntu24.04-v12"}, set())
+            {ref for ref in references if ref[1] != "ubuntu24.04-v13"}, set())
 
     def test_dockerfile_installs_pinned_checksummed_bun_on_path(self):
         text = self.DOCKERFILE.read_text()
@@ -740,7 +740,7 @@ class ReviewerImageTests(unittest.TestCase):
         )
         checksum = re.search(r"^ARG GO_SHA256=([0-9a-f]{64})$", text, re.M)
         self.assertIsNotNone(tarball, "Dockerfile pins no Go tarball")
-        self.assertEqual(tarball.group(1), "1.26.6")
+        self.assertEqual(tarball.group(1), "1.26.9")
         self.assertIsNotNone(checksum, "Dockerfile pins no Go SHA-256")
         self.assertIn("https://go.dev/dl/${GO_TARBALL}", text)
         self.assertRegex(
@@ -749,6 +749,7 @@ class ReviewerImageTests(unittest.TestCase):
         self.assertRegex(text, r"(?m)^\s*&& tar -C /usr/local -xzf ")
         self.assertRegex(text, r"(?m)^ENV PATH=/usr/local/go/bin:\$PATH")
         self.assertRegex(text, r"(?m)^\s*GOTOOLCHAIN=local\b")
+        self.assertRegex(text, r"(?m)^\s*CGO_ENABLED=1\b")
         self.assertRegex(text, r"(?m)^\s*GOPATH=/home/reviewer/go\b")
         self.assertRegex(text, r"(?m)^\s*GOMODCACHE=/home/reviewer/go/pkg/mod\b")
         self.assertRegex(text, r"(?m)^\s*GOCACHE=/home/reviewer/\.cache/go-build\b")

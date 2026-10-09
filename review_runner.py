@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Sequence
 
 ROOT = Path(__file__).resolve().parent
-IMAGE = "holophyte-reviewer:ubuntu24.04-v12"
+IMAGE = "holophyte-reviewer:ubuntu24.04-v13"
 MODEL = "gpt-6-astra"
 EFFORT = "high"
 EFFORTS = ("low", "medium", "high", "xhigh")
@@ -209,7 +209,7 @@ def _prepare_runtime(root: Path, auth: Path,
     home = root / "home"
     codex_home = home / ".codex"
     toolchain = root / "toolchain"
-    home.mkdir()
+    home.mkdir(parents=True)
     toolchain.mkdir(mode=0o700)
     if codex is None:
         return home, toolchain
