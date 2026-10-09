@@ -404,8 +404,8 @@ def _prose_paths(text):
             yield span, paths[0]
 
 
-def _mask_code_spans(text):
-    return re.sub(r"`[^`\n]+`", lambda m: " " * len(m.group()), text)
+def _mask_code_spans(text, fill=" "):
+    return re.sub(r"`[^`\n]+`", lambda m: fill * len(m.group()), text)
 
 
 def _sentence_before(masked, end):
@@ -437,7 +437,7 @@ def _new_paths(t):
     files, directories = set(), set()
     for text in t.sections.values():
         masked = _mask_code_spans(text)
-        marked = re.sub(r"`[^`\n]+`", lambda m: "\0" * len(m.group()), text)
+        marked = _mask_code_spans(text, "\0")
         for span in re.finditer(r"`([^`\n]+)`", text):
             path = span.group(1)
             if not PATH_TOKEN_RE.fullmatch(path):
