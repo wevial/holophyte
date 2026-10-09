@@ -126,6 +126,8 @@ class PrState:
     failed_checks: tuple = ()
     missing_checks: tuple = ()
     awaiting: tuple = ()
+    draft: bool = False
+    node_id: str = ""
 
 
 def origin_url(target):
@@ -327,6 +329,10 @@ def create_pull_request(target, branch, title, body):
     return _create_with_api(target, branch, title, body, token)
 
 
+def _draft(target):
+    return config_tables.merge_config(target).pr_draft
+
+
 def _create_with_gh(target, branch, title, body):
     """Without `--repo`, `gh` opens the PR in its own default repository."""
     repo = origin_url(target)
@@ -334,7 +340,8 @@ def _create_with_gh(target, branch, title, body):
         raise InfraFailure(f"no `{REMOTE}` remote to open the pull request"
                            f" in; branch {branch} preserved")
     argv = [GH, "pr", "create", "--repo", repo, "--base", BASE,
-            "--head", branch, "--title", title, "--body-file", "-"]
+            "--head", branch, *(["--draft"] if _draft(target) else []),
+            "--title", title, "--body-file", "-"]
     try:
         r = subprocess.run(argv, cwd=target.path, input=body,
                            capture_output=True, text=True, timeout=PR_TIMEOUT)
@@ -356,7 +363,8 @@ def _create_with_api(target, branch, title, body, token):
         raise InfraFailure(f"cannot read OWNER/REPO off the {REMOTE} URL;"
                            f" branch {branch} pushed and preserved")
     payload = json.dumps({"title": title, "body": body, "head": branch,
-                          "base": BASE}).encode()
+                          "base": BASE, **({"draft": True} if _draft(target)
+                                           else {})}).encode()
     request = urllib.request.Request(
         f"{API}/repos/{repo}/pulls", data=payload, method="POST",
         headers={"Authorization": f"Bearer {token}",

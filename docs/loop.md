@@ -188,7 +188,12 @@ machines it walks. Back to the [README](index.md).
    request (KO-407): on a hit -- a requeued run's predecessor left one
    open -- the run adopts that PR instead of opening a second, which
    `gh pr create` would refuse; the run's `prUrl` is that PR and the
-   babysit passes below proceed as if the run had opened it. A push the remote refuses or a PR create
+   babysit passes below proceed as if the run had opened it. With
+   `[merge] pr_draft = true` the pull request is opened as a draft; at the
+   point a pass would merge it or park it ready to merge, the babysitter
+   marks it ready for review once (a `pr_ready` run event) and passes
+   again, waiting for the checks, and a draft it may not mark parks
+   instead. A push the remote refuses or a PR create
    that fails is an infra failure -- no strike, branch and worktree
    preserved, no PR recorded. Then the loop babysits the pull request for
    up to `[merge] pr_rounds` passes (see [PR rounds](reviewing.md#pr-rounds)):

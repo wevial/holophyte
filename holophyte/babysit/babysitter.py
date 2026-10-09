@@ -53,7 +53,7 @@ from holophyte.loop.gates import (
 from holophyte.loop.run import Run
 from holophyte.loop.runs import heartbeat_while, record_round
 from holophyte.loop.stop import boundary, fix_state, stop_if_requested
-from holophyte.pr import github, merge_queue, pr_status
+from holophyte.pr import github, merge_queue, pr_ready, pr_status
 from holophyte.pr.missing_checks import Retrigger, unreported
 from holophyte.pr.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.redact import safe_print as print
@@ -259,6 +259,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
     check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
     pass_no = refreshes = 0
+    marked = False
     while pass_no < merge.pr_rounds and refreshes < merge.pr_main_refreshes:
         pass_no += 1
         stop_if_requested(conn, run_id, "merge_gate")
@@ -310,20 +311,25 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             continue
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
-        released = sha
-        if sha != reviewed:
-            fixed = _review_fix(project, conn, run_id, provider, task_id, branch, wt,
-                                sha, reviewed, beat_s, pull, ticket, verify_cmd,
-                                contracts, criteria, fix_note, budget_min)
-            if fixed != sha:
-                fix_note = None  # One fix allowance per babysit, past the cap too.
-                sha = reviewed = fixed
-                pushed_state = _just_pushed_state(
-                    project, conn, run_id, provider, task_id, branch, sha,
-                    beat_s, pull, reviewed)
-                continue
-            # An `--approve` covered the release, not these reviewed fixes.
-            released, reviewed, approved = reviewed, sha, False
+        fixed = sha if sha == reviewed else _review_fix(
+            project, conn, run_id, provider, task_id, branch, wt, sha, reviewed,
+            beat_s, pull, ticket, verify_cmd, contracts, criteria, fix_note,
+            budget_min)
+        if fixed != sha:
+            fix_note = None  # One fix allowance per babysit, past the cap too.
+            sha = reviewed = fixed
+            pushed_state = _just_pushed_state(
+                project, conn, run_id, provider, task_id, branch, sha,
+                beat_s, pull, reviewed)
+            continue
+        # An `--approve` covered the release, not these reviewed fixes.
+        released, reviewed, approved = ((sha, reviewed, approved)
+                                        if sha == reviewed else (reviewed, sha, False))
+        if state.draft:
+            marked = pr_ready.mark_or_park(replace(run, sha=sha), pull, state,
+                                           reviewed, marked)
+            pushed_state, pass_no = None, pass_no - 1
+            continue
         if merge.approve == "auto" or approved:
             try:
                 merge_sha = merge_queue.verified_merge(

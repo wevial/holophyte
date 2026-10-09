@@ -383,6 +383,9 @@ Each module, one line:
   `mergeable`, threads and head against `origin`, as ordered facts and
   the first failing fact's reason.
 - `holophyte/pr/pr_activity.py` — authored PR activity and event-backed wake guards.
+- `holophyte/pr/pr_ready.py` — under `[merge] pr_draft`, marking the factory's
+  draft pull request ready for review once at the babysitter's ready point,
+  or parking a draft it may not mark.
 - `holophyte/host/ci_wake.py` — when the reconcile sends a run parked `ci` back to
   the babysitter (its checks finished, or it is green and quiet for
   `[merge] pr_quiet_sec`), or re-parks it for a human once its checks
