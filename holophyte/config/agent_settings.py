@@ -14,6 +14,7 @@ from holophyte.config.reader import (
     REVIEW_MODES,
     REVIEW_ROUTE_KEYS,
     REVIEW_TIER_KEYS,
+    TURN_CAP_MIN,
     config_table,
 )
 
@@ -131,6 +132,19 @@ def budget_scale(project):
             f"[holo2] {project.config_path}: [agents] budget_scale must be a "
             f"number from {low} to {high}, got {value!r}")
     return value
+
+
+def turn_cap_min(project):
+    value = config_table(project, "agents").get("turn_cap_min", TURN_CAP_MIN)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] turn_cap_min must be a "
+            f"whole number of minutes, at least 1, got {value!r}")
+    return value
+
+
+def turn_cap(project):
+    return round(turn_cap_min(project) * 60 * budget_scale(project))
 
 
 def review_mode(project):
