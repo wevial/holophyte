@@ -329,7 +329,7 @@ HTTP_ROUTES = {
     ("attention",): Route("GET", "/attention"),
     ("board",): Route("GET", "/board", local=(("editable", False),)),
     ("ticket",): Route("GET", "/tickets/{KEY}"),
-    ("requeue",): Route("POST", "/actions/requeue", ("ticket", "note")),
+    ("requeue",): Route("POST", "/actions/requeue", ("ticket", "note", "force")),
     ("send-back",): Route("POST", "/actions/send-back",
                           ("run", "note", "author")),
     ("hold",): Route("POST", "/actions/hold", ("note",)),
@@ -447,6 +447,7 @@ def fields(args, route):
                         " (non-blank text)")
     author = getattr(args, "author", None)
     known = {"note": note, "close": bool(getattr(args, "close_pr", False)),
+             "force": bool(getattr(args, "force", False)),
              "author": author[-1] if author else None}
     first = command.takes[:1]
     if first == ("KEY",):

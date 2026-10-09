@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
+from holophyte.holo.cli import build_parser  # noqa: E402 - likewise
 
 README = ROOT / "README.md"
 DOCS = ROOT / "docs"
@@ -44,6 +45,7 @@ MOVED_HEADINGS = (
 HEADING = re.compile(r"^(#{1,6}) +(.+?)\s*$", re.MULTILINE)
 # Markdown links, `[text](target)`; images and bare URLs are not links here.
 LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")
+USAGE = re.compile(r"## Usage\n+```\n(.*?)```", re.DOTALL)
 
 
 def headings(text, level=None):
@@ -182,7 +184,7 @@ class SingleMachineTests(unittest.TestCase):
 class UsageTests(unittest.TestCase):
     def test_readme_usage_names_every_mode_the_parser_registers(self):
         text = README.read_text()
-        block = re.search(r"## Usage\n+```\n(.*?)```", text, re.DOTALL)
+        block = USAGE.search(text)
         self.assertIsNotNone(block, "README has no usage block")
         missing = [opt for opt in parser_option_strings()
                    if opt not in block.group(1)]
@@ -190,6 +192,36 @@ class UsageTests(unittest.TestCase):
         self.assertIn("factory.py project", block.group(1))
         for name in TOPIC_DOCS:
             self.assertIn(f"docs/{name}.md", text)
+
+
+def holo_command_words():
+    (commands,) = [action for action in build_parser()._actions
+                   if isinstance(action, argparse._SubParsersAction)]
+    return sorted(commands.choices)
+
+
+class HoloUsageTests(unittest.TestCase):
+    def test_readme_usage_names_every_holo_command_word(self):
+        block = USAGE.search(README.read_text()).group(1)
+        missing = [word for word in holo_command_words()
+                   if not re.search(rf"\bholo {re.escape(word)}(?![\w-])",
+                                    block)]
+        self.assertEqual(missing, [])
+
+
+class ReadmeRetiredClaimsTests(unittest.TestCase):
+    """The README claims no Linear-only board, no dependency-free install
+    and no read-only MCP server."""
+
+    RETIRED = ("Linear-driven", "Tickets live in a Linear project",
+               "no frameworks", "read-only tools")
+
+    def test_the_readme_makes_none_of_the_retired_claims(self):
+        text = README.read_text()
+        found = [phrase for phrase in self.RETIRED
+                 if re.search(r"\s+".join(map(re.escape, phrase.split())),
+                              text)]
+        self.assertEqual(found, [])
 
 
 def section(text, title):

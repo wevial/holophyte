@@ -119,8 +119,14 @@ def requeue_action(project, body):
     identifier = body.get("ticket")
     if not isinstance(identifier, str) or not identifier.strip():
         return 400, {"error": "ticket must name a mirrored ticket (KO-n)"}
-    note = body.get("note", DEFAULT_REQUEUE_NOTE)
+    note = body.get("note")
+    force = body.get("force", False)
+    if not isinstance(force, bool):
+        return 400, {"error": "force must be true or false"}
     if not isinstance(note, str) or not note.strip():
+        if force:
+            return 400, {"error": "force requires a note: the written"
+                                  " diagnosis"}
         note = DEFAULT_REQUEUE_NOTE
     identifier = identifier.strip()
     if not project.store_path.exists():
@@ -144,7 +150,7 @@ def requeue_action(project, body):
                          "detail": f"run {requested} is not {identifier}'s latest"
                                    f" attempt; run {latest} is"}
         try:
-            run_id = store.requeue(conn, ticket.id, note)
+            run_id = store.requeue(conn, ticket.id, note, force=force)
         except (store.RequeueRefused, ValueError) as refused:
             return 200, {"action": action, "ok": False, "ticket": identifier,
                          "detail": str(refused)}

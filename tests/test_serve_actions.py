@@ -299,6 +299,68 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.assertEqual(code, 400)
         self.assertIn("ticket", body["error"])
 
+    def test_an_unforced_requeue_with_no_note_records_the_console_default(self):
+        self.seed_ended()
+        self.start(self.token_config("actions = true\n"), host="0.0.0.0")
+
+        code, _, body = self.request("POST", "/actions/requeue", self.BEARER,
+                                     body={"ticket": "KO-2"})
+
+        self.assertEqual((code, body["ok"]), (200, True), body)
+        with store.open(str(self.db)) as conn:
+            (note,) = conn.execute(
+                "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
+            ).fetchone()
+        self.assertEqual(note, "requeued from the console")
+
+    def test_requeue_after_two_relaunches_is_refused_unless_forced(self):
+        self.seed_ended()
+        conn = store.open(str(self.db))
+        try:
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            ticket = store.read.ticket_by_identifier(conn, "KO-2").id
+            for _ in range(2):
+                store.requeue(conn, ticket, "the verify host was down")
+                store.tickets.transition(conn, ticket, "in_flight")
+                run = store.claim(conn, project, ticket)
+                store.release(conn, run, "failed", reason="verify timed out")
+            before = list(conn.iterdump())
+        finally:
+            conn.close()
+        self.start(self.token_config("actions = true\n"), host="0.0.0.0")
+
+        def requeue(**extra):
+            return self.request("POST", "/actions/requeue", self.BEARER,
+                                body={"ticket": "KO-2", "note": "diagnosed",
+                                      **extra})
+
+        code, _, body = requeue()
+        self.assertEqual(code, 200)
+        self.assertIs(body["ok"], False)
+        self.assertIn("--force", body["detail"])
+        code, _, body = requeue(force="yes")
+        self.assertEqual((code, body), (400, {"error": "force must be true or false"}))
+        for note in ({}, {"note": "  "}):
+            code, _, body = self.request(
+                "POST", "/actions/requeue", self.BEARER,
+                body={"ticket": "KO-2", "force": True, **note})
+            self.assertEqual(code, 400, body)
+            self.assertIn("note", body["error"])
+        with store.open(str(self.db)) as conn:
+            self.assertEqual(list(conn.iterdump()), before)
+
+        code, _, body = requeue(force=True)
+        self.assertEqual(code, 200)
+        self.assertIs(body["ok"], True, body)
+        with store.open(str(self.db)) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT status FROM tickets WHERE linearIdentifier = 'KO-2'"
+            ).fetchone(), ("ready",))
+            (note,) = conn.execute(
+                "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
+                " ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual(note, "forced past 2 relaunches: diagnosed")
+
     def test_requeue_refuses_an_identifier_the_store_holds_twice(self):
         # The CLI's `--requeue` refuses to pick one of two tickets named
         # alike; the route must refuse the same way, and neither may move.

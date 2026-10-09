@@ -290,6 +290,38 @@ class WriteTests(HttpCase):
         self.assertEqual([json.loads(call)[:2] for call in calls],
                          [["--user", "start"]] * 2)
 
+    def test_requeue_over_http_refuses_a_third_relaunch_until_forced(self):
+        run = self.failed_run("HOLO-1")
+        (ticket,), = self.conn.execute(
+            "SELECT ticketId FROM runs WHERE id = ?", (run,))
+        relaunched = []
+        for _ in range(2):
+            relaunched.append(run)
+            store.requeue(self.conn, ticket, "rerun")
+            store.tickets.transition(self.conn, ticket, "in_flight")
+            run = store.claim(self.conn, self.project_id, ticket)
+            store.release(self.conn, run, "failed", "verify failed")
+
+        refused = self.holo("requeue", "HOLO-1", "rerun", "-p", "alpha")
+        self.assertEqual(refused.returncode, 1, refused.stderr)
+        for named in ("runs {} and {}".format(*relaunched), "--force"):
+            self.assertIn(named, refused.stderr)
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM interventions WHERE action = 'requeue'"
+        ).fetchone(), (2,))
+
+        forced = self.holo("requeue", "HOLO-1", "the runner image was stale",
+                           "--force", "-p", "alpha")
+        self.assertEqual(forced.returncode, 0, forced.stderr)
+        (run_id, note), = self.conn.execute(
+            "SELECT runId, note FROM interventions WHERE action = 'requeue'"
+            " ORDER BY id DESC LIMIT 1")
+        self.assertEqual((run_id, note), (
+            run, "forced past 2 relaunches: the runner image was stale"))
+        self.assertEqual(self.conn.execute(
+            "SELECT status FROM tickets WHERE id = ?", (ticket,)).fetchone(),
+            ("ready",))
+
     def test_pause_over_http_reads_the_tickets_run_then_pauses_that_run(self):
         self.failed_run("HOLO-1")
         live = self.claim("HOLO-2")

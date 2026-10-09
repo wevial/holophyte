@@ -203,6 +203,33 @@ class RequeueTests(WriteCase):
                          json.loads(oracle.stdout)["detail"])
         self.assertEqual(self.interventions(), before)
 
+    def test_a_third_relaunch_is_refused_naming_both_runs_and_records_nothing(self):
+        conn = store.open(str(self.store_path))
+        try:
+            ticket, project = conn.execute(
+                "SELECT id, projectId FROM tickets WHERE linearIdentifier"
+                " = 'HOLO-1'").fetchone()
+            (run,), = conn.execute("SELECT lastRunId FROM tickets"
+                                   " WHERE id = ?", (ticket,))
+            relaunched = []
+            for _ in range(2):
+                relaunched.append(run)
+                store.requeue(conn, ticket, "rerun")
+                store.tickets.transition(conn, ticket, "in_flight")
+                run = store.claim(conn, project, ticket)
+                store.release(conn, run, "failed", reason="verify went red")
+        finally:
+            conn.close()
+        before = self.interventions()
+
+        result = self.call("requeue", {"ticket": "HOLO-1", "note": "rerun",
+                                       "author": AUTHOR})
+
+        self.assertIs(result.is_error, True)
+        for named in ("runs {} and {}".format(*relaunched), "--force"):
+            self.assertIn(named, result.structured_content["detail"])
+        self.assertEqual(self.interventions(), before)
+
     def test_a_blank_note_or_no_author_is_an_error_naming_it_and_runs_nothing(self):
         before = self.dump()
 
