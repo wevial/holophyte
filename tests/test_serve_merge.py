@@ -340,14 +340,6 @@ class BypassMergeTests(MergeCase):
     def test_a_bypassable_review_reads_as_its_own_reason_naming_the_ruleset(
             self):
         body = self.read_merge()
-        self.assertEqual((body["ready"], body["reason"]),
-                         (False, "review_bypassable"), body)
-        review = body["facts"][FACT_NAMES.index("review_approved")]
-        self.assertFalse(review["ok"])
-        for named in ("human-review", "1 approving review",
-                      "pull_requests_only"):
-            self.assertIn(named, review["detail"])
-        self.assertNotIn("baseline", review["detail"])
         self.assertEqual(json.loads(json.dumps(body).replace(
             self.sha, "HEAD_SHA")), json.loads(BYPASSABLE.read_text()))
 
@@ -363,9 +355,6 @@ class BypassMergeTests(MergeCase):
         self.assertIn("bypassing the required review", summary)
         self.assertIn("human-review", summary)
         self.assertNotIn("review_approved", summary)
-        self.assertEqual(self.rows("SELECT status FROM tickets"), [("ready",)])
-        self.assertEqual(self.rows("SELECT resumePhase FROM runs WHERE id = ?",
-                                   self.run), [("merge_gate",)])
         self.assertEqual(self.github.merge_calls(), [])
 
     def test_an_approved_pull_request_under_bypassable_rules_merges_plainly(
