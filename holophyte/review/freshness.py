@@ -178,11 +178,15 @@ def _unmerged_dependencies(t, conn, provider):
     return reasons
 
 
-def stale_comment(reasons):
+def stale_comment(reasons, identifier=None):
     lines = "\n".join(f"* {reason}" for reason in reasons)
-    return (f"**{STALE_HEADING}**\n\n{lines}\n\nUpdate the body to name"
-            " what main holds now, or wait for its dependencies to merge,"
-            " then move the issue back to Todo.")
+    head = (f"**{STALE_HEADING}**\n\n{lines}\n\nUpdate the body to name"
+            " what main holds now, or wait for its dependencies to merge,")
+    if identifier is None:
+        return head + " then move the issue back to Todo."
+    return (head + f" then `--file-ticket --update {identifier}` re-readies"
+            f" it; `--move {identifier} ready` re-checks it against main as"
+            " it stands.")
 
 
 def skip_labelled_stale(conn, project_id, task):
@@ -207,13 +211,16 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
         moved = row is not None and task.get("store_revision") not in (
             None, row[2])
         store_mode = getattr(provider, "store_mode", False) is True
+        native = getattr(provider, "native", False) is True
         if not (taken or moved):
             salt = None if row is None else _other_park_note(conn, row[3],
                                                              kind)
             ticket_id = mirror_task(conn, project_id, task, specced=False)
             if store_mode:
-                note_problems(conn, ticket_id, kind, task.get("body"),
-                              reasons, stale_comment(reasons), salt=salt)
+                note_problems(conn, ticket_id, kind, task.get("body"), reasons,
+                              stale_comment(reasons,
+                                            task["id"] if native else None),
+                              salt=salt)
     if taken or moved:
         why = ("another loop claimed or parked it" if taken
                else "it changed on the board")
@@ -227,7 +234,7 @@ def park_stale(project, conn, project_id, provider, task, reasons, why=None,
             warn(conn, ticket_id, f"stale-ticket comment failed for"
                                   f" {task['id']} ({e}); the board is not"
                                   " told why")
-    if getattr(provider, "native", False) is not True:
+    if not native:
         _label_and_move(conn, provider, task, issue_id, ticket_id, store_mode)
     why = why or f"{len(reasons)} stale landmarks"
     print(f"[holo2] {task['id']} skipped: out of date with main ({why})")
@@ -266,18 +273,22 @@ def _other_park_note(conn, ticket_id, kind):
     return None if row is None else row[0]
 
 
-def stale_parked(conn, project_id, identifier=None, columns=("ready",)):
+def stale_parked(conn, project_id, identifier=None, columns=("ready",),
+                 critic=False):
     return conn.execute(
         "SELECT t.id, t.linearIdentifier, t.revision, t.body, t.boardColumn,"
-        " n.id FROM tickets t JOIN ticketNotes n ON n.id = ("
+        " n.id, CASE WHEN n.kind = 'critic' OR n.text LIKE '%* critic: %'"
+        " THEN 'critic' ELSE 'stale' END"
+        " FROM tickets t JOIN ticketNotes n ON n.id = ("
         + _NEWEST_PARK_NOTE.format("t.id") + ")"
         " WHERE t.projectId = ? AND t.status = 'needs_spec'"
         " AND t.activeRunId IS NULL AND t.goneSince IS NULL"
         " AND t.boardColumn IN (SELECT value FROM json_each(?))"
-        " AND n.kind = 'stale' AND n.text NOT LIKE '%* critic: %'"
+        " AND (n.kind = 'stale' AND n.text NOT LIKE '%* critic: %'"
+        " OR ? AND n.kind IN ('stale', 'critic'))"
         " AND (? IS NULL OR t.linearIdentifier = ?)"
         " ORDER BY t.id",
-        (project_id, json.dumps(list(columns)), identifier,
+        (project_id, json.dumps(list(columns)), critic, identifier,
          identifier)).fetchall()
 
 
@@ -291,17 +302,17 @@ def _refreshed(target, conn):
     return None
 
 
-def _still_parked(conn, project_id, parked, columns):
-    ticket_id, identifier, _, _, _, note_id = parked
-    if [row[5] for row in stale_parked(conn, project_id, identifier,
-                                       columns)] != [note_id]:
+def _still_parked(conn, project_id, parked, columns, critic=False):
+    identifier, note_id = parked[1], parked[5]
+    if [row[5] for row in stale_parked(conn, project_id, identifier, columns,
+                                       critic)] != [note_id]:
         raise store.board.FilingRefused([
             f"{identifier} was claimed, edited or parked again while it was"
             " re-checked; nothing changed"])
 
 
 def _rederive(target, conn, project_id, parked, revision, note=None):
-    ticket_id, identifier, _, body, _, _ = parked
+    ticket_id, identifier, _, body = parked[:4]
     revision = store.board.edit_ticket(conn, project_id, identifier, body,
                                        revision, author="factory")
     status = store_status(conn, ticket_id)
@@ -312,8 +323,8 @@ def _rederive(target, conn, project_id, parked, revision, note=None):
         now = int(time.time() * 1000)
         store.record_note(
             conn, ticket_id, "recheck",
-            f"Re-checked against main at {head}: every landmark the stale park"
-            f" named is there now, so {identifier} went from needs_spec to"
+            f"Re-checked against main at {head}: every landmark the body"
+            f" names is there now, so {identifier} went from needs_spec to"
             f" {status} (revision {revision})."
             + (f"\n\n{note}" if note else ""),
             f"recheck:{ticket_id}:{now}", now=now)
@@ -345,7 +356,7 @@ def recheck_stale(target, conn, project_id, provider):
 
 
 def recheck_move(target, conn, project_id, provider, parked, revision, note):
-    _, identifier, current, body, column, _ = parked
+    _, identifier, current, body, column, _, kind = parked
     if current != revision:
         raise store.RevisionMoved(identifier, revision, current)
     failure = _refreshed(target, conn)
@@ -358,13 +369,19 @@ def recheck_move(target, conn, project_id, provider, parked, revision, note):
                                          + "; ".join(reasons)])
     moved = column != "ready"
     with lease_turn(target), store.transaction(conn):
-        _still_parked(conn, project_id, parked, ("ready", "backlog"))
+        _still_parked(conn, project_id, parked, ("ready", "backlog"),
+                      critic=True)
         if moved:
             revision = store.board.move_ticket(conn, project_id, identifier,
                                                "ready", revision,
                                                author="cli", note=note)
         revision, status = _rederive(target, conn, project_id, parked,
                                      revision, None if moved else note)
+        if status != "needs_spec":
+            store.record_project_intervention(
+                conn, "requeue", f"--move {identifier} ready re-readied it"
+                f" from a {kind} park: {status} at revision {revision}",
+                source="human", trigger="manual", project_id=project_id)
     return revision, moved, status
 
 

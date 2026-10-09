@@ -116,6 +116,15 @@ past `N` is left as it is, its current revision printed, exit 1. Nothing
 moves a ticket out of Canceled. On a Linear project both are usage errors:
 move its tickets in Linear.
 
+A ticket the claim parked `needs_spec` keeps its column. A park for stale
+landmarks or by the critic is re-readied by `--file-ticket --update` with a
+clean body, or by `--move KEY-n ready`, which re-checks the stored body
+against `main` but does not ask the critic again: with reasons remaining it
+lists them and changes nothing, and with none it re-derives the ticket and
+records a `requeue` intervention. A move to Ready of a ticket already in
+Ready names its status, as in `KEY-n is already in ready at status ready;
+nothing changed`: a ticket at `ready` is already claimable.
+
 ## The ledger
 
 Every run leaves a comment on its ticket: the rounds, their findings, the
