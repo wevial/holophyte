@@ -131,6 +131,8 @@ Each module, one line:
 - `holophyte/config/worktree_settings.py` — the `[worktree]` readers: setup
   commands and cap, carry list, branch prefix and environment allow-lists.
 - `holophyte/config/serve_settings.py` — the `[console]` and `[serve]` readers.
+- `holophyte/config/review_settings.py` — the `[review]` reader: the
+  blast-radius path lists and the fan-in and packages thresholds.
 - `holophyte/config/config_tables.py` — the per-table readers (KO-397): the
   `[supervisor]`, `[loop]`, `[board]`, `[merge]` and `[report]` tables with
   `CONSOLE_KEYS` and `split_address()`, the namedtuples and defaults they own.
@@ -159,6 +161,9 @@ Each module, one line:
   briefs a reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
   witness checks and a verdict.
+- `holophyte/review/blast_radius.py` — a review round's blast-radius tier: the
+  built-in high path list, the diff signals, the raising sources and the
+  implementer's `BLAST RADIUS:` line.
 - `holophyte/review/stale_approval.py` — a review left only stale cited
   approvals: the `stale_approval_rereview` event, and the failure when the
   review again at that head still cites one.

@@ -29,7 +29,7 @@ from holophyte.loop.stop import boundary
 from holophyte.pr.pr_media import implementer_brief as _capture_brief
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
-from holophyte.review import reproduce
+from holophyte.review import blast_radius, reproduce
 from store.working import agent_work
 
 
@@ -263,13 +263,15 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             "work with a clear message. Stay strictly on-scope; do not "
             "expand the task. Commit messages carry no tool attribution or "
             "co-author lines for an AI." + orchestration
-            + _capture_brief(project, ticket, task_id) + reproduce.BRIEF)
+            + _capture_brief(project, ticket, task_id) + blast_radius.BRIEF
+            + reproduce.BRIEF)
     deadline = retry_clock() + budget_min * budget_scale(project) * 60
     out, timed_out = _transport_timed(project, conn, run_id, beat_s, wt,
                                       budget_min, goal)
     if _killed_by_signal(out, timed_out):
         out, timed_out = _retry_crashed(project, conn, run_id, beat_s, wt,
                                         branch, task_id, goal, out, deadline)
+    blast_radius.record_declared(conn, run_id, out)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     # A reused branch already ahead of main is the candidate, even if the

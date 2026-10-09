@@ -31,6 +31,7 @@ from holophyte.config.reader import (
     DOCKER_PROBE_TIMEOUT,
     KNOWN_KEYS,
 )
+from holophyte.config.review_settings import review_config
 from holophyte.config.serve_settings import console_config, serve_config
 from holophyte.config.worktree_settings import (
     branch_prefix,
@@ -82,6 +83,7 @@ def check_config(project):
     report_config(project)
     story_config(project)
     trim_config(project)
+    review_config(project)
     console_config(project)
     serve_config(project)
 

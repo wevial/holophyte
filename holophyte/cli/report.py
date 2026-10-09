@@ -115,6 +115,20 @@ def trim_lines(conn):
             + f" · net {net:+d} lines"]
 
 
+BLAST_TIERS = ("high", "medium", "low")
+
+
+def blast_radius_lines(conn):
+    newest = {run_id: json.loads(payload)["tier"] for run_id, payload in conn.execute(
+        "SELECT runId, payload FROM runEvents WHERE kind = 'blast_radius'"
+        " ORDER BY runId, seq")}
+    if not newest:
+        return []
+    counts = Counter(newest.values())
+    return ["blast radius: "
+            + " · ".join(f"{tier} {counts[tier]}" for tier in BLAST_TIERS)]
+
+
 def calls(n):
     return f"{n} call" if n == 1 else f"{n} calls"
 
@@ -192,6 +206,7 @@ def report_lines(conn, target=None):
         live += failure_lines(conn)
         live += flaky_lines(conn)
         live += trim_lines(conn)
+        live += blast_radius_lines(conn)
         live += question_lines(conn)
         live += toil_lines(conn, now)
         live.append("gap layers: " + ", ".join(
