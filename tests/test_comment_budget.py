@@ -179,6 +179,7 @@ PINNED = {
     "holophyte/pr/pr_contexts.py": 0,
     "holophyte/pr/pr_head.py": 2,
     "holophyte/pr/pr_media.py": 13,
+    "holophyte/pr/pr_ready.py": 1,
     "holophyte/pr/pr_status.py": 13,
     "holophyte/pr/pullrequest.py": 10,
 

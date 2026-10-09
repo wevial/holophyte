@@ -302,6 +302,7 @@ MERGE_KEYS = {
     "missing_check_sec": 600, "retrigger_missing_checks": False,
     "require_up_to_date": True,
     "pr_style": "", "pr_changes_log": False, "review_fixes": False,
+    "pr_draft": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
     "ui_capture_local": False,
     "media_repo": "",
@@ -350,6 +351,8 @@ def merge_config(project):
     values["review_fixes"] = _merge_boolean(
         project, "review_fixes",
         table.get("review_fixes", defaults.pop("review_fixes")))
+    values["pr_draft"] = _merge_boolean(
+        project, "pr_draft", table.get("pr_draft", defaults.pop("pr_draft")))
     values["retrigger_missing_checks"] = _merge_boolean(
         project, "retrigger_missing_checks", table.get(
             "retrigger_missing_checks", defaults.pop("retrigger_missing_checks")))

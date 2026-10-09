@@ -484,24 +484,26 @@ class MergeModeFixture(LoopFixture):
     # state: the PR's head is the candidate the loop pushed, unless a test
     # says otherwise (`head=`).
     HEAD = "HEAD_SHA"
+    NODE_ID = "PR_kwDOexample7"
     ENQUEUED_AT = "2026-09-23T12:00:00Z"
 
     @classmethod
     def pr_state(cls, threads=(), checks="SUCCESS", merged=False,
                  head=HEAD, resolved=(), next_cursor=None,
                  mergeable="MERGEABLE", updated_at="2000-01-01T00:00:00Z",
-                 review=None):
+                 review=None, draft=False):
         """The state query's answer: `threads` (each a `DEFECT`/`NIT`-shaped
         tuple) open, `resolved` the same shape but resolved, the head's
         check rollup, whether the PR is merged, GitHub's `mergeable`
         answer (None for the lazy-computation `null`), `updated_at` the
         `updatedAt` ISO stamp, `review` the `reviewDecision` (None for a
-        repository that requires no review), and -- for a page that is
-        not the last -- the cursor of the next."""
+        repository that requires no review), `draft` the `isDraft` answer,
+        and -- for a page that is not the last -- the cursor of the next."""
         nodes = [cls.thread(n, *t) for n, t in enumerate(threads, 1)]
         nodes += [cls.thread(n, *t[:4], resolved=True)
                   for n, t in enumerate(resolved, len(nodes) + 1)]
         return {"data": {"repository": {"pullRequest": {
+            "id": cls.NODE_ID, "isDraft": draft,
             "state": "MERGED" if merged else "OPEN", "merged": merged,
             "headRefOid": head, "mergeable": mergeable,
             "updatedAt": updated_at, "reviewDecision": review,
@@ -681,7 +683,10 @@ class MergeModeFixture(LoopFixture):
             '  elif grep -q addReaction "$body"; then\n'
             + ('    echo "reaction refused" >&2; exit 1\n' if refuse_reactions
                else "    echo '{\"data\":{\"addReaction\":{}}}'\n")
-            + '  elif grep -q enqueuePullRequest "$body"; then\n'
+            + '  elif grep -q markPullRequestReadyForReview "$body"; then\n'
+            "    echo '{\"data\":{\"markPullRequestReadyForReview\":"
+            "{\"pullRequest\":{\"isDraft\":false}}}}'\n"
+            '  elif grep -q enqueuePullRequest "$body"; then\n'
             "    echo '{\"data\":{\"enqueuePullRequest\":{\"mergeQueueEntry\":"
             f"{{\"enqueuedAt\":\"{self.ENQUEUED_AT}\"}}}}}}}}'\n"
             '  elif grep -q isInMergeQueue "$body"; then\n'
@@ -741,8 +746,8 @@ class MergeModeFixture(LoopFixture):
 
     def api_calls(self):
         """Every `gh api` body the babysitter made, in order, as `(kind,
-        variables)`: the kind is `state`, `reply`, `resolve`, `react` or
-        `merge`.
+        variables)`: the kind is `state`, `reply`, `resolve`, `react`,
+        `ready` or `merge`.
         The loop's per-pass pull-status read of a parked run (KO-359) is
         left out: it is the reconcile's, tested on its own below, and
         every pass after a park makes one. The open step's
@@ -759,6 +764,7 @@ class MergeModeFixture(LoopFixture):
             kind = ("resolve" if "resolveReviewThread" in query
                     else "reply" if "addPullRequestReviewThreadReply" in query
                     else "react" if "addReaction" in query
+                    else "ready" if "markPullRequestReadyForReview" in query
                     else "enqueue" if "enqueuePullRequest" in query
                     else "queue" if "isInMergeQueue" in query
                     else "comments" if "PullRequestReviewThread" in query

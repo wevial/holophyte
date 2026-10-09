@@ -399,7 +399,7 @@ class MergeConfigTests(ConfigTestCase):
         self.assertTrue(config.strip_attribution)
         self.assertEqual(config[1:],
                          ("auto", "local", 5, 10, "merge", 180, 300, 1800, 600, False,
-                          True, "", False, False,
+                          True, "", False, False, False,
                           (), "", "e2e/capture", False, "", None, 10, 20, "park",
                           "act", (), "holophyte", (), (), ("devin-ai-integration",
                            "coderabbitai", "greptile-apps", "github-actions"), ()))
@@ -526,6 +526,11 @@ class MergeConfigTests(ConfigTestCase):
         """KO-663: `"yes"` is not a boolean; startup names the key."""
         message = refused(self, '[merge]\nreview_fixes = "yes"\n')
         self.assertIn("[merge] review_fixes", message)
+        self.assertIn("boolean", message)
+
+    def test_pr_draft_must_be_a_boolean(self):
+        message = refused(self, '[merge]\npr_draft = "yes"\n')
+        self.assertIn("[merge] pr_draft", message)
         self.assertIn("boolean", message)
 
     def test_any_other_value_or_key_is_a_startup_error_naming_it(self):
