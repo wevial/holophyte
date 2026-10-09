@@ -221,14 +221,17 @@ def pr_state(target, pull):
         node = _pull_request_page(target, pull, info["endCursor"])
     comments = pull_comments(target, pull, first_page, _pull_request_page)
     threads.extend(conversation_threads(target, pull, comments))
-    runs, required = _check_reads(target, pull, first_page.get("headRefOid"))
-    runs = _started_since_ready(runs, first_page)
+    every_run, required = _check_reads(target, pull,
+                                       first_page.get("headRefOid"))
+    runs = _started_since_ready(every_run, first_page)
+    rollup_stale = runs is not None and len(runs) < len(every_run)
     if runs is not None:
         try:
             runs += status_contexts_of(target, pull, first_page, graphql)
         except InfraFailure:
             runs = None
-    return replace(_state_of(first_page, threads, runs, required, pull.awaited),
+    return replace(_state_of(first_page, threads, runs, required, pull.awaited,
+                             rollup_stale),
                    console_answers=console_answers(comments))
 
 
@@ -424,10 +427,10 @@ def _started_since_ready(runs, node):
     return [run for run in runs if not _started_before(run, ready)]
 
 
-def _state_of(node, threads, runs, required, awaited=()):
+def _state_of(node, threads, runs, required, awaited=(), rollup_stale=False):
     commits = ((node.get("commits") or {}).get("nodes") or ())
     rollup = None
-    if commits and isinstance(commits[-1], dict):
+    if commits and isinstance(commits[-1], dict) and not rollup_stale:
         rollup = ((commits[-1].get("commit") or {})
                   .get("statusCheckRollup") or {}).get("state")
     checks = fold_checks(rollup, runs, None if required is None

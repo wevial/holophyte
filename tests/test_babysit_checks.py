@@ -269,7 +269,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         state = self._state_with_rest(self.e2e_required(
             self.check_run("e2e-ok", self.AFTER_READY),
             self.check_run("lint", self.BEFORE_READY, conclusion="failure")),
-            ready_at=self.READY_AT)
+            ready_at=self.READY_AT, rollup="FAILURE")
         self.assertEqual((state.checks, state.failed_checks),
                          ("success", ()))
 
