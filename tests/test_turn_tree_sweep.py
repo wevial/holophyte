@@ -490,6 +490,34 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual(self.leftover_events(),
                          [{"cause": "crashed", "paths": ["gen.css"]}])
 
+    def test_a_crashed_turn_s_ignored_directory_is_removed_without_captures(self):
+        self.write(".gitignore", "e2e/\n")
+        self.git("add", ".gitignore")
+        self.git("commit", "-q", "-m", "ignore e2e")
+        self.configure('[merge]\nui_capture_dir = "e2e/capture"\n')
+
+        def write_then_crash():
+            (self.target / "e2e").mkdir()
+            self.write("e2e/temp.log", "written by the turn\n")
+            return ImplementerOutput("crashed", -4, "fake")
+        self.turn(write_then_crash)
+
+        self.assertEqual(self.present("e2e"), [])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "crashed", "paths": ["e2e/"]}])
+
+    def test_a_crashed_turn_s_ignored_file_with_a_carriage_return_is_removed(self):
+        self.ignoring()
+
+        def write_then_crash():
+            self.write("new\r.log", "written by the turn\n")
+            return ImplementerOutput("crashed", -4, "fake")
+        self.turn(write_then_crash)
+
+        self.assertEqual(self.present("new\r.log"), [])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "crashed", "paths": ["new\r.log"]}])
+
 
 if __name__ == "__main__":
     unittest.main()

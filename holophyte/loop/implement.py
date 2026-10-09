@@ -266,8 +266,10 @@ SWEPT_ERRORS = (RuntimeError, OSError, ValueError, subprocess.SubprocessError,
 
 
 def _ignored(wt):
-    return _listed(wt, "ls-files", "-z", "--others", "--ignored",
-                   "--exclude-standard", "--directory")
+    return set(filter(None, os.fsdecode(subprocess.run(
+        ["git", "ls-files", "-z", "--others", "--ignored", "--exclude-standard",
+         "--directory"], cwd=wt, check=True, capture_output=True,
+    ).stdout).split("\0")))
 
 
 def _ignored_quietly(wt):
@@ -285,14 +287,15 @@ def _leftovers(project, wt, before):
     gone = []
     for name in sorted(_ignored(wt) - before):
         path = PurePosixPath(name)
-        if not any(_nested(path, root) for root in kept):
+        if not any(_nested(wt, path, root) for root in kept):
             gone.append(name)
             kept.append(path)
     return gone
 
 
-def _nested(path, root):
-    return path == root or root in path.parents or path in root.parents
+def _nested(wt, path, root):
+    return (path == root or root in path.parents
+            or path in root.parents and os.path.lexists(Path(wt, root)))
 
 
 def remove_entries(wt, names):
