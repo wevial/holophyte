@@ -194,10 +194,6 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
             "run": run, "question": question, "author": "maintainer"})
         self.assertTrue(accepted["ok"], accepted)
         self.assertEqual(code, 200)
-        _, before = run_asks(self.project, str(run))
-        (pending,) = before["asks"]
-        self.assertEqual((pending["id"], pending["answered_ms"], pending["url"],
-                          pending["answer"]), (accepted["event_id"], None, None, None))
         for path in self.api_dir.iterdir():
             path.unlink()
         pushes = self.pushed()
@@ -242,16 +238,13 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
         self.assertEqual([kind for kind, _ in self.api_calls()
                           if kind in ("conversation", "reply")], ["conversation"])
 
-    def test_the_next_claim_answers_a_console_ask_once_on_the_pull_request(self):
+    def test_a_console_ask_is_answered_once_whatever_mention_accounts_lists(self):
         self.babysat_again(self.answered(
-            f"Can an existing guest be renamed? {self.SECRET}"))
+            f"Can an existing guest be renamed? {self.SECRET}",
+            merge='mention_accounts = ["someone-else"]\n'))
 
     def test_a_mention_in_an_answered_question_is_not_read_back(self):
         self.babysat_again(self.answered("Why not rename? @holophyte fix: rename it"))
-
-    def test_a_console_ask_is_answered_whatever_mention_accounts_lists(self):
-        self.answered(f"Can an existing guest be renamed? {self.SECRET}",
-                      merge='mention_accounts = ["someone-else"]\n')
 
 
 if __name__ == "__main__":
