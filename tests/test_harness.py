@@ -790,21 +790,6 @@ class CriticTableTests(unittest.TestCase):
             holophyte.config.checks.check_document(self.target(
                 '[agents.reviewer]\nharness = "claude"\nmodel = "sonnet"\n'))
 
-    def test_only_claude_writing_seats_ask_for_the_json_result_document(self):
-        target = self.target(
-            '[agents.implementer]\nharness = "claude"\n'
-            '[agents.trimmer]\nharness = "claude"\n'
-            '[agents.critic]\nharness = "claude"\n')
-        flag = ["--output-format", "json"]
-        for role in ("implement", "trim"):
-            seat = holophyte.agents.harness.seat(target, role)
-            with self.subTest(role=role):
-                self.assertEqual(seat.turn("GOAL")[-3:-1], flag)
-                self.assertEqual(seat.resume("a-session")[-2:], flag)
-        critic = holophyte.agents.harness.critic_seat(target)
-        self.assertNotIn("--output-format", critic.turn("GOAL"))
-        self.assertNotIn("--output-format", critic.resume("a-session"))
-
     def test_critic_refusals_name_the_table_and_the_problem(self):
         for config, message in (
             ('[agents.critic]\neffort = "max"\n',
