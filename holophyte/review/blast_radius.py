@@ -182,10 +182,26 @@ def record_declared(conn, run_id, reply):
                        level="detail", payload=json.dumps(found))
 
 
+def continued_runs(conn, run_id):
+    runs = [run_id]
+    while row := conn.execute(
+            "SELECT old.id FROM runs old JOIN runs current"
+            " ON old.ticketId = current.ticketId WHERE current.id = ?"
+            " AND old.attempt < current.attempt AND old.outcome = 'paused'"
+            " AND old.resumePhase IN ('working', 'verifying', 'reviewing',"
+            " 'addressing')"
+            " AND old.attempt = (SELECT MAX(attempt) FROM runs WHERE"
+            " ticketId = current.ticketId AND attempt < current.attempt)",
+            (runs[-1],)).fetchone():
+        runs.append(row[0])
+    return runs[::-1]
+
+
 def _newest(conn, run_id, kind, before=None):
-    payloads = [json.loads(payload) for (payload,) in conn.execute(
-        "SELECT payload FROM runEvents WHERE runId = ? AND kind = ? ORDER BY seq",
-        (run_id, kind))]
+    payloads = [json.loads(payload) for run in continued_runs(conn, run_id)
+                for (payload,) in conn.execute(
+                    "SELECT payload FROM runEvents WHERE runId = ? AND kind = ?"
+                    " ORDER BY seq", (run, kind))]
     if before is not None:
         payloads = [payload for payload in payloads if payload["round"] < before]
     return payloads[-1] if payloads else None

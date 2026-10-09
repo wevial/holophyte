@@ -21,6 +21,7 @@ import store  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.config.review_settings import review_config  # noqa: E402
+from holophyte.loop.stop import command  # noqa: E402
 from holophyte.review.blast_radius import assess  # noqa: E402
 
 TICKET = ("# Touch the readme\n\n## What / Why / How\n\n"
@@ -169,10 +170,27 @@ class Remove:
         return f"removed {self.path}"
 
 
+class Pausing:
+    """A turn that asks for a pause of the open run, as `--pause` does, then plays."""
+
+    def __init__(self, db, step):
+        self.db, self.step, self.role = db, step, step.role
+
+    def play(self, cwd, turn):
+        conn = store.open(self.db)
+        try:
+            (run,) = conn.execute(
+                "SELECT id FROM runs WHERE endedAt IS NULL").fetchone()
+            store.pause(conn, run, "reboot writer")
+        finally:
+            conn.close()
+        return self.step.play(cwd, turn)
+
+
 class RecordedRoundTests(LoopFixture):
     def payloads(self, kind):
         return [json.loads(payload) for (payload,) in self.read(
-            f"SELECT payload FROM runEvents WHERE kind = '{kind}' ORDER BY seq")]
+            f"SELECT payload FROM runEvents WHERE kind = '{kind}' ORDER BY id")]
 
     def test_the_implementer_line_raises_round_one_and_is_recorded(self):
         fake, _ = self.loop(CommitSaying(
@@ -211,6 +229,32 @@ class RecordedRoundTests(LoopFixture):
                          list(zip((1, 2), reviewed)))
         self.assertEqual((first["tier"], first["gated"]), ("high", ["poetry.lock"]))
         self.assertEqual((second["tier"], second["gated"]), ("high", []))
+        self.assertEqual([reason.split(":")[0] for reason in second["reasons"]],
+                         ["earlier round"])
+
+    def resumed(self, *script):
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+        command(self.project, "KO-131", None, resume=True)
+        self.loop(*script)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("merged",)])
+        return self.payloads("blast_radius")
+
+    def test_a_declaration_before_a_pause_raises_the_resumed_round(self):
+        self.loop(Pausing(self.db, CommitSaying(
+            path="README.md", body="changed\n",
+            reply="BLAST RADIUS: high — loosens the permission rule")))
+        [first] = self.resumed(APPROVE)
+        self.assertEqual((first["round"], first["tier"]), (1, "high"))
+        self.assertIn("implementer: high — loosens the permission rule",
+                      first["reasons"])
+
+    def test_a_round_before_a_pause_keeps_the_resumed_round_high(self):
+        self.loop(Commit(path="poetry.lock", body="lock\n"), REQUEST_CHANGES,
+                  Pausing(self.db, Remove("poetry.lock")))
+        first, second = self.resumed(APPROVE)
+        self.assertEqual([(e["round"], e["tier"]) for e in (first, second)],
+                         [(1, "high"), (2, "high")])
         self.assertEqual([reason.split(":")[0] for reason in second["reasons"]],
                          ["earlier round"])
 
