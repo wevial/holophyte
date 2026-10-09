@@ -165,8 +165,20 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
         return github.pr_title(task_id, task), github.pr_body_stub(
             {"id": task_id, "body": body}, why, issue_url)
     title, text = parsed
-    return title, (text if refresh is not None else
-                   github.pr_body_written(text, task_id, issue_url))
+    if refresh is not None:
+        return title, text
+    return (_with_own_key(title, task_id),
+            github.pr_body_written(text, task_id, issue_url))
+
+
+TRAILING_KEY = re.compile(r" \(([A-Z]+-\d+)\)\Z")
+
+
+def _with_own_key(title, task_id):
+    match = TRAILING_KEY.search(title)
+    if match is None or match[1] == task_id:
+        return title
+    return f"{title[:match.start()]} ({task_id})"
 
 CHANGES_HEADING = "## Changes since first review"
 

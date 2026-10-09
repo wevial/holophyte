@@ -517,6 +517,16 @@ class MergeModePullRequestTests(MergeModeFixture):
                 self.BODY, 60, self.target, monotonic(), 5, None)
         self.assertEqual(title, "Fix the timeout (HOLO-9)")
 
+    def test_a_written_title_with_its_own_key_or_none_is_kept_verbatim(self):
+        for written in ("Fix the timeout (HOLO-9)", "Fix the timeout",
+                        "Retire the KO-9 workaround"):
+            turn = FakeAgent(Idle(f"TITLE: {written}\n\nRequests no longer hang.\n"))
+            with self.subTest(written=written), patch.object(implement, "agent", turn):
+                title, _ = holophyte.pr.pullrequest._written_pr_text(
+                    self.project, None, None, "HOLO-9", "fix the timeout", BRANCH,
+                    self.BODY, 60, self.target, monotonic(), 5, None)
+                self.assertEqual(title, written)
+
     def test_a_written_pr_takes_the_turns_title_and_body(self):
         """After the approval one more implementer
         turn is given the diff, the ticket, the repository's `AGENTS.md`
