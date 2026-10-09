@@ -1,5 +1,6 @@
 import contextlib
 import hashlib
+import itertools
 import os
 import re
 import shlex
@@ -63,6 +64,38 @@ def route_for(project):
     codex = any(runs_codex(table.get(key))
                 for key in ("implementer", "implementer_fallback"))
     return Route(backend, image, credential, memory, writable, codex)
+
+
+NO_DOCKER_IN_CONTAINER = (
+    "the project verifies inside the review container, which has no Docker,"
+    " so move this check to an operator witness noted in the criterion, or"
+    " to a CI job")
+
+
+def container_docker_problems(project, ticket):
+    from ticket_template import _shell_commands
+
+    lines = [line for line in ticket.verify_commands
+             if any(_needs_docker(tokens) for tokens in _shell_commands(line))]
+    if not lines:
+        return []
+    try:
+        backend = route_for(project).backend
+    except SystemExit as error:
+        return [f"verify command needs Docker, checked against [agents],"
+                f" which is malformed: {error}"]
+    if backend != "container":
+        return []
+    return [f"verify command needs Docker: {line}; {NO_DOCKER_IN_CONTAINER}"
+            for line in lines]
+
+
+def _needs_docker(tokens):
+    if "HOLOPHYTE_TEST_DOCKER=1" in tokens:
+        return True
+    words = itertools.dropwhile(
+        lambda token: re.fullmatch(r"[A-Za-z_]\w*=.*", token), tokens)
+    return next(words, None) == "docker"
 
 
 def turn_route(project, argv):
