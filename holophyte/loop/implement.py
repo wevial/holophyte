@@ -248,9 +248,8 @@ def _sweep_tree(project, conn, run_id, wt, cause):
     lock.unlink(missing_ok=True)
     branch = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=wt)
     task_id = _task_key(conn, run_id, branch)
-    if mid_merge(wt) and _sweep_merge(project, conn, run_id, wt, branch,
-                                      task_id):
-        return
+    if mid_merge(wt):
+        _sweep_merge(project, conn, run_id, wt, branch, task_id)
     _commit_wip(project, conn, run_id, wt, branch, task_id, cause)
 
 
@@ -276,11 +275,12 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
     if not unresolved:
         stage_work(project, wt)
         sh(["git", *factory_identity(wt), "commit", "-q", "--no-edit"], cwd=wt)
+        _drop_stash_clashes(wt)
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
         _announce(conn, run_id, "merge_completed",
                   f"the turn left a resolved merge uncommitted; committed it"
                   f" on {branch} at {head[:12]}")
-        return True
+        return
     merged = (_listed(wt, "diff", "--name-only", "--no-renames", "-z", "HEAD",
                       tree) | conflicted | set(unresolved))
     backup = _backup_resolution(project, wt, task_id)
@@ -289,7 +289,6 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
               f" {', '.join(unresolved)}; aborted it, its attempted resolution"
               f" backed up at {backup}")
     _unwind_merge(wt, merged)
-    return False
 
 
 def _listed(wt, *args):
@@ -335,18 +334,30 @@ def _take_autostash(wt):
     return stash
 
 
-def _unwind_merge(wt, merged):
-    autostash = _take_autostash(wt)
-    sh(["git", "reset", "-q"], cwd=wt)
-    kept = merged & _listed(wt, "ls-tree", "-r", "--name-only", "-z", "HEAD",
-                            "--", *merged)
-    for path in sorted(merged - kept):
+def _restore_to_head(wt, chosen):
+    kept = chosen & _listed(wt, "ls-tree", "-r", "--name-only", "-z", "HEAD",
+                            "--", *chosen)
+    for path in sorted(chosen - kept):
         _remove_file(wt, path)
     if kept:
         sh(["git", "--literal-pathspecs", "checkout", "-q", "HEAD", "--",
             *sorted(kept)], cwd=wt)
+
+
+def _drop_stash_clashes(wt):
+    clashed = set(unmerged_paths(wt))
+    if clashed:
+        sh(["git", "reset", "-q"], cwd=wt)
+        _restore_to_head(wt, clashed)
+
+
+def _unwind_merge(wt, merged):
+    autostash = _take_autostash(wt)
+    sh(["git", "reset", "-q"], cwd=wt)
+    _restore_to_head(wt, merged)
     if autostash and subprocess.run(["git", "stash", "apply", "-q", autostash],
                                     cwd=wt, capture_output=True).returncode:
+        _drop_stash_clashes(wt)
         sh(["git", "stash", "store", "-m", "autostash", autostash], cwd=wt)
 
 

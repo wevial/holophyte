@@ -258,6 +258,30 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual(self.git("status", "--porcelain"), "")
         self.assertEqual(self.git("stash", "list"), "")
 
+    def test_a_resolved_autostashed_merge_wips_its_stash_without_markers(self):
+        self.write("c.txt", "base c\n")
+        self.git("add", "c.txt")
+        self.git("commit", "-q", "-m", "add c")
+        self.tip = self.git("rev-parse", "HEAD")
+
+        def autostash_merge_then_resolve():
+            self.write("a.txt", "edited before the merge\n")
+            self.write("c.txt", "edited before the merge\n")
+            subprocess.run(["git", "merge", "-q", "--autostash", "main"],
+                           cwd=self.target, capture_output=True)
+            self.write("a.txt", "branch a\nmain a\n")
+            self.write("b.txt", "branch b\nmain b\n")
+            self.git("add", "a.txt", "b.txt")
+        self.turn(autostash_merge_then_resolve)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(self.git("rev-parse", "HEAD~1^1", "HEAD~1^2").split(),
+                         [self.tip, self.main])
+        self.assertEqual((self.target / "a.txt").read_text(), "branch a\nmain a\n")
+        self.assertEqual(self.git("show", "HEAD:c.txt"), "edited before the merge")
+        self.assertEqual(len(self.git("stash", "list").splitlines()), 1)
+
     def test_a_conflicted_merge_is_not_discarded_when_its_backup_is_not_recorded(self):
         def leave_conflicted():
             self.merge_main()
