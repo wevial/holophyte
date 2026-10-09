@@ -88,7 +88,8 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         release = next(i for i, (_, summary) in enumerate(events)
                        if "outcome paused" in summary)
         self.assertLess(request, release)
-        self.assertIn("WIP: preserve work at operator pause", self.subjects(BRANCH))
+        self.assertEqual(self.git("show", f"{BRANCH}:pause-work.txt"),
+                         "preserve this uncommitted work\n")
 
     def test_illegal_phase_is_infrastructure_failure_and_preserves_work(self):
         original = store.set_phase
@@ -989,7 +990,7 @@ class GateConflictImplementerTests(LoopFixture):
                 in text
                 for (text,) in self.read("SELECT text FROM ledger")))
 
-    def test_an_unresolved_gate_conflict_fails_and_parks_as_before(self):
+    def test_an_unswept_unresolved_gate_conflict_fails_and_parks(self):
         provider = StubProvider(a_task())
         conn, run_id, branch, wt, sha = self.conflicted()
 
@@ -1009,7 +1010,8 @@ class GateConflictImplementerTests(LoopFixture):
                 return "staged the resolution, then kept editing it"
 
         with patch.object(holophyte.loop.implement, "agent",
-                          FakeAgent(StageThenReEdit())):
+                          FakeAgent(StageThenReEdit())), \
+                patch.object(holophyte.loop.implement, "_sweep_tree"):
             with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
                 holophyte.loop.merge_gate._sync_main_into_branch(
                     self.project, conn, run_id, provider, "KO-131", branch,
@@ -1033,7 +1035,7 @@ class GateConflictImplementerTests(LoopFixture):
             self.read("SELECT status FROM tickets"),
             [("blocked_on_operator",)])
 
-    def test_a_merge_committed_over_uncommitted_edits_is_rejected(self):
+    def test_an_unswept_merge_over_uncommitted_edits_is_rejected(self):
         """A merge commit with uncommitted edits is not a clean candidate."""
         provider = StubProvider(a_task())
         conn, run_id, branch, wt, sha = self.conflicted()
@@ -1047,7 +1049,8 @@ class GateConflictImplementerTests(LoopFixture):
         fake = FakeAgent(CommitMergeLeavingEdits(
             "merge main into the branch", path="README.md",
             body="merged\n"))
-        with patch.object(holophyte.loop.implement, "agent", fake):
+        with patch.object(holophyte.loop.implement, "agent", fake), \
+                patch.object(holophyte.loop.implement, "_sweep_tree"):
             with self.assertRaises(holophyte.loop.gates.RunFailure) as failed:
                 holophyte.loop.merge_gate._sync_main_into_branch(
                     self.project, conn, run_id, provider, "KO-131", branch,

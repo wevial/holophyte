@@ -112,7 +112,7 @@ def first_turn(target, conn, run_id, provider, task_id, wt, beat_s, start_sha,
             "Write the smallest test that shows the reported behaviour, where "
             "those commands run it, and commit it. Change no application code:"
             " the fix is a later turn's. Commit messages carry no tool "
-            "attribution or co-author lines for an AI.")
+            "attribution or co-author lines for an AI.", sweep=False)
     finally:
         # Also when the turn raises: the next claim would commit these edits.
         _discard_leftovers(target, wt)
