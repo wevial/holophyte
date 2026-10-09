@@ -36,6 +36,7 @@ import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
+import holophyte.review.freshness  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
 # from `factory`'s slug rule: an expectation computed by the code under test
@@ -132,6 +133,39 @@ def a_task(n=1):
     return {"id": f"KO-13{n}", "issue_id": f"iss-13{n}", "title": "add a thing",
             "verify": "echo ok", "budget_min": 5, "contracts": [],
             "criteria": ["Given the thing, when it runs, then it works"]}
+
+
+def unverified_main():
+    """`main^{commit}` fails to verify; every other git call is real."""
+    real = holophyte.review.freshness._git
+
+    def fails_verify(repo, *args):
+        if args == ("rev-parse", "--verify", "-q", "main^{commit}"):
+            return False
+        return real(repo, *args)
+
+    return patch.object(holophyte.review.freshness, "_git", fails_verify)
+
+
+def origin_ahead(target):
+    """A bare origin for `target`, whose main is one commit ahead of
+    `target`'s; that commit."""
+    def git(*args, cwd=target):
+        return subprocess.run(
+            ["git", "-c", "user.name=Elsewhere",
+             "-c", "user.email=elsewhere@example.invalid", *args],
+            cwd=str(cwd), check=True, capture_output=True, text=True).stdout
+
+    origin, clone = target.parent / "origin.git", target.parent / "elsewhere"
+    git("init", "-q", "--bare", "-b", "main", str(origin))
+    git("remote", "add", "origin", str(origin))
+    git("push", "-q", "origin", "main")
+    git("clone", "-q", str(origin), str(clone))
+    (clone / "elsewhere.md").write_text("landed elsewhere\n")
+    git("add", "elsewhere.md", cwd=clone)
+    git("commit", "-q", "-m", "land elsewhere", cwd=clone)
+    git("push", "-q", "origin", "main", cwd=clone)
+    return git("rev-parse", "main", cwd=clone).strip()
 
 
 # A body `ticket_template.validate()` accepts, in the shape the Linear

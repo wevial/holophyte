@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import subprocess
@@ -27,6 +28,8 @@ STALE_HEADING = "Not claimed: this ticket is out of date with main"
 BACKLOG_STATE = "Backlog"
 STALE_LABEL = "stale"
 HOUR_MS = 3600 * 1000
+UNVERIFIED_MAIN = ("`git rev-parse --verify main^{commit}` failed, so main"
+                   " could not be verified")
 CRITIC_TIMEOUT = 300
 MERGE_PAGE = 50
 BRIEF_FILES = 20
@@ -98,9 +101,12 @@ def named_paths(body):
     return named
 
 
+def main_verified(repo):
+    return _git(repo, "rev-parse", "--verify", "-q", "main^{commit}")
+
+
 def landmark_reasons(repo, body):
-    if body is None or not _git(repo, "rev-parse", "--verify", "-q",
-                                "main^{commit}"):
+    if body is None or not main_verified(repo):
         return []
     t = ticket_template.parse(body)
     reasons = [f"`{path}` (named in {label}) is not on main"
@@ -304,6 +310,8 @@ def _refreshed(target, conn):
         refresh_main(target, conn=conn, before="the stale re-check")
     except (InfraFailure, RuntimeError) as e:
         return " ".join(str(e).split())
+    if not main_verified(target.path):
+        return UNVERIFIED_MAIN
     return None
 
 
@@ -325,14 +333,13 @@ def _rederive(target, conn, project_id, parked, revision, note=None):
         head = subprocess.run(
             ["git", "-C", str(target.path), "rev-parse", "--short=12", "main"],
             capture_output=True, text=True).stdout.strip()
-        now = int(time.time() * 1000)
-        store.record_note(
-            conn, ticket_id, "recheck",
-            f"Re-checked against main at {head}: every landmark the body"
-            f" names is there now, so {identifier} went from needs_spec to"
-            f" {status} (revision {revision})."
-            + (f"\n\n{note}" if note else ""),
-            f"recheck:{ticket_id}:{now}", now=now)
+        text = (f"Re-checked against main at {head}: every landmark the"
+                f" body names is there now, so {identifier} went from"
+                f" needs_spec to {status} (revision {revision})."
+                + (f"\n\n{note}" if note else ""))
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        store.record_note(conn, ticket_id, "recheck", text,
+                          f"recheck:{digest}")
     return revision, status
 
 

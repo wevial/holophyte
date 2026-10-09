@@ -43,6 +43,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     LoopFixture,
     StubProvider,
     a_task,
+    unverified_main,
 )
 
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
@@ -557,3 +558,18 @@ class ClaimRefreshTests(LoopFixture):
             "SELECT outcomeClass, outcomeReason FROM runs")
         self.assertEqual(outcome_class, "infra")
         self.assertIn("git fetch origin failed", reason)
+
+    def test_an_unverifiable_main_parks_no_landmark_ticket_and_fails_as_infra(self):
+        self.naming_the_fixture()
+        seen = []
+
+        with unverified_main(), patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=StubProvider(self.task),
+                      fake=FakeAgent(CheckoutCritic(self.target, seen)))
+
+        self.assertEqual(seen, [])
+        self.assertNotEqual(self.status(), [("needs_spec",)])
+        ((outcome_class, reason),) = self.read(
+            "SELECT outcomeClass, outcomeReason FROM runs")
+        self.assertEqual(outcome_class, "infra")
+        self.assertIn("main could not be verified", reason)

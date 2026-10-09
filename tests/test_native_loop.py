@@ -21,7 +21,12 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
-from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
+from loop_fixture import (  # noqa: E402
+    VALID_BODY,
+    LoopFixture,
+    origin_ahead,
+    unverified_main,
+)
 
 import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.adjudicate  # noqa: E402
@@ -189,11 +194,12 @@ class NativeLoopTests(LoopFixture):
         self.assertIn("out of date with main", out)
         return self.read("SELECT id FROM tickets")[0][0]
 
-    def sweep(self):
+    def sweep(self, out=None):
         board = UnlistedBoard(self.project, "NAT", self.board.team)
         with closing(open_store(self.project)) as conn:
             return owed(self.project, conn, self.project_id, board, 0,
-                        io.StringIO(), sweep_config(self.project))
+                        io.StringIO() if out is None else out,
+                        sweep_config(self.project))
 
     def notes(self, ticket_id):
         return self.read(f"SELECT kind FROM ticketNotes WHERE ticketId ="
@@ -279,3 +285,53 @@ class NativeLoopTests(LoopFixture):
 
         self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
         self.assertNotIn(("recheck",), self.notes(ticket_id))
+
+    def test_an_unverifiable_main_leaves_a_stale_park_untouched(self):
+        ticket_id = self.parked_on_later()
+        before = self.notes(ticket_id)
+        fetched = origin_ahead(self.target)
+
+        out = io.StringIO()
+        with unverified_main():
+            self.assertEqual(self.sweep(out), [])
+
+        self.assertEqual(self.git("rev-parse", "main").strip(), fetched)
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
+        self.assertEqual(self.notes(ticket_id), before)
+        self.assertIn("main could not be verified", out.getvalue())
+
+    def re_park(self):
+        with patch.object(sys, "stdout", io.StringIO()):
+            park_stale(self.project, self.conn, self.project_id, self.board,
+                       self.board.fetch_task("NAT-1"),
+                       [f"`{LATER}` (named in Implementation notes) is not"
+                        " on main"])
+        self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
+
+    def recheck_texts(self, ticket_id):
+        return [text for (text,) in self.read(
+            f"SELECT text FROM ticketNotes WHERE ticketId = {ticket_id}"
+            " AND kind = 'recheck' ORDER BY id")]
+
+    def test_a_repeated_recheck_verdict_writes_one_note_until_main_moves(self):
+        ticket_id = self.parked_on_later()
+        self.commit_later()
+        self.sweep()
+        first = self.recheck_texts(ticket_id)
+        self.re_park()
+
+        self.sweep()
+
+        self.assertEqual(self.statuses(), {"NAT-1": "ready"})
+        self.assertEqual(len(first), 1)
+        self.assertEqual(self.recheck_texts(ticket_id), first)
+        self.re_park()
+        (self.target / "docs" / "more.md").write_text("# More\n")
+        self.git("add", "docs/more.md")
+        self.git("commit", "-q", "-m", "add more")
+
+        self.sweep()
+
+        texts = self.recheck_texts(ticket_id)
+        self.assertEqual(len(texts), 2)
+        self.assertNotEqual(texts[0], texts[1])

@@ -17,6 +17,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
+from loop_fixture import (  # noqa: E402 - after the sys.path insert
+    origin_ahead,
+    unverified_main,
+)
 
 import holophyte.cli.entry  # noqa: E402
 import linear_provider  # noqa: E402
@@ -274,6 +278,24 @@ class NativeMoveCliTests(ConfigTestCase):
         self.assertEqual(self.ticket("NAT-1"), ("ready", revision, "ready"))
         self.assertEqual(self.newest_note()[0], "recheck")
         self.assert_requeued_from("critic")
+
+    def test_a_move_to_ready_on_an_unverifiable_main_changes_nothing(self):
+        revision = self.parked_on_later()
+        before = self.ticket("NAT-1")
+        fetched = origin_ahead(self.target)
+
+        with unverified_main(), contextlib.redirect_stdout(io.StringIO()), \
+                self.assertRaises(store.board.FilingRefused) as refused:
+            board_for(self.project).move("NAT-1", "ready", revision)
+
+        self.assertEqual(subprocess.check_output(
+            ["git", "rev-parse", "main"], cwd=self.target, text=True).strip(),
+            fetched)
+        self.assertIn("main not refreshed, so NAT-1 is not re-checked",
+                      str(refused.exception))
+        self.assertIn("main could not be verified", str(refused.exception))
+        self.assertEqual(self.ticket("NAT-1"), before)
+        self.assertEqual(self.interventions(), [])
 
     def test_a_move_to_ready_keeps_a_critic_park_main_lacks_a_landmark_of(self):
         revision = self.parked_on_later(kind="critic")
