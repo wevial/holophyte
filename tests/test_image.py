@@ -56,6 +56,12 @@ class ImplementerImageTests(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertRegex(output.strip(), r"^\d+\.\d+\.\d+$")
 
+    def test_go_reports_release_1_26_9(self):
+        code, output = self.launch("go", "version")
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(output.split()[2], "go1.26.9", output)
+
     def test_python3_creates_a_virtual_environment_under_home(self):
         code, output = self.launch(
             "sh", "-c",
