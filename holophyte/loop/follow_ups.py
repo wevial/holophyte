@@ -21,7 +21,7 @@ from holophyte.story import story_scope
 FALLBACK_KIND = "feature"
 _LINE = re.compile(r"(?:- )?FOLLOW_UP\((feature|guardrail)\): (.+?)"
                    r"(?: @ ([^\s:]+)(?::(\d+))?)?")
-_LEGACY = re.compile(r"(?:- )?FOLLOW_UP(.*)")
+_LEGACY = re.compile(r"(?:- )?FOLLOW_UP(?![.,;])(.*)")
 _QUOTES = str.maketrans("", "", "`'\"‘’“”")
 TITLE_PREFIX = "Draft follow-up: "
 TITLE_CHARS = 70
