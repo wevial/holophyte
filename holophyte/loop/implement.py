@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 import subprocess
+from contextlib import suppress
 from pathlib import Path
 from time import monotonic as retry_clock
 from time import sleep, time
@@ -278,32 +279,50 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
                   f"the turn left a resolved merge uncommitted; committed it"
                   f" on {branch} at {head[:12]}")
         return True
+    merged = _merge_paths(wt, unmerged)
     backup = _backup_resolution(project, wt, task_id)
     _announce(conn, run_id, "merge_aborted",
               f"the turn left the merge on {branch} unresolved in"
               f" {', '.join(unmerged)}; aborted it, its attempted resolution"
               f" backed up at {backup}")
-    _unwind_merge(wt, unmerged)
+    _unwind_merge(wt, merged)
     return False
 
 
 def _listed(wt, *args):
-    return subprocess.run(["git", "--literal-pathspecs", *args], cwd=wt,
-                          check=True, capture_output=True,
-                          text=True).stdout.split("\0")
+    return set(filter(None, subprocess.run(
+        ["git", "--literal-pathspecs", *args], cwd=wt, check=True,
+        capture_output=True, text=True).stdout.split("\0")))
 
 
-def _unwind_merge(wt, unmerged):
-    merged = set(filter(None, _listed(wt, "diff", "--name-only", "--no-renames",
-                                      "-z", "HEAD...MERGE_HEAD"))) | set(unmerged)
+def _merge_paths(wt, unmerged):
+    merge = subprocess.run(["git", "merge-tree", "--write-tree", "--no-messages",
+                            "HEAD", "MERGE_HEAD"], cwd=wt, capture_output=True,
+                           text=True)
+    if merge.returncode not in (0, 1):
+        raise RuntimeError(f"git merge-tree failed:\n{merge.stderr}")
+    tree = merge.stdout.split("\n", 1)[0]
+    return _listed(wt, "diff", "--name-only", "--no-renames", "-z", "HEAD",
+                   tree) | set(unmerged)
+
+
+def _remove_file(wt, path):
+    leftover = Path(wt, path)
+    if leftover.is_symlink() or leftover.is_file():
+        leftover.unlink()
+        with suppress(OSError):
+            os.removedirs(leftover.parent)
+
+
+def _unwind_merge(wt, merged):
     sh(["git", "reset", "-q"], cwd=wt)
-    kept = set(filter(None, _listed(wt, "ls-tree", "-r", "--name-only", "-z",
-                                    "HEAD", "--", *merged)))
+    kept = merged & _listed(wt, "ls-tree", "-r", "--name-only", "-z", "HEAD",
+                            "--", *merged)
+    for path in sorted(merged - kept):
+        _remove_file(wt, path)
     if kept:
         sh(["git", "--literal-pathspecs", "checkout", "-q", "HEAD", "--",
             *sorted(kept)], cwd=wt)
-    for path in merged - kept:
-        Path(wt, path).unlink(missing_ok=True)
 
 
 def _staged_entries(project, wt):

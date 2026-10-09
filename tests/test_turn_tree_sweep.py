@@ -177,6 +177,50 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual([kind for kind, _ in self.sweep_events()],
                          ["merge_aborted", "wip_committed"])
 
+    def test_an_aborted_merge_keeps_an_edit_to_a_file_both_sides_changed_alike(self):
+        for branch in ("main", "task"):
+            self.git("checkout", "-q", branch)
+            self.write("s.txt", "same\n")
+            self.git("add", "s.txt")
+            self.git("commit", "-q", "-m", "same change")
+        self.tip = self.git("rev-parse", "HEAD")
+
+        def edit_then_merge():
+            self.write("s.txt", "edited before the merge\n")
+            self.merge_main()
+        self.turn(edit_then_merge)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual((self.target / "a.txt").read_text(), "branch a\n")
+        self.assertEqual((self.target / "s.txt").read_text(),
+                         "edited before the merge\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_an_aborted_merge_unwinds_main_s_edit_to_a_file_the_branch_renamed(self):
+        self.git("checkout", "-q", "-b", "shared", "main~1")
+        self.write("r.txt", "".join(f"line {n}\n" for n in range(9)))
+        self.git("add", "r.txt")
+        self.git("commit", "-q", "-m", "add r")
+        for branch in ("main", "task"):
+            self.git("checkout", "-q", branch)
+            self.git("merge", "-q", "--no-edit", "shared")
+        self.git("mv", "r.txt", "r2.txt")
+        self.git("commit", "-q", "-m", "rename r")
+        self.tip = self.git("rev-parse", "HEAD")
+        renamed = (self.target / "r2.txt").read_text()
+        self.git("checkout", "-q", "main")
+        self.write("r.txt", "main line 0\n" + renamed.split("\n", 1)[1])
+        self.git("commit", "-q", "-am", "edit r")
+        self.git("checkout", "-q", "task")
+
+        self.turn(self.merge_main)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.tip)
+        self.assertEqual((self.target / "r2.txt").read_text(), renamed)
+        self.assertFalse((self.target / "r.txt").exists())
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
     def test_a_conflicted_merge_is_not_discarded_when_its_backup_is_not_recorded(self):
         def leave_conflicted():
             self.merge_main()
