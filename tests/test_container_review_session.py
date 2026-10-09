@@ -1,4 +1,5 @@
-"""A container review records the reviewer's Codex session and keeps its transcript.
+"""A container review records the reviewer's Codex session and keeps its transcript,
+and a refused adversary exit comes back as the adversary's reply.
 
 Run: python3 -m unittest discover -s tests -p 'test_container_review_session.py' -v
 """
@@ -22,6 +23,7 @@ import review_runner  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.agents import roles, transcripts  # noqa: E402
+from holophyte.review import adversary  # noqa: E402
 
 # `run` stands in for the container: it runs the built script's Codex statement
 # with the positional arguments `docker run` was handed, the mounts' host sides
@@ -46,8 +48,9 @@ os.execv("/bin/sh", ["/bin/sh", "-eu", "-c", statement, *positional])
 
 # Writes a rollout under its home when told a name, a newer forged file when
 # told a decoy name, and opens the stream with `thread.started` when told an id.
+# Told a provider error, it ends the turn on that error and exits 1.
 CODEX = """#!{python}
-import json, os, pathlib
+import json, os, pathlib, sys
 thread = os.environ.get("STUB_THREAD_ID")
 rollout = os.environ.get("STUB_ROLLOUT")
 decoy = os.environ.get("STUB_DECOY")
@@ -63,12 +66,19 @@ events = [{{"type": "thread.started", "thread_id": thread}}] if thread else []
 events += [{{"type": "item.completed", "item": item}} for item in (
     {{"type": "command_execution", "exit_code": 0}},
     {{"type": "agent_message", "text": "VERDICT: APPROVE"}})]
+failure = os.environ.get("STUB_PROVIDER_ERROR")
+if failure:
+    events = events[:-1] + [{{"type": "error", "message": failure}},
+                           {{"type": "turn.failed", "error": {{"message": failure}}}}]
 for event in events:
     print(json.dumps(event))
+sys.exit(1 if failure else 0)
 """
 
 THREAD = "0199b2c4-7e1a-7c30-9a51-3f0d2e6b8a14"
 ROLLOUT = f"rollout-2026-10-05T09-00-00-{THREAD}.jsonl"
+REFUSAL = ("This content was flagged for possible cybersecurity risk. If this"
+           " seems wrong, try rephrasing your request.")
 
 
 class ContainerReviewSessionTests(unittest.TestCase):
@@ -183,6 +193,19 @@ class ContainerReviewSessionTests(unittest.TestCase):
             with self.subTest(label):
                 self.assertEqual(self.review(thread, rollout), [])
                 self.assertFalse(self.kept.exists())
+
+    def test_a_refused_adversary_exit_is_returned_as_its_reply(self):
+        with patch.dict(os.environ, {"STUB_PROVIDER_ERROR": REFUSAL}):
+            output = roles.agent(
+                self.project, "adversary", "attack the candidate",
+                self.project.path, base_sha=self.sha, candidate_sha=self.sha,
+                conn=self.conn, run_id=self.run_id, review_round=1)
+
+        self.assertTrue(adversary.refused(output))
+        turns = [json.loads(payload) for (payload,) in self.conn.execute(
+            "SELECT payload FROM runEvents WHERE runId=? AND kind='agent_turn'",
+            (self.run_id,))]
+        self.assertEqual([t["exit_status"] for t in turns], [1])
 
 
 if __name__ == "__main__":
