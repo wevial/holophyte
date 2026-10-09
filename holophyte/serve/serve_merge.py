@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 
 import store
-from holophyte.loop.runs import open_store
 from holophyte.pr.merge_ready import readiness
+from holophyte.serve.serve_actions import action_store, written_on
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import locate_run, no_store
 
@@ -41,15 +41,17 @@ def merge_action(project, body):
                "facts": answer["facts"]}
     if not answer["ready"]:
         return 200, refused
-    conn = open_store(project)
+    conn = action_store(project)
     try:
         store.approve(conn, ready.park.ticket_id, approval_note(body, ready),
                       run_id=run_id)
+        recorded = written_on(conn, MERGE_ACTION)
     except store.ApproveRefused as moved:
         return 200, {**refused, "reason": "not_parked", "detail": str(moved)}
     finally:
         conn.close()
     return 200, {"action": MERGE_ACTION, "ok": True, "run": run_id,
+                 "recorded": recorded,
                  "ticket": answer["ticket"], "head_sha": ready.head_sha,
                  "detail": f"approved at {ready.head_sha}; the loop's next"
                            f" claim merges the candidate on {answer['pr_url']}"}

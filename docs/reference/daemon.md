@@ -26,16 +26,25 @@ exact token the routes answer 401 before anything runs or is written.
 The reply is always the same shape:
 
 ```json
-{"action": "restart-supervisor", "ok": true, "detail": "systemctl --user restart holophyte-supervise@holophyte exited 0"}
+{"action": "restart-supervisor", "ok": true, "detail": "systemctl --user restart holophyte-supervise@holophyte exited 0", "unit": "holophyte-supervise@holophyte", "recorded": 42}
 ```
 
-`ok` says whether the step did what was asked; `detail` says what
+Every project action's 200 reply carries these four keys, whatever else
+the route adds (`ticket`, `run`, `unit`, `facts`, ...). `action` is the route's
+name. `ok` says whether the step did what was asked; `detail` says what
 happened. A step that fails is `ok: false` with the reason in `detail` and
 still status 200: the operator asked for a thing and is told the answer,
 which is not a server error. Each action is an interventions row
 (`store.record_intervention()`, the operator ladder's record-before-acting
 call) written before the action runs; an action that cannot be recorded
-does not run.
+does not run. `recorded` is that row's id, the one `holo --json` write
+results cite: the row the action itself inserted, never another
+writer's row of the same name (`restart_supervisor`, `launch_loop`,
+`requeue`, `operator_note` for `send-back`, `approve` for `merge`, `hold`,
+`release_hold`, `pause`, `resume`, and `abort` or `abort_close`). It is
+null when the action wrote none: a refusal, `ok: false` before the
+write, or a `pause` or `abort` of a run whose request is already
+pending. A 400, 404 or 503 answers `{"error": ...}` instead.
 
 ## On a host daemon
 
@@ -93,8 +102,7 @@ Runs `systemctl --user restart holophyte-supervise@NAME`, where `NAME` is
 project directory's name when the key is absent. `systemctl` gets 20 s to
 answer. A non-zero exit is `ok: false` with its stderr in `detail`; an
 absent `systemctl` or one that outlives the cap is `ok: false` saying so.
-The reply also carries `unit`, the instance addressed, and `recorded`, the
-run the intervention landed on (below).
+The reply also carries `unit`, the instance addressed.
 
 The record is a human `restart_supervisor` intervention on the store's
 newest run, its narrative naming the unit and the route: interventions are
@@ -108,9 +116,11 @@ null, `systemctl` not called. No body is read.
 Runs `systemctl --user start holophyte-loop@NAME`: one pass of the loop as
 the deploy template defines it, inactive again once the queue is down.
 Everything else is as `restart-supervisor`, the intervention a
-`launch_loop` row, except that a store with no run yet records it on the
-project's row, `recorded` null; only a store with neither leaves the unit
-alone.
+`launch_loop` row, except that a store with no run yet links the
+`launch_loop` intervention to the project instead
+(`store.record_project_intervention()`), and `recorded` is that
+interventions row's id, not the project's; only a store with neither
+leaves the unit alone.
 
 ## `POST /actions/requeue`
 
@@ -152,7 +162,8 @@ checks, `MERGEABLE`, no open review thread, and the branch head on
 
 ```json
 {"action": "merge", "ok": false, "run": 52, "reason": "review_not_approved",
- "detail": "GitHub's review decision is REVIEW_REQUIRED", "facts": [...]}
+ "detail": "GitHub's review decision is REVIEW_REQUIRED", "facts": [...],
+ "recorded": null}
 ```
 
 `reason`, `detail` and `facts` are the read route's. Ready, the daemon
@@ -169,7 +180,8 @@ it again otherwise.
 ```json
 {"action": "merge", "ok": true, "run": 52, "ticket": "KO-219",
  "head_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
- "detail": "approved at 5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f; the loop's next claim merges the candidate on https://github.com/example/repo/pull/31"}
+ "detail": "approved at 5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f; the loop's next claim merges the candidate on https://github.com/example/repo/pull/31",
+ "recorded": 87}
 ```
 
 The release names the run it checked: a ticket that moves between the

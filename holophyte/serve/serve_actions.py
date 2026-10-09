@@ -17,9 +17,12 @@ UNIT_ACTIONS = {
     "restart-supervisor": ("restart", SUPERVISOR_UNIT, "restart_supervisor"),
     "launch-loop": ("start", LOOP_UNIT, "launch_loop")}
 REQUEUE_ACTION = "requeue"
-ACTIONS = frozenset(UNIT_ACTIONS) | {REQUEUE_ACTION, "send-back", "hold",
-                                     "release-hold", "pause", "resume",
-                                     "abort", "merge"}
+RECORDS = {**{action: (row,) for action, (*_, row) in UNIT_ACTIONS.items()},
+           REQUEUE_ACTION: ("requeue",), "send-back": ("operator_note",),
+           "merge": ("approve",), "hold": ("hold",),
+           "release-hold": ("release_hold",), "pause": ("pause",),
+           "resume": ("resume",), "abort": ("abort", "abort_close")}
+ACTIONS = frozenset(RECORDS)
 # The store refuses an empty requeue note.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
 MAX_BODY = 64 * 1024
@@ -45,35 +48,55 @@ def unit_action(project, action, unit_name, asked=None):
     unit = template + unit_name
     who, route = asked or ("the daemon", f"POST /actions/{action}")
     note = f"operator asked {who} to {verb} {unit} ({route})"
-    recorded = record_action_intervention(project, intervention, note)
-    written = recorded is not None or (
-        action == "launch-loop"
-        and record_on_project(project, intervention, note) is not None)
-    if not written:
+    written = record_on_newest_run(project, intervention, note)
+    recorded = None if written is None else written[1]
+    if recorded is None and action == "launch-loop":
+        recorded = record_on_project(project, intervention, note)
+    if recorded is None:
         detail = ("the store holds no run to record the intervention"
                   " against; nothing run")
         return 200, {"action": action, "ok": False, "detail": detail,
-                     "unit": unit, "recorded": None}
+                     "unit": unit}
     if action == "launch-loop":
         _, ok, detail = start_loop(unit_name)
     else:
         ok, detail = systemctl_user(verb, unit)
-    return 200, {"action": action, "ok": ok, "detail": detail,
-                 "unit": unit, "recorded": recorded}
+    return 200, {"action": action, "ok": ok, "detail": detail, "unit": unit,
+                 "recorded": recorded}
 
 
 def record_action_intervention(project, action, note):
+    written = record_on_newest_run(project, action, note)
+    return None if written is None else written[0]
+
+
+def record_on_newest_run(project, action, note):
     if not project.store_path.exists():
         return None
     conn = open_store(project)
     try:
         run_id = store.read.newest_run_id(conn)
-        if run_id is not None:
-            store.record_intervention(conn, run_id, action, note,
-                                      source="human", trigger="manual")
+        return None if run_id is None else (run_id, store.record_intervention(
+            conn, run_id, action, note, source="human", trigger="manual"))
     finally:
         conn.close()
-    return run_id
+
+
+def action_store(project):
+    conn = open_store(project)
+    conn.execute("CREATE TEMP TABLE written (id INTEGER, action TEXT)")
+    conn.execute("CREATE TEMP TRIGGER note_written AFTER INSERT ON"
+                 " main.interventions BEGIN INSERT INTO written"
+                 " VALUES (NEW.id, NEW.action); END")
+    return conn
+
+
+def written_on(conn, action):
+    names = RECORDS[action]
+    (row,) = conn.execute(
+        "SELECT MAX(id) FROM temp.written"
+        f" WHERE action IN ({','.join('?' * len(names))})", names).fetchone()
+    return row
 
 
 def record_on_project(project, action, note):
@@ -114,7 +137,7 @@ def requeue_action(project, body):
     identifier = identifier.strip()
     if not project.store_path.exists():
         return 503, no_store(project)
-    conn = open_store(project)
+    conn = action_store(project)
     try:
         ticket = store.read.ticket_by_identifier(conn, identifier)
         if ticket is None:
@@ -137,11 +160,12 @@ def requeue_action(project, body):
         except (store.RequeueRefused, ValueError) as refused:
             return 200, {"action": action, "ok": False, "ticket": identifier,
                          "detail": str(refused)}
+        recorded = written_on(conn, action)
     finally:
         conn.close()
     return 200, {"action": action, "ok": True, "ticket": identifier,
                  "detail": f"{identifier} requeued after run {run_id}",
-                 "run": run_id}
+                 "run": run_id, "recorded": recorded}
 
 
 def send_back_action(project, run_id, note, author):
@@ -149,14 +173,16 @@ def send_back_action(project, run_id, note, author):
         return 400, {"error": "run must be a positive integer"}
     if not project.store_path.exists():
         return 503, no_store(project)
-    conn = open_store(project)
+    conn = action_store(project)
     try:
         event_id = send_back(conn, run_id, note, author)
+        recorded = written_on(conn, "send-back")
     except (store.ApproveRefused, ValueError) as refused:
         return 200, {"ok": False, "detail": str(refused)}
     finally:
         conn.close()
     return 200, {"ok": True, "run": run_id, "event_id": event_id,
+                 "recorded": recorded,
                  "detail": f"Sent back with operator_note event {event_id}"}
 
 

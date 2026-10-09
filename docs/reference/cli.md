@@ -429,16 +429,21 @@ write command's `--json` result says so with `ok: false`.
 With `transport = "http"`, `holo` calls the host daemon's routes at `url`
 instead ([HTTP endpoints](http.md#the-host-daemon)), under
 `/projects/NAME/...`, `NAME` the project's `[serve] name`. The reads `runs`,
-`run N` (`--files`, `--ledger`, `--turns`), `attention`, `board` and `ticket
-KEY` print what the local command prints, `board`'s `editable` false as
-there; `attention` with no project is the root's. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`
+`run N` (`--files`, `--ledger`, `--turns`), `attention`, `board`, `ticket
+KEY` and `report` (`--since` sent as `since`, `--notes` drawn here from a
+body that always holds the notes) print what the local command prints,
+`board`'s `editable` false as there; `attention` with no project is the
+root's. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`
 and `start` post to `POST /projects/NAME/actions/...`
 ([The daemon's actions](daemon.md)): `release` to `release-hold`, `start` to
 `launch-loop`, which takes no note and releases no hold, and `pause` and `abort` first read the
 ticket's live run from `GET /tickets/KEY`. A write's result is the daemon's
-reply, printed as a `✓`/`✗` line or, with `--json`, as given. stderr says
-`via http to URL`, and a `--json` result gains `"transport": "http"`. Every
-other command, `status` and `report` included, has no route: it exits 1
+reply, printed as a `✓`/`✗` line or, with `--json`, as given but with the
+command's words as `action` (`start`, `release`), as locally; its
+`recorded` is the id of the interventions row the daemon wrote, as
+locally. stderr says `via http to URL`, and a `--json` result gains
+`"transport": "http"`. Every other command, `status` included, has no
+route: it exits 1
 saying so and, where ssh carries it, that `transport = "ssh"` runs it, and
 nothing is sent over either road. A redirect is not followed, so the token
 goes nowhere but `url`, and an answer that is not a JSON object exits 1. A 401 exits 1 naming `token_file`'s file; a 404 on an action
