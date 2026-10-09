@@ -428,9 +428,9 @@ class BypassMergeTests(MergeCase):
                 ("threads_unresolved", lambda: setattr(
                     self.github, "threads",
                     (("app.py", 3, "reviewer", "rename this"),))),
-                ("head_moved", push),
                 ("review_not_approved", lambda: setattr(
-                    self.github, "review", "CHANGES_REQUESTED"))):
+                    self.github, "review", "CHANGES_REQUESTED")),
+                ("head_moved", push)):
             with self.subTest(reason=reason):
                 self.bypassable()
                 change()

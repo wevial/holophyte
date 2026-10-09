@@ -188,3 +188,25 @@ test("Confirm bypass merge posts the run with bypass_review once with the bearer
   expect(within(cell()).getByRole("status").textContent).toBe("released");
   expect(within(cell()).queryByRole("button", { name: "Merge (bypass review)" })).toBeNull();
 });
+
+test("the bypass confirm stays open while the review is still bypassable and closes when the reason changes", async () => {
+  storeToken(host.address, "test-token");
+  let answer: Record<string, unknown> = bypassable;
+  const deps = { fetch: tokenedFetch(async () => Response.json(answer)) };
+  const post = fakeFetch({ ok: true, detail: "done" });
+  const table = (polls: number) => <PullRequestTable hosts={[host]} project="all" now={status.now}
+    polls={polls} deps={deps} actionFetch={post.fetchImpl} />;
+  const view = render(table(0));
+  await act(settle);
+  const cell = () => within(screen.getAllByRole("row")[1]!).getAllByRole("cell")[4]!;
+  await act(async () => { fireEvent.click(within(cell()).getByRole("button", { name: "Merge (bypass review)" })); });
+  view.rerender(table(6));
+  await act(settle);
+  expect(within(cell()).getByRole("button", { name: "Confirm bypass merge" })).toBeTruthy();
+  answer = { ...readiness, ready: false, reason: "checks_pending", detail: "the required checks are pending" };
+  view.rerender(table(12));
+  await act(settle);
+  expect(within(cell()).queryByRole("group")).toBeNull();
+  expect(cell().querySelector("[data-merge-waiting]")?.textContent).toBe("checks running");
+  expect(post.seen).toEqual([]);
+});

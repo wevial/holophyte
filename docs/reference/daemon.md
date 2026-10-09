@@ -181,9 +181,8 @@ as held and adds `bypassing the required review: DETAIL`, the
 `review_approved` fact's `detail` naming the bypassed ruleset, and the
 answer's `detail` reads `approved at SHA, bypassing the required review;
 ...`. The loop merges a bypass release as any other: GitHub grants the
-merge to the user its ruleset lets bypass, the credential readiness read
-`current_user_can_bypass` with, and a merge GitHub still refuses takes
-the loop's existing `MergeRefused` path. The daemon does not merge: the loop's next
+merge to a user its ruleset lets bypass, and a merge GitHub still
+refuses takes the loop's existing `MergeRefused` path. The daemon does not merge: the loop's next
 claim resumes the candidate on its pull request and the babysitter
 merges it, re-checking green and quiet under the merge lock and parking
 it again otherwise.
