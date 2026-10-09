@@ -209,7 +209,7 @@ def _prepare_runtime(root: Path, auth: Path,
     home = root / "home"
     codex_home = home / ".codex"
     toolchain = root / "toolchain"
-    home.mkdir()
+    home.mkdir(parents=True)
     toolchain.mkdir(mode=0o700)
     if codex is None:
         return home, toolchain
