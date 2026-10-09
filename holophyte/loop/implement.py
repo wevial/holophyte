@@ -263,7 +263,6 @@ def _sweep_tree(project, conn, run_id, wt, cause, merges):
 
 SWEPT_ERRORS = (RuntimeError, OSError, ValueError, subprocess.SubprocessError,
                 sqlite3.Error)
-LEFTOVER_CAUSES = ("crashed", "budget fired", "ended")
 
 
 def _ignored(wt):
@@ -306,7 +305,7 @@ def remove_entries(wt, names):
 
 
 def _drop_leftovers(project, conn, run_id, wt, cause, before):
-    if cause not in LEFTOVER_CAUSES or before is None:
+    if cause not in ("crashed", "budget fired", "ended") or before is None:
         return
     gone = []
     try:
