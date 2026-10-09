@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import store
 import store.board
+import store.follow_ups
 import store.gap_layers
 import store.operate
 import store.read
@@ -298,6 +299,15 @@ class StoreSurfaceTests(unittest.TestCase):
                                  (store.gap_layers, ["gap_finder_counts",
                                                      "gap_layer_counts",
                                                      "record_gap_layer"]),
+                                 # HOLO-174: a merged run's FOLLOW_UP rows,
+                                 # captured pending and settled at the merge.
+                                 (store.follow_ups, ["filed_drafts",
+                                                     "pending_follow_ups",
+                                                     "record_follow_up",
+                                                     "settle_duplicate",
+                                                     "settle_filed",
+                                                     "settle_ledger",
+                                                     "settle_unfiled"]),
                                  # A story's filing, approval, ledger,
                                  # decisions, closing and abandonment;
                                  # HOLO-60: a landed merge's generation.
