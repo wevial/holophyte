@@ -246,10 +246,10 @@ def _sweep_tree(project, conn, run_id, wt, cause):
     lock.unlink(missing_ok=True)
     branch = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=wt)
     task_id = _task_key(conn, run_id, branch)
-    if mid_merge(wt):
-        _sweep_merge(project, conn, run_id, wt, branch, task_id)
-    else:
-        _commit_wip(project, conn, run_id, wt, branch, task_id, cause)
+    if mid_merge(wt) and _sweep_merge(project, conn, run_id, wt, branch,
+                                      task_id):
+        return
+    _commit_wip(project, conn, run_id, wt, branch, task_id, cause)
 
 
 def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
@@ -277,13 +277,33 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
         _announce(conn, run_id, "merge_completed",
                   f"the turn left a resolved merge uncommitted; committed it"
                   f" on {branch} at {head[:12]}")
-        return
+        return True
     backup = _backup_resolution(project, wt, task_id)
     _announce(conn, run_id, "merge_aborted",
               f"the turn left the merge on {branch} unresolved in"
               f" {', '.join(unmerged)}; aborted it, its attempted resolution"
               f" backed up at {backup}")
-    reproduce._discard_leftovers(project, wt)
+    _unwind_merge(wt, unmerged)
+    return False
+
+
+def _listed(wt, *args):
+    return subprocess.run(["git", "--literal-pathspecs", *args], cwd=wt,
+                          check=True, capture_output=True,
+                          text=True).stdout.split("\0")
+
+
+def _unwind_merge(wt, unmerged):
+    merged = set(filter(None, _listed(wt, "diff", "--name-only", "--no-renames",
+                                      "-z", "HEAD...MERGE_HEAD"))) | set(unmerged)
+    sh(["git", "reset", "-q"], cwd=wt)
+    kept = set(filter(None, _listed(wt, "ls-tree", "-r", "--name-only", "-z",
+                                    "HEAD", "--", *merged)))
+    if kept:
+        sh(["git", "--literal-pathspecs", "checkout", "-q", "HEAD", "--",
+            *sorted(kept)], cwd=wt)
+    for path in merged - kept:
+        Path(wt, path).unlink(missing_ok=True)
 
 
 def _staged_entries(project, wt):

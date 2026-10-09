@@ -154,6 +154,29 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual(self.git("show", f"{backup}:b.txt"), "edited after staging")
         self.assertEqual(self.git("show", f"{backup}^3:b.txt"), "branch b\nmain b")
 
+    def test_an_aborted_merge_keeps_an_edit_made_before_the_merge(self):
+        self.write("c.txt", "base c\n")
+        self.git("add", "c.txt")
+        self.git("commit", "-q", "-m", "add c")
+        self.tip = self.git("rev-parse", "HEAD")
+
+        def edit_then_merge():
+            self.write("c.txt", "edited before the merge\n")
+            self.merge_main()
+            self.write("b.txt", "branch b\nmain b\n")
+            self.git("add", "b.txt")
+        self.turn(edit_then_merge)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual((self.target / "a.txt").read_text(), "branch a\n")
+        self.assertEqual((self.target / "b.txt").read_text(), "branch b\n")
+        self.assertEqual((self.target / "c.txt").read_text(),
+                         "edited before the merge\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(self.git("show", "HEAD:c.txt"), "edited before the merge")
+        self.assertEqual([kind for kind, _ in self.sweep_events()],
+                         ["merge_aborted", "wip_committed"])
+
     def test_a_conflicted_merge_is_not_discarded_when_its_backup_is_not_recorded(self):
         def leave_conflicted():
             self.merge_main()
