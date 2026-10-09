@@ -1508,6 +1508,40 @@ dependency_ready = "merged"
 A `witness_sec` or `max_parallel` that is not a positive integer, or a
 `dependency_ready` other than `merged`, is a startup error naming the key.
 
+## `[review]`
+
+Each review round records a blast-radius tier, `high`, `medium` or `low`, in a
+`blast_radius` detail event, and `--report` counts each run's newest one. The
+tier is set from the round's diff (`git diff --name-only --no-renames
+BASE..SHA`, so a rename counts both paths): a changed path matching the
+built-in high list, `BASE_HIGH_PATHS` in `holophyte/review/blast_radius.py`
+(CI workflows, deploy and security config, lockfiles and dependency manifests,
+migration directories), or `high_paths` makes it `high`; otherwise one of the
+medium signals below makes it `medium`. A pattern is matched with
+`fnmatch.fnmatchcase()` against the repository-relative path, so `*` also
+crosses `/`, and a pattern with no `/` is matched against the basename too. A
+ticket's `**Blast radius:** high` or `medium`, the implementer's `BLAST RADIUS:`
+line and the run's previous round can raise the tier and never lower it.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `high_paths` | Default: `[]` | List of repository-relative globs without `..`; a changed path matching one makes the round `high`. It adds to the built-in high list and never removes from it. |
+| `medium_paths` | Default: `[]` | List of repository-relative globs without `..`; a changed path matching one makes a round that is not `high` `medium`. |
+| `fan_in` | Default: `10` | Integer of at least 0; a changed Python module imported by at least this many other tracked `.py` files at the candidate makes the round `medium`. `0` turns the signal off. |
+| `packages` | Default: `3` | Integer of at least 0; changed paths spanning at least this many first path segments make the round `medium`. Paths under `tests/`, `test/` or `docs/`, and paths ending `.md`, do not count; a root-level file counts as `.`. `0` turns the signal off. |
+
+```toml
+[review]
+high_paths = ["app/auth/*"]
+medium_paths = ["src/parse/*"]
+fan_in = 10
+packages = 3
+```
+
+A `high_paths` or `medium_paths` that is not a list of such globs, a `fan_in` or
+`packages` that is not an integer of at least 0 (a boolean included), or an
+unknown key is a startup error naming the key.
+
 ## `[trim]`
 
 The trim step: one agent turn after the implement turn and before the first

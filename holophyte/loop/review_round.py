@@ -30,6 +30,7 @@ from holophyte.loop.runs import (
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
+from holophyte.review import blast_radius
 from holophyte.review.briefs import (
     criteria_brief,
     evidence_brief,
@@ -98,6 +99,8 @@ def _review(project, conn, run_id, task_id, wt, beat_s, base_sha, sha, ticket,
     round_started = int(time() * 1000)
     scope = scope_files(wt, ticket, base_sha, sha)
     _record_mode(conn, run_id, mode, rnd)
+    blast_radius.record_round(project, conn, run_id, wt, base_sha, sha, ticket,
+                              rnd)
     with heartbeat_while(conn, run_id, beat_s):
         verdict, decision, first_reply = _review_reply(project,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "
