@@ -174,7 +174,12 @@ Each finding is one list item, `PATH:LINE [p0|p1|p2] what breaks`, then a line
 `EVIDENCE: concern` (the scenario and why it cannot be shown yet). A finding
 with no `EVIDENCE:` line, or an unknown level, is a concern. The reply ends with
 exactly one line, `ADVERSARY: DONE`; a reply without it is asked again once, and
-a second miss fails the run as `review_route` with the candidate preserved.
+a second miss fails the run as `review_route` with the candidate preserved. A
+reply without it that carries the provider's refusal line, "This content was
+flagged for possible cybersecurity risk", is not asked again: the pass records
+outcome `refused` with no findings or concerns, writes a ledger note, and the
+round stands on the primary review alone. A refusal is about the content, not
+the route, so no fallback is switched.
 
 A reproduced or traced finding blocks the round: it is not approved, its
 `reviewRounds` row has verdict `changes_requested` and holds the finding with
@@ -187,7 +192,8 @@ into one ledger note. Each pass records an `adversary_round` detail event with
 `family_reason` when the family was forced (`no adversary_credential`, or
 for `fallback` the reason its switch recorded; a pass on the container
 fallback pair records that pair's `model` and `effort`),
-`outcome`, `seconds`, `findings` (the blocking ones) and `concerns`. The
+`outcome` (`clear`, `blocked`, `refused` or `malformed`), `seconds`,
+`findings` (the blocking ones) and `concerns`. The
 pass's `agent_turn` event labels a Claude turn `claude opus`.
 
 ## Consolidation and concerns

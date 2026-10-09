@@ -34,6 +34,7 @@ DEPTHS = {"high": "full", "medium": "light"}
 TIME_BOXES = {"full": 1800, "light": 900}
 MAX_SUBAGENTS = 5
 DONE = "ADVERSARY: DONE"
+REFUSAL = "This content was flagged for possible cybersecurity risk"
 BLOCKING = ("reproduced", "traced")
 LEVELS = (*BLOCKING, "concern")
 EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:[*`\s]*([^\s*`]*)",
@@ -141,20 +142,20 @@ def planned(project, conn, run_id, root, base, sha, rnd):
 
 def _attackers(depth):
     if depth == "full":
-        return (f"one attack subagent per surface the diff touches ({SURFACES}) "
+        return (f"one review subagent per surface the diff touches ({SURFACES}) "
                 "plus one per risky module")
-    return (f"one attack subagent per surface the diff touches ({SURFACES}), "
-            "and no per-module attackers")
+    return (f"one review subagent per surface the diff touches ({SURFACES}), "
+            "and no per-module subagents")
 
 
 def _target(plan, run_id):
     base_ref, candidate_ref = review_refs(run_id)
     if plan.scope == "candidate":
-        return (f"Scope: candidate. Attack the whole candidate, {plan.start}.."
+        return (f"Scope: candidate. Verify the whole candidate, {plan.start}.."
                 f"{plan.sha}, using {base_ref} as the frozen base and "
                 f"{candidate_ref} as the candidate in this repo.\n")
     listed = "".join(f"- {concern['message']}\n" for concern in plan.concerns)
-    return (f"Scope: fix. Attack only the fix range {plan.start}..{plan.sha}; "
+    return (f"Scope: fix. Verify only the fix range {plan.start}..{plan.sha}; "
             f"{candidate_ref} is the candidate in this repo. Re-check each "
             "concern earlier adversarial passes recorded, and report it again "
             "at the evidence level it now reaches:\n" + (listed or "- (none)\n"))
@@ -163,27 +164,29 @@ def _target(plan, run_id):
 def brief(plan, ticket, run_id):
     return (
         "You are a READ-ONLY adversarial reviewer. Another reviewer checks "
-        "this change against its ticket; your job is to break it: find the "
-        "inputs, paths and configurations the change mishandles.\n\n"
+        "this change against its ticket; your job is to verify its robustness "
+        "and find its defects before users do: find inputs where this change "
+        "behaves wrongly, check that each guard holds, and reproduce each "
+        "defect read-only.\n\n"
         + _target(plan, run_id)
         + f"Depth: {plan.depth}. Time box: {plan.seconds} seconds. Start "
         f"{_attackers(plan.depth)}, and at most {MAX_SUBAGENTS} subagents in "
         "the pass. Give mechanical checks, such as listing every export form "
         "or every ignored path, to a light model (luna for Codex, haiku or "
-        "sonnet for Claude), and attack reasoning and reproduction to a "
+        "sonnet for Claude), and defect reasoning and reproduction to a "
         "strong one (sol for Codex, opus for Claude). A reproduction runs "
         "read-only against the candidate and leaves the checkout as it found "
         "it. Do not modify anything.\n\n"
         f"The ticket the change implements:\n\n{ticket}\n\n"
         "Report each finding as one list item, `- PATH:LINE [p0|p1|p2] what "
-        "breaks`, followed by one line naming its evidence level:\n"
+        "goes wrong`, followed by one line naming its evidence level:\n"
         "EVIDENCE: reproduced — give the input and the observed bad result.\n"
         "EVIDENCE: traced — give file:line for each step from the input to "
         "the harm.\n"
         "EVIDENCE: concern — give the scenario and why it cannot be shown "
         "yet.\n"
         "Reproduced and traced findings block the change; concerns are "
-        "recorded and do not. After the findings, list each attack subagent "
+        "recorded and do not. After the findings, list each review subagent "
         "you started on one line, `SUBAGENT: MODEL — SURFACE`. End "
         f"your reply with exactly one line:\n{DONE}")
 
@@ -196,6 +199,11 @@ def subagents(reply):
 def finished(reply):
     lines = [line.strip() for line in str(reply).splitlines() if line.strip()]
     return bool(lines) and lines[-1] == DONE
+
+
+def refused(reply):
+    return (reply is not None and REFUSAL in str(reply)
+            and not finished(reply))
 
 
 def _evidence(block):
@@ -247,7 +255,7 @@ def attack(project, conn, run_id, wt, base, ticket, plan, run_agent):
                           candidate_sha=plan.sha, timeout=plan.seconds,
                           conn=conn, run_id=run_id, family_route=route)
         claude_down(project, route, reply)
-        if finished(reply):
+        if finished(reply) or refused(reply):
             return reply, round(monotonic() - started, 3)
         goal += (f"\n\nYour previous reply did not end with {DONE}. Your "
                  f"reply must end with exactly one line, {DONE}, and nothing "
@@ -292,11 +300,13 @@ def settle(project, conn, run_id, provider, task_id, plan, attacked):
     if plan is None:
         return []
     reply, seconds = attacked
-    found = parse(reply) if reply is not None else []
-    started = subagents(reply) if reply is not None else []
+    answered = reply is not None and not refused(reply)
+    found = parse(reply) if answered else []
+    started = subagents(reply) if answered else []
     blocking = [f for f in found if f["evidence"] in BLOCKING]
     concerns = [f for f in found if f["evidence"] not in BLOCKING]
     outcome = ("malformed" if reply is None else
+               "refused" if refused(reply) else
                "blocked" if blocking else "clear")
     family = (fallback_family(project, conn, run_id)
               if "adversary" in routes(project).commands else plan.family)
@@ -309,6 +319,12 @@ def settle(project, conn, run_id, provider, task_id, plan, attacked):
             **family.record(), "outcome": outcome, "seconds": seconds,
             "subagents": started, "over_cap": len(started) > MAX_SUBAGENTS,
             "findings": blocking, "concerns": concerns}))
+    if outcome == "refused":
+        ledger(conn, run_id, task_id, "note",
+               f"Round {plan.round} adversary turn was refused by the provider;"
+               " the round stands on the primary review.", provider)
+        print(f"[holo2] round {plan.round}: adversary turn refused by the "
+              "provider; the round stands on the primary review")
     if concerns:
         ledger(conn, run_id, task_id, "note",
                f"Round {plan.round} adversary concerns (non-blocking):\n"

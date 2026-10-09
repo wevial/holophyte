@@ -28,9 +28,13 @@ from loop_fixture import BRANCH, LoopFixture, StubProvider, a_task  # noqa: E402
 
 from holophyte.agents import probes, roles  # noqa: E402
 from holophyte.agents.agent_routes import reset  # noqa: E402
+from holophyte.review.adversary import Family, Pass, brief  # noqa: E402
 
 ON = "[review]\nadversary = true\n"
 LEVELS = ("EVIDENCE: reproduced", "EVIDENCE: traced", "EVIDENCE: concern")
+REFUSAL = ("This content was flagged for possible cybersecurity risk. If this "
+           "seems wrong, try rephrasing your request.")
+FILTERED_WORDS = ("attack", "break", "exploit", "attacker", "bypass")
 
 
 @dataclass
@@ -115,8 +119,8 @@ class WhenItRunsTests(AdversaryFixture):
         fake, _ = self.loop(Change("src/parse/csv.py"), APPROVE, attack())
         [attacker] = self.turns(fake, ADVERSARY)
         self.assertIn("Depth: light", attacker.goal)
-        self.assertIn("one attack subagent per surface", attacker.goal)
-        self.assertIn("no per-module attackers", attacker.goal)
+        self.assertIn("one review subagent per surface", attacker.goal)
+        self.assertIn("no per-module subagents", attacker.goal)
         self.assertNotIn("per risky module", attacker.goal)
         self.assertEqual(attacker.timeout, 900)
         [event] = self.events()
@@ -148,6 +152,38 @@ class WhenItRunsTests(AdversaryFixture):
         [attacker] = self.turns(fake, ADVERSARY)
         self.assertNotIn("ADVERSARY-ONLY-MARK", review.goal)
         self.assertNotIn("PRIMARY-ONLY-MARK", attacker.goal)
+
+
+class BriefWordingTests(AdversaryFixture):
+    def test_every_brief_avoids_the_filtered_words_and_keeps_its_contract(self):
+        ticket = "Add a CSV export. Given a file, when exported, then it parses."
+        codex = Family("codex")
+        concern = ({"message": "a symlink may slip by"},)
+        briefs = {
+            "full": brief(Pass(1, "high", "full", "candidate", "a1", "b2",
+                               codex), ticket, 7),
+            "light": brief(Pass(1, "medium", "light", "candidate", "a1", "b2",
+                                codex), ticket, 7),
+            "fix": brief(Pass(2, "high", "light", "fix", "b2", "c3", codex,
+                              concern), ticket, 7)}
+        for name, goal in briefs.items():
+            with self.subTest(brief=name):
+                for word in FILTERED_WORDS:
+                    self.assertNotIn(word, goal.lower())
+                depth, seconds = ("full", 1800) if name == "full" else (
+                    "light", 900)
+                self.assertIn(f"Depth: {depth}. Time box: {seconds} seconds",
+                              goal)
+                self.assertIn("at most 5 subagents", goal)
+                for level in LEVELS:
+                    self.assertIn(level, goal)
+                self.assertIn("`SUBAGENT: MODEL — SURFACE`", goal)
+                self.assertTrue(goal.endswith("\nADVERSARY: DONE"))
+        self.assertIn("plus one per risky module", briefs["full"])
+        for name in ("light", "fix"):
+            self.assertIn("no per-module subagents", briefs[name])
+            self.assertNotIn("per risky module", briefs[name])
+        self.assertIn("- a symlink may slip by", briefs["fix"])
 
 
 class BlockingTests(AdversaryFixture):
@@ -226,6 +262,37 @@ class RerunTests(AdversaryFixture):
         self.assertEqual([(e["round"], e["scope"]) for e in events],
                          [(1, "candidate"), (2, "fix")])
         self.assertEqual(events[1]["range"], [first, second])
+
+
+class RefusalTests(AdversaryFixture):
+    def test_a_refused_turn_is_recorded_once_and_the_primary_review_stands(self):
+        self.configure(ON)
+        fake, _ = self.loop(Change("poetry.lock"), APPROVE, Attack(REFUSAL))
+        self.assertEqual(len(self.turns(fake, ADVERSARY)), 1)
+        [event] = self.events()
+        self.assertEqual((event["outcome"], event["findings"],
+                          event["concerns"]), ("refused", [], []))
+        self.assertEqual(self.round_row(1), ("pass", []))
+        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
+                         [("merged", None)])
+        self.assertEqual(self.read(
+            "SELECT COUNT(*) FROM runEvents WHERE kind = 'route_fallback'"),
+            [(0,)])
+        [note] = [text for (text,) in self.read(
+            "SELECT text FROM ledger WHERE kind = 'note'")
+            if "adversary" in text]
+        self.assertIn("refused by the provider", note)
+        self.assertIn("stands on the primary review", note)
+
+    def test_a_finished_reply_quoting_the_refusal_line_parses_as_findings(self):
+        self.configure(ON)
+        self.loop(Change("poetry.lock"), APPROVE, attack(
+            finding("src/review.py", 8, f"the reply text '{REFUSAL}' is "
+                    "matched anywhere", "concern")))
+        [event] = self.events()
+        self.assertEqual(event["outcome"], "clear")
+        self.assertEqual([c["path"] for c in event["concerns"]],
+                         ["src/review.py"])
 
 
 class FailureTests(AdversaryFixture):
