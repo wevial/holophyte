@@ -211,26 +211,139 @@ def update_story(board, project, slug, identifier, revision, priority=None):
     with closing(open_store(project)) as conn:
         project_id = store.tickets.ensure_project(conn, board.team,
                                                   project.path)
+        native = getattr(board, "native", False)
         _check_filed(conn, project_id, identifier, revision, directory,
-                     headers)
+                     headers, native)
         children = _validated_children(project, directory, headers)
         text = body_path.read_text().partition("\n")[2]
-        try:
-            with store.transaction(conn):
-                parent_id = _check_filed(conn, project_id, identifier,
-                                         revision, directory, headers)
-                lines, filed = _update_rows(
-                    conn, project_id, board.key, directory, parent_id,
-                    identifier, revision, text, children, headers, priority)
-        except StoryRefused:
-            raise
-        except ValueError as refused:
-            raise StoryRefused(getattr(refused, "problems",
-                                       [str(refused)])) from None
+        if native:
+            lines, filed = _in_transaction(
+                conn, _update_native, conn, project_id, board.key, directory,
+                identifier, revision, text, children, headers, priority)
+        else:
+            lines, filed = _update_on_board(
+                board, conn, project, project_id, directory, identifier,
+                revision, text, children, headers, priority)
     for name, new in filed:
         path = directory / story_template.CHILDREN / f"{name}.md"
         path.write_text(f"Ticket: {new}\n{path.read_text()}")
     return lines
+
+
+def _update_native(conn, project_id, key, directory, identifier, revision,
+                   text, children, headers, priority):
+    parent_id = _check_filed(conn, project_id, identifier, revision,
+                             directory, headers)
+    return _update_rows(conn, project_id, key, directory, parent_id,
+                        identifier, revision, text, children, headers,
+                        priority)
+
+
+def _update_on_board(board, conn, project, project_id, directory, identifier,
+                     revision, text, children, headers, priority):
+    slugs = {child.slug for child in children}
+    issue_ids, stored = {}, {}
+    for child in children:
+        issue_ids.update(_merged_issue_ids(conn, project_id, child, slugs))
+    for name in [identifier, *filter(None, headers.values())]:
+        stored[name] = conn.execute(
+            "SELECT body, linearIssueId FROM tickets WHERE projectId = ?"
+            " AND linearIdentifier = ?", (project_id, name)).fetchone()
+    for child in children:
+        if headers[child.name]:
+            issue_ids[child.slug] = stored[headers[child.name]][1]
+    written = {"updated": [], "created": []}
+    try:
+        touched, kept = _board_writes(
+            board, project, directory, identifier, text, children, headers,
+            priority, stored, issue_ids, written)
+    except Exception as refused:
+        raise StoryRefused([f"the board refused the update: {refused}",
+                            *_written(written)]) from None
+    try:
+        return _in_transaction(
+            conn, _mirror_update, conn, project_id, directory, identifier,
+            revision, text, children, headers, touched, kept)
+    except Exception as refused:
+        lines = getattr(refused, "lines",
+                        [f"the store refused the update: {refused}"])
+        raise StoryRefused([*lines, *_written(written)]) from refused
+
+
+def _written(written):
+    return ["already updated on the board: "
+            + (", ".join(written["updated"]) or "none"),
+            _to_cancel(written["created"])]
+
+
+def _board_writes(board, project, directory, identifier, text, children,
+                  headers, priority, stored, issue_ids, written):
+    touched, kept = {}, []
+    if stored[identifier][0] != text:
+        touched[None] = _board_update(board, identifier, text, written, kept)
+    label = board_config(project).label
+    identifiers = {child.slug: headers[child.name] for child in children
+                   if headers[child.name]}
+    for child in children:
+        body = _resolve(_child_body(directory, child), identifiers)
+        header = headers[child.name]
+        if header is None:
+            header = _create(board, written["created"], body, priority,
+                             parent=stored[identifier][1])
+            task = board.fetch_task(header)
+            if label is not None:
+                board.label_issue(task["issue_id"], label)
+                task = board.fetch_task(header)
+            identifiers[child.slug] = header
+            issue_ids[child.slug] = task["issue_id"]
+        elif stored[header][0] != body:
+            task = _board_update(board, header, body, written, kept)
+        else:
+            continue
+        touched[child.name] = (task, [issue_ids[dep] for dep in
+                                      child.depends_on if dep in issue_ids])
+    return touched, kept
+
+
+def _board_update(board, identifier, body, written, kept):
+    ticket = ticket_template.parse(body)
+    _added, extra = board.update(identifier, ticket.title, body,
+                                 ticket.estimate_min,
+                                 blockers=ticket.depends_on or [])
+    written["updated"].append(identifier)
+    kept.extend(f"{blocker} still blocks {identifier} on the board; remove "
+                "that relation on Linear" for blocker in extra)
+    return board.fetch_task(identifier)
+
+
+def _mirror_update(conn, project_id, directory, identifier, revision, text,
+                   children, headers, touched, kept):
+    parent_id = _check_filed(conn, project_id, identifier, revision,
+                             directory, headers, native=False)
+    before = _plan_state(conn, parent_id)
+    if None in touched:
+        mirror_task(conn, project_id, touched[None], specced=False)
+    lines, filed, rows = [], [], []
+    for child in children:
+        if child.name in touched:
+            task, depends_on = touched[child.name]
+            ticket_id = mirror_task(conn, project_id, task,
+                                    depends_on=depends_on)
+        else:
+            ticket_id = _ticket_id(conn, project_id, headers[child.name])
+        if child.name in touched and headers[child.name] is None:
+            filed.append((child.name, task["id"]))
+            lines.append(f"filed {task['id']}: {child.ticket.title} "
+                         f"({child.role}, Backlog)")
+        elif child.name in touched:
+            (new,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                                  (ticket_id,)).fetchone()
+            lines.append(f"updated {task['id']} (revision {new})")
+        rows.append((ticket_id, child.role, child.witnesses))
+    lines.extend(kept)
+    lines.append(_replan(conn, parent_id, identifier, directory, text, rows,
+                         before, int(time.time() * 1000)))
+    return lines, filed
 
 
 def _validated_children(project, directory, headers):
@@ -291,6 +404,12 @@ def _update_rows(conn, project_id, key, directory, parent_id, identifier,
                 lines.append(f"updated {header} (revision {new})")
         rows.append((_ticket_id(conn, project_id, header), child.role,
                      child.witnesses))
+    lines.append(_replan(conn, parent_id, identifier, directory, text, rows,
+                         before, now))
+    return lines, filed
+
+
+def _replan(conn, parent_id, identifier, directory, text, rows, before, now):
     story = story_template.parse_story(text)
     witnesses = _witnesses(directory, story)
     after = (text, *_rows_state(conn, witnesses, rows, story.standing_orders))
@@ -298,14 +417,14 @@ def _update_rows(conn, project_id, key, directory, parent_id, identifier,
     if after != before:
         state = store.stories.replan_story(conn, parent_id, witnesses, rows,
                                            story.standing_orders, now=now,
-                                           body_revised=body_revised)
+                                           body_revised=before[0] != text)
     (current,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
                               (parent_id,)).fetchone()
-    lines.append(f"story {identifier} is {state} at revision {current}")
-    return lines, filed
+    return f"story {identifier} is {state} at revision {current}"
 
 
-def _check_filed(conn, project_id, identifier, revision, directory, headers):
+def _check_filed(conn, project_id, identifier, revision, directory, headers,
+                 native=True):
     row = conn.execute("SELECT id, revision FROM tickets WHERE projectId = ?"
                        " AND linearIdentifier = ?",
                        (project_id, identifier)).fetchone()
@@ -330,7 +449,9 @@ def _check_filed(conn, project_id, identifier, revision, directory, headers):
     if missing:
         raise StoryRefused([f"child {missing[0]} of story {identifier} has no "
                             f"file in {directory / story_template.CHILDREN}; "
-                            "cancel a child with --cancel"])
+                            + ("cancel a child with --cancel" if native else
+                               "cancel the child on Linear and keep its "
+                               "file")])
     return row[0]
 
 
