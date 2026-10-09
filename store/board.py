@@ -40,13 +40,19 @@ def ticket_problems(text, repo):
     return problems
 
 
+def _blocks_filing(problems, column):
+    from holophyte.leak_guard import KEY
+    return bool(problems) and (column != "backlog"
+                               or any(KEY in problem for problem in problems))
+
+
 def file_ticket(conn, project_id, key, text, column="ready", priority=None,
                 author="cli", now=None):
     """File `text` as the next `KEY-n`; a refused filing uses no number."""
     if now is None:
         now = int(time.time() * 1000)
     problems = ticket_problems(text, _repo_path(conn, project_id))
-    if problems and column != "backlog":
+    if _blocks_filing(problems, column):
         raise FilingRefused(problems)
     with _transaction(conn):
         depends, waiting = _dependencies(conn, project_id, text)
@@ -81,7 +87,7 @@ def edit_ticket(conn, project_id, identifier, text, expected_revision,
         ticket_id, issue_id, revision, column, url, state, affinity = row
         if revision != expected_revision:
             raise RevisionMoved(identifier, expected_revision, revision)
-        if problems and column != "backlog":
+        if _blocks_filing(problems, column):
             raise FilingRefused(problems)
         depends, waiting = _dependencies(conn, project_id, text, ticket_id)
         _write(conn, project_id, issue_id, identifier, text, not problems,

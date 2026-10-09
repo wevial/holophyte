@@ -25,6 +25,8 @@ from loop_fixture import (  # noqa: E402
 import holophyte.cli.entry  # noqa: E402
 import holophyte.redact  # noqa: E402
 import linear_provider  # noqa: E402
+import store  # noqa: E402
+import store.board  # noqa: E402
 import ticket_template  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.leak_guard import PrivateMatch  # noqa: E402
@@ -316,6 +318,39 @@ class TicketFilingTests(PrivateText, ConfigTestCase):
         with contextlib.redirect_stdout(out):
             status = ticket_template.main(["--repo", str(self.target), str(path)])
         self.assertRefused(status, out.getvalue(), f"section #9, line {line},")
+
+    def test_a_heading_quoting_a_pattern_is_blanked_from_the_refusal(self):
+        path, line = self.ticket("quoted.md", f"- The API lives at {LEAK}.")
+        text = path.read_text().replace(
+            "## Implementation notes", r"## Notes on (?i)\bbuild-host\.lan\b")
+        path.write_text(text)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            status = ticket_template.main(["--repo", str(self.target), str(path)])
+        self.assertRefused(status, out.getvalue(), f", line {line},")
+
+    def test_a_backlog_draft_that_matches_is_refused_by_the_store(self):
+        clean, _ = self.ticket("clean.md", f"- The API lives at {CLEAN}.")
+        self.assertEqual(self.cli(clean)[0], 0)
+        conn = store.open(str(self.project.store_path))
+        self.addCleanup(conn.close)
+        (project_id,) = conn.execute("SELECT id FROM projects").fetchone()
+        self.assertEqual(store.board.file_ticket(
+            conn, project_id, "NAT", clean.read_text(), column="backlog"), "NAT-2")
+        filed = self.rows()
+        leaked, _ = self.ticket("leak.md", f"- The API lives at {LEAK}.")
+        text = leaked.read_text()
+
+        for write in (lambda: store.board.file_ticket(
+                          conn, project_id, "NAT", text, column="backlog"),
+                      lambda: store.board.edit_ticket(
+                          conn, project_id, "NAT-2", text, 1)):
+            with self.assertRaises(store.board.FilingRefused) as raised:
+                write()
+            self.assertIn(KEY, str(raised.exception))
+            self.assertPrivateAbsent(str(raised.exception))
+        self.assertEqual(self.rows(), filed)
 
 
 class Amend(Commit):

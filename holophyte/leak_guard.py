@@ -146,7 +146,7 @@ def with_findings(verdict, findings):
 
 
 def ticket_problems(repo, text, problems=()):
-    """Problems found before the scan come back redacted of what it matched."""
+    """Every problem comes back redacted of the patterns and what they matched."""
     from holophyte.config.project import Project
     from ticket_template import H1_RE, H2_RE
     try:
@@ -160,12 +160,12 @@ def ticket_problems(repo, text, problems=()):
         if heading:
             headings += 1
             section = (f"section #{headings}" if found
-                       else f"section {heading.group(1).strip()!r}")
+                       else f"section '{heading.group(1).strip()}'")
         elif H1_RE.match(line):
             section = "the title"
         private += [f"{section}, line {number}, holds text the project does"
                     f" not publish ({KEY} #{index})" for index in found]
-    return [redact_values(problem) for problem in problems] + private
+    return [redact_values(problem) for problem in [*problems, *private]]
 
 
 def record(conn, run_id, leaks):
