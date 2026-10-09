@@ -155,7 +155,8 @@ class NativeBoard:
         conn, project_id = self._write()
         with closing(conn):
             parked = column == "ready" and stale_parked(
-                conn, project_id, identifier, columns=("ready", "backlog"))
+                conn, project_id, identifier, columns=("ready", "backlog"),
+                critic=True)
             if parked:
                 return recheck_move(self.project, conn, project_id, self,
                                     parked[0], revision, note)

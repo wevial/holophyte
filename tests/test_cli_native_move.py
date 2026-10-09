@@ -153,13 +153,13 @@ class NativeMoveCliTests(ConfigTestCase):
                         "-c", "user.email=test@example.invalid", *args],
                        cwd=self.target, check=True, capture_output=True)
 
-    def parked_on_later(self):
-        """NAT-1, naming `LATER` in its notes, parked by the claim's
-        freshness check while main lacks it; its revision."""
+    def parked(self, text, kind):
+        """NAT-1 filed with `text` on a committed main and parked with
+        `kind`: the freshness check's own reasons, or a critic verdict;
+        its revision."""
         self.native(0)
         path = self.root / "T.md"
-        path.write_text(body("Thing").replace(
-            "- None worth noting.", f"- Extend `{LATER}` with the thing."))
+        path.write_text(text)
         self.assertEqual(self.cli("--file-ticket", str(path))[0], 0)
         self.git("init", "-q", "-b", "main")
         self.git("add", "-A")
@@ -167,14 +167,52 @@ class NativeMoveCliTests(ConfigTestCase):
         board = board_for(self.project)
         task = board.fetch_task("NAT-1")
         reasons = stale_reasons(self.target, task["body"])
-        self.assertEqual(len(reasons), 1)
+        if kind == "critic":
+            reasons = ["critic: stale \u2014 already done"]
+        else:
+            self.assertEqual(len(reasons), 1)
         with contextlib.closing(open_store(self.project)) as conn, \
                 contextlib.redirect_stdout(io.StringIO()):
             project_id = conn.execute("SELECT id FROM projects").fetchone()[0]
-            park_stale(self.project, conn, project_id, board, task, reasons)
+            park_stale(self.project, conn, project_id, board, task, reasons,
+                       admitted=kind == "critic", kind=kind)
         column, revision, status = self.ticket("NAT-1")
         self.assertEqual((column, status), ("ready", "needs_spec"))
         return revision
+
+    def parked_on_later(self, kind="stale"):
+        """NAT-1, naming `LATER` in its notes, parked while main lacks it;
+        its revision."""
+        return self.parked(body("Thing").replace(
+            "- None worth noting.", f"- Extend `{LATER}` with the thing."),
+            kind)
+
+    def critic_parked(self):
+        """NAT-1, a body every landmark of which is on main, parked by the
+        critic; its revision."""
+        revision = self.parked(body("Thing"), "critic")
+        self.assertEqual(stale_reasons(self.target, body("Thing")), [])
+        return revision
+
+    def interventions(self):
+        """Every interventions row but the store's own `migrate` record."""
+        with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
+            return conn.execute(
+                'SELECT "action", source, "trigger", projectId IS NOT NULL,'
+                " runId, note FROM interventions WHERE \"action\" != 'migrate'"
+                " ORDER BY id").fetchall()
+
+    def newest_note(self):
+        with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
+            return conn.execute(
+                "SELECT kind, text FROM ticketNotes"
+                " ORDER BY at DESC, id DESC LIMIT 1").fetchone()
+
+    def assert_requeued_from(self, kind):
+        (row,) = self.interventions()
+        self.assertEqual(row[:5], ("requeue", "human", "manual", 1, None))
+        self.assertIn("NAT-1", row[5])
+        self.assertIn(kind, row[5])
 
     def test_a_move_to_ready_re_checks_a_stale_park_main_now_satisfies(self):
         revision = self.parked_on_later()
@@ -188,6 +226,7 @@ class NativeMoveCliTests(ConfigTestCase):
             (0, f"[holo2] re-checked NAT-1 against main: ready"
                 f" (revision {revision})\n"))
         self.assertEqual(self.ticket("NAT-1"), ("ready", revision, "ready"))
+        self.assert_requeued_from("stale")
 
     def test_a_move_to_ready_keeps_a_stale_park_main_still_lacks(self):
         revision = self.parked_on_later()
@@ -204,4 +243,71 @@ class NativeMoveCliTests(ConfigTestCase):
     def test_a_ready_ticket_no_park_holds_is_already_in_ready(self):
         self.native(1)
         self.assertEqual(self.cli("--move", "NAT-1", "ready", "--revision", "1"),
-                         (1, "[holo2] NAT-1 is already in ready\n"))
+                         (1, "[holo2] NAT-1 is already in ready at status"
+                             " ready; nothing changed\n"))
+
+    def test_a_stale_park_an_update_re_readied_is_already_in_ready(self):
+        revision = self.parked_on_later()
+        path = self.root / "T.md"
+        path.write_text(body("Thing"))
+        self.assertEqual(self.cli("--file-ticket", str(path), "--update",
+                                  "NAT-1", "--revision", str(revision))[0], 0)
+        column, revision, status = self.ticket("NAT-1")
+        self.assertEqual((column, status), ("ready", "ready"))
+
+        self.assertEqual(
+            self.cli("--move", "NAT-1", "ready", "--revision", str(revision)),
+            (1, "[holo2] NAT-1 is already in ready at status ready;"
+                " nothing changed\n"))
+        self.assertEqual(self.interventions(), [])
+
+    def test_a_move_to_ready_re_readies_a_critic_park_moved_to_backlog(self):
+        revision = self.critic_parked()
+        board = board_for(self.project)
+        revision, _, _ = board.move("NAT-1", "backlog", revision)
+        self.assertEqual(self.ticket("NAT-1"),
+                         ("backlog", revision, "needs_spec"))
+
+        revision, _, status = board.move("NAT-1", "ready", revision)
+
+        self.assertEqual(status, "ready")
+        self.assertEqual(self.ticket("NAT-1"), ("ready", revision, "ready"))
+        self.assertEqual(self.newest_note()[0], "recheck")
+        self.assert_requeued_from("critic")
+
+    def test_a_move_to_ready_keeps_a_critic_park_main_lacks_a_landmark_of(self):
+        revision = self.parked_on_later(kind="critic")
+
+        with self.assertRaises(store.board.FilingRefused) as refused:
+            board_for(self.project).move("NAT-1", "ready", revision)
+
+        self.assertIn(f"`{LATER}` (named in Implementation notes) is not on"
+                      " main", str(refused.exception))
+        self.assertEqual(self.ticket("NAT-1"),
+                         ("ready", revision, "needs_spec"))
+        self.assertEqual(self.interventions(), [])
+
+    def assert_park_note_names_the_native_steps(self, kind):
+        self.parked_on_later(kind=kind)
+        note_kind, text = self.newest_note()
+        self.assertEqual(note_kind, kind)
+        self.assertIn("--file-ticket --update", text)
+        self.assertIn("--move", text)
+        self.assertNotIn("move the issue back to Todo", text)
+
+    def test_a_stale_park_note_names_the_native_steps_that_re_ready_it(self):
+        self.assert_park_note_names_the_native_steps("stale")
+
+    def test_a_critic_park_note_names_the_native_steps_that_re_ready_it(self):
+        self.assert_park_note_names_the_native_steps("critic")
+
+    def test_a_move_to_ready_re_readies_a_critic_park_with_a_clean_body(self):
+        revision = self.critic_parked()
+
+        self.assertEqual(
+            self.cli("--move", "NAT-1", "ready", "--revision", str(revision)),
+            (0, f"[holo2] re-checked NAT-1 against main: ready"
+                f" (revision {revision})\n"))
+        self.assertEqual(self.ticket("NAT-1"), ("ready", revision, "ready"))
+        self.assertEqual(self.newest_note()[0], "recheck")
+        self.assert_requeued_from("critic")
