@@ -30,7 +30,9 @@ TAIL_LINES = 20
 RECEIPT_VERSION = 6
 CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
 STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
-QUOTED = re.compile(r"^Captured with `.*?`\.[ \t\r]*$\n*", re.MULTILINE | re.DOTALL)
+QUOTED = re.compile(r"^Captured with `.*`\.[ \t\r]*\n+"
+                    r"(?=Dropped `|No media remains |Media lives in )",
+                    re.MULTILINE | re.DOTALL)
 
 
 def implementer_brief(project, ticket, task_id):
