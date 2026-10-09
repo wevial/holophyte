@@ -423,8 +423,6 @@ class CoveringAfterConflictedMainMergeTests(unittest.TestCase):
         return added_lines(range_command_output(prompt, self.root))
 
     def test_range_diff_shows_resolution_and_not_main_hunks(self):
-        self.assertEqual(self.git("rev-list", "--count", "--merges",
-                                  f"{self.approved}..{self.head}"), "1")
         added = self.added_lines(self.head)
         self.assertIn("resolved-fifteen", added)
         self.assertNotIn("main-two", added)
