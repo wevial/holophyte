@@ -386,3 +386,62 @@ class CoveringAgainstLaggingMainTests(CoveringAfterMainMergeTests):
         self.assertEqual(
             briefs.covering_scope(self.root, self.approved, self.head, "pr"),
             lagging)
+
+
+class CoveringAfterConflictedMainMergeTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        for args in (("init", "-q", "-b", "main"),
+                     ("config", "user.name", "Test reviewer"),
+                     ("config", "user.email", "reviewer@example.test")):
+            self.git(*args)
+        lines = [f"line-{n}" for n in range(1, 21)]
+        self.commit("base", {"shared.txt": lines})
+        self.git("checkout", "-qb", "task")
+        self.approved = self.commit("candidate fix", {"holophyte/fix.py": ["x"]})
+        self.git("checkout", "-q", "main")
+        self.commit("main moves on", {
+            "other.txt": ["main"],
+            "shared.txt": self.edit(lines, {2: "main-two", 15: "main-fifteen"})})
+        self.git("checkout", "-q", "task")
+        self.commit("candidate touches shared",
+                    {"shared.txt": self.edit(lines, {15: "task-fifteen"})})
+        subprocess.run(["git", "merge", "-q", "main"], cwd=self.root,
+                       capture_output=True)
+        merged = self.edit(lines, {2: "main-two", 15: "resolved-fifteen"})
+        self.head = self.commit("Merge main into task", {"shared.txt": merged})
+
+    def git(self, *args):
+        return subprocess.check_output(
+            ["git", *args], cwd=self.root, text=True, stderr=subprocess.PIPE
+        ).strip()
+
+    @staticmethod
+    def edit(lines, changes):
+        return [changes.get(n, line) for n, line in enumerate(lines, 1)]
+
+    def commit(self, subject, files):
+        for path, lines in files.items():
+            file = self.root / path
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("".join(f"{line}\n" for line in lines))
+        self.git("add", ".")
+        self.git("commit", "-qm", subject)
+        return self.git("rev-parse", "HEAD")
+
+    def added_lines(self, head):
+        prompt = briefs.covering_scope(self.root, self.approved, head, "pr")
+        command = re.search(r"Review this range as `([^`]+)`", prompt)
+        diff = subprocess.check_output(shlex.split(command.group(1)),
+                                       cwd=self.root, text=True)
+        return {line[1:] for line in diff.splitlines()
+                if line.startswith("+") and not line.startswith("+++")}
+
+    def test_range_diff_shows_resolution_and_not_main_hunks(self):
+        self.assertEqual(self.git("rev-list", "--count", "--merges",
+                                  f"{self.approved}..{self.head}"), "1")
+        added = self.added_lines(self.head)
+        self.assertIn("resolved-fifteen", added)
+        self.assertNotIn("main-two", added)
