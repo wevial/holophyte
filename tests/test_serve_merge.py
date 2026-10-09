@@ -59,10 +59,6 @@ def review_rule(ruleset_id, count):
                            "allowed_merge_methods": ["merge", "squash"]}}
 
 
-BYPASS_RULES = [{"type": "deletion", "ruleset_source_type": "Repository",
-                 "ruleset_id": 23}, review_rule(23, 0), review_rule(24, 1)]
-
-
 class FakeGithub:
     """GitHub's API as `pr_state()` reads it, answering one pull request."""
 
@@ -239,13 +235,9 @@ class ReadyMergeTests(MergeCase):
         code, _, posted = self.post_merge(run=self.run, author="ko",
                                           note="looks right")
         self.assertEqual((code, posted["ok"]), (200, True), posted)
-        (summary,) = self.rows(
-            "SELECT e.summary FROM interventions i JOIN runEvents e"
-            " ON e.runId = i.runId AND e.at = i.at AND e.kind = 'intervention'"
-            " WHERE i.runId = ? AND i.action = 'approve'", self.run)
-        self.assertIn(f"ko via the console: merge at head {self.sha}",
-                      summary[0])
-        self.assertIn("looks right", summary[0])
+        summary = self.approve_summary()
+        self.assertIn(f"ko via the console: merge at head {self.sha}", summary)
+        self.assertIn("looks right", summary)
         self.assertEqual(self.rows("SELECT status FROM tickets"), [("ready",)])
         self.assertEqual(self.rows("SELECT resumePhase FROM runs WHERE id = ?",
                                    self.run), [("merge_gate",)])
@@ -267,25 +259,6 @@ class ReadyMergeTests(MergeCase):
             "SELECT id FROM interventions WHERE action = 'approve'")
         self.assertEqual((code, merged["ok"], merged["recorded"]),
                          (200, True, approve[0]), merged)
-
-    def test_an_approved_pull_request_under_bypassable_rules_merges_plainly(
-            self):
-        self.github.rules = BYPASS_RULES
-        self.github.rulesets = {
-            24: {"name": "human-review",
-                 "current_user_can_bypass": "pull_requests_only"}}
-        self.park()
-        self.start_actions()
-        body = self.read_merge()
-        self.assertEqual(json.loads(json.dumps(body).replace(
-            self.sha, "HEAD_SHA")), json.loads(FIXTURE.read_text()))
-
-        code, _, posted = self.post_merge(run=self.run, bypass_review=True)
-        self.assertEqual((code, posted["ok"]), (200, True), posted)
-        self.assertNotIn("bypass", posted["detail"])
-        summary = self.approve_summary()
-        self.assertIn(", ".join(FACT_NAMES) + " held", summary)
-        self.assertNotIn("bypass", summary)
 
     def test_a_run_superseded_during_the_github_read_approves_nothing(self):
         self.park()
@@ -356,7 +329,9 @@ class BypassMergeTests(MergeCase):
         github.review, github.checks, github.mergeable = "REVIEW_REQUIRED", \
             "SUCCESS", "MERGEABLE"
         github.threads, github.later_rules_failure = (), None
-        github.rules = BYPASS_RULES
+        github.rules = [
+            {"type": "deletion", "ruleset_source_type": "Repository",
+             "ruleset_id": 23}, review_rule(23, 0), review_rule(24, 1)]
         github.rulesets = {
             23: {"name": "baseline", "current_user_can_bypass": "never"},
             24: {"name": "human-review",
@@ -392,6 +367,20 @@ class BypassMergeTests(MergeCase):
         self.assertEqual(self.rows("SELECT resumePhase FROM runs WHERE id = ?",
                                    self.run), [("merge_gate",)])
         self.assertEqual(self.github.merge_calls(), [])
+
+    def test_an_approved_pull_request_under_bypassable_rules_merges_plainly(
+            self):
+        self.github.review = "APPROVED"
+        body = self.read_merge()
+        self.assertEqual(json.loads(json.dumps(body).replace(
+            self.sha, "HEAD_SHA")), json.loads(FIXTURE.read_text()))
+
+        code, _, posted = self.post_merge(run=self.run, bypass_review=True)
+        self.assertEqual((code, posted["ok"]), (200, True), posted)
+        self.assertNotIn("bypass", posted["detail"])
+        summary = self.approve_summary()
+        self.assertIn(", ".join(FACT_NAMES) + " held", summary)
+        self.assertNotIn("bypass", summary)
 
     def test_a_bypass_that_cannot_be_established_stays_not_approved(self):
         unreadable = InfraFailure("GitHub did not answer GET rulesets")
