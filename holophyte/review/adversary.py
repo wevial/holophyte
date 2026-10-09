@@ -41,6 +41,9 @@ EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:[*`\s]*([^\s*`]*)",
 LEADING_PATH_RE = re.compile(
     r"^\s*(?:[-*+]|\d+[.)])\s+[`*_]*([\w.\-/]*\w):(\d+)(?![\w.])")
 SURFACES = "browser UI, HTTP or API, CLI, data and migrations"
+SUBAGENT_RE = re.compile(
+    r"^[ \t>*`_-]*SUBAGENT[*`_]*:[ \t*`_]*([^\s*`].*?)[*`_]*[ \t]+[—–-][ \t]+"
+    r"[*`_]*([^\s*`].*?)[ \t\r*`_]*$", re.I | re.M)
 
 
 @dataclass(frozen=True)
@@ -180,8 +183,14 @@ def brief(plan, ticket, run_id):
         "EVIDENCE: concern — give the scenario and why it cannot be shown "
         "yet.\n"
         "Reproduced and traced findings block the change; concerns are "
-        "recorded and do not. End your reply with exactly one line:\n"
-        f"{DONE}")
+        "recorded and do not. After the findings, list each attack subagent "
+        "you started on one line, `SUBAGENT: MODEL — SURFACE`. End "
+        f"your reply with exactly one line:\n{DONE}")
+
+
+def subagents(reply):
+    return [{"model": model, "surface": surface}
+            for model, surface in SUBAGENT_RE.findall(str(reply))]
 
 
 def finished(reply):
@@ -201,7 +210,7 @@ def _indent(block):
 
 def _items(reply):
     items, current = [], None
-    for block in finding_blocks(str(reply).replace(DONE, "")):
+    for block in finding_blocks(SUBAGENT_RE.sub("", str(reply)).replace(DONE, "")):
         nested = current is not None and _indent(block) > _indent(current[0])
         if nested or (current is not None and EVIDENCE_RE.match(block)):
             current.append(block)
@@ -284,6 +293,7 @@ def settle(project, conn, run_id, provider, task_id, plan, attacked):
         return []
     reply, seconds = attacked
     found = parse(reply) if reply is not None else []
+    started = subagents(reply) if reply is not None else []
     blocking = [f for f in found if f["evidence"] in BLOCKING]
     concerns = [f for f in found if f["evidence"] not in BLOCKING]
     outcome = ("malformed" if reply is None else
@@ -297,6 +307,7 @@ def settle(project, conn, run_id, provider, task_id, plan, attacked):
             "round": plan.round, "tier": plan.tier, "depth": plan.depth,
             "scope": plan.scope, "range": [plan.start, plan.sha],
             **family.record(), "outcome": outcome, "seconds": seconds,
+            "subagents": started, "over_cap": len(started) > MAX_SUBAGENTS,
             "findings": blocking, "concerns": concerns}))
     if concerns:
         ledger(conn, run_id, task_id, "note",

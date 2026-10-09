@@ -129,6 +129,59 @@ def blast_radius_lines(conn):
             + " · ".join(f"{tier} {counts[tier]}" for tier in BLAST_TIERS)]
 
 
+ADVERSARY_FAMILIES = ("claude", "codex", "configured", "fallback")
+
+
+def adversary_counts(passes):
+    depths = Counter(event["depth"] for event in passes)
+    models = Counter(subagent["model"] for event in passes
+                     for subagent in event.get("subagents", []))
+    blocking = Counter(finding["evidence"] for event in passes
+                       for finding in event["findings"])
+    return {
+        "passes": len(passes), "full": depths["full"], "light": depths["light"],
+        "models": sorted(models.items(), key=lambda item: (-item[1], item[0])),
+        "reproduced": blocking["reproduced"], "traced": blocking["traced"],
+        "concerns": sum(len(event["concerns"]) for event in passes),
+        "blocked": sum(1 for event in passes if event["findings"]),
+        "minutes": sum(event.get("seconds") or 0 for event in passes) / 60}
+
+
+def adversary_line(family, counts):
+    total = sum(count for _, count in counts["models"])
+    models = (" (" + " · ".join(f"{model} {count}"
+                                for model, count in counts["models"]) + ")"
+              if total else "")
+    return (f"adversary {family}: {counts['passes']} passes"
+            f" (full {counts['full']} · light {counts['light']})"
+            f" · {total} subagents{models}"
+            f" · reproduced {counts['reproduced']} · traced {counts['traced']}"
+            f" · concerns {counts['concerns']} · blocked {counts['blocked']}"
+            f" · {counts['minutes']:.1f} min")
+
+
+def adversary_lines(conn):
+    passes = [json.loads(payload) for (payload,) in conn.execute(
+        "SELECT payload FROM runEvents WHERE kind = 'adversary_round'")]
+    return [adversary_line(family, adversary_counts(mine))
+            for family in ADVERSARY_FAMILIES
+            if (mine := [event for event in passes
+                         if event.get("family") == family])]
+
+
+def consolidation_lines(conn):
+    rounds = [json.loads(payload) for (payload,) in conn.execute(
+        "SELECT payload FROM runEvents WHERE kind = 'consolidation'")]
+    if not rounds:
+        return []
+    merges = sum(len(event["merges"]) for event in rounds)
+    held = sum(len(event["held_concerns"]) for event in rounds)
+    unavailable = sum(1 for event in rounds
+                      if event["pass2"] in ("unavailable", "malformed"))
+    return [f"consolidation: {len(rounds)} rounds · {merges} merges"
+            f" · {held} held concerns · {unavailable} unavailable"]
+
+
 def calls(n):
     return f"{n} call" if n == 1 else f"{n} calls"
 
@@ -207,6 +260,8 @@ def report_lines(conn, target=None):
         live += flaky_lines(conn)
         live += trim_lines(conn)
         live += blast_radius_lines(conn)
+        live += adversary_lines(conn)
+        live += consolidation_lines(conn)
         live += question_lines(conn)
         live += toil_lines(conn, now)
         live.append("gap layers: " + ", ".join(
