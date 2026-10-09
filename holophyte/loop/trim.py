@@ -1,6 +1,5 @@
 """The trim step: one turn that shrinks the diff, kept only while verify is green."""
 import json
-import shutil
 import subprocess
 from functools import partial
 from pathlib import Path
@@ -17,6 +16,7 @@ from holophyte.loop.implement import (
     _commands_brief,
     _killed_by_signal,
     _timed,
+    remove_entries,
     run_cap_reason,
 )
 from holophyte.loop.review_round import _changed_lines
@@ -163,12 +163,7 @@ def _land(wt, target, untracked):
     # one that was untracked before the turn survives the hard reset.
     sh(["git", "reset", "-q", target], cwd=wt)
     sh(["git", "reset", "-q", "--hard"], cwd=wt)
-    for name in _untracked(wt) - untracked:
-        path = Path(wt, name)
-        if path.is_dir() and not path.is_symlink():
-            shutil.rmtree(path)
-        else:
-            path.unlink(missing_ok=True)
+    remove_entries(wt, _untracked(wt) - untracked)
 
 
 def _below_swept_wip(wt, sha):

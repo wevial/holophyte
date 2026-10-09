@@ -2,10 +2,11 @@
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 from contextlib import suppress
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from time import monotonic as retry_clock
 from time import sleep, time
 
@@ -18,8 +19,9 @@ from holophyte.agents.fix_session import resume_argv
 from holophyte.agents.harness import ORCHESTRATION_BRIEFS, implementer_orchestrations
 from holophyte.agents.roles import agent, record_session
 from holophyte.config.agent_settings import budget_scale, turn_cap, turn_cap_min
-from holophyte.config.config_tables import sweep_config, verify_config
+from holophyte.config.config_tables import merge_config, sweep_config, verify_config
 from holophyte.config.reader import config_table
+from holophyte.config.worktree_settings import carry_directories
 from holophyte.environment_git import (
     factory_identity,
     paths,
@@ -82,6 +84,7 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
            merges=True):
     """Return `(output, timed_out)`; a timeout or a sweep kills the turn's group."""
     swept = sweep and role in ("implement", "trim")
+    ignored = _ignored_quietly(wt) if swept else None
     try:
         output, timed_out = _run_turn(project, conn, run_id, beat_s, wt,
                                       budget_min, goal, role, argv, seconds,
@@ -89,10 +92,12 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
     except Exception:
         if swept:
             _sweep_quietly(project, conn, run_id, wt, "ended", merges)
+            _drop_leftovers(project, conn, run_id, wt, "ended", ignored)
         raise
     if swept:
-        _sweep_quietly(project, conn, run_id, wt, _turn_end(output, timed_out),
-                       merges)
+        cause = _turn_end(output, timed_out)
+        _sweep_quietly(project, conn, run_id, wt, cause, merges)
+        _drop_leftovers(project, conn, run_id, wt, cause, ignored)
     return output, timed_out
 
 
@@ -237,8 +242,7 @@ def _task_key(conn, run_id, branch):
 def _sweep_quietly(project, conn, run_id, wt, cause, merges):
     try:
         _sweep_tree(project, conn, run_id, wt, cause, merges)
-    except (RuntimeError, OSError, ValueError, subprocess.SubprocessError,
-            sqlite3.Error) as failed:
+    except SWEPT_ERRORS as failed:
         print(f"[holo2] the turn-end sweep of {wt} failed: {failed}")
 
 
@@ -255,6 +259,66 @@ def _sweep_tree(project, conn, run_id, wt, cause, merges):
     if mid_merge(wt):
         _sweep_merge(project, conn, run_id, wt, branch, task_id)
     _commit_wip(project, conn, run_id, wt, branch, task_id, cause)
+
+
+SWEPT_ERRORS = (RuntimeError, OSError, ValueError, subprocess.SubprocessError,
+                sqlite3.Error)
+LEFTOVER_CAUSES = ("crashed", "budget fired", "ended")
+
+
+def _ignored(wt):
+    return _listed(wt, "ls-files", "-z", "--others", "--ignored",
+                   "--exclude-standard", "--directory")
+
+
+def _ignored_quietly(wt):
+    try:
+        return _ignored(wt)
+    except SWEPT_ERRORS as failed:
+        print(f"[holo2] listing the ignored files of {wt} failed: {failed}")
+        return None
+
+
+def _leftovers(project, wt, before):
+    kept = [PurePosixPath(name) for name in (
+        *before, *carry_directories(project), merge_config(project).ui_capture_dir)
+        if name]
+    gone = []
+    for name in sorted(_ignored(wt) - before):
+        path = PurePosixPath(name)
+        if not any(_nested(path, root) for root in kept):
+            gone.append(name)
+            kept.append(path)
+    return gone
+
+
+def _nested(path, root):
+    return path == root or root in path.parents or path in root.parents
+
+
+def remove_entries(wt, names):
+    for name in names:
+        path = Path(wt, name)
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
+
+
+def _drop_leftovers(project, conn, run_id, wt, cause, before):
+    if cause not in LEFTOVER_CAUSES or before is None:
+        return
+    try:
+        gone = _leftovers(project, wt, before)
+        remove_entries(wt, gone)
+        if gone and conn is not None and run_id is not None:
+            store.record_event(
+                conn, run_id, "ignored_leftovers_removed",
+                f"{cause}: removed {len(gone)} ignored leftover(s):"
+                f" {', '.join(gone)}", level="detail",
+                payload=json.dumps({"cause": cause, "paths": gone}))
+    except SWEPT_ERRORS as failed:
+        print(f"[holo2] removing the ignored leftovers of {wt} failed: {failed}")
 
 
 def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
