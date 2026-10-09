@@ -8,6 +8,7 @@ from store.stories import (
     story_frontier,
     witness_ledger,
 )
+from store.story_proposals import open_proposals
 
 SHOWN_STATES = ("planned", "approved", "parked")
 CHILD_KINDS = ("merged", "running", "frontier", "waiting")
@@ -42,6 +43,9 @@ def _facts(conn, story_id, max_parallel, now):
             "errors": sum(witness["verdict"] == "error"
                           for witness in witnesses),
             "decisions": len(found.decisions),
+            "proposals": [{"id": proposal.id, "from": proposal.raisedBy,
+                           "text": proposal.text}
+                          for proposal in open_proposals(conn, story_id)],
             "age_s": None if filed_at is None
             else max(0, (now - filed_at) // 1000)}
 
@@ -85,7 +89,9 @@ def story_lines(stories):
         lines.append(
             f"  witnesses {witnesses} @{(fact['commit'] or 'none')[:7]}"
             f"  errors {fact['errors']}  decisions {fact['decisions']}"
-            f"  age {_age(fact['age_s'])}")
+            f"  proposals {len(fact['proposals'])}  age {_age(fact['age_s'])}")
+        lines.extend(f"  proposal p{proposal['id']} from {proposal['from']}:"
+                     f" {proposal['text']}" for proposal in fact["proposals"])
     return lines
 
 

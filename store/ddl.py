@@ -462,6 +462,23 @@ CREATE TABLE IF NOT EXISTS followUps (
     error       TEXT,
     UNIQUE (runId, fingerprint)
 );
+
+-- storyProposals: a story child's feature follow-up proposed as a new child,
+-- outside the plan until a decision accepts it.
+CREATE TABLE IF NOT EXISTS storyProposals (
+    id            INTEGER PRIMARY KEY,
+    storyId       INTEGER NOT NULL REFERENCES stories (ticketId),
+    followUpId    INTEGER NOT NULL UNIQUE REFERENCES followUps (id),
+    raisedBy      INTEGER NOT NULL REFERENCES tickets (id),
+    title         TEXT    NOT NULL,
+    body          TEXT    NOT NULL,
+    state         TEXT    NOT NULL
+        {_enums.check_clause('state', _enums.ProposalState)},
+    childTicketId INTEGER REFERENCES tickets (id),
+    decidedBy     TEXT,
+    decidedAt     INTEGER,
+    at            INTEGER NOT NULL
+);
 """
 
 

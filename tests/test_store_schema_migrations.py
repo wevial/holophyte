@@ -9,8 +9,9 @@ from unittest.mock import patch
 
 import store
 import store.schema
+import store.stories
 import store.tickets
-from tests.schema_fixture import VERSION_4_INTERVENTIONS_TABLE
+from tests.schema_fixture import DOCUMENTED_COLUMNS, VERSION_4_INTERVENTIONS_TABLE
 from tests.ticket_url_fixture import assert_schema_url
 
 
@@ -467,7 +468,7 @@ class AdmissionMigrationTests(unittest.TestCase):
 
 STORY_TABLES = ('stories', 'storyChildren', 'witnessResults', 'storyDecisions')
 # Tables newer than version 26, left empty by its migration.
-EMPTY_TABLES = (*STORY_TABLES, 'followUps')
+EMPTY_TABLES = (*STORY_TABLES, 'followUps', 'storyProposals')
 
 
 class Version26EnumMigrationTests(unittest.TestCase):
@@ -805,3 +806,46 @@ class FollowUpsMigrationTests(unittest.TestCase):
                     "INSERT INTO followUps (runId, ticketId, commitSha, kind,"
                     " kindGiven, text, fingerprint, createdAt)"
                     " VALUES (1, 1, 'c', 'bogus', 1, 't', 'g', 1)")
+
+
+class StoryProposalsMigrationTests(unittest.TestCase):
+    def test_a_version_42_store_with_a_story_gains_story_proposals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "store.db"
+            conn = store.open(path)
+            project = store.tickets.ensure_project(conn, "team-1", "/repos/h")
+            parent, child = (store.tickets.mirror_ticket(
+                conn, project, linear_issue_id=f"issue-{n}",
+                linear_identifier=f"KO-{n}", title=f"ticket {n}")
+                for n in (1, 2))
+            store.stories.file_story(
+                conn, parent, [{"key": "W1", "criterion": "it holds",
+                                "file": "tests/test_w1.py",
+                                "command": "python3 -m unittest tests.test_w1",
+                                "source": "pass\n"}],
+                [(child, "completes", ("W1",))])
+            (revision,) = conn.execute("SELECT revision FROM tickets"
+                                       " WHERE id = ?", (parent,)).fetchone()
+            store.stories.approve_story(conn, parent, revision, "operator", "go")
+            tables = ("tickets", "stories", "storyChildren", "storyWitnesses")
+            before = {table: conn.execute(f"SELECT * FROM {table}").fetchall()
+                      for table in tables}
+            conn.close()
+            raw = sqlite3.connect(path)
+            raw.executescript("DROP TABLE storyProposals;\n"
+                              "PRAGMA user_version = 42;\n")
+            raw.close()
+
+            conn = store.open(path)
+            self.addCleanup(conn.close)
+
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                             (store.schema.SCHEMA_VERSION,))
+            self.assertEqual(store.schema.READABLE_FROM, 41)
+            self.assertEqual(
+                {row[1] for row in conn.execute(
+                    "PRAGMA table_info(storyProposals)")},
+                DOCUMENTED_COLUMNS["storyProposals"])
+            self.assertEqual(
+                {table: conn.execute(f"SELECT * FROM {table}").fetchall()
+                 for table in tables}, before)

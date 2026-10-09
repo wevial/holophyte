@@ -26,12 +26,21 @@ import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import holophyte.story.story_close  # noqa: E402
 import linear_provider  # noqa: E402
+import store  # noqa: E402
 import store.board  # noqa: E402
+import store.follow_ups  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board.projection import release_run  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
+)
+from holophyte.loop.follow_ups import (  # noqa: E402
+    Origin,
+    draft_body,
+    draft_title,
+    fingerprint,
 )
 from holophyte.loop.gates import merge_lock  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
@@ -41,7 +50,13 @@ from holophyte.story.witness import (  # noqa: E402
     witness_step,
 )
 from provider import board_for  # noqa: E402
-from store.stories import approve_story, file_story, story  # noqa: E402
+from store.stories import (  # noqa: E402
+    abandon_story,
+    approve_story,
+    file_story,
+    story,
+)
+from store.story_proposals import record_proposal  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
 from tests.test_witness_runner import (  # noqa: E402
     FAILS_AN_ASSERTION,
@@ -50,6 +65,8 @@ from tests.test_witness_runner import (  # noqa: E402
 )
 
 W1_FILE, W2_FILE = "tests/test_w1.py", "tests/test_w2.py"
+PROPOSED = "Export the refund column"
+PROPOSALS = "SELECT state FROM storyProposals ORDER BY id"
 UNMET = ("file a follow-up child", "accept the changed witness file",
          "amend the witness (re-plan)", "abandon the story")
 
@@ -110,6 +127,25 @@ class StoryCloseFixture(LoopFixture):
     def operator_pass(self, parent):
         with patch.object(sys, "stdout", io.StringIO()):
             witness_pass(self.project, self.conn, parent, "operator")
+
+    def propose(self, raiser, text=PROPOSED):
+        """The proposal id of `text`, a follow-up of `raiser`'s merged run."""
+        run_id = store.claim(self.conn, self.project_id, raiser)
+        for phase in ("working", "verifying", "reviewing", "merge_gate",
+                      "merging"):
+            store.set_phase(self.conn, run_id, phase)
+        release_run(self.conn, run_id, True, merge_sha=self.tip())
+        store.tickets.walk_ticket(self.conn, raiser, "merged")
+        row_id = store.follow_ups.record_follow_up(
+            self.conn, run_id, self.tip(), "feature", True, text,
+            fingerprint(text, None))
+        (row,) = store.follow_ups.pending_follow_ups(self.conn, run_id)
+        (key,) = self.read(
+            f"SELECT linearIdentifier FROM tickets WHERE id = {raiser}")[0]
+        return record_proposal(
+            self.conn, story(self.conn, raiser).ticketId, row_id, raiser,
+            draft_title(text), draft_body(row, Origin(key, None, self.tip()),
+                                          depends_on=key))
 
     def decisions(self, parent):
         return [(d.kind, d.question.split(" ")[1], d.options, d.defaultOption)
@@ -275,6 +311,32 @@ class StoryCloseTests(StoryCloseFixture):
         self.assertEqual(self.read(runs_of_w1), [("red",)] * 2)
         self.assertEqual([(kind, key) for kind, key, *_ in
                           self.decisions(parent)], [("regressed", "W1")])
+
+
+class OpenProposalCloseTests(StoryCloseFixture):
+    def test_closing_names_and_supersedes_an_open_proposal(self):
+        parent, child = self.tickets()
+        self.approve(parent, child, [witness("W1", W1_FILE)])
+        self.propose(child)
+        tip = self.commit(W1_FILE, PASSES, "w1 lands")
+
+        self.step()
+
+        self.assertEqual(story(self.conn, parent).state, "closed")
+        (note,) = [text for (text,) in self.read(
+            f"SELECT text FROM ticketNotes WHERE ticketId = {parent}")
+            if tip in text]
+        self.assertIn(f"Open proposals: p1 from NAT-2: {PROPOSED}", note)
+        self.assertEqual(self.read(PROPOSALS), [("superseded",)])
+
+    def test_abandoning_supersedes_an_open_proposal(self):
+        parent, child = self.tickets()
+        self.approve(parent, child, [witness("W1", W1_FILE)])
+        self.propose(child)
+
+        abandon_story(self.conn, parent, "not worth it", "operator")
+
+        self.assertEqual(self.read(PROPOSALS), [("superseded",)])
 
 
 class LinearStub:

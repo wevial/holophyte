@@ -210,11 +210,13 @@ PINNED = {
     "holophyte/serve/views.py": 6,
 
     "holophyte/story/__init__.py": 0,
+    "holophyte/story/proposal_decisions.py": 1,
     "holophyte/story/story_approval.py": 4,
     "holophyte/story/story_claim.py": 5,
     "holophyte/story/story_close.py": 1,
     "holophyte/story/story_drift.py": 6,
     "holophyte/story/story_filing.py": 7,
+    "holophyte/story/story_scope.py": 3,
     "holophyte/story/story_views.py": 1,
     "holophyte/story/witness.py": 1,
 
@@ -242,6 +244,7 @@ PINNED = {
     "store/run_reads.py": 8,
     "store/schema.py": 24,
     "store/stories.py": 2,
+    "store/story_proposals.py": 3,
     "store/tickets.py": 14,
     "store/working.py": 3,
     "store/writes.py": 2,

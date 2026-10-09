@@ -13,6 +13,8 @@ from unittest.mock import patch
 import holophyte.cli.entry
 import holophyte.cli.status
 import store.board
+import store.follow_ups
+import store.story_proposals
 from store.stories import (
     approve_story,
     close_story,
@@ -131,3 +133,24 @@ class StoryStatusTests(SweepTestCase):
         [second] = [line for line in self.status(at=before_filing).splitlines()
                     if "witnesses" in line]
         self.assertTrue(second.endswith("age 0d 0h"), second)
+
+    def test_an_open_proposal_is_counted_and_listed_in_text_and_json(self):
+        parent, [first, _] = self.story("Guest checkout", 2)
+        run_id = self.a_run(ticket=first)
+        follow_up = store.follow_ups.record_follow_up(
+            self.conn, run_id, "c0ffee", "feature", True,
+            "Export the refund column too", "f" * 64)
+        proposal = store.story_proposals.record_proposal(
+            self.conn, parent, follow_up, first,
+            "Draft follow-up: Export the refund column too", "body")
+
+        lines = self.status().splitlines()
+        [second] = [n for n, line in enumerate(lines) if "witnesses" in line]
+        self.assertIn("decisions 0  proposals 1", lines[second])
+        self.assertEqual(lines[second + 1],
+                         f"  proposal p{proposal} from NAT-2:"
+                         " Export the refund column too")
+        [fact] = json.loads(self.status("--json"))["stories"]
+        self.assertEqual(fact["proposals"], [
+            {"id": proposal, "from": "NAT-2",
+             "text": "Export the refund column too"}])

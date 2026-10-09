@@ -24,6 +24,7 @@ import store.read
 import store.run_reads
 import store.schema
 import store.stories
+import store.story_proposals
 import store.tickets
 import store.working
 
@@ -308,6 +309,14 @@ class StoreSurfaceTests(unittest.TestCase):
                                                      "settle_filed",
                                                      "settle_ledger",
                                                      "settle_unfiled"]),
+                                 # HOLO-175: a story child's follow-up proposed
+                                 # as a new child, outside the plan.
+                                 # HOLO-176: `--decide` accepts or rejects it.
+                                 (store.story_proposals, ["accept_proposal",
+                                                          "open_proposals",
+                                                          "record_proposal",
+                                                          "reject_proposal",
+                                                          "story_duplicate"]),
                                  # A story's filing, approval, ledger,
                                  # decisions, closing and abandonment;
                                  # HOLO-60: a landed merge's generation.
