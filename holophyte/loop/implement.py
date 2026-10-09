@@ -297,13 +297,13 @@ def _listed(wt, *args):
 
 def _merge_paths(wt, unmerged):
     merge = subprocess.run(["git", "merge-tree", "--write-tree", "--no-messages",
-                            "HEAD", "MERGE_HEAD"], cwd=wt, capture_output=True,
-                           text=True)
+                            "--name-only", "-z", "HEAD", "MERGE_HEAD"], cwd=wt,
+                           capture_output=True, text=True)
     if merge.returncode not in (0, 1):
         raise RuntimeError(f"git merge-tree failed:\n{merge.stderr}")
-    tree = merge.stdout.split("\n", 1)[0]
-    return _listed(wt, "diff", "--name-only", "--no-renames", "-z", "HEAD",
-                   tree) | set(unmerged)
+    tree, *conflicted = merge.stdout.split("\0")
+    return (_listed(wt, "diff", "--name-only", "--no-renames", "-z", "HEAD",
+                    tree) | set(filter(None, conflicted)) | set(unmerged))
 
 
 def _remove_file(wt, path):

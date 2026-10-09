@@ -196,29 +196,37 @@ class TurnTreeSweepTests(SweepTestCase):
                          "edited before the merge\n")
         self.assertEqual(self.git("status", "--porcelain"), "")
 
-    def test_an_aborted_merge_unwinds_main_s_edit_to_a_file_the_branch_renamed(self):
+    def test_an_aborted_merge_leaves_none_of_main_s_changes_in_the_tree(self):
         self.git("checkout", "-q", "-b", "shared", "main~1")
         self.write("r.txt", "".join(f"line {n}\n" for n in range(9)))
-        self.git("add", "r.txt")
-        self.git("commit", "-q", "-m", "add r")
+        (self.target / "bin.dat").write_bytes(b"\0shared")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "add r and bin")
         for branch in ("main", "task"):
             self.git("checkout", "-q", branch)
             self.git("merge", "-q", "--no-edit", "shared")
         self.git("mv", "r.txt", "r2.txt")
-        self.git("commit", "-q", "-m", "rename r")
+        (self.target / "bin.dat").write_bytes(b"\0task")
+        self.git("commit", "-q", "-am", "rename r, change bin")
         self.tip = self.git("rev-parse", "HEAD")
         renamed = (self.target / "r2.txt").read_text()
         self.git("checkout", "-q", "main")
         self.write("r.txt", "main line 0\n" + renamed.split("\n", 1)[1])
-        self.git("commit", "-q", "-am", "edit r")
+        (self.target / "bin.dat").write_bytes(b"\0main")
+        self.git("commit", "-q", "-am", "edit r and bin")
         self.git("checkout", "-q", "task")
 
-        self.turn(self.merge_main)
+        def take_main_s_binary():
+            self.merge_main()
+            self.git("checkout", "-q", "--theirs", "bin.dat")
+            self.git("add", "bin.dat")
+        self.turn(take_main_s_binary)
 
         self.assertFalse(self.mid_merge())
         self.assertEqual(self.git("rev-parse", "HEAD"), self.tip)
         self.assertEqual((self.target / "r2.txt").read_text(), renamed)
         self.assertFalse((self.target / "r.txt").exists())
+        self.assertEqual((self.target / "bin.dat").read_bytes(), b"\0task")
         self.assertEqual(self.git("status", "--porcelain"), "")
 
     def test_a_conflicted_merge_is_not_discarded_when_its_backup_is_not_recorded(self):
