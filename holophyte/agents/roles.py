@@ -218,6 +218,11 @@ def kept_session(project, role, conn, run_id, review_round, sessions):
             "on_session": sessions.append}
 
 
+def refused_exit(role, error):
+    from holophyte.review.adversary import refused
+    return role == "adversary" and refused(error.provider_error)
+
+
 def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                      run_id, switched, review_round=None, timeout=None,
                      family_route=None):
@@ -261,6 +266,11 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                                   review_round)
         return output
     except review_runner.ReviewBoundaryError as e:
+        if refused_exit(role, e):
+            output = AgentOutput(e.provider_error, profile,
+                                 exit_code=e.returncode)
+            output.service_tier = tier
+            return output
         # The candidate was never judged: the failure is the factory's.
         failure = InfraFailure(f"reviewer route failed for {role}:"
                                f" {e}", "review_route")
