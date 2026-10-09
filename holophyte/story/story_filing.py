@@ -218,7 +218,7 @@ def update_story(board, project, slug, identifier, revision, priority=None):
         text = body_path.read_text().partition("\n")[2]
         if native:
             lines, filed = _in_transaction(
-                conn, _update_native, conn, project_id, board.key, directory,
+                conn, _update_rows, conn, project_id, board.key, directory,
                 identifier, revision, text, children, headers, priority)
         else:
             lines, filed = _update_on_board(
@@ -228,15 +228,6 @@ def update_story(board, project, slug, identifier, revision, priority=None):
         path = directory / story_template.CHILDREN / f"{name}.md"
         path.write_text(f"Ticket: {new}\n{path.read_text()}")
     return lines
-
-
-def _update_native(conn, project_id, key, directory, identifier, revision,
-                   text, children, headers, priority):
-    parent_id = _check_filed(conn, project_id, identifier, revision,
-                             directory, headers)
-    return _update_rows(conn, project_id, key, directory, parent_id,
-                        identifier, revision, text, children, headers,
-                        priority)
 
 
 def _update_on_board(board, conn, project, project_id, directory, identifier,
@@ -370,8 +361,10 @@ def _child_header(directory, child):
     return match.group(1) if match else None
 
 
-def _update_rows(conn, project_id, key, directory, parent_id, identifier,
-                 revision, text, children, headers, priority):
+def _update_rows(conn, project_id, key, directory, identifier, revision,
+                 text, children, headers, priority):
+    parent_id = _check_filed(conn, project_id, identifier, revision,
+                             directory, headers)
     before = _plan_state(conn, parent_id)
     lines, filed, rows = [], [], []
     now = int(time.time() * 1000)
