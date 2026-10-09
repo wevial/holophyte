@@ -321,14 +321,6 @@ def _still_marked(wt, conflicted):
                   and CONFLICT_MARKER.search(Path(wt, path).read_bytes()))
 
 
-def _remove_file(wt, path):
-    leftover = Path(wt, path)
-    if leftover.is_symlink() or leftover.is_file():
-        leftover.unlink()
-        with suppress(OSError):
-            os.removedirs(leftover.parent)
-
-
 def _take_autostash(wt):
     ref = Path(wt, sh(["git", "rev-parse", "--git-path", "MERGE_AUTOSTASH"],
                       cwd=wt))
@@ -343,7 +335,11 @@ def _restore_to_head(wt, chosen):
     kept = chosen & _listed(wt, "ls-tree", "-r", "--name-only", "-z", "HEAD",
                             "--", *chosen)
     for path in sorted(chosen - kept):
-        _remove_file(wt, path)
+        leftover = Path(wt, path)
+        if leftover.is_symlink() or leftover.is_file():
+            leftover.unlink()
+            with suppress(OSError):
+                os.removedirs(leftover.parent)
     if kept:
         sh(["git", "--literal-pathspecs", "checkout", "-q", "HEAD", "--",
             *sorted(kept)], cwd=wt)
