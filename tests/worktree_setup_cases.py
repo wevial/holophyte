@@ -217,7 +217,7 @@ class WorktreeSetupCases:
                         patch.object(holophyte.loop.implement, "_check_run_cap"),
                         patch.object(
                             holophyte.loop.implement,
-                            "_transport_timed",
+                            "_run_turn",
                             return_value=("", True),
                         ),
                     ):

@@ -28,7 +28,12 @@ from holophyte.environment_git import (
     unstage_environment,
 )
 from holophyte.leak_guard import register_matches
-from holophyte.loop.claim import conflict_brief, mid_merge, unmerged_paths
+from holophyte.loop.claim import (
+    conflict_brief,
+    mid_merge,
+    unmerged_paths,
+    unresolved_merge,
+)
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.stop import boundary
@@ -502,6 +507,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             "co-author lines for an AI." + orchestration
             + _capture_brief(project, ticket, task_id) + blast_radius.BRIEF
             + reproduce.BRIEF)
+    merging = conflicts and sh(["git", "rev-parse", "MERGE_HEAD"], cwd=wt)
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
     deadline = retry_clock() + seconds
     out, timed_out = _transport_timed(project, conn, run_id, beat_s, wt,
@@ -514,6 +520,9 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     blast_radius.record_declared(conn, run_id, out)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if merging and subprocess.run(["git", "merge-base", "--is-ancestor",
+                                   merging, "HEAD"], cwd=wt).returncode:
+        raise unresolved_merge(branch, conflicts, head)
     added = head != start_sha and not _failed_wip_only(wt, out, timed_out,
                                                        start_sha, task_id)
     # A reused branch already ahead of main is the candidate, even if the

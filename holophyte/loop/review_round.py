@@ -12,7 +12,7 @@ from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import loop_config, verify_config
-from holophyte.loop.claim import merge_conflicts
+from holophyte.loop.claim import merge_conflicts, unresolved_merge
 from holophyte.loop.gates import (
     InfraFailure,
     RunFailure,
@@ -209,12 +209,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         if rnd == 1:
             unresolved = merge_conflicts(wt)
             if unresolved:
-                raise RunFailure(
-                    f"preserved commits on {branch} conflict with a main"
-                    f" that moved on and the implementer left the merge"
-                    f" unresolved in {', '.join(unresolved)}; a human"
-                    f" resolves the merge before this ticket is run again;"
-                    f" branch {branch} preserved at {sha[:12]}")
+                raise unresolved_merge(branch, unresolved, sha)
         if pending.get("phase") in ("reviewing", "addressing"):
             ok, out = pending.get("ok", False), pending.get("out", "")
         else:
