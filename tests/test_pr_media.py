@@ -800,6 +800,28 @@ class MediaTests(unittest.TestCase):
                                        record_note=notes.append)
         return section, notes
 
+    def test_evidence_never_quotes_the_capture_command(self):
+        command = "python3 capture.py --spec=/srv/host-sentinel/spec.ts"
+        self.config["merge"]["ui_capture"] = command
+        write = ("import sys\nfrom pathlib import Path\n"
+                 f'Path(sys.argv[-1], "screen.png").write_bytes({PNG!r})\n')
+        for script, timeout, expected, noted in [
+            (write, 300, "Captured at ", False),
+            ("raise SystemExit(3)", 300, "The UI capture failed (exit 3).", True),
+            ("import time; time.sleep(30)", 0.05,
+             "The UI capture timed out after 300 seconds.", True),
+            ("pass", 300, "The UI capture produced no media files.", False),
+        ]:
+            with (self.subTest(expected),
+                  patch.object(pr_media, "CAPTURE_TIMEOUT", timeout)):
+                self.candidate(script=script)
+                section, notes = self.prepare()
+                self.assertIn(expected, section)
+                self.assertNotIn("host-sentinel", section)
+                self.assertNotIn("capture.py", section)
+                if noted:
+                    self.assertIn(command, notes[0])
+
     def test_failed_host_capture_ends_with_its_last_twenty_lines(self):
         self.candidate()
         (self.repo / "capture.sh").write_text(
