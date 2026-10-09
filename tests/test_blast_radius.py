@@ -135,6 +135,13 @@ class FanInTests(unittest.TestCase):
     def test_fan_in_zero_turns_the_signal_off(self):
         self.assertEqual(self.changed_core(10, "[review]\nfan_in = 0\n").tier, "low")
 
+    def test_a_src_layout_module_counts_importers_of_its_package_name(self):
+        repo = Repository(self, {"src/pkg/__init__.py": "",
+                                 "src/pkg/core.py": "VALUE = 1\n", **importers(10)})
+        found = repo.round("src/pkg/core.py")
+        self.assertEqual((found.tier, sources(found)), ("medium", ["fan-in"]))
+        self.assertIn("src/pkg/core.py has 10 importers", found.reasons[0])
+
 
 class RaisingTests(unittest.TestCase):
     def test_the_ticket_field_raises_a_readme_change_to_high(self):

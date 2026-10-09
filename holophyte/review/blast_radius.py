@@ -1,6 +1,7 @@
 """A review round's blast-radius tier: set from the diff, raised, never lowered."""
 import fnmatch
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -56,6 +57,23 @@ def module_name(path):
     return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
 
 
+def package_dirs(root, sha):
+    tree = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", sha],
+                          cwd=root, capture_output=True, check=True).stdout
+    return {os.fsdecode(path).rpartition("/")[0] for path in tree.split(b"\0")
+            if path.rpartition(b"/")[2] == b"__init__.py"}
+
+
+def module_names(path, packages):
+    parts = path.split("/")
+    top = len(parts) - 1
+    while top > 0 and "/".join(parts[:top]) in packages:
+        top -= 1
+    if top == len(parts) - 1:
+        return {module_name(path)}
+    return {module_name(path), module_name("/".join(parts[top:]))}
+
+
 def _names(text):
     text = text.split("#", 1)[0].replace("(", " ").replace(")", " ")
     return {part.split()[0] for part in text.replace("\\", " ").split(",")
@@ -97,8 +115,11 @@ def segments(paths):
 def _medium_reasons(root, sha, paths, config):
     reasons = [f"medium path: {path} matches {pattern}" for path in paths
                if (pattern := matching(path, config.medium_paths))]
-    modules = {module_name(path): path for path in paths if path.endswith(".py")}
-    if config.fan_in and modules:
+    sources = [path for path in paths if path.endswith(".py")]
+    if config.fan_in and sources:
+        packages = package_dirs(root, sha)
+        modules = {name: path for path in sources
+                   for name in module_names(path, packages)}
         for path, count in importer_counts(root, sha, modules).items():
             if count >= config.fan_in:
                 reasons.append(f"fan-in: {path} has {count} importers "

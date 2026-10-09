@@ -1527,7 +1527,7 @@ line and the run's previous round can raise the tier and never lower it.
 | --- | --- | --- |
 | `high_paths` | Default: `[]` | List of repository-relative globs without `..`; a changed path matching one makes the round `high`. It adds to the built-in high list and never removes from it. |
 | `medium_paths` | Default: `[]` | List of repository-relative globs without `..`; a changed path matching one makes a round that is not `high` `medium`. |
-| `fan_in` | Default: `10` | Integer of at least 0; a changed Python module imported by at least this many other tracked `.py` files at the candidate makes the round `medium`. `0` turns the signal off. |
+| `fan_in` | Default: `10` | Integer of at least 0; a changed Python module imported by at least this many other tracked `.py` files at the candidate makes the round `medium`. A module inside a package is also named from its top-most package, so `src/pkg/core.py` counts importers of `pkg.core`. `0` turns the signal off. |
 | `packages` | Default: `3` | Integer of at least 0; changed paths spanning at least this many first path segments make the round `medium`. Paths under `tests/`, `test/` or `docs/`, and paths ending `.md`, do not count; a root-level file counts as `.`. `0` turns the signal off. |
 
 ```toml
