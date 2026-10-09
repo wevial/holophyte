@@ -259,7 +259,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
     check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
     pass_no = refreshes = 0
-    marked = False
+    marked, released = False, None
     while pass_no < merge.pr_rounds and refreshes < merge.pr_main_refreshes:
         pass_no += 1
         stop_if_requested(conn, run_id, "merge_gate")
@@ -323,7 +323,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                 beat_s, pull, reviewed)
             continue
         # An `--approve` covered the release, not these reviewed fixes.
-        released, reviewed, approved = ((sha, reviewed, approved)
+        released, reviewed, approved = ((released if marked else sha,
+                                         reviewed, approved)
                                         if sha == reviewed else (reviewed, sha, False))
         if state.draft:
             marked = pr_ready.mark_or_park(replace(run, sha=sha), pull, state,

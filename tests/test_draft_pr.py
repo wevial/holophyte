@@ -23,7 +23,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(HERE))
-from fake_agent import APPROVE, Commit, Idle  # noqa: E402
+from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
 from loop_fixture import BRANCH, MergeModeFixture  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
@@ -103,6 +103,22 @@ class DraftPullRequestTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT phase FROM runs"),
                          [("awaiting_merge_approval",)])
         self.assertIn("ready to merge", self.question())
+
+    def test_the_park_after_a_mark_names_the_reviewed_fix_range(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'review_fixes = true\npr_quiet_sec = 0\n' + DRAFT)
+        self.fake_route(states=[self.pr_state([self.DEFECT], draft=True),
+                                self.pr_state(draft=True), self.pr_state()])
+        fake, _ = self.loop(
+            Commit("the scripted work"), APPROVE, Idle(""),
+            Reply("THREAD 1: ADDRESS -- a real crash"),
+            Commit("fix: default load()"), APPROVE, Idle(""),
+            provider=self.provider())
+        self.assertEqual(self.kinds().count("ready"), 1)
+        released = fake.turns[1].candidate_sha
+        fixed = self.git("rev-parse", BRANCH).strip()
+        self.assertIn(f"ready to merge; fix commits since {released[:12]}"
+                      f" reviewed at {fixed[:12]}", self.question())
 
     def test_a_draft_still_draft_after_the_mark_parks_until_marked_by_hand(self):
         self.configure(AUTO + DRAFT)
