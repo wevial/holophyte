@@ -30,6 +30,9 @@ GO_RESULT = re.compile(r"^(ok|FAIL)[ \t]+\S.*$", re.MULTILINE)
 GO_TEST_FAILED = re.compile(r"^[ \t]*--- FAIL:", re.MULTILINE)
 GO_EXCEPTION = re.compile(r"^(?:panic: |WARNING: DATA RACE[ \t]*$)", re.MULTILINE)
 GO_UNBUILT = re.compile(r"\[(?:build|setup) failed\]")
+PLAYWRIGHT_FAILED = re.compile(r"^[ \t]*\d+ failed[ \t]*$", re.MULTILINE)
+PLAYWRIGHT_TEST = re.compile(r"^[ \t]*\d+\) \S.* › .*$", re.MULTILINE)
+PLAYWRIGHT_ERROR = re.compile(r"^[ \t]*\w*Error: .*$", re.MULTILINE)
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 NO_COLOR = "export NO_COLOR=1 PYTHON_COLORS=0\n"
 LOG_TAIL_BYTES = 64 * 1024
@@ -62,7 +65,8 @@ def red_kind(output):
         for counts in UNITTEST_SUMMARY.findall(output)] + [
         status == "FAILED" and _pytest_message(rest).startswith(
             ("AssertionError", "assert "))
-        for status, rest in PYTEST_SUMMARY.findall(output)] + _go_asserts(output)
+        for status, rest in PYTEST_SUMMARY.findall(output)]
+    asserts += _go_asserts(output) + _playwright_asserts(output)
     return "assert" if asserts and all(asserts) else "exception"
 
 
@@ -74,6 +78,19 @@ def _go_asserts(output):
             asserts.append(bool(GO_TEST_FAILED.search(block))
                            and not GO_UNBUILT.search(result.group())
                            and not GO_EXCEPTION.search(block))
+    return asserts
+
+
+def _playwright_asserts(output):
+    asserts, start = [], 0
+    for summary in PLAYWRIGHT_FAILED.finditer(output):
+        tests = list(PLAYWRIGHT_TEST.finditer(output, start, summary.start()))
+        ends = [test.start() for test in tests[1:]] + [summary.start()]
+        for test, end in zip(tests, ends):
+            error = PLAYWRIGHT_ERROR.search(output, test.end(), end)
+            asserts.append(bool(error) and error.group().lstrip().startswith(
+                "Error: expect("))
+        start = summary.end()
     return asserts
 
 
