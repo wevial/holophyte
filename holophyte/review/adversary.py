@@ -4,7 +4,7 @@ import json
 import os
 import re
 import threading
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from time import monotonic
 
 import store
@@ -42,7 +42,6 @@ EVIDENCE_RE = re.compile(r"^[\s>*`_-]*EVIDENCE[*`_]*:[*`\s]*([^\s*`]*)",
 LEADING_PATH_RE = re.compile(
     r"^\s*(?:[-*+]|\d+[.)])\s+[`*_]*([\w.\-/]*\w):(\d+)(?![\w.])")
 SURFACES = "browser UI, HTTP or API, CLI, data and migrations"
-CLAUDE_ROUTE = {"harness": "claude", "model": "opus", "effort": "high"}
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,8 @@ class Family:
     def route(self):
         if self.name != "claude":
             return None
-        return dict(CLAUDE_ROUTE, credential=self.credential)
+        return {"harness": "claude", "model": self.model,
+                "effort": self.effort, "credential": self.credential}
 
     def record(self):
         reason = {} if self.reason is None else {"family_reason": self.reason}
@@ -75,8 +75,8 @@ class Pass:
     scope: str
     start: str
     sha: str
+    family: Family
     concerns: tuple = ()
-    family: Family = Family("codex")
 
     @property
     def seconds(self):
@@ -97,14 +97,6 @@ def gated(project, root, start, sha):
                   if matching(path, patterns))
 
 
-def planned(project, conn, run_id, root, base, sha, rnd):
-    plan = _scoped(project, conn, run_id, root, base, sha, rnd)
-    if plan is None:
-        return None
-    passes = len(_payloads(conn, run_id, "adversary_round", rnd - 1))
-    return replace(plan, family=choose_family(project, conn, run_id, passes))
-
-
 def choose_family(project, conn, run_id, passes):
     if "adversary" in routes(project).commands:
         return FALLBACK
@@ -115,26 +107,26 @@ def choose_family(project, conn, run_id, passes):
     if credential is None:
         return Family("codex", model, effort, "no adversary_credential")
     if (continued_runs(conn, run_id)[0] + passes) % 2:
-        return Family("claude", CLAUDE_ROUTE["model"], CLAUDE_ROUTE["effort"],
-                      credential=credential)
+        return Family("claude", "opus", "high", credential=credential)
     return Family("codex", model, effort)
 
 
-def _scoped(project, conn, run_id, root, base, sha, rnd):
+def planned(project, conn, run_id, root, base, sha, rnd):
     if conn is None or run_id is None or not review_config(project).adversary:
         return None
     tiers = _payloads(conn, run_id, "blast_radius", rnd)
     tier = tiers[-1]["tier"] if tiers and tiers[-1]["round"] == rnd else "low"
     earlier = _payloads(conn, run_id, "adversary_round", rnd - 1)
+    family = choose_family(project, conn, run_id, len(earlier))
     if not earlier:
-        return (Pass(rnd, tier, DEPTHS[tier], "candidate", base, sha)
+        return (Pass(rnd, tier, DEPTHS[tier], "candidate", base, sha, family)
                 if tier in DEPTHS else None)
     previous = [payload["sha"] for payload in tiers if payload["round"] < rnd]
     if not previous or not gated(project, root, previous[-1], sha):
         return None
     concerns = tuple(concern for payload in earlier
                      for concern in payload["concerns"])
-    return Pass(rnd, tier, "light", "fix", previous[-1], sha, concerns)
+    return Pass(rnd, tier, "light", "fix", previous[-1], sha, family, concerns)
 
 
 def _attackers(depth):
