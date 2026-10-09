@@ -1,5 +1,6 @@
 """The implement stage and the timed agent turn every stage runs under."""
 import json
+import os
 import subprocess
 from pathlib import Path
 from time import monotonic as retry_clock
@@ -22,7 +23,7 @@ from holophyte.environment_git import (
     stage_work,
     unstage_environment,
 )
-from holophyte.loop.claim import conflict_brief
+from holophyte.loop.claim import conflict_brief, mid_merge, unmerged_paths
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.stop import boundary
@@ -68,7 +69,7 @@ def _limit_text(project, limit, budget_min):
 
 
 def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
-           role="implement", argv=None, seconds=None, limit=None):
+           role="implement", argv=None, seconds=None, limit=None, sweep=True):
     """Return `(output, timed_out)`; a timeout or a sweep kills the turn's group."""
     session_role = role
     armed, limit = _armed(project, budget_min, seconds, limit)
@@ -98,6 +99,9 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
         if not kill.wanted:
             record_session(project, conn, run_id, session_role, output, wt,
                            on_start=kill.arm)
+    cause = _turn_end(output, timed_out)
+    if sweep and role == "implement" and cause:
+        _sweep_tree(project, conn, run_id, wt, cause)
     return output, timed_out
 
 
@@ -179,26 +183,95 @@ def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal,
             raise InfraFailure(f"{reason}; retry budget exhausted; branch preserved")
 
 
-def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
-    # The turn's process group is reaped, so a lock here is the dead
-    # turn's; `-uall` lists untracked files rather than their directory.
+def _announce(conn, run_id, kind, note):
+    print(f"[holo2] {note}")
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, kind, note)
+
+
+def _turn_end(out, timed_out):
+    if timed_out:
+        return "budget fired"
+    if _killed_by_signal(out, timed_out):
+        return "crashed"
+    return None if getattr(out, "exit_code", 0) else "stopped"
+
+
+def _wip_subject(cause, task_id):
+    return f"WIP: implementer {cause} mid-edit ({task_id}); not verified"
+
+
+def _task_key(conn, run_id, branch):
+    run = (store.read.run_snapshot(conn, run_id)
+           if conn is not None and run_id is not None else None)
+    ticket = run and store.read.ticket_by_id(conn, run.ticketId)
+    return ticket.linearIdentifier if ticket else branch
+
+
+def _sweep_tree(project, conn, run_id, wt, cause):
+    if not Path(wt).is_dir() or subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", "HEAD"], cwd=wt,
+            capture_output=True).returncode:
+        return
+    # The turn's process group is reaped, so a lock here is the dead turn's.
     lock = Path(wt, sh(["git", "rev-parse", "--git-path", "index.lock"], cwd=wt))
     lock.unlink(missing_ok=True)
+    branch = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=wt)
+    task_id = _task_key(conn, run_id, branch)
+    if mid_merge(wt):
+        _sweep_merge(project, conn, run_id, wt, branch, task_id)
+    else:
+        _commit_wip(project, conn, run_id, wt, branch, task_id, cause)
+
+
+def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
     unstage_environment(project, wt)
+    # `-uall` lists untracked files rather than their directory.
     dirty = sh(["git", "status", "--porcelain", "-uall", *paths(project)],
                cwd=wt).splitlines()
     if not dirty:
-        return None
+        return
     stage_work(project, wt)
     sh(["git", *factory_identity(wt), "commit", "-q", "-m",
-        f"WIP: implementer {cause} mid-edit ({task_id}); not verified"], cwd=wt)
+        _wip_subject(cause, task_id)], cwd=wt)
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    note = (f"{cause} mid-edit; {len(dirty)} changed file(s)"
-            f" committed as WIP on {branch} at {head[:12]}")
-    print(f"[holo2] {note}")
-    if conn is not None and run_id is not None:
-        store.record_event(conn, run_id, "wip_committed", note)
-    return head
+    _announce(conn, run_id, "wip_committed",
+              f"{cause} mid-edit; {len(dirty)} changed file(s)"
+              f" committed as WIP on {branch} at {head[:12]}")
+
+
+def _sweep_merge(project, conn, run_id, wt, branch, task_id):
+    unmerged = unmerged_paths(wt)
+    if not unmerged:
+        stage_work(project, wt)
+        sh(["git", *factory_identity(wt), "commit", "-q", "--no-edit"], cwd=wt)
+        head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+        _announce(conn, run_id, "merge_completed",
+                  f"the turn left a resolved merge uncommitted; committed it"
+                  f" on {branch} at {head[:12]}")
+        return
+    backup = _backup_resolution(project, wt, task_id)
+    sh(["git", "merge", "--abort"], cwd=wt)
+    reproduce._discard_leftovers(project, wt)
+    _announce(conn, run_id, "merge_aborted",
+              f"the turn left the merge on {branch} unresolved in"
+              f" {', '.join(unmerged)}; aborted it, its attempted resolution"
+              f" backed up at {backup}")
+
+
+def _backup_resolution(project, wt, task_id):
+    index = Path(wt, sh(["git", "rev-parse", "--git-path",
+                         "holophyte-backup.index"], cwd=wt))
+    env = dict(os.environ, GIT_INDEX_FILE=str(index))
+    try:
+        sh(["git", "read-tree", "HEAD"], wt, env)
+        sh(["git", "add", "-A", *paths(project)], wt, env)
+        tree = sh(["git", "write-tree"], wt, env)
+    finally:
+        index.unlink(missing_ok=True)
+    return sh(["git", *factory_identity(wt), "commit-tree", tree, "-p", "HEAD",
+               "-p", "MERGE_HEAD", "-m",
+               f"backup: abandoned merge resolution ({task_id})"], cwd=wt)
 
 
 CRASH_TAIL_LINES = 20
@@ -209,8 +282,7 @@ def _killed_by_signal(out, timed_out):
     return not timed_out and code is not None and (code < 0 or code >= 128)
 
 
-def _crashed(project, conn, run_id, wt, branch, task_id, out):
-    wip = _commit_wip(project, conn, run_id, wt, branch, task_id, "crashed")
+def _crashed(project, conn, run_id, out):
     summary = f"implementer killed by a signal (exit {out.exit_code})"
     print(f"[holo2] {summary}")
     if conn is not None and run_id is not None:
@@ -220,12 +292,15 @@ def _crashed(project, conn, run_id, wt, branch, task_id, out):
                                "exit_status": out.exit_code,
                                "output": "\n".join(
                                    text.splitlines()[-CRASH_TAIL_LINES:])}))
-    return wip
 
 
 def _retry_crashed(project, conn, run_id, beat_s, wt, branch, task_id, goal,
-                   out, deadline, budget_min, limit):
-    wip = _crashed(project, conn, run_id, wt, branch, task_id, out)
+                   out, deadline, budget_min, limit, start_sha):
+    _crashed(project, conn, run_id, out)
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    subject = sh(["git", "log", "-1", "--format=%s"], cwd=wt)
+    wip = (head if head != start_sha
+           and subject == _wip_subject("crashed", task_id) else None)
     note = (f"Your previous turn on this task was killed by a signal (exit"
             f" {out.exit_code}) before it finished."
             + (f" A WIP commit {wip[:12]} on {branch} holds the edits it had"
@@ -240,7 +315,7 @@ def _retry_crashed(project, conn, run_id, beat_s, wt, branch, task_id, goal,
         note if argv is not None else f"{note}\n\n{goal}", argv=argv,
         seconds=remaining, limit=limit)
     if _killed_by_signal(out, timed_out):
-        _crashed(project, conn, run_id, wt, branch, task_id, out)
+        _crashed(project, conn, run_id, out)
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
         raise InfraFailure(f"implementer crashed twice (exit {out.exit_code});"
                            f" work kept on {branch} at {head[:12]}")
@@ -305,7 +380,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     if _killed_by_signal(out, timed_out):
         out, timed_out = _retry_crashed(project, conn, run_id, beat_s, wt,
                                         branch, task_id, goal, out, deadline,
-                                        budget_min, limit)
+                                        budget_min, limit, start_sha)
     blast_radius.record_declared(conn, run_id, out)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
@@ -314,9 +389,6 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     carried = not fresh and bool(
         subprocess.run(["git", "diff", "--quiet", "main", "HEAD"],
                        cwd=wt, capture_output=True).returncode)
-    if head == start_sha and not carried and timed_out:
-        head = _commit_wip(project, conn, run_id, wt, branch, task_id,
-                           "budget fired") or head
     if head == start_sha and not carried:
         print(f"[holo2] implementer made no commits for: {task}")
         _record_implementer_output(conn, run_id, out,

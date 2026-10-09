@@ -812,7 +812,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertIn(self.NIT[3], question)
         self.assertNotIn(self.DEFECT[3], question)
 
-    def test_a_fix_round_that_leaves_edits_is_not_pushed_or_resolved(self):
+    def test_a_failed_fix_round_that_leaves_edits_is_not_pushed_or_resolved(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])
         wt = self.worktrees / "ko-131-add-a-thing"
@@ -821,7 +821,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             def play(self, cwd, turn):
                 out = super().play(cwd, turn)
                 (cwd / "rest-of-the-fix.py").write_text("not committed\n")
-                return out
+                return holophyte.agents.agent_output.ImplementerOutput(
+                    out, 1, "fake")
 
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- a real crash"),

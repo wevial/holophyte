@@ -84,12 +84,11 @@ class CommitThenExit(Commits):
 
 
 class WorkWithUntracked(Commit):
-    """The implement turn, leaving an untracked and an ignored file behind."""
+    """The implement turn, leaving an ignored file behind."""
 
     def play(self, cwd, turn):
         (cwd / ".gitignore").write_text("*.log\n")
         reply = super().play(cwd, turn)
-        (cwd / "keep.txt").write_text("there before the trim\n")
         (cwd / "carried.log").write_text("carried before the trim\n")
         return reply
 
@@ -291,7 +290,7 @@ class TrimLoopTests(TrimFixture):
         fake = self.trimmed(
             WorkWithUntracked("work", "work.txt", lines(60)),
             LeaveDirtyThen(failure, Commit("trim: delete", "work.txt", lines(40))),
-            review)
+            review, task=dict(a_task(), verify="echo verified > keep.txt"))
         self.assert_merged()
         self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
         self.assertEqual(review.status, {"?? keep.txt", "!! carried.log"})

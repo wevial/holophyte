@@ -88,7 +88,8 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         release = next(i for i, (_, summary) in enumerate(events)
                        if "outcome paused" in summary)
         self.assertLess(request, release)
-        self.assertIn("WIP: preserve work at operator pause", self.subjects(BRANCH))
+        self.assertEqual(self.git("show", f"{BRANCH}:pause-work.txt"),
+                         "preserve this uncommitted work\n")
 
     def test_illegal_phase_is_infrastructure_failure_and_preserves_work(self):
         original = store.set_phase
@@ -994,9 +995,10 @@ class GateConflictImplementerTests(LoopFixture):
         conn, run_id, branch, wt, sha = self.conflicted()
 
         class StageThenReEdit:
-            """A resolution turn that stages its fix, then edits the file
-            again without committing -- the staged half is one `git merge
-            --abort` will not drop, so the unwind has to go past it."""
+            """A resolution turn that stages its fix, edits the file again
+            and exits failing, so nothing commits its leftovers -- the staged
+            half is one `git merge --abort` will not drop, so the unwind has
+            to go past it."""
 
             role = "implement"
 
@@ -1006,7 +1008,8 @@ class GateConflictImplementerTests(LoopFixture):
                 subprocess.run(["git", "add", "README.md"], cwd=cwd,
                                check=True, capture_output=True)
                 (cwd / "README.md").write_text("edited again\n")
-                return "staged the resolution, then kept editing it"
+                return holophyte.agents.agent_output.ImplementerOutput(
+                    "staged the resolution, then kept editing it", 1, "fake")
 
         with patch.object(holophyte.loop.implement, "agent",
                           FakeAgent(StageThenReEdit())):
@@ -1033,7 +1036,7 @@ class GateConflictImplementerTests(LoopFixture):
             self.read("SELECT status FROM tickets"),
             [("blocked_on_operator",)])
 
-    def test_a_merge_committed_over_uncommitted_edits_is_rejected(self):
+    def test_a_failed_turn_s_merge_over_uncommitted_edits_is_rejected(self):
         """A merge commit with uncommitted edits is not a clean candidate."""
         provider = StubProvider(a_task())
         conn, run_id, branch, wt, sha = self.conflicted()
@@ -1042,7 +1045,8 @@ class GateConflictImplementerTests(LoopFixture):
             def play(self, cwd, turn):
                 out = super().play(cwd, turn)
                 (cwd / self.path).write_text("edited after the merge\n")
-                return out
+                return holophyte.agents.agent_output.ImplementerOutput(
+                    out, 1, "fake")
 
         fake = FakeAgent(CommitMergeLeavingEdits(
             "merge main into the branch", path="README.md",
