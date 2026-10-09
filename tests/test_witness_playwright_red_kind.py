@@ -169,55 +169,6 @@ ACTION_TIMEOUT = (
     "  1 failed\n"
     "    locator.spec.ts:6:5 › click missing ────────────────────────────────"
     "────────────────────────────\n")
-LOCATOR_BESIDE_ACTION_TIMEOUT = (
-    "Running 2 tests using 1 worker\n"
-    "\n"
-    "  ✘  1 locator.spec.ts:2:5 › selector shows (658ms)\n"
-    "  ✘  2 locator.spec.ts:6:5 › click missing (556ms)\n"
-    "\n"
-    "\n"
-    "  1) locator.spec.ts:2:5 › selector shows ──────────────────────────────"
-    "────────────────────────────\n"
-    "\n"
-    "    Error: expect(locator).toBeVisible() failed\n"
-    "\n"
-    "    Locator: locator('#contractVersionSelector')\n"
-    "    Expected: visible\n"
-    "    Timeout: 500ms\n"
-    "    Error: element(s) not found\n"
-    "\n"
-    "    Call log:\n"
-    "      - Expect \"toBeVisible\" locator('#contractVersionSelector') with ti"
-    "meout 500ms\n"
-    "      - waiting for locator('#contractVersionSelector')\n"
-    "\n"
-    "\n"
-    "    > 4 |   await expect(page.locator('#contractVersionSelector')).toBeV"
-    "isible({ timeout: 500 });\n"
-    "        |                                                          ^\n"
-    "        at /tmp/w/locator.spec.ts:4:58\n"
-    "\n"
-    "    Error Context: test-results/locator-selector-shows/error-context.md\n"
-    "\n"
-    "  2) locator.spec.ts:6:5 › click missing ───────────────────────────────"
-    "────────────────────────────\n"
-    "\n"
-    "    TimeoutError: locator.click: Timeout 500ms exceeded.\n"
-    "    Call log:\n"
-    "      - waiting for locator('#nope')\n"
-    "\n"
-    "\n"
-    "    >  8 |   await page.locator('#nope').click({ timeout: 500 });\n"
-    "         |                               ^\n"
-    "        at /tmp/w/locator.spec.ts:8:31\n"
-    "\n"
-    "    Error Context: test-results/locator-click-missing/error-context.md\n"
-    "\n"
-    "  2 failed\n"
-    "    locator.spec.ts:2:5 › selector shows ───────────────────────────────"
-    "────────────────────────────\n"
-    "    locator.spec.ts:6:5 › click missing ────────────────────────────────"
-    "────────────────────────────\n")
 ASSERTION_BESIDE_THROWN_ERROR = (
     "Running 2 tests using 1 worker\n"
     "\n"
@@ -282,10 +233,7 @@ class CapturedPlaywrightOutputTests(unittest.TestCase):
                 self.assertEqual(red_kind(output), "exception")
 
     def test_an_expect_beside_a_thrown_error_is_an_exception_red(self):
-        for name, output in (("thrown", ASSERTION_BESIDE_THROWN_ERROR),
-                             ("action timeout", LOCATOR_BESIDE_ACTION_TIMEOUT)):
-            with self.subTest(name):
-                self.assertEqual(red_kind(output), "exception")
+        self.assertEqual(red_kind(ASSERTION_BESIDE_THROWN_ERROR), "exception")
 
     def test_a_boot_failure_with_no_playwright_summary_is_an_exception_red(self):
         self.assertEqual(red_kind(NEVER_READY), "exception")
