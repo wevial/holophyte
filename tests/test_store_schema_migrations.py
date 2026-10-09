@@ -11,7 +11,7 @@ import store
 import store.schema
 import store.stories
 import store.tickets
-from tests.schema_fixture import VERSION_4_INTERVENTIONS_TABLE
+from tests.schema_fixture import DOCUMENTED_COLUMNS, VERSION_4_INTERVENTIONS_TABLE
 from tests.ticket_url_fixture import assert_schema_url
 
 
@@ -845,8 +845,7 @@ class StoryProposalsMigrationTests(unittest.TestCase):
             self.assertEqual(
                 {row[1] for row in conn.execute(
                     "PRAGMA table_info(storyProposals)")},
-                {"id", "storyId", "followUpId", "raisedBy", "title", "body",
-                 "state", "childTicketId", "decidedBy", "decidedAt", "at"})
+                DOCUMENTED_COLUMNS["storyProposals"])
             self.assertEqual(
                 {table: conn.execute(f"SELECT * FROM {table}").fetchall()
                  for table in tables}, before)
