@@ -13,7 +13,10 @@ from dataclasses import dataclass
 import provider
 import store
 import store.follow_ups
+import store.stories
+import store.story_proposals
 from holophyte.redact import safe_print as print
+from holophyte.story import story_scope
 
 FALLBACK_KIND = "feature"
 _LINE = re.compile(r"(?:- )?FOLLOW_UP\((feature|guardrail)\): (.+?)"
@@ -52,9 +55,13 @@ def parse(message):
     return found
 
 
+def normalised(text):
+    return " ".join(text.lower().translate(_QUOTES).split()).rstrip(".")
+
+
 def fingerprint(text, path):
-    normal = " ".join(text.lower().translate(_QUOTES).split()).rstrip(".")
-    return hashlib.sha256(f"{normal}\n{path or ''}".encode()).hexdigest()
+    return hashlib.sha256(
+        f"{normalised(text)}\n{path or ''}".encode()).hexdigest()
 
 
 def _commits(wt, sha):
@@ -94,9 +101,12 @@ class Origin:
     merge_sha: str | None
 
 
-def draft_body(row, origin):
-    where = f"`{row.path}:{row.line}`" if row.line is not None else (
-        f"`{row.path}`" if row.path else None)
+def _where(row):
+    return f"{row.path}:{row.line}" if row.line is not None else row.path
+
+
+def draft_body(row, origin, note=None, depends_on="none"):
+    where = f"`{_where(row)}`" if row.path else None
     landed = (f"Pull request: {origin.pr_url}" if origin.pr_url
               else f"Merge sha: `{origin.merge_sha}`")
     facts = [f"Found at: {where}" if where else None, landed,
@@ -108,6 +118,7 @@ def draft_body(row, origin):
         "## Summary\n\n"
         "DRAFT: the operator completes this before it leaves Backlog.\n\n"
         f"{row.text}\n\n{summary}\n\n"
+        + (f"{note}\n\n" if note else "") +
         "## What / Why / How\n\n"
         "**What:** <What observable behavior or capability are we delivering?>"
         "\n\n**Why:** <What problem does this solve, for whom?>\n\n"
@@ -121,7 +132,7 @@ def draft_body(row, origin):
         "## Implementation notes\n\n"
         f"- Follow-up fingerprint: {row.fingerprint}\n\n"
         "## Estimate & dependencies\n\n"
-        f"Estimate: {ESTIMATE_MIN} min · Depends on: none\n\n"
+        f"Estimate: {ESTIMATE_MIN} min · Depends on: {depends_on}\n\n"
         "## Open questions\n\n"
         "- Complete this draft: scope, criteria with witnesses, verify"
         " commands and estimate.\n")
@@ -141,20 +152,59 @@ def _board(target):
     return board
 
 
-def settle_row(conn, row, origin, board_of):
-    if row.kind == "guardrail":
-        store.follow_ups.settle_ledger(conn, row.id)
-        return
-    board = board_of()
+def _open_draft(conn, row, board_of):
     filed = store.follow_ups.filed_drafts(conn, row.id)
-    closed = board.closed_identifiers(filed) if filed else {}
+    closed = board_of().closed_identifiers(filed) if filed else {}
     still_open = [key for key in filed if key not in closed]
     if still_open:
         store.follow_ups.settle_duplicate(conn, row.id, still_open[0])
-        return
-    key = board.file(draft_title(row.text), draft_body(row, origin),
-                     ESTIMATE_MIN, BACKLOG)
+    return bool(still_open)
+
+
+def _file(conn, row, board_of, body):
+    key = board_of().file(draft_title(row.text), body, ESTIMATE_MIN, BACKLOG)
     store.follow_ups.settle_filed(conn, row.id, key)
+
+
+def settle_row(target, conn, row, origin, board_of):
+    if row.kind == "guardrail":
+        store.follow_ups.settle_ledger(conn, row.id)
+        return
+    found = store.stories.story(conn, row.ticketId)
+    if (found is not None and found.ticketId != row.ticketId
+            and found.state in store.story_proposals.PROPOSABLE_STATES):
+        _settle_story_row(target, conn, row, origin, board_of, found.ticketId)
+    elif not _open_draft(conn, row, board_of):
+        _file(conn, row, board_of, draft_body(row, origin))
+
+
+def _settle_story_row(target, conn, row, origin, board_of, story_id):
+    (story_key,) = conn.execute("SELECT linearIdentifier FROM tickets"
+                                " WHERE id = ?", (story_id,)).fetchone()
+    duplicate = store.story_proposals.story_duplicate(
+        conn, story_id, row.fingerprint, row.text, normalised)
+    if duplicate is not None:
+        what, key = duplicate
+        store.follow_ups.settle_duplicate(conn, row.id, key,
+                                          of=f"story {story_key}'s {what}")
+        return
+    if _open_draft(conn, row, board_of):
+        return
+    goal = story_scope.scope_goal(conn, story_id, origin.key, row.text,
+                                  _where(row))
+    scope = story_scope.judge(target, conn, row.runId, row.id, goal,
+                              origin.merge_sha)
+    if scope.verdict == story_scope.IN_STORY:
+        store.story_proposals.record_proposal(
+            conn, story_id, row.id, row.ticketId, draft_title(row.text),
+            draft_body(row, origin, note=(
+                f"Proposed child of story {story_key}, raised by"
+                f" {origin.key}; not in the plan until --decide accepts it."),
+                depends_on=origin.key))
+        return
+    _file(conn, row, board_of, draft_body(row, origin, note=(
+        f"Related: story {story_key}, raised by its child {origin.key};"
+        " not a child of the story.")))
 
 
 @contextlib.contextmanager
@@ -188,7 +238,7 @@ def _settle_rows(target, conn, run_id):
     board_of = functools.cache(lambda: _board(target))
     for row in store.follow_ups.pending_follow_ups(conn, run_id):
         try:
-            settle_row(conn, row, origin, board_of)
+            settle_row(target, conn, row, origin, board_of)
         except Exception as e:
             print(f"[holo2] follow-up {row.id} not filed: {e}")
             store.follow_ups.settle_unfiled(conn, row.id,
