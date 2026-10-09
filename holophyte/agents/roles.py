@@ -114,7 +114,7 @@ def critic_turn(project, goal, cwd, timeout):
 
 def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
-          review_round=None, substitute=True):
+          review_round=None):
     from store.working import working
 
     requested_role = role
@@ -145,8 +145,7 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             output = launch()
         except InfraFailure as failure:
             reason = argv is None and route_down(project, role, failure)
-            if (substitute and reason
-                    and activate_fallback(project, role, reason, conn, run_id)):
+            if reason and activate_fallback(project, role, reason, conn, run_id):
                 return second_attempt(launch, failure)
             if timed_out(failure):
                 output = second_attempt(launch, failure)
@@ -156,7 +155,7 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 output = launch()
         command = getattr(output, "command", agent_route(project, role))
         reason = outage_reason(command, output)
-        if (argv is None and substitute and reason
+        if (argv is None and reason
                 and activate_fallback(project, role, reason, conn, run_id)):
             return launch()
         return output
@@ -281,9 +280,8 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     if role in ("review", "adjudicate") and not (base_sha and candidate_sha):
         raise ValueError(f"{role} requires exact base_sha and candidate_sha")
     goal = outbound(goal, known_secrets(project.config()))
-    profile = container_fallback_profile(project, role)
-    switched = (profile is not None
-                and routes(project).commands.get(role) == profile)
+    switched = (role in routes(project).commands
+                and container_fallback_profile(project, role) is not None)
     command = None if switched else routes(project).commands.get(role)
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(project, role, goal))

@@ -7,15 +7,9 @@ from dataclasses import dataclass, replace
 
 import store
 from holophyte.agents.agent_routes import routes, safe_command
-from holophyte.agents.fallback import (
-    activate_fallback,
-    outage_reason,
-    record_pending_switch,
-)
-from holophyte.agents.probes import probe_diagnostic, probe_seat
+from holophyte.agents.fallback import outage_reason, record_pending_switch
 from holophyte.agents.review_workspace import cleanup_review_refs
 from holophyte.agents.roles import agent
-from holophyte.config.agent_settings import fallback_entries
 from holophyte.loop.gates import sh
 from holophyte.pr import github
 from story_template import parse_story
@@ -97,24 +91,6 @@ def _first_parent(repo, merge_sha):
         return sh(parent, repo)
 
 
-def _refusal(target, conn, fallbacks):
-    """Why the seat may not take the turn: an unprobed or foreign route."""
-    active = routes(target).commands.get("adjudicate")
-    if active is not None:
-        return None if active in fallbacks else (
-            f"the adjudicator is switched to {safe_command(target, active)},"
-            " not to adjudicator_fallback")
-    probe = probe_seat(target, "adjudicate", required=True)
-    if probe is None:
-        return "the adjudicator has no route to probe"
-    if probe.ok:
-        return None
-    reason = probe_diagnostic(target, probe)
-    if fallbacks and activate_fallback(target, "adjudicate", reason, conn):
-        return None
-    return f"the adjudicator probe failed: {reason}"
-
-
 def _turn(target, conn, run_id, goal, merge_sha):
     if not merge_sha:
         return _default("the run recorded no merge sha")
@@ -122,15 +98,11 @@ def _turn(target, conn, run_id, goal, merge_sha):
     if state.project_id is None:
         (state.project_id,) = conn.execute(
             "SELECT projectId FROM runs WHERE id = ?", (run_id,)).fetchone()
-    fallbacks = fallback_entries(target, "adjudicate")
     try:
-        refusal = _refusal(target, conn, fallbacks)
-        if refusal is not None:
-            return _default(refusal)
         base = _first_parent(target.path, merge_sha)
         output = agent(target, "adjudicate", goal, target.path, base_sha=base,
                        candidate_sha=merge_sha, timeout=SCOPE_TIMEOUT,
-                       conn=conn, substitute=bool(fallbacks))
+                       conn=conn)
     except Exception as e:
         return _default(f"the scope turn failed: {type(e).__name__}: {e}")
     finally:

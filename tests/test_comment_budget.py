@@ -212,7 +212,7 @@ PINNED = {
     "holophyte/story/story_close.py": 1,
     "holophyte/story/story_drift.py": 6,
     "holophyte/story/story_filing.py": 7,
-    "holophyte/story/story_scope.py": 4,
+    "holophyte/story/story_scope.py": 3,
     "holophyte/story/story_views.py": 1,
     "holophyte/story/witness.py": 1,
 

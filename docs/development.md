@@ -412,10 +412,10 @@ Each module, one line:
 - `holophyte/story/story_scope.py` — a story child's feature follow-up put to
   the adjudicator seat: `scope_goal()` builds the goal from the story's title,
   Summary, Goal and children, `read_scope()` reads the last
-  `SCOPE: in_story|standalone: REASON` line, and `judge()` probes the seat,
-  runs the turn with `adjudicator_fallback` as its only substitute, defaults
-  to `standalone` on a failed probe or a failed, timed-out, outage or
-  unreadable reply, and records its `follow_up_scope` event.
+  `SCOPE: in_story|standalone: REASON` line, and `judge()` runs the turn on
+  the adjudicator seat as terminal adjudication does, defaults to
+  `standalone` on a failed, timed-out, outage or unreadable reply, and
+  records its `follow_up_scope` event.
 - `holophyte/loop/failure_triage.py` — a failed run's cause question
   (`infra`, `code` or `spec`) after close-out, its `failure_triage` event, and
   the one factory requeue a confident `infra` answer earns.
