@@ -9,7 +9,12 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
-from fake_agent import APPROVE, FakeAgent, no_agent_processes  # noqa: E402
+from fake_agent import (  # noqa: E402
+    APPROVE,
+    REQUEST_CHANGES,
+    FakeAgent,
+    no_agent_processes,
+)
 from loop_fixture import BRANCH, LoopFixture, StubProvider, a_task  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
@@ -21,6 +26,17 @@ CRASH = 'echo "panic: Illegal instruction (core dumped)"\nkill -ILL $$\n'
 COMMIT = ('echo "finished" > finished.txt\ngit add finished.txt\n'
           'git commit -q -m "finished work"\n')
 WIP = "WIP: implementer crashed mid-edit (KO-131); not verified"
+PANIC = "panic(main thread): Segmentation fault at address 0x0"
+BUN_CRASH = (
+    'i=1; while [ $i -le 40 ]; do\n'
+    f'  if [ $i -eq 5 ]; then echo "{PANIC}" >&2;'
+    ' else echo "crash report line $i" >&2; fi\n'
+    '  i=$((i + 1))\ndone\nkill -ILL $$\n')
+LAST_LINE = "the last line the crashed turn printed"
+LONG_CRASH = (
+    'i=0; while [ $i -lt 400 ]; do\n'
+    f'  echo "padding line $i {"x" * 60}" >&2; i=$((i + 1))\ndone\n'
+    f'echo "{LAST_LINE}" >&2\nkill -ILL $$\n')
 
 
 class ImplementerCrashTests(LoopFixture):
@@ -79,6 +95,24 @@ class ImplementerCrashTests(LoopFixture):
         self.assertIn("finished work", subjects)
         self.assertEqual(self.git("show", "main:crashed-edit.txt"),
                          "crash-time edit\n")
+
+    def test_a_crashed_review_round_fix_turn_records_its_panic_report(self):
+        self.run_loop(COMMIT, BUN_CRASH, reviews=(REQUEST_CHANGES,))
+
+        self.assertEqual(self.turns_started(), 2)
+        ((summary, payload),) = self.crash_events()
+        self.assertEqual(payload["role"], "implement")
+        self.assertEqual(payload["exit_status"], -4)
+        self.assertIn(PANIC, payload["output"])
+        self.assertIn("crash report line 40", payload["output"])
+        self.assertTrue(summary.endswith(f": {PANIC}"), summary)
+
+    def test_a_crash_event_keeps_a_bounded_tail_ending_at_the_last_line(self):
+        self.run_loop(LONG_CRASH, COMMIT, reviews=(APPROVE,))
+
+        ((_, payload),) = self.crash_events()
+        self.assertEqual(len(payload["output"]), 16384)
+        self.assertTrue(payload["output"].endswith(LAST_LINE), payload["output"][-80:])
 
     def test_a_crashed_turn_with_a_recorded_session_resumes_it(self):
         script = self.db.parent / "implementer.sh"

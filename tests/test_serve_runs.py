@@ -670,6 +670,22 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertLess(consumed_at, body["rounds"][0]["started_ms"])
         self.assertNotIn("ran ruff", [e["summary"] for e in body["events"]])
 
+    def test_a_crash_is_among_the_events_without_its_output(self):
+        self.seed_reviewed()
+        summary = ("implement turn killed by a signal (exit 132): "
+                   "panic(main thread): Segmentation fault at address 0x0")
+        with store.open(str(self.db)) as conn:
+            store.record_event(
+                conn, self.run, "crash", summary, level="detail",
+                payload=json.dumps({"role": "implement", "exit_status": 132,
+                                    "output": "crash report tail"}))
+        self.start()
+        code, _, body = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(code, 200)
+        self.assertEqual([e["summary"] for e in body["events"]
+                          if e["kind"] == "crash"], [summary])
+        self.assertNotIn("crash report tail", self.raw_body)
+
     def test_the_run_is_the_row_joined_to_its_ticket(self):
         self.seed_reviewed()
         self.start()
