@@ -1,6 +1,7 @@
 """The adversarial pass beside the primary review: brief, reply and re-run rule."""
 import contextvars
 import json
+import os
 import re
 import threading
 from dataclasses import dataclass, replace
@@ -14,6 +15,7 @@ from holophyte.config.agent_settings import review_route
 from holophyte.config.reader import adversary_credential
 from holophyte.config.review_settings import review_config
 from holophyte.loop.gates import InfraFailure
+from holophyte.redact import register_values
 from holophyte.redact import safe_print as print
 from holophyte.review.blast_radius import BASE_HIGH_PATHS, continued_runs, matching
 from holophyte.review.briefs import _changed_files
@@ -231,11 +233,13 @@ def parse(reply):
 def attack(project, conn, run_id, wt, base, ticket, plan, run_agent):
     started = monotonic()
     goal = brief(plan, ticket, run_id)
+    route = plan.family.route()
+    if route is not None:
+        register_values([os.environ.get(route["credential"], "")])
     for _ in range(2):
         reply = run_agent(project, "adversary", goal, wt, base_sha=base,
                           candidate_sha=plan.sha, timeout=plan.seconds,
-                          conn=conn, run_id=run_id,
-                          family_route=plan.family.route())
+                          conn=conn, run_id=run_id, family_route=route)
         if finished(reply):
             return reply, round(monotonic() - started, 3)
         goal += (f"\n\nYour previous reply did not end with {DONE}. Your "

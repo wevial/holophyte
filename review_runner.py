@@ -523,7 +523,7 @@ def stray_containers() -> list[str]:
     ]
 
 
-def _codex_release(harness: str, credential: str | None) -> Path | None:
+def _harness_tools(harness: str, credential: str | None) -> Path | None:
     if harness not in PARSERS:
         raise ReviewBoundaryError(f"unknown review harness {harness!r}")
     if harness == "claude":
@@ -569,7 +569,7 @@ def run_review(
         raise ReviewBoundaryError(
             f"reviewer profile {profile} does not name the route "
             f"{model} at {effort} ({profile_for(model, effort)})")
-    codex = _codex_release(harness, credential)
+    codex = _harness_tools(harness, credential)
 
     SCRATCH_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     scratch = tempfile.TemporaryDirectory(prefix=SCRATCH_PREFIX, dir=SCRATCH_ROOT)
@@ -608,11 +608,13 @@ def run_review(
             if _fingerprint(staged.path, run_id) != staged.fingerprint:
                 raise ReviewBoundaryError("staged candidate changed during review")
         if "PREFLIGHT_OK" not in result.stderr:
-            raise ReviewBoundaryError("review preflight did not complete")
+            raise ReviewBoundaryError(
+                "review preflight did not complete: "
+                f"{result.stderr.strip()[-EVIDENCE_LINE:]}")
         try:
             message, _ = PARSERS[harness](result.stdout, verdicts)
         except ReviewBoundaryError as error:
-            error.tail = result.stdout[-EVIDENCE_TAIL:]
+            error.tail = (result.stdout or result.stderr)[-EVIDENCE_TAIL:]
             error.exit_status = result.returncode
             raise
         if (transcripts is not None and on_session is not None

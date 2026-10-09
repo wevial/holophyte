@@ -144,7 +144,6 @@ class ClaudeTurnTests(unittest.TestCase):
                                 credential="CLAUDE_CODE_OAUTH_TOKEN")
                 self.assertEqual(e.exception.tail,
                                  output[-review_runner.EVIDENCE_TAIL:])
-                self.assertTrue(e.exception.tail.endswith(output[-15:]))
 
 
 class RealAdversary(FakeAgent):
@@ -223,6 +222,47 @@ class FamilyTests(test_adversary.AdversaryFixture):
                          [("failed", "review_route")])
         self.assertIn(f"Claude credential variable {KEY} is unset",
                       output.getvalue())
+
+    def test_an_unset_credential_never_switches_to_the_container_fallback_pair(
+            self):
+        self.configure(ON + CREDENTIAL + 'review_fallback_model = "gpt-6-luna"\n'
+                       'review_fallback_effort = "high"\n')
+        self.addCleanup(reset, self.project)
+        real = review_runner.run_review
+
+        def run_review(*, prompt, candidate_sha, **kwargs):
+            if prompt == probes.REVIEW_PROBE_GOAL:
+                return f"ready {candidate_sha}"
+            return real(prompt=prompt, candidate_sha=candidate_sha, **kwargs)
+        environment = {name: value for name, value in os.environ.items()
+                       if name != KEY}
+        with patch.dict(os.environ, environment, clear=True), \
+                patch.object(review_runner, "run_review", side_effect=run_review), \
+                contextlib.redirect_stdout(io.StringIO()):
+            _, guard = self.loop(fake=RealAdversary(Change("poetry.lock"),
+                                                    APPROVE))
+
+        self.assertEqual(guard.spawned, [])
+        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
+                         [("failed", "review_route")])
+        self.assertEqual(self.read(
+            "SELECT COUNT(*) FROM runEvents WHERE kind = 'route_fallback'"),
+            [(0,)])
+
+    def test_a_claude_pass_keeps_its_credential_out_of_the_record(self):
+        secret = "holophyte-adversary-credential-value"
+        self.configure(ON + CREDENTIAL)
+        leak = finding("src/app.py", 4, f"the token is {secret}", "concern")
+        with patch.dict(os.environ, {KEY: secret}):
+            self.loop(Change("poetry.lock"), APPROVE, attack(leak))
+
+        [(_, event)] = self.rounds()
+        self.assertEqual(event["family"], "claude")
+        recorded = [text for (text,) in self.read(
+            "SELECT payload FROM runEvents WHERE payload IS NOT NULL"
+            " UNION ALL SELECT text FROM ledger")]
+        self.assertTrue(any("the token is" in text for text in recorded))
+        self.assertFalse(any(secret in text for text in recorded))
 
     def adversary_turns(self):
         return [json.loads(payload) for (payload,) in self.read(

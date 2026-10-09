@@ -1,4 +1,3 @@
-import re
 import tomllib
 from pathlib import Path
 
@@ -96,16 +95,13 @@ BUDGET_SCALE_RANGE = (1.0, 3.0)
 REVIEW_MODES = ("single", "verified")
 
 
-CREDENTIAL_ENV = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
-
 def adversary_credential(project):
     value = config_table(project, "agents").get("adversary_credential")
     if value is None:
         return None
     if not (isinstance(value, dict) and set(value) == {"env"}
             and isinstance(value["env"], str)
-            and CREDENTIAL_ENV.fullmatch(value["env"])):
+            and review_runner.CREDENTIAL_NAME.fullmatch(value["env"])):
         raise SystemExit(
             f"[holo2] {project.config_path}: [agents] adversary_credential "
             'must be { env = "NAME" }, NAME a variable in the factory\'s '

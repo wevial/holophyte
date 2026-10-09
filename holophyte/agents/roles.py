@@ -165,12 +165,12 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
 
 
 def route_down(project, role, failure):
-    reason = outage_reason(getattr(failure, "command", None)
-                           or agent_route(project, role),
-                           getattr(failure, "output", ""))
+    command = getattr(failure, "command", None) or agent_route(project, role)
+    reason = outage_reason(command, getattr(failure, "output", ""))
     if reason:
         return reason
     if (isinstance(failure.__cause__, review_runner.ReviewBoundaryError)
+            and not command.startswith("claude ")
             and container_fallback_profile(project, role)):
         return str(failure)
     return None

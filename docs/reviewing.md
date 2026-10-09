@@ -81,8 +81,9 @@ build, checksum-verified against its release manifest, on `PATH` under
 permission mode, so a Claude implementer turn under
 `implementer_isolation = "container"` runs its tools without asking; the
 container is its boundary. Only an adversary pass on the Claude family (below)
-gives it a credential; in any other review the CLI is inert. A change to the Dockerfile moves the tag so the
-next review rebuilds instead of reusing the cached image. The image follows
+gives it a credential; in any other review the CLI is inert. A change to the
+Dockerfile moves the tag so the next review rebuilds instead of reusing the
+cached image. The image follows
 the candidate: the runner reads the tag and the Dockerfile out of the candidate
 commit, so a candidate that changed either is reviewed in an image built from
 the candidate's Dockerfile under the candidate's tag before its review starts,
