@@ -25,17 +25,15 @@ STORY_SECTION = "## Story\n\nRole: scaffolding\n\n"
 def decide(target, conn, identifier, story_id, key, option, note):
     proposal = _proposal(conn, story_id, identifier, key)
     answer = _chosen(key, option)
-    filed = None
+    lines = [f"proposal {key} of story {identifier}: {answer}"]
     if answer == ACCEPT:
         filed = _accept(target, conn, proposal, note)
+        lines.append(f"child {filed} filed in {BACKLOG}")
     else:
         try:
             reject_proposal(conn, proposal["id"], "cli", note)
         except ValueError as refused:
             raise DecisionRefused(str(refused)) from None
-    lines = [f"proposal {key} of story {identifier}: {answer}"]
-    if filed is not None:
-        lines.append(f"child {filed} filed in {BACKLOG}")
     return [*lines, f"story {identifier} is {story(conn, story_id).state}"]
 
 
