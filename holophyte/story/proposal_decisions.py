@@ -4,6 +4,7 @@ import re
 import ticket_template
 from holophyte.board.projection import mirror_task
 from holophyte.story.story_close import DecisionRefused
+from holophyte.story.story_filing import _ticket_id
 from provider import FiledWithoutBlockers, board_for
 from store.schema import transaction
 from store.stories import story
@@ -93,10 +94,11 @@ def _accept(target, conn, proposal, note):
     try:
         task = None if native else board.fetch_task(filed)
         with transaction(conn):
-            child_id = (_ticket_id(conn, proposal, filed) if native
-                        else mirror_task(
-                            conn, proposal["projectId"], task, specced=False,
-                            depends_on=[proposal["raiserIssue"]]))
+            child_id = (
+                _ticket_id(conn, proposal["projectId"], filed) if native
+                else mirror_task(conn, proposal["projectId"], task,
+                                 specced=False,
+                                 depends_on=[proposal["raiserIssue"]]))
             accept_proposal(conn, proposal["id"], child_id, "cli", note)
     except Exception as refused:
         raise DecisionRefused(f"the child was not stored: {refused};"
@@ -104,9 +106,3 @@ def _accept(target, conn, proposal, note):
                               f" {filed}") from None
     return filed
 
-
-def _ticket_id(conn, proposal, filed):
-    (ticket_id,) = conn.execute(
-        "SELECT id FROM tickets WHERE projectId = ? AND linearIdentifier = ?",
-        (proposal["projectId"], filed)).fetchone()
-    return ticket_id
