@@ -27,9 +27,12 @@ from holophyte.pr import github
 CAPTURE_TIMEOUT = 300
 CAPTURE_GRACE = 30  # Seconds a stopped capture's teardown gets.
 TAIL_LINES = 20
-RECEIPT_VERSION = 5
+RECEIPT_VERSION = 6
 CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
 STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
+QUOTED = re.compile(r"^Captured with `.*`\.[ \t\r]*\n+"
+                    r"(?=Dropped `|No media remains |Media lives in )",
+                    re.MULTILINE | re.DOTALL)
 
 
 def implementer_brief(project, ticket, task_id):
@@ -172,11 +175,11 @@ def _tail(output, project):
     return f'\n\n{fence}\n{body}\n{fence}'
 
 
-def _failed(command, code, output, project):
+def _failed(code, output, project):
     if code is None:
-        sentence = f'Capture command `{command}` failed: timed out after 300 seconds.'
+        sentence = 'The UI capture timed out after 300 seconds.'
     else:
-        sentence = f'Capture command `{command}` failed (exit {code}).'
+        sentence = f'The UI capture failed (exit {code}).'
     return sentence + _tail(output, project)
 
 
@@ -203,8 +206,8 @@ def _capture(command, wt, output, task_id, states, *, project=None):
                                              timeout=CAPTURE_TIMEOUT,
                                              mounts=[runner], carry=carry)
         except subprocess.TimeoutExpired as expired:
-            return _failed(command, None, expired.output, project)
-        return _failed(command, code, printed, project) if code else ''
+            return _failed(None, expired.output, project)
+        return _failed(code, printed, project) if code else ''
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen(shlex.split(command) + [str(output)],
                                    cwd=wt, env=env, stdin=subprocess.DEVNULL,
@@ -217,7 +220,7 @@ def _capture(command, wt, output, task_id, states, *, project=None):
         if code == 0:
             return ''
         log.seek(0)
-        return _failed(command, code, log.read(), project)
+        return _failed(code, log.read(), project)
 
 
 def _stop(process):
@@ -432,7 +435,7 @@ def _produce(project, wt, task_id, command, note, cfg, states):
             (output / '.gitignore').write_text('*\n')
         error = _capture(command, wt, output, task_id, states, project=project)
         if error:
-            note.write_text(error)
+            note.write_text(f'Ran `{command}`.\n\n{error}')
             # `refresh()` folds the failure onto one line: the sentence only.
             return (_missing('## Evidence\n\n' + error, states),
                     error.partition('\n')[0])
@@ -441,10 +444,11 @@ def _produce(project, wt, task_id, command, note, cfg, states):
                        and file.is_file() and not file.is_symlink()
                        and file.resolve().is_relative_to(output))
         if not files:
-            error = f'Capture command `{command}` produced no media files.'
+            error = 'The UI capture produced no media files.'
+            note.write_text(f'Ran `{command}`.\n\n{error}')
             return _missing('## Evidence\n\n' + error, states), error
         files, dropped = _cap_files(output, files, cfg)
-        lines = ['## Evidence', f'Captured with `{command}`.']
+        lines = ['## Evidence']
         lines.extend(dropped)
         if not files:
             error = 'No media remains within the evidence size limits.'
@@ -529,8 +533,7 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
                            f" to {cfg.media_repo}" if cfg.media_repo else "")
             detail = (f": {error}" if isinstance(error, media_store.MissingCredentials)
                       else "")
-            failure = (f'Capture command `{cfg.ui_capture}` failed to'
-                       f' publish evidence{destination}'
+            failure = (f'The UI capture failed to publish evidence{destination}'
                        f' ({type(error).__name__}{detail}).')
             section = _missing('## Evidence\n\n' + failure, evidence_states)
         failed.unlink(missing_ok=True)
@@ -566,7 +569,9 @@ def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()
         return None
     captured = CAPTURED.search(evidence)
     if captured and not _touched(wt, captured[1], cfg.ui_paths):
-        return _seen(project, wt, task_id, evidence, evidence_states)
+        seen = _seen(project, wt, task_id, evidence, evidence_states)
+        unquoted = QUOTED.sub('', evidence)
+        return seen or (unquoted if unquoted != evidence else None)
     section, failure = _prepare(project, wt, task_id, record_note, evidence_states)
     if not section:
         return None
@@ -578,7 +583,7 @@ def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()
               f' and capturing it failed: {" ".join(failure.split())}')
     return re.sub(r'^## Evidence[ \t]*\r?\n+',
                   lambda heading: heading[0] + notice + '\n\n',
-                  STALE.sub('', evidence), count=1, flags=re.MULTILINE)
+                  STALE.sub('', QUOTED.sub('', evidence)), count=1, flags=re.MULTILINE)
 
 
 def append(body, section):
