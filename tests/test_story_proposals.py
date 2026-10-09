@@ -113,7 +113,6 @@ class StoryProposalTests(LoopFixture):
             {needle: [reply, code] for needle, (reply, code) in by_text.items()}))
 
     def turns(self, probes=False):
-        """The seat's scope turns, its probes too when asked."""
         if not self.calls.exists():
             return []
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
