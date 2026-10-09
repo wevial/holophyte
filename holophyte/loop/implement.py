@@ -308,17 +308,20 @@ def remove_entries(wt, names):
 def _drop_leftovers(project, conn, run_id, wt, cause, before):
     if cause not in LEFTOVER_CAUSES or before is None:
         return
+    gone = []
     try:
-        gone = _leftovers(project, wt, before)
-        remove_entries(wt, gone)
-        if gone and conn is not None and run_id is not None:
+        for name in _leftovers(project, wt, before):
+            remove_entries(wt, [name])
+            gone.append(name)
+    except SWEPT_ERRORS as failed:
+        print(f"[holo2] removing the ignored leftovers of {wt} failed: {failed}")
+    if gone and conn is not None and run_id is not None:
+        with suppress(sqlite3.Error):
             store.record_event(
                 conn, run_id, "ignored_leftovers_removed",
                 f"{cause}: removed {len(gone)} ignored leftover(s):"
                 f" {', '.join(gone)}", level="detail",
                 payload=json.dumps({"cause": cause, "paths": gone}))
-    except SWEPT_ERRORS as failed:
-        print(f"[holo2] removing the ignored leftovers of {wt} failed: {failed}")
 
 
 def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):

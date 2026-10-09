@@ -93,8 +93,8 @@ machines it walks. Back to the [README](index.md).
    had before. Kept are the ignored entries that existed before the turn
    (a directory whole, even when the turn added files inside it) and
    anything at or under a `[worktree] carry` directory or the `[merge]
-   ui_capture_dir`. A turn that exits normally, or exits non-zero below
-   128, removes nothing.
+   ui_capture_dir`, and a directory holding any of those. A turn that exits
+   normally, or exits non-zero below 128, removes nothing.
 
    **Trim step.** Between the implement turn and the verify gate before the
    first review round, a run that implemented trims its own diff once. The
