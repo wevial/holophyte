@@ -23,11 +23,12 @@ import review_runner  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.agents import roles, transcripts  # noqa: E402
+from holophyte.loop.gates import InfraFailure  # noqa: E402
 from holophyte.review import adversary  # noqa: E402
 
 # `run` stands in for the container: it runs the built script's Codex statement
 # with the positional arguments `docker run` was handed, the mounts' host sides
-# standing in for /opt/codex/bin and the reviewer home.
+# standing in for /opt/codex/bin and the reviewer home. Each run is logged.
 DOCKER = """#!{python}
 import os, sys
 args = sys.argv[1:]
@@ -35,6 +36,8 @@ if args[0] == "inspect":
     sys.exit(1)
 if args[0] != "run":
     sys.exit(0)
+with open(os.environ["STUB_LAUNCHES"], "a") as launches:
+    launches.write("run\\n")
 host = {{v.split(":")[1]: v.split(":")[0]
         for a, v in zip(args, args[1:]) if a == "--volume"}}
 shell = args.index("/bin/sh")
@@ -48,7 +51,8 @@ os.execv("/bin/sh", ["/bin/sh", "-eu", "-c", statement, *positional])
 
 # Writes a rollout under its home when told a name, a newer forged file when
 # told a decoy name, and opens the stream with `thread.started` when told an id.
-# Told a provider error, it ends the turn on that error and exits 1.
+# Told a provider error, it ends the turn on that error, after the message it is
+# told if any, and exits 1.
 CODEX = """#!{python}
 import json, os, pathlib, sys
 thread = os.environ.get("STUB_THREAD_ID")
@@ -63,13 +67,15 @@ if decoy:
     (day / decoy).write_text("forged\\n")
     os.utime(day / decoy, (4e9, 4e9))
 events = [{{"type": "thread.started", "thread_id": thread}}] if thread else []
-events += [{{"type": "item.completed", "item": item}} for item in (
-    {{"type": "command_execution", "exit_code": 0}},
-    {{"type": "agent_message", "text": "VERDICT: APPROVE"}})]
 failure = os.environ.get("STUB_PROVIDER_ERROR")
+message = os.environ.get("STUB_MESSAGE", "" if failure else "VERDICT: APPROVE")
+items = [{{"type": "command_execution", "exit_code": 0}}]
+if message:
+    items.append({{"type": "agent_message", "text": message}})
+events += [{{"type": "item.completed", "item": item}} for item in items]
 if failure:
-    events = events[:-1] + [{{"type": "error", "message": failure}},
-                           {{"type": "turn.failed", "error": {{"message": failure}}}}]
+    events += [{{"type": "error", "message": failure}},
+               {{"type": "turn.failed", "error": {{"message": failure}}}}]
 for event in events:
     print(json.dumps(event))
 sys.exit(1 if failure else 0)
@@ -104,6 +110,7 @@ class ContainerReviewSessionTests(unittest.TestCase):
         (self.root / "auth.json").write_text("{}")
         env = patch.dict(os.environ, {
             "HOLOPHYTE_HOME": str(self.root / "home"),
+            "STUB_LAUNCHES": str(self.root / "launches"),
             "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"})
         env.start()
         self.addCleanup(env.stop)
@@ -194,6 +201,18 @@ class ContainerReviewSessionTests(unittest.TestCase):
                 self.assertEqual(self.review(thread, rollout), [])
                 self.assertFalse(self.kept.exists())
 
+    def turn(self, role, stub):
+        with patch.dict(os.environ, stub):
+            return roles.agent(
+                self.project, role, "attack the candidate",
+                self.project.path, base_sha=self.sha, candidate_sha=self.sha,
+                conn=self.conn, run_id=self.run_id, review_round=1)
+
+    def events(self, kind):
+        return [json.loads(payload) for (payload,) in self.conn.execute(
+            "SELECT payload FROM runEvents WHERE runId=? AND kind=?",
+            (self.run_id, kind))]
+
     def test_a_refused_adversary_exit_is_returned_as_its_reply(self):
         with patch.dict(os.environ, {"STUB_PROVIDER_ERROR": REFUSAL}):
             output = roles.agent(
@@ -206,6 +225,39 @@ class ContainerReviewSessionTests(unittest.TestCase):
             "SELECT payload FROM runEvents WHERE runId=? AND kind='agent_turn'",
             (self.run_id,))]
         self.assertEqual([t["exit_status"] for t in turns], [1])
+
+    def test_a_refused_adversary_exit_settles_as_refused_with_no_fallback(self):
+        self.project.config_path.write_text(
+            '[agents]\nreview_fallback_model = "gpt-5.6-sol"\n'
+            'review_fallback_effort = "high"\n')
+        self.project = holophyte.config.project.Project.locate(self.project.path)
+        plan = adversary.Pass(1, "high", "full", "candidate", self.sha, self.sha,
+                              adversary.Family("codex", "gpt-6.1-sol", "high"))
+
+        with patch.dict(os.environ, {"STUB_PROVIDER_ERROR": REFUSAL}):
+            attacked = adversary.attack(
+                self.project, self.conn, self.run_id, self.project.path,
+                self.sha, "the ticket", plan, roles.agent)
+        adversary.settle(self.project, self.conn, self.run_id, None, "KO-1",
+                         plan, attacked)
+
+        self.assertEqual((self.root / "launches").read_text(), "run\n")
+        [event] = self.events("adversary_round")
+        self.assertEqual((event["outcome"], event["findings"],
+                          event["concerns"]), ("refused", [], []))
+        self.assertEqual(self.events("route_fallback"), [])
+
+    def test_an_exit_whose_only_refusal_line_is_model_text_fails_the_route(self):
+        stub = {"STUB_MESSAGE": f"Matching '{REFUSAL}' is unsafe.",
+                "STUB_PROVIDER_ERROR": "stream disconnected before completion"}
+        with self.assertRaises(InfraFailure) as raised:
+            self.turn("adversary", stub)
+        self.assertEqual(raised.exception.failure_kind, "review_route")
+
+    def test_a_refused_exit_of_the_primary_reviewer_fails_the_route(self):
+        with self.assertRaises(InfraFailure) as raised:
+            self.turn("review", {"STUB_PROVIDER_ERROR": REFUSAL})
+        self.assertEqual(raised.exception.failure_kind, "review_route")
 
 
 if __name__ == "__main__":
