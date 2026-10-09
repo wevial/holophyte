@@ -85,7 +85,16 @@ machines it walks. Back to the [README](index.md).
    (default 20 min). A budget that fires with uncommitted work in the tree
    keeps it as a `WIP:` commit on the branch — unverified, and named in the
    run's failure reason — so the requeue carries the work; only a tree with
-   no changes at all is discarded.
+   no changes at all is discarded. An implement or trim turn that crashed
+   (killed by a signal), whose budget fired, or that raised also has the
+   gitignored files and directories it created removed, recording an
+   `ignored_leftovers_removed` event with the cause and the removed paths,
+   so the next turn and verify start from the ignored files the worktree
+   had before. Kept are the ignored entries that existed before the turn
+   (a directory whole, even when the turn added files inside it) and
+   anything at or under a `[worktree] carry` directory or the `[merge]
+   ui_capture_dir`, and a directory holding any of those. A turn that exits
+   normally, or exits non-zero below 128, removes nothing.
 
    **Trim step.** Between the implement turn and the verify gate before the
    first review round, a run that implemented trims its own diff once. The

@@ -1,4 +1,5 @@
 """What a turn leaves in its worktree: a clean tree, a WIP, a merge or a backup."""
+import json
 import re
 import subprocess
 import unittest
@@ -415,6 +416,107 @@ class TurnTreeSweepTests(SweepTestCase):
 
         self.assertEqual(self.git("rev-parse", "HEAD"), carried)
         self.assertEqual(self.sweep_events(), [])
+
+    def ignoring(self):
+        self.write(".gitignore", "gen.css\n*.log\ndeps/\n")
+        self.git("add", ".gitignore")
+        self.git("commit", "-q", "-m", "ignore generated files")
+        self.write("old.log", "before the turn\n")
+        (self.target / "deps").mkdir()
+        self.write("deps/kept.txt", "set up before the turn\n")
+
+    def leftover_events(self):
+        return [json.loads(payload) for (payload,) in self.conn.execute(
+            "SELECT payload FROM runEvents WHERE runId = ? AND kind ="
+            " 'ignored_leftovers_removed'", (self.run_id,))]
+
+    def present(self, *names):
+        return [name for name in names if (self.target / name).exists()]
+
+    def test_a_crashed_turn_s_new_ignored_files_are_removed(self):
+        self.ignoring()
+
+        def write_then_crash():
+            self.write("gen.css", "generated\n")
+            self.write("new.log", "written by the turn\n")
+            self.write("deps/added.txt", "added inside an existing ignored dir\n")
+            return ImplementerOutput("crashed", -4, "fake")
+        self.turn(write_then_crash)
+
+        self.assertEqual(self.present("gen.css", "new.log", "old.log",
+                                      "deps/kept.txt", "deps/added.txt"),
+                         ["old.log", "deps/kept.txt", "deps/added.txt"])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "crashed", "paths": ["gen.css", "new.log"]}])
+
+    def test_a_timed_out_turn_s_new_ignored_files_are_removed(self):
+        self.ignoring()
+
+        def write_then_time_out():
+            self.write("gen.css", "generated\n")
+            raise subprocess.TimeoutExpired("agent", 1)
+        self.turn(write_then_time_out)
+
+        self.assertEqual(self.present("gen.css", "old.log"), ["old.log"])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "budget fired", "paths": ["gen.css"]}])
+
+    def test_a_turn_that_exits_cleanly_keeps_its_new_ignored_files(self):
+        self.ignoring()
+
+        def write_then_stop():
+            self.write("gen.css", "generated\n")
+            return ImplementerOutput("done", 0, "fake")
+        self.turn(write_then_stop)
+
+        self.assertEqual(self.present("gen.css"), ["gen.css"])
+        self.assertEqual(self.leftover_events(), [])
+
+    def test_a_crashed_turn_keeps_what_it_wrote_under_a_carry_directory(self):
+        self.write(".gitignore", "gen.css\ndeps/\n")
+        self.git("add", ".gitignore")
+        self.git("commit", "-q", "-m", "ignore generated files")
+        self.configure('[worktree]\ncarry = ["deps"]\n')
+
+        def install_then_crash():
+            (self.target / "deps").mkdir()
+            self.write("deps/added.txt", "installed by the turn\n")
+            self.write("gen.css", "generated\n")
+            return ImplementerOutput("crashed", -4, "fake")
+        self.turn(install_then_crash)
+
+        self.assertEqual(self.present("deps/added.txt", "gen.css"),
+                         ["deps/added.txt"])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "crashed", "paths": ["gen.css"]}])
+
+    def test_a_crashed_turn_s_ignored_directory_is_removed_without_captures(self):
+        self.write(".gitignore", "e2e/\n")
+        self.git("add", ".gitignore")
+        self.git("commit", "-q", "-m", "ignore e2e")
+        self.configure('[merge]\nui_capture_dir = "e2e/capture"\n')
+
+        def write_then_crash():
+            (self.target / "e2e").mkdir()
+            self.write("e2e/temp.log", "written by the turn\n")
+            return ImplementerOutput("crashed", -4, "fake")
+        self.turn(write_then_crash)
+
+        self.assertEqual(self.present("e2e"), [])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "crashed", "paths": ["e2e/"]}])
+
+    def test_a_crashed_turn_s_ignored_file_with_a_carriage_return_is_removed(self):
+        self.ignoring()
+
+        def write_then_crash():
+            self.write("new\r.log", "written by the turn\n")
+            return ImplementerOutput("crashed", -4, "fake")
+        self.turn(write_then_crash)
+
+        self.assertEqual(self.present("new\r.log"), [])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "crashed", "paths": ["new\r.log"]}])
 
 
 if __name__ == "__main__":
