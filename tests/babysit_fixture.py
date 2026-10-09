@@ -59,9 +59,10 @@ class BabysitHelpers:
                     (cwd / "unfinished.txt").write_text("preserve unfinished work\n")
                     return self.reply
             action = DirtyReply(output)
-        fake, _ = self.loop(Reply("THREAD 1: ADDRESS -- crash\n"
-                                  "THREAD 2: ADDRESS -- style"),
-                            action, provider=self.provider())
+        with patch("holophyte.loop.implement._sweep_tree"):
+            fake, _ = self.loop(Reply("THREAD 1: ADDRESS -- crash\n"
+                                      "THREAD 2: ADDRESS -- style"),
+                                action, provider=self.provider())
         row, = self.read("SELECT id, phase, outcome, outcomeReason, prUrl FROM runs"
                          " ORDER BY id DESC LIMIT 1")
         run_id, phase, outcome, reason, url = row

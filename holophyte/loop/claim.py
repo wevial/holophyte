@@ -135,16 +135,22 @@ def reuse_leftover(project, wt, branch, conn=None, run_id=None,
     return True, ""
 
 
+def mid_merge(wt):
+    return subprocess.run(["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+                          cwd=wt, capture_output=True).returncode == 0
+
+
+def unmerged_paths(wt):
+    return list(filter(None, sh(
+        ["git", "diff", "--name-only", "-z", "--diff-filter=U"],
+        cwd=wt).split("\0")))
+
+
 def merge_conflicts(wt):
-    mid_merge = subprocess.run(
-        ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
-        cwd=wt, capture_output=True).returncode == 0
-    if not mid_merge:
+    if not mid_merge(wt):
         return []
-    unmerged = sh(["git", "diff", "--name-only", "--diff-filter=U"],
-                  cwd=wt).splitlines()
-    return unmerged or sh(["git", "diff", "--name-only", "HEAD", "MERGE_HEAD"],
-                          cwd=wt).splitlines()
+    return unmerged_paths(wt) or sh(
+        ["git", "diff", "--name-only", "HEAD", "MERGE_HEAD"], cwd=wt).splitlines()
 
 
 def conflict_brief(branch, conflicts):
