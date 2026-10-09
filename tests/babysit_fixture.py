@@ -13,7 +13,6 @@ import holophyte.cli.operator
 import holophyte.pr.pr_status
 import store
 import store.tickets
-from holophyte.agents.agent_output import ImplementerOutput
 from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle, Reply
 from tests.loop_fixture import BRANCH, IdleThenTimeout
 
@@ -58,11 +57,12 @@ class BabysitHelpers:
             class DirtyReply(Idle):
                 def play(self, cwd, turn):
                     (cwd / "unfinished.txt").write_text("preserve unfinished work\n")
-                    return ImplementerOutput(self.reply, 1, "fake")
+                    return self.reply
             action = DirtyReply(output)
-        fake, _ = self.loop(Reply("THREAD 1: ADDRESS -- crash\n"
-                                  "THREAD 2: ADDRESS -- style"),
-                            action, provider=self.provider())
+        with patch("holophyte.loop.implement._sweep_tree"):
+            fake, _ = self.loop(Reply("THREAD 1: ADDRESS -- crash\n"
+                                      "THREAD 2: ADDRESS -- style"),
+                                action, provider=self.provider())
         row, = self.read("SELECT id, phase, outcome, outcomeReason, prUrl FROM runs"
                          " ORDER BY id DESC LIMIT 1")
         run_id, phase, outcome, reason, url = row

@@ -5,6 +5,7 @@ import unittest
 from contextlib import nullcontext
 from unittest.mock import patch
 
+from holophyte.agents.agent_output import ImplementerOutput
 from holophyte.loop import implement
 from tests.sweep_fixture import SweepTestCase
 
@@ -48,8 +49,7 @@ class TurnTreeSweepTests(SweepTestCase):
 
     def turn(self, play):
         def agent(*args, **kwargs):
-            play()
-            return "turn over"
+            return play() or "turn over"
         with patch.object(implement, "agent", side_effect=agent), \
                 patch.object(implement, "heartbeat_while",
                              return_value=nullcontext()):
@@ -77,6 +77,17 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertTrue(self.git("log", "-1", "--format=%s").startswith("WIP:"))
         self.assertEqual(self.git("status", "--porcelain"), "")
         self.assertEqual(self.git("show", "HEAD:new.txt"), "a file the turn created")
+
+    def test_a_turn_that_exits_failing_still_has_its_edits_committed(self):
+        def edit_then_fail():
+            self.write("a.txt", "an edit before the turn gave up\n")
+            return ImplementerOutput("gave up", 1, "fake")
+        self.turn(edit_then_fail)
+
+        self.assertEqual(self.git("rev-list", f"{self.tip}..HEAD"),
+                         self.git("rev-parse", "HEAD"))
+        self.assertTrue(self.git("log", "-1", "--format=%s").startswith("WIP:"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
 
     def test_a_resolved_but_uncommitted_merge_is_committed(self):
         def resolve():
@@ -126,6 +137,19 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual(kind, "merge_aborted")
         (backup,) = re.findall(r"\b[0-9a-f]{40}\b", summary)
         self.assertEqual(self.git("show", f"{backup}:b.txt"), "edited after staging")
+        self.assertEqual(self.git("show", f"{backup}^3:b.txt"), "branch b\nmain b")
+
+    def test_a_conflicted_merge_is_not_discarded_when_its_backup_is_not_recorded(self):
+        def leave_conflicted():
+            self.merge_main()
+            self.write("b.txt", "branch b\nmain b\n")
+        refused = RuntimeError("the store refused the write")
+        with patch.object(implement.store, "record_event", side_effect=refused), \
+                self.assertRaises(RuntimeError):
+            self.turn(leave_conflicted)
+
+        self.assertTrue(self.mid_merge())
+        self.assertEqual((self.target / "b.txt").read_text(), "branch b\nmain b\n")
 
     def test_a_clean_turn_leaves_head_and_the_record_alone(self):
         self.turn(lambda: None)

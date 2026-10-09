@@ -20,6 +20,7 @@ from holophyte.config.reader import config_table
 from holophyte.environment_git import (
     factory_identity,
     paths,
+    protected,
     stage_work,
     unstage_environment,
 )
@@ -99,9 +100,8 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
         if not kill.wanted:
             record_session(project, conn, run_id, session_role, output, wt,
                            on_start=kill.arm)
-    cause = _turn_end(output, timed_out)
-    if sweep and role == "implement" and cause:
-        _sweep_tree(project, conn, run_id, wt, cause)
+    if sweep and role == "implement":
+        _sweep_tree(project, conn, run_id, wt, _turn_end(output, timed_out))
     return output, timed_out
 
 
@@ -194,7 +194,7 @@ def _turn_end(out, timed_out):
         return "budget fired"
     if _killed_by_signal(out, timed_out):
         return "crashed"
-    return None if getattr(out, "exit_code", 0) else "stopped"
+    return "failed" if getattr(out, "exit_code", 0) else "stopped"
 
 
 def _wip_subject(cause, task_id):
@@ -251,25 +251,47 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
                   f" on {branch} at {head[:12]}")
         return
     backup = _backup_resolution(project, wt, task_id)
-    reproduce._discard_leftovers(project, wt)
     _announce(conn, run_id, "merge_aborted",
               f"the turn left the merge on {branch} unresolved in"
               f" {', '.join(unmerged)}; aborted it, its attempted resolution"
               f" backed up at {backup}")
+    reproduce._discard_leftovers(project, wt)
+
+
+def _staged_entries(project, wt):
+    listed = subprocess.run(["git", "ls-files", "-s", "-z"], cwd=wt, check=True,
+                            capture_output=True, text=True).stdout
+    kept = []
+    for entry in filter(None, listed.split("\0")):
+        info, _, path = entry.partition("\t")
+        mode, sha, stage = info.split()
+        if stage in ("0", "2") and not (protected(project) and path == ".env"):
+            kept.append(f"{mode} {sha} 0\t{path}\0")
+    return "".join(kept)
 
 
 def _backup_resolution(project, wt, task_id):
     index = Path(wt, sh(["git", "rev-parse", "--git-path",
                          "holophyte-backup.index"], cwd=wt))
     env = dict(os.environ, GIT_INDEX_FILE=str(index))
+    staged = _staged_entries(project, wt)
+    index.unlink(missing_ok=True)
     try:
+        subprocess.run(["git", "update-index", "-z", "--index-info"], cwd=wt,
+                       env=env, input=staged, text=True, check=True,
+                       capture_output=True)
+        staged_tree = sh(["git", "write-tree"], wt, env)
         sh(["git", "read-tree", "HEAD"], wt, env)
         sh(["git", "add", "-A", *paths(project)], wt, env)
         tree = sh(["git", "write-tree"], wt, env)
     finally:
         index.unlink(missing_ok=True)
-    return sh(["git", *factory_identity(wt), "commit-tree", tree, "-p", "HEAD",
-               "-p", "MERGE_HEAD", "-m",
+    identity = factory_identity(wt)
+    staged_commit = sh(["git", *identity, "commit-tree", staged_tree, "-p",
+                        "HEAD", "-m", f"backup: staged merge resolution"
+                        f" ({task_id})"], cwd=wt)
+    return sh(["git", *identity, "commit-tree", tree, "-p", "HEAD",
+               "-p", "MERGE_HEAD", "-p", staged_commit, "-m",
                f"backup: abandoned merge resolution ({task_id})"], cwd=wt)
 
 
@@ -319,6 +341,12 @@ def _retry_crashed(project, conn, run_id, beat_s, wt, branch, task_id, goal,
         raise InfraFailure(f"implementer crashed twice (exit {out.exit_code});"
                            f" work kept on {branch} at {head[:12]}")
     return out, timed_out
+
+
+def _failed_wip_only(wt, out, timed_out, start_sha, task_id):
+    return (_turn_end(out, timed_out) == "failed"
+            and sh(["git", "log", "-1", "--format=%P %s"], cwd=wt)
+            == f"{start_sha} {_wip_subject('failed', task_id)}")
 
 
 def _commands_brief(project, verify_cmd):
@@ -383,12 +411,14 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     blast_radius.record_declared(conn, run_id, out)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    added = head != start_sha and not _failed_wip_only(wt, out, timed_out,
+                                                       start_sha, task_id)
     # A reused branch already ahead of main is the candidate, even if the
     # turn adds nothing; it still owes verify and review.
     carried = not fresh and bool(
         subprocess.run(["git", "diff", "--quiet", "main", "HEAD"],
                        cwd=wt, capture_output=True).returncode)
-    if head == start_sha and not carried:
+    if not added and not carried:
         print(f"[holo2] implementer made no commits for: {task}")
         _record_implementer_output(conn, run_id, out,
                                    known_secrets(project.config()))
@@ -401,7 +431,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                              f" and worktree were discarded{fired}",
                              "budget" if timed_out else "no_commits")
         raise RunFailure(f"implementer made no new commits; preserved work"
-                         f" kept on {branch} at {start_sha[:12]}{fired}",
+                         f" kept on {branch} at {head[:12]}{fired}",
                          "budget" if timed_out else "no_commits")
     if head == start_sha:
         note = (f"candidate carried from a prior run; implementer added"
