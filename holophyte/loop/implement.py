@@ -312,13 +312,24 @@ def _merge_tree(wt):
     return tree, set(filter(None, conflicted))
 
 
-CONFLICT_MARKER = re.compile(rb"^(<{7}|>{7})( |$)", re.MULTILINE)
+def _marker_sizes(wt, paths):
+    fields = subprocess.run(
+        ["git", "check-attr", "-z", "conflict-marker-size", "--", *paths],
+        cwd=wt, check=True, capture_output=True, text=True).stdout.split("\0")
+    return {path: int(value) if value.isdigit() and int(value) else 7
+            for path, value in zip(fields[0::3], fields[2::3])}
+
+
+def _conflict_marker(size):
+    return re.compile(rb"^(<{%d}|>{%d})( |$)" % (size, size), re.MULTILINE)
 
 
 def _still_marked(wt, conflicted):
-    return sorted(path for path in conflicted
-                  if not Path(wt, path).is_symlink() and Path(wt, path).is_file()
-                  and CONFLICT_MARKER.search(Path(wt, path).read_bytes()))
+    files = sorted(path for path in conflicted
+                   if not Path(wt, path).is_symlink() and Path(wt, path).is_file())
+    sizes = _marker_sizes(wt, files) if files else {}
+    return [path for path in files if _conflict_marker(sizes.get(path, 7))
+            .search(Path(wt, path).read_bytes())]
 
 
 def _take_autostash(wt):

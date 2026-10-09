@@ -244,6 +244,24 @@ class TurnTreeSweepTests(SweepTestCase):
         (backup,) = re.findall(r"\b[0-9a-f]{40}\b", summary)
         self.assertIn("<<<<<<<", self.git("show", f"{backup}:a.txt"))
 
+    def test_staged_markers_of_a_configured_size_are_backed_up_then_aborted(self):
+        attributes = self.git("rev-parse", "--git-path", "info/attributes")
+        (self.target / attributes).parent.mkdir(exist_ok=True)
+        (self.target / attributes).write_text("*.txt conflict-marker-size=9\n")
+
+        def stage_the_markers():
+            self.merge_main()
+            self.git("add", "a.txt", "b.txt")
+        self.turn(stage_the_markers)
+
+        self.assertFalse(self.mid_merge())
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.tip)
+        self.assertEqual((self.target / "a.txt").read_text(), "branch a\n")
+        ((kind, summary),) = self.sweep_events()
+        self.assertEqual(kind, "merge_aborted")
+        (backup,) = re.findall(r"\b[0-9a-f]{40}\b", summary)
+        self.assertIn("<" * 9 + " ", self.git("show", f"{backup}:a.txt"))
+
     def test_an_aborted_autostashed_merge_restores_the_stashed_edit(self):
         def edit_then_autostash_merge():
             self.write("a.txt", "edited before the merge\n")
