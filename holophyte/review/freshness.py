@@ -28,8 +28,8 @@ STALE_HEADING = "Not claimed: this ticket is out of date with main"
 BACKLOG_STATE = "Backlog"
 STALE_LABEL = "stale"
 HOUR_MS = 3600 * 1000
-UNVERIFIED_MAIN = ("`git rev-parse --verify main^{commit}` failed after the"
-                   " fetch, so main could not be verified")
+UNVERIFIED_MAIN = ("`git rev-parse --verify main^{commit}` failed, so main"
+                   " could not be verified")
 CRITIC_TIMEOUT = 300
 MERGE_PAGE = 50
 BRIEF_FILES = 20

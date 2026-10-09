@@ -291,7 +291,7 @@ class NativeLoopTests(LoopFixture):
 
         self.assertEqual(self.statuses(), {"NAT-1": "needs_spec"})
         self.assertEqual(self.notes(ticket_id), before)
-        self.assertIn("verif", out.getvalue().lower())
+        self.assertIn("main could not be verified", out.getvalue())
 
     def re_park(self):
         with patch.object(sys, "stdout", io.StringIO()):
