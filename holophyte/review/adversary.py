@@ -11,8 +11,8 @@ import store
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.review_workspace import review_refs
 from holophyte.board.projection import ledger
-from holophyte.config.agent_settings import review_route
-from holophyte.config.reader import adversary_credential
+from holophyte.config.agent_settings import fallback_entries, review_route
+from holophyte.config.reader import ADVERSARY_CLAUDE, adversary_credential
 from holophyte.config.review_settings import review_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import register_values
@@ -64,9 +64,6 @@ class Family:
                 "effort": self.effort, **reason}
 
 
-FALLBACK = Family("fallback")
-
-
 @dataclass(frozen=True)
 class Pass:
     round: int
@@ -97,9 +94,21 @@ def gated(project, root, start, sha):
                   if matching(path, patterns))
 
 
+def fallback_family(project, conn, run_id):
+    pair = (None if fallback_entries(project, "adversary")
+            else review_route(project, fallback=True))
+    reasons = [evidence["reason"] for run in continued_runs(conn, run_id)
+               for (text,) in conn.execute(
+                   "SELECT summary FROM runEvents WHERE runId = ?"
+                   " AND kind = 'route_fallback' ORDER BY seq", (run,))
+               if (evidence := json.loads(text)).get("seat") == "adversary"]
+    return Family("fallback", *(pair or (None, None)),
+                  reasons[-1] if reasons else "adversary route on its fallback")
+
+
 def choose_family(project, conn, run_id, passes):
     if "adversary" in routes(project).commands:
-        return FALLBACK
+        return fallback_family(project, conn, run_id)
     if "adversary" in (project.config().get("agents") or {}):
         return Family("configured")
     model, effort = review_route(project)
@@ -107,7 +116,7 @@ def choose_family(project, conn, run_id, passes):
     if credential is None:
         return Family("codex", model, effort, "no adversary_credential")
     if (continued_runs(conn, run_id)[0] + passes) % 2:
-        return Family("claude", "opus", "high", credential=credential)
+        return Family("claude", *ADVERSARY_CLAUDE, credential=credential)
     return Family("codex", model, effort)
 
 
@@ -272,8 +281,8 @@ def settle(project, conn, run_id, provider, task_id, plan, attacked):
     concerns = [f for f in found if f["evidence"] not in BLOCKING]
     outcome = ("malformed" if reply is None else
                "blocked" if blocking else "clear")
-    family = (FALLBACK if "adversary" in routes(project).commands
-              else plan.family)
+    family = (fallback_family(project, conn, run_id)
+              if "adversary" in routes(project).commands else plan.family)
     store.record_event(
         conn, run_id, "adversary_round",
         f"round {plan.round} adversary ({plan.depth}, {plan.scope}): {outcome}",

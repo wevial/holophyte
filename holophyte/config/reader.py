@@ -40,6 +40,7 @@ REVIEW_EFFORT = review_runner.EFFORT
 REVIEW_EFFORTS = review_runner.EFFORTS
 review_profile = review_runner.profile_for
 REVIEW_PROFILE = review_profile(REVIEW_MODEL, REVIEW_EFFORT)
+ADVERSARY_CLAUDE = ("opus", "high")
 CRITIC_MODEL = "gpt-6-luna"
 CRITIC_EFFORT = "medium"
 

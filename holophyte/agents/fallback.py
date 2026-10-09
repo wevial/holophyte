@@ -4,6 +4,7 @@ import threading
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.probes import (
     container_fallback_profile,
+    probe_adversary_claude,
     probe_critic,
     probe_diagnostic,
     probe_implementer,
@@ -116,6 +117,8 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
                  probe_seat(project, role))
         if probe is None:
             continue
+        if role == "adversary" and probe.ok:
+            probe = probe_adversary_claude(project) or probe
         print(probe_diagnostic(project, probe))
         if not probe.ok and has_fallback:
             probe = startup_fallback(project, provider, role, probe, activate)

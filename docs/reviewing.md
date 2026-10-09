@@ -141,11 +141,13 @@ two model families so they can be compared: a run's passes are numbered from 0
 in the order they run, counted from its `adversary_round` events (a resumed
 run counts from the run it continues), and pass `k` of run `R` runs Claude
 Opus at effort `high` in the review container when `R + k` is odd, Codex
-otherwise. Without the key every pass runs Codex. A Claude turn whose output
-carries a Claude outage line switches to a configured `adversary_fallback`, or
-the reviewer's container fallback pair, probed and recorded as a
-`route_fallback` event; with neither, the run fails as `review_route` and no
-Codex turn stands in.
+otherwise. Without the key every pass runs Codex. A Claude turn whose output,
+on either stream, carries a Claude outage line switches to a configured
+`adversary_fallback`, or the reviewer's container fallback pair, probed and
+recorded as a `route_fallback` event; with neither, the run fails as
+`review_route` and no Codex turn stands in. When `adversary_fallback` is set,
+startup probes the Claude route after the seat's own probe, and a failed
+Claude probe starts the adversary on its fallback.
 
 The round's tier is the one its `blast_radius` event records. The first round
 of a run whose tier is `medium` or `high` gets a pass over the whole candidate,
@@ -180,7 +182,9 @@ Concerns never block and stay out of `reviewRounds`; each pass's concerns go
 into one ledger note. Each pass records an `adversary_round` detail event with
 `round`, `tier`, `depth`, `scope`, `range`, `family` (`claude`, `codex`,
 `configured`, or `fallback` once the route switched), `model`, `effort`,
-`family_reason` when the family was forced (`no adversary_credential`),
+`family_reason` when the family was forced (`no adversary_credential`, or
+for `fallback` the reason its switch recorded; a pass on the container
+fallback pair records that pair's `model` and `effort`),
 `outcome`, `seconds`, `findings` (the blocking ones) and `concerns`. The
 pass's `agent_turn` event labels a Claude turn `claude opus`.
 

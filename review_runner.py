@@ -372,7 +372,6 @@ def parse_claude_output(
         error = ReviewBoundaryError(
             f"Claude turn failed: {detail}" if detail
             else "Claude printed no JSON result")
-        error.output = output
         raise error
     message = reply["result"]
     if verdicts is None:
@@ -616,6 +615,8 @@ def run_review(
         except ReviewBoundaryError as error:
             error.tail = (result.stdout or result.stderr)[-EVIDENCE_TAIL:]
             error.exit_status = result.returncode
+            if codex is None:
+                error.output = f"{result.stdout}{result.stderr}"
             raise
         if (transcripts is not None and on_session is not None
                 and (session := codex_session(result.stdout))

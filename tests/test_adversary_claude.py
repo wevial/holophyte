@@ -31,6 +31,7 @@ from test_review_runner import docker_shim, two_commit_repo  # noqa: E402
 import review_runner  # noqa: E402
 from holophyte.agents import probes, roles  # noqa: E402
 from holophyte.agents.agent_routes import reset  # noqa: E402
+from holophyte.agents.fallback import outage_reason  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
 
 Change, attack, finding = (test_adversary.Change, test_adversary.attack,
@@ -51,6 +52,7 @@ with open(os.environ["HOLOPHYTE_DOCKER_LOG"], "a") as log:
         os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") == {secret!r}}}) + "\\n")
 if sys.argv[1] == "run":
     sys.stderr.write("PREFLIGHT_OK candidate=test\\n")
+    sys.stderr.write(os.environ.get("HOLOPHYTE_DOCKER_STDERR", ""))
     sys.stdout.write(open(os.environ["HOLOPHYTE_DOCKER_REPLY"]).read())
     sys.exit(int(os.environ.get("HOLOPHYTE_DOCKER_EXIT", "0")))
 sys.exit(1 if sys.argv[1] == "inspect" else 0)
@@ -69,9 +71,10 @@ class ClaudeTurnTests(unittest.TestCase):
                         CLAUDE_CODE_OAUTH_TOKEN=SECRET)
         self.base, self.candidate = two_commit_repo(self.root / "repo")
 
-    def review(self, reply, exit_status=0, **route):
+    def review(self, reply, exit_status=0, stderr="", **route):
         (self.root / "reply").write_text(reply)
-        env = dict(self.env, HOLOPHYTE_DOCKER_EXIT=str(exit_status))
+        env = dict(self.env, HOLOPHYTE_DOCKER_EXIT=str(exit_status),
+                   HOLOPHYTE_DOCKER_STDERR=stderr)
         with patch.dict(os.environ, env), \
                 patch.object(review_runner, "SCRATCH_ROOT", self.root / "reviews"), \
                 patch.object(review_runner, "CODEX_AUTH", self.root / "auth.json"):
@@ -144,6 +147,16 @@ class ClaudeTurnTests(unittest.TestCase):
                                 credential="CLAUDE_CODE_OAUTH_TOKEN")
                 self.assertEqual(e.exception.tail,
                                  output[-review_runner.EVIDENCE_TAIL:])
+                self.assertIn(output, e.exception.output)
+
+
+    def test_a_limit_line_on_stderr_reaches_the_outage_check(self):
+        with self.assertRaises(review_runner.ReviewBoundaryError) as e:
+            self.review("", 1, stderr="Credit balance is too low\n",
+                        harness="claude", model="opus", effort="high",
+                        credential="CLAUDE_CODE_OAUTH_TOKEN")
+        self.assertEqual(outage_reason("claude opus", e.exception.output),
+                         "Credit balance is too low")
 
 
 class RealAdversary(FakeAgent):
@@ -157,6 +170,7 @@ def limit_failure():
     try:
         review_runner.parse_claude_output(LIMIT, None)
     except review_runner.ReviewBoundaryError as error:
+        error.output = LIMIT
         return error
     raise AssertionError("a limit reply parsed")
 
@@ -256,13 +270,14 @@ class FamilyTests(test_adversary.AdversaryFixture):
             "SELECT payload FROM runEvents WHERE kind = 'agent_turn'"
             " ORDER BY seq") if json.loads(payload)["role"] == ADVERSARY]
 
-    def scripted_container(self, calls):
+    def scripted_container(self, calls, claude_down=False):
         def run_review(*, prompt, candidate_sha, harness="codex", **kwargs):
             calls.append((harness, prompt[:31]))
+            if harness == "claude" and (claude_down
+                                        or prompt != probes.REVIEW_PROBE_GOAL):
+                raise limit_failure()
             if prompt == probes.REVIEW_PROBE_GOAL:
                 return f"ready {candidate_sha}"
-            if harness == "claude":
-                raise limit_failure()
             return "Nothing broke.\nADVERSARY: DONE"
         return patch.object(roles.review_runner, "run_review",
                             side_effect=run_review)
@@ -296,6 +311,54 @@ class FamilyTests(test_adversary.AdversaryFixture):
                           if goal != probes.REVIEW_PROBE_GOAL[:31]], ["claude"])
         self.assertEqual([(t["label"], t["route"]) for t in self.adversary_turns()],
                          [("claude opus", "primary"), (str(script), "fallback")])
+        [(_, event)] = self.rounds()
+        self.assertEqual((event["family"], event["model"]), ("fallback", None))
+        self.assertIn("You've hit your limit", event["family_reason"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_pass_on_the_container_fallback_pair_records_the_pair(self):
+        self.configure(ON + CREDENTIAL + 'review_fallback_model = "gpt-6-luna"\n'
+                       'review_fallback_effort = "high"\n')
+        self.addCleanup(reset, self.project)
+        calls = []
+        with self.scripted_container(calls), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.loop(fake=RealAdversary(Change("poetry.lock"), APPROVE))
+
+        self.assertEqual([harness for harness, goal in calls
+                          if goal != probes.REVIEW_PROBE_GOAL[:31]],
+                         ["claude", "codex"])
+        [(_, event)] = self.rounds()
+        self.assertEqual((event["family"], event["model"], event["effort"]),
+                         ("fallback", "gpt-6-luna", "high"))
+        self.assertIn("You've hit your limit", event["family_reason"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_startup_probes_claude_and_a_failed_probe_starts_on_the_fallback(
+            self):
+        script = self.db.parent / "adversary-fallback"
+        script.write_text(
+            f"#!{sys.executable}\nimport subprocess, sys\n"
+            f"if sys.argv[-1] == {probes.REVIEW_PROBE_GOAL!r}:\n"
+            " print('ready ' + subprocess.check_output("
+            "['git', 'rev-parse', 'HEAD'], text=True).strip())\n"
+            "else:\n print('Nothing broke.\\nADVERSARY: DONE')\n")
+        script.chmod(0o755)
+        self.configure(ON + CREDENTIAL + f'adversary_fallback = "{script}"\n')
+        self.addCleanup(reset, self.project)
+        calls = []
+        with self.scripted_container(calls, claude_down=True), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.loop(fake=RealAdversary(Change("poetry.lock"), APPROVE))
+
+        self.assertIn(("claude", probes.REVIEW_PROBE_GOAL[:31]), calls)
+        self.assertEqual([harness for harness, goal in calls
+                          if goal != probes.REVIEW_PROBE_GOAL[:31]], [])
+        [switch] = [json.loads(summary) for (summary,) in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'route_fallback'"
+            " AND runId IS NOT NULL")]
+        self.assertEqual(switch["seat"], "adversary")
+        self.assertIn("You've hit your limit", switch["reason"])
         [(_, event)] = self.rounds()
         self.assertEqual(event["family"], "fallback")
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])

@@ -22,11 +22,13 @@ from holophyte.config.agent_settings import (
     review_tier,
 )
 from holophyte.config.reader import (
+    ADVERSARY_CLAUDE,
     AGENT_CONFIG_KEYS,
     DEFAULT_IMPLEMENTER,
     IMPL_EFFORT,
     IMPL_MODEL,
     SHA_ROLES,
+    adversary_credential,
     review_profile,
 )
 from holophyte.isolation import launcher
@@ -172,6 +174,32 @@ def probe_route(project, role, fallback, timeout, entry):
                                entry=entry)
     return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role],
                        expected_commit=sha, entry=entry)
+
+
+def probe_adversary_claude(project, timeout=None):
+    credential = adversary_credential(project)
+    if credential is None or agent_command(project, "adversary", "") is not None:
+        return None
+    model, effort = ADVERSARY_CLAUDE
+    cmd, cap = ["claude", "--model", model], timeout or PROBE_TIMEOUT
+    with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
+        sh(["git", "clone", "--shared", "--quiet", str(project.path), scratch])
+        sha = sh(["git", "rev-parse", "HEAD"], cwd=scratch).strip()
+        publish_review_refs(Path(scratch), sha, sha)
+        try:
+            out = review_runner.run_review(
+                repo=Path(scratch), base_sha=sha, candidate_sha=sha,
+                prompt=REVIEW_PROBE_GOAL, timeout=cap, verdicts=None,
+                harness="claude", model=model, effort=effort,
+                credential=credential)
+        except subprocess.TimeoutExpired:
+            return ProbeResult(cmd, None, "", cap, seat="adversary",
+                               expected_commit=sha)
+        except review_runner.ReviewBoundaryError as failed:
+            return ProbeResult(cmd, None, getattr(failed, "output", ""), cap,
+                               launch_error=str(failed), seat="adversary",
+                               expected_commit=sha)
+    return ProbeResult(cmd, 0, out, cap, seat="adversary", expected_commit=sha)
 
 
 def container_fallback_profile(project, role):
