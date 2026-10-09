@@ -48,22 +48,19 @@ def said(message):
     return " ".join(message.split()).casefold()
 
 
-def _item(finding, found_by, evidence, order):
+def _item(finding, found_by, evidence):
     severity = finding.get("severity")
     return {"path": finding["path"], "line": finding.get("line") or None,
             "severity": severity if severity in SEVERITIES else "p2",
             "evidence": evidence if evidence in EVIDENCE else "concern",
             "found_by": [found_by], "messages": [_body(finding)],
-            "places": [(finding["path"], finding.get("line") or None)],
-            "order": order}
+            "places": [(finding["path"], finding.get("line") or None)]}
 
 
 def items(primary, adversary):
-    found = [("primary", finding, "review") for finding in primary]
-    found += [("adversary", finding, finding.get("evidence"))
-              for finding in adversary]
-    return [_item(finding, who, evidence, n)
-            for n, (who, finding, evidence) in enumerate(found)]
+    return ([_item(finding, "primary", "review") for finding in primary]
+            + [_item(finding, "adversary", finding.get("evidence"))
+               for finding in adversary])
 
 
 def concern(item):
@@ -87,8 +84,7 @@ def _absorb(into, other, messages):
 
 
 def _rank(item):
-    return (SEVERITIES.index(item["severity"]),
-            "primary" not in item["found_by"], item["order"])
+    return SEVERITIES.index(item["severity"]), "primary" not in item["found_by"]
 
 
 def ordered(merged):
@@ -128,7 +124,7 @@ def location(item):
 
 
 def _texts(item):
-    return [message if tuple(place) == _place(item)
+    return [message if place == _place(item)
             else f"{_where(*place)}: {message}"
             for message, place in zip(item["messages"], item["places"])]
 
@@ -260,7 +256,7 @@ def fixing(decision, findings, ok, out):
 
 def primary_findings(verdict, decision, unwitnessed):
     asked = parse_findings(verdict) if decision == "REQUEST_CHANGES" else []
-    return asked + list(unwitnessed)
+    return asked + unwitnessed
 
 
 def adversary_findings(conn, run_id, rnd):
