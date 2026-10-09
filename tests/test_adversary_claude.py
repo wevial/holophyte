@@ -363,6 +363,67 @@ class FamilyTests(test_adversary.AdversaryFixture):
         self.assertEqual(event["family"], "fallback")
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
+    def test_a_failed_claude_probe_keeps_the_credential_out_of_its_record(self):
+        secret = "holophyte-probe-credential-value"
+        self.configure(ON + CREDENTIAL + 'review_fallback_model = "gpt-6-luna"\n'
+                       'review_fallback_effort = "high"\n')
+        self.addCleanup(reset, self.project)
+
+        def run_review(*, prompt, candidate_sha, harness="codex", **kwargs):
+            if harness == "claude":
+                error = review_runner.ReviewBoundaryError(
+                    f"Claude turn failed: token {secret} rejected")
+                error.output = f"token {secret} rejected"
+                raise error
+            if prompt == probes.REVIEW_PROBE_GOAL:
+                return f"ready {candidate_sha}"
+            return "Nothing broke.\nADVERSARY: DONE"
+        output = io.StringIO()
+        with patch.dict(os.environ, {KEY: secret}), \
+                patch.object(review_runner, "run_review", side_effect=run_review), \
+                contextlib.redirect_stdout(output):
+            self.loop(fake=RealAdversary(Change("poetry.lock"), APPROVE))
+
+        reasons = [json.loads(summary)["reason"] for (summary,) in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'route_fallback'")]
+        self.assertTrue(reasons)
+        self.assertTrue(all("rejected" in reason for reason in reasons))
+        self.assertFalse(any(secret in reason for reason in reasons))
+        self.assertNotIn(secret, output.getvalue())
+
+    def test_a_failed_claude_probe_starts_on_the_container_fallback_pair(self):
+        self.configure(ON + CREDENTIAL + 'review_fallback_model = "gpt-6-luna"\n'
+                       'review_fallback_effort = "high"\n')
+        self.addCleanup(reset, self.project)
+        calls = []
+        with self.scripted_container(calls, claude_down=True), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.loop(fake=RealAdversary(Change("poetry.lock"), APPROVE))
+
+        self.assertIn(("claude", probes.REVIEW_PROBE_GOAL[:31]), calls)
+        self.assertEqual([harness for harness, goal in calls
+                          if goal != probes.REVIEW_PROBE_GOAL[:31]], ["codex"])
+        [(_, event)] = self.rounds()
+        self.assertEqual((event["family"], event["model"]),
+                         ("fallback", "gpt-6-luna"))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_done_reply_holding_a_limit_line_fails_without_a_fallback(self):
+        self.configure(ON + CREDENTIAL)
+        calls = []
+
+        def run_review(*, prompt, harness="codex", **kwargs):
+            calls.append(harness)
+            return "You've hit your limit · resets 5pm\nADVERSARY: DONE"
+        with patch.object(review_runner, "run_review", side_effect=run_review), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.loop(fake=RealAdversary(Change("poetry.lock"), APPROVE))
+
+        self.assertEqual(calls, ["claude"])
+        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
+                         [("failed", "review_route")])
+        self.assertEqual(self.rounds(), [])
+
     def test_a_claude_limit_with_no_fallback_fails_and_runs_no_codex_turn(self):
         self.configure(ON + CREDENTIAL)
         calls = []

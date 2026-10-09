@@ -145,9 +145,11 @@ otherwise. Without the key every pass runs Codex. A Claude turn whose output,
 on either stream, carries a Claude outage line switches to a configured
 `adversary_fallback`, or the reviewer's container fallback pair, probed and
 recorded as a `route_fallback` event; with neither, the run fails as
-`review_route` and no Codex turn stands in. When `adversary_fallback` is set,
-startup probes the Claude route after the seat's own probe, and a failed
-Claude probe starts the adversary on its fallback.
+`review_route` and no Codex turn stands in, even when the reply otherwise
+ends with `ADVERSARY: DONE`. When the adversary has a fallback
+(`adversary_fallback`, or the reviewer's container fallback pair while
+`[review] adversary` is on), startup probes the Claude route after the seat's
+own probe, and a failed Claude probe starts the adversary on its fallback.
 
 The round's tier is the one its `blast_radius` event records. The first round
 of a run whose tier is `medium` or `high` gets a pass over the whole candidate,

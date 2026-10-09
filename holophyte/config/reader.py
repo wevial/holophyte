@@ -1,3 +1,4 @@
+import os
 import tomllib
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from holophyte.config.config_tables import (
     TRIM_KEYS,
 )
 from holophyte.config.review_settings import REVIEW_KEYS
+from holophyte.redact import register_values
 
 
 def load_config(path):
@@ -107,6 +109,7 @@ def adversary_credential(project):
             f"[holo2] {project.config_path}: [agents] adversary_credential "
             'must be { env = "NAME" }, NAME a variable in the factory\'s '
             "environment")
+    register_values([os.environ.get(value["env"], "")])
     return value["env"]
 
 

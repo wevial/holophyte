@@ -1,7 +1,6 @@
 """The adversarial pass beside the primary review: brief, reply and re-run rule."""
 import contextvars
 import json
-import os
 import re
 import threading
 from dataclasses import dataclass
@@ -9,13 +8,14 @@ from time import monotonic
 
 import store
 from holophyte.agents.agent_routes import routes
+from holophyte.agents.agent_turns import family_label
+from holophyte.agents.fallback import outage_reason
 from holophyte.agents.review_workspace import review_refs
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import fallback_entries, review_route
 from holophyte.config.reader import ADVERSARY_CLAUDE, adversary_credential
 from holophyte.config.review_settings import review_config
 from holophyte.loop.gates import InfraFailure
-from holophyte.redact import register_values
 from holophyte.redact import safe_print as print
 from holophyte.review.blast_radius import BASE_HIGH_PATHS, continued_runs, matching
 from holophyte.review.briefs import _changed_files
@@ -235,18 +235,27 @@ def attack(project, conn, run_id, wt, base, ticket, plan, run_agent):
     started = monotonic()
     goal = brief(plan, ticket, run_id)
     route = plan.family.route()
-    if route is not None:
-        register_values([os.environ.get(route["credential"], "")])
     for _ in range(2):
         reply = run_agent(project, "adversary", goal, wt, base_sha=base,
                           candidate_sha=plan.sha, timeout=plan.seconds,
                           conn=conn, run_id=run_id, family_route=route)
+        claude_down(project, route, reply)
         if finished(reply):
             return reply, round(monotonic() - started, 3)
         goal += (f"\n\nYour previous reply did not end with {DONE}. Your "
                  f"reply must end with exactly one line, {DONE}, and nothing "
                  "after it.")
     return None, round(monotonic() - started, 3)
+
+
+def claude_down(project, route, reply):
+    if route is None or "adversary" in routes(project).commands:
+        return
+    reason = outage_reason(family_label(route), str(reply))
+    if reason:
+        print(f"[holo2] adversary route {family_label(route)} down: {reason}")
+        raise InfraFailure(f"adversary route {family_label(route)} down with "
+                           f"no fallback: {reason}", "review_route")
 
 
 def beside(conn, run_id, primary, side):
