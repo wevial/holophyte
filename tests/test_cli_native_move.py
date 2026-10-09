@@ -205,3 +205,29 @@ class NativeMoveCliTests(ConfigTestCase):
         self.native(1)
         self.assertEqual(self.cli("--move", "NAT-1", "ready", "--revision", "1"),
                          (1, "[holo2] NAT-1 is already in ready\n"))
+
+    def test_a_move_to_ready_re_readies_a_critic_park_with_a_clean_body(self):
+        self.native(0)
+        self.git("init", "-q", "-b", "main")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        path = self.root / "T.md"
+        path.write_text(body("Thing"))
+        self.assertEqual(self.cli("--file-ticket", str(path))[0], 0)
+        board = board_for(self.project)
+        task = board.fetch_task("NAT-1")
+        self.assertEqual(stale_reasons(self.target, task["body"]), [])
+        with contextlib.closing(open_store(self.project)) as conn, \
+                contextlib.redirect_stdout(io.StringIO()):
+            project_id = conn.execute("SELECT id FROM projects").fetchone()[0]
+            park_stale(self.project, conn, project_id, board, task,
+                       ["critic: stale — already done"], admitted=True,
+                       kind="critic")
+        column, revision, status = self.ticket("NAT-1")
+        self.assertEqual((column, status), ("ready", "needs_spec"))
+
+        self.assertEqual(
+            self.cli("--move", "NAT-1", "ready", "--revision", str(revision)),
+            (0, f"[holo2] re-checked NAT-1 against main: ready"
+                f" (revision {revision})\n"))
+        self.assertEqual(self.ticket("NAT-1"), ("ready", revision, "ready"))
