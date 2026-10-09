@@ -81,7 +81,7 @@ COMMANDS = (
             note=REQUIRED, flags=(REVISION,),
             records=("abort", "abort_close", "close_out")),
     Command(("requeue",), "--requeue", "a failed ticket back in the queue",
-            takes=("KEY",), note=REQUIRED, records=("requeue",)),
+            takes=("KEY",), note=REQUIRED, flags=(FORCE,), records=("requeue",)),
     Command(("approve",), "--approve", "release a run parked for merge approval",
             takes=("KEY",), note=OPTIONAL, flags=(FORCE,), records=("approve",)),
     Command(("babysit",), "--babysit", "look at a parked run's pull request again",
