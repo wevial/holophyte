@@ -3,13 +3,17 @@ from dataclasses import replace
 
 from holophyte.pr.github import Thread
 from holophyte.review.findings import decode_findings
-from store import operator_notes
+from store import console_asks, operator_notes
 
 PREFIX = "Maintainer's instruction (amends the ticket where they conflict):"
 
 
 def is_note(thread):
     return thread.author_kind == "maintainer" and thread.id.startswith("operator_note:")
+
+
+def is_console_ask(thread):
+    return thread.id.startswith("console_ask:")
 
 
 def event_id(thread):
@@ -72,7 +76,18 @@ def pending_state(conn, run_id, state, url):
                            n["author"], n["note"], "", author_kind="maintainer")
                     for n in operator_notes.notes(
                         conn, run_id, pending=True, pr_url=url))
-    return replace(state, threads=state.threads + threads)
+    posted = {event_id: (at, answer)
+              for event_id, at, answer in state.console_answers}
+    asks = []
+    for a in console_asks.pending(conn, run_id, url):
+        if a["id"] in posted:
+            console_asks.answered(conn, run_id, a["id"], *posted[a["id"]])
+        else:
+            asks.append(Thread(f"console_ask:{a['id']}", "", None, a["author"],
+                               a["question"], url, kind="conversation",
+                               classification="MENTIONED", request=a["question"],
+                               intent="ask"))
+    return replace(state, threads=state.threads + threads + tuple(asks))
 
 
 def instruction(thread):

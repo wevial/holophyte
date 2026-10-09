@@ -1,0 +1,25 @@
+{
+  "run": 2,
+  "ticket": "KO-1",
+  "pr_url": "https://github.com/example/repo/pull/31",
+  "asks": [
+    {
+      "id": 4,
+      "question": "Why is the guest keyed by name?",
+      "author": "maintainer",
+      "asked_ms": "NOW",
+      "answered_ms": "NOW",
+      "url": "https://github.com/example/repo/pull/31#issuecomment-901",
+      "answer": "Names are unique per party: src/app.py:30."
+    },
+    {
+      "id": 10,
+      "question": "Can a guest be renamed?",
+      "author": "reviewer",
+      "asked_ms": "NOW",
+      "answered_ms": null,
+      "url": null,
+      "answer": null
+    }
+  ]
+}

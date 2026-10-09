@@ -19,7 +19,7 @@ UNIT_ACTIONS = {
 REQUEUE_ACTION = "requeue"
 RECORDS = {**{action: (row,) for action, (*_, row) in UNIT_ACTIONS.items()},
            REQUEUE_ACTION: ("requeue",), "send-back": ("operator_note",),
-           "merge": ("approve",), "hold": ("hold",),
+           "merge": ("approve",), "ask": ("babysit",), "hold": ("hold",),
            "release-hold": ("release_hold",), "pause": ("pause",),
            "resume": ("resume",), "abort": ("abort", "abort_close")}
 ACTIONS = frozenset(RECORDS)

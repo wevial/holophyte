@@ -1,9 +1,13 @@
 import contextlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
-from holophyte.babysit.conversation_comments import conversation_threads
+from holophyte.babysit.conversation_comments import (
+    console_answers,
+    conversation_threads,
+    pull_comments,
+)
 from holophyte.babysit.thread_mentions import classify
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
@@ -51,7 +55,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
       commits(last: 1) { nodes { commit { statusCheckRollup { state %s } } } }
       comments(first: 100, after: $commentsAfter) {
         pageInfo { hasNextPage endCursor }
-        nodes { id author { login __typename } body url
+        nodes { id author { login __typename } body url viewerDidAuthor
                 reactionGroups { content viewerHasReacted } }
       }
       reviewThreads(first: %d, after: $after) {
@@ -212,14 +216,16 @@ def pr_state(target, pull):
         if not (info.get("hasNextPage") and info.get("endCursor")):
             break
         node = _pull_request_page(target, pull, info["endCursor"])
-    threads.extend(conversation_threads(target, pull, first_page, _pull_request_page))
+    comments = pull_comments(target, pull, first_page, _pull_request_page)
+    threads.extend(conversation_threads(target, pull, comments))
     runs, required = _check_reads(target, pull, first_page.get("headRefOid"))
     if runs is not None:
         try:
             runs += status_contexts_of(target, pull, first_page, graphql)
         except InfraFailure:
             runs = None
-    return _state_of(first_page, threads, runs, required, pull.awaited)
+    return replace(_state_of(first_page, threads, runs, required, pull.awaited),
+                   console_answers=console_answers(comments))
 
 
 def _reopened(target, thread):
