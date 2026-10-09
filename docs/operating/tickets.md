@@ -34,6 +34,18 @@ python3 ticket_template.py TICKET.md --repo /path/to/project
 Blockers make the ticket INVALID and the loop skips it as `needs_spec`.
 Advisories print and let it through.
 
+With `--repo`, the checker also runs the landmark half of the claim's
+freshness check against that repository's `main`: every path the criteria
+and Implementation notes name must be on `main`, and every function or class
+an Implementation notes item names must be in one of the files on `main`
+that item names. A path
+is exempt when "new" governs it: "new", at most three words with no
+preposition among them, an optional comma, colon or opening parenthesis,
+then the path or a list of paths joined by commas, `and` or `or`. "a new test
+file `tests/x.py`" and "new modules `a.py` and `b.py`" declare; "a new test
+in `tests/x.py`" does not. A repository with no `main` commit skips the
+check.
+
 ## What the validator refuses, and why
 
 | Refusal | Why it exists |
@@ -46,6 +58,7 @@ Advisories print and let it through.
 | Open questions not exactly `- None` | an open question is not a frozen contract |
 | `**UI change:**` other than `major` or `minor`, or a `## Mock-up` without exactly one accepted bare URL and one `Approved YYYY-MM-DD: what` line | a markdown link keeps only its text, and an unnamed approval is no agreement |
 | `**UI change:** major` with no `## Mock-up`, on a project whose `[merge]` sets `ui_paths` (`--file-ticket` and the claim) | a layout agreed before the run is cheaper than one corrected after the Evidence screenshots |
+| A named path `main` lacks, or a named symbol not in the file it is paired with, in a body with `Depends on: none` (`--repo` and `--file-ticket`; with a dependency each reason is an advisory, or a `warning:` line at filing, and the claim re-checks it) | the claim parks such a ticket as stale; LOTUS-95, LOTUS-96, LOTUS-97 and HOLO-182 passed filing and were parked at claim |
 
 Advisories: a `What:` that chains two deliverables; a bare `python3` in a
 verify command on a project with a venv; a criterion that reads as an

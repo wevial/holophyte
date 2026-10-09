@@ -412,18 +412,42 @@ def _sentence_before(masked, end):
     return re.split(r"[.!?](?:\s|$)|\n\s*(?:\n|[-*+] )", masked[:end])[-1]
 
 
+PREPOSITIONS = frozenset(
+    "about above across after against along alongside among around as at"
+    " before behind below beneath beside between beyond by during for from in"
+    " inside into near of off on onto out outside over past per since through"
+    " to toward towards under until upon via with within without".split())
+NEW_GAP_RE = re.compile(
+    r"\s*(?P<words>(?:\w[\w-]*\s+)*(?:\w[\w-]*)?)\s*[,:(]?\s*"
+    r"(?:\0+\s*(?:,\s*(?:(?:and|or)\s+)?|(?:and|or)\s+))*", re.I)
+
+
+def _governing_new(marked, start, end):
+    news = list(re.finditer(r"\bnew\b", marked[start:end], re.I))
+    gap = news and NEW_GAP_RE.fullmatch(marked, start + news[-1].end(), end)
+    if not gap:
+        return None
+    words = gap.group("words").lower().split()
+    if len(words) > 3 or PREPOSITIONS.intersection(words):
+        return None
+    return words
+
+
 def _new_paths(t):
     files, directories = set(), set()
     for text in t.sections.values():
         masked = _mask_code_spans(text)
+        marked = re.sub(r"`[^`\n]+`", lambda m: "\0" * len(m.group()), text)
         for span in re.finditer(r"`([^`\n]+)`", text):
             path = span.group(1)
             if not PATH_TOKEN_RE.fullmatch(path):
                 continue
             sentence = _sentence_before(masked, span.start())
-            directory = re.search(r"\bdirector(?:y|ies)\b", sentence, re.I)
-            if (re.search(r"\bnew\b", sentence, re.I)
-                    and (_repo_paths(path) or directory)):
+            words = _governing_new(marked, span.start() - len(sentence),
+                                   span.start())
+            directory = words is not None and any(
+                re.fullmatch(r"director(?:y|ies)", w) for w in words)
+            if words is not None and (_repo_paths(path) or directory):
                 normalized = str(Path(path))
                 files.add(normalized)
                 if path.endswith("/") or directory:
@@ -876,7 +900,14 @@ def main(argv):
     repo, paths = parsed
     invalid = 0
     for path in paths:
-        problems = validate(parse(Path(path).read_text()), repo=repo)
+        text = Path(path).read_text()
+        ticket = parse(text)
+        problems = validate(ticket, repo=repo)
+        if repo is not None:
+            from holophyte.review.freshness import landmark_reasons
+            prefix = ADVISORY_PREFIX if ticket.depends_on else ""
+            problems += [prefix + reason
+                         for reason in landmark_reasons(repo, text)]
         blockers = blocking(problems)
         if blockers:
             invalid += 1

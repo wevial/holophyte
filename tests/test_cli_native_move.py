@@ -157,13 +157,13 @@ class NativeMoveCliTests(ConfigTestCase):
         """NAT-1, naming `LATER` in its notes, parked by the claim's
         freshness check while main lacks it; its revision."""
         self.native(0)
-        self.git("init", "-q", "-b", "main")
-        self.git("add", "-A")
-        self.git("commit", "-q", "-m", "base")
         path = self.root / "T.md"
         path.write_text(body("Thing").replace(
             "- None worth noting.", f"- Extend `{LATER}` with the thing."))
         self.assertEqual(self.cli("--file-ticket", str(path))[0], 0)
+        self.git("init", "-q", "-b", "main")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
         board = board_for(self.project)
         task = board.fetch_task("NAT-1")
         reasons = stale_reasons(self.target, task["body"])
