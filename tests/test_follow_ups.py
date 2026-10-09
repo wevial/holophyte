@@ -7,9 +7,7 @@ from __future__ import annotations
 import io
 import json
 import os
-import subprocess
 import sys
-import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
@@ -27,7 +25,6 @@ from fake_agent import (  # noqa: E402
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
-import holophyte.config.project  # noqa: E402
 import holophyte.loop.adjudicate  # noqa: E402
 import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
@@ -49,52 +46,34 @@ FIX = f"address the review\n\nADDRESS: fixed the blocker\n{FEATURE}\n{GUARDRAIL}
 URL = "https://github.com/example/repo/pull/12"
 
 
-def git(cwd, *args):
-    return subprocess.run(["git", *args], cwd=cwd, check=True,
-                          capture_output=True, text=True).stdout.strip()
-
-
 def events(conn, run_id, kind):
     return [json.loads(payload) for (payload,) in conn.execute(
         "SELECT payload FROM runEvents WHERE runId = ? AND kind = ?"
         " ORDER BY seq", (run_id, kind))]
 
 
-class CaptureTests(unittest.TestCase):
+class CaptureTests(LoopFixture):
     """`fix_turn()` over a real repository and store, its turn committing."""
 
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        root = Path(tmp.name)
-        self.repo = root / "repo"
-        self.repo.mkdir()
-        git(self.repo, "init", "-q", "-b", "main")
-        git(self.repo, "config", "user.email", "factory@example.invalid")
-        git(self.repo, "config", "user.name", "Factory Test")
-        (self.repo / "README.md").write_text("base\n")
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-q", "-m", "base")
-        self.target = holophyte.config.project.Project(
-            path=self.repo, holo_dir=root, store_path=root / "store.db",
-            config_path=root / "config.toml", worktrees=root / "worktrees")
-        self.conn = store.open(root / "store.db")
+        super().setUp()
+        self.conn = open_store(self.project)
         self.addCleanup(self.conn.close)
-        project = store.tickets.ensure_project(self.conn, "team", str(self.repo))
+        project = store.tickets.ensure_project(self.conn, "team", str(self.target))
         ticket = store.tickets.mirror_ticket(
             self.conn, project, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="ticket 1")
         self.run_id = store.claim(self.conn, project, ticket)
 
     def fix(self, *messages):
-        sha = git(self.repo, "rev-parse", "HEAD")
+        sha = self.git("rev-parse", "HEAD").strip()
 
         def timed(*args, argv=None):
             for turn, message in enumerate(messages):
-                Commit(message).play(self.repo, f"{sha[:8]}-{turn}")
+                Commit(message).play(self.target, f"{sha[:8]}-{turn}")
             return "done", False
 
-        fix_turn(self.target, self.conn, self.run_id, 0, self.repo, 10,
+        fix_turn(self.project, self.conn, self.run_id, 0, self.target, 10,
                  "TICKET", "VERDICT: REQUEST_CHANGES", sha, timed=timed,
                  check_cap=None)
 
@@ -213,9 +192,9 @@ class NativeSettleTests(NativeProject):
                                       VALID_BODY)
         ticket = store.read.ticket_by_identifier(self.conn, key)
         run_id = store.claim(self.conn, self.project_id, ticket.id)
-        base = git(self.target, "rev-parse", "HEAD")
+        base = self.git("rev-parse", "HEAD").strip()
         for message in messages:
-            git(self.target, "commit", "-q", "--allow-empty", "-m", message)
+            self.git("commit", "-q", "--allow-empty", "-m", message)
         capture(self.conn, run_id, self.target, base)
         for phase in ("working", "verifying", "reviewing", "merge_gate",
                       "merging"):
@@ -223,7 +202,7 @@ class NativeSettleTests(NativeProject):
         if pr_url:
             store.set_pull_request(self.conn, run_id, pr_url)
         release_run(self.conn, run_id, True,
-                    merge_sha=git(self.target, "rev-parse", "HEAD"))
+                    merge_sha=self.git("rev-parse", "HEAD").strip())
         settle(self.project, self.conn, run_id)
         return run_id
 
