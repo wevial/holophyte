@@ -25,6 +25,7 @@ from sweep_fixture import MINUTE, SweepTestCase  # noqa: E402
 
 import holophyte.agents.roles  # noqa: E402
 import holophyte.config.checks  # noqa: E402
+import holophyte.config.project  # noqa: E402
 from holophyte.loop import implement  # noqa: E402
 
 
@@ -117,10 +118,17 @@ class ImplementArmingTests(SweepTestCase):
                           (worked_min * MINUTE, run))
         self.conn.commit()
         return implement.implement_arming(self.project, self.conn, run,
-                                          budget_min)[0]
+                                          budget_min)
 
     def test_the_implement_turn_asks_for_the_box_less_its_agent_work(self):
         for budget_min, worked_min, asked in ((90, 0, 5400), (90, 30, 3600),
                                               (90, 85, 600), (5, 4, 300)):
             with self.subTest(budget_min=budget_min, worked_min=worked_min):
-                self.assertEqual(self.armed(budget_min, worked_min), asked)
+                self.assertEqual(self.armed(budget_min, worked_min)[0], asked)
+
+    def test_a_floored_turn_under_a_lower_cap_names_the_time_box(self):
+        config = self.db.parent / "config.toml"
+        config.write_text("[agents]\nturn_cap_min = 5\n")
+        self.project = holophyte.config.project.Project.locate(self.target)
+
+        self.assertEqual(self.armed(90, 90), (300, "time_box"))

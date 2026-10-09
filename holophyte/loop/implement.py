@@ -54,8 +54,9 @@ def implement_arming(project, conn, run_id, budget_min):
            if conn is not None and run_id is not None else None)
     spent_ms = agent_work(run, int(time() * 1000)) if run is not None else None
     floor = min(10, budget_min) * 60 * scale
-    return _armed(project, budget_min, max(floor, budget_min * 60 * scale
-                                           - (spent_ms or 0) // 1000))
+    left = budget_min * 60 * scale - (spent_ms or 0) // 1000
+    return _armed(project, budget_min, max(floor, left),
+                  "time_box" if floor > left else None)
 
 
 def _limit_text(project, limit, budget_min):
