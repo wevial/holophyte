@@ -423,7 +423,7 @@ seven, in this order, each its `name`, whether it holds (`ok`) and a
 | --- | --- |
 | `parked` | the run is its ticket's newest run, in phase `awaiting_merge_approval`, the ticket `blocked_on_operator` with no live run, and the run recorded a pull request and a branch |
 | `human_approval` | `[merge] approve` is `"human"` |
-| `review_approved` | GitHub's `reviewDecision` is `APPROVED` |
+| `review_approved` | GitHub's `reviewDecision` is `APPROVED`; a bypassable review (below) stays `ok: false` |
 | `checks_passed` | the required checks fold to success, as the babysitter folds them |
 | `mergeable` | GitHub's `mergeable` is `MERGEABLE` |
 | `threads_resolved` | no review thread is open, as the babysitter counts them |
@@ -433,13 +433,37 @@ When `parked` or `human_approval` fails the daemon asks GitHub nothing:
 the five GitHub facts are `ok: false` with a `detail` saying they were
 not read. `reason` is null when `ready`, else the first failing fact's
 reason, one of `not_parked`, `not_human_approval`,
-`review_not_approved`, `checks_pending`, `checks_failing`, `conflicting`,
-`mergeable_unknown` (GitHub has not computed `mergeable` yet),
-`threads_unresolved`, `head_moved` and `github_unreadable` (a GitHub read
-or the `ls-remote` failed); `detail` is that fact's `detail`. A
-repository whose rules require no review has a null `reviewDecision`:
-`review_not_approved`. `head_sha` is `origin`'s branch head, null when
-it was not read. `ticket` and `pr_url` are the run's.
+`review_not_approved`, `review_bypassable`, `checks_pending`,
+`checks_failing`, `conflicting`, `mergeable_unknown` (GitHub has not
+computed `mergeable` yet), `threads_unresolved`, `head_moved` and
+`github_unreadable` (a GitHub read or the `ls-remote` failed); `detail`
+is that fact's `detail`. A repository whose rules require no review has a
+null `reviewDecision`: `review_not_approved`. `head_sha` is `origin`'s
+branch head, null when it was not read. `ticket` and `pr_url` are the
+run's.
+
+`review_bypassable` is a `REVIEW_REQUIRED` review the host's GitHub user
+may bypass. On that decision the daemon reads main's rules
+(`GET repos/OWNER/REPO/rules/branches/main`) and, for each `pull_request`
+rule that asks for a review (one or more approving reviews, a code
+owner's review, approval of the most recent push, or a non-empty
+`required_reviewers`), its ruleset (`GET repos/OWNER/REPO/rulesets/ID`).
+When every such ruleset answers `current_user_can_bypass` as `always`,
+`pull_requests_only` or `exempt`, the `review_approved` fact's reason is
+`review_bypassable` and its `detail` names each ruleset, the reviews it
+asks for and the bypass value:
+
+```
+GitHub's review decision is REVIEW_REQUIRED; the host's GitHub user may bypass it: ruleset human-review asks 1 approving review, current_user_can_bypass pull_requests_only
+```
+
+Any other failing fact is the answer's `reason` before it, so checks,
+conflicts, open threads and a moved head still read as themselves. The
+bypass fails closed: an unreadable rules or ruleset answer, a value that
+cannot be made out, a ruleset answering `never` or anything else, or no
+ruleset asking for a review (classic branch protection) keeps
+`review_not_approved`, its `detail` ending `no bypass: ` and what stopped
+it. A `CHANGES_REQUESTED` review is never bypassable.
 
 `N` parses as on `/runs/N`: a non-integer is 400, an integer with no run
 is 404 carrying `run`. The route writes nothing; a GitHub read that fails

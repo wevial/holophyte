@@ -14,6 +14,10 @@ NOT_READ = "not read from GitHub: the run is not parked for a human's merge"
 CHECK_REASONS = {"pending": "checks_pending", "failure": "checks_failing"}
 MERGEABLE_REASONS = {"MERGEABLE": None, "CONFLICTING": "conflicting"}
 UNREADABLE = "github_unreadable"
+REVIEW_FACT = "review_approved"
+REVIEW_REQUIRED = "REVIEW_REQUIRED"
+REVIEW_BYPASSABLE = "review_bypassable"
+BYPASSING_ANSWERS = frozenset({"always", "pull_requests_only", "exempt"})
 
 
 @dataclass(frozen=True)
@@ -25,7 +29,10 @@ class Readiness:
 
     @property
     def failing(self):
-        return next((fact for fact in self.facts if not fact[1]), None)
+        failing = [fact for fact in self.facts if not fact[1]]
+        return next((fact for fact in failing
+                     if fact[3] != REVIEW_BYPASSABLE),
+                    failing[0] if failing else None)
 
     @property
     def reason(self):
@@ -126,9 +133,101 @@ def _head(park, reads):
 
 
 LOCAL_FACTS = (("parked", _parked), ("human_approval", _human_approval))
-GITHUB_FACTS = (("review_approved", _review), ("checks_passed", _checks),
+GITHUB_FACTS = ((REVIEW_FACT, _review), ("checks_passed", _checks),
                 ("mergeable", _mergeable), ("threads_resolved", _threads),
                 ("head_unchanged", _head))
+
+
+class NoBypass(Exception):
+    pass
+
+
+def _asked_reviews(rule):
+    parameters = rule.get("parameters")
+    parameters = parameters if isinstance(parameters, dict) else {}
+    count = parameters.get("required_approving_review_count")
+    owners = parameters.get("require_code_owner_review", False)
+    last_push = parameters.get("require_last_push_approval", False)
+    reviewers = parameters.get("required_reviewers", [])
+    if (type(count) is not int or count < 0 or type(owners) is not bool
+            or type(last_push) is not bool or type(reviewers) is not list):
+        raise NoBypass(f"the pull_request rule of ruleset"
+                       f" {rule.get('ruleset_id')} cannot be made out")
+    return [phrase for phrase, asked in (
+        (f"{count} approving review{'' if count == 1 else 's'}", count > 0),
+        ("a code owner's review", owners),
+        ("approval of the most recent push", last_push),
+        (f"{len(reviewers)} required reviewer group(s)", bool(reviewers)))
+        if asked]
+
+
+def _review_rulesets(rules):
+    if not isinstance(rules, list):
+        raise NoBypass("the rules on main cannot be made out")
+    asking = {}
+    for rule in rules:
+        if not isinstance(rule, dict) or rule.get("type") != "pull_request":
+            continue
+        asked = _asked_reviews(rule)
+        ruleset = rule.get("ruleset_id")
+        if asked and type(ruleset) is not int:
+            raise NoBypass("a pull_request rule on main names no ruleset")
+        if asked:
+            asking.setdefault(ruleset, []).extend(asked)
+    if not asking:
+        raise NoBypass("no ruleset on main asks for a review")
+    return asking
+
+
+def _ruleset_bypass(project, pull, ruleset, asked):
+    try:
+        answer = pr_status.rest(
+            project, pull, "GET",
+            f"repos/{pull.owner}/{pull.name}/rulesets/{ruleset}")
+    except InfraFailure as failure:
+        raise NoBypass(f"ruleset {ruleset} is unreadable: {failure}") \
+            from failure
+    answer = answer if isinstance(answer, dict) else {}
+    name = answer.get("name")
+    name = name if isinstance(name, str) and name else f"#{ruleset}"
+    bypass = answer.get("current_user_can_bypass")
+    if not isinstance(bypass, str) or bypass not in BYPASSING_ANSWERS:
+        raise NoBypass(f"ruleset {name} answers current_user_can_bypass"
+                       f" {bypass if isinstance(bypass, str) else 'nothing'}")
+    return (f"ruleset {name} asks {' and '.join(asked)},"
+            f" current_user_can_bypass {bypass}")
+
+
+def _review_bypass(project, park):
+    required = f"GitHub's review decision is {REVIEW_REQUIRED}"
+    pull = pr_status.parse_pr_url(park.pr_url)
+    try:
+        try:
+            rules = pr_status.main_rules(project, pull)
+        except InfraFailure as failure:
+            raise NoBypass(f"the rules on main are unreadable: {failure}") \
+                from failure
+        bypasses = [_ruleset_bypass(project, pull, ruleset, asked)
+                    for ruleset, asked in _review_rulesets(rules).items()]
+    except NoBypass as why:
+        return f"{required}; no bypass: {why}", "review_not_approved"
+    return (f"{required}; the host's GitHub user may bypass it: "
+            + "; ".join(bypasses)), REVIEW_BYPASSABLE
+
+
+def _github_facts(project, park, reads):
+    if reads is None:
+        return [(name, False, NOT_READ, None) for name, _ in GITHUB_FACTS]
+    if reads.state is None:
+        return [(name, False, f"GitHub is unreadable: {reads.failure}",
+                 UNREADABLE) for name, _ in GITHUB_FACTS]
+    facts = [(name, reason is None, detail, reason) for name, check
+             in GITHUB_FACTS for detail, reason in [check(park, reads)]]
+    if (reads.state.review or "").upper() != REVIEW_REQUIRED:
+        return facts
+    detail, reason = _review_bypass(project, park)
+    return [(name, False, detail, reason) if name == REVIEW_FACT
+            else (name, *rest) for name, *rest in facts]
 
 
 def read_github(project, park):
@@ -155,14 +254,6 @@ def readiness(project, run_id):
     reads = None
     if all(ok for _, ok, _, _ in facts):
         reads = read_github(project, park)
-    for name, check in GITHUB_FACTS:
-        if reads is None:
-            facts.append((name, False, NOT_READ, None))
-        elif reads.state is None:
-            facts.append((name, False, f"GitHub is unreadable: {reads.failure}",
-                          UNREADABLE))
-        else:
-            detail, reason = check(park, reads)
-            facts.append((name, reason is None, detail, reason))
+    facts.extend(_github_facts(project, park, reads))
     return Readiness(run_id, park, tuple(facts),
                      reads.remote if reads is not None else None)

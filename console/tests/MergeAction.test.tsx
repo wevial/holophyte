@@ -5,6 +5,7 @@ import { tokenedFetch } from "../src/lib/poll";
 import { storeToken } from "../src/lib/token";
 import type { AttentionItem, Status } from "../src/lib/types";
 import ready from "../../tests/fixtures/serve/run-merge-ready.json";
+import bypassableReady from "../../tests/fixtures/serve/run-merge-bypassable.json";
 import { fakeFetch } from "./actionFakes";
 import { fixture, hostOf, settle } from "./harness";
 
@@ -18,6 +19,7 @@ const item: AttentionItem = {
 const attention = { level: "attention" as const, now: status.now, items: [item] };
 const host = hostOf({ ...status, project: "/projects/repo", actions: true }, attention);
 const readiness = { ...ready, run: 47 };
+const bypassable = { ...bypassableReady, run: 47 };
 afterEach(() => { cleanup(); localStorage.clear(); });
 
 /** The table over `hosts` at poll count `polls`, reading readiness from
@@ -145,4 +147,44 @@ test("readiness is read once across six polls and again at the sixth", async () 
   poll(6);
   await act(settle);
   expect(read.map(request => request.url)).toEqual([`${host.base}/runs/47/merge`, `${host.base}/runs/47/merge`]);
+});
+
+/** `show` with a bypassable review and its confirm group open. */
+async function openBypass(post = fakeFetch({ ok: true, detail: "done" })) {
+  const shown = await show(bypassable, { post });
+  await act(async () => { fireEvent.click(within(shown.cell()).getByRole("button", { name: "Merge (bypass review)" })); });
+  return shown;
+}
+
+test("a bypassable review shows Merge (bypass review), whose in-row confirm names the ruleset and Cancel posts nothing", async () => {
+  const dialogs = [spyOn(window, "confirm"), spyOn(window, "alert"), spyOn(window, "prompt")];
+  try {
+    const { cell: shownCell } = await show(bypassable);
+    expect(within(shownCell()).getByRole("button", { name: "Merge (bypass review)" })).toBeTruthy();
+    expect(within(shownCell()).queryByRole("button", { name: "Merge" })).toBeNull();
+    expect(shownCell().querySelector("[data-merge-waiting]")).toBeNull();
+    cleanup();
+    const { post, cell } = await openBypass();
+    const group = within(cell()).getByRole("group");
+    expect(group.textContent).toContain("Bypass the required review and merge PR #2170 into main?");
+    const review = bypassable.facts.find(fact => fact.name === "review_approved")!;
+    expect(review.detail).toContain("human-review");
+    expect(group.textContent).toContain(review.detail);
+    expect(within(group).getByRole("button", { name: "Confirm bypass merge" })).toBeTruthy();
+    fireEvent.click(within(group).getByRole("button", { name: "Cancel" }));
+    expect(within(cell()).queryByRole("group")).toBeNull();
+    expect(within(cell()).getByRole("button", { name: "Merge (bypass review)" })).toBeTruthy();
+    await act(settle);
+    expect(post).toEqual([]);
+    for (const dialog of dialogs) expect(dialog).not.toHaveBeenCalled();
+  } finally { for (const dialog of dialogs) dialog.mockRestore(); }
+});
+
+test("Confirm bypass merge posts the run with bypass_review once with the bearer and hides the bypass button", async () => {
+  const { post, cell } = await openBypass(fakeFetch({ ok: true, detail: "released" }));
+  await act(async () => { fireEvent.click(within(cell()).getByRole("button", { name: "Confirm bypass merge" })); await settle(); });
+  expect(post).toEqual([{ url: `${host.base}/actions/merge`, method: "POST", authorization: "Bearer test-token",
+    body: { run: 47, bypass_review: true } }]);
+  expect(within(cell()).getByRole("status").textContent).toBe("released");
+  expect(within(cell()).queryByRole("button", { name: "Merge (bypass review)" })).toBeNull();
 });

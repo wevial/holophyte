@@ -37,12 +37,30 @@ from tests.test_serve_host import (  # noqa: E402
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "serve" / "run-merge-ready.json"
+BYPASSABLE = FIXTURE.with_name("run-merge-bypassable.json")
 TOKEN = "merge-action-token"
 BEARER = {"Authorization": f"Bearer {TOKEN}"}
 BRANCH = "task/ko-7-ticket-7"
 URL = "https://github.com/example/repo/pull/31"
 FACT_NAMES = ["parked", "human_approval", "review_approved", "checks_passed",
               "mergeable", "threads_resolved", "head_unchanged"]
+
+
+def review_rule(ruleset_id, count):
+    """A `pull_request` rule as `GET rules/branches/main` answers it."""
+    return {"type": "pull_request", "ruleset_source_type": "Repository",
+            "ruleset_id": ruleset_id,
+            "parameters": {"required_approving_review_count": count,
+                           "dismiss_stale_reviews_on_push": False,
+                           "require_code_owner_review": False,
+                           "require_last_push_approval": False,
+                           "required_review_thread_resolution": False,
+                           "required_reviewers": [],
+                           "allowed_merge_methods": ["merge", "squash"]}}
+
+
+BYPASS_RULES = [{"type": "deletion", "ruleset_source_type": "Repository",
+                 "ruleset_id": 23}, review_rule(23, 0), review_rule(24, 1)]
 
 
 class FakeGithub:
@@ -54,6 +72,8 @@ class FakeGithub:
             "MERGEABLE"
         self.threads, self.head, self.unreachable = (), None, False
         self.while_reading = None
+        self.rules, self.rulesets = [], {}
+        self.later_rules_failure, self.rules_reads = None, 0
 
     def graphql(self, target, pull, query, variables):
         self.calls.append(("graphql", query))
@@ -67,10 +87,23 @@ class FakeGithub:
             mergeable=self.mergeable, review=self.review)["data"]
 
     def rest(self, target, pull, method, path, payload=None):
+        """`later_rules_failure` is raised by a rules read after the one
+        `pr_state()` makes following its check-runs read."""
         self.calls.append(("rest", method, path))
         if "check-runs" in path:
+            self.rules_reads = 0
             return {"total_count": 0, "check_runs": []}
-        return [] if path.endswith("/rules/branches/main") else {}
+        if path.endswith("/rules/branches/main"):
+            self.rules_reads += 1
+            if self.rules_reads > 1 and self.later_rules_failure:
+                raise self.later_rules_failure
+            return self.rules
+        if "/rulesets/" in path:
+            answer = self.rulesets[int(path.rsplit("/", 1)[1])]
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        return {}
 
     def install(self, case):
         case.enterContext(patch.object(holophyte.pr.pr_status, "graphql",
@@ -170,14 +203,21 @@ class MergeCase(ServeTestCase):
         finally:
             conn.close()
 
-    def assert_refused(self, reason, run_id=None):
+    def approve_summary(self):
+        (summary,) = self.rows(
+            "SELECT e.summary FROM interventions i JOIN runEvents e"
+            " ON e.runId = i.runId AND e.at = i.at AND e.kind = 'intervention'"
+            " WHERE i.runId = ? AND i.action = 'approve'", self.run)
+        return summary[0]
+
+    def assert_refused(self, reason, run_id=None, **post):
         """Both routes name `reason`, and the POST writes nothing."""
         run_id = self.run if run_id is None else run_id
         before = dump(self.db)
         body = self.read_merge(run_id)
         self.assertEqual((body["ready"], body["reason"]), (False, reason), body)
         self.assertEqual([fact["name"] for fact in body["facts"]], FACT_NAMES)
-        code, _, posted = self.post_merge(run=run_id)
+        code, _, posted = self.post_merge(run=run_id, **post)
         self.assertEqual((code, posted["ok"], posted["reason"]),
                          (200, False, reason), posted)
         self.assertEqual(dump(self.db), before)
@@ -227,6 +267,25 @@ class ReadyMergeTests(MergeCase):
             "SELECT id FROM interventions WHERE action = 'approve'")
         self.assertEqual((code, merged["ok"], merged["recorded"]),
                          (200, True, approve[0]), merged)
+
+    def test_an_approved_pull_request_under_bypassable_rules_merges_plainly(
+            self):
+        self.github.rules = BYPASS_RULES
+        self.github.rulesets = {
+            24: {"name": "human-review",
+                 "current_user_can_bypass": "pull_requests_only"}}
+        self.park()
+        self.start_actions()
+        body = self.read_merge()
+        self.assertEqual(json.loads(json.dumps(body).replace(
+            self.sha, "HEAD_SHA")), json.loads(FIXTURE.read_text()))
+
+        code, _, posted = self.post_merge(run=self.run, bypass_review=True)
+        self.assertEqual((code, posted["ok"]), (200, True), posted)
+        self.assertNotIn("bypass", posted["detail"])
+        summary = self.approve_summary()
+        self.assertIn(", ".join(FACT_NAMES) + " held", summary)
+        self.assertNotIn("bypass", summary)
 
     def test_a_run_superseded_during_the_github_read_approves_nothing(self):
         self.park()
@@ -280,6 +339,113 @@ class GithubRefusalTests(MergeCase):
     def test_an_unreachable_github_is_refused_as_unreadable(self):
         self.github.unreachable = True
         self.assert_refused("github_unreadable")
+
+
+class BypassMergeTests(MergeCase):
+    """A `REVIEW_REQUIRED` pull request whose only review-asking ruleset,
+    `human-review`, the host's GitHub user may bypass."""
+
+    def setUp(self):
+        super().setUp()
+        self.bypassable()
+        self.park()
+        self.start_actions()
+
+    def bypassable(self):
+        github = self.github
+        github.review, github.checks, github.mergeable = "REVIEW_REQUIRED", \
+            "SUCCESS", "MERGEABLE"
+        github.threads, github.later_rules_failure = (), None
+        github.rules = BYPASS_RULES
+        github.rulesets = {
+            23: {"name": "baseline", "current_user_can_bypass": "never"},
+            24: {"name": "human-review",
+                 "current_user_can_bypass": "pull_requests_only"}}
+
+    def test_a_bypassable_review_reads_as_its_own_reason_naming_the_ruleset(
+            self):
+        body = self.read_merge()
+        self.assertEqual((body["ready"], body["reason"]),
+                         (False, "review_bypassable"), body)
+        review = body["facts"][FACT_NAMES.index("review_approved")]
+        self.assertFalse(review["ok"])
+        for named in ("human-review", "1 approving review",
+                      "pull_requests_only"):
+            self.assertIn(named, review["detail"])
+        self.assertNotIn("baseline", review["detail"])
+        self.assertEqual(json.loads(json.dumps(body).replace(
+            self.sha, "HEAD_SHA")), json.loads(BYPASSABLE.read_text()))
+
+    def test_a_bypassable_review_merges_only_with_the_flag_and_records_it(
+            self):
+        self.assert_refused("review_bypassable")
+        code, _, posted = self.post_merge(run=self.run, author="ko",
+                                          bypass_review=True)
+        self.assertEqual((code, posted["ok"]), (200, True), posted)
+        self.assertIn("bypassing the required review", posted["detail"])
+        summary = self.approve_summary()
+        self.assertIn(f"ko via the console: merge at head {self.sha}", summary)
+        self.assertIn("bypassing the required review", summary)
+        self.assertIn("human-review", summary)
+        self.assertNotIn("review_approved", summary)
+        self.assertEqual(self.rows("SELECT status FROM tickets"), [("ready",)])
+        self.assertEqual(self.rows("SELECT resumePhase FROM runs WHERE id = ?",
+                                   self.run), [("merge_gate",)])
+        self.assertEqual(self.github.merge_calls(), [])
+
+    def test_a_bypass_that_cannot_be_established_stays_not_approved(self):
+        unreadable = InfraFailure("GitHub did not answer GET rulesets")
+        for case, change, stopped in (
+                ("never", lambda: self.github.rulesets.update(
+                    {24: {"name": "human-review",
+                          "current_user_can_bypass": "never"}}),
+                 "ruleset human-review answers current_user_can_bypass never"),
+                ("ruleset unreadable", lambda: self.github.rulesets.update(
+                    {24: unreadable}), "ruleset 24 is unreadable"),
+                ("rules unreadable", lambda: setattr(
+                    self.github, "later_rules_failure", unreadable),
+                 "the rules on main are unreadable"),
+                ("no bypass answer", lambda: self.github.rulesets.update(
+                    {24: {"name": "human-review"}}),
+                 "ruleset human-review answers current_user_can_bypass"
+                 " nothing")):
+            with self.subTest(case=case):
+                self.bypassable()
+                change()
+                body = self.assert_refused("review_not_approved",
+                                           bypass_review=True)
+                self.assertIn(f"no bypass: {stopped}", body["detail"])
+
+    def test_every_other_gap_still_blocks_a_bypassable_review(self):
+        def push():
+            self.commit("pushed after the park")
+            git(self.target, "push", "origin", BRANCH)
+        for reason, change in (
+                ("checks_pending", lambda: setattr(
+                    self.github, "checks", "PENDING")),
+                ("conflicting", lambda: setattr(
+                    self.github, "mergeable", "CONFLICTING")),
+                ("threads_unresolved", lambda: setattr(
+                    self.github, "threads",
+                    (("app.py", 3, "reviewer", "rename this"),))),
+                ("head_moved", push),
+                ("review_not_approved", lambda: setattr(
+                    self.github, "review", "CHANGES_REQUESTED"))):
+            with self.subTest(reason=reason):
+                self.bypassable()
+                change()
+                self.assert_refused(reason, bypass_review=True)
+
+    def test_a_bypass_flag_that_is_not_a_boolean_is_400_and_asks_nothing(
+            self):
+        before = dump(self.db)
+        for flag in ("yes", 1, None):
+            with self.subTest(flag=flag):
+                code, _, body = self.post_merge(run=self.run,
+                                                bypass_review=flag)
+                self.assertEqual(code, 400, body)
+                self.assertIn("bypass_review", body["error"])
+        self.assertEqual((dump(self.db), self.github.calls), (before, []))
 
 
 class HeadTests(MergeCase):

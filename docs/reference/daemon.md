@@ -147,7 +147,7 @@ object, one with no `ticket`, a `force` that is not a boolean, or
 ## `POST /actions/merge`
 
 Body: a JSON object with `run` (required, the run parked for a human's
-merge), `note` and `author` (both optional). Under `[merge] mode = "pr"`
+merge), `note`, `author` and `bypass_review` (all optional). Under `[merge] mode = "pr"`
 and `approve = "human"` a green and quiet pull request parks its run in
 `awaiting_merge_approval`; this route is a console's "merge" on it, and
 it merges only an approved, green, quiet pull request.
@@ -166,13 +166,24 @@ checks, `MERGEABLE`, no open review thread, and the branch head on
  "recorded": null}
 ```
 
-`reason`, `detail` and `facts` are the read route's. Ready, the daemon
+`reason`, `detail` and `facts` are the read route's. A
+`review_bypassable` run is refused so too unless the body carries
+`"bypass_review": true`; with it the run is released as a ready one is.
+The flag on a ready run is a plain merge that records no bypass, and on
+any other reason it changes nothing. Ready, the daemon
 calls the store's `approve` release, the one `--approve KO-n` makes: in
 one transaction an `approve` interventions row on the run, the run
 released `abandoned` with `resumePhase` `merge_gate`, and the ticket
 walked to `ready`. Its note reads `AUTHOR via the console: merge at head
 SHA; FACTS held`, then the body's `note` when one is given; `author`
-defaults to `maintainer`. The daemon does not merge: the loop's next
+defaults to `maintainer`. A bypass lists every fact but `review_approved`
+as held and adds `bypassing the required review: DETAIL`, the
+`review_approved` fact's `detail` naming the bypassed ruleset, and the
+answer's `detail` reads `approved at SHA, bypassing the required review;
+...`. The loop merges a bypass release as any other: GitHub grants the
+merge to the user its ruleset lets bypass, the credential readiness read
+`current_user_can_bypass` with, and a merge GitHub still refuses takes
+the loop's existing `MergeRefused` path. The daemon does not merge: the loop's next
 claim resumes the candidate on its pull request and the babysitter
 merges it, re-checking green and quiet under the merge lock and parking
 it again otherwise.
@@ -190,7 +201,8 @@ store's `ApproveRefused`, `ok: false` with `reason` `not_parked` and the
 refusal in `detail`, and nothing is approved. On a host daemon
 `/projects/NAME/actions/merge` answers only to the machine token; a
 project's own token is 401. A `run` that is not a positive integer is
-400; a project with no store is 503. `--approve` and `holo approve` keep
+400, and so is a `bypass_review` that is not a boolean, before GitHub is
+read; a project with no store is 503. `--approve` and `holo approve` keep
 releasing without reading GitHub.
 
 ## The project's configuration: `GET /config` and `PUT /config`
@@ -340,7 +352,10 @@ by a person. For a run parked for a human's merge (`[merge] approve =
 "human"`), [`GET /runs/N/merge`](http.md#get-runsnmerge) says whether it
 may merge now and [`POST /actions/merge`](#post-actionsmerge) releases it
 to the loop once GitHub shows it approved, green, mergeable, quiet and at
-the parked head; the console's Merge button is not built yet.
+the parked head. The console draws a Merge button when it is ready, and a
+"Merge (bypass review)" button when its readiness is `review_bypassable`,
+each behind an in-row confirm; the bypass confirm names the bypassed
+ruleset and posts `"bypass_review": true`.
 `--approve KO-n` on the writer host releases a parked candidate without
 reading GitHub.
 
