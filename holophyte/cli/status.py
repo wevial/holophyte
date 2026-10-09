@@ -11,7 +11,9 @@ from holophyte.host.supervisor_lock import (
 )
 from holophyte.loop.claim_store import store_mode
 from holophyte.loop.gates import merge_lock_path, read_merge_lock
+from holophyte.serve.console_build import console_state
 from holophyte.serve.serve_runs import json_host
+from holophyte.serve.server import CONSOLE_DIR
 from holophyte.story.story_views import story_facts, story_lines
 
 
@@ -162,6 +164,7 @@ def host_snapshot(host, now=None):
         "registry": str(host.path),
         "build": {"head": factory_revision(),
                   "sweep": (sweep or {}).get("revision")},
+        "console": console_state(CONSOLE_DIR, host.home),
         "sweep": sweep,
         "home_lock": _supervisor_holder(host.home / HOME_LOCK),
         "projects": [_host_project(entry, now) for entry in host.projects()],
@@ -181,6 +184,11 @@ def render_host(snap):
         lines.append("sweep: " + ", ".join(
             f"{key} {sweep[key]}" for key in
             ("started", "ended", "revision", "exit", "error") if key in sweep))
+    console = snap["console"]
+    if console["stale"]:
+        lines.append(f"console stale: serving {console['served'] or 'no build'},"
+                     f" the checkout's tree is {console['tree']}:"
+                     f" {console['reason'] or 'no failed build recorded'}")
     lines.append(_lock_line("home", snap["home_lock"], "pid"))
     swept = (sweep or {}).get("projects")
     for project in snap["projects"]:

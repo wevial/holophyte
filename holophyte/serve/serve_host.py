@@ -22,7 +22,7 @@ from holophyte.host.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.loop.pool_handoff import workers_on_previous_build
 from holophyte.loop.reexec import SWEEP_UNIT, systemctl_user
 from holophyte.redact import known_secrets, outbound
-from holophyte.serve.console_build import refresh_console
+from holophyte.serve.console_build import console_state, refresh_console
 from holophyte.serve.serve_actions import (
     ACTIONS,
     ACTIONS_PREFIX,
@@ -206,6 +206,7 @@ def host_status(server, now=None):
         "daemon": {"started_ms": server.started_ms, "pid": os.getpid()},
         "build": {"daemon": getattr(server.code_check, "started_from", None),
                   "sweep": sweep["revision"], "head": factory_revision()},
+        "console": console_state(server.console_dir, server.host.home),
         "sweep": sweep,
         "actions": server.actions,
         "projects": each_project(
@@ -531,7 +532,7 @@ def serve_host(host, address=None, out=None, interval=CODE_CHECK_SEC):
     read, write = host_tokens(host, knobs, bound_host, entries)
     name_ignored(entries, knobs, out)
     watch = CodeWatch(interval, out, factory_revision)
-    refresh_console(out, CONSOLE_DIR)
+    refresh_console(out, CONSOLE_DIR, host.home)
     server = HostServer(host, knobs, (bound_host, port), CONSOLE_DIR,
                         read_token=read, write_token=write, sock=sock)
     guard = "open" if read is None else "behind the machine token"

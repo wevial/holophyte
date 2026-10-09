@@ -20,7 +20,7 @@ from pathlib import Path
 from time import monotonic, sleep
 from unittest.mock import patch
 
-from holophyte.serve.console_build import refresh_console
+from holophyte.serve.console_build import BUILD_RECORD, refresh_console
 from tests.host_fixture import HostFixture, git
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -139,7 +139,7 @@ class StartupCheckTests(ConsoleCase):
     def test_a_changed_console_tree_is_rebuilt_once_and_swapped_in(self):
         self.change_sources()
         self.build_with(NEW_BUILD)
-        refresh_console(self.out, self.dist)
+        refresh_console(self.out, self.dist, self.home)
         calls = self.bun_calls()
         self.assertEqual(calls[0], "install --frozen-lockfile")
         self.assertEqual([c.split()[:2] for c in calls[1:]], [["run", "build"]])
@@ -152,14 +152,29 @@ class StartupCheckTests(ConsoleCase):
 
     def test_a_stamp_matching_the_tree_runs_no_build(self):
         self.build_with(NEW_BUILD)
-        refresh_console(self.out, self.dist)
+        refresh_console(self.out, self.dist, self.home)
         self.assertEqual(self.bun_calls(), [])
         self.assert_old_build_kept()
+        self.assertFalse((self.home / BUILD_RECORD).exists())
+
+    def test_a_failed_build_is_recorded_until_a_build_succeeds(self):
+        self.change_sources()
+        new_tree = git(self.repo, "rev-parse", "HEAD:console")
+        self.build_with(FAILING_BUILD)
+        refresh_console(self.out, self.dist, self.home)
+        record = json.loads((self.home / BUILD_RECORD).read_text())
+        self.assertIn("exited 1", record["reason"])
+        self.assertEqual(record["tried"], new_tree)
+        self.assertEqual(record["served"], self.old_tree)
+        self.build_with(NEW_BUILD)
+        refresh_console(self.out, self.dist, self.home)
+        self.assertEqual((self.dist / "index.html").read_text(), "new")
+        self.assertFalse((self.home / BUILD_RECORD).exists())
 
     def test_a_build_stamped_with_sources_that_moved_under_it_is_not_published(self):
         self.change_sources()
         self.build_with(SOURCES_MOVE)
-        refresh_console(self.out, self.dist)
+        refresh_console(self.out, self.dist, self.home)
         self.assert_old_build_kept()
         self.assertIn("console build failed", self.out.getvalue())
 

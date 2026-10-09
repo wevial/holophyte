@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import json
 import os
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+from contextlib import suppress
 from pathlib import Path
+from time import time
 
 STAMP = "source-tree"
+BUILD_RECORD = "console-build.json"
 STEP_TIMEOUT_SEC = 300
 TAIL_LINES = 20
 # `AT_FDCWD` and `RENAME_EXCHANGE` from Linux's <fcntl.h>, `RENAME_SWAP`
@@ -111,7 +115,54 @@ def build_and_swap(sources, dist, tree):
         shutil.rmtree(staging, ignore_errors=True)
 
 
-def refresh_console(out, dist):
+def record_failure(home, out, reason, tried, served):
+    path = Path(home) / BUILD_RECORD
+    temporary = path.with_name(f"{BUILD_RECORD}.{os.getpid()}.tmp")
+    record = {"failed_ms": int(time() * 1000), "reason": reason,
+              "tried": tried, "served": served}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(temporary, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True, indent=1))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except OSError as bad:
+        with suppress(OSError):
+            temporary.unlink()
+        print(f"[holo2] could not record the console build failure in"
+              f" {path}: {bad}", file=out, flush=True)
+
+
+def clear_failure(home, out):
+    path = Path(home) / BUILD_RECORD
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as bad:
+        print(f"[holo2] could not remove {path}: {bad}", file=out, flush=True)
+
+
+def read_failure(home):
+    try:
+        record = json.loads((Path(home) / BUILD_RECORD).read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+def console_state(dist, home):
+    dist = Path(dist)
+    served = built_tree(dist)
+    tree = source_tree(dist.parent)
+    stale = tree is not None and tree != served
+    record = read_failure(home) if stale else {}
+    return {"served": served, "tree": tree, "stale": stale,
+            "reason": record.get("reason"),
+            "failed_ms": record.get("failed_ms"),
+            "tried": record.get("tried")}
+
+
+def refresh_console(out, dist, home):
     dist = Path(dist)
     sources = dist.parent
     if not (sources / "package.json").is_file():
@@ -135,6 +186,8 @@ def refresh_console(out, dist):
               file=out, flush=True)
         if output:
             print(output, file=out, flush=True)
+        record_failure(home, out, reason, tree, built)
         return False
     print(f"[holo2] console rebuilt from {tree}", file=out, flush=True)
+    clear_failure(home, out)
     return True

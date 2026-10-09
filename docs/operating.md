@@ -486,9 +486,11 @@ the `[[project]]` list whenever the file changes; the daemon reads the
 `[serve]` and `[console]` keys once, at start.
 
 Beside it in the home: `supervisor.lock`, the host sweep's lock;
-`sweep.json`, its record; and `host-actions.jsonl`, the host daemon's
+`sweep.json`, its record; `host-actions.jsonl`, the host daemon's
 ledger, one JSON line per `POST /actions/run-sweep`, written before
-`systemctl` is asked.
+`systemctl` is asked; and `console-build.json`, the host daemon's last
+failed startup console build, which `--status` and the console report
+while the served console is stale.
 
 ### Registering and disabling projects
 

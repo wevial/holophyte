@@ -76,6 +76,10 @@ export const hostStatusSchema = z.looseObject({
   now: z.number(),
   daemon: z.looseObject({ started_ms: z.number(), pid: z.number() }).optional(),
   build: z.looseObject({ daemon: z.string().nullable(), sweep: z.string().nullable(), head: z.string().nullable() }),
+  console: z.looseObject({
+    served: z.string().nullable(), tree: z.string().nullable(), stale: z.boolean(),
+    reason: z.string().nullable(), failed_ms: z.number().nullable(), tried: z.string().nullable(),
+  }).optional(),
   sweep: sweepSchema,
   actions: z.boolean(),
   projects: z.array(hostProjectSchema),
