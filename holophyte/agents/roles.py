@@ -5,7 +5,11 @@ import subprocess
 from pathlib import Path
 
 import review_runner
-from holophyte.agents.agent_output import AgentOutput, ImplementerOutput
+from holophyte.agents.agent_output import (
+    AgentOutput,
+    ImplementerOutput,
+    claude_result,
+)
 from holophyte.agents.agent_routes import routes, safe_command
 from holophyte.agents.agent_turns import family_label, recorded_turn
 from holophyte.agents.fallback import (
@@ -366,4 +370,9 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                                  launcher.environment(project), cmd,
                                  timeout=cap, runner=run_capped, project=project,
                                  keep_session=True, **hook)
-    return ImplementerOutput(out.strip(), code, dispatched_route)
+    decoded = claude_result(out) if seat is not None and seat.name == "claude" else None
+    if decoded is None:
+        return ImplementerOutput(out.strip(), code, dispatched_route)
+    output = ImplementerOutput(decoded[0].strip(), code, dispatched_route)
+    output.usage = decoded[1]
+    return output
