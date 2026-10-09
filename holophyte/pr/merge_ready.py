@@ -192,7 +192,8 @@ def _ruleset_bypass(project, pull, ruleset, asked):
             from failure
     answer = answer if isinstance(answer, dict) else {}
     name = answer.get("name")
-    name = name if isinstance(name, str) and name else f"#{ruleset}"
+    if not isinstance(name, str) or not name:
+        raise NoBypass(f"ruleset {ruleset} answers no name")
     bypass = answer.get("current_user_can_bypass")
     if not isinstance(bypass, str) or bypass not in BYPASSING_ANSWERS:
         raise NoBypass(f"ruleset {name} answers current_user_can_bypass"

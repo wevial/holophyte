@@ -391,7 +391,19 @@ class BypassMergeTests(MergeCase):
                     self.github, "rules", [*self.github.rules, {
                         "ruleset_id": 25, "parameters": {
                             "required_approving_review_count": 1}}]),
-                 "a rule on main cannot be made out")):
+                 "a rule on main cannot be made out"),
+                ("no name", lambda: self.github.rulesets.update(
+                    {24: {"current_user_can_bypass": "pull_requests_only"}}),
+                 "ruleset 24 answers no name"),
+                ("an empty name", lambda: self.github.rulesets.update(
+                    {24: {"name": "",
+                          "current_user_can_bypass": "pull_requests_only"}}),
+                 "ruleset 24 answers no name"),
+                ("a name that is not a string", lambda:
+                    self.github.rulesets.update(
+                        {24: {"name": 24, "current_user_can_bypass":
+                              "pull_requests_only"}}),
+                 "ruleset 24 answers no name")):
             with self.subTest(case=case):
                 self.bypassable()
                 change()
