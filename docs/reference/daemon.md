@@ -44,7 +44,9 @@ action name (`restart_supervisor`, `launch_loop`, `requeue`,
 `release_hold`, `pause`, `resume`, and `abort` or `abort_close`). It is
 null when the action wrote none: a refusal, `ok: false` before the
 write, or a `pause` or `abort` of a run whose request is already
-pending. A 400, 404 or 503 answers `{"error": ...}` instead.
+pending. A daemon runs one action at a time per store, so two requests
+at once each cite their own row. A 400, 404 or 503 answers
+`{"error": ...}` instead.
 
 ## On a host daemon
 

@@ -211,9 +211,17 @@ class ReadyMergeTests(MergeCase):
                                    self.run), [("merge_gate",)])
         self.assertEqual(self.github.merge_calls(), [])
 
-    def test_a_merge_answers_the_id_of_its_approve_row(self):
+    def test_a_merge_answers_its_approve_row_and_a_refusal_answers_null(self):
         self.park()
         self.start_actions()
+        self.github.checks = "PENDING"
+        before = dump(self.db)
+        code, _, refused = self.post_merge(run=self.run)
+        self.assertEqual((code, refused["ok"], refused["recorded"]),
+                         (200, False, None), refused)
+        self.assertEqual(dump(self.db), before)
+
+        self.github.checks = "SUCCESS"
         code, _, merged = self.post_merge(run=self.run)
         (approve,) = self.rows(
             "SELECT id FROM interventions WHERE action = 'approve'")

@@ -9,6 +9,7 @@ import signal
 import socket
 import stat
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from time import time
@@ -102,6 +103,7 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
                  ".map": "application/json"}
 OCTET_STREAM = "application/octet-stream"
 TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
+ACTION_LOCKS = {}
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger",
                         "/attention", "/board", "/report"})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
@@ -351,13 +353,16 @@ class StatusHandler(BaseHTTPRequestHandler):
 
     def act(self, scope, action, body):
         project = scope.project
+        lock = ACTION_LOCKS.setdefault(str(project.store_path),
+                                       threading.Lock())
         try:
-            before = newest_row(project)
-            code, reply = self.run_action(scope, action, body)
+            with lock:
+                before = newest_row(project)
+                code, reply = self.run_action(scope, action, body)
+                recorded = code == 200 and written_row(project, before, action)
             if code != 200:
                 return code, reply
-            return code, {"action": action, **reply,
-                          "recorded": written_row(project, before, action)}
+            return code, {"action": action, **reply, "recorded": recorded}
         except (Exception, SystemExit) as failure:
             return self.act_failed(scope, action, failure)
 

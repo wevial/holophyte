@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import subprocess
 import sys
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -377,6 +378,34 @@ class ActionsTests(UnitActionCases, ServeTestCase):
             [(body["ok"], body["recorded"])
              for body in (on_project, restart, launch)],
             [(True, project_row), (True, restart_row), (True, run_row)])
+
+    def test_two_overlapping_restarts_each_answer_their_own_row(self):
+        self.seed()
+        self.start(self.token_config("actions = true\n"))
+        first_running, second_ran = threading.Event(), threading.Event()
+
+        def systemctl(argv, **kw):
+            if first_running.is_set():
+                second_ran.set()
+            else:
+                first_running.set()
+                second_ran.wait(timeout=1)
+            return self.completed(argv)
+        replies = {}
+
+        def restart(name):
+            replies[name] = self.request(
+                "POST", "/actions/restart-supervisor", self.BEARER)[2]
+        with patch.object(subprocess, "run", side_effect=systemctl):
+            first = threading.Thread(target=restart, args=("first",))
+            first.start()
+            first_running.wait(timeout=10)
+            restart("second")
+            first.join(timeout=10)
+        rows = self.interventions("restart_supervisor")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual((replies["first"]["recorded"],
+                          replies["second"]["recorded"]), tuple(rows))
 
     def test_requeue_and_send_back_answer_the_row_each_wrote(self):
         self.seed()

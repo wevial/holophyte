@@ -257,7 +257,7 @@ class WriteTests(HttpCase):
         (line,) = completed.stdout.splitlines()
         self.assertTrue(line.startswith("✓ HOLO-1"), line)
 
-    def test_start_prints_its_words_and_the_rows_written(self):
+    def test_requeue_and_start_print_their_words_and_the_rows_written(self):
         run = self.failed_run("HOLO-1")
         for note in ("an earlier hand", "another earlier hand"):
             store.record_intervention(self.conn, run, "approve", note, now=T0)
@@ -267,18 +267,24 @@ class WriteTests(HttpCase):
         systemctl.chmod(0o755)
         self.enterContext(patch.dict(
             os.environ, {"PATH": f"{self.bin}:{os.environ['PATH']}"}))
-        completed = self.holo("start", "--json", "-p", "alpha")
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        reply = json.loads(completed.stdout)
+        replies = []
+        for argv in (["requeue", "HOLO-1", "rerun"], ["start"]):
+            completed = self.holo(*argv, "--json", "-p", "alpha")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            replies.append(json.loads(completed.stdout))
         page = self.holo("start", "-p", "alpha")
         self.assertEqual(page.returncode, 0, page.stderr)
+        (requeued,), = self.conn.execute(
+            "SELECT id FROM interventions WHERE action = 'requeue'")
         launched = [row for (row,) in self.conn.execute(
             "SELECT id FROM interventions WHERE action = 'launch_loop'"
             " ORDER BY id")]
         self.assertEqual(len(launched), 2)
-        self.assertNotIn(run, launched)
-        self.assertEqual((reply["action"], reply["recorded"], reply["ok"]),
-                         ("start", launched[0], True))
+        self.assertNotIn(run, [requeued, *launched])
+        self.assertEqual(
+            [(reply["action"], reply["recorded"], reply["ok"])
+             for reply in replies],
+            [("requeue", requeued, True), ("start", launched[0], True)])
         self.assertIn(f"intervention {launched[1]} recorded", page.stdout)
         calls = (self.root / "systemctl.jsonl").read_text().splitlines()
         self.assertEqual([json.loads(call)[:2] for call in calls],
