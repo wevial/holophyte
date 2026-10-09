@@ -217,7 +217,8 @@ Each module, one line:
 - `holophyte/story/story_views.py` — `--status`'s story lines: `story_facts()`
   reads each planned, approved or parked story's state, generation, child
   counts, latest witness verdicts at its last ledgered commit, errors,
-  open decisions and age; `story_lines()` renders them as two lines each.
+  open decisions, open proposals and age; `story_lines()` renders them as
+  two lines each, then one line per open proposal.
 - `holophyte/cli/store_import.py` — `--import-store PATH --dry-run` (KO-595):
   `plan()` reads another store and the project's own, both read-only, and
   says per table what an import would move — rows, id range, the remap
@@ -409,7 +410,17 @@ Each module, one line:
   from its new commits and stored pending, and the merged run's settle step,
   one project's at a time under a file lock: a feature filed as a Backlog
   draft or matched to an open one by its fingerprint, a guardrail kept as a
-  findings-ledger row.
+  findings-ledger row. A feature raised by a child of an open story is first
+  matched against the story's children and proposals, then put to the
+  adjudicator: `in_story` writes a story proposal, `standalone` files the
+  draft with a related-story line.
+- `holophyte/story/story_scope.py` — a story child's feature follow-up put to
+  the adjudicator seat: `scope_goal()` builds the goal from the story's title,
+  Summary, Goal and children, `read_scope()` reads the last
+  `SCOPE: in_story|standalone: REASON` line, and `judge()` runs the turn on
+  the adjudicator seat as terminal adjudication does, defaults to
+  `standalone` on a failed, timed-out, outage or unreadable reply, and
+  records its `follow_up_scope` event.
 - `holophyte/loop/failure_triage.py` — a failed run's cause question
   (`infra`, `code` or `spec`) after close-out, its `failure_triage` event, and
   the one factory requeue a confident `infra` answer earns.
@@ -506,6 +517,10 @@ The store is its own package:
   a run's pending rows with those of the parked runs whose candidate it
   carried, `filed_drafts()` the drafts filed for a fingerprint, and the four `settle_*()` writers settle a row
   as filed, duplicate, ledger or unfiled, each with its run event.
+- `store/story_proposals.py` — `record_proposal()` writes a story child's
+  follow-up as a `proposed` `storyProposals` row and settles the follow-up,
+  `open_proposals()` reads a story's open proposals, and `story_duplicate()`
+  finds the child or proposal a follow-up repeats.
 - `store/stories.py` — `file_story()` writes a story's rows for a parent
   and its children, `story()` reads one back from either, `approve_story()`
   freezes its plan with one open story per project, and `abandon_story()`

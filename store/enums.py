@@ -223,6 +223,13 @@ class FollowUpKind(str, Enum):
     GUARDRAIL = 'guardrail'
 
 
+class ProposalState(str, Enum):
+    PROPOSED = 'proposed'
+    ACCEPTED = 'accepted'
+    REJECTED = 'rejected'
+    SUPERSEDED = 'superseded'
+
+
 # Line breaks are part of the existing sqlite_master SQL contract.
 _WRAPPING = {
     TicketStatus: {4: 26},
@@ -262,6 +269,7 @@ CONSTRAINED_COLUMNS = {
     ('witnessResults', 'verifier'): WitnessVerifier,
     ('storyDecisions', 'kind'): DecisionKind,
     ('followUps', 'kind'): FollowUpKind,
+    ('storyProposals', 'state'): ProposalState,
 }
 
 

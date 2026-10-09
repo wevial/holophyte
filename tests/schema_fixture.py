@@ -127,6 +127,10 @@ DOCUMENTED_COLUMNS = {
     "followUps": {"id", "runId", "ticketId", "commitSha", "kind", "kindGiven",
                   "text", "path", "line", "fingerprint", "createdAt",
                   "settledAt", "filedAs", "duplicateOf", "error"},
+    # A story child's follow-up proposed as a new child, outside the plan.
+    "storyProposals": {"id", "storyId", "followUpId", "raisedBy", "title",
+                       "body", "state", "childTicketId", "decidedBy",
+                       "decidedAt", "at"},
 }
 
 

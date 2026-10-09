@@ -94,7 +94,7 @@ def filed_drafts(conn, follow_up_id):
         " AND f.filedAs IS NOT NULL ORDER BY f.id DESC", (follow_up_id,))]
 
 
-def _settle(conn, follow_up_id, event, summary, now, **columns):
+def _settle(conn, follow_up_id, event, summary, now, named=None, **columns):
     now = _now(now)
     sets = "".join(f", {column} = ?" for column in columns)
     with _transaction(conn):
@@ -110,7 +110,7 @@ def _settle(conn, follow_up_id, event, summary, now, **columns):
             (now, *columns.values(), follow_up_id)).rowcount
         if not changed:
             return False
-        key = columns.get("filedAs") or columns.get("duplicateOf")
+        key = named or columns.get("filedAs") or columns.get("duplicateOf")
         record_event(conn, run_id, event,
                      f"follow-up {follow_up_id}: {summary}", level="detail",
                      now=now, payload=_payload(follow_up_id, kind, fingerprint,
@@ -123,9 +123,9 @@ def settle_filed(conn, follow_up_id, key, now=None):
                    f"filed as {key}", now, filedAs=key)
 
 
-def settle_duplicate(conn, follow_up_id, key, now=None):
+def settle_duplicate(conn, follow_up_id, key, now=None, of="open draft"):
     return _settle(conn, follow_up_id, "follow_up_duplicate",
-                   f"duplicate of open draft {key}", now, duplicateOf=key)
+                   f"duplicate of {of} {key}", now, duplicateOf=key)
 
 
 def settle_ledger(conn, follow_up_id, now=None):
