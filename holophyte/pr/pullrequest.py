@@ -152,6 +152,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
                               goal, role="write")
     stop_if_requested(conn, run_id, "merge_gate")
     parsed = None if timed_out else github.parse_pr_text(reply)
+    parsed = _with_own_key(parsed, task_id) if refresh is None else parsed
     if parsed is None or not parsed[1]:
         why = ("the turn ran out of time" if timed_out
                else "the reply has no `TITLE:` line, an empty title, or a"
@@ -167,18 +168,21 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     title, text = parsed
     if refresh is not None:
         return title, text
-    return (_with_own_key(title, task_id),
-            github.pr_body_written(text, task_id, issue_url))
+    return title, github.pr_body_written(text, task_id, issue_url)
 
 
 TRAILING_KEY = re.compile(r" \(([A-Z]+-\d+)\)\Z")
 
 
-def _with_own_key(title, task_id):
+def _with_own_key(parsed, task_id):
+    if parsed is None:
+        return None
+    title, text = parsed
     match = TRAILING_KEY.search(title)
     if match is None or match[1] == task_id:
-        return title
-    return f"{title[:match.start()]} ({task_id})"
+        return parsed
+    title = f"{title[:match.start()]} ({task_id})"
+    return (title, text) if len(title) <= github.PR_TITLE_MAX else None
 
 CHANGES_HEADING = "## Changes since first review"
 

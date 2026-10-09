@@ -517,6 +517,18 @@ class MergeModePullRequestTests(MergeModeFixture):
                 self.BODY, 60, self.target, monotonic(), 5, None)
         self.assertEqual(title, "Fix the timeout (HOLO-9)")
 
+    def test_a_title_its_key_correction_pushes_over_the_cap_takes_the_stub(self):
+        cap = holophyte.pr.github.PR_TITLE_MAX
+        written = "Fix the timeout".ljust(cap - len(" (KO-9)"), "!")
+        turn = FakeAgent(Idle(f"TITLE: {written} (KO-9)\n\nRequests no longer hang.\n"))
+        with patch.object(implement, "agent", turn), patch(
+                "sys.stdout", new_callable=io.StringIO) as out:
+            title, _ = holophyte.pr.pullrequest._written_pr_text(
+                self.project, None, None, "HOLO-9", "fix the timeout", BRANCH,
+                self.BODY, 60, self.target, monotonic(), 5, None)
+        self.assertEqual(title, "HOLO-9: fix the timeout")
+        self.assertIn("written PR text refused", out.getvalue())
+
     def test_a_written_title_with_its_own_key_or_none_is_kept_verbatim(self):
         for written in ("Fix the timeout (HOLO-9)", "Fix the timeout",
                         "Retire the KO-9 workaround"):
