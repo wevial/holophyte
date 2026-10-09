@@ -26,6 +26,7 @@ from holophyte.config.reader import (
     DEFAULT_IMPLEMENTER,
     IMPL_EFFORT,
     IMPL_MODEL,
+    SHA_ROLES,
     review_profile,
 )
 from holophyte.isolation import launcher
@@ -116,7 +117,7 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
 
 
 def probe_route(project, role, fallback, timeout, entry):
-    goal = REVIEW_PROBE_GOAL if role in ("review", "adjudicate") else PROBE_GOAL
+    goal = REVIEW_PROBE_GOAL if role in SHA_ROLES else PROBE_GOAL
     cmd = agent_command(project, role, goal, fallback=fallback, entry=entry)
     default = cmd is None
     pair = None
@@ -128,7 +129,7 @@ def probe_route(project, role, fallback, timeout, entry):
                "--effort", IMPL_EFFORT]
     elif default:
         pair = (review_route(project, fallback=fallback)
-                if role in ("review", "adjudicate") else None)
+                if role in SHA_ROLES else None)
         if pair is None or not (fallback or container_fallback_profile(project, role)
                                 or agent_command(project, role, "", fallback=True)):
             return None
@@ -137,7 +138,7 @@ def probe_route(project, role, fallback, timeout, entry):
     sha = None
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
-            if role in ("review", "adjudicate"):
+            if role in SHA_ROLES:
                 sh(["git", "clone", "--shared", "--quiet",
                     str(project.path), scratch])
                 sha = sh(["git", "rev-parse", "HEAD"], cwd=scratch).strip()
@@ -174,7 +175,7 @@ def probe_route(project, role, fallback, timeout, entry):
 
 
 def container_fallback_profile(project, role):
-    if (role not in ("review", "adjudicate")
+    if (role not in SHA_ROLES
             or AGENT_CONFIG_KEYS[role] in (project.config().get("agents") or {})):
         return None
     pair = review_route(project, fallback=True)

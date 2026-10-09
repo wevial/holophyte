@@ -1,4 +1,5 @@
 import json
+import threading
 
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.probes import (
@@ -44,7 +45,15 @@ def record_pending_switch(project, role, conn, run_id):
         del state.pending[role]
 
 
+SWITCHING = threading.RLock()
+
+
 def activate_fallback(project, role, reason, conn=None, run_id=None, *, probe=None):
+    with SWITCHING:
+        return _activate(project, role, reason, conn, run_id, probe)
+
+
+def _activate(project, role, reason, conn, run_id, probe):
     from holophyte.loop.runs import open_store
     from store.agent_routes import switched
 

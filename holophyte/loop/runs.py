@@ -173,7 +173,7 @@ def _ending_of(conn, run_id):
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                  started_at=None, criteria=(), root=None, route=None,
                  prior_reply="", structured_findings=None, approved_range=None,
-                 scope=()):
+                 scope=(), adversary=()):
     if conn is None:
         return
     verdicts = (review_runner.REVIEW_VERDICTS if role == "review"
@@ -190,7 +190,7 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
     if role == "review" and verdict != "error":
         unwitnessed = criteria_findings(reply, criteria, root,
                                         approved_range=approved_range,
-                                        scope=scope)
+                                        scope=scope) + list(adversary)
         if unwitnessed:
             verdict = "changes_requested"
             findings = findings + unwitnessed

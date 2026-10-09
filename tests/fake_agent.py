@@ -28,6 +28,7 @@ import contextlib
 import json
 import re
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
@@ -35,7 +36,9 @@ from unittest.mock import patch
 import holophyte.loop.gates
 
 IMPLEMENT = "implement"
+ADVERSARY = "adversary"
 REVIEW_ROLES = ("review", "adjudicate")
+EXACT_ROLES = (*REVIEW_ROLES, ADVERSARY)
 
 
 class HarnessViolation(BaseException):
@@ -138,6 +141,19 @@ MALFORMED = Reply("I have some thoughts about this but never say the word.")
 
 
 @dataclass(frozen=True)
+class Attack:
+    """An adversary turn, replayed from a queue of its own: it runs on a
+    thread beside the review turn, so the two may ask in either order."""
+
+    text: str = "Nothing broke.\nADVERSARY: DONE"
+
+    role = ADVERSARY
+
+    def play(self, cwd, turn):
+        return self.text
+
+
+@dataclass(frozen=True)
 class Critic:
     """The claim's critic turn (KO-715): scripted text handed back verbatim,
     or `raises` raised, the way a turn that failed would."""
@@ -221,9 +237,11 @@ class FakeAgent:
     """
 
     def __init__(self, *script):
-        self.script = list(script)
+        self.script = [step for step in script if step.role != ADVERSARY]
+        self.attacks = [step for step in script if step.role == ADVERSARY]
         self.turns: list[Turn] = []
         self.replies: list[str] = []
+        self.lock = threading.Lock()
 
     def __call__(self, target, role, goal, cwd, *, base_sha=None, conn=None,
                  candidate_sha=None, timeout=None, on_start=None, run_id=None,
@@ -231,27 +249,33 @@ class FakeAgent:
         # Like agent(), dispatch the requested turn through its effective seat.
         from holophyte.agents.roles import effective_role
         role = effective_role(target, role)
-        n = len(self.turns) + 1
-        if not self.script:
-            raise ScriptError(f"script exhausted: the loop asked for a {role!r}"
-                              f" turn (#{n}) the script has no step for")
-        step = self.script.pop(0)
-        wanted = step.role
-        wanted = (wanted,) if isinstance(wanted, str) else wanted
-        if role not in wanted:
-            raise ScriptError(f"turn #{n} is a {role!r} turn but the script's"
-                              f" next step answers {'/'.join(wanted)}")
-        if role in REVIEW_ROLES and not (base_sha and candidate_sha):
-            # The real reviewer route refuses the turn without both, so a loop
-            # that stopped passing them would otherwise only break in prod.
-            raise ScriptError(f"{role!r} turn #{n} arrived without an exact"
-                              f" base_sha and candidate_sha")
-        self.turns.append(Turn(role, goal, Path(cwd), base_sha, candidate_sha,
-                               timeout, on_start))
+        with self.lock:
+            n = len(self.turns) + 1
+            queue = self.attacks if role == ADVERSARY else self.script
+            if not queue:
+                raise ScriptError(f"script exhausted: the loop asked for a "
+                                  f"{role!r} turn (#{n}) the script has no "
+                                  f"step for")
+            step = queue.pop(0)
+            wanted = step.role
+            wanted = (wanted,) if isinstance(wanted, str) else wanted
+            if role not in wanted:
+                raise ScriptError(f"turn #{n} is a {role!r} turn but the "
+                                  f"script's next step answers "
+                                  f"{'/'.join(wanted)}")
+            if role in EXACT_ROLES and not (base_sha and candidate_sha):
+                # The real reviewer route refuses the turn without both, so a
+                # loop that stopped passing them would otherwise only break in
+                # prod.
+                raise ScriptError(f"{role!r} turn #{n} arrived without an exact"
+                                  f" base_sha and candidate_sha")
+            self.turns.append(Turn(role, goal, Path(cwd), base_sha,
+                                   candidate_sha, timeout, on_start))
         reply = step.play(Path(cwd), n)
         if role == "review":
             reply = answer_scope(goal, reply)
-        self.replies.append(reply)
+        with self.lock:
+            self.replies.append(reply)
         return reply
 
     @property

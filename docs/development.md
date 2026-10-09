@@ -164,6 +164,9 @@ Each module, one line:
 - `holophyte/review/blast_radius.py` — a review round's blast-radius tier: the
   built-in high path list, the diff signals, the raising sources and the
   implementer's `BLAST RADIUS:` line.
+- `holophyte/review/adversary.py` — the adversarial pass beside the primary
+  review: when a round runs it, its brief by depth and scope, the reply's
+  evidence levels and the findings that block.
 - `holophyte/review/stale_approval.py` — a review left only stale cited
   approvals: the `stale_approval_rereview` event, and the failure when the
   review again at that head still cites one.
