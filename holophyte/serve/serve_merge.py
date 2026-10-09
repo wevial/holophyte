@@ -21,12 +21,11 @@ def run_merge(project, segment):
 
 def approval_note(body, ready):
     note = body.get("note")
-    bypassed = ready.failing
     names = ", ".join(name for name, ok, *_ in ready.facts if ok)
     return (f"{console_author(body)} via the console: merge at head"
             f" {ready.head_sha}; {names} held"
-            + (f"; bypassing the required review: {bypassed[2]}"
-               if bypassed is not None else "")
+            + (f"; bypassing the required review: {ready.detail}"
+               if ready.failing else "")
             + (f"; {note.strip()}" if isinstance(note, str) and note.strip()
                else ""))
 
