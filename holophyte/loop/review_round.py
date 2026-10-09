@@ -68,6 +68,24 @@ def _verify_brief(verify_cmd, ok, out):
                "specific concern.\n" if ok else ""))
 
 
+def _verify_findings(verify_cmd, ok, out):
+    if ok or verify_timed_out(out):
+        return []
+    facts = getattr(out, "failure", None) or {}
+    command = facts.get("command") or verify_cmd or "(no command)"
+    status = facts.get("exit_status")
+    title = (f"failing verify command: {command}"
+             + (f" (exit {status})" if status is not None else ""))
+    last = facts.get("last_output_line")
+    return [{"path": "verify", "line": facts.get("command_index") or None,
+             "severity": "p1", "title": title,
+             "message": f"{title}\n{last}" if last else title}]
+
+
+def _with_report(verdict, red, out):
+    return f"{verdict}\n\n{out}" if red else verdict
+
+
 def _changed_lines(wt):
     """Count changed lines against the merge base; binary files count as zero."""
     base = sh(["git", "merge-base", "main", "HEAD"], cwd=wt)
@@ -134,11 +152,12 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     blocking = adversary.settle(project, conn, run_id, provider, task_id, plan,
                                 attacked)
     approved = cited_approval(verdict, wt, sha)
+    red = _verify_findings(verify_cmd, ok, out)
     record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out,
                  started_at=round_started, criteria=criteria, root=wt,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
-                 adversary=blocking)
+                 adversary=blocking + red)
     if decision == "MALFORMED":
         reason = "reviewer returned no verdict line twice"
         print(f"[holo2] round {rnd}: {reason}")
@@ -151,16 +170,16 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     if unwitnessed:
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed; treating as REQUEST_CHANGES")
-    findings = unwitnessed + blocking
+    findings = unwitnessed + blocking + red
     adversarial = consolidate.adversary_findings(conn, run_id, rnd) if plan else None
     handed = adversarial is not None and consolidate.handed_on(
         project, conn, run_id, provider, task_id, rnd,
-        consolidate.primary_findings(verdict, decision, unwitnessed),
+        consolidate.primary_findings(verdict, decision, unwitnessed + red),
         adversarial, consolidate.fixing(decision, findings, ok, out),
         partial(agent, project, "consolidate", cwd=wt, base_sha=base_sha,
                 candidate_sha=sha, timeout=consolidate.TIMEOUT, conn=conn,
                 run_id=run_id))
-    return handed or verdict, decision, findings
+    return _with_report(handed or verdict, red, out), decision, findings
 
 
 def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,
