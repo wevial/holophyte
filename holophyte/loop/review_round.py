@@ -6,7 +6,7 @@ from time import time
 import store
 import store.read
 import ticket_template
-from holophyte import failure_reason
+from holophyte import failure_reason, leak_guard
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
@@ -153,11 +153,14 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                                 attacked)
     approved = cited_approval(verdict, wt, sha)
     red = _verify_findings(verify_cmd, ok, out)
+    leaks = leak_guard.branch_leaks(project, wt, sha)
+    leak_guard.record(conn, run_id, leaks)
+    private = leak_guard.review_findings(leaks)
     record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out,
                  started_at=round_started, criteria=criteria, root=wt,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
-                 adversary=blocking + red)
+                 adversary=blocking + red + private)
     if decision == "MALFORMED":
         reason = "reviewer returned no verdict line twice"
         print(f"[holo2] round {rnd}: {reason}")
@@ -170,16 +173,18 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     if unwitnessed:
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed; treating as REQUEST_CHANGES")
-    findings = unwitnessed + blocking + red
+    findings = unwitnessed + blocking + red + private
     adversarial = consolidate.adversary_findings(conn, run_id, rnd) if plan else None
     handed = adversarial is not None and consolidate.handed_on(
         project, conn, run_id, provider, task_id, rnd,
-        consolidate.primary_findings(verdict, decision, unwitnessed + red),
+        consolidate.primary_findings(verdict, decision,
+                                     unwitnessed + red + private),
         adversarial, consolidate.fixing(decision, findings, ok, out),
         partial(agent, project, "consolidate", cwd=wt, base_sha=base_sha,
                 candidate_sha=sha, timeout=consolidate.TIMEOUT, conn=conn,
                 run_id=run_id))
-    return _with_report(handed or verdict, red, out), decision, findings
+    verdict = _with_report(handed or verdict, red, out)
+    return leak_guard.with_findings(verdict, private), decision, findings
 
 
 def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,

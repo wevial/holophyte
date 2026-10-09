@@ -293,6 +293,7 @@ DEFAULT_STRIP_ATTRIBUTION = (
 )
 MERGE_KEYS = {
     "strip_attribution": DEFAULT_STRIP_ATTRIBUTION,
+    "private_patterns": (),
     "approve": "auto", "mode": "local",
     "pr_rounds": 5, "pr_main_refreshes": 10,
     "pr_merge_method": "merge",
@@ -341,6 +342,8 @@ def merge_config(project):
     defaults = dict(MERGE_KEYS, check_wait_sec=CHECK_WAIT_S)
     values["strip_attribution"] = _attribution_patterns(
         project, table.get("strip_attribution", defaults.pop("strip_attribution")))
+    values["private_patterns"] = _private_patterns(
+        project, table.get("private_patterns", defaults.pop("private_patterns")))
     values["pr_changes_log"] = _merge_boolean(
         project, "pr_changes_log",
         table.get("pr_changes_log", defaults.pop("pr_changes_log")))
@@ -420,6 +423,23 @@ def _attribution_patterns(project, value):
     if error:
         raise SystemExit(f"[holo2] {project.config_path}: "
                          f"[merge] strip_attribution {error}")
+    return tuple(value)
+
+
+def _private_patterns(project, value):
+    from holophyte.redact import register_values
+    where = f"[holo2] {project.config_path}: [merge] private_patterns"
+    if not isinstance(value, (list, tuple)):
+        raise SystemExit(f"{where} must be a list of regular expressions")
+    register_values([p for p in value if isinstance(p, str)])
+    for index, pattern in enumerate(value):
+        if not isinstance(pattern, str):
+            raise SystemExit(f"{where} #{index} is not a string")
+        try:
+            re.compile(pattern)
+        except re.error:
+            raise SystemExit(f"{where} #{index} is not a valid regular"
+                             " expression") from None
     return tuple(value)
 
 

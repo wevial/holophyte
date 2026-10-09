@@ -141,6 +141,8 @@ PINNED = {
     "holophyte/isolation/isolation_return.py": 2,
     "holophyte/isolation/launcher.py": 1,
 
+    "holophyte/leak_guard.py": 1,
+
     "holophyte/loop/__init__.py": 0,
     "holophyte/loop/adjudicate.py": 2,
     "holophyte/loop/branch_sync.py": 2,

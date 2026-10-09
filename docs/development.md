@@ -364,6 +364,9 @@ Each module, one line:
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from
   unpublished commits before task pushes and local merges.
+- `holophyte/leak_guard.py` — scans unpublished commits, pull request text and
+  ticket bodies for `[merge] private_patterns` and refuses a match by location
+  and pattern index.
 - `holophyte/loop/pause_notice.py` — a paused run's pull request gets the
   `holophyte:paused` label and one notice comment; `--resume` removes both
   (KO-608).
