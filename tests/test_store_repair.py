@@ -21,7 +21,9 @@ import store
 import store.schema
 import store.tickets
 
-DANGLING = ("runs", "stopRequested", "interventions_old", "interventions")
+DANGLING = [("runs", "stopRequested", "interventions_old", "interventions"),
+            ("steerNotes", "interventionId", "interventions_old",
+             "interventions")]
 
 
 class RepairReferencesTests(unittest.TestCase):
@@ -64,7 +66,7 @@ class RepairReferencesTests(unittest.TestCase):
             store.open(self.path)
         schema, rows = self.schema(conn), self.interventions(conn)
 
-        self.assertEqual(store.repair_references(conn), [DANGLING])
+        self.assertEqual(store.repair_references(conn), DANGLING)
 
         self.assertEqual(self.schema(conn), schema)
         self.assertEqual(self.interventions(conn), rows)
@@ -75,11 +77,12 @@ class RepairReferencesTests(unittest.TestCase):
         rows = self.interventions(conn)
 
         self.assertEqual(store.repair_references(conn, dry_run=False),
-                         [DANGLING])
+                         DANGLING)
 
-        self.assertEqual([row[2] for row in conn.execute(
-            "PRAGMA foreign_key_list(runs)") if row[3] == "stopRequested"],
-            ["interventions"])
+        for table, column, _missing, target in DANGLING:
+            self.assertEqual([row[2] for row in conn.execute(
+                f"PRAGMA foreign_key_list({table})") if row[3] == column],
+                [target])
         ((run, project, action, note),) = self.interventions(conn)[len(rows):]
         self.assertEqual((run, project, action), (None, self.project_id, "migrate"))
         self.assertTrue(Path(json.loads(note)["backup"]).is_file())
@@ -137,7 +140,7 @@ class RepairReferencesTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("refused: repair_references", result.stdout)
-        self.assertEqual(store.repair_references(self.raw()), [DANGLING])
+        self.assertEqual(store.repair_references(self.raw()), DANGLING)
 
     def test_only_the_reference_clause_is_rewritten(self):
         conn = self.raw()
