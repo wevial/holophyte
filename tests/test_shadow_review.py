@@ -63,6 +63,14 @@ class ShadowReviewTests(ShadowRun, unittest.TestCase):
         self.assertNotIn("shadow", prompt.lower())
         self.assertEqual(prompt, self.primary_prompt(call.kwargs["candidate_sha"]))
 
+    def test_verify_output_shows_the_reviewer_the_primarys_path_and_branch(self):
+        self.configure(turn=commits("ok\n"))
+        self.shadow(verify="pwd && git branch --show-current && grep -qx ok done.txt")
+        prompt = self.review.call_args.kwargs["prompt"]
+        self.assertIn(str(self.root / "repo.worktrees" / "ko-7-thing"), prompt)
+        self.assertIn("task/ko-7-thing", prompt)
+        self.assertNotIn("shadow", prompt.lower())
+
     def primary_prompt(self, sha):
         class Captured(Exception):
             pass

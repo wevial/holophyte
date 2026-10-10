@@ -89,11 +89,11 @@ class ShadowRun:
             '[agents.implementer_shadow]\nharness = "claude"\nmodel = "sonnet"\n'
             f'effort = "high"\n{extra}[harnesses]\nclaude = "{binary}"\n')
 
-    def shadow(self, seconds=60):
+    def shadow(self, seconds=60, verify="grep -qx ok done.txt"):
         return run_shadow(self.target, self.conn, self.run_id, ShadowBrief(
             goal="Create done.txt saying ok", ticket=self.TICKET,
             criteria=self.CRITERIA, task_id="KO-7",
-            verify="grep -qx ok done.txt", contracts=None, base_sha=self.base,
+            verify=verify, contracts=None, base_sha=self.base,
             branch="task/ko-7-thing", seconds=seconds))
 
     def events(self, kind):

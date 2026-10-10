@@ -164,7 +164,8 @@ turn ran), the `outcome` (`route_down`, `branch_exists`, `setup_failed`,
 and a redacted `detail`. A `verified` or `verify_failed` shadow then gets one
 `review`, blind to which implementer wrote it: the primary reviewer route
 reads round 1's prompt, less the visual evidence the shadow never captures
-or publishes, and the event records its `verdict` (`APPROVE`,
+or publishes, and with the shadow's worktree name and branch shown as the
+primary's; the event records its `verdict` (`APPROVE`,
 `REQUEST_CHANGES`, `MALFORMED` or `error` with its `error` text), the
 `findings` count by severity, the `unwitnessed` criteria count, the
 `reviewer` profile and the review's `seconds`. No adversary, fix round or

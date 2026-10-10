@@ -116,10 +116,11 @@ def _attempt(project, run_id, seat, brief, branch, wt, result, cut):
                          "no_commits" if not result["commits"] else
                          "verified" if ok else "verify_failed")
     if result["outcome"] in ("verified", "verify_failed"):
-        result["review"] = _review(project, run_id, brief, wt, head, ok, out)
+        result["review"] = _review(project, run_id, brief, wt, branch, head, ok,
+                                   out)
 
 
-def _review(project, run_id, brief, wt, head, ok, out):
+def _review(project, run_id, brief, wt, branch, head, ok, out):
     if "reviewer" in config_table(project, "agents"):
         return {"verdict": "skipped", "reason": "configured reviewer"}
     model, effort = review_route(project)
@@ -132,6 +133,7 @@ def _review(project, run_id, brief, wt, head, ok, out):
         prompt = round_prompt(project, run_id, brief.task_id, wt, brief.base_sha,
                               head, brief.ticket, brief.verify, brief.criteria,
                               review_mode(project), ok, out, evidence=False)
+        prompt = _as_primary(prompt, wt, branch, brief.branch)
         reply = review_runner.run_review(
             repo=wt, run_id=run_id, base_sha=brief.base_sha, candidate_sha=head,
             prompt=outbound(prompt, known_secrets(project.config())),
@@ -143,6 +145,11 @@ def _review(project, run_id, brief, wt, head, ok, out):
         review.update(verdict="error", error=route_prose(project, str(error)))
     review["seconds"] = round(monotonic() - started, 3)
     return review
+
+
+def _as_primary(text, wt, branch, primary):
+    slug = primary.split("/", 1)[-1]
+    return text.replace(wt.name, slug).replace(branch, primary)
 
 
 def _judged(project, reply, criteria, wt):
