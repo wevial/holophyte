@@ -33,6 +33,7 @@ from holophyte.loop.merge_gate import (
 from holophyte.loop.review_round import _review_cap, _review_rounds
 from holophyte.loop.runs import RunSwept
 from holophyte.loop.shadow_spawn import shadow_starter
+from holophyte.loop.steering import pending as steer_pending
 from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import Aborted, continuation
 from holophyte.loop.trim import trim
@@ -133,15 +134,17 @@ def _run_stages(run, task):
     sha, rnd, approved = (reproduce.review_rounds if unreproduced else _review_rounds)(
         project, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
         sha, ticket, verify_cmd, contracts, criteria, budget_min, cap, resume=resume)
-    if not approved:
+    spent = max(cap, rnd)
+    while not approved or (not unreproduced and steer_pending(conn, run_id)):
         steered = None if unreproduced else steer_turn(
             project, conn, run_id, beat_s, wt, budget_min, ticket, sha,
             timed=_timed, check_cap=_check_run_cap)
         sha, resume = (sha, resume) if steered is None else (steered, None)
         _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                                branch, wt, beat_s, base_sha, sha, ticket,
-                               verify_cmd, contracts, max(cap, rnd), criteria,
+                               verify_cmd, contracts, spent, criteria,
                                resume=resume)
+        approved, resume, spent = True, None, spent + 1
 
     ticket = reviewed_ticket(conn, run_id, ticket)
     merge = merge_config(project)

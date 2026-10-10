@@ -215,6 +215,22 @@ class DeliveryTests(LiveSteerFixture):
             self.assertNotIn(HINT, goal)
         self.assertEqual(self.consumed_by(), [(self.only_run(),)])
 
+    def test_a_note_steered_during_adjudication_is_carried_and_judged_again(self):
+        fake, _ = self.loop(
+            Commit("the thing", path="app.txt"), REQUEST_CHANGES,
+            Commit("the fix", path="app.txt", body="fixed\n"), REQUEST_CHANGES,
+            Commit("the second fix", path="app.txt", body="fixed again\n"),
+            Steering(self, PASS, "-n", NOTE),
+            Commit("the steer", path="app.txt", body="steered\n"), PASS)
+
+        self.assertEqual(fake.roles[-3:], ["adjudicate", "implement", "adjudicate"])
+        first, steered, second = (turn.goal for turn in fake.turns[-3:])
+        self.assertFalse(self.amended(first, NOTE))
+        self.assertTrue(self.amended(steered, NOTE))
+        self.assertTrue(self.amended(second, NOTE))
+        self.assertEqual(self.consumed_by(), [(self.only_run(),)])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
 
 class UnsteeredTests(LiveSteerFixture):
     def test_with_no_steer_notes_every_prompt_is_the_one_recorded_before_steering(self):

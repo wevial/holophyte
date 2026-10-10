@@ -166,6 +166,7 @@ PINNED = {
     "holophyte/loop/runs.py": 11,
     "holophyte/loop/shadow.py": 0,
     "holophyte/loop/shadow_spawn.py": 1,
+    "holophyte/loop/steering.py": 1,
     "holophyte/loop/stop.py": 5,
     "holophyte/loop/trim.py": 3,
     "holophyte/loop/trim_brief.py": 0,
