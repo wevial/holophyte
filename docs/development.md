@@ -300,6 +300,9 @@ Each module, one line:
   turn per round, up to the cap the candidate's size earns.
 - `holophyte/loop/adjudicate.py` — the terminal adjudication once the review
   rounds are spent.
+- `holophyte/loop/steering.py` — a live run's pending `holo steer` notes: the
+  prompt text its next implementer turn carries, their consumption, and the
+  amendments it carried joined to the reviewers' ticket text.
 - `holophyte/loop/branch_sync.py` — the branch fast-forwarded to origin's copy,
   and the worktree held to the candidate a park recorded.
 - `holophyte/agents/harness.py` — harness adapters: a table-form `[agents]` role's

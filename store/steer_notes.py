@@ -2,6 +2,8 @@
 import time
 from typing import NamedTuple
 
+import store
+
 from . import operator_notes
 from .operate import record_intervention, record_project_intervention
 from .schema import _transaction
@@ -10,6 +12,7 @@ AMENDMENT, HINT = "amendment", "hint"
 SEALED = ("merged", "abandoned")
 PARKED_PHASE = "awaiting_merge_approval"
 GATE_PHASES = ("merge_gate", "merging")
+LIVE_PHASES = ("claimed", "working", "verifying", "reviewing", "addressing")
 
 
 class SteerRefused(ValueError):
@@ -22,6 +25,7 @@ class Steer(NamedTuple):
     intervention_id: int
     run_id: int | None
     event_id: int | None
+    live: bool = False
 
 
 class SteerNote(NamedTuple):
@@ -29,6 +33,9 @@ class SteerNote(NamedTuple):
     kind: str
     note: str
     author: str
+    run_id: int | None = None
+    consumed_by: int | None = None
+    live: bool = False
 
 
 class SteerRow(NamedTuple):
@@ -61,9 +68,8 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
             raise SteerRefused(f"ticket {ticket_id} does not exist")
         key, status, live, last, project_id, phase, pr_url, resume, outcome = row
         if live is not None:
-            raise SteerRefused(
-                f"{key} has live run {live}, which a steer does not reach;"
-                f" stop it first with holo pause {key} or holo abort {key}")
+            return _live(conn, ticket_id, key, live, kind, note, author, now,
+                         resume)
         if status in SEALED:
             raise SteerRefused(f"{key} is {status}; nothing is left to steer")
         if status == "blocked_on_operator":
@@ -94,6 +100,30 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
                        intervention_id, None)
 
 
+def _live(conn, ticket_id, key, live, kind, note, author, now, resume):
+    phase, pr_url = conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
+                                 (live,)).fetchone()
+    closed = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
+                          " AND kind = 'steer_closed'", (live,)).fetchone()
+    if phase not in LIVE_PHASES or pr_url or closed:
+        raise SteerRefused(
+            f"{key}'s live run {live} is in {phase}"
+            + (" on its pull request" if pr_url else "")
+            + ", past its last implementer turn, so no implementer would read"
+            f" a steer; steer it once that run parks or ends, or stop it with"
+            f" holo pause {key} or holo abort {key}")
+    if phase == "claimed" and resume in GATE_PHASES:
+        raise SteerRefused(
+            f"{key}'s live run {live} resumes a candidate at {resume}, past"
+            " the implement turn, so no implementer would read a steer;"
+            " steer it once that run parks or ends")
+    intervention_id = record_intervention(conn, live, "steer",
+                                          f"{kind} for {key}: {note}", now=now)
+    steered = _insert(conn, ticket_id, live, kind, note, author, now,
+                      intervention_id, None)
+    return steered._replace(live=True)
+
+
 def _noted(conn, ticket_id, run_id, kind, note, author, now, write):
     event_id = write(conn, run_id, note, author, hint=kind == HINT)
     (intervention_id,) = conn.execute(
@@ -114,17 +144,37 @@ def _insert(conn, ticket_id, run_id, kind, note, author, now, intervention_id,
 
 
 def _notes(conn, where, args):
-    return [SteerNote(*row) for row in conn.execute(
-        "SELECT id, kind, note, author FROM steerNotes WHERE ticketId = ?"
-        f" AND eventId IS NULL AND {where} ORDER BY id", args)]
+    return [SteerNote(*row[:6], bool(row[6])) for row in conn.execute(
+        "SELECT s.id, s.kind, s.note, s.author, s.runId, s.consumedBy,"
+        " r.id IS NOT NULL AND (r.endedAt IS NULL OR r.endedAt >= s.at)"
+        " FROM steerNotes s LEFT JOIN runs r ON r.id = s.runId"
+        f" WHERE s.ticketId = ? AND s.eventId IS NULL AND {where}"
+        " ORDER BY s.id", args)]
 
 
 def amendments(conn, ticket_id):
-    return _notes(conn, "kind = ?", (ticket_id, AMENDMENT))
+    return _notes(conn, "s.kind = ?", (ticket_id, AMENDMENT))
 
 
-def pending(conn, ticket_id, kind):
-    return _notes(conn, "kind = ? AND consumedBy IS NULL", (ticket_id, kind))
+def pending(conn, ticket_id, kind=None):
+    if kind is None:
+        return _notes(conn, "s.consumedBy IS NULL", (ticket_id,))
+    return _notes(conn, "s.kind = ? AND s.consumedBy IS NULL",
+                  (ticket_id, kind))
+
+
+def close(conn, run_id):
+    with _transaction(conn):
+        waiting = conn.execute(
+            "SELECT 1 FROM steerNotes s JOIN runs r ON r.ticketId = s.ticketId"
+            " WHERE r.id = ? AND s.eventId IS NULL AND s.consumedBy IS NULL",
+            (run_id,)).fetchone()
+        if waiting:
+            return False
+        store.record_event(conn, run_id, "steer_closed",
+                           "steering closed: no implementer turn remains",
+                           level="detail")
+        return True
 
 
 def consume(conn, note_ids, run_id, now=None):

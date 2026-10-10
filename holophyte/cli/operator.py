@@ -364,6 +364,10 @@ def steer_ticket(target, identifier, note, hint=False, author=None, out=None):
                   " back to the babysitter as a maintainer instruction"
                   f" (operator_note event {steered.event_id}, steer note"
                   f" {steered.id})", file=out)
+        elif steered.live:
+            print(f"[holo2] {identifier} steered: {steered.kind} (steer note"
+                  f" {steered.id}) on live run {steered.run_id}, landing at"
+                  " its next implementer turn", file=out)
         else:
             reader = ("its next implement turn" if hint
                       else "its next run's contract")
