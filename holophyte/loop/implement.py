@@ -96,8 +96,9 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
         raise
     if swept:
         cause = _turn_end(output, timed_out)
-        _sweep_quietly(project, conn, run_id, wt, cause, merges)
-        _drop_leftovers(project, conn, run_id, wt, cause, ignored)
+        mid_edit = _sweep_quietly(project, conn, run_id, wt, cause, merges)
+        _drop_leftovers(project, conn, run_id, wt, cause, ignored,
+                        mid_edit=mid_edit)
     return output, timed_out
 
 
@@ -241,24 +242,27 @@ def _task_key(conn, run_id, branch):
 
 def _sweep_quietly(project, conn, run_id, wt, cause, merges):
     try:
-        _sweep_tree(project, conn, run_id, wt, cause, merges)
+        return _sweep_tree(project, conn, run_id, wt, cause, merges)
     except SWEPT_ERRORS as failed:
         print(f"[holo2] the turn-end sweep of {wt} failed: {failed}")
+        return False
 
 
 def _sweep_tree(project, conn, run_id, wt, cause, merges):
     if not Path(wt).is_dir() or subprocess.run(
             ["git", "rev-parse", "-q", "--verify", "HEAD"], cwd=wt,
             capture_output=True).returncode or (mid_merge(wt) and not merges):
-        return
+        return False
     # The turn's process group is reaped, so a lock here is the dead turn's.
     lock = Path(wt, sh(["git", "rev-parse", "--git-path", "index.lock"], cwd=wt))
     lock.unlink(missing_ok=True)
     branch = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=wt)
     task_id = _task_key(conn, run_id, branch)
-    if mid_merge(wt):
+    merging = mid_merge(wt)
+    if merging:
         _sweep_merge(project, conn, run_id, wt, branch, task_id)
-    _commit_wip(project, conn, run_id, wt, branch, task_id, cause)
+    return _commit_wip(project, conn, run_id, wt, branch, task_id,
+                       cause) or merging
 
 
 SWEPT_ERRORS = (RuntimeError, OSError, ValueError, subprocess.SubprocessError,
@@ -307,8 +311,10 @@ def remove_entries(wt, names):
             path.unlink(missing_ok=True)
 
 
-def _drop_leftovers(project, conn, run_id, wt, cause, before):
-    if cause not in ("crashed", "budget fired", "ended") or before is None:
+def _drop_leftovers(project, conn, run_id, wt, cause, before, *,
+                    mid_edit=False):
+    if before is None or not (
+            mid_edit or cause in ("crashed", "budget fired", "ended")):
         return
     gone = []
     try:
@@ -332,7 +338,7 @@ def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
     dirty = sh(["git", "status", "--porcelain", "-uall", *paths(project)],
                cwd=wt).splitlines()
     if not dirty:
-        return
+        return False
     _refuse_environment(project, wt)
     stage_work(project, wt)
     sh(["git", *factory_identity(wt), "commit", "-q", "-m",
@@ -341,6 +347,7 @@ def _commit_wip(project, conn, run_id, wt, branch, task_id, cause):
     _announce(conn, run_id, "wip_committed",
               f"{cause} mid-edit; {len(dirty)} changed file(s)"
               f" committed as WIP on {branch} at {head[:12]}")
+    return True
 
 
 def _refuse_environment(project, wt):
