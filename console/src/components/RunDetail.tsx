@@ -22,6 +22,7 @@ import { RoundTimeline } from "./RoundTimeline";
 import { RunTurns } from "./RunTurns";
 import { RunLog } from "./RunLog";
 import { ReasonAction } from "./ReasonAction";
+import { SteerNote } from "./SteerNote";
 import type { RowDaemon } from "./RowActions";
 import { PrLink, Sha } from "./ShippedTable";
 
@@ -80,7 +81,8 @@ function SeatChip({ seat, routes }: Seat) {
  *  `/runs/ID/turns`, whose models the header names per seat; each read on
  *  expand and again each poll. Given
  *  its `daemon`, a live run has Abort in the footer, Abort and close too
- *  when it has a pull request, and Pause when it has no `stopRequested`. */
+ *  when it has a pull request, Pause when it has no `stopRequested`, and
+ *  Steer. */
 export function RunDetail({
   base,
   id,
@@ -250,6 +252,7 @@ function Card({
         {daemon && !finished && run.pr_url && <ReasonAction daemon={daemon} route="/actions/abort" body={{ run: run.id, close: true }} label="Abort and close" />}
         <ActionButton>Requeue ticket</ActionButton>
         {pauseDaemon && !finished && <ReasonAction daemon={pauseDaemon} route="/actions/pause" body={{ run: run.id }} label="Pause" />}
+        {daemon && !finished && <SteerNote daemon={daemon} ticket={run.ticket} stoppable />}
       </footer>
       <RunLog events={body.events} rounds={rounds} now={tickingNow} />
     </article>

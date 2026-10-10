@@ -42,7 +42,8 @@ results cite: the row the action itself inserted, never another
 writer's row of the same name (`restart_supervisor`, `launch_loop`,
 `requeue`, `operator_note` for `send-back`, `approve` for `merge`,
 `babysit` for `ask`, `hold`,
-`release_hold`, `pause`, `resume`, and `abort` or `abort_close`). It is
+`release_hold`, `pause`, `resume`, `abort` or `abort_close`, and `steer`
+or `operator_note` for `steer`). It is
 null when the action wrote none: a refusal, `ok: false` before the
 write, or a `pause` or `abort` of a run whose request is already
 pending. A 400, 404 or 503 answers `{"error": ...}` instead.

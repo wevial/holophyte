@@ -4,7 +4,7 @@ import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME } from "../lib/attention";
 import type { Fetch } from "../lib/poll";
 import { ActionButton } from "./ActionButton";
 import { ReasonAction } from "./ReasonAction";
-import { SendBackNote } from "./SendBackNote";
+import { SteerNote } from "./SteerNote";
 
 /** The title of an "Open PR" on a row whose item carried no URL. */
 export const NO_PR_URL = "the item carries no PR URL";
@@ -71,7 +71,7 @@ export function RowActions({ kind, actions, ticket, prUrl, daemon, runId }: {
           </ActionButton>
         ))}
       </div>
-      {kind === "pr_open" && daemon?.actions && runId != null && <SendBackNote daemon={daemon} runId={runId} />}
+      {kind === "pr_open" && daemon && ticket != null && <SteerNote daemon={daemon} ticket={ticket} />}
       {detail && (
         <p
           data-action-detail

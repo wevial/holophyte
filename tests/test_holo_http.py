@@ -57,6 +57,7 @@ COVERED = {
     ("ticket",): ["ticket", "HOLO-1"],
     ("requeue",): ["requeue", "HOLO-1", "rerun"],
     ("send-back",): ["send-back", "1", "fix the test"],
+    ("steer",): ["steer", "HOLO-1", "-n", "log the port"],
     ("hold",): ["hold", "maintenance"],
     ("release",): ["release", "maintenance over"],
     ("pause",): ["pause", "HOLO-1", "stop"],
@@ -340,6 +341,19 @@ class WriteTests(HttpCase):
             ("POST", "/projects/alpha/actions/pause")])
 
 
+    def test_steer_hint_over_http_posts_the_hint_and_prints_the_detail(self):
+        live = self.claim("HOLO-1")
+        completed = self.holo("steer", "HOLO-1", "--hint", "-n", "log the port",
+                              "-p", "alpha")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.conn.execute(
+            "SELECT kind, note, runId FROM steerNotes").fetchall(),
+            [("hint", "log the port", live)])
+        (line,) = completed.stdout.splitlines()
+        self.assertIn(f"HOLO-1 steered: hint (steer note 1) on live run {live}",
+                      line)
+        self.assertEqual(self.requests, [("POST", "/projects/alpha/actions/steer")])
+
 class RefusalTests(HttpCase):
     def test_approve_has_no_route_and_goes_nowhere_not_even_ssh(self):
         self.failed_run("HOLO-1")
@@ -350,6 +364,14 @@ class RefusalTests(HttpCase):
         self.assertIn('transport = "ssh"', completed.stderr)
         self.assertEqual(self.requests, [])
         self.assertFalse(self.record.exists())
+
+    def test_steer_withdraw_has_no_route_and_writes_nothing(self):
+        self.claim("HOLO-1")
+        completed = self.holo("steer", "HOLO-1", "--withdraw", "-n", "drop it",
+                              "-p", "alpha")
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertIn("holo steer --withdraw has no HTTP route", completed.stderr)
+        self.assertEqual(self.requests, [])
 
     def test_a_wrong_token_exits_one_naming_the_file_and_never_its_text(self):
         self.secret(self.token_file, WRONG)
