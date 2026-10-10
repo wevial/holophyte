@@ -29,6 +29,7 @@ from holophyte.serve.serve_actions import (
     parse_action_body,
     requeue_action,
     send_back_action,
+    steer_action,
     unit_action,
 )
 from holophyte.serve.serve_ask import (
@@ -369,6 +370,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             return send_back_action(
                 project, body.get("run"), body.get("note"),
                 body.get("author", "maintainer"))
+        if action == "steer":
+            return steer_action(project, body)
         if action == REQUEUE_ACTION:
             return requeue_action(project, body)
         if action == MERGE_ACTION:

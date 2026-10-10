@@ -69,27 +69,28 @@ test("project selection narrows both the table and the pointer, including a PR-o
   expect(screen.queryByText(/pull requests? below/)).toBeNull();
 });
 
-test("table actions retain Open PR and the private send-back note across polls", async () => {
+test("table actions retain Open PR and the steer note across polls, the note posting the row's ticket", async () => {
   storeToken(host.address, "test-token");
-  const { seen, fetchImpl } = fakeFetch({ ok: true, detail: "Sent back" });
+  const { seen, fetchImpl } = fakeFetch({ action: "steer", ok: true, detail: "KO-7: sent back with the note", recorded: 12 });
   const opened: unknown[][] = [];
   const realOpen = window.open;
   window.open = ((...args: unknown[]) => { opened.push(args); return null; }) as typeof window.open;
   try {
     const view = render(<PullRequestTable hosts={[host]} project="all" now={status.now} deps={offline} actionFetch={fetchImpl} />);
-    expect(screen.getAllByRole("button").map(button => button.textContent)).toEqual(["▸", "Open PR", "Send back with note"]);
+    expect(screen.getAllByRole("button").map(button => button.textContent)).toEqual(["▸", "Open PR", "Steer"]);
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open PR" })); });
     expect(opened).toEqual([[item.pr_url, "_blank", "noopener,noreferrer"]]);
     expect(seen).toEqual([]);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send back with note" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Steer" })); });
+    expect(screen.getAllByRole("checkbox").map(box => box.parentElement!.textContent)).toEqual(["Hint only"]);
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Please fix the heading" } });
     view.rerender(<PullRequestTable hosts={[{ ...host, attention: { ...host.attention!, items: [{ ...item }] } }]} project="all" now={status.now} deps={offline} actionFetch={fetchImpl} />);
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("Please fix the heading");
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send" })); await settle(); });
-    expect(seen).toEqual([{ url: `${host.base}/actions/send-back`, method: "POST", authorization: "Bearer test-token",
-      body: { run: 47, note: "Please fix the heading" } }]);
-    expect(screen.getByRole("status").textContent).toBe("Sent back");
+    expect(seen).toEqual([{ url: `${host.base}/actions/steer`, method: "POST", authorization: "Bearer test-token",
+      body: { ticket: "KO-7", hint: false, now: false, note: "Please fix the heading" } }]);
+    expect(screen.getByRole("status").textContent).toBe("KO-7: sent back with the note");
     expect(screen.queryByRole("textbox")).toBeNull();
   } finally { window.open = realOpen; }
 });

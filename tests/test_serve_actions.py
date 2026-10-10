@@ -93,7 +93,8 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         self.seed()
         self.start(self.token_config(), host="0.0.0.0")
         with patch.object(subprocess, "run") as run:
-            for action in ("restart-supervisor", "launch-loop", "requeue", "send-back"):
+            for action in ("restart-supervisor", "launch-loop", "requeue",
+                           "send-back", "steer"):
                 with self.subTest(action=action):
                     code, _, body = self.request(
                         "POST", f"/actions/{action}", self.BEARER,
@@ -492,6 +493,63 @@ class ActionsTests(UnitActionCases, ServeTestCase):
                 self.assertEqual((body["action"], body["ok"], body["recorded"]),
                                  (action, True, row), body)
                 self.assertTrue(body["detail"])
+
+    def park_on_pull_request(self):
+        with store.open(str(self.db)) as conn:
+            for phase in ("verifying", "reviewing", "merge_gate"):
+                store.set_phase(conn, self.run, phase)
+            store.park(conn, self.run, "awaiting_merge_approval",
+                       pr_url="https://example.test/org/repo/pull/1")
+            ticket = store.read.ticket_by_identifier(conn, "KO-7").id
+            store.tickets.transition(conn, ticket, "blocked_on_operator")
+
+    def steer_rows(self):
+        conn = store.read.open_readonly(self.db)
+        try:
+            return [conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+                    for table in ("interventions", "steerNotes", "runEvents")]
+        finally:
+            conn.close()
+
+    def test_steer_sends_a_parked_run_back_and_answers_its_note_row(self):
+        self.seed()
+        self.park_on_pull_request()
+        self.start(self.token_config("actions = true\n"))
+        code, _, reply = self.request(
+            "POST", "/actions/steer", self.BEARER,
+            body={"ticket": "KO-7", "note": "remove the subheader"})
+        self.assertEqual(code, 200, reply)
+        (note_row,) = self.interventions("operator_note")
+        self.assertEqual((reply["action"], reply["ok"], reply["recorded"]),
+                         ("steer", True, note_row), reply)
+        self.assertIn("sent back to the babysitter", reply["detail"])
+        with store.open(str(self.db)) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT kind, note, author, runId, interventionId,"
+                " eventId IS NOT NULL FROM steerNotes").fetchall(),
+                [("amendment", "remove the subheader", "maintainer", self.run,
+                  note_row, 1)])
+            self.assertEqual(conn.execute("SELECT status FROM tickets").fetchone(),
+                             ("ready",))
+            self.assertEqual(conn.execute("SELECT outcome FROM runs").fetchone(),
+                             ("abandoned",))
+
+    def test_steer_refuses_a_blank_note_or_an_unknown_ticket_writing_nothing(self):
+        self.seed()
+        self.park_on_pull_request()
+        self.start(self.token_config("actions = true\n"))
+        before = self.steer_rows()
+        for body in ({"ticket": "KO-7", "note": "   "},
+                     {"ticket": "KO-99", "note": "remove the subheader"},
+                     {"ticket": "KO-7", "note": "   ", "now": True}):
+            with self.subTest(body=body):
+                code, _, reply = self.request("POST", "/actions/steer",
+                                              self.BEARER, body=body)
+                self.assertEqual(code, 200, reply)
+                self.assertEqual((reply["ok"], reply["recorded"]),
+                                 (False, None), reply)
+                self.assertTrue(reply["detail"])
+        self.assertEqual(self.steer_rows(), before)
 
     def test_a_refused_action_answers_recorded_null_and_writes_no_row(self):
         self.seed()
