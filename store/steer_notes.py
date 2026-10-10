@@ -111,12 +111,12 @@ def _live(conn, ticket_id, key, live, kind, note, author, now, resume,
                                  (live,)).fetchone()
     closed = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
                           " AND kind = 'steer_closed'", (live,)).fetchone()
-    if phase == "merge_gate" and pr_url and interrupt:
-        raise SteerRefused(
-            f"{key}'s live run {live} is babysitting its pull request in"
-            f" {phase}; --now stops an implementer turn before the pull"
-            " request, so steer it without --now")
     if phase == "merge_gate" and pr_url:
+        if interrupt:
+            raise SteerRefused(
+                f"{key}'s live run {live} is babysitting its pull request in"
+                f" {phase}; --now stops an implementer turn before the pull"
+                " request, so steer it without --now")
         return _babysat(conn, ticket_id, key, live, kind, note, author, now)
     if phase not in LIVE_PHASES or pr_url or closed:
         raise SteerRefused(
