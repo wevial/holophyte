@@ -126,12 +126,11 @@ def _resume_steered(project, conn, run_id, beat_s, wt, budget_min, goal, left,
         payload["reason"] = reason
     if wip:
         payload["wip"] = wip
-    if conn is not None and run_id is not None:
-        store.record_event(
-            conn, run_id, "steer_resumed",
-            "steered turn resumed in its session" if argv is not None else
-            f"steered turn restarted fresh ({reason})", level="detail",
-            payload=json.dumps(payload))
+    store.record_event(
+        conn, run_id, "steer_resumed",
+        "steered turn resumed in its session" if argv is not None else
+        f"steered turn restarted fresh ({reason})", level="detail",
+        payload=json.dumps(payload))
     return _timed(project, conn, run_id, beat_s, wt, budget_min,
                   ask if argv is not None else f"{ask}\n\n{goal}", argv=argv,
                   seconds=left, limit=limit, merges=merges)

@@ -57,12 +57,11 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None, on_interrupt=None):
                if row[1] == "main"]
     stop = threading.Event()
     swept = []  # the ended row's (outcome, reason), set once by the beat
-    steer = ({} if on_interrupt is None else
-             {"on_interrupt": on_interrupt, "interrupts": []})
     thread = threading.Thread(
         target=_beat, args=(path, run_id, interval_s, stop, swept, on_swept,
                            partial(_fallback_heartbeat, conn, run_id, swept,
-                                   stop)), kwargs=steer,
+                                   stop)),
+        kwargs={} if on_interrupt is None else {"on_interrupt": on_interrupt},
         name=f"heartbeat-run-{run_id}", daemon=True)
     thread.start()
     failure = None
@@ -129,9 +128,10 @@ def _interrupted(conn, run_id):
 
 
 def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat,
-          on_interrupt=None, interrupts=None):
+          on_interrupt=None):
     own = None
     failed = False
+    interrupted = False
 
     def current_heartbeat():
         nonlocal own, failed
@@ -151,9 +151,9 @@ def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat,
             try:
                 alive = current_heartbeat()()
                 if alive:
-                    if interrupts == [] and own is not None and _interrupted(
-                            own, run_id):
-                        interrupts.append(True)
+                    if (on_interrupt is not None and not interrupted
+                            and own is not None and _interrupted(own, run_id)):
+                        interrupted = True
                         _notify_swept(on_interrupt)
                     # The open failure persists until the timer's own
                     # connection can beat.

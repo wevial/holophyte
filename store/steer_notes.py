@@ -106,7 +106,7 @@ def steer(conn, ticket_id, note, author, hint=False, now=None,
 
 
 def _live(conn, ticket_id, key, live, kind, note, author, now, resume,
-          interrupt=False):
+          interrupt):
     phase, pr_url = conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
                                  (live,)).fetchone()
     closed = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
