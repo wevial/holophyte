@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -40,10 +41,12 @@ import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import holophyte.pr.pullrequest  # noqa: E402
 import store  # noqa: E402
+import store.read  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.babysit import babysitter  # noqa: E402
 from holophyte.loop.gates import RunFailure  # noqa: E402
 from holophyte.loop.runs import open_store, set_phase  # noqa: E402
+from holophyte.loop.stop import resume_babysit_fix, resume_paused  # noqa: E402
 from holophyte.pr import github, pr_media, pr_status  # noqa: E402
 from holophyte.pr.github import PullRequest, Thread  # noqa: E402
 
@@ -671,6 +674,8 @@ class ConflictingPullRequestTests(cases.ConflictingMainHelpers,
 
 
 SPEC = Path("e2e/capture/KO-1.capture.ts")
+TICKET = "Show load in `ui/page.html`.\n"
+CAPTURE_PULL = PullRequest("example.test", "o", "n", 1, "https://example.test/pull/1")
 CAPTURE = """\
 import pathlib, sys
 spec = pathlib.Path("e2e/capture/KO-1.capture.ts")
@@ -690,18 +695,20 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name, "repo")
-        self.root.mkdir()
+        repo = Path(tmp.name, "repo")
+        repo.mkdir()
         self.enterContext(patch.dict(
             os.environ, {"HOLOPHYTE_HOME": str(Path(tmp.name, "home"))}))
         script = Path(tmp.name, "capture.py")
         script.write_text(CAPTURE)
+        self.project = holophyte.config.project.Project.locate(repo)
+        self.root = holophyte.config.project.worktree_path(self.project, "task")
         for args in (("init", "-q", "-b", "main"),
                      ("config", "user.name", "Test implementer"),
                      ("config", "user.email", "implementer@example.test"),
                      ("commit", "--allow-empty", "-qm", "base"),
-                     ("checkout", "-qb", "task")):
-            self.git(*args)
+                     ("worktree", "add", "-qb", "task", str(self.root))):
+            self.git(*args, cwd=repo)
         (self.root / "ui").mkdir()
         (self.root / "ui/page.html").write_text("<p>load</p>\n")
         self.git("add", ".")
@@ -710,7 +717,6 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         (self.root / SPEC).parent.mkdir(parents=True)
         (self.root / SPEC.parent / ".gitignore").write_text("*\n")
         (self.root / SPEC).write_text("BROKEN")
-        self.project = holophyte.config.project.Project.locate(self.root)
         self.project.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.project.config_path.write_text(
             '[merge]\nmode = "pr"\napprove = "auto"\nui_paths = ["ui/**"]\n'
@@ -719,22 +725,25 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         self.conn = open_store(self.project)
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        project_id = store.tickets.ensure_project(self.conn, "team-1", self.root)
-        ticket = store.tickets.mirror_ticket(
+        self.project_id = project_id = store.tickets.ensure_project(
+            self.conn, "team-1", repo)
+        self.ticket = ticket = store.tickets.mirror_ticket(
             self.conn, project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="ticket 1",
             acceptance_criteria=["Given the page, then it shows load"],
             verification_commands=["true"], time_box_ms=60 * 60 * 1000)
         store.tickets.transition(self.conn, ticket, "in_flight")
         self.run_id = store.claim(self.conn, project_id, ticket)
+        store.set_branch(self.conn, self.run_id, "task")
         set_phase(self.conn, self.run_id, "merge_gate")
 
-    def git(self, *args):
+    def git(self, *args, cwd=None):
         return subprocess.check_output(
-            ["git", *args], cwd=self.root, text=True, stderr=subprocess.PIPE
-        ).strip()
+            ["git", *args], cwd=cwd or self.root, text=True,
+            stderr=subprocess.PIPE).strip()
 
-    def review_fix(self, fix):
+    @contextmanager
+    def fakes(self, fix):
         replies = ["CRITERION 1: unwitnessed — the capture failed\n"
                    "VERDICT: REQUEST_CHANGES",
                    "CRITERION 1: met — ui/page.html shows load\n"
@@ -760,13 +769,14 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
               patch.object(github, "push_branch"),
               patch.object(github, "rest", return_value={"body": "Load."}),
               patch.object(holophyte.pr.pullrequest, "refresh_pr_text")):
+            yield
+
+    def review_fix(self, fix):
+        with self.fakes(fix):
             return babysitter._review_fix(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
-                self.root, self.head, None, 30,
-                PullRequest("example.test", "o", "n", 1,
-                            "https://example.test/pull/1"),
-                "Show load in `ui/page.html`.\n", "true", (),
-                ["Given the page, then it shows load"],
+                self.root, self.head, None, 30, CAPTURE_PULL, TICKET, "true",
+                (), ["Given the page, then it shows load"],
                 fix_note="repair the capture", budget_min=10)
 
     def test_a_fix_that_only_edits_the_ignored_spec_is_reviewed_again(self):
@@ -786,6 +796,29 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
 
         self.assertEqual(self.fix_turns, 1)
         self.assertEqual(len(self.prompts), 1)
+
+    def test_a_spec_only_fix_paused_after_its_turn_resumes_unreviewed(self):
+        def fix_then_pause():
+            (self.root / SPEC).write_text("FIXED")
+            store.pause(self.conn, self.run_id, "operator pause")
+
+        with self.assertRaises(store.RunEnded):
+            self.review_fix(fix_then_pause)
+        resume_paused(self.project, self.conn, self.ticket, "go on")
+        run_id = store.claim(self.conn, self.project_id, self.ticket)
+        set_phase(self.conn, run_id, "merge_gate")
+        carried = store.read.approved_candidate(self.conn, self.ticket, run_id)
+        with self.fakes(lambda: self.fail("the resume ran another fix turn")):
+            resumed = resume_babysit_fix(
+                self.project, self.conn, run_id, None, "KO-1", "task",
+                self.root, self.head, 30, CAPTURE_PULL, TICKET, "true", (),
+                10, carried)
+
+        self.assertTrue(carried.paused)
+        self.assertEqual(resumed, (self.head, True))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        verdict = store.read.last_independent_verdict(self.conn, self.ticket)
+        self.assertEqual(verdict[0], "changes_requested")
 
 
 if __name__ == "__main__":

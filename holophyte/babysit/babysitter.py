@@ -825,6 +825,10 @@ def _spec_digest(project, wt, task_id, ticket):
                                ticket_template.parse(ticket).evidence_states)
 
 
+def _spec_checkpoint(spec):
+    return {} if spec is _UNTRACKED else {"spec": spec}
+
+
 def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
@@ -840,8 +844,8 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         fixes, timed_out = _transport_timed(
             project, conn, run_id, beat_s, wt, budget_min,
             goal or babysitter.fix_brief(pull, addressed, ticket))
-        saved = fix_state(sha, fixes, timed_out, addressed, model,
-                          pass_no, review_follows)
+        saved = dict(fix_state(sha, fixes, timed_out, addressed, model,
+                               pass_no, review_follows), **_spec_checkpoint(spec))
     else:
         saved = dict(resume_step)
         fixes, timed_out = saved["fixes"], saved["timed_out"]
@@ -863,8 +867,8 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     if no_commit_why and fixed == sha and not timed_out:
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     no_commit_why, (), reviewed=reviewed)
-    spec_moved = spec is not _UNTRACKED and _spec_digest(
-        project, wt, task_id, ticket) != spec
+    spec_moved = "spec" in saved and _spec_digest(
+        project, wt, task_id, ticket) != saved["spec"]
     if timed_out or (fixed == sha and not spec_moved):
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,
