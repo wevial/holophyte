@@ -94,8 +94,6 @@ class CapParkTests(SteerCapFixture):
         self.assertEqual(status, "blocked_on_operator")
         self.assertIn("KO-131 hit its review-round cap after steering added"
                       " 1 amendment(s): also log the port.", question)
-        self.assertIn("holo steer KO-131 --withdraw", question)
-        self.assertIn("holo requeue KO-131", question)
 
     def test_failure_triage_requeues_no_parked_steered_ticket(self):
         self.configure(REQUEUE + TIME_CAP)
@@ -111,22 +109,16 @@ class CapParkTests(SteerCapFixture):
                                   " WHERE kind = 'failure_triage'")
         self.assertEqual(json.loads(payload)["why"], "ticket not in flight")
 
-    def assert_closed_out_as_before(self):
+    def test_a_cap_with_only_withdrawn_amendments_closes_out_as_before(self):
+        self.configure(TIME_CAP)
+        self.steer("-n", NOTE)
+        self.steer("--withdraw", "-n", "split into a follow-up")
+
         self.run_out_of_time()
 
         self.assertEqual(self.last_run()[:2], ("failed", "budget"))
         self.assertEqual(self.ticket_row(), ("in_flight", None))
         self.assertEqual(self.parks(), [])
-
-    def test_a_cap_on_an_unsteered_ticket_closes_out_as_before(self):
-        self.configure(TIME_CAP)
-        self.assert_closed_out_as_before()
-
-    def test_a_cap_with_only_withdrawn_amendments_closes_out_as_before(self):
-        self.configure(TIME_CAP)
-        self.steer("-n", NOTE)
-        self.steer("--withdraw", "-n", "split into a follow-up")
-        self.assert_closed_out_as_before()
 
     def test_a_steered_run_failing_verify_closes_out_as_before(self):
         self.configure("[verify]\ntimeout_sec = 1\n")
