@@ -181,7 +181,8 @@ class PrBodyStubTests(unittest.TestCase):
         own = "Ticket: the board asked for it.\n\nAdds the thing.\n\n"
         evidence = "## Evidence\n\nA screenshot.\n\n"
         tail = "<!-- bot -->\n## Bot review\nLooks fine."
-        for footer in ("Ticket: KO-131", "Linear: KO-131 (https://linear.app/x)"):
+        for footer in ("Ticket: KO-131", "Ticket: H2-1",
+                       "Linear: KO-131 (https://linear.app/x)"):
             with self.subTest(footer=footer):
                 self.assertEqual(
                     github.split_pr_body(own + footer + "\n\n" + evidence + tail),

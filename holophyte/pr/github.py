@@ -228,7 +228,8 @@ def pr_body_written(body, task_id, issue_url, native=False):
     return f"{body}\n\n{link}" if body else link
 
 
-FOOTER_START = r"^(?:Linear:|Ticket: [A-Z]+-\d+[ \t]*\r?$)"
+FOOTER_START = (r"^(?:Linear:|Ticket: "
+                rf"{config_tables.NATIVE_KEY_SHAPE.pattern}-\d+[ \t]*\r?$)")
 TICKET_LINE = re.compile(FOOTER_START + r"[^\n]*(?:\n|$)", re.MULTILINE)
 
 
