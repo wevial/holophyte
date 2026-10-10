@@ -107,11 +107,13 @@ def withdraw(conn, ticket_id, note, now=None):
     now = int(time.time() * 1000) if now is None else now
     with _transaction(conn):
         row = conn.execute(
-            "SELECT linearIdentifier, activeRunId, lastRunId, projectId"
+            "SELECT linearIdentifier, status, activeRunId, lastRunId, projectId"
             " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         if row is None:
             raise SteerRefused(f"ticket {ticket_id} does not exist")
-        key, live, last, project_id = row
+        key, status, live, last, project_id = row
+        if status in SEALED:
+            raise SteerRefused(f"{key} is {status}; nothing is left to steer")
         if live is not None:
             raise SteerRefused(
                 f"{key} has live run {live}; withdraw its amendments once that"

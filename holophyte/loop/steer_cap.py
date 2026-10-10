@@ -1,6 +1,6 @@
 """A cap failure on a steered ticket parks it with a split suggestion."""
 import store
-from holophyte.board.projection import block_ticket, comment_body
+from holophyte.board.projection import block_ticket, comment_body, warn
 from store import steer_notes
 
 ROUND_CAP_REASON = "terminal adjudication: FAIL"
@@ -35,12 +35,21 @@ def park_steered_cap(conn, run_id, ticket_id, provider):
     if not amendments or ticket.status != "in_flight":
         return False
     asked = question(ticket.linearIdentifier, cap, amendments)
-    with store.transaction(conn):
-        if not block_ticket(conn, ticket_id, provider, asked):
-            return False
-        store.record_event(conn, run_id, "steer_cap_park", asked)
-        if getattr(provider, "store_mode", False) is True:
+    if getattr(provider, "store_mode", False) is True:
+        with store.transaction(conn):
+            if not block_ticket(conn, ticket_id, provider, asked):
+                return False
             store.record_note(conn, ticket_id, "escalation",
                               comment_body(asked), f"steer_cap:{run_id}",
                               run_id=run_id)
+            store.record_event(conn, run_id, "steer_cap_park", asked)
+        return True
+    if not block_ticket(conn, ticket_id, provider, asked):
+        return False
+    store.record_event(conn, run_id, "steer_cap_park", asked)
+    try:
+        provider.comment(ticket.linearIssueId, comment_body(asked))
+    except Exception as e:
+        warn(conn, ticket_id, f"steer cap comment failed for"
+                              f" {ticket.linearIdentifier} ({e})")
     return True

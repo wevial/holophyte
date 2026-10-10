@@ -125,7 +125,8 @@ def steer_notes(conn, start):
              "run": row.run_id, "event_id": row.event_id,
              "consumed_by": row.consumed_by, "consumed_ms": row.consumed_at}
             for row in steers(conn)
-            if row.at >= start or row.consumed_by is None]
+            if row.at >= start
+            or (row.consumed_by is None and row.withdrawn_by is None)]
 
 
 def report(conn, project, since, now):
