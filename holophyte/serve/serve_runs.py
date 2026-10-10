@@ -268,7 +268,8 @@ def run_detail(project, run_id, now=None):
         notes = {r.round: round_notes(conn, run.id, r.round) for r in rounds}
         events = store.read.narrative_events(
             conn, run.id,
-            detail_kinds=("implementer_output", "operator_note_consumed"))
+            detail_kinds=("implementer_output", "operator_note_consumed",
+                          "crash"))
         chain = chain_detail(conn, run.id, now)
     finally:
         conn.close()
