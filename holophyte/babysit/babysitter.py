@@ -76,7 +76,6 @@ from holophyte.review.reply_parsing import (
     stale_approvals,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
-from store import operator_notes
 
 
 def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
@@ -341,13 +340,13 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             pushed_state, pass_no = None, pass_no - 1
             continue
         if merge.approve == "auto" or approved:
-            if not operator_notes.close_for_merge(conn, run_id, pull.url):
-                continue
             try:
                 merge_sha = merge_queue.verified_merge(
                     project, conn, run_id, provider, task_id, issue_id, branch,
                     wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
                     contracts, ticket, budget_min, merge.approve == "auto")
+                if merge_sha is None:
+                    continue
                 return replace(run, sha=sha, merge_sha=merge_sha)
             except merge_queue.QueueRemoved as removed:
                 sha, pushed_state = fix_checks_or_park(

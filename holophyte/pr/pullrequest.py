@@ -18,6 +18,7 @@ from holophyte.loop.stop import resume_babysit_fix, stop_if_requested
 from holophyte.pr import github, merge_queue, pr_activity, pr_media, pr_status
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
+from store import operator_notes
 
 
 def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
@@ -339,8 +340,10 @@ def _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
 
 def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
               pull, reviewed=None, retry_conflicts=False):
-    set_phase(conn, run_id, "merging", f"merging {pull.url} through the"
-              " pull request API")
+    if not operator_notes.begin_merge(conn, run_id, pull.url, lambda: set_phase(
+            conn, run_id, "merging", f"merging {pull.url} through the"
+            " pull request API")):
+        return None
     behind = None
     if merge_config(project).require_up_to_date:
         with heartbeat_while(conn, run_id, beat_s):
