@@ -3,7 +3,6 @@ shadow's candidate with round 1's prompt, and its verdict joins `shadow_result`.
 
 Run: python3 -m unittest discover -s tests -p 'test_shadow_review.py' -v
 """
-import contextlib
 import unittest
 from unittest.mock import patch
 
@@ -75,17 +74,15 @@ class ShadowReviewTests(ShadowRun, unittest.TestCase):
             raise Captured
 
         self.git("checkout", "-q", sha)
-        with contextlib.ExitStack() as stack:
-            stack.enter_context(
-                patch.object(review_round, "agent", side_effect=capture))
-            stack.enter_context(patch.object(review_round, "set_phase"))
-            with self.assertRaises(Captured):
-                review_round._review_rounds(
-                    project=self.target, conn=None, run_id=self.run_id,
-                    provider=None, task_id="KO-7", branch="task/ko-7-thing",
-                    wt=self.repo, beat_s=1, base_sha=self.base, sha=sha,
-                    ticket=TICKET, verify_cmd="grep -qx ok done.txt",
-                    contracts=None, criteria=CRITERIA, budget_min=10, cap=1)
+        with (patch.object(review_round, "agent", side_effect=capture),
+              patch.object(review_round, "set_phase"),
+              self.assertRaises(Captured)):
+            review_round._review_rounds(
+                project=self.target, conn=None, run_id=self.run_id,
+                provider=None, task_id="KO-7", branch="task/ko-7-thing",
+                wt=self.repo, beat_s=1, base_sha=self.base, sha=sha,
+                ticket=TICKET, verify_cmd="grep -qx ok done.txt",
+                contracts=None, criteria=CRITERIA, budget_min=10, cap=1)
         return prompts[0]
 
     def test_a_ui_candidate_on_a_pr_project_is_judged_without_evidence(self):
