@@ -256,22 +256,6 @@ class PoolTests(PoolRestartCases, LoopFixture):
             "[holo2] Linear has no ready tickets. done.",
         ])
 
-    def test_a_full_pool_waits_on_exits_alone(self):
-        """Three ready tickets under `workers = 3`: the pool is full, so
-        the wait carries no timeout; once one exits with the listing
-        emptied, two slots are free and the timer is back (KO-353)."""
-        provider = StubProvider(*(a_task(n) for n in range(1, 4)))
-
-        pool = self.run_scheduler(3, provider, [
-            (holophyte.loop.pool.WORKER_MERGED, provider.queue.clear),
-            (holophyte.loop.pool.WORKER_MERGED, None),
-            (holophyte.loop.pool.WORKER_MERGED, None),
-        ])
-
-        self.assertEqual(len(pool.spawned), 3)
-        self.assertEqual(pool.timeouts, [None, 120, 120])
-        self.assertEqual(self.rc, 0)
-
     def test_a_full_pool_still_ticks_without_listing(self):
         """Two ready tickets under `workers = 2`: with both workers busy the
         wait still carries `tick_sec`, and a tick that passes with no exit
