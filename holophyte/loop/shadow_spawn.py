@@ -18,12 +18,8 @@ SPAWN = subprocess.Popen
 FACTORY = Path(__file__).resolve().parents[2] / "factory.py"
 
 
-def shadows_dir(project):
-    return project.holo_dir / "shadows"
-
-
 def brief_path(project, run_id):
-    return shadows_dir(project) / f"{run_id}.json"
+    return project.holo_dir / "shadows" / f"{run_id}.json"
 
 
 def write_brief(project, run_id, brief):
@@ -33,11 +29,6 @@ def write_brief(project, run_id, brief):
     with open(fd, "w") as out:
         json.dump({"run_id": run_id, **asdict(brief)}, out)
     return path
-
-
-def read_brief(path):
-    fields = json.loads(Path(path).read_text())
-    return fields.pop("run_id"), ShadowBrief(**fields)
 
 
 def start_shadow(project, conn, run_id, brief):
@@ -72,9 +63,11 @@ def start_shadow(project, conn, run_id, brief):
 
 def shadow_mode(target, path):
     try:
-        run_id, brief = read_brief(path)
+        fields = json.loads(Path(path).read_text())
     finally:
         Path(path).unlink(missing_ok=True)
+    run_id = fields.pop("run_id")
+    brief = ShadowBrief(**fields)
     conn = open_store(target)
     try:
         taken, busy = take_shadow_lock(target, run_id)
