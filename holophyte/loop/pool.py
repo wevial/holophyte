@@ -193,7 +193,7 @@ def scheduler(target, provider, knobs):
                 return 1 if state.broken else 0
             witness_step(target, conn, project)
             listing = None
-            if state.spawning and not held:
+            if state.spawning and not held and len(pool) < knobs.workers:
                 listing = pool_handoff.listing(target, conn, project, provider)
                 if listing is not None:
                     # Live workers hold leases the claimable count leaves out.
@@ -221,9 +221,8 @@ def scheduler(target, provider, knobs):
                                    [task["id"] for task in listing])
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if state.broken else 0
-            timeout = None if len(pool) >= knobs.workers else knobs.tick_sec
             pid, code = WAIT({pid: child for pid, (_, child) in pool.items()},
-                             timeout)
+                             knobs.tick_sec)
             if pid in pool:
                 state.exited(pool.pop(pid)[0], code)
                 previous.discard(pid)
