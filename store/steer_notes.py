@@ -153,6 +153,8 @@ def _live(conn, ticket_id, key, live, kind, note, author, now, resume):
                                  (live,)).fetchone()
     closed = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
                           " AND kind = 'steer_closed'", (live,)).fetchone()
+    if phase == "merge_gate" and pr_url:
+        return _babysat(conn, ticket_id, key, live, kind, note, author, now)
     if phase not in LIVE_PHASES or pr_url or closed:
         raise SteerRefused(
             f"{key}'s live run {live} is in {phase}"
@@ -169,6 +171,16 @@ def _live(conn, ticket_id, key, live, kind, note, author, now, resume):
                                           f"{kind} for {key}: {note}", now=now)
     steered = _insert(conn, ticket_id, live, kind, note, author, now,
                       intervention_id, None)
+    return steered._replace(live=True)
+
+
+def _babysat(conn, ticket_id, key, run_id, kind, note, author, now):
+    intervention_id = record_intervention(conn, run_id, "steer",
+                                          f"{kind} for {key}: {note}", now=now)
+    event_id = operator_notes.note_live(conn, run_id, note, author,
+                                        hint=kind == HINT)
+    steered = _insert(conn, ticket_id, run_id, kind, note, author, now,
+                      intervention_id, event_id)
     return steered._replace(live=True)
 
 

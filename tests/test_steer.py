@@ -1,6 +1,6 @@
 """`holo steer KEY -n NOTE`: an amendment every later run's ticket text
 carries, a hint one implement turn's opening carries, or a parked run's
-send-back; refused for a run on its pull request and a ticket with nothing
+send-back; refused for a run merging its pull request and a ticket with nothing
 left to steer.
 
 Run: python3 -m unittest discover -s tests -p 'test_steer.py' -v
@@ -225,14 +225,15 @@ class RefusalTests(SteerFixture):
             self.assertIn(text, said)
         self.assertEqual(list(self.conn.iterdump()), before)
 
-    def test_a_live_run_on_its_pull_request_is_refused_naming_pause_and_abort(self):
+    def test_a_run_merging_its_pull_request_is_refused_naming_pause_and_abort(self):
         run = self.claim()
         for phase in ("working", "verifying", "reviewing", "merge_gate"):
             store.set_phase(self.conn, run, phase)
         store.set_pull_request(self.conn, run, PR_URL)
+        store.set_phase(self.conn, run, "merging")
         for words in ((), ("--hint",)):
             with self.subTest(words=words):
-                self.assert_refused(*words, naming=("merge_gate",
+                self.assert_refused(*words, naming=("merging",
                                                     "holo pause KO-131",
                                                     "holo abort KO-131"))
 

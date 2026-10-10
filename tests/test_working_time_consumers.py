@@ -231,7 +231,7 @@ class WorkingConsumers(SweepTestCase):
             ),
             patch.object(github, "SLEEP") as sleep,
         ):
-            self.assertIs(
+            self.assertEqual(
                 babysitter._settled_state(self.project, None, None, 10, pull), thread
             )
             sleep.assert_called_once_with(github.CHECK_POLL_S)
