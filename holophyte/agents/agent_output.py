@@ -1,3 +1,5 @@
+import json
+
 TRANSPORT_SIGNATURES = (
     "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "getaddrinfo",
     "fetch failed", "Could not resolve host", "502 Bad Gateway",
@@ -12,6 +14,35 @@ def transport_failure(exit_code, output):
     tail = output[-4000:].casefold()
     return next((sig for sig in TRANSPORT_SIGNATURES
                  if sig.casefold() in tail), None)
+
+
+def count(value):
+    return value if type(value) is int and value >= 0 else None
+
+
+def claude_usage(document):
+    usage = document.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    inputs = [count(usage.get(key)) for key in (
+        "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")]
+    cost = document.get("total_cost_usd")
+    return dict(
+        input_tokens=sum(filter(None, inputs)) if any(n is not None for n in inputs)
+        else None,
+        output_tokens=count(usage.get("output_tokens")),
+        cost_usd=cost if type(cost) in (int, float) and cost >= 0 else None,
+    )
+
+
+def claude_result(output):
+    try:
+        document = json.loads(output)
+    except ValueError:
+        return None
+    if not isinstance(document, dict) or not isinstance(document.get("result"), str):
+        return None
+    return document["result"], dict(claude_usage(document),
+                                    num_turns=count(document.get("num_turns")))
 
 
 class AgentOutput(str):

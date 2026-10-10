@@ -35,6 +35,7 @@ import holophyte.loop.implement
 import holophyte.review.freshness
 import store
 from holophyte.agents import harness
+from holophyte.agents.agent_output import claude_result
 
 LIVE = os.environ.get("HOLOPHYTE_LIVE_HARNESS")
 TURN_TIMEOUT = 300
@@ -54,7 +55,11 @@ class LiveHarnessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0,
                          f"{argv[0]} exited {result.returncode}:\n"
                          f"{result.stdout}\n{result.stderr}")
-        return result.stdout
+        decoded = claude_result(result.stdout)
+        self.assertIsNotNone(decoded, f"not a result document:\n{result.stdout}")
+        text, usage = decoded
+        self.assertGreater(usage["output_tokens"] or 0, 0, usage)
+        return text
 
     def test_resumed_session_remembers_the_word(self):
         self.assertIn(LIVE, harness.ADAPTERS,
