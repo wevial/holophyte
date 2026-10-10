@@ -393,6 +393,22 @@ def steer_ticket(target, identifier, note, hint=False, author=None, out=None,
         conn.close()
 
 
+def withdraw_steers(target, identifier, note, out=None):
+    out = out or sys.stdout
+    conn = _operator_store(target)
+    try:
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        try:
+            count, intervention_id = steer_notes.withdraw(conn, ticket_id, note)
+        except ValueError as refused:
+            raise SystemExit(f"[holo2] {refused}") from None
+        print(f"[holo2] {identifier}: {count} amendment(s) withdrawn (steer"
+              f" intervention {intervention_id}); later runs read the ticket"
+              " without them", file=out)
+    finally:
+        conn.close()
+
+
 def _interrupts(target, conn, ticket_id, out):
     live = store.read.ticket_by_id(conn, ticket_id).activeRunId
     run = live and store.read.run_detail(conn, live)

@@ -134,7 +134,7 @@ DOCUMENTED_COLUMNS = {
     # A maintainer's steer: a ticket's amendment or hint, or a send-back.
     "steerNotes": {"id", "ticketId", "runId", "kind", "note", "author", "at",
                    "interventionId", "eventId", "consumedBy", "consumedAt",
-                   "interrupt"},
+                   "interrupt", "withdrawnBy"},
 }
 
 

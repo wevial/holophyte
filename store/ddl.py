@@ -495,7 +495,8 @@ CREATE TABLE IF NOT EXISTS steerNotes (
     eventId        INTEGER REFERENCES runEvents (id),
     consumedBy     INTEGER REFERENCES runs (id),
     consumedAt     INTEGER,
-    interrupt      INTEGER
+    interrupt      INTEGER,
+    withdrawnBy    INTEGER REFERENCES interventions (id)
 );
 """
 

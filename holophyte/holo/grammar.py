@@ -32,6 +32,7 @@ ONCE = Flag("--once")
 CLOSE_PR = Flag("--close-pr")
 FORCE = Flag("--force")
 HINT = Flag("--hint")
+WITHDRAW = Flag("--withdraw")
 FOREGROUND = Flag("--foreground")
 NOW = Flag("--now")
 BACKLOG = Flag("--backlog", emits=("--state", "Backlog"))
@@ -94,7 +95,7 @@ COMMANDS = (
             records=("operator_note",)),
     Command(("steer",), None,
             "amend a ticket or its live run, or send a parked run back",
-            takes=("KEY",), note=REQUIRED, flags=(HINT, AUTHOR, NOW),
+            takes=("KEY",), note=REQUIRED, flags=(HINT, WITHDRAW, AUTHOR, NOW),
             records=("steer", "operator_note")),
     Command(("repoint",), "--repoint", "move a parked candidate to a rebuilt tip",
             takes=("KEY", "SHA"), note=REQUIRED, records=("repoint",)),
