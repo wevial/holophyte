@@ -56,7 +56,7 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
     sha, pushed = resume_babysit_fix(
         project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
         pr_status.parse_pr_url(url), f"{task}\n\n{body}" if body else task,
-        verify_cmd, contracts, run.budget_min, carried)
+        verify_cmd, contracts, run.budget_min, carried, criteria)
     run = replace(run, sha=sha, pr_url=url)
     run = babysitter._babysit(
         run, beat_s, f"{task}\n\n{body}" if body else task,
