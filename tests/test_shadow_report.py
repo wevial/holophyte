@@ -98,21 +98,16 @@ class ShadowReportTests(ReportStoreCase):
             ("shadow_result", shadow(300, usage(900, 150, 0.30), True, "APPROVE")),
         ])
         primary, mirror = table_rows(self.report())
-        self.assertEqual(
-            {key: primary[key] for key in (
-                "ticket", "route", "min", "in", "out", "cost", "verify",
-                "round 1", "findings", "rounds", "all turns", "outcome")},
-            {"ticket": "KO-1", "route": "claude opus", "min": "11.0",
-             "in": "1100", "out": "220", "cost": "$1.60", "verify": "verified",
-             "round 1": "REQUEST_CHANGES", "findings": "p1 1, p2 1",
-             "rounds": "2", "all turns": "$2.20", "outcome": "merged"})
-        self.assertEqual(
-            {key: mirror[key] for key in (
-                "side", "route", "min", "in", "out", "cost", "verify",
-                "round 1", "findings")},
-            {"side": "shadow", "route": "claude sonnet high", "min": "5.0",
-             "in": "900", "out": "150", "cost": "$0.30", "verify": "verified",
-             "round 1": "APPROVE", "findings": "none"})
+        self.assertEqual(primary, {
+            "ticket": "KO-1", "side": "primary", "route": "claude opus",
+            "min": "11.0", "in": "1100", "out": "220", "cost": "$1.60",
+            "verify": "verified", "round 1": "REQUEST_CHANGES",
+            "findings": "p1 1, p2 1", "rounds": "2", "all turns": "$2.20",
+            "outcome": "merged"})
+        self.assertEqual(mirror, {
+            "ticket": "KO-1", "side": "shadow", "route": "claude sonnet high",
+            "min": "5.0", "in": "900", "out": "150", "cost": "$0.30",
+            "verify": "verified", "round 1": "APPROVE", "findings": "none"})
 
     def test_a_turn_without_usage_reads_na_but_its_minutes_still_count(self):
         self.run_with(1, [
