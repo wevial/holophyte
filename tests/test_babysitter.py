@@ -870,5 +870,6 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         self.assertEqual(cited, self.head)
         self.assertEqual(self.git("rev-parse", "HEAD"), self.head)
 
+
 if __name__ == "__main__":
     unittest.main()
