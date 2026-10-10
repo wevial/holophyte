@@ -435,13 +435,13 @@ class PullRequestTitleTests(ServeTestCase):
         pr = self.pr_open()["pr"]
         self.assertEqual((pr["open_threads"], pr["threads"]), (0, 4))
 
-    def test_a_count_over_only_the_first_page_is_served_as_a_floor(self):
+    def test_a_count_over_only_the_first_page_is_served_as_100_plus(self):
         page = [{"isResolved": True}] * 100
         self.read_status(self.TITLE, {"totalCount": 100, "nodes": page})
         self.read_status(self.TITLE, {"totalCount": 101, "nodes": page},
                          facts_only=True)
         pr = self.pr_open()["pr"]
-        self.assertEqual((pr["open_threads"], pr["threads"]), ("0+", 100))
+        self.assertEqual((pr["open_threads"], pr["threads"]), ("100+", 100))
 
 
 class CiParkAttentionTests(ServeTestCase):

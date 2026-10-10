@@ -11,7 +11,7 @@ from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import board_mode, sweep_config
 from holophyte.config.serve_settings import serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
-from holophyte.pr.pr_status import PR_URL_RE
+from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
 from holophyte.serve.serve_levers import paused_item
 from holophyte.serve.serve_runs import json_host, no_store
 from store.working import agent_work, chain_work, effective_work, verify_work
@@ -128,7 +128,7 @@ def parked_item(ticket):
 
 def _open_threads(ticket):
     count = ticket.prSeenOpenThreads
-    return f"{count}+" if count is not None \
+    return f"{THREADS_PAGE}+" if count is not None \
         and ticket.prSeenOpenThreadsFloor else count
 
 

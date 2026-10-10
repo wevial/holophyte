@@ -196,7 +196,7 @@ export interface PrFacts {
   checks?: string | null;
   review?: string | null;
   threads?: number | null;
-  /** The unresolved ones among `threads`; a string such as "3+" when only
+  /** The unresolved ones among `threads`; "100+" when only
    *  the first page of them was counted. */
   open_threads?: number | string | null;
   title?: string | null;

@@ -693,7 +693,7 @@ URL, `checks` (`success`, `pending`, `failure`, null for a PR with no
 checks), `review` (GitHub's review decision lower-cased: `approved`,
 `changes_requested`, `review_required`, null when none is required) and
 `threads`, the review-thread count, `open_threads`, the count of those
-unresolved (a string such as `"3+"` when the read that counted it saw more
+unresolved (the string `"100+"` when the read that counted it saw more
 threads than the first page of 100 it counts over,
 `runs.prSeenOpenThreadsFloor`), and `title`, the pull
 request's title (`runs.prSeenChecks`, `prSeenReview`, `prSeenThreads`,
