@@ -1,11 +1,14 @@
 """The pids limit of a real isolated implementer launch, which counts threads."""
 
 import os
+import re
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+from review_runner import PIDS_LIMIT
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -21,10 +24,12 @@ print(len(threads))
 
 FORK_LOOP = """
 i=0
+trap 'echo "fork failed after $i processes"' EXIT
 while [ "$i" -lt 6000 ]; do
   sleep 300 &
   i=$((i + 1))
 done
+trap - EXIT
 echo "started $i without a fork failure"
 """
 
@@ -69,7 +74,10 @@ class ContainerThreadsTests(unittest.TestCase):
         code, output = self.launch(["sh", "-c", FORK_LOOP])
         self.assertNotEqual(code, 0, output)
         self.assertNotIn("without a fork failure", output)
-        self.assertRegex(output, r"(?i)fork", output)
+        started = re.search(r"fork failed after (\d+) processes", output)
+        self.assertIsNotNone(started, output)
+        self.assertGreater(int(started[1]), PIDS_LIMIT - 100, output)
+        self.assertLess(int(started[1]), PIDS_LIMIT, output)
 
 
 if __name__ == "__main__":
