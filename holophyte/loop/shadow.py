@@ -114,9 +114,14 @@ def _turn(project, seat, brief, wt, result):
                                     launcher.environment(project), argv,
                                     timeout=brief.seconds, runner=run_capped,
                                     project=project, keep_session=True)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as expired:
         code, out = None, ""
         result["timed_out"] = True
+        partial = expired.output or ""
+        if isinstance(partial, bytes):
+            partial = partial.decode(errors="replace")
+        result["detail"] = (f"{seat.name} turn timed out after {expired.timeout:g}s\n"
+                            + (partial.strip()[-2000:] or "(no output)"))
     result["seconds"] = round(monotonic() - started, 3)
     result["exit_status"] = code
     decoded = claude_result(out) if seat.name == "claude" else None

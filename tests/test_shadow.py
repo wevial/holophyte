@@ -83,11 +83,11 @@ class ShadowTests(unittest.TestCase):
             '[agents.implementer_shadow]\nharness = "claude"\nmodel = "sonnet"\n'
             f'effort = "high"\n{extra}[harnesses]\nclaude = "{binary}"\n')
 
-    def shadow(self):
+    def shadow(self, seconds=60):
         return run_shadow(self.target, self.conn, self.run_id, ShadowBrief(
             goal="Create done.txt saying ok", verify="grep -qx ok done.txt",
             contracts=None, base_sha=self.base, branch="task/ko-7-thing",
-            seconds=60))
+            seconds=seconds))
 
     def events(self, kind):
         return [json.loads(payload) for (payload,) in self.conn.execute(
@@ -155,6 +155,15 @@ class ShadowTests(unittest.TestCase):
         [result] = self.events("shadow_result")
         self.assertEqual(result["outcome"], "no_commits")
         self.assertEqual(result["commits"], 0)
+
+    def test_a_shadow_turn_past_its_cap_records_the_timeout_in_detail(self):
+        self.configure(turn="print('partial work', flush=True)\n"
+                            "import time; time.sleep(30)\n")
+        self.shadow(seconds=1)
+        [result] = self.events("shadow_result")
+        self.assertEqual((result["outcome"], result["timed_out"]), ("timed_out", True))
+        self.assertIn("timed out after 1s", result["detail"])
+        self.assertIn("partial work", result["detail"])
 
     def test_an_existing_shadow_branch_is_left_at_its_tip(self):
         subprocess.run(["git", *IDENTITY, "commit", "--allow-empty", "-qm", "kept"],
