@@ -51,7 +51,8 @@ class SteerRow(NamedTuple):
     consumed_at: int | None
 
 
-def steer(conn, ticket_id, note, author, hint=False, now=None):
+def steer(conn, ticket_id, note, author, hint=False, now=None,
+          interrupt=False):
     for name, text in (("note", note), ("author", author)):
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"{name} must be non-blank text")
@@ -69,7 +70,11 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
         key, status, live, last, project_id, phase, pr_url, resume, outcome = row
         if live is not None:
             return _live(conn, ticket_id, key, live, kind, note, author, now,
-                         resume)
+                         resume, interrupt)
+        if interrupt:
+            raise SteerRefused(
+                f"{key} is {status} with no live run; --now stops a live"
+                " run's implementer turn")
         if status in SEALED:
             raise SteerRefused(f"{key} is {status}; nothing is left to steer")
         if status == "blocked_on_operator":
@@ -100,11 +105,17 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
                        intervention_id, None)
 
 
-def _live(conn, ticket_id, key, live, kind, note, author, now, resume):
+def _live(conn, ticket_id, key, live, kind, note, author, now, resume,
+          interrupt=False):
     phase, pr_url = conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
                                  (live,)).fetchone()
     closed = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
                           " AND kind = 'steer_closed'", (live,)).fetchone()
+    if phase == "merge_gate" and pr_url and interrupt:
+        raise SteerRefused(
+            f"{key}'s live run {live} is babysitting its pull request in"
+            f" {phase}; --now stops an implementer turn before the pull"
+            " request, so steer it without --now")
     if phase == "merge_gate" and pr_url:
         return _babysat(conn, ticket_id, key, live, kind, note, author, now)
     if phase not in LIVE_PHASES or pr_url or closed:
@@ -122,7 +133,7 @@ def _live(conn, ticket_id, key, live, kind, note, author, now, resume):
     intervention_id = record_intervention(conn, live, "steer",
                                           f"{kind} for {key}: {note}", now=now)
     steered = _insert(conn, ticket_id, live, kind, note, author, now,
-                      intervention_id, None)
+                      intervention_id, None, interrupt)
     return steered._replace(live=True)
 
 
@@ -146,12 +157,12 @@ def _noted(conn, ticket_id, run_id, kind, note, author, now, write):
 
 
 def _insert(conn, ticket_id, run_id, kind, note, author, now, intervention_id,
-            event_id):
+            event_id, interrupt=False):
     note_id = conn.execute(
         "INSERT INTO steerNotes (ticketId, runId, kind, note, author, at,"
-        " interventionId, eventId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " interventionId, eventId, interrupt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (ticket_id, run_id, kind, note, author, now, intervention_id,
-         event_id)).lastrowid
+         event_id, 1 if interrupt else None)).lastrowid
     return Steer(note_id, kind, intervention_id, run_id, event_id)
 
 
@@ -173,6 +184,13 @@ def pending(conn, ticket_id, kind=None):
         return _notes(conn, "s.consumedBy IS NULL", (ticket_id,))
     return _notes(conn, "s.kind = ? AND s.consumedBy IS NULL",
                   (ticket_id, kind))
+
+
+def interrupting(conn, run_id):
+    return conn.execute(
+        "SELECT 1 FROM steerNotes WHERE runId = ? AND interrupt = 1"
+        " AND eventId IS NULL AND consumedBy IS NULL", (run_id,)
+    ).fetchone() is not None
 
 
 def close(conn, run_id):

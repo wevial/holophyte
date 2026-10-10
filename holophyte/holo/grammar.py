@@ -94,7 +94,7 @@ COMMANDS = (
             records=("operator_note",)),
     Command(("steer",), None,
             "amend a ticket or its live run, or send a parked run back",
-            takes=("KEY",), note=REQUIRED, flags=(HINT, AUTHOR),
+            takes=("KEY",), note=REQUIRED, flags=(HINT, AUTHOR, NOW),
             records=("steer", "operator_note")),
     Command(("repoint",), "--repoint", "move a parked candidate to a rebuilt tip",
             takes=("KEY", "SHA"), note=REQUIRED, records=("repoint",)),

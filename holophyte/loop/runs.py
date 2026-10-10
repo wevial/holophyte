@@ -7,6 +7,7 @@ from time import time
 import review_runner
 import store
 import store.read
+import store.steer_notes
 from holophyte.agents.roles import agent_route
 from holophyte.redact import safe_print as print
 from holophyte.review.reply_parsing import (
@@ -48,7 +49,7 @@ class RunSwept(Exception):
 
 
 @contextmanager
-def heartbeat_while(conn, run_id, interval_s, on_swept=None):
+def heartbeat_while(conn, run_id, interval_s, on_swept=None, on_interrupt=None):
     if conn is None or run_id is None:
         yield
         return
@@ -56,10 +57,12 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None):
                if row[1] == "main"]
     stop = threading.Event()
     swept = []  # the ended row's (outcome, reason), set once by the beat
+    steer = ({} if on_interrupt is None else
+             {"on_interrupt": on_interrupt, "interrupts": []})
     thread = threading.Thread(
         target=_beat, args=(path, run_id, interval_s, stop, swept, on_swept,
                            partial(_fallback_heartbeat, conn, run_id, swept,
-                                   stop)),
+                                   stop)), kwargs=steer,
         name=f"heartbeat-run-{run_id}", daemon=True)
     thread.start()
     failure = None
@@ -115,7 +118,18 @@ def _heartbeat(conn, run_id, swept):
         return False
 
 
-def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat):
+def _interrupted(conn, run_id):
+    with store.transaction(conn):
+        if not store.steer_notes.interrupting(conn, run_id):
+            return False
+        store.record_event(conn, run_id, "steer_interrupt",
+                           "steer --now: stopping the implementer turn to"
+                           " resume it with the maintainer's note")
+        return True
+
+
+def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat,
+          on_interrupt=None, interrupts=None):
     own = None
     failed = False
 
@@ -137,6 +151,10 @@ def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat):
             try:
                 alive = current_heartbeat()()
                 if alive:
+                    if interrupts == [] and own is not None and _interrupted(
+                            own, run_id):
+                        interrupts.append(True)
+                        _notify_swept(on_interrupt)
                     # The open failure persists until the timer's own
                     # connection can beat.
                     if failed and own is not None:

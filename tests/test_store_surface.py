@@ -319,9 +319,12 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # the ticket's state, read and consumed.
                                  # HOLO-226: `close` ends a live run's steer
                                  # admission once no implementer turn remains.
+                                 # HOLO-228: `interrupting` is the heartbeat's
+                                 # ask for a `--now` note to stop the turn.
                                  (store.steer_notes, ["amendments", "close",
-                                                      "consume", "pending",
-                                                      "steer", "steers"]),
+                                                      "consume", "interrupting",
+                                                      "pending", "steer",
+                                                      "steers"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.
                                  # HOLO-176: `--decide` accepts or rejects it.

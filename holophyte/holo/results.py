@@ -133,7 +133,7 @@ def steer(args, target):
     project = located(target)
     author = getattr(args, "author", None)
     return steer_ticket(project, values[0], note, hint=args.hint,
-                        author=author[-1] if author else None)
+                        author=author[-1] if author else None, now=args.now)
 
 
 def located(target):

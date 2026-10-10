@@ -316,17 +316,28 @@ class GroupKill:
         self._proc = None
         self.wanted = False
         self.fired = False
+        self.steered = False
+        self._steer_pending = False
 
     def arm(self, proc):
         with self._lock:
             self._proc = proc
-            if self.wanted:
+            if self.wanted or self._steer_pending:
+                self._steer_pending = False
                 self._kill()
 
     def __call__(self):
         with self._lock:
             self.wanted = True
             if self._proc is not None:
+                self._kill()
+
+    def steer(self):
+        with self._lock:
+            self.steered = True
+            if self._proc is None:
+                self._steer_pending = True
+            else:
                 self._kill()
 
     def _kill(self):
