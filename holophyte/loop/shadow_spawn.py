@@ -105,8 +105,7 @@ def take_shadow_lock(target, run_id):
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         os.close(fd)
-        holder = read_merge_lock(path)
-        return False, holder[0] if holder else None
+        return False, read_merge_lock(path)[0]
     os.ftruncate(fd, 0)
     os.write(fd, f"{run_id} {time():.3f}\n".encode())
     return True, None
