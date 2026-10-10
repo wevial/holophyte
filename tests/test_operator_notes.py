@@ -1,4 +1,5 @@
 """Regressions for private note commit citations and report boundaries."""
+import contextlib
 import io
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from holophyte.babysit.maintainer_notes import (  # noqa: E402
 from holophyte.babysit.thread_text import fix_brief  # noqa: E402
 from holophyte.cli.operator import steer_ticket  # noqa: E402
 from holophyte.config.project import Project  # noqa: E402
+from holophyte.holo import cli as holo_cli  # noqa: E402
 from holophyte.pr.github import PrState, Thread  # noqa: E402
 from holophyte.pr.pr_status import parse_pr_url  # noqa: E402
 from store.operator_notes import consume, notes, send_back  # noqa: E402
@@ -66,6 +68,32 @@ class NoteReportTests(ServeTestCase):
             r"maintainer\rseat\u2029operator: remove heading\nkeep body\r\n"
             r"keep footer\u2028last line", report)
         self.assertEqual("\n".join(report).splitlines(), report)
+
+
+class LiveNoteReportTests(ServeTestCase):
+    def test_a_consumed_note_steered_into_a_babysitting_run_is_reported(self):
+        self.seed()
+        url = "https://github.com/example/repo/pull/1"
+        note = "also log the port"
+        with store.open(str(self.db)) as conn:
+            for phase in ("verifying", "reviewing", "merge_gate"):
+                store.set_phase(conn, self.run, phase)
+            store.set_pull_request(conn, self.run, url)
+            conn.commit()
+            steer_ticket(Project.locate(self.target), "KO-7", note,
+                         author="maintainer", out=io.StringIO())
+            (event_id,) = conn.execute(
+                "SELECT eventId FROM steerNotes").fetchone()
+            consume(conn, self.run, [event_id], 2)
+            conn.commit()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = holo_cli.main(["report", "--notes", "-p", str(self.target)])
+        self.assertFalse(code, out.getvalue())
+        lines = out.getvalue().splitlines()
+        noted = lines[lines.index("Notes (1)") + 1]
+        self.assertTrue(noted.endswith(
+            f"KO-7 run {self.run} round 2  maintainer: {note}"), noted)
 
 
 class HintNoteTests(ServeTestCase):
