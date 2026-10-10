@@ -5,7 +5,7 @@ and the drawer are views of it; the loop, the supervisor and the serve
 daemon's action endpoints write it, all through the store API. It is one
 SQLite file per project in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 45) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 46) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -48,7 +48,7 @@ A new table or column follows the ones already there:
 | `ledger` | entry in a run's narrative | loop, operator commands | `kind` ∈ `merge, failure, round, adjudication, intervention, note`, `source` ∈ `loop, operator`; written before the Linear comment that projects it; served at `/ledger` and `/runs/N/ledger` |
 | `followUps` | FOLLOW_UP line of a run's fix commit | loop | `kind` ∈ `feature, guardrail`; captured pending at the fix turn and settled when the run merges: a feature as a Backlog draft (`filedAs`) or a duplicate of an open one (`duplicateOf`), a guardrail as a findings-ledger entry; `error` when the draft could not be filed |
 | `storyProposals` | a story child's feature follow-up proposed as a new child of the story | loop | `state` ∈ `proposed, accepted, rejected, superseded`; written when the adjudicator calls the follow-up `in_story`; outside the approved plan, so it changes no child, witness, generation or frontier and cannot be claimed; `raisedBy` is the child whose run raised it |
-| `steerNotes` | `holo steer` note on a ticket | operator commands, loop | `kind` ∈ `amendment, hint`; `interventionId` the `steer` row written before it, or the `operator_note` row and `eventId` the event of a parked run's send-back; an amendment joins every later run's ticket text, a hint the next implement turn's opening alone; `runId` a live run's when steered while it ran, the note then carried by that run's next implementer turn; `consumedBy` and `consumedAt` the run that first carried it, `withdrawnBy` the `steer` row of a `holo steer --withdraw` that drops an amendment from every later run, the note never rewritten |
+| `steerNotes` | `holo steer` note on a ticket | operator commands, loop | `kind` ∈ `amendment, hint`; `interventionId` the `steer` row written before it, or the `operator_note` row and `eventId` the event of a parked run's send-back; an amendment joins every later run's ticket text, a hint the next implement turn's opening alone; `runId` a live run's when steered while it ran, the note then carried by that run's next implementer turn; `consumedBy` and `consumedAt` the run that first carried it, `withdrawnBy` the `steer` row of a `holo steer --withdraw` that drops an amendment from every later run, the note never rewritten; `interrupt` set by `holo steer --now`, stopping that run's running implementer turn to resume it with the note |
 
 A story is a parent ticket whose children serve one outcome; the five tables
 `stories`, `storyWitnesses`, `storyChildren`, `witnessResults` and

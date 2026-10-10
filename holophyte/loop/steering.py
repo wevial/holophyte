@@ -1,6 +1,6 @@
 """Steer notes recorded on a live run, carried by its next implementer turn."""
 from holophyte.babysit.maintainer_notes import steer_text
-from store import steer_notes
+from store import operator_notes, steer_notes
 from store.read import run_snapshot
 
 
@@ -29,3 +29,16 @@ def reviewed_ticket(conn, run_id, ticket):
         conn, run_snapshot(conn, run_id).ticketId)
         if n.live and n.consumed_by == run_id]
     return ticket + "".join(f"\n\n{steer_text(n)}" for n in carried)
+
+
+def take_now(conn, run_id):
+    if conn is None or run_id is None:
+        return ""
+    babysat = steer_notes.babysat_interrupts(conn, run_id)
+    if babysat:
+        rnd = conn.execute("SELECT MAX(round) FROM reviewRounds WHERE runId = ?",
+                           (run_id,)).fetchone()[0]
+        operator_notes.consume(conn, run_id, [e for _, e in babysat], rnd)
+        steer_notes.consume(conn, [n.id for n, _ in babysat], run_id)
+    return take(conn, run_id) + "".join(f"{steer_text(n)}\n\n"
+                                        for n, _ in babysat)

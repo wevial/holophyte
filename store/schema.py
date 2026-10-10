@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 45
+SCHEMA_VERSION = 46
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -277,6 +277,7 @@ ADDED_COLUMNS = (
     ("runs", "storyGeneration", "storyGeneration INTEGER"),
     ("gapLayers", "foundBy", "foundBy TEXT NOT NULL DEFAULT 'operator' "
      + _enums.check_clause("foundBy", _enums.GapFinder)),
+    ("steerNotes", "interrupt", "interrupt INTEGER"),
     ("steerNotes", "withdrawnBy",
      "withdrawnBy INTEGER REFERENCES interventions (id)"),
 )
