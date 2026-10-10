@@ -693,6 +693,13 @@ class TrimmerTableTests(unittest.TestCase):
         self.assertEqual(argv[3:], ["--model", "sonnet", "--effort", "high",
                                     "--output-format", "json", "trim the diff"])
 
+    def test_a_claude_trimmer_resume_asks_for_the_json_result_document(self):
+        self.target.config_path.write_text(TRIMMER_CONFIG)
+        seat = holophyte.agents.harness.seat(self.target, "trim")
+        self.assertEqual(seat.resume("a-session"), [
+            "claude", "-p", "--resume", "a-session", "--model", "sonnet",
+            "--effort", "high", "--output-format", "json"])
+
     def test_startup_refuses_a_cursor_trimmer_naming_the_roles_cursor_serves(self):
         self.target.config_path.write_text(
             '[agents.trimmer]\nharness = "cursor"\nmodel = "gpt-6"\n')
