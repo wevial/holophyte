@@ -16,6 +16,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import holophyte.board.projection
 import holophyte.config.project
 import holophyte.loop.shadow_spawn
 import store
@@ -88,6 +89,11 @@ class ShadowStartTests(LoopFixture):
         self.assertEqual(fields["goal"], fake.turns[0].goal)
         self.assertEqual(fields["base_sha"], self.base)
         self.assertEqual(fields["branch"], BRANCH)
+        [(payload,)] = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'shadow_started'")
+        self.assertEqual(json.loads(payload), {
+            "pid": NeverExits.pid, "branch": "shadow/ko-131-add-a-thing",
+            "route": "claude sonnet", "error": None})
 
     def test_a_shadow_that_never_exits_leaves_the_runs_review_rounds_alone(self):
         def script(n):
@@ -109,6 +115,7 @@ class ShadowStartTests(LoopFixture):
         started = json.loads(payload)
         self.assertIsNone(started["pid"])
         self.assertIn("spawn refused", started["error"])
+        self.assertEqual(list(self.db.parent.glob("shadows/*.json")), [])
 
     def test_no_shadow_without_the_key(self):
         spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE, config="")

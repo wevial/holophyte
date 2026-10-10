@@ -22,8 +22,12 @@ def shadows_dir(project):
     return project.holo_dir / "shadows"
 
 
+def brief_path(project, run_id):
+    return shadows_dir(project) / f"{run_id}.json"
+
+
 def write_brief(project, run_id, brief):
-    path = shadows_dir(project) / f"{run_id}.json"
+    path = brief_path(project, run_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with open(fd, "w") as out:
@@ -43,8 +47,9 @@ def start_shadow(project, conn, run_id, brief):
     payload = {"pid": None, "branch": shadow_branch(brief.branch),
                "route": outbound(shadow_label(seat), known_secrets(project.config())),
                "error": None}
+    path = brief_path(project, run_id)
     try:
-        path = write_brief(project, run_id, brief)
+        write_brief(project, run_id, brief)
         program, _ = reexec_command()
         log = os.open(path.with_suffix(".log"),
                       os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -58,14 +63,18 @@ def start_shadow(project, conn, run_id, brief):
         payload["pid"] = child.pid
         summary = f"shadow {payload['route']} started as pid {child.pid}"
     except Exception as error:
+        path.unlink(missing_ok=True)
         payload["error"] = str(error)
         summary = f"shadow {payload['route']} not started: {error}"
     store.record_event(conn, run_id, "shadow_started", summary, level="detail",
                        payload=json.dumps(payload))
 
 
-def shadow_mode(target, brief_path):
-    run_id, brief = read_brief(brief_path)
+def shadow_mode(target, path):
+    try:
+        run_id, brief = read_brief(path)
+    finally:
+        Path(path).unlink(missing_ok=True)
     conn = open_store(target)
     try:
         taken, busy = take_shadow_lock(target, run_id)
@@ -85,7 +94,6 @@ def shadow_mode(target, brief_path):
                                                    "detail": str(error)}))
         return 0
     finally:
-        Path(brief_path).unlink(missing_ok=True)
         conn.close()
 
 
