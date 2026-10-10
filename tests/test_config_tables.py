@@ -400,9 +400,10 @@ class MergeConfigTests(ConfigTestCase):
         self.assertEqual(config[1:],
                          ("auto", "local", 5, 10, "merge", 180, 300, 1800, 600, False,
                           True, "", False, False, False,
-                          (), "", "e2e/capture", False, "", None, 10, 20, "park",
-                          "act", (), "holophyte", (), (), ("devin-ai-integration",
-                           "coderabbitai", "greptile-apps", "github-actions"), ()))
+                          (), "", "e2e/capture", False, False, "", None, 10, 20,
+                          "park", "act", (), "holophyte", (), (),
+                          ("devin-ai-integration", "coderabbitai", "greptile-apps",
+                           "github-actions"), ()))
 
     def test_bucket_validates_without_credentials_and_secrets_are_redacted(self):
         from holophyte.redact import known_secrets, redact_prose
@@ -531,6 +532,11 @@ class MergeConfigTests(ConfigTestCase):
     def test_pr_draft_must_be_a_boolean(self):
         message = refused(self, '[merge]\npr_draft = "yes"\n')
         self.assertIn("[merge] pr_draft", message)
+        self.assertIn("boolean", message)
+
+    def test_ui_capture_video_must_be_a_boolean(self):
+        message = refused(self, '[merge]\nui_capture_video = "yes"\n')
+        self.assertIn("[merge] ui_capture_video", message)
         self.assertIn("boolean", message)
 
     def test_any_other_value_or_key_is_a_startup_error_naming_it(self):
