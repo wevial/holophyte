@@ -11,11 +11,13 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import holophyte.agents.agent_routes
 import holophyte.agents.harness
 import holophyte.config.checks
 import holophyte.config.project
+import review_runner
 import store
 from holophyte.agents.probes import PROBE_GOAL
 from holophyte.loop.shadow import ShadowBrief, run_shadow
@@ -43,7 +45,9 @@ def commits(text):
             " check=True)\n")
 
 
-class ShadowTests(unittest.TestCase):
+class ShadowRun:
+    REVIEW = "VERDICT: APPROVE"
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -68,6 +72,8 @@ class ShadowTests(unittest.TestCase):
                                      verification_commands=["true"])
         self.run_id = store.claim(self.conn, project, ticket)
         self.wt = self.root / "repo.worktrees" / "ko-7-thing.shadow"
+        self.review = self.enterContext(patch.object(
+            review_runner, "run_review", return_value=self.REVIEW))
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.repo, check=True,
@@ -83,11 +89,12 @@ class ShadowTests(unittest.TestCase):
             '[agents.implementer_shadow]\nharness = "claude"\nmodel = "sonnet"\n'
             f'effort = "high"\n{extra}[harnesses]\nclaude = "{binary}"\n')
 
-    def shadow(self, seconds=60):
+    def shadow(self, seconds=60, verify="grep -qx ok done.txt"):
         return run_shadow(self.target, self.conn, self.run_id, ShadowBrief(
-            goal="Create done.txt saying ok", verify="grep -qx ok done.txt",
-            contracts=None, base_sha=self.base, branch="task/ko-7-thing",
-            seconds=seconds))
+            goal="Create done.txt saying ok", ticket=self.TICKET,
+            criteria=self.CRITERIA, task_id="KO-7",
+            verify=verify, contracts=None, base_sha=self.base,
+            branch="task/ko-7-thing", seconds=seconds))
 
     def events(self, kind):
         return [json.loads(payload) for (payload,) in self.conn.execute(
@@ -98,6 +105,10 @@ class ShadowTests(unittest.TestCase):
         return (self.conn.execute(
             "SELECT phase, workingMs, verifyMs FROM runs WHERE id = ?",
             (self.run_id,)).fetchone(), self.events("agent_turn"))
+
+
+class ShadowTests(ShadowRun, unittest.TestCase):
+    TICKET, CRITERIA = "# Create done.txt\n", ["done"]
 
     def test_a_verified_shadow_keeps_its_commit_on_the_shadow_branch(self):
         self.configure(turn=commits("ok\n"))
