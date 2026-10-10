@@ -24,6 +24,7 @@ import store.operate
 import store.read
 import store.run_reads
 import store.schema
+import store.steer_notes
 import store.stories
 import store.story_proposals
 import store.tickets
@@ -314,6 +315,11 @@ class StoreSurfaceTests(unittest.TestCase):
                                                      "settle_filed",
                                                      "settle_ledger",
                                                      "settle_unfiled"]),
+                                 # HOLO-225: `holo steer`'s notes, routed by
+                                 # the ticket's state, read and consumed.
+                                 (store.steer_notes, ["amendments", "consume",
+                                                      "pending", "steer",
+                                                      "steers"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.
                                  # HOLO-176: `--decide` accepts or rejects it.

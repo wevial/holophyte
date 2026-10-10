@@ -31,6 +31,7 @@ DRY_RUN = Flag("--dry-run")
 ONCE = Flag("--once")
 CLOSE_PR = Flag("--close-pr")
 FORCE = Flag("--force")
+HINT = Flag("--hint")
 FOREGROUND = Flag("--foreground")
 NOW = Flag("--now")
 BACKLOG = Flag("--backlog", emits=("--state", "Backlog"))
@@ -91,6 +92,10 @@ COMMANDS = (
             "send a run parked on its pull request back with an instruction",
             takes=("RUN",), note=REQUIRED, flags=(AUTHOR,),
             records=("operator_note",)),
+    Command(("steer",), None,
+            "amend a ticket with no live run, or send a parked run back",
+            takes=("KEY",), note=REQUIRED, flags=(HINT, AUTHOR),
+            records=("steer", "operator_note")),
     Command(("repoint",), "--repoint", "move a parked candidate to a rebuilt tip",
             takes=("KEY", "SHA"), note=REQUIRED, records=("repoint",)),
     Command(("pause",), "--pause", "stop a run at its next safe point",

@@ -102,6 +102,8 @@ def call(args, target):
             return _legacy_cli(target + factory_argv(args))
     if args.command.words == ("send-back",):
         return send_back(args, target)
+    if args.command.words == ("steer",):
+        return steer(args, target)
     from holophyte.holo.units import VERBS
     return VERBS[args.command.words](args, target)
 
@@ -116,12 +118,30 @@ def send_back(args, target):
     if run_id is None:
         args.leaf.error("RUN must be a positive 64-bit run id")
     from holophyte.cli.operator import send_back_run
+    project = located(target)
+    author = getattr(args, "author", None)
+    return send_back_run(project, run_id, note, author[-1] if author else None)
+
+
+def steer(args, target):
+    values, note = arguments(args, args.command)
+    if not target:
+        args.leaf.error("steer needs its project: -p NAME|PATH")
+    if note is None or not note.strip():
+        args.leaf.error("steer records a note: give it non-blank text")
+    from holophyte.cli.operator import steer_ticket
+    project = located(target)
+    author = getattr(args, "author", None)
+    return steer_ticket(project, values[0], note, hint=args.hint,
+                        author=author[-1] if author else None)
+
+
+def located(target):
     from holophyte.config.checks import check_config
     project = Project.locate(target[0])
     project.config()
     check_config(project)
-    author = getattr(args, "author", None)
-    return send_back_run(project, run_id, note, author[-1] if author else None)
+    return project
 
 
 def parse_run(value):

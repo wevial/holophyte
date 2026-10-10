@@ -40,7 +40,7 @@ class StoreEnumTests(unittest.TestCase):
                          previous['interventions', 'action'][:-2]
                          + ", 'hold', 'release_hold', 'register_project',"
                          " 'disable', 'pause', 'abort', 'abort_close',"
-                         " 'approve_story', 'decide'))")
+                         " 'approve_story', 'decide', 'steer'))")
         self.assertEqual(actual['interventions', 'trigger'],
                          previous['interventions', 'trigger'][:-2]
                          + ", 'board_cancelled'))")

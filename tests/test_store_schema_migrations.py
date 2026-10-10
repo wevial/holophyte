@@ -468,7 +468,7 @@ class AdmissionMigrationTests(unittest.TestCase):
 
 STORY_TABLES = ('stories', 'storyChildren', 'witnessResults', 'storyDecisions')
 # Tables newer than version 26, left empty by its migration.
-EMPTY_TABLES = (*STORY_TABLES, 'followUps', 'storyProposals')
+EMPTY_TABLES = (*STORY_TABLES, 'followUps', 'storyProposals', 'steerNotes')
 
 
 class Version26EnumMigrationTests(unittest.TestCase):
@@ -849,3 +849,45 @@ class StoryProposalsMigrationTests(unittest.TestCase):
             self.assertEqual(
                 {table: conn.execute(f"SELECT * FROM {table}").fetchall()
                  for table in tables}, before)
+
+
+class SteerNotesMigrationTests(unittest.TestCase):
+    def test_a_version_43_store_gains_steer_notes_and_the_steer_action(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "store.db"
+            conn = store.open(path)
+            project = store.tickets.ensure_project(conn, "team-1", "/repos/h")
+            store.record_project_intervention(conn, "hold", "maintenance",
+                                              project_id=project)
+            before = conn.execute("SELECT * FROM interventions"
+                                  " WHERE action != 'migrate'").fetchall()
+            conn.close()
+            raw = sqlite3.connect(path)
+            (ddl,) = raw.execute("SELECT sql FROM sqlite_master"
+                                 " WHERE name = 'interventions'").fetchone()
+            raw.executescript(
+                "PRAGMA foreign_keys = OFF;\n"
+                "DROP TABLE steerNotes;\n"
+                + ddl.replace(", 'steer'", "").replace(
+                    "TABLE interventions", "TABLE interventions_new", 1) + ";\n"
+                "INSERT INTO interventions_new SELECT * FROM interventions;\n"
+                "DROP TABLE interventions;\n"
+                "ALTER TABLE interventions_new RENAME TO interventions;\n"
+                "PRAGMA user_version = 43;\n")
+            with self.assertRaises(sqlite3.IntegrityError):
+                raw.execute("INSERT INTO interventions (projectId, source,"
+                            ' "trigger", action, note, at)'
+                            " VALUES (1, 'human', 'manual', 'steer', 'n', 1)")
+            raw.close()
+
+            conn = store.open(path)
+            self.addCleanup(conn.close)
+
+            self.assertEqual(
+                {row[1] for row in conn.execute("PRAGMA table_info(steerNotes)")},
+                DOCUMENTED_COLUMNS["steerNotes"])
+            self.assertEqual(conn.execute("SELECT * FROM interventions"
+                                          " WHERE action != 'migrate'").fetchall(),
+                             before)
+            store.record_project_intervention(conn, "steer", "amendment for KO-1",
+                                              project_id=project)

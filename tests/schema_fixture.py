@@ -131,6 +131,9 @@ DOCUMENTED_COLUMNS = {
     "storyProposals": {"id", "storyId", "followUpId", "raisedBy", "title",
                        "body", "state", "childTicketId", "decidedBy",
                        "decidedAt", "at"},
+    # A maintainer's steer: a ticket's amendment or hint, or a send-back.
+    "steerNotes": {"id", "ticketId", "runId", "kind", "note", "author", "at",
+                   "interventionId", "eventId", "consumedBy", "consumedAt"},
 }
 
 

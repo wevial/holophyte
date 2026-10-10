@@ -3,9 +3,11 @@ from dataclasses import replace
 
 from holophyte.pr.github import Thread
 from holophyte.review.findings import decode_findings
-from store import console_asks, operator_notes
+from store import console_asks, operator_notes, steer_notes
+from store.read import run_snapshot
 
 PREFIX = "Maintainer's instruction (amends the ticket where they conflict):"
+HINT_PREFIX = "Maintainer's hint for this turn (advice, not part of the contract):"
 
 
 def is_note(thread):
@@ -21,11 +23,31 @@ def event_id(thread):
 
 
 def amended_ticket(conn, run_id, ticket, url):
-    amendments = operator_notes.notes(conn, run_id, pr_url=url)
+    amendments = [n for n in operator_notes.notes(conn, run_id, pr_url=url)
+                  if not n.get("hint")]
     if not amendments:
         return ticket
     return ticket + "".join(f"\n\n{PREFIX}\noperator_note event {n['event_id']} "
                             f"by {n['author']}:\n{n['note']}" for n in amendments)
+
+
+def carry_amendments(conn, run_id, ticket):
+    if conn is None or run_id is None:
+        return ticket
+    amendments = steer_notes.amendments(conn, run_snapshot(conn, run_id).ticketId)
+    steer_notes.consume(conn, [n.id for n in amendments], run_id)
+    return ticket + "".join(f"\n\n{PREFIX}\nsteer note {n.id} by {n.author}:"
+                            f"\n{n.note}" for n in amendments)
+
+
+def take_hints(conn, run_id):
+    if conn is None or run_id is None:
+        return ""
+    hints = steer_notes.pending(conn, run_snapshot(conn, run_id).ticketId,
+                                steer_notes.HINT)
+    steer_notes.consume(conn, [n.id for n in hints], run_id)
+    return "".join(f"{HINT_PREFIX}\nsteer note {n.id} by {n.author}:\n{n.note}\n\n"
+                   for n in hints)
 
 
 FINDINGS_CAP = 1500

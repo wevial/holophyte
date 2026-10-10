@@ -12,6 +12,7 @@ from holophyte.config.project import Project
 from holophyte.holo.render import age_since, clock, colour_on, day, symbol, zone
 from holophyte.serve.serve_runs import json_host, no_store
 from store.gap_layers import gap_finder_counts, gap_layer_counts
+from store.steer_notes import steers
 
 DEFAULT_SINCE = "7d"
 ALL = "all"
@@ -118,6 +119,15 @@ def consumed_notes(conn, start):
     return notes
 
 
+def steer_notes(conn, start):
+    return [{"id": row.id, "ticket": row.ticket, "kind": row.kind,
+             "author": row.author, "note": row.note, "steered_ms": row.at,
+             "run": row.run_id, "event_id": row.event_id,
+             "consumed_by": row.consumed_by, "consumed_ms": row.consumed_at}
+            for row in steers(conn)
+            if row.at >= start or row.consumed_by is None]
+
+
 def report(conn, project, since, now):
     span = window_ms(since)
     start = 0 if span is None else max(0, now - span)
@@ -133,7 +143,8 @@ def report(conn, project, since, now):
                            "now_ms": now},
                 "shipped": shipped(rows), "failures": failures(conn, start),
                 "gaps": gaps(conn), "hands_on": hands_on(conn, start),
-                "runs": rows, "notes": consumed_notes(conn, start)}
+                "runs": rows, "notes": consumed_notes(conn, start),
+                "steers": steer_notes(conn, start)}
     finally:
         if owns_transaction:
             conn.rollback()
@@ -204,12 +215,25 @@ def note_lines(body, tz):
     return lines
 
 
+def steer_lines(body, tz):
+    lines = [f"Steers ({len(body['steers'])})"]
+    for note in body["steers"]:
+        at = note["steered_ms"]
+        author = repr(note["author"])[1:-1]
+        text = repr(note["note"])[1:-1]
+        state = ("pending" if note["consumed_by"] is None
+                 else f"consumed by run {note['consumed_by']}")
+        lines.append(f"  {day(at, tz)}, {clock(at, tz)}  {note['ticket']}"
+                     f" {note['kind']} by {author}, {state}: {text}")
+    return lines
+
+
 def page(body, tz=None, colour=False, notes=False):
     lines = [f"{label.ljust(LABEL)}{text}" for label, text in count_lines(body)]
     if body["runs"]:
         lines += [""] + run_lines(body, colour)
     if notes:
-        lines += [""] + note_lines(body, tz)
+        lines += [""] + note_lines(body, tz) + [""] + steer_lines(body, tz)
     name = Path(body["project"]).name
     return lines + ["", f"{name} · {window_words(body['window']['since'])}"]
 

@@ -252,6 +252,7 @@ PINNED = {
     "store/revisions.py": 1,
     "store/run_reads.py": 8,
     "store/schema.py": 24,
+    "store/steer_notes.py": 1,
     "store/stories.py": 2,
     "store/story_proposals.py": 3,
     "store/tickets.py": 14,
