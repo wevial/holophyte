@@ -472,6 +472,36 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual(self.present("gen.css"), ["gen.css"])
         self.assertEqual(self.leftover_events(), [])
 
+    def test_a_turn_that_stops_mid_edit_drops_its_new_ignored_files(self):
+        self.ignoring()
+        self.tip = self.git("rev-parse", "HEAD")
+
+        def edit_write_then_stop():
+            self.write("a.txt", "an edit the turn never committed\n")
+            self.write("gen.css", "generated\n")
+            return ImplementerOutput("done", 0, "fake")
+        self.turn(edit_write_then_stop)
+
+        self.assert_one_wip_and_clean()
+        self.assertEqual(self.present("gen.css", "old.log"), ["old.log"])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "stopped", "paths": ["gen.css"]}])
+
+    def test_a_turn_that_fails_mid_edit_drops_its_new_ignored_files(self):
+        self.ignoring()
+        self.tip = self.git("rev-parse", "HEAD")
+
+        def edit_write_then_fail():
+            self.write("a.txt", "an edit before the turn gave up\n")
+            self.write("gen.css", "generated\n")
+            return ImplementerOutput("gave up", 1, "fake")
+        self.turn(edit_write_then_fail)
+
+        self.assert_one_wip_and_clean()
+        self.assertEqual(self.present("gen.css", "old.log"), ["old.log"])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "failed", "paths": ["gen.css"]}])
+
     def test_a_crashed_turn_keeps_what_it_wrote_under_a_carry_directory(self):
         self.write(".gitignore", "gen.css\ndeps/\n")
         self.git("add", ".gitignore")
