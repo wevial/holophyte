@@ -295,6 +295,18 @@ class AgentFallbackTests(SweepTestCase):
                 "(America/Los_Angeles)")
         self.assertEqual(fallback.outage_reason('claude opus', line), line)
 
+    def test_claude_session_limit_without_fallback_raises_infra_failure(self):
+        line = ("You've hit your session limit · resets 12:50pm "
+                "(America/Los_Angeles)")
+        self.configure('[agents]\n')
+        run = self.a_run()
+        with patch.object(roles, 'run_capped', return_value=(1, line)):
+            self.addCleanup(reset, self.project)
+            with self.assertRaises(roles.InfraFailure) as raised:
+                roles.agent(self.project, 'implement', 'work', self.target,
+                            conn=self.conn, run_id=run)
+        self.assertIn(line, str(raised.exception))
+
     def test_scheduler_readiness_does_not_activate_fallback(self):
         from holophyte.agents.agent_routes import routes
 
