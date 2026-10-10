@@ -73,6 +73,14 @@ AUTHOR = Field("author", {
     "type": "string", "minLength": 1,
     "description": "who asks, non-blank; recorded as AUTHOR via MCP"}, None)
 SIGNATURE = (NOTE, AUTHOR)
+HINT = Field("hint", {
+    "type": "boolean", "default": False,
+    "description": "the note is one implement turn's hint, not an amendment"},
+    lambda value: ["--hint"] * bool(value))
+NOW = Field("now", {
+    "type": "boolean", "default": False,
+    "description": "stop a running implementer turn to read the note now"},
+    lambda value: ["--now"] * bool(value))
 
 
 def signed(author):
@@ -122,6 +130,10 @@ WRITES = (
     Tool("babysit", "send a ticket's run parked on its pull request back to"
          " the babysitter, the note its instruction (holo babysit KEY --json)",
          ("babysit",), (PROJECT, TICKET), required=("ticket",), tier=WRITE,
+         signs=by_author),
+    Tool("steer", "amend a ticket or its live run, or send its parked run"
+         " back, the note the steer (holo steer KEY --json)", ("steer",),
+         (PROJECT, TICKET, HINT, NOW), required=("ticket",), tier=WRITE,
          signs=by_author),
     Tool("requeue", "put a failed run's ticket back in the queue"
          " (holo requeue KEY --json)", ("requeue",), (PROJECT, TICKET),
