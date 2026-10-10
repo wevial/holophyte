@@ -25,6 +25,10 @@ def event_id(thread):
 def amended_ticket(conn, run_id, ticket, url):
     amendments = [n for n in operator_notes.notes(conn, run_id, pr_url=url)
                   if not n.get("hint")]
+    if amendments:
+        withdrawn = steer_notes.withdrawn_events(
+            conn, run_snapshot(conn, run_id).ticketId)
+        amendments = [n for n in amendments if n["event_id"] not in withdrawn]
     if not amendments:
         return ticket
     return ticket + "".join(f"\n\n{PREFIX}\noperator_note event {n['event_id']} "

@@ -49,6 +49,7 @@ class SteerRow(NamedTuple):
     event_id: int | None
     consumed_by: int | None
     consumed_at: int | None
+    withdrawn_by: int | None = None
 
 
 def steer(conn, ticket_id, note, author, hint=False, now=None):
@@ -100,6 +101,51 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
                        intervention_id, None)
 
 
+def withdraw(conn, ticket_id, note, now=None):
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError("note must be non-blank text")
+    now = int(time.time() * 1000) if now is None else now
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT linearIdentifier, activeRunId, lastRunId, projectId"
+            " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+        if row is None:
+            raise SteerRefused(f"ticket {ticket_id} does not exist")
+        key, live, last, project_id = row
+        if live is not None:
+            raise SteerRefused(
+                f"{key} has live run {live}; withdraw its amendments once that"
+                " run parks or ends")
+        (count,) = conn.execute(
+            "SELECT COUNT(*) FROM steerNotes WHERE ticketId = ? AND kind = ?"
+            " AND withdrawnBy IS NULL", (ticket_id, AMENDMENT)).fetchone()
+        if not count:
+            raise SteerRefused(f"{key} has no amendment to withdraw")
+        text = f"withdraw {count} amendment(s) for {key}: {note.strip()}"
+        if last is None:
+            intervention_id = record_project_intervention(
+                conn, "steer", text, project_id=project_id, now=now)
+        else:
+            intervention_id = record_intervention(conn, last, "steer", text,
+                                                  now=now)
+        conn.execute("UPDATE steerNotes SET withdrawnBy = ? WHERE ticketId = ?"
+                     " AND kind = ? AND withdrawnBy IS NULL",
+                     (intervention_id, ticket_id, AMENDMENT))
+        return count, intervention_id
+
+
+def standing(conn, ticket_id):
+    return [note for (note,) in conn.execute(
+        "SELECT note FROM steerNotes WHERE ticketId = ? AND kind = ?"
+        " AND withdrawnBy IS NULL ORDER BY id", (ticket_id, AMENDMENT))]
+
+
+def withdrawn_events(conn, ticket_id):
+    return {event for (event,) in conn.execute(
+        "SELECT eventId FROM steerNotes WHERE ticketId = ?"
+        " AND eventId IS NOT NULL AND withdrawnBy IS NOT NULL", (ticket_id,))}
+
+
 def _live(conn, ticket_id, key, live, kind, note, author, now, resume):
     phase, pr_url = conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
                                  (live,)).fetchone()
@@ -148,7 +194,8 @@ def _notes(conn, where, args):
         "SELECT s.id, s.kind, s.note, s.author, s.runId, s.consumedBy,"
         " r.id IS NOT NULL AND (r.endedAt IS NULL OR r.endedAt >= s.at)"
         " FROM steerNotes s LEFT JOIN runs r ON r.id = s.runId"
-        f" WHERE s.ticketId = ? AND s.eventId IS NULL AND {where}"
+        " WHERE s.ticketId = ? AND s.eventId IS NULL AND s.withdrawnBy IS NULL"
+        f" AND {where}"
         " ORDER BY s.id", args)]
 
 
@@ -167,7 +214,8 @@ def close(conn, run_id):
     with _transaction(conn):
         waiting = conn.execute(
             "SELECT 1 FROM steerNotes s JOIN runs r ON r.ticketId = s.ticketId"
-            " WHERE r.id = ? AND s.eventId IS NULL AND s.consumedBy IS NULL",
+            " WHERE r.id = ? AND s.eventId IS NULL AND s.consumedBy IS NULL"
+            " AND s.withdrawnBy IS NULL",
             (run_id,)).fetchone()
         if waiting:
             return False
@@ -193,7 +241,7 @@ def steers(conn):
     return [SteerRow(*row) for row in conn.execute(
         "SELECT s.id, t.linearIdentifier, s.kind, s.author, s.note, s.at,"
         " s.runId, s.eventId, COALESCE(s.consumedBy, c.runId),"
-        " COALESCE(s.consumedAt, c.at) FROM steerNotes s"
+        " COALESCE(s.consumedAt, c.at), s.withdrawnBy FROM steerNotes s"
         " JOIN tickets t ON t.id = s.ticketId"
         " LEFT JOIN runEvents c ON c.id = (SELECT MIN(e.id) FROM runEvents e"
         " WHERE e.kind = 'operator_note_consumed'"

@@ -87,7 +87,7 @@ holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an a
 holo approve KEY ["note"] -p NAME|PATH           # each ticket verb takes the factory mode's arguments, the note last; see docs/reference/cli.md#holo
 holo hold "note" -p NAME|PATH                    # and holo release "note"
 holo send-back RUN "note" -p NAME|PATH           # the console's send-back of run RUN; no factory.py equivalent
-holo steer KEY "note" [--hint] [--author NAME] -p NAME|PATH # amend a ticket, or a live run before its pull request at its next implementer turn (--hint: advice for its next implement turn alone), or send its run parked on a pull request back; no factory.py equivalent
+holo steer KEY "note" [--hint] [--withdraw] [--author NAME] -p NAME|PATH # amend a ticket, or a live run before its pull request at its next implementer turn (--hint: advice for its next implement turn alone), or send its run parked on a pull request back; --withdraw drops the ticket's amendments; no factory.py equivalent
 holo start ["note"] [--foreground] -p NAME|PATH  # start the project's loop unit and return; the note releases a hold
 holo stop [--now] "note" -p NAME|PATH            # hold the project: the loop ends after its live runs; --now aborts them
 holo sweep [--act] | board diff | board import -p NAME|PATH
