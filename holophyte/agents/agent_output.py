@@ -7,6 +7,7 @@ TRANSPORT_SIGNATURES = (
     "network error",
 )
 CRASH_TAIL_CHARS = 16384
+PANIC_SUMMARY_CHARS = 200
 
 
 def killed_by_signal(exit_code, timed_out):

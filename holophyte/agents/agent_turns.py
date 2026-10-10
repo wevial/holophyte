@@ -4,7 +4,11 @@ import subprocess
 from time import monotonic
 
 import store
-from holophyte.agents.agent_output import CRASH_TAIL_CHARS, killed_by_signal
+from holophyte.agents.agent_output import (
+    CRASH_TAIL_CHARS,
+    PANIC_SUMMARY_CHARS,
+    killed_by_signal,
+)
 from holophyte.agents.agent_routes import routes
 from holophyte.config.agent_settings import agent_command, review_route
 from holophyte.config.reader import DEFAULT_IMPLEMENTER, IMPL_MODEL
@@ -109,7 +113,7 @@ def record_crash(project, conn, run_id, role, exit_status, output):
     panic = next((line for line in text.splitlines()
                   if line.startswith("panic(")), None)
     if panic is not None:
-        summary += f": {panic}"
+        summary += f": {panic[:PANIC_SUMMARY_CHARS]}"
     store.record_event(conn, run_id, "crash", summary, level="detail",
                        payload=json.dumps({
                            "role": role, "exit_status": exit_status,

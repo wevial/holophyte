@@ -32,6 +32,7 @@ BUN_CRASH = (
     f'  if [ $i -eq 5 ]; then echo "{PANIC}" >&2;'
     ' else echo "crash report line $i" >&2; fi\n'
     '  i=$((i + 1))\ndone\nkill -ILL $$\n')
+LONG_PANIC = f"{PANIC} {'y' * 20000}"
 LAST_LINE = "the last line the crashed turn printed"
 LONG_CRASH = (
     'i=0; while [ $i -lt 400 ]; do\n'
@@ -106,6 +107,14 @@ class ImplementerCrashTests(LoopFixture):
         self.assertIn(PANIC, payload["output"])
         self.assertIn("crash report line 40", payload["output"])
         self.assertTrue(summary.endswith(f": {PANIC}"), summary)
+
+    def test_a_long_panic_line_is_cut_short_in_the_crash_summary(self):
+        self.run_loop(COMMIT, f'echo "{LONG_PANIC}" >&2\nkill -ILL $$\n',
+                      reviews=(REQUEST_CHANGES,))
+
+        ((summary, _),) = self.crash_events()
+        self.assertIn(f": {PANIC}", summary)
+        self.assertLess(len(summary), 1000)
 
     def test_a_crash_event_keeps_a_bounded_tail_ending_at_the_last_line(self):
         self.run_loop(LONG_CRASH, COMMIT, reviews=(APPROVE,))
