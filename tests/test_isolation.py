@@ -67,9 +67,11 @@ class IsolationTests(GoRaceCases, IsolationCase):
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--network=bridge",
-            "--pids-limit=256",
         ):
             self.assertIn(flag, argv)
+        self.assertEqual(
+            [v for v in argv if v.startswith("--pids-limit")], ["--pids-limit=4096"]
+        )
         self.assertIn("--env=ALLOWED", argv)
         self.assertNotIn("allowed-secret", str(argv))
         self.assertEqual(run.call_args.kwargs["env"]["ALLOWED"], "allowed-secret")

@@ -20,6 +20,7 @@ from typing import Sequence
 
 ROOT = Path(__file__).resolve().parent
 IMAGE = "holophyte-reviewer:ubuntu24.04-v13"
+PIDS_LIMIT = 4096
 MODEL = "gpt-6-astra"
 EFFORT = "high"
 EFFORTS = ("low", "medium", "high", "xhigh")
@@ -239,7 +240,7 @@ exec /opt/claude/bin/claude -p --model "$2" --effort "$3" --output-format json "
 
 def hardening_flags(uid: int, gid: int, memory: str = "2g") -> list[str]:
     return ["--read-only", "--cap-drop=ALL",
-            "--security-opt=no-new-privileges", "--pids-limit=256",
+            "--security-opt=no-new-privileges", f"--pids-limit={PIDS_LIMIT}",
             f"--memory={memory}", "--cpus=2", "--network=bridge",
             f"--user={uid}:{gid}", "--workdir=/workspace"]
 
