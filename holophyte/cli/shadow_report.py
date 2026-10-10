@@ -1,5 +1,6 @@
 import json
 import statistics
+from collections import Counter
 
 from store import SEVERITIES
 
@@ -29,13 +30,6 @@ def first_implementation(turns):
             **{key: usage_total(usages, key) for key in USAGE_KEYS}}
 
 
-def severity_counts(severities):
-    counts = {}
-    for severity in severities:
-        counts[severity] = counts.get(severity, 0) + 1
-    return counts
-
-
 def primary_round(conn, run_id):
     row = conn.execute(
         "SELECT verdict, findings, verificationResults FROM reviewRounds"
@@ -47,7 +41,7 @@ def primary_round(conn, run_id):
     return {"verified": all(result.get("exitCode") == 0 for result in results)
             if results else None,
             "verdict": ROUND_VERDICTS.get(verdict, verdict),
-            "findings": severity_counts(
+            "findings": Counter(
                 finding.get("severity") for finding in json.loads(findings)
                 if finding.get("evidence_only") is not True)}
 
