@@ -61,6 +61,23 @@ def add_note(conn, run_id, note, author, hint=False):
         return _latest_note(conn, run_id)
 
 
+def closed_for_merge(conn, run_id):
+    return conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
+                        " AND kind = 'notes_closed'", (run_id,)).fetchone() is not None
+
+
+def close_for_merge(conn, run_id, pr_url):
+    if conn is None or run_id is None:
+        return True
+    with _transaction(conn):
+        if notes(conn, run_id, pending=True, pr_url=pr_url):
+            return False
+        store.record_event(conn, run_id, "notes_closed",
+                           "maintainer notes closed: the run merges next",
+                           level="detail")
+        return True
+
+
 def note_live(conn, run_id, note, author, hint=False):
     data = _instruction(note, author, hint)
     with _transaction(conn):
@@ -68,9 +85,9 @@ def note_live(conn, run_id, note, author, hint=False):
             "SELECT 1 FROM tickets t JOIN runs r ON r.id = t.activeRunId"
             " WHERE r.id = ? AND r.endedAt IS NULL AND r.phase = 'merge_gate'"
             " AND r.prUrl IS NOT NULL", (run_id,)).fetchone()
-        if row is None:
+        if row is None or closed_for_merge(conn, run_id):
             raise ValueError("run must be live at the merge gate on its pull"
-                             " request")
+                             " request, before it merges")
         _record_note(conn, run_id, data)
         return _latest_note(conn, run_id)
 

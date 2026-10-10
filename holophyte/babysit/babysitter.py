@@ -76,6 +76,7 @@ from holophyte.review.reply_parsing import (
     stale_approvals,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
+from store import operator_notes
 
 
 def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
@@ -238,6 +239,14 @@ def _babysit(run, *args, **kwargs):
     return result.merge_sha if legacy else result
 
 
+def _pull_of(url, branch, sha):
+    pull = pr_status.parse_pr_url(url)
+    if pull is None:
+        raise RunFailure(f"cannot read a pull request off {url!r};"
+                         f" branch {branch} preserved at {sha[:12]}")
+    return pull
+
+
 def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                    approved=False, reviewed=None, verified=None, fix_note=None,
                    just_pushed=False):
@@ -248,10 +257,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
     budget_min, url = run.budget_min, run.pr_url
     from holophyte.pr.pullrequest import _park_on_pr
     merge = merge_config(project)
-    pull = pr_status.parse_pr_url(url)
-    if pull is None:
-        raise RunFailure(f"cannot read a pull request off {url!r};"
-                         f" branch {branch} preserved at {sha[:12]}")
+    pull = _pull_of(url, branch, sha)
     contract = ticket
     model = agent_route(project, "adjudicate")
     pushed_state = (_just_pushed_state(
@@ -335,6 +341,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             pushed_state, pass_no = None, pass_no - 1
             continue
         if merge.approve == "auto" or approved:
+            if not operator_notes.close_for_merge(conn, run_id, pull.url):
+                continue
             try:
                 merge_sha = merge_queue.verified_merge(
                     project, conn, run_id, provider, task_id, issue_id, branch,
