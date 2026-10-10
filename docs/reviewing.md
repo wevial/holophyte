@@ -10,8 +10,9 @@ The factory never gives a reviewer the implementation worktree directly.
 detached, zero-remote Git repository and verifies its identity before and after
 the review. Docker mounts that repository at `/workspace` read-only. The
 container also has a read-only root filesystem, no Linux capabilities, no
-privilege escalation, bounded processes/memory/CPU, and no Docker socket or
-host home.
+privilege escalation, bounded memory/CPU, a pids limit of 4096 tasks
+(`PIDS_LIMIT`; on Linux it counts threads as well as processes), and no Docker
+socket or host home.
 
 Codex runs with `danger-full-access` **inside** this container because Ubuntu's
 AppArmor policy blocks its nested Bubblewrap sandbox when the previous
