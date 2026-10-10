@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from holophyte.loop.gates import InfraFailure
 from holophyte.pr import github
 
 STUB = """#!/bin/sh
@@ -42,6 +43,32 @@ class GhApiRetryTest(unittest.TestCase):
 
         self.assertEqual(out.strip(), "{}")
         self.assertEqual(calls.read_text().strip(), "3")
+
+    def test_never_connected_call_fails_naming_the_last_attempt(self):
+        target, calls = self.stand_in(
+            9, "dial tcp 127.0.0.1:443: i/o timeout (attempt $n)")
+        sleeps = []
+        self.enterContext(patch.object(github, "SLEEP", sleeps.append))
+
+        with self.assertRaises(InfraFailure) as raised:
+            github._gh_output(target, "github.com", "PUT",
+                              "repos/o/r/pulls/69/merge", {})
+
+        self.assertIn("(attempt 3)", str(raised.exception))
+        self.assertEqual(calls.read_text().strip(), "3")
+        self.assertEqual(sleeps, [5, 15])
+
+    def test_http_error_status_fails_on_the_first_call(self):
+        for status in ("422", "502"):
+            with self.subTest(status=status):
+                target, calls = self.stand_in(
+                    9, f"gh: Request failed (HTTP {status})")
+
+                with self.assertRaises(InfraFailure):
+                    github._gh_output(target, "github.com", "POST",
+                                      "repos/o/r/pulls", {"title": "t"})
+
+                self.assertEqual(calls.read_text().strip(), "1")
 
 
 if __name__ == "__main__":
