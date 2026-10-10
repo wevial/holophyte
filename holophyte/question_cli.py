@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from holophyte import questions, redact
+from holophyte.agents.agent_output import claude_usage
 from holophyte.agents.fallback import OUTAGE_SIGNATURES
 from store import agent_routes
 
@@ -148,17 +149,7 @@ def parse_claude(output, question):
         return questions.Failure("invalid_response"), {}
     if not isinstance(document, dict):
         return questions.Failure("invalid_response"), {}
-    usage = document.get("usage")
-    usage = usage if isinstance(usage, dict) else {}
-    inputs = [questions.count(usage.get(key)) for key in (
-        "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")]
-    cost = document.get("total_cost_usd")
-    tokens = dict(
-        input_tokens=sum(filter(None, inputs)) if any(n is not None for n in inputs)
-        else None,
-        output_tokens=questions.count(usage.get("output_tokens")),
-        cost_usd=cost if type(cost) in (int, float) and cost >= 0 else None,
-    )
+    tokens = claude_usage(document)
     if document.get("is_error"):
         return questions.Failure("service_error"), tokens
     return checked(document.get("structured_output"), question), tokens

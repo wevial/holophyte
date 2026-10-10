@@ -54,13 +54,18 @@ class Claude(Adapter):
 
     def turn(self, binary, options, role):
         return [binary, "-p", "--session-id", str(uuid.uuid4()),
-                *self.route(options)]
+                *self.route(options), *self.output_format(role)]
 
     def session(self, argv):
         return argv[argv.index("--session-id") + 1]
 
     def resume(self, binary, options, session, role):
-        return [binary, "-p", "--resume", session, *self.route(options)]
+        return [binary, "-p", "--resume", session, *self.route(options),
+                *self.output_format(role)]
+
+    @staticmethod
+    def output_format(role):
+        return ["--output-format", "json"] if role in WRITING_ROLES else []
 
     @staticmethod
     def route(options):

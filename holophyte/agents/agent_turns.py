@@ -82,6 +82,8 @@ def recorded_turn(project, role, routed_role, conn, run_id, launch,
             crashed = output
         if hasattr(output, "service_tier"):
             payload["service_tier"] = output.service_tier
+        if hasattr(output, "usage"):
+            payload["usage"] = output.usage
         return output
     except Exception as exc:
         cause = exc.__cause__ or exc

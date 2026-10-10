@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import store
 from holophyte import redact
+from holophyte.agents.agent_output import count
 from holophyte.config.reader import CRITIC_MODEL, REVIEW_EFFORTS
 
 DEFAULTS = dict(
@@ -210,10 +211,6 @@ def record(conn, run_id, question, route, result, usage, started):
     store.record_event(conn, run_id, "question",
                        f"question {question.name} via {route.backend}: {outcome}",
                        level="detail", payload=json.dumps(payload))
-
-
-def count(value):
-    return value if type(value) is int and value >= 0 else None
 
 
 def tokens(usage):
