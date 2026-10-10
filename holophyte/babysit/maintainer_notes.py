@@ -22,8 +22,17 @@ def event_id(thread):
     return int(thread.id.partition(":")[2])
 
 
+def standing_notes(conn, run_id, pending=False, pr_url=None):
+    notes = operator_notes.notes(conn, run_id, pending=pending, pr_url=pr_url)
+    if not notes:
+        return notes
+    withdrawn = steer_notes.withdrawn_events(
+        conn, run_snapshot(conn, run_id).ticketId)
+    return [n for n in notes if n["event_id"] not in withdrawn]
+
+
 def amended_ticket(conn, run_id, ticket, url):
-    amendments = [n for n in operator_notes.notes(conn, run_id, pr_url=url)
+    amendments = [n for n in standing_notes(conn, run_id, pr_url=url)
                   if not n.get("hint")]
     if not amendments:
         return ticket
@@ -31,13 +40,19 @@ def amended_ticket(conn, run_id, ticket, url):
                             f"by {n['author']}:\n{n['note']}" for n in amendments)
 
 
+def steer_text(note):
+    prefix = HINT_PREFIX if note.kind == steer_notes.HINT else PREFIX
+    return f"{prefix}\nsteer note {note.id} by {note.author}:\n{note.note}"
+
+
 def carry_amendments(conn, run_id, ticket):
     if conn is None or run_id is None:
         return ticket
-    amendments = steer_notes.amendments(conn, run_snapshot(conn, run_id).ticketId)
+    amendments = [n for n in steer_notes.amendments(
+        conn, run_snapshot(conn, run_id).ticketId)
+        if not n.live or n.consumed_by is not None]
     steer_notes.consume(conn, [n.id for n in amendments], run_id)
-    return ticket + "".join(f"\n\n{PREFIX}\nsteer note {n.id} by {n.author}:"
-                            f"\n{n.note}" for n in amendments)
+    return ticket + "".join(f"\n\n{steer_text(n)}" for n in amendments)
 
 
 def take_hints(conn, run_id):
@@ -46,8 +61,7 @@ def take_hints(conn, run_id):
     hints = steer_notes.pending(conn, run_snapshot(conn, run_id).ticketId,
                                 steer_notes.HINT)
     steer_notes.consume(conn, [n.id for n in hints], run_id)
-    return "".join(f"{HINT_PREFIX}\nsteer note {n.id} by {n.author}:\n{n.note}\n\n"
-                   for n in hints)
+    return "".join(f"{steer_text(n)}\n\n" for n in hints)
 
 
 FINDINGS_CAP = 1500
@@ -96,7 +110,7 @@ def requeue_context(conn, run_id):
 def pending_state(conn, run_id, state, url):
     threads = tuple(Thread(f"operator_note:{n['event_id']}", "", None,
                            n["author"], n["note"], "", author_kind="maintainer")
-                    for n in operator_notes.notes(
+                    for n in standing_notes(
                         conn, run_id, pending=True, pr_url=url))
     posted = {event_id: (at, answer)
               for event_id, at, answer in state.console_answers}

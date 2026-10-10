@@ -332,6 +332,8 @@ HTTP_ROUTES = {
     ("requeue",): Route("POST", "/actions/requeue", ("ticket", "note", "force")),
     ("send-back",): Route("POST", "/actions/send-back",
                           ("run", "note", "author")),
+    ("steer",): Route("POST", "/actions/steer",
+                      ("ticket", "note", "hint", "now", "author")),
     ("hold",): Route("POST", "/actions/hold", ("note",)),
     ("release",): Route("POST", "/actions/release-hold", ("note",)),
     ("pause",): Route("POST", "/actions/pause", ("run", "note")),
@@ -418,6 +420,8 @@ def run_http(args, url, config):
     route = HTTP_ROUTES.get(command.words)
     if getattr(args, "foreground", False):
         return unrouted(args, f"{label} --foreground")
+    if getattr(args, "withdraw", False):
+        return unrouted(args, f"{label} --withdraw")
     if route is None:
         return unrouted(args, label, command.mode not in HOST_ONLY
                         and command.words not in CLIENT_ONLY)
@@ -448,6 +452,8 @@ def fields(args, route):
     author = getattr(args, "author", None)
     known = {"note": note, "close": bool(getattr(args, "close_pr", False)),
              "force": bool(getattr(args, "force", False)),
+             "hint": bool(getattr(args, "hint", False)),
+             "now": bool(getattr(args, "now", False)),
              "author": author[-1] if author else None}
     first = command.takes[:1]
     if first == ("KEY",):

@@ -129,11 +129,17 @@ def steer(args, target):
         args.leaf.error("steer needs its project: -p NAME|PATH")
     if note is None or not note.strip():
         args.leaf.error("steer records a note: give it non-blank text")
-    from holophyte.cli.operator import steer_ticket
     project = located(target)
+    if args.withdraw:
+        if args.hint or args.now:
+            args.leaf.error("--withdraw drops amendments: it takes no --hint"
+                            " or --now")
+        from holophyte.cli.operator import withdraw_steers
+        return withdraw_steers(project, values[0], note)
+    from holophyte.cli.operator import steer_ticket
     author = getattr(args, "author", None)
     return steer_ticket(project, values[0], note, hint=args.hint,
-                        author=author[-1] if author else None)
+                        author=author[-1] if author else None, now=args.now)
 
 
 def located(target):

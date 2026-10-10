@@ -1,5 +1,6 @@
 import json
 import sys
+from collections import Counter
 from time import time
 
 import store.read
@@ -15,10 +16,14 @@ from holophyte.serve.console_build import console_state
 from holophyte.serve.serve_runs import json_host
 from holophyte.serve.server import CONSOLE_DIR
 from holophyte.story.story_views import story_facts, story_lines
+from store.steer_notes import steers
 
 
 def snapshot(target, conn, now=None):
     now = int(time() * 1000) if now is None else now
+    pending = Counter(note.ticket for note in steers(conn)
+                      if note.event_id is None and note.consumed_by is None
+                      and note.withdrawn_by is None)
     projects = conn.execute(
         "SELECT repoPath, admission, holdNote FROM projects ORDER BY id")
     return {
@@ -29,7 +34,8 @@ def snapshot(target, conn, now=None):
                      for path, admission, note in projects],
         "live": [{"run": run.id, "ticket": run.linearIdentifier,
                   "phase": run.phase, "worker": json_host(target, run.host),
-                  "heartbeat_age_s": (now - run.lastHeartbeat) // 1000}
+                  "heartbeat_age_s": (now - run.lastHeartbeat) // 1000,
+                  "steer_pending": pending.get(run.linearIdentifier, 0)}
                  for run in store.read.live_runs(conn, SWEEPABLE_PHASES)],
         "parked": [{"run": ticket.runId, "ticket": ticket.linearIdentifier,
                     "question": ticket.blockedQuestion}

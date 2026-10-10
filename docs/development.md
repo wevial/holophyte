@@ -300,6 +300,12 @@ Each module, one line:
   turn per round, up to the cap the candidate's size earns.
 - `holophyte/loop/adjudicate.py` — the terminal adjudication once the review
   rounds are spent.
+- `holophyte/loop/steering.py` — a live run's pending `holo steer` notes: the
+  prompt text its next implementer turn carries, their consumption, and the
+  amendments it carried joined to the reviewers' ticket text.
+- `holophyte/loop/steer_cap.py` — a run that failed on its time or review-round
+  cap while its ticket holds an amendment: the ticket parked on the operator
+  with a question suggesting the steered scope split into a follow-up ticket.
 - `holophyte/loop/branch_sync.py` — the branch fast-forwarded to origin's copy,
   and the worktree held to the candidate a park recorded.
 - `holophyte/agents/harness.py` — harness adapters: a table-form `[agents]` role's
@@ -428,7 +434,8 @@ Each module, one line:
   babysitter threads, contract amendments, and commit event references.
 - `store/steer_notes.py` — `holo steer`'s notes: a ticket's amendment or hint
   recorded with its interventions row, or a parked run's send-back linked to
-  its event; a ticket's amendments and pending hints, and their consumption.
+  its event; a ticket's amendments and pending hints, their consumption, and
+  `--withdraw`'s marking of every standing amendment withdrawn.
 - `store/operator_notes.py` — atomic send-back and append-only note consumption
   evidence across attempts on the same pull request.
 - `store/console_asks.py` — a console ask recorded and its park released in one

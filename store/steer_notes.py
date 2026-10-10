@@ -2,6 +2,8 @@
 import time
 from typing import NamedTuple
 
+import store
+
 from . import operator_notes
 from .operate import record_intervention, record_project_intervention
 from .schema import _transaction
@@ -10,6 +12,7 @@ AMENDMENT, HINT = "amendment", "hint"
 SEALED = ("merged", "abandoned")
 PARKED_PHASE = "awaiting_merge_approval"
 GATE_PHASES = ("merge_gate", "merging")
+LIVE_PHASES = ("claimed", "working", "verifying", "reviewing", "addressing")
 
 
 class SteerRefused(ValueError):
@@ -22,6 +25,7 @@ class Steer(NamedTuple):
     intervention_id: int
     run_id: int | None
     event_id: int | None
+    live: bool = False
 
 
 class SteerNote(NamedTuple):
@@ -29,6 +33,9 @@ class SteerNote(NamedTuple):
     kind: str
     note: str
     author: str
+    run_id: int | None = None
+    consumed_by: int | None = None
+    live: bool = False
 
 
 class SteerRow(NamedTuple):
@@ -42,9 +49,11 @@ class SteerRow(NamedTuple):
     event_id: int | None
     consumed_by: int | None
     consumed_at: int | None
+    withdrawn_by: int | None
 
 
-def steer(conn, ticket_id, note, author, hint=False, now=None):
+def steer(conn, ticket_id, note, author, hint=False, now=None,
+          interrupt=False):
     for name, text in (("note", note), ("author", author)):
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"{name} must be non-blank text")
@@ -61,9 +70,12 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
             raise SteerRefused(f"ticket {ticket_id} does not exist")
         key, status, live, last, project_id, phase, pr_url, resume, outcome = row
         if live is not None:
+            return _live(conn, ticket_id, key, live, kind, note, author, now,
+                         resume, interrupt)
+        if interrupt:
             raise SteerRefused(
-                f"{key} has live run {live}, which a steer does not reach;"
-                f" stop it first with holo pause {key} or holo abort {key}")
+                f"{key} is {status} with no live run; --now stops a live"
+                " run's implementer turn")
         if status in SEALED:
             raise SteerRefused(f"{key} is {status}; nothing is left to steer")
         if status == "blocked_on_operator":
@@ -94,6 +106,92 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
                        intervention_id, None)
 
 
+def withdraw(conn, ticket_id, note, now=None):
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError("note must be non-blank text")
+    now = int(time.time() * 1000) if now is None else now
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT linearIdentifier, status, activeRunId, lastRunId, projectId"
+            " FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+        if row is None:
+            raise SteerRefused(f"ticket {ticket_id} does not exist")
+        key, status, live, last, project_id = row
+        if status in SEALED:
+            raise SteerRefused(f"{key} is {status}; nothing is left to steer")
+        if live is not None:
+            raise SteerRefused(
+                f"{key} has live run {live}; withdraw its amendments once that"
+                " run parks or ends")
+        (count,) = conn.execute(
+            "SELECT COUNT(*) FROM steerNotes WHERE ticketId = ? AND kind = ?"
+            " AND withdrawnBy IS NULL", (ticket_id, AMENDMENT)).fetchone()
+        if not count:
+            raise SteerRefused(f"{key} has no amendment to withdraw")
+        text = f"withdraw {count} amendment(s) for {key}: {note.strip()}"
+        if last is None:
+            intervention_id = record_project_intervention(
+                conn, "steer", text, project_id=project_id, now=now)
+        else:
+            intervention_id = record_intervention(conn, last, "steer", text,
+                                                  now=now)
+        conn.execute("UPDATE steerNotes SET withdrawnBy = ? WHERE ticketId = ?"
+                     " AND kind = ? AND withdrawnBy IS NULL",
+                     (intervention_id, ticket_id, AMENDMENT))
+        return count, intervention_id
+
+
+def standing(conn, ticket_id):
+    return [note for (note,) in conn.execute(
+        "SELECT note FROM steerNotes WHERE ticketId = ? AND kind = ?"
+        " AND withdrawnBy IS NULL ORDER BY id", (ticket_id, AMENDMENT))]
+
+
+def withdrawn_events(conn, ticket_id):
+    return {event for (event,) in conn.execute(
+        "SELECT eventId FROM steerNotes WHERE ticketId = ?"
+        " AND eventId IS NOT NULL AND withdrawnBy IS NOT NULL", (ticket_id,))}
+
+
+def _live(conn, ticket_id, key, live, kind, note, author, now, resume,
+          interrupt):
+    phase, pr_url = conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
+                                 (live,)).fetchone()
+    closed = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
+                          " AND kind = 'steer_closed'", (live,)).fetchone()
+    if phase == "merge_gate" and pr_url:
+        return _babysat(conn, ticket_id, key, live, kind, note, author, now,
+                        interrupt)
+    if phase not in LIVE_PHASES or pr_url or closed:
+        raise SteerRefused(
+            f"{key}'s live run {live} is in {phase}"
+            + (" on its pull request" if pr_url else "")
+            + ", past its last implementer turn, so no implementer would read"
+            f" a steer; steer it once that run parks or ends, or stop it with"
+            f" holo pause {key} or holo abort {key}")
+    if phase == "claimed" and resume in GATE_PHASES:
+        raise SteerRefused(
+            f"{key}'s live run {live} resumes a candidate at {resume}, past"
+            " the implement turn, so no implementer would read a steer;"
+            " steer it once that run parks or ends")
+    intervention_id = record_intervention(conn, live, "steer",
+                                          f"{kind} for {key}: {note}", now=now)
+    steered = _insert(conn, ticket_id, live, kind, note, author, now,
+                      intervention_id, None, interrupt)
+    return steered._replace(live=True)
+
+
+def _babysat(conn, ticket_id, key, run_id, kind, note, author, now,
+             interrupt=False):
+    intervention_id = record_intervention(conn, run_id, "steer",
+                                          f"{kind} for {key}: {note}", now=now)
+    event_id = operator_notes.note_live(conn, run_id, note, author,
+                                        hint=kind == HINT)
+    steered = _insert(conn, ticket_id, run_id, kind, note, author, now,
+                      intervention_id, event_id, interrupt)
+    return steered._replace(live=True)
+
+
 def _noted(conn, ticket_id, run_id, kind, note, author, now, write):
     event_id = write(conn, run_id, note, author, hint=kind == HINT)
     (intervention_id,) = conn.execute(
@@ -104,27 +202,68 @@ def _noted(conn, ticket_id, run_id, kind, note, author, now, write):
 
 
 def _insert(conn, ticket_id, run_id, kind, note, author, now, intervention_id,
-            event_id):
+            event_id, interrupt=False):
     note_id = conn.execute(
         "INSERT INTO steerNotes (ticketId, runId, kind, note, author, at,"
-        " interventionId, eventId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " interventionId, eventId, interrupt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (ticket_id, run_id, kind, note, author, now, intervention_id,
-         event_id)).lastrowid
+         event_id, 1 if interrupt else None)).lastrowid
     return Steer(note_id, kind, intervention_id, run_id, event_id)
 
 
 def _notes(conn, where, args):
-    return [SteerNote(*row) for row in conn.execute(
-        "SELECT id, kind, note, author FROM steerNotes WHERE ticketId = ?"
-        f" AND eventId IS NULL AND {where} ORDER BY id", args)]
+    return [SteerNote(*row[:6], bool(row[6])) for row in conn.execute(
+        "SELECT s.id, s.kind, s.note, s.author, s.runId, s.consumedBy,"
+        " r.id IS NOT NULL AND (r.endedAt IS NULL OR r.endedAt >= s.at)"
+        " FROM steerNotes s LEFT JOIN runs r ON r.id = s.runId"
+        " WHERE s.ticketId = ? AND s.eventId IS NULL AND s.withdrawnBy IS NULL"
+        f" AND {where}"
+        " ORDER BY s.id", args)]
 
 
 def amendments(conn, ticket_id):
-    return _notes(conn, "kind = ?", (ticket_id, AMENDMENT))
+    return _notes(conn, "s.kind = ?", (ticket_id, AMENDMENT))
 
 
-def pending(conn, ticket_id, kind):
-    return _notes(conn, "kind = ? AND consumedBy IS NULL", (ticket_id, kind))
+def pending(conn, ticket_id, kind=None):
+    if kind is None:
+        return _notes(conn, "s.consumedBy IS NULL", (ticket_id,))
+    return _notes(conn, "s.kind = ? AND s.consumedBy IS NULL",
+                  (ticket_id, kind))
+
+
+_UNCARRIED = (" AND s.consumedBy IS NULL AND NOT EXISTS (SELECT 1 FROM"
+              " runEvents c WHERE c.kind = 'operator_note_consumed'"
+              " AND json_extract(c.payload, '$.event_id') = s.eventId)")
+
+
+def interrupting(conn, run_id):
+    return conn.execute(
+        "SELECT 1 FROM steerNotes s WHERE s.runId = ? AND s.interrupt = 1"
+        + _UNCARRIED, (run_id,)).fetchone() is not None
+
+
+def babysat_interrupts(conn, run_id):
+    return [(SteerNote(*row[:6], True), row[6]) for row in conn.execute(
+        "SELECT s.id, s.kind, s.note, s.author, s.runId, s.consumedBy,"
+        " s.eventId FROM steerNotes s WHERE s.runId = ? AND s.interrupt = 1"
+        " AND s.eventId IS NOT NULL" + _UNCARRIED + " ORDER BY s.id",
+        (run_id,))]
+
+
+def close(conn, run_id):
+    with _transaction(conn):
+        waiting = conn.execute(
+            "SELECT 1 FROM steerNotes s JOIN runs r ON r.ticketId = s.ticketId"
+            " WHERE r.id = ? AND s.eventId IS NULL AND s.consumedBy IS NULL"
+            " AND s.withdrawnBy IS NULL",
+            (run_id,)).fetchone()
+        if waiting:
+            return False
+        store.record_event(conn, run_id, "steer_closed",
+                           "steering closed: no implementer turn remains",
+                           level="detail")
+        return True
 
 
 def consume(conn, note_ids, run_id, now=None):
@@ -137,13 +276,14 @@ def consume(conn, note_ids, run_id, now=None):
 
 
 def steers(conn):
-    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
-                    " AND name = 'steerNotes'").fetchone() is None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(steerNotes)")}
+    if not columns:
         return []
+    withdrawn = "s.withdrawnBy" if "withdrawnBy" in columns else "NULL"
     return [SteerRow(*row) for row in conn.execute(
         "SELECT s.id, t.linearIdentifier, s.kind, s.author, s.note, s.at,"
         " s.runId, s.eventId, COALESCE(s.consumedBy, c.runId),"
-        " COALESCE(s.consumedAt, c.at) FROM steerNotes s"
+        f" COALESCE(s.consumedAt, c.at), {withdrawn} FROM steerNotes s"
         " JOIN tickets t ON t.id = s.ticketId"
         " LEFT JOIN runEvents c ON c.id = (SELECT MIN(e.id) FROM runEvents e"
         " WHERE e.kind = 'operator_note_consumed'"

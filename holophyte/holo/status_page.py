@@ -197,6 +197,8 @@ def running_rows(who, status):
     rows = []
     for run in status["live"]:
         text = f"{run['phase']} · heartbeat {age(run['heartbeat_age_s'])} ago"
+        if run.get("steer_pending"):
+            text += f" · steer {run['steer_pending']} pending"
         if run["run"] == merging:
             text += " · merge lock"
         rows.append(Row(">", who, run["ticket"] or "", text))

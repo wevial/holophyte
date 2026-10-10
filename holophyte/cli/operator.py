@@ -8,8 +8,9 @@ from typing import NamedTuple
 import store
 import store.read
 import store.tickets
-from holophyte.agents.agent_routes import reset, routes
+from holophyte.agents.agent_routes import active_fallbacks, reset, routes
 from holophyte.agents.fallback import startup_routes
+from holophyte.agents.fix_session import resume_argv
 from holophyte.agents.probes import probe_diagnostic, probe_implementer
 from holophyte.board.projection import release_lease_label
 from holophyte.cli.report import migration_header, report_lines
@@ -348,29 +349,85 @@ def send_back_run(target, run_id, note, author=None, out=None):
         conn.close()
 
 
-def steer_ticket(target, identifier, note, hint=False, author=None, out=None):
+def steer_ticket(target, identifier, note, hint=False, author=None, out=None,
+                 now=False):
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            steered = steer_notes.steer(
-                conn, ticket_id, note,
-                getpass.getuser() if author is None else author, hint=hint)
+            line = steered_line(
+                target, conn, ticket_id, identifier, note,
+                getpass.getuser() if author is None else author, hint=hint,
+                now=now, out=out)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
-        if steered.event_id is not None:
-            print(f"[holo2] {identifier} steered: run {steered.run_id} sent"
-                  " back to the babysitter as a maintainer instruction"
-                  f" (operator_note event {steered.event_id}, steer note"
-                  f" {steered.id})", file=out)
-        else:
-            reader = ("its next implement turn" if hint
-                      else "its next run's contract")
-            print(f"[holo2] {identifier} steered: {steered.kind} (steer note"
-                  f" {steered.id}) for {reader}", file=out)
+        print(f"[holo2] {line}", file=out)
     finally:
         conn.close()
+
+
+def steered_line(target, conn, ticket_id, identifier, note, author, hint, now,
+                 out):
+    interrupt = now and _interrupts(target, conn, ticket_id, out)
+    steered = steer_notes.steer(conn, ticket_id, note, author, hint=hint,
+                                interrupt=interrupt)
+    if interrupt:
+        return (f"{identifier} steered --now: {steered.kind} (steer note"
+                f" {steered.id}) on live run {steered.run_id}; a running"
+                " implementer turn stops at its next heartbeat and resumes"
+                " its session with the note, else the note lands at the next"
+                " implementer turn")
+    if steered.live and steered.event_id is not None:
+        return (f"{identifier} steered: {steered.kind} (operator_note"
+                f" event {steered.event_id}, steer note {steered.id}) on live"
+                f" run {steered.run_id}, landing at its babysitter's next"
+                " fix round")
+    if steered.event_id is not None:
+        return (f"{identifier} steered: run {steered.run_id} sent"
+                " back to the babysitter as a maintainer instruction"
+                f" (operator_note event {steered.event_id}, steer note"
+                f" {steered.id})")
+    if steered.live:
+        return (f"{identifier} steered: {steered.kind} (steer note"
+                f" {steered.id}) on live run {steered.run_id}, landing at"
+                " its next implementer turn")
+    reader = "its next implement turn" if hint else "its next run's contract"
+    return (f"{identifier} steered: {steered.kind} (steer note"
+            f" {steered.id}) for {reader}")
+
+
+def withdraw_steers(target, identifier, note, out=None):
+    out = out or sys.stdout
+    conn = _operator_store(target)
+    try:
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        try:
+            count, intervention_id = steer_notes.withdraw(conn, ticket_id, note)
+        except ValueError as refused:
+            raise SystemExit(f"[holo2] {refused}") from None
+        print(f"[holo2] {identifier}: {count} amendment(s) withdrawn (steer"
+              f" intervention {intervention_id}); later runs read the ticket"
+              " without them", file=out)
+    finally:
+        conn.close()
+
+
+def _interrupts(target, conn, ticket_id, out):
+    live = store.read.ticket_by_id(conn, ticket_id).activeRunId
+    run = live and store.read.run_detail(conn, live)
+    babysat = run is not None and run.phase == "merge_gate" and run.prUrl
+    if run is None or not babysat and (
+            run.phase not in steer_notes.LIVE_PHASES or run.prUrl):
+        return True
+    argv, reason = ((None, "fallback implementer route")
+                    if "implementer" in active_fallbacks(target)
+                    else resume_argv(target, conn, live))
+    if argv is None:
+        print(f"[holo2] --now: cannot resume the implementer session"
+              f" ({reason}); the note lands at the next turn boundary",
+              file=out)
+    return argv is not None
 
 
 def repoint(target, identifier, sha, note, out=None):

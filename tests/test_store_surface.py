@@ -317,9 +317,22 @@ class StoreSurfaceTests(unittest.TestCase):
                                                      "settle_unfiled"]),
                                  # HOLO-225: `holo steer`'s notes, routed by
                                  # the ticket's state, read and consumed.
-                                 (store.steer_notes, ["amendments", "consume",
-                                                      "pending", "steer",
-                                                      "steers"]),
+                                 # HOLO-226: `close` ends a live run's steer
+                                 # admission once no implementer turn remains.
+                                 # HOLO-228: `interrupting` is the heartbeat's
+                                 # ask for a `--now` note to stop the turn;
+                                 # `babysat_interrupts` the babysit fix
+                                 # turn's `--now` notes its resume carries.
+                                 # HOLO-229: `withdraw` and its readers,
+                                 # `standing` and `withdrawn_events`.
+                                 (store.steer_notes, ["amendments",
+                                                      "babysat_interrupts",
+                                                      "close", "consume",
+                                                      "interrupting",
+                                                      "pending", "standing",
+                                                      "steer", "steers",
+                                                      "withdraw",
+                                                      "withdrawn_events"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.
                                  # HOLO-176: `--decide` accepts or rejects it.

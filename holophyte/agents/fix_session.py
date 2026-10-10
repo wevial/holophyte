@@ -9,8 +9,10 @@ from holophyte.agents.session_arms import select_arm
 from holophyte.config.checks import check_command_path
 from holophyte.config.config_tables import loop_config
 from holophyte.config.reader import config_table
+from holophyte.loop import steering
 from holophyte.loop.follow_ups import capture as capture_follow_ups
-from holophyte.loop.gates import sh
+from holophyte.loop.gates import RunFailure, sh
+from holophyte.redact import safe_print as print
 
 
 def resume_template(target):
@@ -46,9 +48,17 @@ def resume_argv(target, conn, run_id):
     return [arg.replace('{session}', row[0]) for arg in template], None
 
 
+STEER_ASK = ('Apply the maintainer\'s notes above to your work on this '
+             'ticket and commit. An instruction amends the ticket where they '
+             'conflict; a hint is advice for this turn alone. Never amend, '
+             'rebase or squash commits already on the branch: the factory only '
+             'fast-forwards it.')
+
+
 def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
              *, timed, check_cap):
-    findings = (f'Reviewer findings:\n\n{verdict}\n\n'
+    findings = steering.take(conn, run_id) + (
+        f'Reviewer findings:\n\n{verdict}\n\n'
         'For EACH finding, adjudicate it first: ADDRESS (concrete '
         'blocker — fix now), FOLLOW_UP (valid but out of scope — name '
         'it in the commit message), or DECLINE (invalid/out-of-scope — '
@@ -68,6 +78,33 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
     fresh = ('A reviewer left findings on your work. The ticket you '
              'are held to, acceptance criteria included:\n\n'
              f'{ticket}\n\n' + findings)
+    return _session_turn(target, conn, run_id, beat_s, wt, budget_min, sha,
+                         findings, fresh, timed=timed, check_cap=check_cap)
+
+
+def steer_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
+               *, timed, check_cap):
+    if not steering.pending(conn, run_id):
+        return None
+    check_cap(target, conn, run_id, budget_min, sha)
+    held = steering.reviewed_ticket(conn, run_id, ticket)
+    ask = steering.take(conn, run_id) + STEER_ASK
+    fresh = ('A maintainer steered your work on this ticket. The ticket you '
+             'are held to, acceptance criteria included:\n\n'
+             f'{held}\n\n' + ask)
+    print(f'[holo2] steer turn: carrying the maintainer\'s notes at {sha[:12]}')
+    _, timed_out = _session_turn(target, conn, run_id, beat_s, wt, budget_min,
+                                 sha, ask, fresh, timed=timed,
+                                 check_cap=check_cap, record=False)
+    head = sh(['git', 'rev-parse', 'HEAD'], cwd=wt)
+    if timed_out:
+        raise RunFailure(f'steer turn timed out; work kept at {head[:12]}',
+                         'budget')
+    return head
+
+
+def _session_turn(target, conn, run_id, beat_s, wt, budget_min, sha, resumed,
+                  fresh, *, timed, check_cap, record=True):
     arm = select_arm(loop_config(target).fix_session, run_id)
     argv, reason = (resume_argv(target, conn, run_id)
                     if arm == 'resume' else (None, None))
@@ -77,7 +114,7 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
         output, timed_out = timed(*args, fresh)
     else:
         try:
-            output, timed_out = timed(*args, findings, argv=argv)
+            output, timed_out = timed(*args, resumed, argv=argv)
             code = getattr(output, 'exit_code', 0)
             if timed_out or code:
                 reason = 'resume timed out' if timed_out else f'resume exited {code}'
@@ -86,7 +123,7 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
         except OSError:
             output, timed_out = '', False
             reason, retry = 'resume launch failed', True
-    if loop_config(target).fix_session != 'fresh' and conn is not None:
+    if record and loop_config(target).fix_session != 'fresh' and conn is not None:
         payload = {'arm': arm, 'resumed': argv is not None and reason is None}
         if reason:
             payload['reason'] = reason
