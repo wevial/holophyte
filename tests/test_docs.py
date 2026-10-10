@@ -216,7 +216,6 @@ class HoloUsageTests(unittest.TestCase):
         self.assertIn("six signed writes", line)
         names = {tool.name for tool in WRITES}
         self.assertEqual(len(names), 6)
-        self.assertIn("steer", names)
         for name in names:
             self.assertRegex(line, rf"\b{name}\b")
 

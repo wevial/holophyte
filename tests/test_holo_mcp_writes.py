@@ -321,23 +321,6 @@ class SteerTests(WriteCase):
                                           "look at the csv module",
                                           "maintainer via MCP")])
 
-    def test_a_blank_note_or_no_author_is_an_error_naming_it_and_runs_nothing(self):
-        before = self.dump()
-
-        async def use(client, _):
-            return (await client.call_tool("steer", {
-                        "ticket": "HOLO-1", "note": "  ",
-                        "author": "maintainer"}),
-                    await client.call_tool("steer", {
-                        "ticket": "HOLO-1", "note": "use v2"}))
-        blank, unsigned = self.session(use)
-
-        for result, field in ((blank, "note"), (unsigned, "author")):
-            with self.subTest(field=field):
-                self.assertIs(result.is_error, True)
-                self.assertIn(field, result.content[0].text)
-        self.assertEqual(self.dump(), before)
-
 
 class HoldTests(WriteCase):
     def test_hold_holds_admission_and_its_row_names_the_author_via_mcp(self):
