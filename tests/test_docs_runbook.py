@@ -36,12 +36,8 @@ def section_block(section: str) -> list[str]:
     return match.group(1).splitlines()
 
 
-def native_move_block() -> list[str]:
-    return section_block(SECTION)
-
-
 def backup_line() -> str:
-    lines = [ln for ln in native_move_block()
+    lines = [ln for ln in section_block(SECTION)
              if ln.startswith('python3 -c "import sqlite3')]
     if len(lines) != 1:
         raise AssertionError(f"expected one backup line, found {lines!r}")
@@ -79,7 +75,7 @@ class NativeMoveBackupTest(unittest.TestCase):
             self.assertEqual(rows, [("KO-1", "first"), ("KO-2", "second")])
 
     def test_no_line_invokes_the_sqlite3_command(self):
-        for line in native_move_block():
+        for line in section_block(SECTION):
             words = shlex.split(line, comments=True)
             self.assertNotIn("sqlite3", words[:1], line)
 
