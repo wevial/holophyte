@@ -296,7 +296,7 @@ def fix_state(sha, fixes, timed_out, addressed, model, pass_no, review_follows):
 
 def resume_babysit_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                        beat_s, pull, ticket, verify_cmd, contracts, budget_min,
-                       carried):
+                       carried, criteria=()):
     from holophyte.babysit.babysitter import _fix_threads
     from holophyte.pr.github import Comment, Thread
     row = conn.execute("SELECT payload FROM runEvents WHERE runId = ?"
@@ -315,5 +315,6 @@ def resume_babysit_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     fixed = _fix_threads(target, conn, run_id, provider, task_id, branch, wt,
                          saved["sha"], beat_s, pull, addressed, saved["model"], ticket,
                          verify_cmd, contracts, budget_min, saved["pass_no"],
-                         review_follows=saved["review_follows"], resume_step=saved)
+                         review_follows=saved["review_follows"], resume_step=saved,
+                         criteria=criteria)
     return fixed, True

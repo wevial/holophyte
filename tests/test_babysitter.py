@@ -38,16 +38,14 @@ from loop_fixture import (  # noqa: E402
 )
 
 import holophyte.config.project  # noqa: E402
-import holophyte.loop.branch_sync  # noqa: E402
 import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import holophyte.pr.pullrequest  # noqa: E402
 import store  # noqa: E402
 import store.read  # noqa: E402
 import store.tickets  # noqa: E402
-from holophyte.babysit import babysitter  # noqa: E402
-from holophyte.loop.gates import RunFailure  # noqa: E402
-from holophyte.loop.run import Run  # noqa: E402
+from holophyte.babysit import babysitter, maintainer_notes  # noqa: E402
+from holophyte.loop.gates import MergeParked, RunFailure, sh  # noqa: E402
 from holophyte.loop.runs import open_store, set_phase  # noqa: E402
 from holophyte.loop.stop import resume_babysit_fix, resume_paused  # noqa: E402
 from holophyte.pr import github, pr_media, pr_status  # noqa: E402
@@ -681,6 +679,7 @@ CAPTURE_THREAD = Thread(id="thread", path=str(SPEC), line=1, author="review-bot"
                         body="The capture loads a redirected page.", url="thread",
                         author_kind="bot")
 TICKET = "Show load in `ui/page.html`.\n"
+APPROVE_CAPTURE = "CRITERION 1: met — ui/page.html shows load\nVERDICT: APPROVE"
 CAPTURE_PULL = PullRequest("example.test", "o", "n", 1, "https://example.test/pull/1")
 CAPTURE = """\
 import pathlib, sys
@@ -786,13 +785,15 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
                 (), ["Given the page, then it shows load"],
                 fix_note="repair the capture", budget_min=10)
 
-    def answer_thread(self, fix):
-        with self.fakes(fix, ["THREAD 1: ADDRESS -- the capture is redirected"]):
-            return babysitter._answer_recaptured(
+    def answer_thread(self, fix, review):
+        with self.fakes(fix, ["THREAD 1: ADDRESS -- the capture is redirected",
+                              review]):
+            return babysitter._answer_threads(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
                 self.root, self.head, 30, CAPTURE_PULL,
                 SimpleNamespace(threads=(CAPTURE_THREAD,), checks="success"),
-                1, 1, "reviewer", TICKET, "true", (), 10, reviewed=self.head)
+                1, 1, "reviewer", TICKET, "true", (), 10, reviewed=self.head,
+                criteria=["Given the page, then it shows load"])
 
     def edit_spec(self):
         (self.root / SPEC).write_text("FIXED")
@@ -815,7 +816,7 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         self.assertEqual(self.fix_turns, 1)
         self.assertEqual(len(self.prompts), 1)
 
-    def test_a_spec_only_fix_paused_after_its_turn_resumes_unreviewed(self):
+    def test_a_spec_only_fix_paused_after_its_turn_is_reviewed_on_resume(self):
         def fix_then_pause():
             self.edit_spec()
             store.pause(self.conn, self.run_id, "operator pause")
@@ -826,55 +827,51 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         run_id = store.claim(self.conn, self.project_id, self.ticket)
         set_phase(self.conn, run_id, "merge_gate")
         carried = store.read.approved_candidate(self.conn, self.ticket, run_id)
-        with self.fakes(lambda: self.fail("the resume ran another fix turn")):
+        with self.fakes(lambda: self.fail("the resume ran another fix turn"),
+                        [APPROVE_CAPTURE]):
             resumed = resume_babysit_fix(
                 self.project, self.conn, run_id, None, "KO-1", "task",
                 self.root, self.head, 30, CAPTURE_PULL, TICKET, "true", (),
-                10, carried)
+                10, carried, ["Given the page, then it shows load"])
 
         self.assertTrue(carried.paused)
         self.assertEqual(resumed, (self.head, True))
-        self.assertEqual(self.git("status", "--porcelain"), "")
-        verdict = store.read.last_independent_verdict(self.conn, self.ticket)
-        self.assertEqual(verdict[0], "changes_requested")
+        self.assertEqual(len(self.prompts), 1)
+        self.assertIn("https://example.test/01-state.png", self.prompts[0])
+        self.assertNotIn("failed (exit 1)", self.prompts[0])
 
+    def test_a_thread_fix_that_only_edits_the_spec_is_reviewed_before_its_reply(self):
+        answered = self.answer_thread(self.edit_spec, APPROVE_CAPTURE)
 
-    def test_a_thread_fix_that_only_edits_the_spec_leaves_the_head_unreviewed(self):
-        self.assertEqual(self.answer_thread(self.edit_spec), (self.head, None))
-
+        self.assertEqual(answered, self.head)
         self.assertEqual(self.fix_turns, 1)
+        self.assertEqual(len(self.prompts), 2)
+        self.assertIn("https://example.test/01-state.png", self.prompts[1])
+        self.assertNotIn("failed (exit 1)", self.prompts[1])
         self.assertEqual(self.posted.call_count, 1)
-        self.assertEqual(self.git("status", "--porcelain"), "")
 
-    def test_a_paused_spec_only_thread_fix_resumes_without_the_prior_approval(self):
-        def fix_then_pause():
-            self.edit_spec()
-            store.pause(self.conn, self.run_id, "operator pause")
+    def test_a_rejected_review_of_a_spec_only_thread_fix_parks_unanswered(self):
+        with (patch.object(holophyte.pr.pullrequest, "_park_on_pr",
+                           side_effect=MergeParked("parked")) as parked,
+              self.assertRaises(MergeParked)):
+            self.answer_thread(self.edit_spec,
+                               "CRITERION 1: unwitnessed — no load\n"
+                               "VERDICT: REQUEST_CHANGES")
 
-        store.set_pull_request(self.conn, self.run_id, CAPTURE_PULL.url, self.head)
-        with self.assertRaises(store.RunEnded):
-            self.answer_thread(fix_then_pause)
-        resume_paused(self.project, self.conn, self.ticket, "go on")
-        run_id = store.claim(self.conn, self.project_id, self.ticket)
-        set_phase(self.conn, run_id, "merge_gate")
-        carried = store.read.approved_candidate(self.conn, self.ticket, run_id)
-        run = Run(self.project, self.conn, run_id, None, "KO-1", "issue-1",
-                  TICKET, "task", self.root, 10, 0.0)
-        handed = {}
-        with (self.fakes(lambda: self.fail("the resume ran another fix turn")),
-              patch.object(holophyte.loop.branch_sync, "_sync_branch_from_origin",
-                           return_value=self.head),
-              patch.object(store.read, "last_independent_verdict",
-                           return_value=("pass", self.head)),
-              patch.object(babysitter, "_babysit",
-                           side_effect=lambda run, *a, **kw: handed.update(kw) or run),
-              patch.object(holophyte.pr.pullrequest.run_state, "land")):
-            holophyte.pr.pullrequest._resume_on_pr(run, carried, "true", (), "")
+        self.assertEqual(len(self.prompts), 2)
+        self.assertIn("asked for changes", parked.call_args.args[8])
+        self.assertEqual(self.posted.call_count, 0)
 
-        self.assertTrue(carried.paused)
-        self.assertEqual(self.posted.call_count, 1)
-        self.assertIsNone(handed["reviewed"])
 
+    def test_citing_an_operator_note_without_a_new_commit_keeps_the_head(self):
+        note = Thread(id="operator_note:7", path="", line=None, author="operator",
+                      body="repair the capture", url="", author_kind="maintainer")
+
+        cited = maintainer_notes.cite_commits(
+            self.root, self.head, self.head, [(1, note, "")], sh)
+
+        self.assertEqual(cited, self.head)
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.head)
 
 if __name__ == "__main__":
     unittest.main()

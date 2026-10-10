@@ -289,10 +289,11 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             continue
         rnd = _next_round(conn, run_id)
         if state.threads:
-            sha, reviewed = _answer_recaptured(
-                project, conn, run_id, provider, task_id, branch, wt, sha,
-                beat_s, pull, state, rnd, pass_no, model, ticket, verify_cmd,
-                contracts, budget_min, reviewed=reviewed)
+            sha = _answer_threads(project, conn, run_id, provider, task_id,
+                                  branch, wt, sha, beat_s, pull, state, rnd,
+                                  pass_no, model, ticket, verify_cmd,
+                                  contracts, budget_min, reviewed=reviewed,
+                                  criteria=criteria)
             pushed_state = (_just_pushed_state(
                 project, conn, run_id, provider, task_id, branch, sha,
                 beat_s, pull, reviewed) if sha != state.head_sha else None)
@@ -558,7 +559,8 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                " recorded re-review, even if reviewRoundCap is spent.", provider)
         fixed = _fix_threads(project, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, (), None, ticket, verify_cmd,
-                             contracts, budget_min, rnd, review_follows=True, goal=goal)
+                             contracts, budget_min, rnd, review_follows=True, goal=goal,
+                             reviewed_by_caller=True)
         return _review_fix(project, conn, run_id, provider, task_id, branch, wt,
                            fixed, None, beat_s, pull, ticket, verify_cmd,
                            contracts, criteria, budget_min=budget_min,
@@ -668,21 +670,9 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
     return state
 
 
-def _answer_recaptured(project, conn, run_id, provider, task_id, branch, wt,
-                       sha, beat_s, pull, state, rnd, pass_no, model, ticket,
-                       verify_cmd, contracts, budget_min, reviewed=None):
-    spec = _spec_digest(project, wt, task_id, ticket)
-    sha = _answer_threads(project, conn, run_id, provider, task_id, branch, wt,
-                          sha, beat_s, pull, state, rnd, pass_no, model, ticket,
-                          verify_cmd, contracts, budget_min, reviewed=reviewed)
-    if _spec_digest(project, wt, task_id, ticket) != spec:
-        reviewed = None
-    return sha, reviewed
-
-
 def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                     beat_s, pull, state, rnd, pass_no, model, ticket,
-                    verify_cmd, contracts, budget_min, reviewed=None):
+                    verify_cmd, contracts, budget_min, reviewed=None, criteria=()):
     """Only configured bots' or `[bot]` logins' declines are resolved."""
     from holophyte.loop.review_round import agent
     from holophyte.pr.pullrequest import _park_human, _park_on_pr
@@ -743,7 +733,7 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         sha = _fix_threads(project, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
                            model, ticket, verify_cmd, contracts, budget_min,
-                           pass_no,
+                           pass_no, criteria=criteria,
                            review_follows=_fixes_reviewed(merge_config(project)))
     declined_open = _decline_threads(project, conn, run_id, beat_s, pull,
                                      by_verdict["DECLINE"], model)
@@ -833,10 +823,21 @@ def _spec_digest(project, wt, task_id, ticket):
                                ticket_template.parse(ticket or "").evidence_states)
 
 
+def _review_spec_only_fix(project, conn, run_id, provider, task_id, branch, wt,
+                          sha, fixed, beat_s, pull, ticket, verify_cmd,
+                          contracts, criteria, budget_min, fixes,
+                          reviewed_by_caller):
+    if fixed == sha and not reviewed_by_caller:
+        _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
+                    None, beat_s, pull, ticket, verify_cmd, contracts, criteria,
+                    budget_min=budget_min, fix_context=str(fixes))
+
+
 def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
-                 resume_step=None, no_commit_why=None, reviewed=None):
+                 resume_step=None, no_commit_why=None, reviewed=None,
+                 criteria=(), reviewed_by_caller=False):
     from holophyte.loop.branch_sync import _candidate_drift
     from holophyte.loop.implement import _record_implementer_output, _transport_timed
     from holophyte.pr.pullrequest import _park_on_pr
@@ -877,6 +878,10 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,
             f"for {pull.url}; branch {branch} preserved at {sha[:12]}"))
+    _review_spec_only_fix(
+        project, conn, run_id, provider, task_id, branch, wt, sha, fixed,
+        beat_s, pull, ticket, verify_cmd, contracts, criteria, budget_min,
+        fixes, reviewed_by_caller)
     unclean = _candidate_drift(wt, branch, fixed)
     if unclean:
         ledger(conn, run_id, task_id, "failure",

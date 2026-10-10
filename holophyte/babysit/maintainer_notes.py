@@ -105,7 +105,7 @@ def start_fix(conn, run_id, addressed):
 
 def cite_commits(wt, sha, fixed, addressed, sh):
     refs = [f"operator_note event {event_id(t)}" for _, t, _ in addressed if is_note(t)]
-    if not refs:
+    if not refs or fixed == sha:
         return fixed
     messages = sh(["git", "log", "--format=%B", f"{sha}..{fixed}"], cwd=wt)
     missing = [ref for ref in refs
