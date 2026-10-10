@@ -1,6 +1,7 @@
 """A cap failure on a steered ticket parks it with a split suggestion."""
 import store
 from holophyte.board.projection import block_ticket, comment_body, warn
+from holophyte.redact import redact_values
 from store import steer_notes
 
 ROUND_CAP_REASON = "terminal adjudication: FAIL"
@@ -23,6 +24,13 @@ def question(key, cap, amendments):
             " again with the amendments.")
 
 
+def park(conn, ticket_id, provider, asked, escalated):
+    if escalated:
+        store.set_question(conn, ticket_id, redact_values(asked))
+        return True
+    return block_ticket(conn, ticket_id, provider, asked)
+
+
 def park_steered_cap(conn, run_id, ticket_id, provider):
     kind, reason = conn.execute(
         "SELECT failureKind, outcomeReason FROM runs WHERE id = ?",
@@ -32,19 +40,21 @@ def park_steered_cap(conn, run_id, ticket_id, provider):
         return
     amendments = steer_notes.standing(conn, ticket_id)
     ticket = store.read.ticket_by_id(conn, ticket_id)
-    if not amendments or ticket.status != "in_flight":
+    escalated = (ticket.status == "blocked_on_operator"
+                 and ticket.lastRunId == run_id)
+    if not amendments or (ticket.status != "in_flight" and not escalated):
         return
     asked = question(ticket.linearIdentifier, cap, amendments)
     if getattr(provider, "store_mode", False) is True:
         with store.transaction(conn):
-            if not block_ticket(conn, ticket_id, provider, asked):
+            if not park(conn, ticket_id, provider, asked, escalated):
                 return
             store.record_note(conn, ticket_id, "escalation",
                               comment_body(asked), f"steer_cap:{run_id}",
                               run_id=run_id)
             store.record_event(conn, run_id, "steer_cap_park", asked)
         return
-    if not block_ticket(conn, ticket_id, provider, asked):
+    if not park(conn, ticket_id, provider, asked, escalated):
         return
     store.record_event(conn, run_id, "steer_cap_park", asked)
     try:

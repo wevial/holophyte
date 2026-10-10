@@ -42,9 +42,9 @@ class SteerCapFixture(SteerFixture):
 
         return patch.object(holophyte.loop.review_round, "set_phase", watching)
 
-    def run_out_of_time(self, guard=None):
+    def run_out_of_time(self, guard=None, script=OUT_OF_TIME):
         with self.aged():
-            return self.loop(*OUT_OF_TIME, provider=StubProvider(CAPPED_TASK),
+            return self.loop(*script, provider=StubProvider(CAPPED_TASK),
                              guard=guard)
 
     def ticket_row(self):
@@ -170,3 +170,37 @@ class WithdrawTests(SteerCapFixture):
         self.assertNotEqual(code, 0, said)
         self.assertIn(f"live run {run}", said)
         self.assertEqual(list(self.conn.iterdump()), before)
+
+
+class EscalatedCapTests(SteerCapFixture):
+    def test_a_cap_after_a_factory_requeue_keeps_the_split_question(self):
+        self.configure("[verify]\ntimeout_sec = 1\n" + TIME_CAP)
+        self.steer("-n", NOTE)
+        self.loop(Commit("work", path="app.txt"), APPROVE,
+                  provider=StubProvider(dict(a_task(),
+                                             verify="echo started && sleep 5")))
+        self.assertEqual(self.ticket_row(), ("in_flight", None))
+        store.requeue(self.conn, self.ticket, "failure triage: infra",
+                      source="factory")
+
+        self.run_out_of_time(script=(
+            Commit("more work", path="app.txt", body="more\n"), REQUEST_CHANGES))
+
+        self.assertEqual(self.last_run()[:2], ("failed", "budget"))
+        status, question = self.ticket_row()
+        self.assertEqual(status, "blocked_on_operator")
+        self.assertIn("KO-131 hit its time cap after steering added"
+                      " 1 amendment(s): also log the port.", question)
+        self.assertEqual(self.parks(), [(question,)])
+
+
+class OlderStoreTests(SteerCapFixture):
+    def test_report_reads_a_store_from_before_the_withdrawn_column(self):
+        self.steer("-n", NOTE)
+        self.conn.executescript("ALTER TABLE steerNotes DROP COLUMN withdrawnBy;\n"
+                                "PRAGMA user_version = 44;\n")
+
+        code, said = self.holo("report", "--notes")
+
+        self.assertEqual(code, 0, said)
+        self.assertIn("Steers (1)", said.splitlines())

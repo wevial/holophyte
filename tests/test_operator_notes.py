@@ -110,3 +110,23 @@ class WithdrawnNoteTests(ServeTestCase):
             reviewed = amended_ticket(conn, self.run, "the ticket", url)
         self.assertIn(note, steered)
         self.assertEqual(reviewed, "the ticket")
+
+    def test_a_withdrawn_sent_back_amendment_is_no_pending_instruction(self):
+        self.seed()
+        url = "https://github.com/example/repo/pull/1"
+        with store.open(str(self.db)) as conn:
+            for phase in ("verifying", "reviewing", "merge_gate"):
+                store.set_phase(conn, self.run, phase)
+            store.park(conn, self.run, "awaiting_merge_approval", pr_url=url)
+            store.tickets.transition(conn, 1, "blocked_on_operator")
+            conn.commit()
+            project = Project.locate(self.target)
+            steer_ticket(project, "KO-7", "also log the port",
+                         author="maintainer", out=io.StringIO())
+            empty = PrState((), "success", None)
+            steered = pending_state(conn, self.run, empty, url).threads
+            withdraw_steers(project, "KO-7", "split into a follow-up",
+                            out=io.StringIO())
+            pending = pending_state(conn, self.run, empty, url).threads
+        self.assertEqual([t.body for t in steered], ["also log the port"])
+        self.assertEqual(pending, ())

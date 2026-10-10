@@ -22,13 +22,18 @@ def event_id(thread):
     return int(thread.id.partition(":")[2])
 
 
+def standing_notes(conn, run_id, pending=False, pr_url=None):
+    notes = operator_notes.notes(conn, run_id, pending=pending, pr_url=pr_url)
+    if not notes:
+        return notes
+    withdrawn = steer_notes.withdrawn_events(
+        conn, run_snapshot(conn, run_id).ticketId)
+    return [n for n in notes if n["event_id"] not in withdrawn]
+
+
 def amended_ticket(conn, run_id, ticket, url):
-    amendments = [n for n in operator_notes.notes(conn, run_id, pr_url=url)
+    amendments = [n for n in standing_notes(conn, run_id, pr_url=url)
                   if not n.get("hint")]
-    if amendments:
-        withdrawn = steer_notes.withdrawn_events(
-            conn, run_snapshot(conn, run_id).ticketId)
-        amendments = [n for n in amendments if n["event_id"] not in withdrawn]
     if not amendments:
         return ticket
     return ticket + "".join(f"\n\n{PREFIX}\noperator_note event {n['event_id']} "
@@ -105,7 +110,7 @@ def requeue_context(conn, run_id):
 def pending_state(conn, run_id, state, url):
     threads = tuple(Thread(f"operator_note:{n['event_id']}", "", None,
                            n["author"], n["note"], "", author_kind="maintainer")
-                    for n in operator_notes.notes(
+                    for n in standing_notes(
                         conn, run_id, pending=True, pr_url=url))
     posted = {event_id: (at, answer)
               for event_id, at, answer in state.console_answers}

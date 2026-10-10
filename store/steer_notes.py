@@ -237,13 +237,14 @@ def consume(conn, note_ids, run_id, now=None):
 
 
 def steers(conn):
-    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
-                    " AND name = 'steerNotes'").fetchone() is None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(steerNotes)")}
+    if not columns:
         return []
+    withdrawn = "s.withdrawnBy" if "withdrawnBy" in columns else "NULL"
     return [SteerRow(*row) for row in conn.execute(
         "SELECT s.id, t.linearIdentifier, s.kind, s.author, s.note, s.at,"
         " s.runId, s.eventId, COALESCE(s.consumedBy, c.runId),"
-        " COALESCE(s.consumedAt, c.at), s.withdrawnBy FROM steerNotes s"
+        f" COALESCE(s.consumedAt, c.at), {withdrawn} FROM steerNotes s"
         " JOIN tickets t ON t.id = s.ticketId"
         " LEFT JOIN runEvents c ON c.id = (SELECT MIN(e.id) FROM runEvents e"
         " WHERE e.kind = 'operator_note_consumed'"
