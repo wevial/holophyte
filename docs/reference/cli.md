@@ -85,7 +85,7 @@ any other mode without a project is a usage error.
 ## holo
 
 `holo COMMAND [ARGS] [-p NAME|PATH] [--verbose]` is the short form of the
-modes above. Each command but `send-back`, `start` and `stop` stands for one
+modes above. Each command but `send-back`, `steer`, `start` and `stop` stands for one
 `factory.py` invocation and runs through the same parser, so its refusals, messages and
 exit codes are the factory's own. A command's project is the first of these
 that answers:
@@ -126,6 +126,7 @@ claim's implement stage.
 | `holo approve KEY [NOTE] [--force]` | `holo ticket approve` | `--approve KEY [--note NOTE] [--force] PROJECT` |
 | `holo babysit KEY [NOTE [--author NAME]]` | `holo ticket babysit` | `--babysit KEY [--note NOTE [--author NAME]] PROJECT` |
 | `holo send-back RUN NOTE [--author NAME]` | | none: the console's send-back of run `RUN`, its note by `--author`, or else the caller's login (over http, the daemon's `maintainer`) |
+| `holo steer KEY NOTE [--hint] [--author NAME]` | | none: a `steerNotes` row by `--author`, or else the caller's login. On a ticket with no live run, a `steer` interventions row (on its newest run, or the project's when it has none) and an amendment every later run's ticket text carries, so its implementer and reviewers see it; with `--hint`, advice the next implement turn's opening carries once and no reviewer sees. On a run parked on its pull request, `holo send-back`'s release, its note a hint the reviewer's ticket leaves out under `--hint`. A live run is refused naming `holo pause` and `holo abort`; a merged or abandoned ticket, or one parked with no pull request, is refused naming its state |
 | `holo repoint KEY SHA NOTE` | `holo ticket repoint` | `--repoint KEY SHA --note NOTE PROJECT` |
 | `holo pause KEY NOTE` | `holo ticket pause` | `--pause KEY --note NOTE PROJECT` |
 | `holo resume KEY NOTE` | `holo ticket resume` | `--resume KEY --note NOTE PROJECT` |
@@ -259,6 +260,7 @@ page's lines carry no `[holo2]` prefix:
 | `Hands-on` | the human interventions by action, `3 interventions (requeue 2 · approve 1)`, and the send-backs, the human `operator_note` interventions, which the interventions count leaves out |
 | `Runs (N)` | the window's ended runs in end order: `✓` merged, `✗` failed, `·` otherwise, the ticket, the outcome, the work against the estimate in minutes, the review rounds and how long ago it ended |
 | `Notes (N)` | with `--notes` only: each send-back note consumed in the window, newest first, with the time it was consumed, the ticket, run and round, and its author |
+| `Steers (N)` | with `--notes` only: each `holo steer` note recorded in the window or still pending, oldest first, with the time it was recorded, the ticket, its kind (`amendment` or `hint`) and author, and `pending` or `consumed by run N` |
 | footer | the project's directory and the window, `holophyte · last 7 days` |
 
 `holo report --json` prints the object the page renders from, the notes

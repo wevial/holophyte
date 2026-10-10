@@ -7,7 +7,7 @@ import store
 import store.read
 import ticket_template
 from holophyte import leak_guard
-from holophyte.babysit import babysitter
+from holophyte.babysit import babysitter, maintainer_notes
 from holophyte.board.projection import block_ticket, ledger
 from holophyte.config.config_tables import board_mode, merge_config, sweep_config
 from holophyte.host.reconcile import _pr_seen
@@ -53,13 +53,15 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
           " babysitting it")
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
     set_phase(conn, run_id, "merge_gate", f"babysitting {url}")
+    ticket = maintainer_notes.carry_amendments(
+        conn, run_id, f"{task}\n\n{body}" if body else task)
     sha, pushed = resume_babysit_fix(
         project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
-        pr_status.parse_pr_url(url), f"{task}\n\n{body}" if body else task,
+        pr_status.parse_pr_url(url), ticket,
         verify_cmd, contracts, run.budget_min, carried, criteria)
     run = replace(run, sha=sha, pr_url=url)
     run = babysitter._babysit(
-        run, beat_s, f"{task}\n\n{body}" if body else task,
+        run, beat_s, ticket,
         verify_cmd, contracts, criteria, approved=carried.approved,
         reviewed=reviewed, verified=None, just_pushed=pushed,
         fix_note=(None if carried.approved else

@@ -176,7 +176,7 @@ class Home(unittest.TestCase):
         return path
 
 
-class RequeueTests(Home):
+class TicketHome(Home):
     def setUp(self):
         super().setUp()
         self.path = self.repo("repo", "HOLO")
@@ -191,6 +191,8 @@ class RequeueTests(Home):
         store.tickets.transition(self.conn, self.ticket, "in_flight")
         self.run = store.claim(self.conn, project, self.ticket, now=T0)
 
+
+class RequeueTests(TicketHome):
     def fail_the_run(self):
         store.release(self.conn, self.run, "failed", "verify failed", now=T0 + 1)
 
@@ -241,6 +243,18 @@ class RequeueTests(Home):
         refusal = legacy.stderr.strip().removeprefix("[holo2] ")
         self.assertTrue(refusal)
         self.assertIn(refusal, result.stderr)
+        self.assertEqual(list(self.conn.iterdump()), before)
+
+
+class SteerParseTests(TicketHome):
+    def test_a_blank_steer_note_exits_two_and_writes_nothing(self):
+        before = list(self.conn.iterdump())
+        for note in (["-n", " "], [" "]):
+            with self.subTest(note=note):
+                result = holo("steer", "HOLO-1", *note, "-p", str(self.path),
+                              home=self.home)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("steer records a note", result.stderr)
         self.assertEqual(list(self.conn.iterdump()), before)
 
 

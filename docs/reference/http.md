@@ -614,6 +614,12 @@ from history.
   {"run": 310, "ticket": "KO-240", "round": 2, "event_id": 881,
    "author": "maintainer", "note": "name the window in the header",
    "consumed_ms": 1788470000000}
+ ],
+ "steers": [
+  {"id": 4, "ticket": "KO-242", "kind": "hint", "author": "maintainer",
+   "note": "the port is in config.toml", "steered_ms": 1788480000000,
+   "run": null, "event_id": null, "consumed_by": 315,
+   "consumed_ms": 1788481000000}
  ]}
 ```
 
@@ -639,8 +645,13 @@ wall-clock minutes.
 `notes` are the send-back notes a run consumed in the window, newest
 first: the `run` and `ticket`, the `round` that consumed it, the
 `event_id` of the `operator_note` event, its `author` and `note`, and
-`consumed_ms`. `holo report` prints its notes only with `--notes`; the
-body always holds them.
+`consumed_ms`. `steers` are the `holo steer` notes recorded in the window
+or still pending, oldest first: the steer note's `id`, its `ticket`, `kind`
+(`amendment` or `hint`), `author` and `note`, `steered_ms`, the `run` it
+was recorded on and, for a parked run's send-back, its `event_id`, both
+null otherwise; `consumed_by` is the run that first carried it and
+`consumed_ms` when, both null while it is pending. `holo report` prints its
+notes and steers only with `--notes`; the body always holds them.
 
 ## `GET /attention`
 

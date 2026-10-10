@@ -9,8 +9,14 @@ from serve_fixture import ServeTestCase  # noqa: E402
 
 import holophyte.cli.report  # noqa: E402
 import store  # noqa: E402
-from holophyte.babysit.maintainer_notes import cite_commits  # noqa: E402
-from holophyte.pr.github import Thread  # noqa: E402
+from holophyte.babysit.maintainer_notes import (  # noqa: E402
+    amended_ticket,
+    cite_commits,
+    pending_state,
+)
+from holophyte.babysit.thread_text import fix_brief  # noqa: E402
+from holophyte.pr.github import PrState, Thread  # noqa: E402
+from holophyte.pr.pr_status import parse_pr_url  # noqa: E402
 from store.operator_notes import consume, notes, send_back  # noqa: E402
 
 
@@ -57,3 +63,23 @@ class NoteReportTests(ServeTestCase):
             r"maintainer\rseat\u2029operator: remove heading\nkeep body\r\n"
             r"keep footer\u2028last line", report)
         self.assertEqual("\n".join(report).splitlines(), report)
+
+
+class HintNoteTests(ServeTestCase):
+    def test_a_hint_reaches_the_fix_brief_but_not_the_reviewers_ticket(self):
+        self.seed()
+        url = "https://github.com/example/repo/pull/1"
+        hint = "the port is in config.toml"
+        with store.open(str(self.db)) as conn:
+            for phase in ("verifying", "reviewing", "merge_gate"):
+                store.set_phase(conn, self.run, phase)
+            store.park(conn, self.run, "awaiting_merge_approval", pr_url=url)
+            store.tickets.transition(conn, 1, "blocked_on_operator")
+            send_back(conn, self.run, hint, "maintainer", hint=True)
+            reviewed = amended_ticket(conn, self.run, "the ticket", url)
+            state = pending_state(conn, self.run, PrState((), "success", None),
+                                  url)
+        (thread,) = state.threads
+        brief = fix_brief(parse_pr_url(url), [(1, thread, "")], reviewed)
+        self.assertEqual(reviewed, "the ticket")
+        self.assertIn(hint, brief)

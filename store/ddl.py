@@ -479,6 +479,23 @@ CREATE TABLE IF NOT EXISTS storyProposals (
     decidedAt     INTEGER,
     at            INTEGER NOT NULL
 );
+
+-- steerNotes: a maintainer's note on a ticket, an amendment to its contract
+-- or one implement turn's hint; consumption is recorded beside the note.
+CREATE TABLE IF NOT EXISTS steerNotes (
+    id             INTEGER PRIMARY KEY,
+    ticketId       INTEGER NOT NULL REFERENCES tickets (id),
+    runId          INTEGER REFERENCES runs (id),
+    kind           TEXT    NOT NULL
+        {_enums.check_clause('kind', _enums.SteerKind)},
+    note           TEXT    NOT NULL,
+    author         TEXT    NOT NULL,
+    at             INTEGER NOT NULL,
+    interventionId INTEGER NOT NULL REFERENCES interventions (id),
+    eventId        INTEGER REFERENCES runEvents (id),
+    consumedBy     INTEGER REFERENCES runs (id),
+    consumedAt     INTEGER
+);
 """
 
 

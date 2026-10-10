@@ -6,12 +6,14 @@ from store.operate import _release_parked
 from store.schema import _transaction
 
 
-def send_back(conn, run_id, note, author):
+def send_back(conn, run_id, note, author, hint=False):
     if not isinstance(note, str) or not note.strip():
         raise ValueError("note must be non-blank text")
     if not isinstance(author, str) or not author.strip():
         raise ValueError("author must be non-blank text")
     data = {"note": note.strip(), "author": author.strip()}
+    if hint:
+        data["hint"] = True
     with _transaction(conn):
         row = conn.execute(
             "SELECT t.id FROM tickets t JOIN runs r ON r.ticketId = t.id"

@@ -47,6 +47,7 @@ import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
+from holophyte.babysit.maintainer_notes import PREFIX  # noqa: E402
 from holophyte.loop import implement, pipeline  # noqa: E402
 
 
@@ -732,6 +733,23 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"
                                    " WHERE id = 2"),
                          [("merged", self.MERGE_SHA)])
+
+    def test_a_babysit_resume_hands_the_reviewer_a_steered_amendment(self):
+        approved, bare, clone = self.park_on_a_declined_nit_with_a_bare_origin()
+        holophyte.cli.operator.steer_ticket(
+            self.project, "KO-131", "also log the port", author="maintainer",
+            out=io.StringIO())
+        (clone / "README.md").write_text("a person's touch\n")
+        self.git("commit", "-q", "-am", "operator: adjust the candidate",
+                 cwd=clone)
+        self.publish(clone, bare)
+
+        fake, _ = self.loop(APPROVE, self.WRITTEN, provider=self.provider())
+
+        self.assertEqual(fake.roles[0], "review")
+        self.assertIn(f"{PREFIX}\nsteer note 1 by maintainer:\nalso log the port",
+                      fake.turns[0].goal)
+        self.assertEqual(self.read("SELECT consumedBy FROM steerNotes"), [(2,)])
 
     def test_a_babysit_resume_parks_when_the_branches_diverged(self):
         """The remote branch was rewritten past the candidate rather than

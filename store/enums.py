@@ -164,6 +164,7 @@ class InterventionAction(str, Enum):
     ABORT_CLOSE = 'abort_close'
     APPROVE_STORY = 'approve_story'
     DECIDE = 'decide'
+    STEER = 'steer'
 
 
 class GapLayer(str, Enum):
@@ -230,6 +231,11 @@ class ProposalState(str, Enum):
     SUPERSEDED = 'superseded'
 
 
+class SteerKind(str, Enum):
+    AMENDMENT = 'amendment'
+    HINT = 'hint'
+
+
 # Line breaks are part of the existing sqlite_master SQL contract.
 _WRAPPING = {
     TicketStatus: {4: 26},
@@ -270,6 +276,7 @@ CONSTRAINED_COLUMNS = {
     ('storyDecisions', 'kind'): DecisionKind,
     ('followUps', 'kind'): FollowUpKind,
     ('storyProposals', 'state'): ProposalState,
+    ('steerNotes', 'kind'): SteerKind,
 }
 
 

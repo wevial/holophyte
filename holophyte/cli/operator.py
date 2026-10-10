@@ -35,7 +35,7 @@ from holophyte.loop.reexec import reexec_self
 from holophyte.loop.runs import open_store
 from holophyte.pr.merge_ready import PARKED_PHASE, readiness
 from holophyte.review.findings import commit_findings
-from store import operator_notes
+from store import operator_notes, steer_notes
 from store.gap_layers import record_gap_layer
 
 BABYSIT_DEFAULT_NOTE = "sent back to the babysitter"
@@ -344,6 +344,31 @@ def send_back_run(target, run_id, note, author=None, out=None):
         print(f"[holo2] run {run_id} sent back to the babysitter as a"
               f" maintainer instruction (operator_note event {event_id})",
               file=out)
+    finally:
+        conn.close()
+
+
+def steer_ticket(target, identifier, note, hint=False, author=None, out=None):
+    out = out or sys.stdout
+    conn = _operator_store(target)
+    try:
+        ticket_id = _ticket_by_identifier(target, conn, identifier)
+        try:
+            steered = steer_notes.steer(
+                conn, ticket_id, note,
+                getpass.getuser() if author is None else author, hint=hint)
+        except (store.ApproveRefused, ValueError) as refused:
+            raise SystemExit(f"[holo2] {refused}") from None
+        if steered.event_id is not None:
+            print(f"[holo2] {identifier} steered: run {steered.run_id} sent"
+                  " back to the babysitter as a maintainer instruction"
+                  f" (operator_note event {steered.event_id}, steer note"
+                  f" {steered.id})", file=out)
+        else:
+            reader = ("its next implement turn" if hint
+                      else "its next run's contract")
+            print(f"[holo2] {identifier} steered: {steered.kind} (steer note"
+                  f" {steered.id}) for {reader}", file=out)
     finally:
         conn.close()
 

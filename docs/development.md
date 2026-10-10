@@ -69,7 +69,7 @@ Each module, one line:
   `HOLO_PROJECT`, the current repository or `client.toml`'s `default_project`,
   the client config reader, and the refusal when none answers.
 - `holophyte/holo/grammar.py` — the `holo` command table: one canonical row per
-  `factory.py` mode, the `send-back`, `start` and `stop` rows, the
+  `factory.py` mode, the `send-back`, `steer`, `start` and `stop` rows, the
   interventions actions each write row records, the `ticket VERB` and `loop
   start|stop` aliases, and their translation to the argv `build_parser()`
   parses; and the read rows, `run show N` among them.
@@ -426,6 +426,9 @@ Each module, one line:
   merge commit, a removal, or `[merge] check_wait_sec`.
 - `holophyte/babysit/maintainer_notes.py` — private maintainer instructions as pre-approved
   babysitter threads, contract amendments, and commit event references.
+- `store/steer_notes.py` — `holo steer`'s notes: a ticket's amendment or hint
+  recorded with its interventions row, or a parked run's send-back linked to
+  its event; a ticket's amendments and pending hints, and their consumption.
 - `store/operator_notes.py` — atomic send-back and append-only note consumption
   evidence across attempts on the same pull request.
 - `store/console_asks.py` — a console ask recorded and its park released in one
