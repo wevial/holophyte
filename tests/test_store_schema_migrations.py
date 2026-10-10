@@ -189,6 +189,7 @@ class Version9MigrationTests(unittest.TestCase):
         run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
         conn.execute("UPDATE runs SET prSeenThreads = 4 WHERE id = ?", (run_id,))
         conn.execute("ALTER TABLE runs DROP COLUMN prSeenOpenThreads")
+        conn.execute("ALTER TABLE runs DROP COLUMN prSeenOpenThreadsFloor")
         conn.execute("PRAGMA user_version = 46")
         conn.commit()
         conn.close()
@@ -547,7 +548,7 @@ class Version26EnumMigrationTests(unittest.TestCase):
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
         added = {'parkKind', 'failureKind', 'stopRequested', 'workerPid', 'revision',
                  'prSeenTitle', 'verifyMs', 'verifyStartedAt', 'storyGeneration',
-                 'prSeenOpenThreads'}
+                 'prSeenOpenThreads', 'prSeenOpenThreadsFloor'}
         after['runs'] = [tuple(value for column, value in zip(columns, row)
                                if column not in added) for row in after['runs']]
         self.assertEqual(after, self.before)

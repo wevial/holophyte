@@ -240,6 +240,7 @@ ADDED_COLUMNS = (
         "prSeenThreads INTEGER",
     ),
     ("runs", "prSeenOpenThreads", "prSeenOpenThreads INTEGER"),
+    ("runs", "prSeenOpenThreadsFloor", "prSeenOpenThreadsFloor INTEGER"),
     (
         "runs",
         "prSeenChecks",

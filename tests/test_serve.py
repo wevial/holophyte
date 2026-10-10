@@ -836,7 +836,7 @@ class AttentionTests(ServeTestCase):
         carries them beside the number."""
         self.seed_attention()
         url = "https://github.com/example/repo/pull/2170"
-        self.park_on_pr(url, pr_seen=("2026-09-10T10:00:00Z", 3, None, "failure",
+        self.park_on_pr(url, pr_seen=("2026-09-10T10:00:00Z", 3, None, None, "failure",
                                       "changes_requested", None))
         self.start()
 

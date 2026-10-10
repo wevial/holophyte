@@ -119,6 +119,7 @@ class PullStatus:
     updated_at: str | None = None
     threads: int | None = None
     open_threads: int | None = None
+    open_threads_floor: bool | None = None
     checks: str | None = None
     review: str | None = None
     mergeable: str | None = None
@@ -159,6 +160,7 @@ def pull_status(target, pull):
                       threads=_count(threads.get("totalCount")
                                      if isinstance(threads, dict) else None),
                       open_threads=_open_count(threads),
+                      open_threads_floor=_counted_in_part(threads),
                       checks=_head_checks(node),
                       review=decision.lower() if isinstance(decision, str)
                       and decision else None,
@@ -180,6 +182,14 @@ def _open_count(threads):
     if not all(isinstance(flag, bool) for flag in flags):
         return None
     return flags.count(False)
+
+
+def _counted_in_part(threads):
+    total = threads.get("totalCount") if isinstance(threads, dict) else None
+    nodes = threads.get("nodes") if isinstance(threads, dict) else None
+    if not isinstance(nodes, list) or _count(total) is None:
+        return None
+    return total > len(nodes)
 
 
 def _head_checks(node):
