@@ -336,6 +336,13 @@ def build_parser():
              "ticket, work it to merge or park, exit with the run's status; "
              "spawned by the scheduler under [loop] workers > 1, not meant "
              "to be typed")
+    modes.add_argument(
+        "--shadow", metavar="BRIEF",
+        help="internal: run the shadow implementer from the brief file "
+             "BRIEF under the project's shadow lock, record its result on "
+             "the brief's run and delete the brief; spawned by a fresh "
+             "claim's implement stage under [agents.implementer_shadow], "
+             "not meant to be typed")
     parser.add_argument(
         "--act", action="store_true",
         help="with --sweep: fail each tripped run and release its leases, "
