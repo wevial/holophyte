@@ -488,7 +488,7 @@ supplies the binary; review roles run on the host and keep their path.
 | `workers` | Default: `1` | Integer at least 1; increase to work multiple claimable tickets concurrently. |
 | `review_session` | Default: `"fresh"` | `fresh`, `resume`, or `alternate`; alternate requests reviewer resume on odd run ids, fresh on even run ids. |
 | `fix_session` | Default: `"fresh"` | `fresh`, `resume`, or `alternate`; alternate resumes odd run ids and starts even run ids fresh. |
-| `tick_sec` | Default: `120` seconds | Integer at least 10; change how soon a pool with spare slots notices new work. |
+| `tick_sec` | Default: `120` seconds | Integer at least 10; change how soon a pool with spare slots notices new work, and how often a pool re-checks its parked pull requests. |
 | `critic_after_hours` | Default: `12` hours | Integer at least 0; a ticket filed longer ago than this, or one whose named files changed on `main` since it was filed, is put to `[agents.critic]` before it is claimed. Lower it to ask sooner; 0 asks of every ticket. Without a critic seat it does nothing. |
 
 Configured reviewer wrappers may write their session id to
@@ -605,10 +605,12 @@ that could work nothing) is a startup error naming the key.
 below `workers`: with a slot free, its wait on the children times out after
 this many seconds and the ready listing and the claimable count are run
 again, so a ticket filed while the pool was busy starts within a tick rather
-than at the next exit. With the pool full the scheduler waits on exits
-alone, and the tick prints nothing unless it spawns. An integer of at least
-`10`; `"120"` (a string) or `5` is a startup error naming the key. Only the
-scheduler reads it: under `workers = 1` there is no pool to tick.
+than at the next exit. The wait carries it with the pool full too: that tick
+re-checks the parked pull requests (their checks, threads and CI wake) but
+reads no listing and spawns nothing. The timer itself prints nothing; only
+a spawn or what the parked-pull-request check reports shows. An integer of at
+least `10`; `"120"` (a string) or `5` is a startup error naming the key. Only
+the scheduler reads it: under `workers = 1` there is no pool to tick.
 
 ## `[board]`
 

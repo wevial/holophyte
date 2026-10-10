@@ -256,21 +256,35 @@ class PoolTests(PoolRestartCases, LoopFixture):
             "[holo2] Linear has no ready tickets. done.",
         ])
 
-    def test_a_full_pool_waits_on_exits_alone(self):
-        """Three ready tickets under `workers = 3`: the pool is full, so
-        the wait carries no timeout; once one exits with the listing
-        emptied, two slots are free and the timer is back (KO-353)."""
-        provider = StubProvider(*(a_task(n) for n in range(1, 4)))
+    def test_a_full_pool_still_ticks_without_listing(self):
+        """Two ready tickets under `workers = 2`: with both workers busy the
+        wait still carries `tick_sec`, and a tick that passes with no exit
+        reconciles parked runs again but reads no listing and spawns none."""
+        provider = StubProvider(a_task(1), a_task(2))
+        counts = []
 
-        pool = self.run_scheduler(3, provider, [
-            (holophyte.loop.pool.WORKER_MERGED, provider.queue.clear),
-            (holophyte.loop.pool.WORKER_MERGED, None),
-            (holophyte.loop.pool.WORKER_MERGED, None),
-        ])
+        def count():
+            counts.append((reconcile.call_count, listing.call_count))
 
-        self.assertEqual(len(pool.spawned), 3)
-        self.assertEqual(pool.timeouts, [None, 120, 120])
-        self.assertEqual(self.rc, 0)
+        def count_and_empty_board():
+            count()
+            provider.queue.clear()
+
+        with patch.object(holophyte.loop.pool.admission, "reconcile_tick",
+                          wraps=holophyte.loop.pool.admission.reconcile_tick
+                          ) as reconcile, \
+                patch.object(provider, "ready_issues",
+                             wraps=provider.ready_issues) as listing:
+            pool = self.run_scheduler(2, provider, [
+                (TICK, count),
+                (holophyte.loop.pool.WORKER_MERGED, count_and_empty_board),
+                (holophyte.loop.pool.WORKER_MERGED, None),
+            ], tick_sec=45)
+
+        self.assertEqual(pool.timeouts[0], 45)
+        (reconciled, listed), after_tick = counts
+        self.assertEqual(after_tick, (reconciled + 1, listed))
+        self.assertEqual(len(pool.spawned), 2)
 
     def test_the_pool_refills_while_live_workers_hold_their_leases(self):
         """Live leases do not prevent free slots from being refilled."""
