@@ -6,7 +6,7 @@ from store.operate import _release_parked
 from store.schema import _transaction
 
 
-def send_back(conn, run_id, note, author, hint=False):
+def _instruction(note, author, hint):
     if not isinstance(note, str) or not note.strip():
         raise ValueError("note must be non-blank text")
     if not isinstance(author, str) or not author.strip():
@@ -14,23 +14,51 @@ def send_back(conn, run_id, note, author, hint=False):
     data = {"note": note.strip(), "author": author.strip()}
     if hint:
         data["hint"] = True
+    return data
+
+
+def _record_note(conn, run_id, data):
+    return store.record_event(conn, run_id, "operator_note",
+                              f"{data['author']}: {data['note']}",
+                              level="detail", payload=json.dumps(data))
+
+
+def _latest_note(conn, run_id):
+    return conn.execute("SELECT id FROM runEvents WHERE runId = ?"
+                        " AND kind = 'operator_note' ORDER BY id DESC LIMIT 1",
+                        (run_id,)).fetchone()[0]
+
+
+def send_back(conn, run_id, note, author, hint=False):
+    data = _instruction(note, author, hint)
     with _transaction(conn):
         row = conn.execute(
             "SELECT t.id FROM tickets t JOIN runs r ON r.ticketId = t.id"
             " WHERE r.id = ? AND t.lastRunId = r.id", (run_id,)).fetchone()
         if row is None:
             raise ValueError("run must be the ticket's latest parked attempt")
-        def record_note():
-            store.record_event(conn, run_id, "operator_note",
-                               f"{data['author']}: {data['note']}",
-                               level="detail", payload=json.dumps(data))
         _release_parked(conn, row[0], "operator_note", json.dumps(data),
                         "sent back with a maintainer instruction", None,
                         require_pr=True, guidance=json.dumps(data),
-                        before_release=record_note)
-        return conn.execute("SELECT id FROM runEvents WHERE runId = ?"
-                            " AND kind = 'operator_note' ORDER BY id DESC LIMIT 1",
-                            (run_id,)).fetchone()[0]
+                        before_release=lambda: _record_note(conn, run_id, data))
+        return _latest_note(conn, run_id)
+
+
+def add_note(conn, run_id, note, author, hint=False):
+    data = _instruction(note, author, hint)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT 1 FROM tickets t JOIN runs r ON r.ticketId = t.id"
+            " WHERE r.id = ? AND t.lastRunId = r.id AND t.activeRunId IS NULL"
+            " AND r.prUrl IS NOT NULL AND r.resumePhase = 'merge_gate'",
+            (run_id,)).fetchone()
+        if row is None:
+            raise ValueError("run must be the ticket's latest attempt, released"
+                             " to resume on its pull request")
+        store.record_intervention(conn, run_id, "operator_note",
+                                  json.dumps(data), guidance=json.dumps(data))
+        _record_note(conn, run_id, data)
+        return _latest_note(conn, run_id)
 
 
 def notes(conn, run_id, pending=False, pr_url=None):

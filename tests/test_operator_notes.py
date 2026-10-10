@@ -1,4 +1,5 @@
 """Regressions for private note commit citations and report boundaries."""
+import io
 import sys
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from holophyte.babysit.maintainer_notes import (  # noqa: E402
     pending_state,
 )
 from holophyte.babysit.thread_text import fix_brief  # noqa: E402
+from holophyte.cli.operator import steer_ticket  # noqa: E402
+from holophyte.config.project import Project  # noqa: E402
 from holophyte.pr.github import PrState, Thread  # noqa: E402
 from holophyte.pr.pr_status import parse_pr_url  # noqa: E402
 from store.operator_notes import consume, notes, send_back  # noqa: E402
@@ -75,7 +78,9 @@ class HintNoteTests(ServeTestCase):
                 store.set_phase(conn, self.run, phase)
             store.park(conn, self.run, "awaiting_merge_approval", pr_url=url)
             store.tickets.transition(conn, 1, "blocked_on_operator")
-            send_back(conn, self.run, hint, "maintainer", hint=True)
+            conn.commit()
+            steer_ticket(Project.locate(self.target), "KO-7", hint, hint=True,
+                         author="maintainer", out=io.StringIO())
             reviewed = amended_ticket(conn, self.run, "the ticket", url)
             state = pending_state(conn, self.run, PrState((), "success", None),
                                   url)

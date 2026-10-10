@@ -13,9 +13,15 @@ import re
 import holophyte.board.projection
 import store
 import store.tickets
-from holophyte.babysit.maintainer_notes import HINT_PREFIX, PREFIX
+from holophyte.babysit.maintainer_notes import (
+    HINT_PREFIX,
+    PREFIX,
+    amended_ticket,
+    pending_state,
+)
 from holophyte.holo import cli as holo_cli
 from holophyte.loop.runs import open_store
+from holophyte.pr.github import PrState
 from store.operator_notes import consume as consume_note
 from store.steer_notes import consume
 from tests.fake_agent import APPROVE, Commit
@@ -185,6 +191,30 @@ class ParkedTests(SteerFixture):
                                              event, None)])
 
 
+    def test_steers_after_a_send_back_reach_the_resumed_babysit_pass(self):
+        run = self.claim()
+        self.park_on_the_pull_request(run)
+        self.steer("--author", "maintainer", "-n", "address the nit")
+        self.steer("--author", "maintainer", "-n", "also log the port")
+        self.steer("--hint", "--author", "maintainer", "-n", "see config.toml")
+
+        self.assertEqual(self.read(f"SELECT status, activeRunId FROM tickets"
+                                   f" WHERE id = {self.ticket}"),
+                         [("ready", None)])
+        self.assertEqual(self.read("SELECT action FROM interventions"
+                                   f" WHERE runId = {run} AND action != 'claim'"),
+                         [("operator_note",)] * 3)
+        resumed = self.claim()
+        threads = pending_state(self.conn, resumed,
+                                PrState((), "success", None), PR_URL).threads
+        self.assertEqual([t.body for t in threads],
+                         ["address the nit", "also log the port",
+                          "see config.toml"])
+        reviewed = amended_ticket(self.conn, resumed, "the ticket", PR_URL)
+        self.assertIn("also log the port", reviewed)
+        self.assertNotIn("see config.toml", reviewed)
+
+
 class RefusalTests(SteerFixture):
     def assert_refused(self, *words, naming, key="KO-131"):
         before = list(self.conn.iterdump())
@@ -210,19 +240,14 @@ class RefusalTests(SteerFixture):
         self.park_on_the_pull_request(run, pr_url=None)
         self.assert_refused(naming=("blocked_on_operator", "no pull request"))
 
-    def test_a_candidate_resuming_at_the_merge_gate_is_refused_naming_it(self):
+    def test_an_approved_local_candidate_is_refused_naming_its_resume(self):
         run = self.claim()
         self.park_on_the_pull_request(run, pr_url=None)
         store.approve(self.conn, self.ticket, "ship it", run_id=run)
-        released_ticket = self.mirror(a_task(2))
-        released = self.claim(released_ticket)
-        self.park_on_the_pull_request(released, released_ticket)
-        store.babysit(self.conn, released_ticket, "another look")
-        for key, parked in (("KO-131", run), ("KO-132", released)):
-            for words in ((), ("--hint",)):
-                with self.subTest(key=key, words=words):
-                    self.assert_refused(*words, key=key, naming=(
-                        f"resumes run {parked}'s candidate at merge_gate",))
+        for words in ((), ("--hint",)):
+            with self.subTest(words=words):
+                self.assert_refused(*words, naming=(
+                    f"resumes run {run}'s candidate at merge_gate",))
 
 
 class ReportTests(SteerFixture):

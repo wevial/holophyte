@@ -72,13 +72,11 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
                     f"{key} is blocked_on_operator, parked with no pull request"
                     f" (run {last} is {phase}); a steer reaches a ticket with"
                     " no run in flight or a run parked on its pull request")
-            event_id = operator_notes.send_back(conn, last, note, author,
-                                                hint=hint)
-            (intervention_id,) = conn.execute(
-                "SELECT MAX(id) FROM interventions WHERE runId = ?"
-                " AND action = 'operator_note'", (last,)).fetchone()
-            return _insert(conn, ticket_id, last, kind, note, author, now,
-                           intervention_id, event_id)
+            return _noted(conn, ticket_id, last, kind, note, author, now,
+                          operator_notes.send_back)
+        if resume == "merge_gate" and pr_url and outcome != "paused":
+            return _noted(conn, ticket_id, last, kind, note, author, now,
+                          operator_notes.add_note)
         if resume in GATE_PHASES or (outcome == "paused"
                                      and resume not in (None, "working")):
             raise SteerRefused(
@@ -94,6 +92,15 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
                                                   now=now)
         return _insert(conn, ticket_id, last, kind, note, author, now,
                        intervention_id, None)
+
+
+def _noted(conn, ticket_id, run_id, kind, note, author, now, write):
+    event_id = write(conn, run_id, note, author, hint=kind == HINT)
+    (intervention_id,) = conn.execute(
+        "SELECT MAX(id) FROM interventions WHERE runId = ?"
+        " AND action = 'operator_note'", (run_id,)).fetchone()
+    return _insert(conn, ticket_id, run_id, kind, note, author, now,
+                   intervention_id, event_id)
 
 
 def _insert(conn, ticket_id, run_id, kind, note, author, now, intervention_id,
