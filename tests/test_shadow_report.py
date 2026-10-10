@@ -54,7 +54,7 @@ def table_rows(lines):
 
 class ShadowReportTests(ReportStoreCase):
 
-    def run_with(self, n, events, rounds=(), outcome="merged"):
+    def run_with(self, n, events, outcome="merged"):
         ticket = store.tickets.mirror_ticket(
             self.conn, self.project_id, linear_issue_id=f"issue-{n}",
             linear_identifier=f"KO-{n}", title=f"ticket {n}")
