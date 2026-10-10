@@ -13,7 +13,7 @@ USAGE_KEYS = ("input_tokens", "output_tokens", "cost_usd")
 def usage_total(usages, key):
     values = [usage.get(key) if isinstance(usage, dict) else None
               for usage in usages]
-    return None if None in values else sum(values)
+    return None if not values or None in values else sum(values)
 
 
 def first_implementation(turns):
