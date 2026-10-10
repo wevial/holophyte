@@ -6,6 +6,13 @@ TRANSPORT_SIGNATURES = (
     "503 Service Unavailable", "504 Gateway Timeout", "overloaded_error",
     "network error",
 )
+CRASH_TAIL_CHARS = 16384
+PANIC_SUMMARY_CHARS = 200
+
+
+def killed_by_signal(exit_code, timed_out):
+    return not timed_out and exit_code is not None and (
+        exit_code < 0 or exit_code >= 128)
 
 
 def transport_failure(exit_code, output):

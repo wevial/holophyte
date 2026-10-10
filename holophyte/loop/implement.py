@@ -13,7 +13,7 @@ from time import sleep, time
 import store
 import store.read
 import ticket_template
-from holophyte.agents.agent_output import transport_failure
+from holophyte.agents.agent_output import killed_by_signal, transport_failure
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.fix_session import resume_argv
 from holophyte.agents.harness import ORCHESTRATION_BRIEFS, implementer_orchestrations
@@ -496,29 +496,17 @@ def _backup_resolution(project, wt, task_id):
                f"backup: abandoned merge resolution ({task_id})"], cwd=wt)
 
 
-CRASH_TAIL_LINES = 20
-
-
 def _killed_by_signal(out, timed_out):
-    code = getattr(out, "exit_code", 0)
-    return not timed_out and code is not None and (code < 0 or code >= 128)
+    return killed_by_signal(getattr(out, "exit_code", 0), timed_out)
 
 
-def _crashed(project, conn, run_id, out):
-    summary = f"implementer killed by a signal (exit {out.exit_code})"
-    print(f"[holo2] {summary}")
-    if conn is not None and run_id is not None:
-        text = redact_prose(out.strip(), known_secrets(project.config()))
-        store.record_event(conn, run_id, "crash", summary, level="detail",
-                           payload=json.dumps({
-                               "exit_status": out.exit_code,
-                               "output": "\n".join(
-                                   text.splitlines()[-CRASH_TAIL_LINES:])}))
+def _crashed(out):
+    print(f"[holo2] implementer killed by a signal (exit {out.exit_code})")
 
 
 def _retry_crashed(project, conn, run_id, beat_s, wt, branch, task_id, goal,
                    out, deadline, budget_min, limit, start_sha):
-    _crashed(project, conn, run_id, out)
+    _crashed(out)
     head, _, subject = sh(["git", "log", "-1", "--format=%H %s"],
                           cwd=wt).partition(" ")
     wip = (head if head != start_sha
@@ -537,7 +525,7 @@ def _retry_crashed(project, conn, run_id, beat_s, wt, branch, task_id, goal,
         note if argv is not None else f"{note}\n\n{goal}", argv=argv,
         seconds=remaining, limit=limit, merges=False)
     if _killed_by_signal(out, timed_out):
-        _crashed(project, conn, run_id, out)
+        _crashed(out)
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
         raise InfraFailure(f"implementer crashed twice (exit {out.exit_code});"
                            f" work kept on {branch} at {head[:12]}")
