@@ -355,42 +355,46 @@ def steer_ticket(target, identifier, note, hint=False, author=None, out=None,
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
-        interrupt = now and _interrupts(target, conn, ticket_id, out)
         try:
-            steered = steer_notes.steer(
-                conn, ticket_id, note,
+            line = steered_line(
+                target, conn, ticket_id, identifier, note,
                 getpass.getuser() if author is None else author, hint=hint,
-                interrupt=interrupt)
+                now=now, out=out)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
-        if interrupt:
-            print(f"[holo2] {identifier} steered --now: {steered.kind} (steer"
-                  f" note {steered.id}) on live run {steered.run_id}; a running"
-                  " implementer turn stops at its next heartbeat and resumes"
-                  " its session with the note, else the note lands at the next"
-                  " implementer turn", file=out)
-            return
-        if steered.live and steered.event_id is not None:
-            print(f"[holo2] {identifier} steered: {steered.kind} (operator_note"
-                  f" event {steered.event_id}, steer note {steered.id}) on live"
-                  f" run {steered.run_id}, landing at its babysitter's next"
-                  " fix round", file=out)
-        elif steered.event_id is not None:
-            print(f"[holo2] {identifier} steered: run {steered.run_id} sent"
-                  " back to the babysitter as a maintainer instruction"
-                  f" (operator_note event {steered.event_id}, steer note"
-                  f" {steered.id})", file=out)
-        elif steered.live:
-            print(f"[holo2] {identifier} steered: {steered.kind} (steer note"
-                  f" {steered.id}) on live run {steered.run_id}, landing at"
-                  " its next implementer turn", file=out)
-        else:
-            reader = ("its next implement turn" if hint
-                      else "its next run's contract")
-            print(f"[holo2] {identifier} steered: {steered.kind} (steer note"
-                  f" {steered.id}) for {reader}", file=out)
+        print(f"[holo2] {line}", file=out)
     finally:
         conn.close()
+
+
+def steered_line(target, conn, ticket_id, identifier, note, author, hint=False,
+                 now=False, out=None):
+    interrupt = now and _interrupts(target, conn, ticket_id, out or sys.stdout)
+    steered = steer_notes.steer(conn, ticket_id, note, author, hint=hint,
+                                interrupt=interrupt)
+    if interrupt:
+        return (f"{identifier} steered --now: {steered.kind} (steer note"
+                f" {steered.id}) on live run {steered.run_id}; a running"
+                " implementer turn stops at its next heartbeat and resumes"
+                " its session with the note, else the note lands at the next"
+                " implementer turn")
+    if steered.live and steered.event_id is not None:
+        return (f"{identifier} steered: {steered.kind} (operator_note"
+                f" event {steered.event_id}, steer note {steered.id}) on live"
+                f" run {steered.run_id}, landing at its babysitter's next"
+                " fix round")
+    if steered.event_id is not None:
+        return (f"{identifier} steered: run {steered.run_id} sent"
+                " back to the babysitter as a maintainer instruction"
+                f" (operator_note event {steered.event_id}, steer note"
+                f" {steered.id})")
+    if steered.live:
+        return (f"{identifier} steered: {steered.kind} (steer note"
+                f" {steered.id}) on live run {steered.run_id}, landing at"
+                " its next implementer turn")
+    reader = "its next implement turn" if hint else "its next run's contract"
+    return (f"{identifier} steered: {steered.kind} (steer note"
+            f" {steered.id}) for {reader}")
 
 
 def withdraw_steers(target, identifier, note, out=None):

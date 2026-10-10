@@ -160,7 +160,7 @@ test("the band hands each row its own daemon: the fixture's status without actio
   expect(seen.map((request) => request.url)).toEqual([`${BASE}/actions/restart-supervisor`]);
 });
 
-test("a pr_open row reads PR, shows the reason with the PR link, and its one action opens the URL in a new tab", () => {
+test("a pr_open row reads PR, shows the reason with the PR link, Open PR opens the URL in a new tab while Steer waits on actions", () => {
   const url = "https://github.com/o/r/pull/2170";
   const item: AttentionItem = {
     kind: "pr_open",
@@ -196,8 +196,9 @@ test("a pr_open row reads PR, shows the reason with the PR link, and its one act
     expect(link.getAttribute("href")).toBe(url);
     expect(within(row!).getByText(/^run #60 · parked at \d\d:\d\d$/)).toBeTruthy();
     const buttons = within(row!).getAllByRole("button") as HTMLButtonElement[];
-    expect(buttons.map((b) => b.textContent)).toEqual(["Open PR"]);
+    expect(buttons.map((b) => b.textContent)).toEqual(["Open PR", "Steer"]);
     expect(buttons[0]!.disabled).toBe(false);
+    expect([buttons[1]!.disabled, buttons[1]!.title]).toEqual([true, ACTIONS_OFF]);
     fireEvent.click(buttons[0]!);
     expect(opened).toEqual([[url, "_blank", "noopener,noreferrer"]]);
   } finally {
@@ -318,34 +319,34 @@ test("a failed ticket's attempts affordance opens only its attempts card", async
 });
 
 
-test("parked run sends a private maintainer note to its daemon", async () => {
+test("a parked row steers its ticket with a note through its daemon", async () => {
   const item: AttentionItem = { kind: "pr_open", level: "attention", run: 47, ticket: "KO-7", pr_url: "https://github.com/o/r/pull/7" };
-  const { seen, fetchImpl } = fakeFetch({ ok: true, detail: "Sent back" });
+  const { seen, fetchImpl } = fakeFetch({ action: "steer", ok: true, detail: "KO-7: sent back with the note", recorded: 12 });
   render(<ul><AttentionRow kind="pr_open" project="repo" runId={47}
     description={describe(item, thresholds, { now: allKinds.status.now })}
     daemon={{ base: BASE, actions: true, fetch: fetchImpl }} /></ul>);
-  await act(async () => { fireEvent.click(button("Send back with note")); });
-  fireEvent.change(screen.getByRole("textbox", { name: "Maintainer's note" }), { target: { value: "remove the subheader" } });
+  await act(async () => { fireEvent.click(button("Steer")); });
+  fireEvent.change(screen.getByRole("textbox", { name: "Steer note" }), { target: { value: "remove the subheader" } });
   await act(async () => { fireEvent.click(button("Send")); await settle(); });
-  expect(seen).toEqual([{ url: `${BASE}/actions/send-back`, method: "POST",
-    authorization: `Bearer ${TOKEN}`, body: { run: 47, note: "remove the subheader" } }]);
-  expect(screen.getByRole("status").textContent).toBe("Sent back");
+  expect(seen).toEqual([{ url: `${BASE}/actions/steer`, method: "POST",
+    authorization: `Bearer ${TOKEN}`, body: { ticket: "KO-7", hint: false, now: false, note: "remove the subheader" } }]);
+  expect(screen.getByRole("status").textContent).toBe("KO-7: sent back with the note");
 });
 
-test("a send-back the daemon answers 500 shows its error under the box, not Failed to fetch", async () => {
+test("a steer the daemon answers 500 shows its error under the box, not Failed to fetch", async () => {
   const item: AttentionItem = { kind: "pr_open", level: "attention", run: 47, ticket: "KO-7", pr_url: "https://github.com/o/r/pull/7" };
   const error = "SchemaNewer: store.db: store schema version 99 is newer than the version 98 this build understands";
   const { fetchImpl } = fakeFetch(() => Response.json({ error }, { status: 500 }));
   render(<ul><AttentionRow kind="pr_open" project="repo" runId={47}
     description={describe(item, thresholds, { now: allKinds.status.now })}
     daemon={{ base: BASE, actions: true, fetch: fetchImpl }} /></ul>);
-  await act(async () => { fireEvent.click(button("Send back with note")); });
-  fireEvent.change(screen.getByRole("textbox", { name: "Maintainer's note" }), { target: { value: "remove the subheader" } });
+  await act(async () => { fireEvent.click(button("Steer")); });
+  fireEvent.change(screen.getByRole("textbox", { name: "Steer note" }), { target: { value: "remove the subheader" } });
   await act(async () => { fireEvent.click(button("Send")); await settle(); });
   const shown = screen.getByRole("status").textContent!;
   expect(shown).toContain(error);
   expect(shown).not.toContain("Failed to fetch");
-  expect(screen.getByRole("textbox", { name: "Maintainer's note" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Steer note" })).toBeTruthy();
 });
 
 /** happy-dom lays nothing out, so the row's paragraph gets a stand-in

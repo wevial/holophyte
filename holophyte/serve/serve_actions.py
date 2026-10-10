@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import sys
 import traceback
@@ -21,7 +22,8 @@ RECORDS = {**{action: (row,) for action, (*_, row) in UNIT_ACTIONS.items()},
            REQUEUE_ACTION: ("requeue",), "send-back": ("operator_note",),
            "merge": ("approve",), "ask": ("babysit",), "hold": ("hold",),
            "release-hold": ("release_hold",), "pause": ("pause",),
-           "resume": ("resume",), "abort": ("abort", "abort_close")}
+           "resume": ("resume",), "abort": ("abort", "abort_close"),
+           "steer": ("steer", "operator_note")}
 ACTIONS = frozenset(RECORDS)
 # The store refuses an empty requeue note.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
@@ -184,6 +186,40 @@ def send_back_action(project, run_id, note, author):
     return 200, {"ok": True, "run": run_id, "event_id": event_id,
                  "recorded": recorded,
                  "detail": f"Sent back with operator_note event {event_id}"}
+
+
+def steer_action(project, body):
+    identifier = body.get("ticket")
+    if not isinstance(identifier, str) or not identifier.strip():
+        return 400, {"error": "ticket must name a mirrored ticket (KO-n)"}
+    hint, now = body.get("hint", False), body.get("now", False)
+    if type(hint) is not bool or type(now) is not bool:
+        return 400, {"error": "hint and now must be true or false"}
+    identifier = identifier.strip()
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    from holophyte.cli.operator import steered_line
+    conn = action_store(project)
+    said = io.StringIO()
+    try:
+        ticket = store.read.ticket_by_identifier(conn, identifier)
+        named = 0 if ticket is None else tickets_named(conn, identifier)
+        if named != 1:
+            detail = (f"{identifier}: no such ticket in the store" if not named
+                      else f"{identifier} names {named} tickets in the store;"
+                           " refusing to pick one")
+            return 200, {"ok": False, "ticket": identifier, "detail": detail}
+        line = steered_line(project, conn, ticket.id, identifier,
+                            body.get("note"), body.get("author", "maintainer"),
+                            hint=hint, now=now, out=said)
+        recorded = written_on(conn, "steer")
+    except (store.ApproveRefused, ValueError) as refused:
+        return 200, {"ok": False, "ticket": identifier, "detail": str(refused)}
+    finally:
+        conn.close()
+    warned = [text.removeprefix("[holo2] ") for text in said.getvalue().splitlines()]
+    return 200, {"ok": True, "ticket": identifier, "recorded": recorded,
+                 "detail": "\n".join([*warned, line])}
 
 
 def action_failure(project, action, failure):

@@ -796,6 +796,41 @@ the store has never mirrored is 404 with an empty object, like an absent
 run. The endpoint reads the store's mirror and nothing more; it never
 calls the provider.
 
+## `POST /actions/steer`
+
+Opened by `[serve] actions = true` ([The daemon's actions](daemon.md)),
+behind its token. It does what `holo steer KEY NOTE` does: the store's one
+steer, routed by the ticket's state, so a run parked on its pull request
+goes back to the babysitter with the note, a live run's next implementer
+turn or babysitter fix round reads it, and a ticket with no run in flight
+carries it into its next run. The console's Steer box posts it from a live
+run's detail card and from a parked pull request row; `holo steer` posts
+it under `transport = "http"`.
+
+```json
+{"ticket": "KO-n", "note": "remove the subheader", "hint": false,
+ "now": false, "author": "maintainer"}
+```
+
+`ticket` (required) is the Linear identifier; `note` is the steer;
+`hint` (default `false`) makes it one turn's hint rather than a contract
+amendment; `now` (default `false`) is `--now`, stopping a live run's
+implementer turn to resume its session with the note; `author` defaults
+to `maintainer`.
+
+```json
+{"action": "steer", "ok": true, "ticket": "KO-n", "recorded": 42,
+ "detail": "KO-n steered: run 52 sent back to the babysitter as a maintainer instruction (operator_note event 7, steer note 3)"}
+```
+
+`detail` is the line `holo steer` prints; `recorded` is the interventions
+row the steer wrote, `steer` or, for a parked run, `operator_note`. A
+blank note, a ticket the store never mirrored or holds twice, and every
+refusal the store makes for the ticket's state are 200 with `ok: false`
+and the reason in `detail`, and nothing is written. A missing `ticket`,
+or a `hint` or `now` that is not a boolean, is 400; a project with no
+store is 503.
+
 ## `GET /peers`
 
 Where the other daemons are, so the page can fan out from whichever
