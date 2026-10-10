@@ -878,10 +878,6 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,
             f"for {pull.url}; branch {branch} preserved at {sha[:12]}"))
-    _review_spec_only_fix(
-        project, conn, run_id, provider, task_id, branch, wt, sha, fixed,
-        beat_s, pull, ticket, verify_cmd, contracts, criteria, budget_min,
-        fixes, reviewed_by_caller)
     unclean = _candidate_drift(wt, branch, fixed)
     if unclean:
         ledger(conn, run_id, task_id, "failure",
@@ -892,6 +888,10 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(f"fix round for {pull.url} left the worktree"
                          f" unclean ({unclean.splitlines()[0]}); branch"
                          f" {branch} preserved at {fixed[:12]}")
+    _review_spec_only_fix(
+        project, conn, run_id, provider, task_id, branch, wt, sha, fixed,
+        beat_s, pull, ticket, verify_cmd, contracts, criteria, budget_min,
+        fixes, reviewed_by_caller)
     fixed = maintainer_notes.cite_commits(wt, sha, fixed, addressed, sh)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts,

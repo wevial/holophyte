@@ -850,18 +850,15 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         self.assertNotIn("failed (exit 1)", self.prompts[1])
         self.assertEqual(self.posted.call_count, 1)
 
-    def test_a_rejected_review_of_a_spec_only_thread_fix_parks_unanswered(self):
+    def test_a_spec_only_thread_fix_missing_a_criterion_parks_unanswered(self):
         with (patch.object(holophyte.pr.pullrequest, "_park_on_pr",
                            side_effect=MergeParked("parked")) as parked,
               self.assertRaises(MergeParked)):
-            self.answer_thread(self.edit_spec,
-                               "CRITERION 1: unwitnessed — no load\n"
-                               "VERDICT: REQUEST_CHANGES")
+            self.answer_thread(self.edit_spec, "VERDICT: APPROVE")
 
         self.assertEqual(len(self.prompts), 2)
         self.assertIn("asked for changes", parked.call_args.args[8])
         self.assertEqual(self.posted.call_count, 0)
-
 
     def test_citing_an_operator_note_without_a_new_commit_keeps_the_head(self):
         note = Thread(id="operator_note:7", path="", line=None, author="operator",
