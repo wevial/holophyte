@@ -56,10 +56,9 @@ def run_shadow(project, conn, run_id, brief):
             result["outcome"], result["detail"] = "error", str(error)
         if result["detail"] is not None:
             result["detail"] = route_prose(project, result["detail"])
-        minutes = result["seconds"] / 60
         store.record_event(conn, run_id, "shadow_result",
                            f"Shadow {result['route']}: {result['outcome']} in "
-                           f"{minutes:.1f} min", level="detail",
+                           f"{result['seconds'] / 60:.1f} min", level="detail",
                            payload=json.dumps(result))
     finally:
         if cut and wt.exists():
@@ -98,7 +97,7 @@ def _attempt(project, seat, brief, branch, wt, result, cut):
     ok, out = run_verify(brief.verify, wt, brief.contracts,
                          verify_config(project).timeout_sec, project=project)
     ok, out = with_baseline(project, wt, brief.verify, ok, out)
-    failure = getattr(out, "failure", None)
+    failure = out.failure
     result["verify"] = {"ok": ok, "failed_command": None if ok or not failure
                         else failure["command_index"]}
     result["outcome"] = ("timed_out" if result["timed_out"] else
