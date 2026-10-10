@@ -161,11 +161,20 @@ The shadow's turn gets the primary's brief, isolation and time cap. Its
 and `usage`, the `verify` result (`ok` and `failed_command`, or null when no
 turn ran), the `outcome` (`route_down`, `branch_exists`, `setup_failed`,
 `crashed`, `timed_out`, `no_commits`, `verify_failed`, `verified` or `error`)
-and a redacted `detail`. The worktree is removed with its uncommitted edits
-once the event is recorded, but a shadow's commits stay on a local
-`shadow/SLUG` branch: list them with `git branch --list 'shadow/*'` in the
-project repository and remove one with `git branch -D shadow/SLUG` once its
-diff is no longer needed. The factory never pushes or deletes them, and an
+and a redacted `detail`. A `verified` or `verify_failed` shadow then gets one
+`review`, blind to which implementer wrote it: the primary reviewer route
+reads round 1's prompt, less the visual evidence the shadow never captures
+or publishes, and with the shadow's worktree name and branch shown as the
+primary's; the event records its `verdict` (`APPROVE`,
+`REQUEST_CHANGES`, `MALFORMED` or `error` with its `error` text), the
+`findings` count by severity, the `unwitnessed` criteria count, the
+`reviewer` profile and the review's `seconds`. No adversary, fix round or
+fallback reviewer runs, a configured `[agents] reviewer` records verdict
+`skipped`, and any other shadow records `review` null. The worktree is
+removed with its uncommitted edits once the event is recorded, but a
+shadow's commits stay on a local `shadow/SLUG` branch: list them with
+`git branch --list 'shadow/*'` in the project repository and remove one with
+`git branch -D shadow/SLUG` once its diff is no longer needed. The factory never pushes or deletes them, and an
 existing `shadow/SLUG` branch or `SLUG.shadow` path is left untouched: the
 shadow records `branch_exists` and stops.
 

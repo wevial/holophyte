@@ -114,15 +114,9 @@ def _record_mode(conn, run_id, mode, rnd):
                            payload=json.dumps({"mode": mode, "round": rnd}))
 
 
-def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
-            ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=(),
-            leaks=()):
-    round_started = int(time() * 1000)
-    scope = scope_files(wt, ticket, base_sha, sha)
-    _record_mode(conn, run_id, mode, rnd)
-    record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
-    plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
-    prompt = (
+def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
+                 verify_cmd, criteria, mode, ok, out, stale=(), evidence=True):
+    return (
         f"You are a READ-ONLY code reviewer. Review commit {sha} using "
         f"{review_refs(run_id)[0]} as the frozen base and "
         f"{review_refs(run_id)[1]} as the candidate "
@@ -137,12 +131,25 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         + tests_brief(wt)
         + scope_brief(wt, ticket, base_sha, sha)
         + trim_brief(wt, base_sha, sha)
-        + evidence_brief(project, wt, task_id,
-                         ticket_template.parse(ticket).evidence_states)
+        + (evidence_brief(project, wt, task_id,
+                          ticket_template.parse(ticket).evidence_states)
+           if evidence else "")
         + "Do not modify anything. End your reply with exactly one "
         "line:\n"
         "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
         "If REQUEST_CHANGES, list only concrete blockers.")
+
+
+def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
+            ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=(),
+            leaks=()):
+    round_started = int(time() * 1000)
+    scope = scope_files(wt, ticket, base_sha, sha)
+    _record_mode(conn, run_id, mode, rnd)
+    record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
+    plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
+    prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
+                          verify_cmd, criteria, mode, ok, out, stale)
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
             conn, run_id,
