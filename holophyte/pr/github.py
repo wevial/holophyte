@@ -228,7 +228,8 @@ def pr_body_written(body, task_id, issue_url, native=False):
     return f"{body}\n\n{link}" if body else link
 
 
-TICKET_LINE = re.compile(r"^(?:Linear|Ticket):[^\n]*(?:\n|$)", re.MULTILINE)
+FOOTER_START = r"^(?:Linear:|Ticket: [A-Z]+-\d+[ \t]*\r?$)"
+TICKET_LINE = re.compile(FOOTER_START + r"[^\n]*(?:\n|$)", re.MULTILINE)
 
 
 def split_pr_body(body):
@@ -241,7 +242,7 @@ def split_pr_body(body):
     heading = re.search(r"^## Evidence[ \t]*\r?$", region, re.MULTILINE)
     evidence = ""
     if heading:
-        end = re.search(r"^## |^(?:Linear|Ticket):|<!--", body[heading.end():],
+        end = re.search(rf"^## |{FOOTER_START}|<!--", body[heading.end():],
                         re.MULTILINE)
         cut = heading.end() + end.start() if end else len(body)
         evidence = body[heading.start():cut]

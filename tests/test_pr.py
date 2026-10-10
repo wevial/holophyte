@@ -178,7 +178,7 @@ class PrBodyStubTests(unittest.TestCase):
                     self.assertNotIn("linear.app", body)
 
     def test_a_ticket_footer_splits_like_a_linear_footer(self):
-        own = "Adds the thing.\n\n"
+        own = "Ticket: the board asked for it.\n\nAdds the thing.\n\n"
         evidence = "## Evidence\n\nA screenshot.\n\n"
         tail = "<!-- bot -->\n## Bot review\nLooks fine."
         for footer in ("Ticket: KO-131", "Linear: KO-131 (https://linear.app/x)"):
