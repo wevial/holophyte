@@ -558,7 +558,8 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                " recorded re-review, even if reviewRoundCap is spent.", provider)
         fixed = _fix_threads(project, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, (), None, ticket, verify_cmd,
-                             contracts, budget_min, rnd, review_follows=True, goal=goal)
+                             contracts, budget_min, rnd, review_follows=True, goal=goal,
+                             spec=_spec_digest(project, wt, task_id, ticket))
         return _review_fix(project, conn, run_id, provider, task_id, branch, wt,
                            fixed, None, beat_s, pull, ticket, verify_cmd,
                            contracts, criteria, budget_min=budget_min,
@@ -816,24 +817,31 @@ def _verdicts_by_kind(threads, judged, parsed):
     return verdicts
 
 
+_UNTRACKED = object()
+
+
+def _spec_digest(project, wt, task_id, ticket):
+    return capture_spec_digest(project, wt, task_id,
+                               ticket_template.parse(ticket).evidence_states)
+
+
 def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
-                 resume_step=None, no_commit_why=None, reviewed=None):
+                 resume_step=None, no_commit_why=None, reviewed=None,
+                 spec=_UNTRACKED):
     from holophyte.loop.branch_sync import _candidate_drift
     from holophyte.loop.implement import _record_implementer_output, _transport_timed
     from holophyte.pr.pullrequest import _park_on_pr
     from holophyte.redact import known_secrets, outbound, redact_prose
-    states = ticket_template.parse(ticket).evidence_states
     if resume_step is None:
         record_step(conn, run_id, "fix")
         maintainer_notes.start_fix(conn, run_id, addressed)
-        spec = capture_spec_digest(project, wt, task_id, states)
         fixes, timed_out = _transport_timed(
             project, conn, run_id, beat_s, wt, budget_min,
             goal or babysitter.fix_brief(pull, addressed, ticket))
-        saved = dict(fix_state(sha, fixes, timed_out, addressed, model,
-                               pass_no, review_follows), spec=spec)
+        saved = fix_state(sha, fixes, timed_out, addressed, model,
+                          pass_no, review_follows)
     else:
         saved = dict(resume_step)
         fixes, timed_out = saved["fixes"], saved["timed_out"]
@@ -855,8 +863,8 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     if no_commit_why and fixed == sha and not timed_out:
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     no_commit_why, (), reviewed=reviewed)
-    spec_moved = "spec" in saved and capture_spec_digest(
-        project, wt, task_id, states) != saved["spec"]
+    spec_moved = spec is not _UNTRACKED and _spec_digest(
+        project, wt, task_id, ticket) != spec
     if timed_out or (fixed == sha and not spec_moved):
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,
