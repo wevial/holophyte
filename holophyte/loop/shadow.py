@@ -7,7 +7,7 @@ from time import monotonic
 import store
 from holophyte.agents.agent_output import claude_result
 from holophyte.agents.agent_routes import route_prose
-from holophyte.agents.harness import shadow_seat
+from holophyte.agents.harness import SHADOW_KEY, shadow_seat
 from holophyte.agents.probes import (
     PROBE_GOAL,
     PROBE_TIMEOUT,
@@ -68,8 +68,7 @@ def run_shadow(project, conn, run_id, brief):
 
 
 def _attempt(project, seat, brief, branch, wt, result, cut):
-    probe = probe_launch(project, seat.turn(PROBE_GOAL), PROBE_TIMEOUT,
-                         "implementer_shadow")
+    probe = probe_launch(project, seat.turn(PROBE_GOAL), PROBE_TIMEOUT, SHADOW_KEY)
     if not probe.ok:
         result["outcome"] = "route_down"
         result["detail"] = probe_diagnostic(project, probe)
