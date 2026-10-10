@@ -111,7 +111,7 @@ def _run_stages(run, task):
             beat_s, test.sha if test else start_sha, ticket, verify_cmd,
             budget_min, conflicts=conflicts,
             opening=maintainer_notes.requeue_context(conn, run_id)
-            + (test.opening() if test else ""))
+            + (test.opening() if test else ""), contracts=contracts)
         if not unreproduced:
             sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
                        verify_cmd, contracts)

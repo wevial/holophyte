@@ -37,12 +37,16 @@ def shadow_label(seat):
                                   if key in seat.options)])
 
 
+def shadow_branch(primary):
+    return "shadow/" + primary.split("/", 1)[-1]
+
+
 def run_shadow(project, conn, run_id, brief):
     seat = shadow_seat(project)
     if seat is None:
         return None
     slug = brief.branch.split("/", 1)[-1]
-    branch, wt = f"shadow/{slug}", project.worktrees / f"{slug}.shadow"
+    branch, wt = shadow_branch(brief.branch), project.worktrees / f"{slug}.shadow"
     result = {"route": outbound(shadow_label(seat), known_secrets(project.config())),
               "branch": branch, "base_sha": brief.base_sha, "head_sha": None,
               "commits": 0, "lines_changed": 0, "seconds": 0, "exit_status": None,
