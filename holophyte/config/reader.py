@@ -75,7 +75,8 @@ KNOWN_KEYS = {
                   "turn_cap_min",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",
-                  "implementer_resume", "review_mode", "adversary_credential"}),
+                  "implementer_resume", "review_mode", "adversary_credential",
+                  harness.SHADOW_KEY}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry", "env_source", "env_allow"}),
 }

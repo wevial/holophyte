@@ -137,6 +137,8 @@ def probe_route(project, role, fallback, timeout, entry):
             return None
         cmd = ["default-review", review_profile(*pair)]
     cap = PROBE_TIMEOUT if timeout is None else timeout
+    if role in ("implement", "trim"):
+        return probe_launch(project, cmd, cap, AGENT_CONFIG_KEYS[role], entry)
     sha = None
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
@@ -145,7 +147,7 @@ def probe_route(project, role, fallback, timeout, entry):
                     str(project.path), scratch])
                 sha = sh(["git", "rev-parse", "HEAD"], cwd=scratch).strip()
                 publish_review_refs(Path(scratch), sha, sha)
-            if default and role != "implement":
+            if default:
                 out = review_runner.run_review(
                     repo=Path(scratch), base_sha=sha, candidate_sha=sha,
                     prompt=goal, model=pair[0], effort=pair[1],
@@ -153,11 +155,6 @@ def probe_route(project, role, fallback, timeout, entry):
                     timeout=cap, verdicts=None,
                     service_tier=review_tier(project, fallback=fallback))
                 code = 0
-            elif role in ("implement", "trim"):
-                code, out = launcher.launch(
-                    replace(launcher.turn_route(project, cmd), writable=False), scratch,
-                    launcher.environment(project), cmd, timeout=cap,
-                    runner=run_capped)
             else:
                 code, out = probe_configured_review(project, role, fallback, goal,
                                                     cmd, scratch, cap)
@@ -174,6 +171,24 @@ def probe_route(project, role, fallback, timeout, entry):
                                entry=entry)
     return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role],
                        expected_commit=sha, entry=entry)
+
+
+def probe_launch(project, cmd, cap, seat, entry=0):
+    with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
+        try:
+            code, out = launcher.launch(
+                replace(launcher.turn_route(project, cmd), writable=False), scratch,
+                launcher.environment(project), cmd, timeout=cap,
+                runner=run_capped)
+        except subprocess.TimeoutExpired as expired:
+            partial = expired.output or ""
+            if isinstance(partial, bytes):
+                partial = partial.decode(errors="replace")
+            return ProbeResult(cmd, None, partial, cap, seat=seat, entry=entry)
+        except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
+            return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
+                               seat=seat, entry=entry)
+    return ProbeResult(cmd, code, out or "", cap, seat=seat, entry=entry)
 
 
 def probe_adversary_claude(project, timeout=None):
