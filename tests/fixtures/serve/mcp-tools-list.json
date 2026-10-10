@@ -339,6 +339,55 @@
           "destructiveHint": false,
           "readOnlyHint": false
         },
+        "description": "amend a ticket or its live run, or send its parked run back, the note the steer (holo steer KEY --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "ticket": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the ticket's key, such as HOLO-1"
+            },
+            "hint": {
+              "type": "boolean",
+              "default": false,
+              "description": "the note is one implement turn's hint, not an amendment"
+            },
+            "now": {
+              "type": "boolean",
+              "default": false,
+              "description": "stop a running implementer turn to read the note now"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "ticket",
+            "note",
+            "author"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "steer"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
         "description": "put a failed run's ticket back in the queue (holo requeue KEY --json)",
         "inputSchema": {
           "properties": {
