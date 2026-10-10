@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS runs (
     -- shepherd".
     prSeenAt          TEXT,
     prSeenThreads     INTEGER,
+    prSeenOpenThreads INTEGER,
     prSeenChecks      TEXT,
     prSeenReview      TEXT,
     -- The pull request's title as the same read saw it, so `/attention`'s

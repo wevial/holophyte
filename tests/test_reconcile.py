@@ -627,6 +627,15 @@ class ContentWakeTests(MergeModeFixture):
                          [('awaiting_merge_approval', H.T1, 3,
                            'success', 'approved')])
 
+    def test_a_parked_read_counts_only_unresolved_threads_as_open(self):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.parked_on_pr(self)
+        H.fake_client(self, dict(H.OPEN_PULL, updatedAt=H.T1, threadCount={
+            'totalCount': 4, 'nodes': [{'isResolved': True}] * 4}))
+        self.main_output(provider=StubProvider())
+        self.assertEqual(self.read("SELECT prSeenThreads, prSeenOpenThreads"
+                                   " FROM runs"), [(4, 0)])
+
     def test_only_new_authored_content_wakes_once(self):
         from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_with_mark(self, H.T1, 3)

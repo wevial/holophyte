@@ -180,6 +180,28 @@ class Version9MigrationTests(unittest.TestCase):
             conn.execute("SELECT reviewRoundCap FROM runs").fetchall(),
             [(4,)])
 
+    def test_a_version_46_store_reads_an_unknown_open_thread_count(self):
+        conn = store.open(self.path)
+        project = store.tickets.ensure_project(conn, "team-1", "/repos/holophyte")
+        ticket = store.tickets.mirror_ticket(
+            conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
+            title="ticket 1")
+        run_id = store.claim(conn, project, ticket, now=1_700_000_000_000)
+        conn.execute("UPDATE runs SET prSeenThreads = 4 WHERE id = ?", (run_id,))
+        conn.execute("ALTER TABLE runs DROP COLUMN prSeenOpenThreads")
+        conn.execute("PRAGMA user_version = 46")
+        conn.commit()
+        conn.close()
+
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
+        self.assertLessEqual(store.schema.READABLE_FROM, 46)
+        self.assertEqual(
+            conn.execute("SELECT id, prSeenThreads, prSeenOpenThreads"
+                         " FROM runs").fetchall(), [(run_id, 4, None)])
+
 
 # `interventions` exactly as schema version 10 shipped it: 'shepherd' in the
 # action CHECK, 'reconcile' not yet and no 'linear_completed' trigger.
@@ -524,7 +546,8 @@ class Version26EnumMigrationTests(unittest.TestCase):
         after['tickets'] = [row[:-11] for row in after['tickets']]
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
         added = {'parkKind', 'failureKind', 'stopRequested', 'workerPid', 'revision',
-                 'prSeenTitle', 'verifyMs', 'verifyStartedAt', 'storyGeneration'}
+                 'prSeenTitle', 'verifyMs', 'verifyStartedAt', 'storyGeneration',
+                 'prSeenOpenThreads'}
         after['runs'] = [tuple(value for column, value in zip(columns, row)
                                if column not in added) for row in after['runs']]
         self.assertEqual(after, self.before)

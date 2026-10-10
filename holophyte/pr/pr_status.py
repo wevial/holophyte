@@ -99,14 +99,14 @@ query($owner: String!, $name: String!, $number: Int!) {
       }
       state merged mergeable mergeCommit { oid } mergedBy { login }
       updatedAt title
-      threadCount: reviewThreads { totalCount }
+      threadCount: reviewThreads(first: %d) { totalCount nodes { isResolved } }
       reviewDecision
       %s
     }
   }
   viewer { login }
   rateLimit { remaining resetAt }
-}""" % ACTIVITY_FIELDS
+}""" % (THREADS_PAGE, ACTIVITY_FIELDS)
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,7 @@ class PullStatus:
     merged_by: str | None = None
     updated_at: str | None = None
     threads: int | None = None
+    open_threads: int | None = None
     checks: str | None = None
     review: str | None = None
     mergeable: str | None = None
@@ -157,6 +158,7 @@ def pull_status(target, pull):
                       else None,
                       threads=_count(threads.get("totalCount")
                                      if isinstance(threads, dict) else None),
+                      open_threads=_open_count(threads),
                       checks=_head_checks(node),
                       review=decision.lower() if isinstance(decision, str)
                       and decision else None,
@@ -169,6 +171,15 @@ def pull_status(target, pull):
                       rate_reset=rate.get("resetAt")
                       if isinstance(rate, dict)
                       and isinstance(rate.get("resetAt"), str) else None)
+
+
+def _open_count(threads):
+    nodes = threads.get("nodes") if isinstance(threads, dict) else None
+    flags = [t.get("isResolved") if isinstance(t, dict) else None
+             for t in nodes] if isinstance(nodes, list) else [None]
+    if not all(isinstance(flag, bool) for flag in flags):
+        return None
+    return flags.count(False)
 
 
 def _head_checks(node):

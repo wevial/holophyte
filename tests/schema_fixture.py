@@ -48,6 +48,7 @@ DOCUMENTED_COLUMNS = {
         "reviewRoundCap",
         "prSeenAt",
         "prSeenThreads",
+        "prSeenOpenThreads",
         # Store-owned: the checks rollup and review decision the same read
         # saw, so `/attention`'s `pr_open` item carries them (KO-368).
         "prSeenChecks",

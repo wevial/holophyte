@@ -216,7 +216,7 @@ test("a pr_open row carrying pr leads with the PR link, keeps the reason's first
     pr_url: url,
     reason: "ready to merge; waiting for a human to say merge\n1. src/x.py:3 by @coworker",
     asked_ms: allKinds.status.now - 600000,
-    pr: { number: 2170, checks: "success", review: "changes_requested", threads: 2 },
+    pr: { number: 2170, checks: "success", review: "changes_requested", threads: 2, open_threads: 2 },
   };
   render(
     <ul>

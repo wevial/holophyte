@@ -380,8 +380,8 @@ def _budget_low():
 
 def _seen(status):
     at = max([status.updated_at or "", *(item[1] for item in status.activity)])
-    return (at or None, status.threads, status.checks, status.review,
-            status.title)
+    return (at or None, status.threads, status.open_threads, status.checks,
+            status.review, status.title)
 
 
 def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None):
