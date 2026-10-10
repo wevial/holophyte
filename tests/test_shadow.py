@@ -105,7 +105,7 @@ class ShadowTests(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "shadow/ko-7-thing~1"), self.base)
         self.assertEqual(self.git("show", "shadow/ko-7-thing:done.txt"), "ok")
         self.assertFalse(self.wt.exists())
-        self.assertNotIn(str(self.wt), self.git("worktree", "list"))
+        self.assertNotIn(str(self.wt.resolve()), self.git("worktree", "list"))
         [result] = self.events("shadow_result")
         self.assertEqual(result["outcome"], "verified")
         self.assertEqual(result["verify"], {"ok": True, "failed_command": None})

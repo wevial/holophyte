@@ -6,6 +6,7 @@ from time import monotonic
 
 import store
 from holophyte.agents.agent_output import claude_result
+from holophyte.agents.agent_routes import route_prose
 from holophyte.agents.harness import shadow_seat
 from holophyte.agents.probes import (
     PROBE_GOAL,
@@ -49,16 +50,20 @@ def run_shadow(project, conn, run_id, brief):
               "detail": None}
     cut = []
     try:
-        _attempt(project, seat, brief, branch, wt, result, cut)
-    except Exception as error:
-        result["outcome"], result["detail"] = "error", redact_values(str(error))
-    minutes = result["seconds"] / 60
-    store.record_event(conn, run_id, "shadow_result",
-                       f"Shadow {result['route']}: {result['outcome']} in "
-                       f"{minutes:.1f} min", level="detail",
-                       payload=json.dumps(result))
-    if cut:
-        _remove_worktree(project, wt)
+        try:
+            _attempt(project, seat, brief, branch, wt, result, cut)
+        except Exception as error:
+            result["outcome"], result["detail"] = "error", str(error)
+        if result["detail"] is not None:
+            result["detail"] = route_prose(project, result["detail"])
+        minutes = result["seconds"] / 60
+        store.record_event(conn, run_id, "shadow_result",
+                           f"Shadow {result['route']}: {result['outcome']} in "
+                           f"{minutes:.1f} min", level="detail",
+                           payload=json.dumps(result))
+    finally:
+        if cut and wt.exists():
+            _remove_worktree(project, wt)
     return result
 
 
@@ -67,7 +72,7 @@ def _attempt(project, seat, brief, branch, wt, result, cut):
                          "implementer_shadow")
     if not probe.ok:
         result["outcome"] = "route_down"
-        result["detail"] = redact_values(probe_diagnostic(project, probe))
+        result["detail"] = probe_diagnostic(project, probe)
         return
     known = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
@@ -75,9 +80,9 @@ def _attempt(project, seat, brief, branch, wt, result, cut):
     if known or os.path.lexists(wt):
         result["outcome"] = "branch_exists"
         return
+    cut.append(wt)
     sh(["git", "worktree", "add", "--quiet", "-b", branch, str(wt), brief.base_sha],
        project.path)
-    cut.append(wt)
     ready, output = run_worktree_setup(project, wt)
     if not ready:
         result["outcome"], result["detail"] = "setup_failed", output
