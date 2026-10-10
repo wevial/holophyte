@@ -80,6 +80,7 @@ def _run_stages(run, task):
         return _resume_at_merge_gate(
             run, carried, verify_cmd, contracts, body,
             criteria, issue_url=issue_url)
+    cut = not wt.exists()
     fresh = _cut_worktree(project, conn, run_id, provider, task_id, task,
                           branch, wt)
 
@@ -111,7 +112,7 @@ def _run_stages(run, task):
             beat_s, test.sha if test else start_sha, ticket, verify_cmd,
             budget_min, conflicts=conflicts,
             opening=maintainer_notes.requeue_context(conn, run_id)
-            + (test.opening() if test else ""), contracts=contracts)
+            + (test.opening() if test else ""), contracts=contracts, cut=cut)
         if not unreproduced:
             sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
                        verify_cmd, contracts)

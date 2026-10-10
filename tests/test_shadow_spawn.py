@@ -6,6 +6,7 @@ Run: python3 -m unittest discover -s tests -p 'test_shadow_spawn.py' -v
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import stat
@@ -25,7 +26,7 @@ from holophyte.agents.probes import PROBE_GOAL
 from holophyte.loop.runs import open_store
 from holophyte.loop.shadow import ShadowBrief
 from holophyte.loop.shadow_spawn import write_brief
-from tests.fake_agent import APPROVE, Commit
+from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit
 from tests.loop_fixture import BRANCH, LoopFixture, StubProvider, a_task
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,6 +66,12 @@ class ShadowStartTests(LoopFixture):
     def last_outcome(self):
         return self.read("SELECT outcome FROM runs ORDER BY id DESC LIMIT 1")[0][0]
 
+    def rounds(self, task_id):
+        return self.read(
+            "SELECT r.round, r.verdict FROM reviewRounds r JOIN runs u"
+            " ON u.id = r.runId JOIN tickets t ON t.id = u.ticketId"
+            f" WHERE t.linearIdentifier = '{task_id}' ORDER BY r.round")
+
     def test_a_fresh_claim_spawns_the_shadow_with_the_primarys_brief(self):
         spawn, fake = self.shadow_loop(Commit("the thing"), APPROVE)
         self.assertEqual(self.last_outcome(), "merged")
@@ -85,6 +92,29 @@ class ShadowStartTests(LoopFixture):
             "pid": NeverExits.pid, "branch": "shadow/ko-131-add-a-thing",
             "route": "claude sonnet", "error": None})
 
+    def test_a_shadow_that_never_exits_leaves_the_runs_review_rounds_alone(self):
+        def script(n):
+            return (Commit("the thing", path=f"thing-{n}.txt"), REQUEST_CHANGES,
+                    Commit("the fix", path=f"fix-{n}.txt"), APPROVE)
+        self.shadow_loop(*script(1), config="", task=a_task(1))
+        spawn, _ = self.shadow_loop(*script(2), task=a_task(2))
+        self.assertEqual(len(spawn.calls), 1)
+        self.assertEqual(self.last_outcome(), "merged")
+        self.assertEqual(len(self.rounds("KO-131")), 2)
+        self.assertEqual(self.rounds("KO-132"), self.rounds("KO-131"))
+
+    def test_a_brief_that_cannot_be_written_is_recorded_and_the_run_merges(self):
+        shadows = self.db.parent / "shadows"
+        shadows.mkdir()
+        shadows.chmod(0)
+        self.addCleanup(shadows.chmod, 0o700)
+        spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE)
+        self.assertEqual(self.last_outcome(), "merged")
+        self.assertEqual(spawn.calls, [])
+        [(payload,)] = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'shadow_started'")
+        self.assertIn("Permission denied", json.loads(payload)["error"])
+
     def test_a_spawn_that_raises_is_recorded_and_the_run_still_merges(self):
         self.shadow_loop(Commit("the thing"), APPROVE,
                          spawn=Spawn(OSError("spawn refused")))
@@ -101,13 +131,10 @@ class ShadowStartTests(LoopFixture):
         self.assertEqual(self.last_outcome(), "merged")
         self.assertEqual(spawn.calls, [])
 
-    def test_no_shadow_for_a_claim_that_reuses_a_leftover_worktree(self):
+    def test_no_shadow_for_a_claim_that_reuses_a_clean_leftover_worktree(self):
         wt = self.worktrees / "ko-131-add-a-thing"
         self.git("worktree", "add", "--detach", str(wt), "main")
         self.git("checkout", "-q", "-b", BRANCH, cwd=wt)
-        (wt / "preserved.txt").write_text("kept from a failed run\n")
-        self.git("add", "preserved.txt", cwd=wt)
-        self.git("commit", "-q", "-m", "preserved work", cwd=wt)
         spawn, fake = self.shadow_loop(Commit("the thing"), APPROVE)
         self.assertEqual(fake.roles[0], "implement")
         self.assertEqual(self.last_outcome(), "merged")
@@ -150,6 +177,20 @@ os.write(fd, b"7 0.0\\n")
 print("held", flush=True)
 sys.stdin.read()
 """
+PUBLISHING_HOLDER = """
+import fcntl, os, sys
+arbiter = os.open(sys.argv[1] + ".arbiter", os.O_RDWR | os.O_CREAT, 0o644)
+fcntl.flock(arbiter, fcntl.LOCK_EX)
+fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o644)
+fcntl.flock(fd, fcntl.LOCK_EX)
+print("locked", flush=True)
+sys.stdin.readline()
+os.ftruncate(fd, 0)
+os.write(fd, b"8 0.0\\n")
+os.close(arbiter)
+print("published", flush=True)
+sys.stdin.read()
+"""
 
 
 class ShadowModeTests(unittest.TestCase):
@@ -186,16 +227,20 @@ class ShadowModeTests(unittest.TestCase):
                               capture_output=True, text=True).stdout.strip()
 
     def shadow(self):
+        brief, done = self.start_shadow()
+        out, err = done.communicate(timeout=120)
+        self.assertEqual(done.returncode, 0, out + err)
+        self.assertFalse(brief.exists())
+
+    def start_shadow(self):
         brief = write_brief(self.project, self.run_id, ShadowBrief(
             goal="Create done.txt saying ok", verify="grep -qx ok done.txt",
             contracts=None, base_sha=self.base, branch="task/ko-7-thing",
             seconds=60))
-        done = subprocess.run(
+        return brief, subprocess.Popen(
             [sys.executable, str(ROOT / "factory.py"), "--shadow", str(brief),
-             str(self.repo)], cwd=ROOT, capture_output=True, text=True,
-            timeout=120)
-        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-        self.assertFalse(brief.exists())
+             str(self.repo)], cwd=ROOT, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True)
 
     def events(self, kind):
         conn = store.open(self.project.store_path)
@@ -228,6 +273,28 @@ class ShadowModeTests(unittest.TestCase):
         holder.stdout.close()
         self.shadow()
         self.assertEqual(len(self.events("shadow_result")), 1)
+
+    def test_a_skip_names_the_holder_that_has_published_not_a_stale_one(self):
+        lock = self.project.holo_dir / "shadow.lock"
+        lock.write_text("7 0.0\n")
+        holder = subprocess.Popen(
+            [sys.executable, "-c", PUBLISHING_HOLDER, str(lock)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(holder.kill)
+        self.assertEqual(holder.stdout.readline(), "locked\n")
+        _, contender = self.start_shadow()
+        self.addCleanup(contender.kill)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            contender.wait(timeout=3)
+        holder.stdin.write("\n")
+        holder.stdin.flush()
+        self.assertEqual(holder.stdout.readline(), "published\n")
+        out, err = contender.communicate(timeout=120)
+        self.assertEqual(contender.returncode, 0, out + err)
+        self.assertEqual(self.events("shadow_skipped"), [{"busy_run": 8}])
+        holder.stdin.close()
+        holder.wait(timeout=30)
+        holder.stdout.close()
 
 
 if __name__ == "__main__":

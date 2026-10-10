@@ -578,7 +578,7 @@ def _orchestration(project, conn, run_id, ticket):
 
 def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening="",
-               contracts=None):
+               contracts=None, cut=False):
     commands = _commands_brief(project, verify_cmd)
     _check_run_cap(project, conn, run_id, budget_min, start_sha)
     orchestration = _orchestration(project, conn, run_id, ticket)
@@ -592,7 +592,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             + _capture_brief(project, ticket, task_id) + blast_radius.BRIEF
             + reproduce.BRIEF)
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
-    if fresh and not conflicts and not opening:
+    if cut and fresh and not conflicts and not opening:
         start_shadow(project, conn, run_id, ShadowBrief(
             goal, verify_cmd, contracts, start_sha, branch, seconds))
     deadline = retry_clock() + seconds

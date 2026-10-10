@@ -2,13 +2,14 @@ import fcntl
 import json
 import os
 import subprocess
+from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
 from time import time
 
 import store
 from holophyte.agents.harness import shadow_seat
-from holophyte.loop.gates import read_merge_lock
+from holophyte.loop.gates import merge_lock_arbiter, read_merge_lock
 from holophyte.loop.reexec import reexec_command
 from holophyte.loop.runs import open_store
 from holophyte.loop.shadow import ShadowBrief, run_shadow, shadow_branch, shadow_label
@@ -54,7 +55,8 @@ def start_shadow(project, conn, run_id, brief):
         payload["pid"] = child.pid
         summary = f"shadow {payload['route']} started as pid {child.pid}"
     except Exception as error:
-        path.unlink(missing_ok=True)
+        with suppress(OSError):
+            path.unlink(missing_ok=True)
         payload["error"] = str(error)
         summary = f"shadow {payload['route']} not started: {error}"
     store.record_event(conn, run_id, "shadow_started", summary, level="detail",
@@ -93,12 +95,13 @@ def shadow_mode(target, path):
 def take_shadow_lock(target, run_id):
     # The flock is kept until this process exits; the file is never unlinked.
     path = target.holo_dir / "shadow.lock"
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        os.close(fd)
-        return False, read_merge_lock(path)[0]
-    os.ftruncate(fd, 0)
-    os.write(fd, f"{run_id} {time():.3f}\n".encode())
+    with merge_lock_arbiter(path):
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(fd)
+            return False, read_merge_lock(path)[0]
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{run_id} {time():.3f}\n".encode())
     return True, None
