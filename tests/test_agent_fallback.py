@@ -290,6 +290,11 @@ class AgentFallbackTests(SweepTestCase):
             "SELECT count(*) FROM runEvents WHERE kind='route_fallback'"
         ).fetchone()[0], 1)
 
+    def test_claude_session_limit_line_is_an_outage(self):
+        line = ("You've hit your session limit · resets 12:50pm "
+                "(America/Los_Angeles)")
+        self.assertEqual(fallback.outage_reason('claude opus', line), line)
+
     def test_scheduler_readiness_does_not_activate_fallback(self):
         from holophyte.agents.agent_routes import routes
 
