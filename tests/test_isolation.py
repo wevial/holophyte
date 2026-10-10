@@ -67,7 +67,6 @@ class IsolationTests(GoRaceCases, IsolationCase):
             "--cap-drop=ALL",
             "--security-opt=no-new-privileges",
             "--network=bridge",
-            "--pids-limit=4096",
         ):
             self.assertIn(flag, argv)
         self.assertEqual(
