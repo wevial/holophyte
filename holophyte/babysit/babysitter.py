@@ -56,6 +56,7 @@ from holophyte.loop.stop import boundary, fix_state, stop_if_requested
 from holophyte.pr import github, merge_queue, pr_ready, pr_status
 from holophyte.pr.missing_checks import Retrigger, unreported
 from holophyte.pr.pr_head import _just_pushed_state, _pr_terminal
+from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import (
     covering_scope,
@@ -823,14 +824,16 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     from holophyte.loop.implement import _record_implementer_output, _transport_timed
     from holophyte.pr.pullrequest import _park_on_pr
     from holophyte.redact import known_secrets, outbound, redact_prose
+    states = ticket_template.parse(ticket).evidence_states
     if resume_step is None:
         record_step(conn, run_id, "fix")
         maintainer_notes.start_fix(conn, run_id, addressed)
+        spec = capture_spec_digest(project, wt, task_id, states)
         fixes, timed_out = _transport_timed(
             project, conn, run_id, beat_s, wt, budget_min,
             goal or babysitter.fix_brief(pull, addressed, ticket))
-        saved = fix_state(sha, fixes, timed_out, addressed, model,
-                          pass_no, review_follows)
+        saved = dict(fix_state(sha, fixes, timed_out, addressed, model,
+                               pass_no, review_follows), spec=spec)
     else:
         saved = dict(resume_step)
         fixes, timed_out = saved["fixes"], saved["timed_out"]
@@ -852,7 +855,9 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     if no_commit_why and fixed == sha and not timed_out:
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     no_commit_why, (), reviewed=reviewed)
-    if timed_out or fixed == sha:
+    spec_moved = "spec" in saved and capture_spec_digest(
+        project, wt, task_id, states) != saved["spec"]
+    if timed_out or (fixed == sha and not spec_moved):
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,
             f"for {pull.url}; branch {branch} preserved at {sha[:12]}"))
