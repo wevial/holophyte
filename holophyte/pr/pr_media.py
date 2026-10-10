@@ -594,6 +594,6 @@ def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()
 def append(body, section):
     if not section:
         return body
-    text, separator, linear = body.rpartition('\n\nLinear:')
-    return (f'{text}\n\n{section}{separator}{linear}' if separator
+    footer = re.fullmatch(r'(.*)(\n\n(?:Linear|Ticket):.*)', body, re.DOTALL)
+    return (f'{footer[1]}\n\n{section}{footer[2]}' if footer
             else f'{body}\n\n{section}')

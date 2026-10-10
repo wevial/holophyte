@@ -49,6 +49,15 @@ def running(pid, start=None):
     return start is None or fields[19] == start
 
 
+class AppendTests(unittest.TestCase):
+    def test_evidence_lands_before_either_ticket_footer(self):
+        for footer in ("Ticket: KO-1", "Linear: KO-1 (https://linear.app/x)"):
+            with self.subTest(footer=footer):
+                self.assertEqual(
+                    pr_media.append(f"Desc.\n\n{footer}", "## Evidence\n\nshot"),
+                    f"Desc.\n\n## Evidence\n\nshot\n\n{footer}")
+
+
 class MediaTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

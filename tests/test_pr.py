@@ -157,6 +157,37 @@ class PrBodyStubTests(unittest.TestCase):
             self.assertNotIn("Partial text", body)
             self.assertNotIn("## Acceptance criteria", body)
 
+    def test_the_body_footer_names_the_board_the_project_runs(self):
+        url = "https://linear.app/example/KO-131"
+        for board, footer in (({"kind": "native"}, "\n\nTicket: KO-131"),
+                              ({}, f"\n\nLinear: KO-131 ({url})")):
+            target = SimpleNamespace(config=lambda board=board: {"board": board})
+            with (
+                self.subTest(board=board),
+                patch("holophyte.pr.pullrequest.sh", return_value=""),
+                patch("holophyte.babysit.babysitter.conventions", return_value=[]),
+                patch.object(holophyte.loop.implement, "_timed",
+                             return_value=("TITLE: Add a thing\n\nAdds it.", False)),
+            ):
+                _, body = holophyte.pr.pullrequest._written_pr_text(
+                    target, None, None, "KO-131", "add a thing", "task/ko-131",
+                    "## Summary\nThe thing.", 60, Path("/unused"),
+                    monotonic(), 5, url)
+                self.assertTrue(body.endswith(footer), body)
+                if board:
+                    self.assertNotIn("linear.app", body)
+
+    def test_a_ticket_footer_splits_like_a_linear_footer(self):
+        own = "Ticket: the board asked for it.\n\nAdds the thing.\n\n"
+        evidence = "## Evidence\n\nA screenshot.\n\n"
+        tail = "<!-- bot -->\n## Bot review\nLooks fine."
+        for footer in ("Ticket: KO-131", "Ticket: H2-1",
+                       "Linear: KO-131 (https://linear.app/x)"):
+            with self.subTest(footer=footer):
+                self.assertEqual(
+                    github.split_pr_body(own + footer + "\n\n" + evidence + tail),
+                    (own, footer + "\n\n", evidence, tail))
+
 
 class RequiredStatusContextTests(unittest.TestCase):
     def read_status(self, status, more=False):
