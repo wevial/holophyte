@@ -177,6 +177,16 @@ class PrBodyStubTests(unittest.TestCase):
                 if board:
                     self.assertNotIn("linear.app", body)
 
+    def test_a_ticket_footer_splits_like_a_linear_footer(self):
+        own = "Adds the thing.\n\n"
+        evidence = "## Evidence\n\nA screenshot.\n\n"
+        tail = "<!-- bot -->\n## Bot review\nLooks fine."
+        for footer in ("Ticket: KO-131", "Linear: KO-131 (https://linear.app/x)"):
+            with self.subTest(footer=footer):
+                self.assertEqual(
+                    github.split_pr_body(own + footer + "\n\n" + evidence + tail),
+                    (own, footer + "\n\n", evidence, tail))
+
 
 class RequiredStatusContextTests(unittest.TestCase):
     def read_status(self, status, more=False):

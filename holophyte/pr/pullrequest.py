@@ -9,7 +9,7 @@ import ticket_template
 from holophyte import leak_guard
 from holophyte.babysit import babysitter
 from holophyte.board.projection import block_ticket, ledger
-from holophyte.config.config_tables import merge_config, sweep_config
+from holophyte.config.config_tables import board_mode, merge_config, sweep_config
 from holophyte.host.reconcile import _pr_seen
 from holophyte.loop import run as run_state
 from holophyte.loop.gates import InfraFailure, MergeParked, RunFailure, sh
@@ -157,6 +157,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     leaks = parsed and leak_guard.text_leaks(project, "written pull request text",
                                              "\n".join(parsed))
     leak_guard.record(conn, run_id, leaks)
+    native = board_mode(project).kind == "native"
     if parsed is None or not parsed[1] or leaks:
         why = ("the turn ran out of time" if timed_out
                else "the reply holds text the project does not publish"
@@ -170,11 +171,11 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
         print(f"[holo2] written PR text refused for {task_id}: {why};"
               " opening the pull request with the ticket's title and a stub")
         return github.pr_title(task_id, task), github.pr_body_stub(
-            {"id": task_id, "body": body}, why, issue_url)
+            {"id": task_id, "body": body}, why, issue_url, native)
     title, text = parsed
     if refresh is not None:
         return title, text
-    return title, github.pr_body_written(text, task_id, issue_url)
+    return title, github.pr_body_written(text, task_id, issue_url, native)
 
 
 TRAILING_KEY = re.compile(r" \(([A-Z]+-\d+)\)\Z")

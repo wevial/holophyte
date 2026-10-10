@@ -187,7 +187,7 @@ def pr_title(task_id, task):
     return f"{task_id}: {task}"
 
 
-def pr_body_stub(task, reason, issue_url):
+def pr_body_stub(task, reason, issue_url, native=False):
     summary = ticket_template.parse(task.get("body") or "").sections.get(
         "Summary", "").strip()
     paragraph = []
@@ -200,7 +200,7 @@ def pr_body_stub(task, reason, issue_url):
     text = f"The description could not be written: {reason}"
     if summary:
         text = f"{summary}\n\n{text}"
-    return pr_body_written(text, task["id"], issue_url)
+    return pr_body_written(text, task["id"], issue_url, native)
 
 
 # GitHub truncates past 256; a title longer than this is a paragraph.
@@ -220,31 +220,35 @@ def parse_pr_text(reply):
     return None
 
 
-def pr_body_written(body, task_id, issue_url):
+def pr_body_written(body, task_id, issue_url, native=False):
     body = (body or "").strip()
-    link = f"Linear: {task_id}"
-    if issue_url:
+    link = f"Ticket: {task_id}" if native else f"Linear: {task_id}"
+    if issue_url and not native:
         link = f"{link} ({issue_url})"
     return f"{body}\n\n{link}" if body else link
 
 
+TICKET_LINE = re.compile(r"^(?:Linear|Ticket):[^\n]*(?:\n|$)", re.MULTILINE)
+
+
 def split_pr_body(body):
-    """The first HTML comment after Linear always starts externally owned text."""
-    linear = re.search(r"^Linear:[^\n]*(?:\n|$)", body, re.MULTILINE)
-    if linear is None:
+    """The first HTML comment after the ticket line starts externally owned text."""
+    footer = TICKET_LINE.search(body)
+    if footer is None:
         return body, "", "", ""
-    tail_start = body.find("<!--", linear.end())
+    tail_start = body.find("<!--", footer.end())
     region = body if tail_start < 0 else body[:tail_start]
     heading = re.search(r"^## Evidence[ \t]*\r?$", region, re.MULTILINE)
     evidence = ""
     if heading:
-        end = re.search(r"^## |^Linear:|<!--", body[heading.end():], re.MULTILINE)
+        end = re.search(r"^## |^(?:Linear|Ticket):|<!--", body[heading.end():],
+                        re.MULTILINE)
         cut = heading.end() + end.start() if end else len(body)
         evidence = body[heading.start():cut]
         body = body[:heading.start()] + body[cut:]
-        linear = re.search(r"^Linear:[^\n]*(?:\n|$)", body, re.MULTILINE)
-    own, link = body[:linear.start()], linear.group()
-    rest = body[linear.end():]
+        footer = TICKET_LINE.search(body)
+    own, link = body[:footer.start()], footer.group()
+    rest = body[footer.end():]
     space = len(rest) - len(rest.lstrip("\r\n"))
     link += rest[:space]
     return own, link, evidence, rest[space:]
