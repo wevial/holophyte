@@ -137,8 +137,7 @@ def _review(project, run_id, brief, wt, head, ok, out):
             prompt=outbound(prompt, known_secrets(project.config())),
             model=model, effort=effort, profile=review["reviewer"],
             timeout=REVIEW_TIMEOUT, verdicts=None,
-            carry=carry_directories(project),
-            **({} if tier is None else {"service_tier": tier}))
+            carry=carry_directories(project), service_tier=tier)
         review.update(_judged(project, reply, brief.criteria, wt))
     except Exception as error:
         review.update(verdict="error", error=route_prose(project, str(error)))
