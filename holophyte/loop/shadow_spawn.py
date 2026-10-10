@@ -32,6 +32,13 @@ def write_brief(project, run_id, brief):
     return path
 
 
+def shadow_starter(project, conn, run_id, **ticket):
+    def start(goal, base_sha, seconds):
+        start_shadow(project, conn, run_id, ShadowBrief(
+            goal=goal, base_sha=base_sha, seconds=seconds, **ticket))
+    return start
+
+
 def start_shadow(project, conn, run_id, brief):
     seat = shadow_seat(project)
     if seat is None or conn is None or run_id is None:

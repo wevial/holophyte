@@ -34,8 +34,6 @@ from holophyte.leak_guard import register_matches
 from holophyte.loop.claim import conflict_brief, mid_merge, unmerged_paths
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
-from holophyte.loop.shadow import ShadowBrief
-from holophyte.loop.shadow_spawn import start_shadow
 from holophyte.loop.stop import boundary
 from holophyte.pr.pr_media import implementer_brief as _capture_brief
 from holophyte.redact import known_secrets, redact_prose
@@ -578,7 +576,7 @@ def _orchestration(project, conn, run_id, ticket):
 
 def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening="",
-               contracts=None, shadow=False):
+               shadow=None):
     commands = _commands_brief(project, verify_cmd)
     _check_run_cap(project, conn, run_id, budget_min, start_sha)
     orchestration = _orchestration(project, conn, run_id, ticket)
@@ -593,8 +591,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             + reproduce.BRIEF)
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
     if shadow and fresh and not conflicts and not opening:
-        start_shadow(project, conn, run_id, ShadowBrief(
-            goal, verify_cmd, contracts, start_sha, branch, seconds))
+        shadow(goal, start_sha, seconds)
     deadline = retry_clock() + seconds
     out, timed_out = _transport_timed(project, conn, run_id, beat_s, wt,
                                       budget_min, goal, seconds=seconds,

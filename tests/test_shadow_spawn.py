@@ -253,7 +253,8 @@ class ShadowModeTests(unittest.TestCase):
 
     def start_shadow(self):
         brief = write_brief(self.project, self.run_id, ShadowBrief(
-            goal="Create done.txt saying ok", verify="grep -qx ok done.txt",
+            goal="Create done.txt saying ok", ticket="Create done.txt",
+            criteria=[], task_id="KO-7", verify="grep -qx ok done.txt",
             contracts=None, base_sha=self.base, branch="task/ko-7-thing",
             seconds=60))
         return brief, subprocess.Popen(
