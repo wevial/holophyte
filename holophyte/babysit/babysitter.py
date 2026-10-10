@@ -252,7 +252,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
     if pull is None:
         raise RunFailure(f"cannot read a pull request off {url!r};"
                          f" branch {branch} preserved at {sha[:12]}")
-    ticket = maintainer_notes.amended_ticket(conn, run_id, ticket, url)
+    contract = ticket
     model = agent_route(project, "adjudicate")
     pushed_state = (_just_pushed_state(
         project, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
@@ -271,6 +271,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             park_ci=sha == run.sha and not check_fix.reran)
         sha, reviewed = retrigger.sha, retrigger.reviewed
         pushed_state = None
+        ticket = maintainer_notes.amended_ticket(conn, run_id, contract, url)
         stop_if_requested(conn, run_id, "merge_gate")
         done = _pr_terminal(project, conn, run_id, provider, task_id, branch,
                             sha, pull, state, reviewed)
@@ -665,7 +666,8 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
                     f"{reason} exceeded {merge.check_wait_sec}s on the pull request")
             stop_if_requested(conn, run_id, "merge_gate")
             github.SLEEP(min(nap, remaining))
-            state = pr_status.pr_state(project, pull)
+            state = maintainer_notes.pending_state(
+                conn, run_id, pr_status.pr_state(project, pull), pull.url)
             state = route_bot_threads(project, conn, run_id, beat_s, pull, state, merge)
     return state
 

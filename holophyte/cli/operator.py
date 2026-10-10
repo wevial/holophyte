@@ -359,7 +359,12 @@ def steer_ticket(target, identifier, note, hint=False, author=None, out=None):
                 getpass.getuser() if author is None else author, hint=hint)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
-        if steered.event_id is not None:
+        if steered.live and steered.event_id is not None:
+            print(f"[holo2] {identifier} steered: {steered.kind} (operator_note"
+                  f" event {steered.event_id}, steer note {steered.id}) on live"
+                  f" run {steered.run_id}, landing at its babysitter's next"
+                  " fix round", file=out)
+        elif steered.event_id is not None:
             print(f"[holo2] {identifier} steered: run {steered.run_id} sent"
                   " back to the babysitter as a maintainer instruction"
                   f" (operator_note event {steered.event_id}, steer note"

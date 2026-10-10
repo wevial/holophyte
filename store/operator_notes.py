@@ -61,6 +61,20 @@ def add_note(conn, run_id, note, author, hint=False):
         return _latest_note(conn, run_id)
 
 
+def note_live(conn, run_id, note, author, hint=False):
+    data = _instruction(note, author, hint)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT 1 FROM tickets t JOIN runs r ON r.id = t.activeRunId"
+            " WHERE r.id = ? AND r.endedAt IS NULL AND r.phase = 'merge_gate'"
+            " AND r.prUrl IS NOT NULL", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError("run must be live at the merge gate on its pull"
+                             " request")
+        _record_note(conn, run_id, data)
+        return _latest_note(conn, run_id)
+
+
 def notes(conn, run_id, pending=False, pr_url=None):
     """Consumption is an appended event; the instruction itself never changes."""
     if conn is None or run_id is None:
