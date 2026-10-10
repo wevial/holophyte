@@ -592,6 +592,8 @@ def _gh_run(target, argv, body, path):
 
 def _never_connected(stderr):
     text = (stderr or "").lower()
+    if re.search(r"\bhttp \d{3}\b", text):
+        return False
     return any(pattern in text for pattern in GH_NEVER_CONNECTED)
 
 

@@ -59,10 +59,11 @@ class GhApiRetryTest(unittest.TestCase):
         self.assertEqual(sleeps, [5, 15])
 
     def test_http_error_status_fails_on_the_first_call(self):
-        for status in ("422", "502"):
-            with self.subTest(status=status):
-                target, calls = self.stand_in(
-                    9, f"gh: Request failed (HTTP {status})")
+        for error in ("gh: Request failed (HTTP 422)",
+                      "gh: Request failed (HTTP 502)",
+                      "gh: connection refused (HTTP 502)"):
+            with self.subTest(error=error):
+                target, calls = self.stand_in(9, error)
 
                 with self.assertRaises(InfraFailure):
                     github._gh_output(target, "github.com", "POST",
