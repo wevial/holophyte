@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import store.read
 import store.schema
+from holophyte.cli.shadow_report import shadow_lines
 from holophyte.config.config_tables import report_config
 from holophyte.story.story_views import story_report_lines
 from store.gap_layers import gap_finder_counts, gap_layer_counts
@@ -251,6 +252,7 @@ def report_lines(conn, target=None):
         live += failure_lines(conn)
         live += flaky_lines(conn)
         live += trim_lines(conn)
+        live += shadow_lines(conn)
         live += blast_radius_lines(conn)
         live += adversary_lines(conn)
         live += consolidation_lines(conn)

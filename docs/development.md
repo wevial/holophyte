@@ -179,6 +179,10 @@ Each module, one line:
   (actual, estimate, ratio, rounds, outcome) with mean and median ratio, a
   read-only query over the store that claims no ticket, cuts no worktree and
   calls no one.
+- `holophyte/cli/shadow_report.py` — `--report`'s shadow implementer section:
+  per run with a `shadow_result`, the primary's and the shadow's first
+  implementation (route, minutes, tokens, cost, verify, round-1 verdict and
+  findings) side by side, with a summary line totalling both.
 - `holophyte/loop/run.py` — the frozen claimed run and the shared landing entry point.
 - `holophyte/loop/stop.py` — cooperative pause requests, operator aborts and durable
   continuations.
