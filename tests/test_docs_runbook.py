@@ -17,24 +17,27 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from holophyte.holo.cli import build_parser
+
 ROOT = Path(__file__).resolve().parent.parent
 RUNBOOK = ROOT / "docs" / "operating" / "runbook.md"
 SECTION = "### Move a project off Linear to the native board"
+LOTUSPOD = "### A maintainer steers a run from a Lotuspod page comment"
 STORE_ARG = re.compile(r"^~/\.holophyte/[^/]+/(store\.db(?:\.pre-native)?)$")
 
 
-def native_move_block() -> list[str]:
-    """The lines of the first code block under the native move heading."""
+def section_block(section: str) -> list[str]:
+    """The lines of the first code block under a runbook heading."""
     text = RUNBOOK.read_text(encoding="utf-8")
-    start = text.index(SECTION)
+    start = text.index(section)
     match = re.search(r"^```[^\n]*\n(.*?)^```", text[start:], re.M | re.S)
     if match is None:
-        raise AssertionError("the native move section has no code block")
+        raise AssertionError(f"{section!r} has no code block")
     return match.group(1).splitlines()
 
 
 def backup_line() -> str:
-    lines = [ln for ln in native_move_block()
+    lines = [ln for ln in section_block(SECTION)
              if ln.startswith('python3 -c "import sqlite3')]
     if len(lines) != 1:
         raise AssertionError(f"expected one backup line, found {lines!r}")
@@ -72,9 +75,21 @@ class NativeMoveBackupTest(unittest.TestCase):
             self.assertEqual(rows, [("KO-1", "first"), ("KO-2", "second")])
 
     def test_no_line_invokes_the_sqlite3_command(self):
-        for line in native_move_block():
+        for line in section_block(SECTION):
             words = shlex.split(line, comments=True)
             self.assertNotIn("sqlite3", words[:1], line)
+
+
+class LotuspodRelayTest(unittest.TestCase):
+
+    def test_the_relay_line_parses_as_a_steer_signed_via_lotuspod(self):
+        lines = [ln for ln in section_block(LOTUSPOD)
+                 if ln.startswith("holo steer ")]
+        self.assertEqual(len(lines), 1, lines)
+        args = build_parser().parse_args(shlex.split(lines[0])[1:])
+        self.assertEqual(args.command.words, ("steer",))
+        self.assertTrue((args.note or args.note_option or "").strip())
+        self.assertTrue(args.author[-1].endswith("via Lotuspod"), args.author)
 
 
 if __name__ == "__main__":

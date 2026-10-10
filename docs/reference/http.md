@@ -1152,7 +1152,7 @@ and `additionalProperties`, false. Every tool takes an optional `project`,
 a `[serve]` name or a repository path; `report` also takes `since`, `runs`
 `limit`, `run` the `run` id and its `view`, `ticket` the `key`, and the
 writes their own `ticket`, `run` or `body` and the required `note` and
-`author`. `annotations` holds `readOnlyHint`, true for a read, and
+`author`, `steer` also its `hint` and `now` booleans. `annotations` holds `readOnlyHint`, true for a read, and
 `destructiveHint`, false for every tool served today, so a client that
 asks a person before a destructive write asks here as on stdio. A tool
 call's `result` holds `content`, a list of one object whose `type` is
@@ -1163,7 +1163,7 @@ naming the tools.
 
 Each call runs its `holo` command on the host (`HOLO_TRANSPORT=local`) as
 a subprocess, as on stdio, and a write records its author as `AUTHOR via
-MCP`. The five write tools are listed and callable only when
+MCP`. The six write tools are listed and callable only when
 `host.toml`'s `[serve] actions` is true; otherwise only the reads are
 listed and a write is an unknown tool.
 

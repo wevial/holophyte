@@ -335,7 +335,7 @@ true`.
 | `board_diff` | | `holo board diff` |
 | `sweep_preview` | | `holo sweep`, which acts on nothing and writes only sightings |
 
-The five write tools are marked `readOnlyHint: false` and
+The six write tools are marked `readOnlyHint: false` and
 `destructiveHint: false`. Each requires a non-blank `note` and `author`; a
 missing or blank one is a result with `isError: true` naming it, and no
 command runs. The interventions table has no actor column, so the author
@@ -353,6 +353,7 @@ on the host.
 | `file_ticket` | `body`, required | `holo file - --backlog --note NOTE --author "AUTHOR via MCP" --json`, the body on stdin | the ticket in Backlog, never Ready, and its first board note `AUTHOR via MCP: NOTE`; an invalid body files nothing and is an error carrying the template checker's first problem |
 | `send_back` | `run`, required | `holo send-back RUN --note NOTE --author "AUTHOR via MCP" --json` | the maintainer instruction `NOTE`, its author `AUTHOR via MCP` |
 | `babysit` | `ticket`, required | `holo babysit KEY --note NOTE --author "AUTHOR via MCP" --json` | the same, for the ticket's parked run |
+| `steer` | `ticket`, required; `hint` and `now`, booleans | `holo steer KEY [--hint] [--now] --note NOTE --author "AUTHOR via MCP" --json` | the steer note `NOTE`, an amendment or with `hint` a hint, its author `AUTHOR via MCP`; the verb's line is the result's `detail` |
 | `requeue` | `ticket`, required | `holo requeue KEY --note "AUTHOR via MCP: NOTE" --json` | a `requeue` interventions row with that text |
 | `hold` | | `holo hold --note "AUTHOR via MCP: NOTE" --json` | a `hold` interventions row with that text |
 
