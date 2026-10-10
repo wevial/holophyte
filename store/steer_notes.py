@@ -112,12 +112,8 @@ def _live(conn, ticket_id, key, live, kind, note, author, now, resume,
     closed = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
                           " AND kind = 'steer_closed'", (live,)).fetchone()
     if phase == "merge_gate" and pr_url:
-        if interrupt:
-            raise SteerRefused(
-                f"{key}'s live run {live} is babysitting its pull request in"
-                f" {phase}; --now stops an implementer turn before the pull"
-                " request, so steer it without --now")
-        return _babysat(conn, ticket_id, key, live, kind, note, author, now)
+        return _babysat(conn, ticket_id, key, live, kind, note, author, now,
+                        interrupt)
     if phase not in LIVE_PHASES or pr_url or closed:
         raise SteerRefused(
             f"{key}'s live run {live} is in {phase}"
@@ -137,13 +133,14 @@ def _live(conn, ticket_id, key, live, kind, note, author, now, resume,
     return steered._replace(live=True)
 
 
-def _babysat(conn, ticket_id, key, run_id, kind, note, author, now):
+def _babysat(conn, ticket_id, key, run_id, kind, note, author, now,
+             interrupt=False):
     intervention_id = record_intervention(conn, run_id, "steer",
                                           f"{kind} for {key}: {note}", now=now)
     event_id = operator_notes.note_live(conn, run_id, note, author,
                                         hint=kind == HINT)
     steered = _insert(conn, ticket_id, run_id, kind, note, author, now,
-                      intervention_id, event_id)
+                      intervention_id, event_id, interrupt)
     return steered._replace(live=True)
 
 
@@ -186,11 +183,23 @@ def pending(conn, ticket_id, kind=None):
                   (ticket_id, kind))
 
 
+_UNCARRIED = (" AND s.consumedBy IS NULL AND NOT EXISTS (SELECT 1 FROM"
+              " runEvents c WHERE c.kind = 'operator_note_consumed'"
+              " AND json_extract(c.payload, '$.event_id') = s.eventId)")
+
+
 def interrupting(conn, run_id):
     return conn.execute(
-        "SELECT 1 FROM steerNotes WHERE runId = ? AND interrupt = 1"
-        " AND eventId IS NULL AND consumedBy IS NULL", (run_id,)
-    ).fetchone() is not None
+        "SELECT 1 FROM steerNotes s WHERE s.runId = ? AND s.interrupt = 1"
+        + _UNCARRIED, (run_id,)).fetchone() is not None
+
+
+def babysat_interrupts(conn, run_id):
+    return [(SteerNote(*row[:6], True), row[6]) for row in conn.execute(
+        "SELECT s.id, s.kind, s.note, s.author, s.runId, s.consumedBy,"
+        " s.eventId FROM steerNotes s WHERE s.runId = ? AND s.interrupt = 1"
+        " AND s.eventId IS NOT NULL" + _UNCARRIED + " ORDER BY s.id",
+        (run_id,))]
 
 
 def close(conn, run_id):

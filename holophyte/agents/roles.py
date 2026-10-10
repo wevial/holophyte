@@ -93,6 +93,7 @@ def record_session(project, conn, run_id, role, output, cwd=None,
     if session:
         store.record_agent_session(conn, run_id, session, role,
                                    "fallback" if fallback else "primary")
+    return session or None
 
 
 def writer_turn(project, goal, cwd, timeout, on_start):

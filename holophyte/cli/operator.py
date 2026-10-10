@@ -396,7 +396,9 @@ def steer_ticket(target, identifier, note, hint=False, author=None, out=None,
 def _interrupts(target, conn, ticket_id, out):
     live = store.read.ticket_by_id(conn, ticket_id).activeRunId
     run = live and store.read.run_detail(conn, live)
-    if run is None or run.phase not in steer_notes.LIVE_PHASES or run.prUrl:
+    babysat = run is not None and run.phase == "merge_gate" and run.prUrl
+    if run is None or not babysat and (
+            run.phase not in steer_notes.LIVE_PHASES or run.prUrl):
         return True
     argv, reason = ((None, "fallback implementer route")
                     if "implementer" in active_fallbacks(target)

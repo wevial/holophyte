@@ -21,7 +21,7 @@ from holophyte.agents.agent_routes import routes
 from holophyte.agents.fix_session import steer_turn
 from holophyte.agents.roles import agent
 from holophyte.holo import cli as holo_cli
-from store import steer_notes
+from store import operator_notes, steer_notes
 from tests.sweep_fixture import SweepTestCase
 
 BEAT = 0.5
@@ -234,6 +234,46 @@ class SteerNowTests(SweepTestCase):
         ((_, payload),) = self.events("steer_resumed")
         self.assertEqual(json.loads(payload)["reason"],
                          "the stopped turn reported no session")
+
+    def test_a_babysit_fix_turn_is_stopped_and_resumed_carrying_the_note(self):
+        self.claude()
+        for phase in ("verifying", "reviewing", "merge_gate"):
+            store.set_phase(self.conn, self.run_id, phase)
+        store.set_pull_request(self.conn, self.run_id,
+                               "https://github.com/example/repo/pull/7")
+        thread, timing = self.when_ready(self.steer_now_by_cli)
+
+        output, timed_out = self.timed()
+        thread.join()
+
+        code, said = timing["said"]
+        self.assertEqual(code, 0, said)
+        self.assertLessEqual(timing["gone"], 2 * BEAT + 0.5)
+        self.assertEqual((str(output), timed_out), ("resumed", False))
+        self.assertEqual(self.argv(2)[1], "--resume")
+        self.assertIn(NOTE, self.argv(2)[-1])
+        self.assertEqual(self.notes(), [(1, self.run_id)])
+        self.assertEqual(operator_notes.notes(self.conn, self.run_id,
+                                              pending=True), [])
+
+    def test_a_command_implementer_reporting_its_recorded_session_resumes_it(self):
+        script = self.stand_in("implementer",
+                               first='echo "session id: s-1"\n' + STALL,
+                               later="echo resumed\n")
+        self.configure(f'[agents]\nimplementer = "{script}"\n'
+                       "implementer_session = 'session id: (\\S+)'\n"
+                       f'implementer_resume = "{script} --resume {{session}}"\n')
+        store.record_agent_session(self.conn, self.run_id, "s-1", "implement",
+                                   "primary")
+        thread, timing = self.when_ready(self.steer_now_by_cli)
+
+        self.timed()
+        thread.join()
+
+        code, said = timing["said"]
+        self.assertEqual(code, 0, said)
+        self.assertEqual(self.argv(2)[:2], ["--resume", "s-1"])
+        self.assertIn(NOTE, self.argv(2)[-1])
 
     def test_a_fallback_implementer_takes_the_note_without_stopping_the_turn(self):
         self.claude(first='touch "$STATE/ready"\necho $$ > "$STATE/pid"\n'

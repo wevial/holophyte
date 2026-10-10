@@ -320,9 +320,13 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # HOLO-226: `close` ends a live run's steer
                                  # admission once no implementer turn remains.
                                  # HOLO-228: `interrupting` is the heartbeat's
-                                 # ask for a `--now` note to stop the turn.
-                                 (store.steer_notes, ["amendments", "close",
-                                                      "consume", "interrupting",
+                                 # ask for a `--now` note to stop the turn;
+                                 # `babysat_interrupts` the babysit fix
+                                 # turn's `--now` notes its resume carries.
+                                 (store.steer_notes, ["amendments",
+                                                      "babysat_interrupts",
+                                                      "close", "consume",
+                                                      "interrupting",
                                                       "pending", "steer",
                                                       "steers"]),
                                  # HOLO-175: a story child's follow-up proposed

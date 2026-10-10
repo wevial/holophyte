@@ -120,7 +120,7 @@ def _resume_steered(project, conn, run_id, beat_s, wt, budget_min, goal, left,
                   " committed; build on it." if wip else ""))
     argv, reason = (resume_argv(project, conn, run_id) if reported
                     else (None, "the stopped turn reported no session"))
-    ask = f"{steering.take(conn, run_id)}{stopped} {STEER_ASK}"
+    ask = f"{steering.take_now(conn, run_id)}{stopped} {STEER_ASK}"
     payload = {"resumed": argv is not None, "seconds": round(left)}
     if reason:
         payload["reason"] = reason
@@ -167,12 +167,12 @@ def _run_turn(project, conn, run_id, beat_s, wt, budget_min, goal, role, argv,
                   " output before the budget fired:\n"
                   + (partial[-2000:] or "(no output before the budget fired)"))
             output, timed_out = partial, True
-        if not kill.wanted:
-            record_session(project, conn, run_id, session_role, output, wt,
-                           on_start=kill.arm)
+        recorded = None if kill.wanted else record_session(
+            project, conn, run_id, session_role, output, wt, on_start=kill.arm)
     if kill.steered and not timed_out:
         steered.append((max(0, armed - (retry_clock() - started)),
-                        argv is not None or _session_of(conn, run_id) != before))
+                        argv is not None or recorded is not None
+                        or _session_of(conn, run_id) != before))
     return output, timed_out
 
 
