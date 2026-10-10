@@ -93,7 +93,8 @@ class ClaudeTableTests(unittest.TestCase):
 
     def assert_turn(self, argv, goal):
         self.assertEqual(argv[:2], ["-p", "--session-id"])
-        self.assertEqual(argv[3:], ["--model", "sonnet", "--effort", "low", goal])
+        self.assertEqual(argv[3:], ["--model", "sonnet", "--effort", "low",
+                                    "--output-format", "json", goal])
         self.assertEqual(str(uuid.UUID(argv[2], version=4)), argv[2])
         self.assertEqual(self.session(), argv[2])
 
@@ -119,7 +120,8 @@ class ClaudeTableTests(unittest.TestCase):
             check_cap=lambda *args: None)
         _, resumed = self.received()
         self.assertEqual(resumed[:-1], ["-p", "--resume", first[2], "--model",
-                                        "sonnet", "--effort", "low"])
+                                        "sonnet", "--effort", "low",
+                                        "--output-format", "json"])
         self.assertTrue(resumed[-1].startswith("Reviewer findings:"))
         self.assertIn("REQUEST_CHANGES: a finding", resumed[-1])
         [(payload,)] = self.conn.execute(
@@ -644,7 +646,7 @@ class ContainerImplementerTests(unittest.TestCase):
         self.assertEqual(
             holophyte.agents.fix_session.resume_argv(self.target, self.conn, self.run),
             (["claude", "-p", "--resume", chosen, "--model", "sonnet",
-              "--effort", "low"], None))
+              "--effort", "low", "--output-format", "json"], None))
 
     def test_a_devin_turn_records_no_session(self):
         self.configure('[agents.implementer]\nharness = "devin"\n'
@@ -689,7 +691,14 @@ class TrimmerTableTests(unittest.TestCase):
         self.assertEqual(argv[:2], ["-p", "--session-id"])
         self.assertEqual(str(uuid.UUID(argv[2], version=4)), argv[2])
         self.assertEqual(argv[3:], ["--model", "sonnet", "--effort", "high",
-                                    "trim the diff"])
+                                    "--output-format", "json", "trim the diff"])
+
+    def test_a_claude_trimmer_resume_asks_for_the_json_result_document(self):
+        self.target.config_path.write_text(TRIMMER_CONFIG)
+        seat = holophyte.agents.harness.seat(self.target, "trim")
+        self.assertEqual(seat.resume("a-session"), [
+            "claude", "-p", "--resume", "a-session", "--model", "sonnet",
+            "--effort", "high", "--output-format", "json"])
 
     def test_startup_refuses_a_cursor_trimmer_naming_the_roles_cursor_serves(self):
         self.target.config_path.write_text(
@@ -704,7 +713,48 @@ class TrimmerTableTests(unittest.TestCase):
         argv = self.launch_turn(lambda: self.trim("trim the diff"))
         self.assertEqual(argv[0], "claude")
         self.assertEqual(argv[4:], ["--model", "sonnet", "--effort", "high",
-                                    "trim the diff"])
+                                    "--output-format", "json", "trim the diff"])
+
+
+RESULT_DOCUMENT = {"type": "result", "result": "finished work", "num_turns": 3,
+                   "total_cost_usd": 0.25,
+                   "usage": {"input_tokens": 10, "cache_creation_input_tokens": 20,
+                             "cache_read_input_tokens": 30, "output_tokens": 7}}
+
+
+class ClaudeUsageTests(unittest.TestCase):
+    """A Claude table implementer's result document: the reply text is the
+    output, and its tokens and cost ride on the turn's `agent_turn` event."""
+
+    setUp = ClaudeTableTests.setUp
+
+    def turn_with(self, script):
+        binary = self.repo.parent / "claude-harness"
+        binary.write_text(f"#!{sys.executable}\n{script}")
+        binary.chmod(0o755)
+        self.target.config_path.write_text(
+            CONFIG + f'[harnesses]\nclaude = "{binary}"\n')
+        output, timed_out = holophyte.loop.implement._timed(
+            self.target, self.conn, self.run, 60, self.repo, 1,
+            "implement the thing")
+        self.assertFalse(timed_out)
+        [(payload,)] = self.conn.execute(
+            "SELECT payload FROM runEvents WHERE kind = 'agent_turn'").fetchall()
+        return output, json.loads(payload)
+
+    def test_a_result_document_yields_its_text_and_records_its_usage(self):
+        output, payload = self.turn_with(
+            f"print({json.dumps(json.dumps(RESULT_DOCUMENT))})\n")
+        self.assertEqual(output, "finished work")
+        self.assertEqual(payload["usage"], {"input_tokens": 60, "output_tokens": 7,
+                                            "cost_usd": 0.25, "num_turns": 3})
+
+    def test_plain_text_passes_through_and_records_no_usage(self):
+        output, payload = self.turn_with(
+            "import sys\nprint('Error: the CLI crashed')\nsys.exit(3)\n")
+        self.assertEqual(output, "Error: the CLI crashed")
+        self.assertEqual(output.exit_code, 3)
+        self.assertNotIn("usage", payload)
 
 
 class CriticTableTests(unittest.TestCase):
