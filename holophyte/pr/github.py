@@ -20,6 +20,9 @@ BASE = "main"
 # Both are names `gh` itself honours, so an operator sets one thing.
 TOKEN_VARS = ("GH_TOKEN", "GITHUB_TOKEN")
 GH = "gh"
+GH_NEVER_CONNECTED = ("dial tcp", "connection refused", "no such host",
+                      "network is unreachable")
+GH_RETRY_S = (5, 15)
 API = "https://api.github.com"
 # A call unanswered this long is a route down: fail rather than hold a lease.
 PR_TIMEOUT = 120
@@ -565,16 +568,33 @@ def _gh_output(target, host, method, path, payload):
     if payload is not None:
         argv += ["--input", "-"]
         body = json.dumps(payload)
+    for wait in (*GH_RETRY_S, None):
+        r = _gh_run(target, argv, body, path)
+        if not r.returncode:
+            return r.stdout
+        if wait is None or not _never_connected(r.stderr):
+            break
+        SLEEP(wait)
+        deadline.admit(f"GitHub's {method} {path} request")
+    detail = " ".join((r.stderr or r.stdout).split())[-500:]
+    raise InfraFailure(f"{GH} api {path} failed: {detail or 'no output'}")
+
+
+def _gh_run(target, argv, body, path):
     try:
-        r = subprocess.run(argv, cwd=target.path, input=body or "",
-                           capture_output=True, text=True, timeout=PR_TIMEOUT)
+        return subprocess.run(argv, cwd=target.path, input=body or "",
+                              capture_output=True, text=True,
+                              timeout=PR_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise InfraFailure(f"{GH} api {path} did not answer in"
                            f" {PR_TIMEOUT}s") from None
-    if r.returncode:
-        detail = " ".join((r.stderr or r.stdout).split())[-500:]
-        raise InfraFailure(f"{GH} api {path} failed: {detail or 'no output'}")
-    return r.stdout
+
+
+def _never_connected(stderr):
+    text = (stderr or "").lower()
+    if re.search(r"\bhttp \d{3}\b", text):
+        return False
+    return any(pattern in text for pattern in GH_NEVER_CONNECTED)
 
 
 def _call_with_api(host, method, path, payload, token):
