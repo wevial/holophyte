@@ -84,6 +84,7 @@ PINNED = {
     "holophyte/cli/host_modes.py": 2,
     "holophyte/cli/operator.py": 4,
     "holophyte/cli/report.py": 1,
+    "holophyte/cli/shadow_report.py": 0,
     "holophyte/cli/status.py": 4,
     "holophyte/cli/store_import.py": 3,
     "holophyte/cli/store_verbs.py": 0,
