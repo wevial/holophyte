@@ -304,7 +304,7 @@ MERGE_KEYS = {
     "pr_style": "", "pr_changes_log": False, "review_fixes": False,
     "pr_draft": False,
     "ui_paths": (), "ui_capture": "", "ui_capture_dir": "e2e/capture",
-    "ui_capture_local": False,
+    "ui_capture_local": False, "ui_capture_video": False,
     "media_repo": "",
     "media_bucket": None, "media_max_file_mb": 10, "media_max_total_mb": 20,
     "human_threads": "park", "bot_threads": "act", "bot_logins": (),
@@ -362,6 +362,9 @@ def merge_config(project):
     values["ui_capture_local"] = _merge_boolean(
         project, "ui_capture_local",
         table.get("ui_capture_local", defaults.pop("ui_capture_local")))
+    values["ui_capture_video"] = _merge_boolean(
+        project, "ui_capture_video",
+        table.get("ui_capture_video", defaults.pop("ui_capture_video")))
     for key, default in defaults.items():
         value = table.get(key, default)
         if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):

@@ -707,6 +707,36 @@ class MediaTests(unittest.TestCase):
         )
         self.assertEqual(names.strip(), "flow.mp4")
 
+    def test_video_key_alone_sets_the_capture_switch_and_recaptures(self):
+        self.candidate(
+            script="import os, sys\nfrom pathlib import Path\n"
+            'video = os.environ.get("HOLOPHYTE_CAPTURE_VIDEO")\n'
+            'with open("switches", "a") as file:\n'
+            ' file.write(f"{video}\\n")\n'
+            f'Path(sys.argv[1], "01-a.png").write_bytes({PNG!r})\n'
+            'if video == "1":\n'
+            ' Path(sys.argv[1], "flow.webm").write_bytes(b"video")\n'
+        )
+
+        def evidence():
+            with (patch("holophyte.pr.pr_media.repo_is_private", return_value=False),
+                  patch("holophyte.pr.github.origin_url",
+                        return_value="https://github.com/example/repo.git")):
+                return pr_media.prepare(self.target, self.repo, "KO-505")
+
+        self.enterContext(patch.dict(os.environ, HOLOPHYTE_CAPTURE_VIDEO="1"))
+        section = evidence()
+        self.assertIn("![01-a.png]", section)
+        self.assertNotIn("flow.webm", section)
+        self.assertEqual((self.repo / "switches").read_text(), "None\n")
+
+        self.config["merge"]["ui_capture_video"] = True
+        section = evidence()
+        self.assertEqual((self.repo / "switches").read_text(), "None\n1\n")
+        self.assertIn("[flow.webm](https://github.com/example/repo/blob/"
+                      "pr-media/KO-505/flow.webm?raw=true)", section)
+        self.assertNotIn("![flow.webm]", section)
+
     def test_timeout_opens_with_missing_evidence(self):
         self.candidate(script="import time; time.sleep(30)")
         with patch("holophyte.pr.pr_media.CAPTURE_TIMEOUT", 0.05):

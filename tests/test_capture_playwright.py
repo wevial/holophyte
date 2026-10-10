@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -35,6 +36,36 @@ else:
     open(written, 'wb').close()
 sys.exit(int(os.environ.get('FAKE_EXIT', '0')))
 """
+# Writes 01-a.png into CAPTURE_OUT and each FAKE_VIDEOS [test, bytes] pair as
+# test/video.webm under the config's outputDir, one second apart, and records
+# that directory in recordings.txt.
+VIDEO_FAKE = """\
+import json, os, re, sys
+config = open(sys.argv[sys.argv.index('--config') + 1]).read()
+recordings = re.search(r'outputDir: "([^"]+)"', config)[1]
+open('recordings.txt', 'w').write(recordings)
+open(os.path.join(os.environ['CAPTURE_OUT'], '01-a.png'), 'wb').close()
+for number, (test, data) in enumerate(json.loads(os.environ['FAKE_VIDEOS'])):
+    os.makedirs(os.path.join(recordings, test))
+    video = os.path.join(recordings, test, 'video.webm')
+    open(video, 'w').write(data)
+    written = (1_700_000_000 + number) * 10**9
+    os.utime(video, ns=(written, written))
+"""
+# Imports the generated config and records it as the boot received it.
+NODE_BOOT = """\
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const argv = process.argv.slice(2);
+const generated = argv[argv.indexOf('--config') + 1];
+const config = (await import(pathToFileURL(generated).href)).default;
+fs.writeFileSync('record.json', JSON.stringify({
+  text: fs.readFileSync(generated, 'utf8'), config,
+  outputs: (config.projects || [config]).filter((entry) => entry.outputDir)
+    .map((entry) => fs.statSync(entry.outputDir).isDirectory())}));
+fs.writeFileSync(path.join(process.env.CAPTURE_OUT, '01-a.png'), '');
+"""
 
 
 class FakeBootTests(unittest.TestCase):
@@ -46,19 +77,25 @@ class FakeBootTests(unittest.TestCase):
         (self.repo / ".holophyte-capture" / "KO-7.capture.ts").write_text("")
         (self.repo / "playwright.config.ts").write_text("export default {};\n")
         (self.repo / "fake.py").write_text(FAKE)
+        (self.repo / "video_fake.py").write_text(VIDEO_FAKE)
+        (self.repo / "boot.mjs").write_text(NODE_BOOT)
 
     def capture(self, ticket="KO-7", writes="01-open.png", code=0,
-                options=(), states=None):
+                options=(), states=None, boot=(sys.executable, "fake.py"),
+                video=False, videos=()):
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("HOLOPHYTE_")}
-        env.update(FAKE_WRITES=writes, FAKE_EXIT=str(code))
+        env.update(FAKE_WRITES=writes, FAKE_EXIT=str(code),
+                   FAKE_VIDEOS=json.dumps(videos))
+        if video:
+            env["HOLOPHYTE_CAPTURE_VIDEO"] = "1"
         if ticket:
             env["HOLOPHYTE_TICKET"] = ticket
         if states is not None:
             env["HOLOPHYTE_EVIDENCE_STATES"] = states
         return subprocess.run(
             [sys.executable, str(RUNNER),
-             "--boot", shlex.join([sys.executable, "fake.py"]),
+             "--boot", shlex.join(boot),
              "--env", "HANDLE=-capture-{key}", *options, "out"],
             cwd=self.repo, env=env, capture_output=True, text=True, timeout=60)
 
@@ -222,6 +259,74 @@ class FakeBootTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("expected gone", result.stderr)
         self.assertFalse((self.repo / "record.json").exists())
+
+    @unittest.skipUnless(shutil.which("node"), "node imports the generated config")
+    def test_video_records_only_the_capture_project_and_off_leaves_the_config(self):
+        (self.repo / "playwright.config.mjs").write_text(
+            "export default {use: {viewport: {width: 800, height: 600}}, projects: [\n"
+            "  {name: 'setup', testMatch: /auth\\.setup\\.ts$/},\n"
+            "  {name: 'chromium', dependencies: ['setup'],"
+            " use: {colorScheme: 'dark'}},\n]};\n")
+        options = ("--config", "playwright.config.mjs")
+
+        result = self.capture(boot=("node", "boot.mjs"), options=options,
+                              video=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = self.record()
+        setup, chromium = record["config"]["projects"]
+        self.assertEqual(chromium["use"], {"colorScheme": "dark", "video": "on"})
+        self.assertTrue(os.path.isabs(chromium["outputDir"]), chromium)
+        self.assertEqual(record["outputs"], [True])
+        self.assertFalse(os.path.exists(chromium["outputDir"]))
+        self.assertNotIn("use", setup)
+        self.assertNotIn("outputDir", setup)
+        self.assertNotIn("outputDir", record["config"])
+
+        result = self.capture(boot=("node", "boot.mjs"), options=options)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = self.record()
+        self.assertNotIn("video", record["text"])
+        self.assertNotIn("outputDir", record["text"])
+        self.assertEqual(record["config"]["projects"][1]["use"],
+                         {"colorScheme": "dark"})
+
+    @unittest.skipUnless(shutil.which("node"), "node imports the generated config")
+    def test_video_on_a_config_without_projects_records_at_the_top_level(self):
+        (self.repo / "playwright.config.mjs").write_text(
+            "export default {use: {viewport: {width: 800, height: 600}}};\n")
+
+        result = self.capture(boot=("node", "boot.mjs"), video=True,
+                              options=("--config", "playwright.config.mjs"))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = self.record()
+        self.assertEqual(record["config"]["use"],
+                         {"viewport": {"width": 800, "height": 600}, "video": "on"})
+        self.assertEqual(record["outputs"], [True])
+
+    def test_recordings_are_copied_in_written_order_and_their_directory_removed(self):
+        result = self.capture(boot=(sys.executable, "video_fake.py"), video=True,
+                              videos=[["z-first", "first"], ["a-second", "second"]])
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = self.repo / "out"
+        self.assertEqual(sorted(p.name for p in output.iterdir()),
+                         ["01-a.png", "video-01.webm", "video-02.webm"])
+        self.assertEqual((output / "video-01.webm").read_text(), "first")
+        self.assertEqual((output / "video-02.webm").read_text(), "second")
+        recordings = (self.repo / "recordings.txt").read_text()
+        self.assertFalse(os.path.exists(recordings), recordings)
+        self.assertEqual(self.leftovers(), ["KO-7.capture.ts"])
+
+    def test_a_video_run_that_recorded_nothing_still_passes_and_says_so(self):
+        result = self.capture(boot=(sys.executable, "video_fake.py"), video=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("capture_playwright: no video was recorded", result.stderr)
+        self.assertEqual([p.name for p in (self.repo / "out").iterdir()],
+                         ["01-a.png"])
 
     def test_a_failed_boot_command_fails_the_run_and_cleans_up(self):
         result = self.capture(code=3)

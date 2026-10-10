@@ -189,10 +189,14 @@ def _capture(command, wt, output, task_id, states, *, project=None):
         env = dict(launcher.environment(project) or {})
     else:
         env = dict(os.environ)
+    cfg = merge_config(project) if project is not None else None
     if project is not None:
         env.update(capture_environment(project) or {})
-        env['HOLOPHYTE_CAPTURE_DIR'] = merge_config(project).ui_capture_dir
+        env['HOLOPHYTE_CAPTURE_DIR'] = cfg.ui_capture_dir
     env['HOLOPHYTE_TICKET'] = task_id
+    env.pop("HOLOPHYTE_CAPTURE_VIDEO", None)
+    if cfg is not None and cfg.ui_capture_video:
+        env["HOLOPHYTE_CAPTURE_VIDEO"] = "1"
     env.pop("HOLOPHYTE_EVIDENCE_STATES", None)
     if states:
         env["HOLOPHYTE_EVIDENCE_STATES"] = "\n".join(states)
@@ -506,7 +510,8 @@ def _receipt(project, wt, task_id, evidence_states):
     cfg = merge_config(project)
     revisions = sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt)
     identity = [RECEIPT_VERSION, revisions,
-                task_id, cfg.ui_paths, cfg.ui_capture, github.origin_url(project),
+                task_id, cfg.ui_paths, cfg.ui_capture, cfg.ui_capture_video,
+                github.origin_url(project),
                 cfg.media_repo, cfg.media_bucket, cfg.media_max_file_mb,
                 cfg.media_max_total_mb, list(evidence_states),
                 _execution_fingerprint(project),
