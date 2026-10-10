@@ -10,7 +10,10 @@ ignored rather than filed against a thread that does not exist.
 Run: python3 -m unittest discover -s tests -p 'test_babysit*' -v
 """
 import json
+import os
 import re
+import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -32,8 +35,16 @@ from loop_fixture import (  # noqa: E402
     a_task,
 )
 
+import holophyte.config.project  # noqa: E402
+import holophyte.loop.implement  # noqa: E402
+import holophyte.loop.review_round  # noqa: E402
+import holophyte.pr.pullrequest  # noqa: E402
+import store  # noqa: E402
+import store.tickets  # noqa: E402
 from holophyte.babysit import babysitter  # noqa: E402
-from holophyte.pr import github, pr_status  # noqa: E402
+from holophyte.loop.gates import RunFailure  # noqa: E402
+from holophyte.loop.runs import open_store, set_phase  # noqa: E402
+from holophyte.pr import github, pr_media, pr_status  # noqa: E402
 from holophyte.pr.github import PullRequest, Thread  # noqa: E402
 
 PULL = PullRequest(host="github.com", owner="o", name="r", number=3,
@@ -657,6 +668,124 @@ class ConflictingPullRequestTests(cases.ConflictingMainHelpers,
         self.assertEqual(
             self.read("SELECT COUNT(*) FROM ledger WHERE kind = 'note'"
                       " AND text LIKE 'Merged main into%'"), [(0,)])
+
+
+SPEC = Path("e2e/capture/KO-1.capture.ts")
+CAPTURE = """\
+import pathlib, sys
+spec = pathlib.Path("e2e/capture/KO-1.capture.ts")
+if spec.read_text() == "BROKEN":
+    print("page redirected into the index")
+    sys.exit(1)
+pathlib.Path(sys.argv[-1], "01-state.png").write_bytes(b"png")
+"""
+
+
+class CaptureOnlyBabysitFixTests(unittest.TestCase):
+    """A babysit fix turn whose only change is the ticket's capture spec, in
+    a capture directory that ignores itself, makes no commit; the edited
+    spec is still progress, and only a turn that changes neither the head
+    nor the spec fails the run."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name, "repo")
+        self.root.mkdir()
+        self.enterContext(patch.dict(
+            os.environ, {"HOLOPHYTE_HOME": str(Path(tmp.name, "home"))}))
+        script = Path(tmp.name, "capture.py")
+        script.write_text(CAPTURE)
+        for args in (("init", "-q", "-b", "main"),
+                     ("config", "user.name", "Test implementer"),
+                     ("config", "user.email", "implementer@example.test"),
+                     ("commit", "--allow-empty", "-qm", "base"),
+                     ("checkout", "-qb", "task")):
+            self.git(*args)
+        (self.root / "ui").mkdir()
+        (self.root / "ui/page.html").write_text("<p>load</p>\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "candidate")
+        self.head = self.git("rev-parse", "HEAD")
+        (self.root / SPEC).parent.mkdir(parents=True)
+        (self.root / SPEC.parent / ".gitignore").write_text("*\n")
+        (self.root / SPEC).write_text("BROKEN")
+        self.project = holophyte.config.project.Project.locate(self.root)
+        self.project.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.project.config_path.write_text(
+            '[merge]\nmode = "pr"\napprove = "auto"\nui_paths = ["ui/**"]\n'
+            f"ui_capture = '{shlex.join([sys.executable, str(script)])}'\n"
+            "ui_capture_local = true\n")
+        self.conn = open_store(self.project)
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        project_id = store.tickets.ensure_project(self.conn, "team-1", self.root)
+        ticket = store.tickets.mirror_ticket(
+            self.conn, project_id, linear_issue_id="issue-1",
+            linear_identifier="KO-1", title="ticket 1",
+            acceptance_criteria=["Given the page, then it shows load"],
+            verification_commands=["true"], time_box_ms=60 * 60 * 1000)
+        store.tickets.transition(self.conn, ticket, "in_flight")
+        self.run_id = store.claim(self.conn, project_id, ticket)
+        set_phase(self.conn, self.run_id, "merge_gate")
+
+    def git(self, *args):
+        return subprocess.check_output(
+            ["git", *args], cwd=self.root, text=True, stderr=subprocess.PIPE
+        ).strip()
+
+    def review_fix(self, fix):
+        replies = ["CRITERION 1: unwitnessed — the capture failed\n"
+                   "VERDICT: REQUEST_CHANGES",
+                   "CRITERION 1: met — ui/page.html shows load\n"
+                   "VERDICT: APPROVE"]
+        self.prompts, self.fix_turns = [], 0
+
+        def reviewer(target, role, goal, *args, **kwargs):
+            self.prompts.append(goal)
+            return replies.pop(0)
+
+        def fixer(*args, **kwargs):
+            self.fix_turns += 1
+            fix()
+            return "Pointed the capture spec at the index.", False
+
+        def publish(project, wt, output, files, task_id, note, media_repo):
+            return "Media lives here.", {
+                file: f"https://example.test/{file.name}" for file in files}
+
+        with (patch.object(holophyte.loop.review_round, "agent", reviewer),
+              patch.object(holophyte.loop.implement, "_transport_timed", fixer),
+              patch.object(pr_media, "_publish_git", publish),
+              patch.object(github, "push_branch"),
+              patch.object(github, "rest", return_value={"body": "Load."}),
+              patch.object(holophyte.pr.pullrequest, "refresh_pr_text")):
+            return babysitter._review_fix(
+                self.project, self.conn, self.run_id, None, "KO-1", "task",
+                self.root, self.head, None, 30,
+                PullRequest("example.test", "o", "n", 1,
+                            "https://example.test/pull/1"),
+                "Show load in `ui/page.html`.\n", "true", (),
+                ["Given the page, then it shows load"],
+                fix_note="repair the capture", budget_min=10)
+
+    def test_a_fix_that_only_edits_the_ignored_spec_is_reviewed_again(self):
+        approved = self.review_fix(lambda: (self.root / SPEC).write_text("FIXED"))
+
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual(approved, self.head)
+        self.assertEqual(self.fix_turns, 1)
+        self.assertEqual(len(self.prompts), 2)
+        self.assertIn("failed (exit 1)", self.prompts[0])
+        self.assertNotIn("failed (exit 1)", self.prompts[1])
+        self.assertIn("https://example.test/01-state.png", self.prompts[1])
+
+    def test_a_fix_that_changes_neither_head_nor_spec_still_fails(self):
+        with self.assertRaisesRegex(RunFailure, "fix round made no progress"):
+            self.review_fix(lambda: None)
+
+        self.assertEqual(self.fix_turns, 1)
+        self.assertEqual(len(self.prompts), 1)
 
 
 if __name__ == "__main__":
