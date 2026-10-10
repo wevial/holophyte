@@ -19,6 +19,7 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
@@ -37,6 +38,7 @@ from loop_fixture import (  # noqa: E402
 )
 
 import holophyte.config.project  # noqa: E402
+import holophyte.loop.branch_sync  # noqa: E402
 import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import holophyte.pr.pullrequest  # noqa: E402
@@ -45,6 +47,7 @@ import store.read  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.babysit import babysitter  # noqa: E402
 from holophyte.loop.gates import RunFailure  # noqa: E402
+from holophyte.loop.run import Run  # noqa: E402
 from holophyte.loop.runs import open_store, set_phase  # noqa: E402
 from holophyte.loop.stop import resume_babysit_fix, resume_paused  # noqa: E402
 from holophyte.pr import github, pr_media, pr_status  # noqa: E402
@@ -674,6 +677,9 @@ class ConflictingPullRequestTests(cases.ConflictingMainHelpers,
 
 
 SPEC = Path("e2e/capture/KO-1.capture.ts")
+CAPTURE_THREAD = Thread(id="thread", path=str(SPEC), line=1, author="review-bot",
+                        body="The capture loads a redirected page.", url="thread",
+                        author_kind="bot")
 TICKET = "Show load in `ui/page.html`.\n"
 CAPTURE_PULL = PullRequest("example.test", "o", "n", 1, "https://example.test/pull/1")
 CAPTURE = """\
@@ -743,11 +749,11 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
             stderr=subprocess.PIPE).strip()
 
     @contextmanager
-    def fakes(self, fix):
-        replies = ["CRITERION 1: unwitnessed — the capture failed\n"
-                   "VERDICT: REQUEST_CHANGES",
-                   "CRITERION 1: met — ui/page.html shows load\n"
-                   "VERDICT: APPROVE"]
+    def fakes(self, fix, replies=None):
+        replies = replies or ["CRITERION 1: unwitnessed — the capture failed\n"
+                              "VERDICT: REQUEST_CHANGES",
+                              "CRITERION 1: met — ui/page.html shows load\n"
+                              "VERDICT: APPROVE"]
         self.prompts, self.fix_turns = [], 0
 
         def reviewer(target, role, goal, *args, **kwargs):
@@ -757,7 +763,7 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         def fixer(*args, **kwargs):
             self.fix_turns += 1
             fix()
-            return "Pointed the capture spec at the index.", False
+            return "THREAD 1: pointed the capture spec at the index.", False
 
         def publish(project, wt, output, files, task_id, note, media_repo):
             return "Media lives here.", {
@@ -768,7 +774,8 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
               patch.object(pr_media, "_publish_git", publish),
               patch.object(github, "push_branch"),
               patch.object(github, "rest", return_value={"body": "Load."}),
-              patch.object(holophyte.pr.pullrequest, "refresh_pr_text")):
+              patch.object(holophyte.pr.pullrequest, "refresh_pr_text"),
+              patch.object(babysitter, "_post") as self.posted):
             yield
 
     def review_fix(self, fix):
@@ -779,8 +786,19 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
                 (), ["Given the page, then it shows load"],
                 fix_note="repair the capture", budget_min=10)
 
+    def answer_thread(self, fix):
+        with self.fakes(fix, ["THREAD 1: ADDRESS -- the capture is redirected"]):
+            return babysitter._answer_recaptured(
+                self.project, self.conn, self.run_id, None, "KO-1", "task",
+                self.root, self.head, 30, CAPTURE_PULL,
+                SimpleNamespace(threads=(CAPTURE_THREAD,), checks="success"),
+                1, 1, "reviewer", TICKET, "true", (), 10, reviewed=self.head)
+
+    def edit_spec(self):
+        (self.root / SPEC).write_text("FIXED")
+
     def test_a_fix_that_only_edits_the_ignored_spec_is_reviewed_again(self):
-        approved = self.review_fix(lambda: (self.root / SPEC).write_text("FIXED"))
+        approved = self.review_fix(self.edit_spec)
 
         self.assertEqual(self.git("status", "--porcelain"), "")
         self.assertEqual(approved, self.head)
@@ -799,7 +817,7 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
 
     def test_a_spec_only_fix_paused_after_its_turn_resumes_unreviewed(self):
         def fix_then_pause():
-            (self.root / SPEC).write_text("FIXED")
+            self.edit_spec()
             store.pause(self.conn, self.run_id, "operator pause")
 
         with self.assertRaises(store.RunEnded):
@@ -819,6 +837,43 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         self.assertEqual(self.git("status", "--porcelain"), "")
         verdict = store.read.last_independent_verdict(self.conn, self.ticket)
         self.assertEqual(verdict[0], "changes_requested")
+
+
+    def test_a_thread_fix_that_only_edits_the_spec_leaves_the_head_unreviewed(self):
+        self.assertEqual(self.answer_thread(self.edit_spec), (self.head, None))
+
+        self.assertEqual(self.fix_turns, 1)
+        self.assertEqual(self.posted.call_count, 1)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_a_paused_spec_only_thread_fix_resumes_without_the_prior_approval(self):
+        def fix_then_pause():
+            self.edit_spec()
+            store.pause(self.conn, self.run_id, "operator pause")
+
+        store.set_pull_request(self.conn, self.run_id, CAPTURE_PULL.url, self.head)
+        with self.assertRaises(store.RunEnded):
+            self.answer_thread(fix_then_pause)
+        resume_paused(self.project, self.conn, self.ticket, "go on")
+        run_id = store.claim(self.conn, self.project_id, self.ticket)
+        set_phase(self.conn, run_id, "merge_gate")
+        carried = store.read.approved_candidate(self.conn, self.ticket, run_id)
+        run = Run(self.project, self.conn, run_id, None, "KO-1", "issue-1",
+                  TICKET, "task", self.root, 10, 0.0)
+        handed = {}
+        with (self.fakes(lambda: self.fail("the resume ran another fix turn")),
+              patch.object(holophyte.loop.branch_sync, "_sync_branch_from_origin",
+                           return_value=self.head),
+              patch.object(store.read, "last_independent_verdict",
+                           return_value=("pass", self.head)),
+              patch.object(babysitter, "_babysit",
+                           side_effect=lambda run, *a, **kw: handed.update(kw) or run),
+              patch.object(holophyte.pr.pullrequest.run_state, "land")):
+            holophyte.pr.pullrequest._resume_on_pr(run, carried, "true", (), "")
+
+        self.assertTrue(carried.paused)
+        self.assertEqual(self.posted.call_count, 1)
+        self.assertIsNone(handed["reviewed"])
 
 
 if __name__ == "__main__":

@@ -53,10 +53,13 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
           " babysitting it")
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
     set_phase(conn, run_id, "merge_gate", f"babysitting {url}")
+    synced = sha
     sha, pushed = resume_babysit_fix(
         project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
         pr_status.parse_pr_url(url), f"{task}\n\n{body}" if body else task,
         verify_cmd, contracts, run.budget_min, carried)
+    if pushed and sha == synced:
+        reviewed = None
     run = replace(run, sha=sha, pr_url=url)
     run = babysitter._babysit(
         run, beat_s, f"{task}\n\n{body}" if body else task,
