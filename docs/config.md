@@ -830,7 +830,7 @@ the text. Removing a matching line is never refused.
 | `ui_paths` | Default: `[]` | List of non-empty repository-relative globs without `..`; set with ui_capture to identify changes needing visual evidence. |
 | `ui_capture_dir` | Default: `"e2e/capture"` | Directory named in the implementer brief for ticket capture scripts; the capture command receives it as `HOLOPHYTE_CAPTURE_DIR`. |
 | `ui_capture_local` | Default: `false` | Boolean; `true` keeps capture specs out of the project's repository. `ui_capture_dir` must then be a repository-relative directory without `..`. |
-| `ui_capture_video` | Default: `false` | Boolean; `true` sets `HOLOPHYTE_CAPTURE_VIDEO=1` for the capture command, so the bundled Playwright runner records each capture test as `video-01.webm`, `video-02.webm` and so on; `false` removes an inherited `HOLOPHYTE_CAPTURE_VIDEO`. Turning it on or off captures again at the same commit. |
+| `ui_capture_video` | Default: `false` | Boolean; `true` sets `HOLOPHYTE_CAPTURE_VIDEO=1` for the capture command, so the bundled Playwright runner records each page a capture test opens as `video-01.webm`, `video-02.webm` and so on; `false` removes an inherited `HOLOPHYTE_CAPTURE_VIDEO`. Turning it on or off captures again at the same commit. |
 | `ui_capture` | Default: `""` | Command string with shell-style quoting but no shell evaluation; set with ui_paths to capture evidence non-interactively. |
 | `capture_env_source` | Default: absent | Source dotenv path for the capture command only, with `~` expanded; relative paths resolve beside config.toml. Requires `capture_env_allow`. |
 | `capture_env_allow` | Default: absent | List of names matching `[A-Za-z_][A-Za-z0-9_]*`; requires `capture_env_source`. Missing names refuse startup, naming the variable. Exactly these values are added to the `ui_capture` command's environment, on the host and in a container; they are never written to the worktree and never reach agent turns or verify commands. Source values are redacted from output. |
@@ -1085,7 +1085,7 @@ points every test project at that spec. Projects named in another project's `dep
 config and the spec's path appended, regex-escaped because Playwright reads it
 as a file filter, and with `CAPTURE_OUT` set to the absolute output directory. After the command exits 0, the run fails unless at least
 one `NN-slug.png` was written. With `HOLOPHYTE_CAPTURE_VIDEO=1`, the
-projects that run the capture spec, never a helper project, record video into
+projects that run the capture spec, never a helper project, record each page into
 a fresh temporary `outputDir`; after the command exits 0, every `.webm` there
 is copied into the output directory as `video-01.webm`, `video-02.webm` and so
 on, in the order they were written, the temporary directory is removed, and a
