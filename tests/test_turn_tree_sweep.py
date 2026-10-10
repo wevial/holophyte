@@ -461,6 +461,20 @@ class TurnTreeSweepTests(SweepTestCase):
         self.assertEqual(self.leftover_events(),
                          [{"cause": "budget fired", "paths": ["gen.css"]}])
 
+    def test_a_turn_ended_by_a_swept_run_keeps_only_its_older_ignored_files(self):
+        self.ignoring()
+
+        def write_then_get_swept():
+            self.write("gen.css", "generated\n")
+            raise RunSwept(self.run_id, "failed", "stale heartbeat")
+        with self.assertRaises(RunSwept):
+            self.turn(write_then_get_swept)
+
+        self.assertEqual(self.present("gen.css", "old.log", "deps/kept.txt"),
+                         ["old.log", "deps/kept.txt"])
+        self.assertEqual(self.leftover_events(),
+                         [{"cause": "ended", "paths": ["gen.css"]}])
+
     def test_a_turn_that_exits_cleanly_keeps_its_new_ignored_files(self):
         self.ignoring()
 
