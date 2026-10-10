@@ -57,6 +57,13 @@ class Phased(Commit):
         return super().play(cwd, turn)
 
 
+class Declare(Commit):
+    """An implementer commit whose reply declares the defect not reproduced."""
+
+    def play(self, cwd, turn):
+        return f"{super().play(cwd, turn)}\nOUTCOME: NOT_REPRODUCED"
+
+
 class LiveSteerFixture(SteerFixture):
     def goals(self, fake, role):
         return [turn.goal for turn in fake.turns if turn.role == role]
@@ -229,6 +236,52 @@ class DeliveryTests(LiveSteerFixture):
         self.assertTrue(self.amended(steered, NOTE))
         self.assertTrue(self.amended(second, NOTE))
         self.assertEqual(self.consumed_by(), [(self.only_run(),)])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+
+class ClosingTests(LiveSteerFixture):
+    def test_a_steer_while_the_run_waits_for_the_merge_lock_is_refused(self):
+        refused = []
+        gate_lock = holophyte.loop.pipeline._gate_lock
+
+        def steered_lock(*args):
+            refused.append(self.holo("steer", "KO-131", "-n", NOTE))
+            return gate_lock(*args)
+
+        with patch.object(holophyte.loop.pipeline, "_gate_lock", steered_lock):
+            self.loop(Commit("the thing", path="app.txt"), APPROVE)
+
+        ((code, said),) = refused
+        self.assertNotEqual(code, 0, said)
+        self.assertIn("reviewing", said)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM steerNotes"), [(0,)])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_not_reproduced_run_carries_a_note_to_its_evidence_check(self):
+        fake, _ = self.loop(
+            Steering(self, Declare("test the modal", path="tests/test_modal.py"),
+                     "-n", NOTE),
+            Commit("the steer", path="tests/test_modal.py", body="steered\n"),
+            PASS)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "adjudicate"])
+        _, steered, check = (turn.goal for turn in fake.turns)
+        self.assertTrue(self.amended(steered, NOTE))
+        self.assertTrue(self.amended(check, NOTE))
+        self.assertEqual(self.consumed_by(), [(self.only_run(),)])
+        self.assertEqual(self.read("SELECT phase FROM runs"),
+                         [("awaiting_merge_approval",)])
+
+    def test_an_evidence_pass_with_a_note_pending_is_reviewed_not_parked(self):
+        fake, _ = self.loop(
+            Declare("test the modal", path="tests/test_modal.py"),
+            Steering(self, PASS, "-n", NOTE),
+            Commit("the steer", path="app.txt", body="steered\n"), APPROVE)
+
+        self.assertEqual(fake.roles,
+                         ["implement", "adjudicate", "implement", "review"])
+        self.assertTrue(self.amended(fake.turns[2].goal, NOTE))
+        self.assertTrue(self.amended(fake.turns[3].goal, NOTE))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
 

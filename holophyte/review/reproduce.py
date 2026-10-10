@@ -22,6 +22,8 @@ from holophyte.loop.gates import (
     with_baseline,
 )
 from holophyte.loop.runs import heartbeat_while, record_round, set_phase
+from holophyte.loop.steering import close as close_steering
+from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import boundary, keep_route
 from holophyte.redact import safe_print as print
 from holophyte.review import skipped_tests
@@ -182,7 +184,7 @@ def review_rounds(*args, resume=None):
             reply, decision, started = _check(loop, frame, 1, ok, out)
             _record(frame, 1, reply, decision, ok, out, started)
             if decision == "PASS":
-                _park(frame)
+                return _park(loop, frame)
             reasons = _reasons(reply)
     fixes, head = _fix(loop, frame, reasons, ok, out, headline)
     return _second(loop, replace(frame, sha=head),
@@ -201,7 +203,7 @@ def _second(loop, frame, pending):
     reply, decision, started = _check(loop, frame, 2, ok, out)
     if decision == "PASS":
         _record(frame, 2, reply, decision, ok, out, started)
-        _park(frame)
+        return _park(loop, frame)
     _event(frame, "not_reproduced_refused",
            f"second evidence check: {decision}; round 2 is an ordinary review",
            reply)
@@ -297,7 +299,8 @@ def _check(loop, frame, rnd, ok, out):
             "committed tests only and declared the behaviour not reproduced. "
             f"Judge commit {frame.sha} using {base} (base {frame.base_sha}) "
             f"as the frozen base and {candidate} (candidate {frame.sha}) as "
-            f"the candidate in this repo.\n\n{frame.ticket}\n\n"
+            f"the candidate in this repo.\n\n"
+            f"{reviewed_ticket(frame.conn, frame.run_id, frame.ticket)}\n\n"
             + loop._verify_brief(frame.verify_cmd, ok, out)
             + "Answer one question: do the tests the candidate adds exercise "
             "the path the ticket reports, and does the candidate change "
@@ -342,7 +345,9 @@ def _fix(loop, frame, reasons, ok, out, headline):
               "round 1: addressing the evidence check")
     fixes, timed_out = fix_turn(
         frame.target, frame.conn, frame.run_id, frame.beat_s, frame.wt,
-        frame.budget_min, frame.ticket, f"{reasons}\n\n{REDECLARE}",
+        frame.budget_min, reviewed_ticket(frame.conn, frame.run_id,
+                                          frame.ticket),
+        f"{reasons}\n\n{REDECLARE}",
         frame.sha, timed=loop._timed, check_cap=loop._check_run_cap)
     boundary(frame.conn, frame.run_id, "verifying", rnd=2,
              declared=declared(fixes))
@@ -371,7 +376,12 @@ def _event(frame, kind, summary, detail):
                            payload=json.dumps({"detail": str(detail)[-2000:]}))
 
 
-def _park(frame):
+def _park(loop, frame):
+    if not close_steering(frame.conn, frame.run_id):
+        _event(frame, "not_reproduced_steered",
+               "evidence check passed with a steer note pending; round 2 is"
+               " an ordinary review", frame.sha)
+        return _hand_on(loop, frame, {"rnd": 2})
     conn, run_id, task_id = frame.conn, frame.run_id, frame.task_id
     first = (f"not reproduced: tests at {frame.sha[:12]} pass on base"
              f" {frame.base_sha[:12]}")

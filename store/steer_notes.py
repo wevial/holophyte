@@ -2,6 +2,8 @@
 import time
 from typing import NamedTuple
 
+import store
+
 from . import operator_notes
 from .operate import record_intervention, record_project_intervention
 from .schema import _transaction
@@ -101,7 +103,9 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
 def _live(conn, ticket_id, key, live, kind, note, author, now, resume):
     phase, pr_url = conn.execute("SELECT phase, prUrl FROM runs WHERE id = ?",
                                  (live,)).fetchone()
-    if phase not in LIVE_PHASES or pr_url:
+    closed = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
+                          " AND kind = 'steer_closed'", (live,)).fetchone()
+    if phase not in LIVE_PHASES or pr_url or closed:
         raise SteerRefused(
             f"{key}'s live run {live} is in {phase}"
             + (" on its pull request" if pr_url else "")
@@ -157,6 +161,20 @@ def pending(conn, ticket_id, kind=None):
         return _notes(conn, "s.consumedBy IS NULL", (ticket_id,))
     return _notes(conn, "s.kind = ? AND s.consumedBy IS NULL",
                   (ticket_id, kind))
+
+
+def close(conn, run_id):
+    with _transaction(conn):
+        waiting = conn.execute(
+            "SELECT 1 FROM steerNotes s JOIN runs r ON r.ticketId = s.ticketId"
+            " WHERE r.id = ? AND s.eventId IS NULL AND s.consumedBy IS NULL",
+            (run_id,)).fetchone()
+        if waiting:
+            return False
+        store.record_event(conn, run_id, "steer_closed",
+                           "steering closed: no implementer turn remains",
+                           level="detail")
+        return True
 
 
 def consume(conn, note_ids, run_id, now=None):

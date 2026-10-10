@@ -10,6 +10,10 @@ def pending(conn, run_id):
     return steer_notes.pending(conn, run_snapshot(conn, run_id).ticketId)
 
 
+def close(conn, run_id):
+    return conn is None or run_id is None or steer_notes.close(conn, run_id)
+
+
 def take(conn, run_id):
     notes = pending(conn, run_id)
     if not notes:
