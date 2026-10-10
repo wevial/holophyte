@@ -74,9 +74,10 @@ python3 factory.py --decide KEY-n ID [OPTION] --note TEXT /path/to/repo # answer
 python3 factory.py --move KEY-n ready|backlog --revision N [--note TEXT] /path/to/repo # a native ticket to Ready or Backlog
 python3 factory.py --cancel KEY-n --revision N --note TEXT /path/to/repo # cancel a native ticket; a live run ends abandoned
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
+python3 factory.py --shadow BRIEF /path/to/repo   # internal: the shadow implementer a fresh claim spawns under [agents.implementer_shadow]
 python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
 holo --version                                   # the package version and the checkout's short HEAD
-holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode but the internal --worker has a holo command
+holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode but the internal --worker and --shadow has a holo command
 holo status --watch [SECONDS]                    # the status page redrawn every SECONDS (default 5) until Ctrl-C
 holo follow [--since AGO] [--every SECONDS] [--json] -p NAME|PATH # one line per run event and ledger entry as it is written, and one when a heartbeat goes stale
 holo mcp                                         # an MCP server on stdio: tools for the holo reads and five signed writes (file_ticket, send_back, babysit, requeue, hold); see docs/reference/cli.md#holo

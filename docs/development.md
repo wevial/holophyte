@@ -293,6 +293,9 @@ Each module, one line:
 - `holophyte/loop/shadow.py` — `run_shadow`: one shadow implementation of a
   run's ticket by `[agents.implementer_shadow]` in its own worktree, recorded
   as a `shadow_result` event.
+- `holophyte/loop/shadow_spawn.py` — `start_shadow`: a fresh claim's detached
+  `factory.py --shadow` beside the primary, recorded as `shadow_started`; and
+  that mode, one shadow a project under `shadow.lock`, else `shadow_skipped`.
 - `holophyte/loop/review_round.py` — the review rounds: verify, review and a fix
   turn per round, up to the cap the candidate's size earns.
 - `holophyte/loop/adjudicate.py` — the terminal adjudication once the review

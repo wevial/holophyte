@@ -31,6 +31,7 @@ from holophyte.loop.merge_gate import (
 )
 from holophyte.loop.review_round import _review_cap, _review_rounds
 from holophyte.loop.runs import RunSwept
+from holophyte.loop.shadow_spawn import shadow_starter
 from holophyte.loop.stop import Aborted, continuation
 from holophyte.loop.trim import trim
 from holophyte.pr.pullrequest import _prepare_pr, _push_and_open
@@ -80,6 +81,7 @@ def _run_stages(run, task):
         return _resume_at_merge_gate(
             run, carried, verify_cmd, contracts, body,
             criteria, issue_url=issue_url)
+    cut = not wt.exists()
     fresh = _cut_worktree(project, conn, run_id, provider, task_id, task,
                           branch, wt)
 
@@ -111,7 +113,11 @@ def _run_stages(run, task):
             beat_s, test.sha if test else start_sha, ticket, verify_cmd,
             budget_min, conflicts=conflicts,
             opening=maintainer_notes.requeue_context(conn, run_id)
-            + (test.opening() if test else ""))
+            + (test.opening() if test else ""),
+            shadow=None if resume or not cut else shadow_starter(
+                project, conn, run_id, ticket=ticket, criteria=criteria,
+                task_id=task_id, verify=verify_cmd, contracts=contracts,
+                branch=branch))
         if not unreproduced:
             sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
                        verify_cmd, contracts)

@@ -82,7 +82,7 @@ def factory_args(holo_argv, project="/repo"):
 
 
 class TableTests(unittest.TestCase):
-    def test_every_parser_mode_has_one_canonical_row_and_only_worker_is_hidden(self):
+    def test_every_parser_mode_has_one_canonical_row_and_only_internal_modes_hide(self):
         _, modes = build_parser()
         registered = {action.option_strings[0] for action in modes._group_actions}
         rows = collections.Counter(command.mode for command in COMMANDS
@@ -90,7 +90,7 @@ class TableTests(unittest.TestCase):
         self.assertEqual({mode for mode, count in rows.items() if count > 1}, set())
         self.assertEqual(registered - set(rows), set(NOT_EXPOSED))
         self.assertEqual(set(rows) - registered, set())
-        self.assertEqual(set(NOT_EXPOSED), {"--worker"})
+        self.assertEqual(set(NOT_EXPOSED), {"--worker", "--shadow"})
 
     def test_each_row_translates_to_its_mode_and_note_in_the_factory_parser(self):
         self.assertEqual(set(SAMPLES), {command.words for command in COMMANDS
