@@ -367,9 +367,9 @@ def steer_ticket(target, identifier, note, hint=False, author=None, out=None,
         conn.close()
 
 
-def steered_line(target, conn, ticket_id, identifier, note, author, hint=False,
-                 now=False, out=None):
-    interrupt = now and _interrupts(target, conn, ticket_id, out or sys.stdout)
+def steered_line(target, conn, ticket_id, identifier, note, author, hint, now,
+                 out):
+    interrupt = now and _interrupts(target, conn, ticket_id, out)
     steered = steer_notes.steer(conn, ticket_id, note, author, hint=hint,
                                 interrupt=interrupt)
     if interrupt:
