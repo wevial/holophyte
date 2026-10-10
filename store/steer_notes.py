@@ -49,7 +49,7 @@ class SteerRow(NamedTuple):
     event_id: int | None
     consumed_by: int | None
     consumed_at: int | None
-    withdrawn_by: int | None = None
+    withdrawn_by: int | None
 
 
 def steer(conn, ticket_id, note, author, hint=False, now=None):

@@ -29,27 +29,26 @@ def park_steered_cap(conn, run_id, ticket_id, provider):
         (run_id,)).fetchone()
     cap = cap_hit(kind, reason)
     if cap is None:
-        return False
+        return
     amendments = steer_notes.standing(conn, ticket_id)
     ticket = store.read.ticket_by_id(conn, ticket_id)
     if not amendments or ticket.status != "in_flight":
-        return False
+        return
     asked = question(ticket.linearIdentifier, cap, amendments)
     if getattr(provider, "store_mode", False) is True:
         with store.transaction(conn):
             if not block_ticket(conn, ticket_id, provider, asked):
-                return False
+                return
             store.record_note(conn, ticket_id, "escalation",
                               comment_body(asked), f"steer_cap:{run_id}",
                               run_id=run_id)
             store.record_event(conn, run_id, "steer_cap_park", asked)
-        return True
+        return
     if not block_ticket(conn, ticket_id, provider, asked):
-        return False
+        return
     store.record_event(conn, run_id, "steer_cap_park", asked)
     try:
         provider.comment(ticket.linearIssueId, comment_body(asked))
     except Exception as e:
         warn(conn, ticket_id, f"steer cap comment failed for"
                               f" {ticket.linearIdentifier} ({e})")
-    return True
