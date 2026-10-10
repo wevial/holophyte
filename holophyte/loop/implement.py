@@ -31,6 +31,7 @@ from holophyte.environment_git import (
     unstage_environment,
 )
 from holophyte.leak_guard import register_matches
+from holophyte.loop import steering
 from holophyte.loop.claim import conflict_brief, mid_merge, unmerged_paths
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
@@ -587,7 +588,8 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     commands = _commands_brief(project, verify_cmd)
     _check_run_cap(project, conn, run_id, budget_min, start_sha)
     orchestration = _orchestration(project, conn, run_id, ticket)
-    goal = (conflict_brief(branch, conflicts) + opening
+    steered = steering.take(conn, run_id)
+    goal = (conflict_brief(branch, conflicts) + opening + steered
             + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
             "The ticket above is the contract, acceptance criteria "
             "included; the task is done only when they hold. Commit your "
@@ -597,7 +599,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             + _capture_brief(project, ticket, task_id) + blast_radius.BRIEF
             + reproduce.BRIEF)
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
-    if shadow and fresh and not conflicts and not opening:
+    if shadow and fresh and not conflicts and not opening and not steered:
         shadow(goal, start_sha, seconds)
     deadline = retry_clock() + seconds
     out, timed_out = _transport_timed(project, conn, run_id, beat_s, wt,

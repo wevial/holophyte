@@ -7,6 +7,7 @@ import store
 import store.read
 import ticket_template
 from holophyte import failure_reason, leak_guard
+from holophyte.agents.fix_session import fix_turn, steer_turn
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
@@ -28,6 +29,8 @@ from holophyte.loop.runs import (
     review_round_cap,
     set_phase,
 )
+from holophyte.loop.steering import pending as steer_pending
+from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
@@ -203,6 +206,25 @@ def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,
     return {"phase": "reviewing", "ok": ok, "out": out, "stale": stale}
 
 
+def _steer_at_top(project, conn, run_id, beat_s, wt, budget_min, ticket, sha,
+                  pending):
+    steered = steer_turn(project, conn, run_id, beat_s, wt, budget_min, ticket,
+                         sha, timed=_timed, check_cap=_check_run_cap)
+    return (sha, pending) if steered is None else (steered, {})
+
+
+def _steer_approved(project, conn, run_id, provider, task_id, wt, beat_s, sha,
+                    ticket, budget_min, rnd, verdict):
+    print(f"[holo2] round {rnd}: APPROVE with a steer note pending; steer turn"
+          f" before round {rnd + 1}")
+    ledger(conn, run_id, task_id, "round",
+           f"Round {rnd}: APPROVE, steer note pending -> steer turn\n"
+           f"Reviewer verdict:\n{verdict}", provider)
+    boundary(conn, run_id, "verifying", rnd=rnd + 1)
+    return steer_turn(project, conn, run_id, beat_s, wt, budget_min, ticket, sha,
+                      timed=_timed, check_cap=_check_run_cap) or sha
+
+
 def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
                    budget_min, cap, resume=None):
@@ -211,6 +233,9 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     mode = review_mode(project)
     rnd = pending.get("rnd", 1) - 1
     for rnd in range(pending.get("rnd", 1), cap + 1):
+        sha, pending = _steer_at_top(project, conn, run_id, beat_s, wt,
+                                     budget_min, ticket, sha, pending)
+        reviewed = reviewed_ticket(conn, run_id, ticket)
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
         leaks = leak_guard.branch_leaks(project, wt, sha)
         if rnd == 1:
@@ -244,9 +269,14 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         else:
             verdict, decision, unwitnessed = _review(
                 project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
-                ticket, verify_cmd, criteria, mode, rnd, ok, out,
+                reviewed, verify_cmd, criteria, mode, rnd, ok, out,
                 pending.get("stale", ()), leaks)
             if ok and not unwitnessed and decision == "APPROVE":
+                if steer_pending(conn, run_id):
+                    sha, pending = _steer_approved(
+                        project, conn, run_id, provider, task_id, wt, beat_s,
+                        sha, ticket, budget_min, rnd, verdict), {}
+                    continue
                 stop_if_requested(conn, run_id, "merge_gate")
                 ledger(conn, run_id, task_id, "round",
                        f"Round {rnd}: APPROVE\nReviewer verdict:\n{verdict}",
@@ -277,11 +307,10 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                  out=str(out), verdict=verdict)
         pending = {}
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        from holophyte.agents.fix_session import fix_turn
         states = ticket_template.parse(ticket).evidence_states
         spec = capture_spec_digest(project, wt, task_id, states)
         fixes, timed_out = fix_turn(
-            project, conn, run_id, beat_s, wt, budget_min, ticket,
+            project, conn, run_id, beat_s, wt, budget_min, reviewed,
             without_refuted(verdict), sha, timed=_timed, check_cap=_check_run_cap)
         boundary(conn, run_id, "verifying", rnd=rnd + 1)
         ledger(conn, run_id, task_id, "round",

@@ -4,6 +4,7 @@ from time import monotonic
 
 import store
 import store.read
+from holophyte.agents.fix_session import steer_turn
 from holophyte.babysit import maintainer_notes
 from holophyte.babysit.babysitter import _babysit
 from holophyte.board import projection
@@ -21,7 +22,7 @@ from holophyte.loop.gates import InfraFailure, sh
 from holophyte.loop.gates import (
     MergeParked as MergeParked,
 )
-from holophyte.loop.implement import _implement
+from holophyte.loop.implement import _check_run_cap, _implement, _timed
 from holophyte.loop.merge_gate import (
     DriftRequeued,
     _gate_lock,
@@ -32,6 +33,7 @@ from holophyte.loop.merge_gate import (
 from holophyte.loop.review_round import _review_cap, _review_rounds
 from holophyte.loop.runs import RunSwept
 from holophyte.loop.shadow_spawn import shadow_starter
+from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import Aborted, continuation
 from holophyte.loop.trim import trim
 from holophyte.pr.pullrequest import _prepare_pr, _push_and_open
@@ -121,6 +123,9 @@ def _run_stages(run, task):
                 task_id=task_id, verify=verify_cmd, contracts=contracts,
                 branch=branch))
         if not unreproduced:
+            sha = steer_turn(project, conn, run_id, beat_s, wt, budget_min,
+                             ticket, sha, timed=_timed,
+                             check_cap=_check_run_cap) or sha
             sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
                        verify_cmd, contracts)
 
@@ -129,11 +134,16 @@ def _run_stages(run, task):
         project, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
         sha, ticket, verify_cmd, contracts, criteria, budget_min, cap, resume=resume)
     if not approved:
+        steered = None if unreproduced else steer_turn(
+            project, conn, run_id, beat_s, wt, budget_min, ticket, sha,
+            timed=_timed, check_cap=_check_run_cap)
+        sha, resume = (sha, resume) if steered is None else (steered, None)
         _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                                branch, wt, beat_s, base_sha, sha, ticket,
                                verify_cmd, contracts, max(cap, rnd), criteria,
                                resume=resume)
 
+    ticket = reviewed_ticket(conn, run_id, ticket)
     merge = merge_config(project)
     # Under `mode = "pr"` the merge lock covers the push-and-open alone.
     if merge.mode == "pr":

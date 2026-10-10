@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import holophyte.cli.status
 import holophyte.holo.status_page
 import store
+import store.steer_notes
 import store.stories
 import store.tickets
 import tests.test_holo_results as results_tests
@@ -113,9 +114,10 @@ class StatusPageTests(HostFixture):
         store.release(self.conn, run, "failed", reason=REASON, now=ended)
 
     def go_live(self, key, heartbeat):
-        run = store.claim(self.conn, self.project_id, self.ticket(key),
-                          now=heartbeat)
+        ticket = self.ticket(key)
+        run = store.claim(self.conn, self.project_id, ticket, now=heartbeat)
         store.set_phase(self.conn, run, "working", now=heartbeat)
+        return ticket
 
     def write_sweep(self, ended):
         (self.home / "sweep.json").write_text(json.dumps(
@@ -151,6 +153,23 @@ class PageOrderTests(StatusPageTests):
         self.assertTrue(running[0].endswith("working · heartbeat 20 s ago"),
                         running[0])
         self.assertEqual(lines[at[2] + 1], "  ✓  beta   nothing ready")
+
+    def test_a_live_run_shows_its_pending_steer_count_and_one_without_none(self):
+        steered = self.go_live("ALPHA-20", NOW - 20_000)
+        self.go_live("ALPHA-21", NOW - 30_000)
+        for note in ("also log the port", "the port is in config.toml"):
+            store.steer_notes.steer(self.conn, steered, note, "maintainer",
+                                    hint=note.startswith("the"))
+
+        lines = self.page()
+
+        running = lines[lines.index("Running (2)") + 1:lines.index("Quiet")]
+        (twenty,) = [line for line in running if "ALPHA-20" in line]
+        (twenty_one,) = [line for line in running if "ALPHA-21" in line]
+        self.assertTrue(twenty.endswith(
+            "working · heartbeat 20 s ago · steer 2 pending"), twenty)
+        self.assertTrue(twenty_one.endswith("working · heartbeat 30 s ago"),
+                        twenty_one)
 
     def test_the_client_zone_shows_clock_time_and_the_stranded_wait(self):
         (self.home / "client.toml").write_text('timezone = "America/Los_Angeles"\n')
