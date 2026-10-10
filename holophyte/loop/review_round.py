@@ -7,7 +7,7 @@ import store
 import store.read
 import ticket_template
 from holophyte import failure_reason, leak_guard
-from holophyte.agents.fix_session import fix_turn, steer_turn
+from holophyte.agents.fix_session import steer_turn
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
@@ -307,6 +307,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                  out=str(out), verdict=verdict)
         pending = {}
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
+        from holophyte.agents.fix_session import fix_turn
         states = ticket_template.parse(ticket).evidence_states
         spec = capture_spec_digest(project, wt, task_id, states)
         fixes, timed_out = fix_turn(
