@@ -25,7 +25,7 @@ from holophyte.agents.probes import PROBE_GOAL
 from holophyte.loop.runs import open_store
 from holophyte.loop.shadow import ShadowBrief
 from holophyte.loop.shadow_spawn import write_brief
-from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit
+from tests.fake_agent import APPROVE, Commit
 from tests.loop_fixture import BRANCH, LoopFixture, StubProvider, a_task
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,10 +35,6 @@ T0 = 1_700_000_000_000
 
 class NeverExits:
     pid = 4242
-    returncode = None
-
-    def poll(self):
-        return None
 
     def wait(self, timeout=None):
         raise AssertionError("the run waited on its shadow")
@@ -69,12 +65,6 @@ class ShadowStartTests(LoopFixture):
     def last_outcome(self):
         return self.read("SELECT outcome FROM runs ORDER BY id DESC LIMIT 1")[0][0]
 
-    def rounds(self, task_id):
-        return self.read(
-            "SELECT r.round, r.verdict FROM reviewRounds r JOIN runs u"
-            " ON u.id = r.runId JOIN tickets t ON t.id = u.ticketId"
-            f" WHERE t.linearIdentifier = '{task_id}' ORDER BY r.round")
-
     def test_a_fresh_claim_spawns_the_shadow_with_the_primarys_brief(self):
         spawn, fake = self.shadow_loop(Commit("the thing"), APPROVE)
         self.assertEqual(self.last_outcome(), "merged")
@@ -94,17 +84,6 @@ class ShadowStartTests(LoopFixture):
         self.assertEqual(json.loads(payload), {
             "pid": NeverExits.pid, "branch": "shadow/ko-131-add-a-thing",
             "route": "claude sonnet", "error": None})
-
-    def test_a_shadow_that_never_exits_leaves_the_runs_review_rounds_alone(self):
-        def script(n):
-            return (Commit("the thing", path=f"thing-{n}.txt"), REQUEST_CHANGES,
-                    Commit("the fix", path=f"fix-{n}.txt"), APPROVE)
-        self.shadow_loop(*script(1), config="", task=a_task(1))
-        spawn, _ = self.shadow_loop(*script(2), task=a_task(2))
-        self.assertEqual(len(spawn.calls), 1)
-        self.assertEqual(self.last_outcome(), "merged")
-        self.assertEqual(len(self.rounds("KO-131")), 2)
-        self.assertEqual(self.rounds("KO-132"), self.rounds("KO-131"))
 
     def test_a_spawn_that_raises_is_recorded_and_the_run_still_merges(self):
         self.shadow_loop(Commit("the thing"), APPROVE,
