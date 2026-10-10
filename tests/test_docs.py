@@ -208,6 +208,17 @@ class HoloUsageTests(unittest.TestCase):
                                     block)]
         self.assertEqual(missing, [])
 
+    def test_readme_holo_mcp_line_names_the_six_signed_writes(self):
+        from holophyte.holo.mcp_tools import WRITES
+        block = USAGE.search(README.read_text()).group(1)
+        [line] = [ln for ln in block.splitlines()
+                  if ln.startswith("holo mcp ") and "signed writes" in ln]
+        self.assertIn("six signed writes", line)
+        names = {tool.name for tool in WRITES}
+        self.assertEqual(len(names), 6)
+        for name in names:
+            self.assertRegex(line, rf"\b{name}\b")
+
 
 class ReadmeRetiredClaimsTests(unittest.TestCase):
     """The README claims no Linear-only board, no dependency-free install

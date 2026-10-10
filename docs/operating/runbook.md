@@ -219,6 +219,23 @@ board id, so rows, runs, ledger and `dependsOn` stay, old tickets keep
 the restart. `team` is the store's key for the project, so it stays as it
 was. Nothing in Linear is deleted or archived.
 
+### A maintainer steers a run from a Lotuspod page comment
+
+The operator seat relays a page comment into `holo steer`, through the
+command or its `steer` MCP tool, only when the comment was written by the
+maintainer's own handle, names exactly one ticket key, and asks for a change
+to that ticket's work.
+
+```
+holo steer -p PROJECT KO-n -n "the comment's text, as written" --author "maintainer via Lotuspod"
+```
+
+The note is the comment's text as written. Add `--hint` only when the
+comment says hint or advice, and `--now` only when it says now. Reply on the
+page with the line the verb printed, a refusal included. Any other comment,
+by another handle, naming no ticket or several, or asking no change, is
+answered on the page and not relayed.
+
 ### A manual merge to `main`
 
 Named event with a gate: suite green, `ruff` clean, an independent review

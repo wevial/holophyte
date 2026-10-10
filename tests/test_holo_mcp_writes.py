@@ -28,7 +28,7 @@ from tests.phase_fixture import park_run
 from tests.test_holo_http import ROOT, HttpCase
 from tests.test_holo_mcp import MINUTE, NOW, TOOLS, McpCase
 
-WRITES = {"file_ticket", "send_back", "babysit", "requeue", "hold"}
+WRITES = {"file_ticket", "send_back", "babysit", "steer", "requeue", "hold"}
 URL = "https://example.test/pull/7"
 AUTHOR = "test seat"
 SIGNED = "test seat via MCP"
@@ -161,7 +161,7 @@ class WriteCase(McpCase):
 
 
 class ListingTests(WriteCase):
-    def test_the_reads_and_five_writes_each_write_signed_and_not_read_only(self):
+    def test_the_reads_and_six_writes_each_write_signed_and_not_read_only(self):
         async def use(client, _):
             return (await client.list_tools()).tools
         tools = self.session(use)
@@ -289,6 +289,37 @@ class SendBackTests(WriteCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.send_back_author(),
                          {"note": "look again", "author": getpass.getuser()})
+
+
+class SteerTests(WriteCase):
+    def steers(self):
+        return self.query("SELECT t.linearIdentifier, s.kind, s.note,"
+                          " s.author FROM steerNotes s JOIN tickets t"
+                          " ON t.id = s.ticketId ORDER BY s.id")
+
+    def test_a_ticket_with_no_live_run_records_one_amendment_via_mcp(self):
+        result = self.call("steer", {"ticket": "HOLO-1",
+                                     "note": "use the v2 endpoint",
+                                     "author": "maintainer"})
+
+        self.assertIs(result.is_error, False, result.content)
+        self.assertEqual(self.steers(), [("HOLO-1", "amendment",
+                                          "use the v2 endpoint",
+                                          "maintainer via MCP")])
+        [(note,)] = self.query("SELECT id FROM steerNotes")
+        detail = result.structured_content["detail"]
+        self.assertTrue(detail.startswith("HOLO-1 steered: amendment"), detail)
+        self.assertIn(f"steer note {note}", detail)
+
+    def test_hint_records_the_note_as_a_hint(self):
+        result = self.call("steer", {"ticket": "HOLO-1", "hint": True,
+                                     "note": "look at the csv module",
+                                     "author": "maintainer"})
+
+        self.assertIs(result.is_error, False, result.content)
+        self.assertEqual(self.steers(), [("HOLO-1", "hint",
+                                          "look at the csv module",
+                                          "maintainer via MCP")])
 
 
 class HoldTests(WriteCase):
