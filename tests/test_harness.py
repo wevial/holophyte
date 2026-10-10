@@ -716,6 +716,34 @@ class TrimmerTableTests(unittest.TestCase):
                                     "--output-format", "json", "trim the diff"])
 
 
+
+class ShadowTableTests(unittest.TestCase):
+    """`[agents.implementer_shadow]`: implementer rules, refused under its own name."""
+
+    setUp = ClaudeTableTests.setUp
+
+    def refused(self, table, message):
+        self.target.config_path.write_text(
+            "[agents.implementer_shadow]\n" + table)
+        with self.assertRaisesRegex(
+                SystemExit, r"\[agents\.implementer_shadow\] " + message):
+            holophyte.config.checks.check_config(self.target)
+
+    def test_startup_refuses_an_unknown_shadow_key(self):
+        self.refused('harness = "claude"\norchestration = "subagents"\n',
+                     r"orchestration: unknown key; .* accepts: harness, "
+                     r"model, effort")
+
+    def test_startup_refuses_a_shadow_harness_that_cannot_implement(self):
+        self.refused('harness = "cursor"\nmodel = "gpt-6"\n',
+                     r"harness: 'cursor' supports adjudicator, adversary, "
+                     r"reviewer, not implementer_shadow")
+
+    def test_startup_refuses_a_bad_shadow_effort(self):
+        self.refused('harness = "codex"\neffort = "extreme"\n',
+                     r"effort must be one of low, medium, high, xhigh, "
+                     r"got 'extreme'")
+
 RESULT_DOCUMENT = {"type": "result", "result": "finished work", "num_turns": 3,
                    "total_cost_usd": 0.25,
                    "usage": {"input_tokens": 10, "cache_creation_input_tokens": 20,

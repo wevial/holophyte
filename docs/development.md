@@ -286,6 +286,9 @@ Each module, one line:
   verify.
 - `holophyte/loop/trim_brief.py` — `TRIM_BRIEF`, the vendored trim procedure
   the trim turn is sent, and the `trim:` pass subjects it commits under.
+- `holophyte/loop/shadow.py` — `run_shadow`: one shadow implementation of a
+  run's ticket by `[agents.implementer_shadow]` in its own worktree, recorded
+  as a `shadow_result` event.
 - `holophyte/loop/review_round.py` — the review rounds: verify, review and a fix
   turn per round, up to the cap the candidate's size earns.
 - `holophyte/loop/adjudicate.py` — the terminal adjudication once the review

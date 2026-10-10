@@ -91,6 +91,7 @@ implementer's command and isolation settings.
 | `adjudicator_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup adjudicator. |
 | `adversary_fallback` | Default: Absent (disabled) | Non-empty command string distinct from `adversary`; set for a probed backup adversary. When it is set startup probes the adversary seat, and an adversary turn whose output carries an outage line probes it and switches to it, as `reviewer_fallback` does. |
 | `trimmer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from `trimmer`; set for a probed backup trimmer. Startup activates it when the trimmer's probe fails and its own passes, and a trim turn whose output carries an outage line switches to it; a trimmer that fails with no fallback, or a fallback that fails its probe, reverts that run's trim. |
+| `implementer_shadow` | Default: Absent (no shadow) | Only the table `[agents.implementer_shadow]`, with `harness`, `model` and `effort` under the same rules as `[agents.implementer]` (no `orchestration`); startup refuses a command string, an unknown key, a harness that cannot implement or a bad effort, naming `[agents.implementer_shadow]`. Set it to run a second implementer on a claimed run's ticket for comparison: the shadow probes its route, implements the ticket once in its own worktree `SLUG.shadow` on the local branch `shadow/SLUG`, cut from the run's base commit, runs the ticket's verify commands and the baseline checks, and records one `shadow_result` run event (see below). It never pushes, opens a pull request, merges, writes to the board, changes the run's phase or adds to its working time, and a down shadow route switches no route. |
 
 ```toml
 [agents]
@@ -143,6 +144,30 @@ effort  = "high"    # optional; passed to --effort as written
 [harnesses]
 claude = "/opt/claude/bin/claude"   # optional; absolute path only
 ```
+
+`[agents.implementer_shadow]` names a second implementer route to compare
+with the primary on the same ticket:
+
+```toml
+[agents.implementer_shadow]
+harness = "claude"
+model = "sonnet"
+effort = "high"
+```
+
+The shadow's turn gets the primary's brief, isolation and time cap. Its
+`shadow_result` event records the `route`, `branch`, `base_sha`, `head_sha`,
+`commits`, `lines_changed`, the turn's `seconds`, `exit_status`, `timed_out`
+and `usage`, the `verify` result (`ok` and `failed_command`, or null when no
+turn ran), the `outcome` (`route_down`, `branch_exists`, `setup_failed`,
+`crashed`, `timed_out`, `no_commits`, `verify_failed`, `verified` or `error`)
+and a redacted `detail`. The worktree is removed with its uncommitted edits
+once the event is recorded, but a shadow's commits stay on a local
+`shadow/SLUG` branch: list them with `git branch --list 'shadow/*'` in the
+project repository and remove one with `git branch -D shadow/SLUG` once its
+diff is no longer needed. The factory never pushes or deletes them, and an
+existing `shadow/SLUG` branch or `SLUG.shadow` path is left untouched: the
+shadow records `branch_exists` and stops.
 
 `[agents.reviewer] harness = "codex"` (and the same for `adjudicator`) does
 what a host wrapper script used to. Each turn runs in a throwaway detached

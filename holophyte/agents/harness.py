@@ -15,6 +15,7 @@ TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic", "trimmer",
 WRITING_ROLES = ("implementer", "trimmer")
 TABLE_KEYS = ("harness", "model", "effort")
 IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
+SHADOW_KEY = "implementer_shadow"
 
 SUBAGENTS_BRIEF = (
     "\n\nYou may orchestrate subagents for this ticket. Independent pieces "
@@ -226,7 +227,8 @@ class Seat:
 
 
 def parse_role(where, key, table):
-    if key not in TABLE_ROLES:
+    role = "implementer" if key == SHADOW_KEY else key
+    if role not in TABLE_ROLES:
         raise SystemExit(
             f"{where}: [agents.{key}]: only {', '.join(TABLE_ROLES)} may be a "
             f"table; write [agents] {key} as a command string")
@@ -242,7 +244,7 @@ def parse_role(where, key, table):
         raise SystemExit(
             f"{where}: [agents.{key}] harness must be one of "
             f"{', '.join(sorted(ADAPTERS))}, got {name!r}")
-    if key not in adapter.roles:
+    if role not in adapter.roles:
         raise SystemExit(
             f"{where}: [agents.{key}] harness: {name!r} supports "
             f"{', '.join(sorted(adapter.roles))}, not {key}")
@@ -340,6 +342,7 @@ def check_target(target):
     for role in AGENT_CONFIG_KEYS:
         seat(target, role)
         seat(target, role, fallback=True)
+    shadow_seat(target)
     check_fallback_orchestration(where, config_table(target, "agents"))
     if seat(target, "implement") is None:
         return
@@ -359,15 +362,35 @@ def seat(target, role, *, fallback=False):
         table = critic_table(where, table)
     if not isinstance(table, dict):
         return None
+    return table_seat(target, where, key, table, AGENT_CONFIG_KEYS[role],
+                      launched=role in ("implement", "trim"))
+
+
+def shadow_seat(target):
+    from holophyte.config.reader import config_table
+    table = config_table(target, "agents").get(SHADOW_KEY)
+    if table is None:
+        return None
+    where = f"[holo2] {target.config_path}"
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"{where}: [agents] {SHADOW_KEY}: write it as the "
+            f"[agents.{SHADOW_KEY}] table")
+    return table_seat(target, where, SHADOW_KEY, table, "implementer",
+                      launched=True)
+
+
+def table_seat(target, where, key, table, role, *, launched):
+    from holophyte.config.reader import config_table
     adapter = parse_role(where, key, table)
     from holophyte.isolation.launcher import route_for
     binary = adapter.binary
     # A container implementer's binary comes from the image, not `[harnesses]`.
-    if role not in ("implement", "trim") or route_for(target).backend != "container":
+    if not launched or route_for(target).backend != "container":
         paths = config_table(target, "harnesses")
         check_paths(where, paths)
         binary = paths.get(adapter.name, binary)
-    return Seat(adapter, binary, table, AGENT_CONFIG_KEYS[role])
+    return Seat(adapter, binary, table, role)
 
 
 def critic_table(where, table):
