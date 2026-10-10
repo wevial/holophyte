@@ -19,6 +19,8 @@ from unittest.mock import patch
 
 import holophyte.board.projection
 import holophyte.config.project
+import holophyte.loop.claim
+import holophyte.loop.pipeline
 import holophyte.loop.shadow_spawn
 import store
 import store.tickets
@@ -26,6 +28,7 @@ from holophyte.agents.probes import PROBE_GOAL
 from holophyte.loop.runs import open_store
 from holophyte.loop.shadow import ShadowBrief
 from holophyte.loop.shadow_spawn import write_brief
+from holophyte.loop.stop import command
 from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit
 from tests.loop_fixture import BRANCH, LoopFixture, StubProvider, a_task
 
@@ -135,6 +138,22 @@ class ShadowStartTests(LoopFixture):
         wt = self.worktrees / "ko-131-add-a-thing"
         self.git("worktree", "add", "--detach", str(wt), "main")
         self.git("checkout", "-q", "-b", BRANCH, cwd=wt)
+        spawn, fake = self.shadow_loop(Commit("the thing"), APPROVE)
+        self.assertEqual(fake.roles[0], "implement")
+        self.assertEqual(self.last_outcome(), "merged")
+        self.assertEqual(spawn.calls, [])
+
+    def test_no_shadow_for_a_run_resumed_from_a_pause_before_its_worktree(self):
+        cut = holophyte.loop.claim._cut_worktree
+
+        def pause_first(project, conn, run_id, *args):
+            store.pause(conn, run_id, "reboot writer")
+            return cut(project, conn, run_id, *args)
+
+        with patch.object(holophyte.loop.pipeline, "_cut_worktree", pause_first):
+            self.shadow_loop()
+        self.assertEqual(self.last_outcome(), "paused")
+        command(self.project, "KO-131", None, resume=True)
         spawn, fake = self.shadow_loop(Commit("the thing"), APPROVE)
         self.assertEqual(fake.roles[0], "implement")
         self.assertEqual(self.last_outcome(), "merged")
