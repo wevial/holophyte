@@ -30,7 +30,7 @@ import path from 'node:path';
 
 const root = {root};
 const capture = {{
-  testDir: {dir}, testMatch: [{spec}], testIgnore: [], respectGitIgnore: false,
+  testDir: {dir}, testMatch: [{spec}], testIgnore: [], respectGitIgnore: false,{output}
 }};
 const helpers = new Set((config.projects || []).flatMap(
   (project) => [...(project.dependencies || []),
@@ -43,8 +43,8 @@ const helper = (project) => ({{
 export default config.projects
   ? {{...config, projects: config.projects.map(
       (project) => helpers.has(project.name) ? helper(project)
-                                              : {{...project, ...capture}})}}
-  : {{...config, ...capture}};
+                                              : {{...project, ...capture{video}}})}}
+  : {{...config, ...capture{config_video}}};
 """
 
 
@@ -130,14 +130,22 @@ def _copied(spec, default, directory):
     return Path(name)
 
 
-def _generated(config, directory, spec):
+def _video(recordings):
+    if not recordings:
+        return {"output": "", "video": "", "config_video": ""}
+    return {"output": f" outputDir: {json.dumps(recordings)},",
+            "video": ", use: {...project.use, video: 'on'}",
+            "config_video": ", use: {...config.use, video: 'on'}"}
+
+
+def _generated(config, directory, spec, recordings=None):
     relative = Path(os.path.relpath(config, directory)).as_posix()
     if not relative.startswith("../"):
         relative = "./" + relative
     text = TEMPLATE.format(config=json.dumps(relative),
                            root=json.dumps(str(config.parent)),
                            dir=json.dumps(str(directory)),
-                           spec=json.dumps(spec.name))
+                           spec=json.dumps(spec.name), **_video(recordings))
     handle, name = tempfile.mkstemp(prefix="holophyte-capture-",
                                     suffix=".config" + config.suffix,
                                     dir=directory)
@@ -156,6 +164,16 @@ def _boot(command, argv, env):
         raise Refusal(f"boot command {command!r} failed with exit {code}")
 
 
+def _copy_videos(recordings, output):
+    videos = sorted((video for video in recordings.rglob("*.webm")
+                     if video.is_file()),
+                    key=lambda video: (video.stat().st_mtime_ns, str(video)))
+    if not videos:
+        print("capture_playwright: no video was recorded", file=sys.stderr)
+    for number, video in enumerate(videos, 1):
+        (output / f"video-{number:02d}.webm").write_bytes(video.read_bytes())
+
+
 def run(argv):
     args = _arguments(argv)
     output = Path(args.output).absolute()
@@ -170,16 +188,24 @@ def run(argv):
         raise Refusal(f"no Playwright config: expected {args.config}")
     copy = _copied(spec, args.default, args.dir)
     spec = copy or spec
-    generated = None
+    generated = recordings = None
     try:
         output.mkdir(parents=True, exist_ok=True)
-        generated = _generated(config, spec.parent.absolute(), spec)
+        if env.get("HOLOPHYTE_CAPTURE_VIDEO") == "1":
+            recordings = tempfile.TemporaryDirectory(prefix="holophyte-video-",
+                                                     ignore_cleanup_errors=True)
+        generated = _generated(config, spec.parent.absolute(), spec,
+                               recordings.name if recordings else None)
         _boot(args.boot, ["--config", generated,
                           REGEX_SPECIAL.sub(r"\\\g<0>", str(spec))], env)
+        if recordings:
+            _copy_videos(Path(recordings.name), output)
     finally:
         for made in (generated, copy):
             if made:
                 os.unlink(made)
+        if recordings:
+            recordings.cleanup()
     if not any(shot.is_file() for shot in output.glob(SHOT)):
         raise Refusal(f"no screenshot in {output}: expected at least one "
                       f"NN-slug.png ({SHOT})")
