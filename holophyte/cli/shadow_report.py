@@ -58,12 +58,11 @@ def primary_side(conn, run_id, rounds, outcome):
 
 
 def shadow_side(result):
-    usage = result.get("usage")
     verify = result.get("verify")
     review = result.get("review") or {}
     return {"route": result.get("route"),
             "minutes": (result.get("seconds") or 0) / 60,
-            **{key: usage_total([usage], key) for key in USAGE_KEYS},
+            **{key: usage_total([result.get("usage")], key) for key in USAGE_KEYS},
             "verified": verify.get("ok") if isinstance(verify, dict) else None,
             "verdict": review.get("verdict"), "findings": review.get("findings")}
 
