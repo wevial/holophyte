@@ -186,9 +186,9 @@ class ParkedTests(SteerFixture):
 
 
 class RefusalTests(SteerFixture):
-    def assert_refused(self, *words, naming):
+    def assert_refused(self, *words, naming, key="KO-131"):
         before = list(self.conn.iterdump())
-        code, said = self.holo("steer", "KO-131", *words, "-n", "a note")
+        code, said = self.holo("steer", key, *words, "-n", "a note")
         self.assertNotEqual(code, 0, said)
         for text in naming:
             self.assertIn(text, said)
@@ -210,8 +210,31 @@ class RefusalTests(SteerFixture):
         self.park_on_the_pull_request(run, pr_url=None)
         self.assert_refused(naming=("blocked_on_operator", "no pull request"))
 
+    def test_a_candidate_resuming_at_the_merge_gate_is_refused_naming_it(self):
+        run = self.claim()
+        self.park_on_the_pull_request(run, pr_url=None)
+        store.approve(self.conn, self.ticket, "ship it", run_id=run)
+        released_ticket = self.mirror(a_task(2))
+        released = self.claim(released_ticket)
+        self.park_on_the_pull_request(released, released_ticket)
+        store.babysit(self.conn, released_ticket, "another look")
+        for key, parked in (("KO-131", run), ("KO-132", released)):
+            for words in ((), ("--hint",)):
+                with self.subTest(key=key, words=words):
+                    self.assert_refused(*words, key=key, naming=(
+                        f"resumes run {parked}'s candidate at merge_gate",))
+
 
 class ReportTests(SteerFixture):
+    def test_report_reads_a_store_from_before_the_steer_table(self):
+        self.conn.executescript("DROP TABLE steerNotes;\n"
+                                "PRAGMA user_version = 43;\n")
+
+        code, said = self.holo("report", "--notes")
+
+        self.assertEqual(code, 0, said)
+        self.assertIn("Steers (0)", said.splitlines())
+
     def test_report_notes_lists_each_steer_pending_or_consumed(self):
         run = self.claim()
         self.fail_run(run)

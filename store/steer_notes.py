@@ -9,6 +9,7 @@ from .schema import _transaction
 AMENDMENT, HINT = "amendment", "hint"
 SEALED = ("merged", "abandoned")
 PARKED_PHASE = "awaiting_merge_approval"
+GATE_PHASES = ("merge_gate", "merging")
 
 
 class SteerRefused(ValueError):
@@ -53,12 +54,12 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
     with _transaction(conn):
         row = conn.execute(
             "SELECT t.linearIdentifier, t.status, t.activeRunId, t.lastRunId,"
-            " t.projectId, r.phase, r.prUrl FROM tickets t"
-            " LEFT JOIN runs r ON r.id = t.lastRunId WHERE t.id = ?",
-            (ticket_id,)).fetchone()
+            " t.projectId, r.phase, r.prUrl, r.resumePhase, r.outcome"
+            " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
+            " WHERE t.id = ?", (ticket_id,)).fetchone()
         if row is None:
             raise SteerRefused(f"ticket {ticket_id} does not exist")
-        key, status, live, last, project_id, phase, pr_url = row
+        key, status, live, last, project_id, phase, pr_url, resume, outcome = row
         if live is not None:
             raise SteerRefused(
                 f"{key} has live run {live}, which a steer does not reach;"
@@ -78,6 +79,12 @@ def steer(conn, ticket_id, note, author, hint=False, now=None):
                 " AND action = 'operator_note'", (last,)).fetchone()
             return _insert(conn, ticket_id, last, kind, note, author, now,
                            intervention_id, event_id)
+        if resume in GATE_PHASES or (outcome == "paused"
+                                     and resume not in (None, "working")):
+            raise SteerRefused(
+                f"{key}'s next run resumes run {last}'s candidate at {resume},"
+                " past the implement turn, so no implementer or reviewer"
+                " would read a steer; steer it once that run parks or ends")
         text = f"{kind} for {key}: {note}"
         if last is None:
             intervention_id = record_project_intervention(
@@ -123,6 +130,9 @@ def consume(conn, note_ids, run_id, now=None):
 
 
 def steers(conn):
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
+                    " AND name = 'steerNotes'").fetchone() is None:
+        return []
     return [SteerRow(*row) for row in conn.execute(
         "SELECT s.id, t.linearIdentifier, s.kind, s.author, s.note, s.at,"
         " s.runId, s.eventId, COALESCE(s.consumedBy, c.runId),"
