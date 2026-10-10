@@ -22,6 +22,8 @@ import store.schema
 import store.tickets
 
 DANGLING = [("runs", "stopRequested", "interventions_old", "interventions"),
+            ("steerNotes", "withdrawnBy", "interventions_old",
+             "interventions"),
             ("steerNotes", "interventionId", "interventions_old",
              "interventions")]
 

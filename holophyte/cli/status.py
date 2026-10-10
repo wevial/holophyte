@@ -22,7 +22,8 @@ from store.steer_notes import steers
 def snapshot(target, conn, now=None):
     now = int(time() * 1000) if now is None else now
     pending = Counter(note.ticket for note in steers(conn)
-                      if note.event_id is None and note.consumed_by is None)
+                      if note.event_id is None and note.consumed_by is None
+                      and note.withdrawn_by is None)
     projects = conn.execute(
         "SELECT repoPath, admission, holdNote FROM projects ORDER BY id")
     return {

@@ -319,9 +319,13 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # the ticket's state, read and consumed.
                                  # HOLO-226: `close` ends a live run's steer
                                  # admission once no implementer turn remains.
+                                 # HOLO-229: `withdraw` and its readers,
+                                 # `standing` and `withdrawn_events`.
                                  (store.steer_notes, ["amendments", "close",
                                                       "consume", "pending",
-                                                      "steer", "steers"]),
+                                                      "standing", "steer",
+                                                      "steers", "withdraw",
+                                                      "withdrawn_events"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.
                                  # HOLO-176: `--decide` accepts or rejects it.
