@@ -204,10 +204,9 @@ def _reconcile_pull_requests(target, conn, project, provider,
             _note_closed_pr(target, conn, provider, ticket, pull, status)
         # A babysit round is many reads and writes: not on a budget already low.
         elif not low:
-            reason = ci_wake.wake_reason(target, conn, ticket, pull, status,
-                                         _iso_epoch(_seen(status)[0]))
+            kind, reason = _wake_reason(target, conn, ticket, pull, status)
             issue = None if reason is ci_wake.EXPIRED else _rebabysit(
-                conn, ticket, pull, status, poll_ms, reason)
+                conn, ticket, pull, status, poll_ms, reason, kind)
             if issue is not None:
                 sent.add(issue)
         if low:
@@ -385,7 +384,27 @@ def _seen(status):
             status.title)
 
 
-def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None):
+def _wake_reason(target, conn, ticket, pull, status):
+    kind, reason = _conflict_wake(conn, ticket, pull, status)
+    if reason is None:
+        reason = ci_wake.wake_reason(target, conn, ticket, pull, status,
+                                     _iso_epoch(_seen(status)[0]))
+    return kind, reason
+
+
+def _conflict_wake(conn, ticket, pull, status):
+    if status.mergeable != "CONFLICTING" or not status.head_sha:
+        return ("ci_wake", None)
+    summary = f"{pull.url} conflicts with main at {status.head_sha}"
+    woken = conn.execute(
+        "SELECT 1 FROM runEvents e JOIN runs r ON r.id = e.runId"
+        " WHERE r.ticketId = ? AND e.kind = 'conflict_wake'"
+        " AND e.summary = ?", (ticket.id, summary)).fetchone()
+    return ("ci_wake", None) if woken else ("conflict_wake", summary)
+
+
+def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
+               kind="ci_wake"):
     identifier, run_id = ticket.linearIdentifier, ticket.runId
     row = conn.execute("SELECT prSeenAt, prSeenThreads, lastHeartbeat,"
                        " (SELECT linearIssueId FROM tickets WHERE id = ?)"
@@ -421,6 +440,8 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None):
             f"{', '.join(sorted({item[0] for item in arrived}))}; updated"
             f" {status.updated_at} (last seen {seen_at}), {threads} review"
             f" threads (last seen {seen_threads})") if arrived else reason
+    if arrived and kind == "conflict_wake":
+        note = f"{reason}; {note}"
     try:
         with store.transaction(conn):
             store.record_pr_seen(conn, run_id, mark)
@@ -428,7 +449,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None):
             if arrived:
                 store.record_event(conn, run_id, "pr_wake", json.dumps(arrived))
             if reason:
-                store.record_event(conn, run_id, "ci_wake", reason)
+                store.record_event(conn, run_id, kind, reason)
             store.babysit(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
         print(f"[holo2] {identifier}: {why} but the ticket moved while GitHub"

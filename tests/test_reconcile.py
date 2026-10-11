@@ -636,6 +636,70 @@ class ContentWakeTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT prSeenThreads, prSeenOpenThreads"
                                    " FROM runs"), [(4, 0)])
 
+    def test_a_conflicting_park_is_sent_back_to_merge_main(self):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.parked_with_mark(self, H.T1, 0)
+        self.reconcile_parked('CONFLICTING')
+        notes = self.read("SELECT note FROM interventions"
+                          " WHERE action = 'babysit'")
+        self.assertEqual(len(notes), 1)
+        self.assertIn(f'{self.URL} conflicts with main', notes[0][0])
+        events = self.read("SELECT summary FROM runEvents"
+                           " WHERE kind = 'conflict_wake'")
+        self.assertEqual(len(events), 1)
+        self.assertIn('conflicted-head', events[0][0])
+
+    def test_a_conflict_with_new_review_activity_names_both(self):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.parked_with_mark(self, H.T1, 0)
+        self.reconcile_parked('CONFLICTING', updatedAt=H.T2, comments={
+            'nodes': [{'id': 'c', 'createdAt': H.T2,
+                       'author': {'login': 'person'}, 'body': 'Please check'}]})
+        ((note,),) = self.read("SELECT note FROM interventions"
+                               " WHERE action = 'babysit'")
+        self.assertIn(f'{self.URL} conflicts with main', note)
+        self.assertIn('new review activity', note)
+
+    def reconcile_parked(self, mergeable, head='conflicted-head', **fields):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.fake_client(self, dict(H.OPEN_PULL, **dict(
+            dict(updatedAt=H.T1, reviewThreads={'totalCount': 0},
+                 mergeable=mergeable, headRefOid=head), **fields)))
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        with patch.object(sys, 'stdout', io.StringIO()):
+            holophyte.host.reconcile._reconcile_pull_requests(
+                self.project, conn,
+                conn.execute('SELECT id FROM projects').fetchone()[0],
+                StubProvider())
+
+    def test_a_conflict_wakes_once_per_head_commit(self):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.parked_with_mark(self, H.T1, 0)
+        with patch.object(store, 'babysit'):
+            self.reconcile_parked('CONFLICTING')
+        self.assertEqual(self.read("SELECT phase FROM runs"),
+                         [('awaiting_merge_approval',)])
+        self.reconcile_parked('CONFLICTING')
+        self.assertEqual(self.read("SELECT note FROM interventions"
+                                   " WHERE action = 'babysit'"), [])
+        self.reconcile_parked('CONFLICTING', head='merged-main-head')
+        notes = self.read("SELECT note FROM interventions"
+                          " WHERE action = 'babysit'")
+        self.assertEqual(len(notes), 1)
+        self.assertIn('merged-main-head', notes[0][0])
+
+    def test_an_unknown_or_mergeable_park_is_not_woken(self):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.parked_with_mark(self, H.T1, 0)
+        for mergeable in ('UNKNOWN', 'MERGEABLE'):
+            with self.subTest(mergeable=mergeable):
+                self.reconcile_parked(mergeable)
+                self.assertEqual(self.read("SELECT action FROM interventions"
+                                           " WHERE action = 'babysit'"), [])
+                self.assertEqual(self.read("SELECT kind FROM runEvents"
+                                           " WHERE kind = 'conflict_wake'"), [])
+
     def test_only_new_authored_content_wakes_once(self):
         from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_with_mark(self, H.T1, 3)
@@ -981,6 +1045,27 @@ class CiParkTests(MergeModeFixture):
                       self.question())
         self.assertEqual(self.wakes(), [])
 
+    def assert_conflict_wakes_ahead_of(self, checks, later_s):
+        self.ci_parked("PENDING")
+        self.age()
+        self.reconcile(dict(self.pull(self.OLD, checks),
+                            mergeable="CONFLICTING", headRefOid="ci-head"),
+                       later_s=later_s)
+        notes = self.read("SELECT note FROM interventions"
+                          " WHERE action = 'babysit'")
+        self.assertEqual(len(notes), 1)
+        self.assertIn(f"{self.URL} conflicts with main", notes[0][0])
+        self.assertEqual(self.read(
+            "SELECT kind, summary LIKE '%ci-head' FROM runEvents WHERE kind"
+            " IN ('conflict_wake', 'ci_wake', 'ci_expired')"),
+            [("conflict_wake", 1)])
+
+    def test_a_conflict_wakes_a_ci_park_whose_checks_finished(self):
+        self.assert_conflict_wakes_ahead_of("SUCCESS", 0)
+
+    def test_a_conflict_wakes_a_ci_park_whose_checks_expired(self):
+        self.assert_conflict_wakes_ahead_of("PENDING", 1801)
+
     def test_repeated_ci_wakes_never_trip_the_empty_wake_breaker(self):
         fresh = datetime.now(timezone.utc).isoformat()
         self.ci_parked("PENDING")
@@ -995,6 +1080,25 @@ class CiParkTests(MergeModeFixture):
                 self.assertEqual(self.read("SELECT parkKind FROM runs"
                                            " ORDER BY id DESC LIMIT 1"),
                                  [("ci",)])
+                self.assertEqual(self.read(
+                    "SELECT summary FROM runEvents WHERE kind ="
+                    " 'pr_empty_wakes' ORDER BY id DESC LIMIT 1"), [("0",)])
+        self.assertEqual(self.read("SELECT id FROM runEvents"
+                                   " WHERE kind = 'pr_wake_breaker'"), [])
+
+    def test_repeated_conflict_wakes_never_trip_the_empty_wake_breaker(self):
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.ci_parked("PENDING")
+        for n in (1, 2):
+            with self.subTest(wake=n):
+                self.age()
+                self.github(dict(self.pull(self.OLD, "PENDING"),
+                                 mergeable="CONFLICTING",
+                                 headRefOid=f"head-{n}"),
+                            self.pull(fresh, "PENDING"))
+                self.serve(self.pr_state(checks="PENDING"))
+                self.main_output(provider=self.provider())
+                self.assertEqual(len(self.wakes()), n)
                 self.assertEqual(self.read(
                     "SELECT summary FROM runEvents WHERE kind ="
                     " 'pr_empty_wakes' ORDER BY id DESC LIMIT 1"), [("0",)])

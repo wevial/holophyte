@@ -97,7 +97,7 @@ query($owner: String!, $name: String!, $number: Int!) {
       timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
-      state merged mergeable mergeCommit { oid } mergedBy { login }
+      state merged mergeable headRefOid mergeCommit { oid } mergedBy { login }
       updatedAt title
       threadCount: reviewThreads(first: %d) { totalCount nodes { isResolved } }
       reviewDecision
@@ -123,6 +123,7 @@ class PullStatus:
     checks: str | None = None
     review: str | None = None
     mergeable: str | None = None
+    head_sha: str | None = None
     rate_remaining: int | None = None
     rate_reset: str | None = None
     activity: tuple = ()
@@ -167,6 +168,8 @@ def pull_status(target, pull):
                       mergeable=node.get("mergeable")
                       if isinstance(node.get("mergeable"), str)
                       else None,
+                      head_sha=node.get("headRefOid")
+                      if isinstance(node.get("headRefOid"), str) else None,
                       rate_remaining=_count(rate.get("remaining")
                                             if isinstance(rate, dict)
                                             else None),
