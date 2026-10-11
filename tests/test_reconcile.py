@@ -1034,6 +1034,27 @@ class CiParkTests(MergeModeFixture):
                       self.question())
         self.assertEqual(self.wakes(), [])
 
+    def assert_conflict_wakes_ahead_of(self, checks, later_s):
+        self.ci_parked("PENDING")
+        self.age()
+        self.reconcile(dict(self.pull(self.OLD, checks),
+                            mergeable="CONFLICTING", headRefOid="ci-head"),
+                       later_s=later_s)
+        notes = self.read("SELECT note FROM interventions"
+                          " WHERE action = 'babysit'")
+        self.assertEqual(len(notes), 1)
+        self.assertIn(f"{self.URL} conflicts with main", notes[0][0])
+        self.assertEqual(self.read(
+            "SELECT kind, summary LIKE '%ci-head' FROM runEvents WHERE kind"
+            " IN ('conflict_wake', 'ci_wake', 'ci_expired')"),
+            [("conflict_wake", 1)])
+
+    def test_a_conflict_wakes_a_ci_park_whose_checks_finished(self):
+        self.assert_conflict_wakes_ahead_of("SUCCESS", 0)
+
+    def test_a_conflict_wakes_a_ci_park_whose_checks_expired(self):
+        self.assert_conflict_wakes_ahead_of("PENDING", 1801)
+
     def test_repeated_ci_wakes_never_trip_the_empty_wake_breaker(self):
         fresh = datetime.now(timezone.utc).isoformat()
         self.ci_parked("PENDING")

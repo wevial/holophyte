@@ -204,10 +204,7 @@ def _reconcile_pull_requests(target, conn, project, provider,
             _note_closed_pr(target, conn, provider, ticket, pull, status)
         # A babysit round is many reads and writes: not on a budget already low.
         elif not low:
-            reason = ci_wake.wake_reason(target, conn, ticket, pull, status,
-                                         _iso_epoch(_seen(status)[0]))
-            kind, reason = ("ci_wake", reason) if reason else \
-                _conflict_wake(conn, ticket, pull, status)
+            kind, reason = _wake_reason(target, conn, ticket, pull, status)
             issue = None if reason is ci_wake.EXPIRED else _rebabysit(
                 conn, ticket, pull, status, poll_ms, reason, kind)
             if issue is not None:
@@ -385,6 +382,14 @@ def _seen(status):
     return (at or None, status.threads, status.open_threads,
             status.open_threads_floor, status.checks, status.review,
             status.title)
+
+
+def _wake_reason(target, conn, ticket, pull, status):
+    kind, reason = _conflict_wake(conn, ticket, pull, status)
+    if reason is None:
+        reason = ci_wake.wake_reason(target, conn, ticket, pull, status,
+                                     _iso_epoch(_seen(status)[0]))
+    return kind, reason
 
 
 def _conflict_wake(conn, ticket, pull, status):
