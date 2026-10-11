@@ -144,6 +144,8 @@ def story_duplicate(conn, story_id, fingerprint, text, normalise):
             return "child", key
     row = conn.execute(
         "SELECT p.id FROM storyProposals p JOIN followUps f"
-        " ON f.id = p.followUpId WHERE p.storyId = ? AND f.fingerprint = ?"
-        " ORDER BY p.id LIMIT 1", (story_id, fingerprint)).fetchone()
+        " ON f.id = p.followUpId WHERE p.storyId = ? AND (f.fingerprint = ?"
+        " OR EXISTS (SELECT 1 FROM followUps joined WHERE joined.fingerprint = ?"
+        "   AND joined.duplicateOf = 'p' || p.id))"
+        " ORDER BY p.id LIMIT 1", (story_id, fingerprint, fingerprint)).fetchone()
     return None if row is None else ("proposal", _key(row[0]))

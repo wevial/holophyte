@@ -267,6 +267,20 @@ class ScopeCallTests(StoryProposalTests):
             f" WHERE runId = {run_id} ORDER BY id"),
             [(0, f"p{proposal}"), (1, None)])
 
+    def test_a_later_repeat_of_a_joined_wording_is_its_proposal_s_duplicate(self):
+        self.approved_story()
+        self.reply(**{TEXT: (IN_STORY, 0), "Add the refund total": (IN_STORY, 0)})
+        self.merged(self.merged_child, f"fix\n\n{FEATURE}",
+                    "fix again\n\nFOLLOW_UP(feature): Add the refund"
+                    " total @ export.py:42")
+        [(proposal, *_)] = self.proposals()
+
+        repeat = self.merged(self.backlog_child, f"fix\n\n{FEATURE}")
+
+        self.assertEqual(len(self.proposals()), 1)
+        self.assertEqual([payload["key"] for _, payload in events(
+            self.conn, repeat, "follow_up_duplicate")], [f"p{proposal}"])
+
     def test_a_proposal_leaves_the_story_its_frontier_and_claims_unchanged(self):
         parent = self.approved_story(second="ready")
         self.reply(**{TEXT: (IN_STORY, 0)})
