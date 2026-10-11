@@ -165,9 +165,11 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 output = launch()
         command = getattr(output, "command", agent_route(project, role))
         reason = failed_turn(output) and outage_reason(command, output)
-        if (argv is None and reason
-                and activate_fallback(project, role, reason, conn, run_id)):
-            return launch()
+        if argv is None and reason:
+            if activate_fallback(project, role, reason, conn, run_id):
+                return launch()
+            if role == "implement" and not getattr(output, "timed_out", False):
+                raise InfraFailure(reason, "infra")
         return output
 
 

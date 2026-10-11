@@ -290,6 +290,23 @@ class AgentFallbackTests(SweepTestCase):
             "SELECT count(*) FROM runEvents WHERE kind='route_fallback'"
         ).fetchone()[0], 1)
 
+    def test_claude_session_limit_line_is_an_outage(self):
+        line = ("You've hit your session limit · resets 12:50pm "
+                "(America/Los_Angeles)")
+        self.assertEqual(fallback.outage_reason('claude opus', line), line)
+
+    def test_claude_session_limit_without_fallback_raises_infra_failure(self):
+        line = ("You've hit your session limit · resets 12:50pm "
+                "(America/Los_Angeles)")
+        self.configure('[agents]\n')
+        run = self.a_run()
+        with patch.object(roles, 'run_capped', return_value=(1, line)):
+            self.addCleanup(reset, self.project)
+            with self.assertRaises(roles.InfraFailure) as raised:
+                roles.agent(self.project, 'implement', 'work', self.target,
+                            conn=self.conn, run_id=run)
+        self.assertIn(line, str(raised.exception))
+
     def test_clean_turn_quoting_an_outage_message_is_a_result(self):
         self.routes()
         self.configure(f'[agents]\nimplementer_fallback = "{self.fallback}"\n')
