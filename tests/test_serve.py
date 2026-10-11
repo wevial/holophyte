@@ -829,6 +829,18 @@ class AttentionTests(ServeTestCase):
             "level": "attention"})
         self.assertEqual(body["level"], "attention")
 
+    def test_an_approved_pull_request_waiting_for_a_claim_is_queued(self):
+        self.seed_attention()
+        self.park_on_pr(url := "https://github.com/example/repo/pull/2170")
+        with contextlib.closing(store.open(str(self.db))) as conn:
+            store.approve(conn, conn.execute("SELECT MAX(id) FROM tickets")
+                          .fetchone()[0], "go", now=self.now - MIN)
+        self.start()
+        _, _, body = self.request("GET", "/status")
+        self.assertEqual([(q["ticket"], q["pr_url"], q["waiting_ms"])
+                          for q in body.get("queued", [])],
+                         [("KO-10", url, body["now"] - (self.now - MIN))])
+
     def test_a_pr_open_item_carries_what_the_reconcile_saw_on_the_pull_request(
             self):
         """KO-368: the run's park recorded the checks rollup, the review
