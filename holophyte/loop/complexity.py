@@ -11,6 +11,9 @@ EVENT = "complexity"
 BODY_CHARS = 24000
 REASON_CHARS = 200
 RECORD_MARGIN = 1024
+TITLE_SHARE = 4
+RESUMABLE = ("working", "verifying", "reviewing", "addressing",
+             "merge_gate", "merging")
 
 
 def classifier_profile(run, task):
@@ -31,14 +34,29 @@ def classifier_profile(run, task):
 
 def recorded(run):
     conn, run_id = run.conn, run.run_id
+    own = verdict_of(conn, run_id)
+    if own is not None or not resumes(run):
+        return own
+    older = conn.execute(
+        "SELECT old.id, old.outcome, old.resumePhase FROM runs old JOIN runs current"
+        " ON old.ticketId = current.ticketId WHERE current.id = ?"
+        " AND old.id != current.id AND old.attempt < current.attempt"
+        " ORDER BY old.attempt DESC", (run_id,)).fetchall()
+    for index, (older_id, _, _) in enumerate(older):
+        verdict = verdict_of(conn, older_id)
+        if verdict is not None:
+            return verdict
+        before = older[index + 1] if index + 1 < len(older) else None
+        if before is None or before[1] != "paused" or before[2] not in RESUMABLE:
+            return None
+    return None
+
+
+def verdict_of(conn, run_id):
     row = conn.execute(
-        "SELECT e.runId, e.payload FROM runEvents e JOIN runs r ON r.id = e.runId"
-        " JOIN runs current ON current.ticketId = r.ticketId"
-        " WHERE current.id = ? AND r.id <= current.id AND e.kind = ?"
-        " ORDER BY e.id DESC LIMIT 1", (run_id, EVENT)).fetchone()
-    if row is None or (row[0] != run_id and not resumes(run)):
-        return None
-    return json.loads(row[1])
+        "SELECT payload FROM runEvents WHERE runId = ? AND kind = ?"
+        " ORDER BY id DESC LIMIT 1", (run_id, EVENT)).fetchone()
+    return row and json.loads(row[0])
 
 
 def classify(run, task, options):
@@ -68,8 +86,10 @@ def ticket_state(task, config):
     body = task.get("body") or ""
     ticket = ticket_template.parse(body)
     secrets = redact.known_secrets(config)
-    state = dict(title=redact.outbound(task.get("title") or "", secrets),
-                 body="", estimate_min=ticket.estimate_min,
+    title = prefix_fitting_escaped(
+        redact.outbound(task.get("title") or "", secrets),
+        question_cli.MAX_RECORD // TITLE_SHARE)
+    state = dict(title=title, body="", estimate_min=ticket.estimate_min,
                  criteria=len(ticket.acceptance) + len(ticket.acceptance_done)
                  + len(ticket.acceptance_other))
     room = question_cli.MAX_RECORD - RECORD_MARGIN - len(question_cli.dumped(state))

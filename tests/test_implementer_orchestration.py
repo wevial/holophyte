@@ -542,3 +542,46 @@ class ComplexityClassifierTests(ProfileRunFixture):
         record = json.loads(prompt.split("```json\n", 1)[1].rsplit("\n```", 1)[0])
         self.assertEqual((record["estimate_min"], record["criteria"]), (5, 1))
         self.assertTrue(record["body"].startswith("# Add a thing"))
+
+    def test_a_resume_asks_when_the_resumed_run_has_no_verdict(self):
+        from pause_fixture import PauseReply
+
+        from holophyte.loop.stop import command
+        self.claude.answer("small", 0.9, reason="one config key")
+        self.configure(PROFILES + '[merge]\napprove = "human"\n')
+        conn = open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = store.tickets.ensure_project(conn, StubProvider.TEAM,
+                                                  self.target)
+        ticket = holophyte.board.projection.mirror_task(conn, project_id,
+                                                        a_task())
+        run = store.claim(conn, project_id, ticket)
+        store.record_event(conn, run, "complexity", "complexity: small",
+                           level="detail", payload=json.dumps({
+                               "verdict": "small", "confidence": 0.9}))
+        store.release(conn, run, "failed", "an earlier attempt")
+        conn.commit()
+        self.run_ticket(VALID_BODY, PauseReply(self.db, APPROVE))
+        self.assertEqual(self.read(
+            "SELECT outcome, resumePhase FROM runs ORDER BY id")[-1],
+            ("paused", "merge_gate"))
+        command(self.project, a_task()["id"], None, resume=True)
+        self.configure(CLASSIFIER + '[merge]\napprove = "human"\n')
+        self.run_ticket(VALID_BODY, guard=question_guard())
+        self.assertEqual(self.read(
+            "SELECT runId FROM runEvents WHERE kind = 'complexity'"
+            " ORDER BY id"), [(1,), (3,)])
+
+    def test_a_long_escaped_title_keeps_the_record_whole(self):
+        self.claude.answer("large", 0.9, reason="a long title")
+        self.configure(CLASSIFIER)
+        with profile_routes(self.db, (APPROVE,), (0, "ready"), False, (),
+                            None) as dispatch:
+            self.loop(fake=dispatch, guard=question_guard(),
+                      provider=StubProvider(dict(
+                          a_task(), title="変" * 20000, body=VALID_BODY)))
+        prompt = next(call["argv"][-1] for call in self.claude.calls()
+                      if call["mode"] == "question")
+        record = json.loads(prompt.split("```json\n", 1)[1].rsplit("\n```", 1)[0])
+        self.assertTrue(record["title"].startswith("変"))
+        self.assertTrue(record["body"].startswith("# Add a thing"))
