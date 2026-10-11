@@ -471,6 +471,62 @@ class IsolationTests(GoRaceCases, IsolationCase):
                           if part == "--volume"]
                 self.assertIn(f"{release}/codex:/opt/codex/bin/codex:ro", mounts)
 
+    def probe_codex_fallback(self, fallback, implementer=None, credential=None):
+        from holophyte.agents import probes
+        from holophyte.isolation import launcher
+
+        release = self.root / "release"
+        if not release.exists():
+            self.fake_codex_release()
+        codex_home = self.root / "codex-home"
+        codex_home.mkdir(exist_ok=True)
+        (codex_home / "auth.json").write_text("codex-login-secret")
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": implementer or {"harness": "claude"},
+                                "implementer_fallback": fallback}
+        if credential is not None:
+            self.table["agents"]["implementer_credential"] = credential
+        path = f"{release}{os.pathsep}{os.environ.get('PATH', '')}"
+        with (patch.dict(os.environ, {"PATH": path, "CODEX_HOME": str(codex_home)}),
+              patch.object(launcher, "image_ready"),
+              patch.object(launcher.review_runner, "_remove_container"),
+              patch.object(launcher, "run_capped",
+                           return_value=(0, "PROBE_OK")) as run):
+            result = probes.probe_launch(self.target, fallback.split(), 5,
+                                         "implementer")
+        self.assertEqual(result.returncode, 0, result.launch_error)
+        return codex_home / "auth.json", run.call_args, result
+
+    def test_codex_fallback_probe_mounts_the_codex_login_read_only(self):
+        login, call, result = self.probe_codex_fallback("codex exec -m model")
+        argv = call.args[0]
+        mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
+        self.assertIn(f"{login}:/opt/codex/login/auth.json:ro", mounts)
+        self.assertIn('ln -sf /opt/codex/login/auth.json '
+                      '"${CODEX_HOME:-/home/implementer/.codex}/auth.json"',
+                      " ".join(argv))
+        self.assertNotIn("codex-login-secret", str(call))
+        self.assertNotIn("codex-login-secret", str(result))
+
+    def test_non_codex_fallback_probe_gets_no_codex_login(self):
+        _, call, _ = self.probe_codex_fallback("claude -p", "codex exec -m model")
+        command = " ".join(call.args[0])
+        self.assertIn('PATH="/opt/codex/bin:$PATH" exec', command)
+        self.assertNotIn("auth.json", command)
+
+    def test_only_an_explicit_codex_auth_file_replaces_the_host_login(self):
+        token = self.root / "token"
+        token.write_text("provider")
+        for destination, mounted in (
+                ("/home/implementer/.codex/provider/token", True),
+                ("/home/implementer/.codex/auth.json", False)):
+            with self.subTest(destination=destination):
+                login, call, _ = self.probe_codex_fallback(
+                    "codex exec -m model",
+                    credential={"file": str(token), "destination": destination})
+                mount = f"{login}:/opt/codex/login/auth.json:ro"
+                self.assertEqual(mount in call.args[0], mounted)
+
     def test_quoted_codex_program_is_a_codex_implementer(self):
         from holophyte.isolation.launcher import route_for
 
