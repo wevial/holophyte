@@ -468,6 +468,37 @@ class WitnessSetupTests(WitnessRunnerFixture, unittest.TestCase):
 
         self.assertEqual(row.verdict, "green")
 
+    def test_a_setup_that_cannot_launch_is_red_with_the_reason_logged(self):
+        target = self.project('[worktree]\nsetup = ["true"]\n')
+        touch = f"touch {shlex.quote(str(self.marker))}"
+        self.approve([("W1", "tests/test_w1.py", touch, PASSES)])
+        unlaunchable = patch("holophyte.loop.task_worktree.run_verify",
+                             side_effect=FileNotFoundError("no docker binary"))
+
+        with unlaunchable:
+            (row,) = run_witnesses(target, self.conn, self.story_id,
+                                   main_tip(target), "loop", copy_files=True)
+
+        self.assertEqual((row.verdict, row.redKind), ("red", "exception"))
+        log = Path(row.evidencePath).read_text()
+        self.assertIn("[setup failed]", log)
+        self.assertIn("no docker binary", log)
+        self.assertFalse(self.marker.exists())
+
+    def test_a_witness_command_out_of_budget_keeps_the_setup_output(self):
+        target = self.project(
+            '[story]\nwitness_sec = 1\n'
+            '[worktree]\nsetup = ["printf \'setup-%s\\\\n\' marker"]\n')
+        self.approve([("W1", "tests/test_w1.py", "sleep 5", PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "loop", copy_files=True)
+
+        self.assertEqual(row.verdict, "error")
+        log = Path(row.evidencePath).read_text()
+        self.assertIn("setup-marker", log)
+        self.assertIn("timed out", log)
+
     def test_a_termination_during_setup_ends_the_pass(self):
         target = self.project('[worktree]\nsetup = ["true"]\n')
         self.approve([("W1", "tests/test_w1.py", "true", PASSES)])

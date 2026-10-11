@@ -354,11 +354,12 @@ def _run_one(run, witness, file_hash, log):
         code, output = _verify_command(run.target, NO_COLOR + witness.command,
                                        run.tree, remaining)
     except subprocess.TimeoutExpired as expired:
-        _write_log(log, f"{expired.output or ''}\n[witness] timed out after"
-                        f" {remaining:.0f}s\n", secrets)
+        _write_log(log, f"{transcript}{expired.output or ''}\n[witness] timed"
+                        f" out after {remaining:.0f}s\n", secrets)
         return "error", None, file_hash, time.monotonic() - started
     except OSError as error:
-        _write_log(log, f"[witness] could not run: {error}\n", secrets)
+        _write_log(log, f"{transcript}[witness] could not run: {error}\n",
+                   secrets)
         return "error", None, file_hash, time.monotonic() - started
     output = output or ""
     seconds = time.monotonic() - started
@@ -380,7 +381,10 @@ def _setup(run):
         if not isinstance(error.code, str):
             raise
         return False, error.code, ""
-    return prepare_worktree(run.target, run.tree, deadline=run.deadline)
+    try:
+        return prepare_worktree(run.target, run.tree, deadline=run.deadline)
+    except OSError as error:
+        return False, f"[witness] setup could not run: {error}", ""
 
 
 def _git(cwd, *args):
