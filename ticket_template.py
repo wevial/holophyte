@@ -934,7 +934,7 @@ def main(argv):
             from holophyte.config.project import Project
             from holophyte.isolation.launcher import container_docker_problems
             from holophyte.loop.implementer_profile import filing_problems
-            project = Project.locate(repo, adopt=False)
+            project = Project.locate(Path(repo).resolve(), adopt=False)
             problems += container_docker_problems(project, ticket)
             problems += filing_problems(project, ticket)
             problems = ticket_problems(repo, text, problems)
