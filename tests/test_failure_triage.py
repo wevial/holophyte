@@ -21,6 +21,7 @@ from failure_triage_fixture import (  # noqa: E402 - after the sys.path insert a
 )
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
+    FAIL,
     REQUEST_CHANGES,
     Commit,
     Idle,
@@ -34,6 +35,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     StubProvider,
     a_task,
 )
+from test_steer import SteerFixture  # noqa: E402 - after the sys.path insert above
 
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
@@ -454,3 +456,29 @@ class EscalationTests(LoopFixture):
     def triage(self):
         return [json.loads(payload) for (payload,) in self.read(
             "SELECT payload FROM runEvents WHERE kind = 'failure_triage'")]
+
+
+class SteeredEscalationTests(SteerFixture):
+    def test_a_steered_profile_run_failing_its_round_cap_is_escalated(self):
+        FakeClaude(self)
+        self.configure(PROFILES)
+        self.steer("-n", "also log the port")
+
+        with ProfileTurns(
+                Commit("work", path="app.txt"), REQUEST_CHANGES,
+                Commit("fix", path="app.txt", body="fixed\n"), REQUEST_CHANGES,
+                Commit("fix again", path="app.txt", body="fixed again\n"),
+                FAIL) as turns:
+            self.loop(fake=turns, guard=question_guard(), provider=StubProvider(
+                dict(a_task(), body=ON_SONNET)))
+
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertTrue(reason.startswith("terminal adjudication: FAIL"), reason)
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
+        ((note,),) = self.read(
+            "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
+            " AND source = 'factory'")
+        self.assertTrue(note.startswith("escalation:"), note)
+        ((payload,),) = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'escalation'")
+        self.assertIs(json.loads(payload)["requeued"], True)

@@ -32,17 +32,13 @@ def requeue_on_default(conn, run_id, ticket_id):
     if profile is None or not (
             kind in KINDS or (reason or "").startswith(ROUND_CAP_REASON)):
         return
-    if conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
-                    " AND kind = 'steer_cap_park'", (run_id,)).fetchone():
-        why = "parked for the operator"
-    else:
-        note = (f"{ESCALATION_NOTE} implementer profile {profile} failed"
-                f" ({reason}); requeued once on the default implementer")
-        try:
-            store.requeue(conn, ticket_id, note, source="factory")
-            why = "requeued"
-        except store.RequeueRefused as refused:
-            why = f"requeue refused: {refused}"
+    note = (f"{ESCALATION_NOTE} implementer profile {profile} failed"
+            f" ({reason}); requeued once on the default implementer")
+    try:
+        store.requeue(conn, ticket_id, note, source="factory")
+        why = "requeued"
+    except store.RequeueRefused as refused:
+        why = f"requeue refused: {refused}"
     summary = f"{ESCALATION_NOTE} {profile} {kind}: {why}"
     store.record_event(conn, run_id, "escalation", summary, level="detail",
                        payload=json.dumps({
