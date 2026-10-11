@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from holophyte.config.config_tables import merge_config
@@ -76,40 +77,61 @@ def write_capture_ignore(project, wt):
 
 
 def run_worktree_setup(project, wt, conn=None, run_id=None):
+    ok, report, _ = prepare_worktree(project, wt, conn, run_id)
+    return ok, report
+
+
+def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None):
     try:
         write_worktree_environment(project, wt)
     except (SystemExit, InfraFailure) as error:
-        return False, redact_values(str(error))
+        return False, redact_values(str(error)), ""
     except OSError:
-        return False, "[holo2] worktree environment file could not be written"
+        return False, "[holo2] worktree environment file could not be written", ""
     try:
         write_capture_ignore(project, wt)
     except (SystemExit, OSError) as error:
-        return False, f"[holo2] local capture directory not prepared: {error}"
+        return False, f"[holo2] local capture directory not prepared: {error}", ""
     commands = setup_commands(project)
-    timeout = setup_timeout(project)
     if commands:
         set_phase(conn, run_id, "working",
                   f"worktree setup: {len(commands)} command(s) in {wt}")
-    for n, command in enumerate(commands, 1):
-        try:
-            ok, out = run_verify(command, wt, timeout=timeout, project=project,
-                                 rerun=False)
-        except subprocess.TimeoutExpired as e:
-            ok, out = False, timeout_report(command, e)
-        if not ok:
-            return False, (f"[holo2] worktree setup command {n} of "
-                           f"{len(commands)} FAILED: {redact_values(command)}\n"
-                           f"{redact_values(out)}")
-        print(f"[holo2] worktree setup {n}/{len(commands)} ok: {command}")
+    ok, report, transcript = _run_setup_commands(project, wt, commands, deadline)
+    if not ok:
+        return False, report, transcript
     if (Path(wt) / ".githooks").is_dir():
         try:
             # Without this extension --worktree writes the shared config.
             sh(["git", "config", "extensions.worktreeConfig", "true"], wt)
             sh(["git", "config", "--worktree", "core.hooksPath", ".githooks"], wt)
         except RuntimeError as error:
-            return False, f"[holo2] worktree setup hooks configuration FAILED:\n{error}"
-    return True, ""
+            return (False, "[holo2] worktree setup hooks configuration FAILED:"
+                    f"\n{error}", transcript)
+    return True, "", transcript
+
+
+def _run_setup_commands(project, wt, commands, deadline):
+    timeout = setup_timeout(project)
+    transcript = ""
+    for n, command in enumerate(commands, 1):
+        limit = timeout if deadline is None else min(
+            timeout, deadline - time.monotonic())
+        if limit <= 0:
+            return False, (f"[holo2] worktree setup command {n} of {len(commands)}"
+                           " not run: the time budget is spent"), transcript
+        try:
+            ok, out = run_verify(command, wt, timeout=limit, project=project,
+                                 rerun=False)
+        except subprocess.TimeoutExpired as e:
+            ok, out = False, timeout_report(command, e)
+        if not ok:
+            return False, (f"[holo2] worktree setup command {n} of "
+                           f"{len(commands)} FAILED: {redact_values(command)}\n"
+                           f"{redact_values(out)}"), transcript
+        print(f"[holo2] worktree setup {n}/{len(commands)} ok: {command}")
+        transcript += (f"[holo2] worktree setup {n}/{len(commands)} ok:"
+                       f" {redact_values(command)}\n{redact_values(out)}\n")
+    return True, "", transcript
 
 
 def _retirement_remote_tip(project, branch):

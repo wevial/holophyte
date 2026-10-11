@@ -11,8 +11,9 @@ from pathlib import Path
 from holophyte import deadline, redact
 from holophyte.admission import held_line
 from holophyte.config.config_tables import merge_config, story_config
+from holophyte.config.worktree_settings import setup_commands, setup_timeout
 from holophyte.loop.gates import _verify_command, run_capped, vacuous_green_report
-from holophyte.loop.task_worktree import run_worktree_setup
+from holophyte.loop.task_worktree import prepare_worktree
 from holophyte.pr import github
 from holophyte.redact import safe_print as print
 from holophyte.story.story_close import (
@@ -339,16 +340,15 @@ def _run_one(run, witness, file_hash, log):
     if remaining <= 0:
         _write_log(log, SPENT, secrets)
         return "error", None, file_hash, 0.0
-    try:
-        ready, report = run_worktree_setup(run.target, run.tree)
-    except SystemExit as error:
-        ready, report = False, str(error)
+    ready, report, transcript = _setup(run)
     if not ready:
-        _write_log(log, f"[setup failed]\n{report}\n", secrets)
-        return "red", "exception", file_hash, time.monotonic() - started
+        _write_log(log, f"{transcript}[setup failed]\n{report}\n", secrets)
+        spent = time.monotonic() >= run.deadline
+        return ("error" if spent else "red", None if spent else "exception",
+                file_hash, time.monotonic() - started)
     remaining = run.deadline - time.monotonic()
     if remaining <= 0:
-        _write_log(log, SPENT, secrets)
+        _write_log(log, transcript + SPENT, secrets)
         return "error", None, file_hash, time.monotonic() - started
     try:
         code, output = _verify_command(run.target, NO_COLOR + witness.command,
@@ -363,12 +363,24 @@ def _run_one(run, witness, file_hash, log):
     output = output or ""
     seconds = time.monotonic() - started
     vacuous = vacuous_green_report(witness.command, output) if code == 0 else None
-    _write_log(log, vacuous or output, secrets)
+    _write_log(log, transcript + (vacuous or output), secrets)
     if vacuous:
         return "error", None, file_hash, seconds
     if code == 0:
         return "green", None, file_hash, seconds
     return "red", red_kind(output), file_hash, seconds
+
+
+def _setup(run):
+    try:
+        if not setup_commands(run.target):
+            return True, "", ""
+        setup_timeout(run.target)
+    except SystemExit as error:
+        if not isinstance(error.code, str):
+            raise
+        return False, error.code, ""
+    return prepare_worktree(run.target, run.tree, deadline=run.deadline)
 
 
 def _git(cwd, *args):
