@@ -8,12 +8,14 @@ import review_runner
 from holophyte.agents.agent_output import (
     AgentOutput,
     ImplementerOutput,
+    claude_marked_error,
     claude_result,
 )
 from holophyte.agents.agent_routes import routes, safe_command
 from holophyte.agents.agent_turns import family_label, recorded_turn
 from holophyte.agents.fallback import (
     activate_fallback,
+    failed_turn,
     outage_reason,
     record_pending_switch,
 )
@@ -161,11 +163,17 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             else:
                 output = launch()
         command = getattr(output, "command", agent_route(project, role))
-        reason = outage_reason(command, output)
+        reason = turn_outage(role, command, output)
         if (argv is None and reason
                 and activate_fallback(project, role, reason, conn, run_id)):
             return launch()
         return output
+
+
+def turn_outage(role, command, output):
+    if role in WRITING_ROLES and not failed_turn(output):
+        return None
+    return outage_reason(command, output)
 
 
 def route_down(project, role, failure):
@@ -371,9 +379,12 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                                  launcher.environment(project), cmd,
                                  timeout=cap, runner=run_capped, project=project,
                                  keep_session=True, **hook)
-    decoded = claude_result(out) if seat is not None and seat.name == "claude" else None
+    claude = seat is not None and seat.name == "claude"
+    decoded = claude_result(out) if claude else None
     if decoded is None:
-        return ImplementerOutput(out.strip(), code, dispatched_route)
-    output = ImplementerOutput(decoded[0].strip(), code, dispatched_route)
-    output.usage = decoded[1]
+        output = ImplementerOutput(out.strip(), code, dispatched_route)
+    else:
+        output = ImplementerOutput(decoded[0].strip(), code, dispatched_route)
+        output.usage = decoded[1]
+    output.is_error = claude and claude_marked_error(out)
     return output

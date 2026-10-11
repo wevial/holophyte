@@ -52,6 +52,14 @@ def claude_result(output):
                                     num_turns=count(document.get("num_turns")))
 
 
+def claude_marked_error(output):
+    try:
+        document = json.loads(output)
+    except ValueError:
+        return False
+    return isinstance(document, dict) and document.get("is_error") is True
+
+
 class AgentOutput(str):
 
     def __new__(cls, output, command, *, timed_out=False, exit_code=0):

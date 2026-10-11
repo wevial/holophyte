@@ -310,6 +310,28 @@ class AgentFallbackTests(SweepTestCase):
             "SELECT count(*) FROM runEvents WHERE kind='route_fallback'"
         ).fetchone()[0], 0)
 
+    def test_clean_exit_marked_as_an_error_result_dispatches_fallback(self):
+        self.routes()
+        self.configure(f'[agents]\nimplementer_fallback = "{self.fallback}"\n'
+                       '[agents.implementer]\nharness = "claude"\n')
+        run = self.a_run()
+        limited = json.dumps({"type": "result", "is_error": True,
+                              "result": "You've hit your limit · resets tomorrow"})
+        dispatched = []
+        def execute(cmd, *_args, **_kwargs):
+            dispatched.append(cmd)
+            if cmd[0] == 'claude':
+                return 0, limited
+            return 0, 'ready' if cmd[-1] == probes.PROBE_GOAL else 'completed'
+        with patch.object(roles, 'run_capped', side_effect=execute), \
+                patch.object(probes, 'run_capped', side_effect=execute):
+            self.addCleanup(reset, self.project)
+            result = roles.agent(self.project, 'implement', 'work', self.target,
+                                  conn=self.conn, run_id=run)
+        self.assertEqual(result, 'completed')
+        self.assertEqual([cmd[0] for cmd in dispatched],
+                         ['claude', self.fallback, self.fallback])
+
     def test_scheduler_readiness_does_not_activate_fallback(self):
         from holophyte.agents.agent_routes import routes
 
