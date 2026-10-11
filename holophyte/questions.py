@@ -29,6 +29,9 @@ FALLBACK_KEYS = ("backend_fallback", "fallback_model", "fallback_effort")
 FAILURE_CLI_DEFAULTS = CLI_DEFAULTS | {"claude": ("sonnet", "medium")}
 FAILURE_DEFAULTS = dict(requeue=False, requeue_confidence=0.85)
 FAILURE_KEYS = ("backend", "model", "effort", *FALLBACK_KEYS, *FAILURE_DEFAULTS)
+COMPLEXITY_DEFAULTS = dict(route=False, route_confidence=0.8, profiles={})
+COMPLEXITY_KEYS = ("backend", "model", "effort", *FALLBACK_KEYS,
+                   *COMPLEXITY_DEFAULTS)
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,24 @@ class Question:
     instructions: str
     criteria: dict[str, str]
     name: str
+    reason: bool = False
+
+
+COMPLEXITY = Question(
+    "A software factory is about to implement a ticket. Judge from the "
+    "record (the ticket's title, body, estimate in minutes and number of "
+    "acceptance criteria) how much work the change takes.",
+    {
+        "small": "A narrow change: one or two files, a config key, a message "
+                 "or a focused fix with a test or two",
+        "medium": "A change across a few modules with new tests, following "
+                  "patterns the codebase already has",
+        "large": "A broad or delicate change: many modules, a new mechanism, "
+                 "a schema or concurrency change, or unclear design",
+    },
+    "complexity",
+    reason=True,
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +70,7 @@ class Route:
 class Answer:
     choice: str
     confidence: float
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,20 +91,16 @@ def settings(config):
     if not probability(values["min_confidence"]):
         raise ValueError("[questions] min_confidence must be a number in [0, 1]")
     values |= routes(table, "[questions]", "jev", CLI_DEFAULTS)
-    return values | dict(failures=failure_settings(table.get("failures"), values))
+    return values | dict(
+        failures=failure_settings(table.get("failures"), values),
+        complexity=complexity_settings(table.get("complexity"), values, config))
 
 
 def failure_settings(table, values):
     label = "[questions.failures]"
     if table is None:
         return None
-    if not isinstance(table, dict):
-        raise ValueError(f"{label} must be a table")
-    for key in table:
-        if key not in FAILURE_KEYS:
-            raise ValueError(f"{label} {key}: unknown key; {label} accepts: "
-                             f"{', '.join(sorted(FAILURE_KEYS))}")
-    options = FAILURE_DEFAULTS | table
+    options = FAILURE_DEFAULTS | seat_table(table, label, FAILURE_KEYS)
     if type(options["requeue"]) is not bool:
         raise ValueError(f"{label} requeue must be true or false")
     if not probability(options["requeue_confidence"]):
@@ -90,6 +108,43 @@ def failure_settings(table, values):
     return (values | routes(table, label, "claude", FAILURE_CLI_DEFAULTS)
             | dict(requeue=options["requeue"],
                    requeue_confidence=float(options["requeue_confidence"])))
+
+
+def complexity_settings(table, values, config):
+    label = "[questions.complexity]"
+    if table is None:
+        return None
+    options = COMPLEXITY_DEFAULTS | seat_table(table, label, COMPLEXITY_KEYS)
+    if type(options["route"]) is not bool:
+        raise ValueError(f"{label} route must be true or false")
+    if not probability(options["route_confidence"]):
+        raise ValueError(f"{label} route_confidence must be a number in [0, 1]")
+    profiles = options["profiles"]
+    if not isinstance(profiles, dict) or not set(profiles) <= set(COMPLEXITY.criteria):
+        raise ValueError(f"{label} profiles must map small, medium or large to "
+                         "a profile name")
+    if options["route"] and not profiles:
+        raise ValueError(f"{label} route = true needs profiles")
+    agents = config.get("agents")
+    defined = agents.get("implementer_profiles") if isinstance(agents, dict) else None
+    for verdict, name in profiles.items():
+        if not isinstance(name, str) or name not in (defined or {}):
+            raise ValueError(f"{label} profiles.{verdict} = {name!r} names no "
+                             "[agents.implementer_profiles] profile")
+    return (values | routes(table, label, "claude", CLI_DEFAULTS)
+            | dict(route=options["route"],
+                   route_confidence=float(options["route_confidence"]),
+                   profiles=dict(profiles)))
+
+
+def seat_table(table, label, keys):
+    if not isinstance(table, dict):
+        raise ValueError(f"{label} must be a table")
+    for key in table:
+        if key not in keys:
+            raise ValueError(f"{label} {key}: unknown key; {label} accepts: "
+                             f"{', '.join(sorted(keys))}")
+    return table
 
 
 def routes(table, label, default, defaults):

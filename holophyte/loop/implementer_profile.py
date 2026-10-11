@@ -15,6 +15,7 @@ from holophyte.agents.probes import (
 )
 from holophyte.config.config_tables import sweep_config
 from holophyte.config.reader import config_table
+from holophyte.loop.complexity import classifier_profile
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.stop import continuation
@@ -27,6 +28,9 @@ ESCALATION_NOTE = "escalation:"
 def profiled_run(run, task):
     project, conn, run_id = run.project, run.conn, run.run_id
     seats = implementer_profiles(project)
+    beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+    with heartbeat_while(conn, run_id, beat_s):
+        picked = classifier_profile(run, task)
     recorded = carried_profile(run)
     if recorded is not None:
         name = recorded["profile"]
@@ -39,21 +43,23 @@ def profiled_run(run, task):
     requested = ticket_template.parse(task.get("body") or "").implementer or None
     name, why, source = None, None, None
     earlier = escalated_from(conn, run_id)
+    candidate = requested or picked
+    if requested is None and picked is not None:
+        source = "classifier"
     if earlier is not None:
         why, source = f"escalated after run {earlier['run']} failed", "escalation"
-    elif requested in seats:
-        view = scoped(project, requested)
-        beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+    elif candidate in seats:
+        view = scoped(project, candidate)
         with heartbeat_while(conn, run_id, beat_s):
-            probe = probe_launch(view, seats[requested].turn(PROBE_GOAL),
-                                 PROBE_TIMEOUT, f"{PROFILES_KEY}.{requested}")
+            probe = probe_launch(view, seats[candidate].turn(PROBE_GOAL),
+                                 PROBE_TIMEOUT, f"{PROFILES_KEY}.{candidate}")
         if probe.ok:
-            name = requested
+            name = candidate
         else:
-            why = probe_diagnostic(project, probe)
+            why, source = probe_diagnostic(project, probe), None
             print(why)
-    elif requested is not None:
-        why = "unknown profile"
+    elif candidate is not None:
+        why, source = "unknown profile", None
     view = scoped(project, name)
     record(view, conn, run_id, name, requested, why, source)
     return dataclasses.replace(run, project=view)

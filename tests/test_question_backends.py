@@ -17,6 +17,7 @@ import store.tickets
 from holophyte import question_cli, questions, redact
 from holophyte.babysit import thread_mentions
 from holophyte.cli import report
+from holophyte.loop import failure_triage
 from holophyte.pr import github
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "questions"
@@ -52,9 +53,11 @@ sys.exit(int(code.read_text()) if code.exists() else 0)
 """
 
 
-def claude_output(choice, confidence, result=""):
+def claude_output(choice, confidence, result="", reason=None):
     document = json.loads((FIXTURES / "claude_answer.json").read_text())
     document["structured_output"] = {"choice": choice, "confidence": confidence}
+    if reason is not None:
+        document["structured_output"]["reason"] = reason
     document["result"] = result or json.dumps(document["structured_output"])
     return json.dumps(document)
 
@@ -369,6 +372,22 @@ class QuestionBackendTests(unittest.TestCase):
                          ("ask", "question"))
         self.assertEqual(self.conn.execute(
             "SELECT COUNT(*) FROM runEvents WHERE kind = 'question'").fetchone(), (0,))
+
+    def test_a_reason_is_answered_only_where_the_question_asks_for_one(self):
+        self.fake("claude", "question",
+                  claude_output("small", 0.9, reason="one config key"))
+        config = {"questions": {"failures": {}, "complexity": {}}}
+        complexity = questions.ask(questions.COMPLEXITY, {"title": "x"},
+                                   config=config, seat="complexity")
+        self.assertEqual(complexity,
+                         questions.Answer("small", 0.9, "one config key"))
+        self.assertIn('"reason"', self.calls("claude")[-1]["schema"])
+        self.fake("claude", "question",
+                  claude_output("infra", 0.9, reason="the host was down"))
+        failures = questions.ask(failure_triage.FAILURE_CAUSE, {"reason": "x"},
+                                 config=config, seat="failures")
+        self.assertEqual(failures, questions.Failure("invalid_response"))
+        self.assertNotIn('"reason"', self.calls("claude")[-1]["schema"])
 
     def test_config_refusals_name_the_key_and_claude_defaults(self):
         for table, key in (

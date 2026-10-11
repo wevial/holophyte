@@ -21,11 +21,13 @@ import holophyte.config.project
 import holophyte.loop.adjudicate
 import holophyte.loop.implement
 import holophyte.loop.review_round
+import holophyte.question_cli
 import store
 import store.tickets
 from holophyte.agents.fix_session import resume_argv
 from holophyte.agents.probes import PROBE_GOAL
 from holophyte.loop.runs import open_store
+from tests.failure_triage_fixture import FakeClaude, question_guard
 from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit, FakeAgent
 from tests.loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task
 
@@ -310,20 +312,13 @@ def resume_in_this_process(target, body):
         return holophyte.cli.operator.main(project, provider)
 
 
-class ImplementerProfileTests(LoopFixture):
+class ProfileRunFixture(LoopFixture):
     def run_ticket(self, body, *reviews, probe=(0, "ready"), pause=False,
-                   down=(), on_probe=None):
+                   down=(), on_probe=None, guard=None):
         with profile_routes(self.db, reviews, probe, pause, down,
                             on_probe) as dispatch:
-            self.loop(fake=dispatch, provider=StubProvider(
+            self.loop(fake=dispatch, guard=guard, provider=StubProvider(
                 dict(a_task(), body=body)))
-
-    def pause_on_sonnet_and_resume(self):
-        from holophyte.loop.stop import command
-        self.configure(PROFILES)
-        self.run_ticket(implementer_line("sonnet"), pause=True)
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
-        command(self.project, a_task()["id"], None, resume=True)
 
     def turns(self):
         return [json.loads(payload)["label"] for (payload,) in self.read(
@@ -333,6 +328,16 @@ class ImplementerProfileTests(LoopFixture):
     def profiles(self):
         return [json.loads(payload) for (payload,) in self.read(
             "SELECT payload FROM runEvents WHERE kind = 'implementer_profile'")]
+
+
+class ImplementerProfileTests(ProfileRunFixture):
+
+    def pause_on_sonnet_and_resume(self):
+        from holophyte.loop.stop import command
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("sonnet"), pause=True)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+        command(self.project, a_task()["id"], None, resume=True)
 
     def test_ticket_profile_routes_the_implement_and_fix_turns(self):
         self.configure(PROFILES)
@@ -451,3 +456,63 @@ class ImplementerProfileTests(LoopFixture):
         self.assertEqual(self.read(
             "SELECT outcome, failureKind FROM runs ORDER BY id")[-1],
             ("failed", "infra"))
+
+
+CLASSIFIER = PROFILES + '[questions.complexity]\nbackend = "claude"\n'
+ROUTING = CLASSIFIER + 'route = true\nprofiles = { small = "sonnet" }\n'
+
+
+class ComplexityClassifierTests(ProfileRunFixture):
+    def setUp(self):
+        super().setUp()
+        self.claude = FakeClaude(self)
+
+    def classify(self, config, body=VALID_BODY):
+        self.configure(config)
+        self.run_ticket(body, APPROVE, guard=question_guard())
+
+    def verdicts(self):
+        return [json.loads(payload) for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'complexity'")]
+
+    def test_a_verdict_is_recorded_and_changes_nothing_with_route_off(self):
+        self.claude.answer("small", 0.9, reason="one config key\nand a test")
+        self.classify(CLASSIFIER)
+        self.assertEqual(self.verdicts(), [{
+            "verdict": "small", "confidence": 0.9, "reason": "one config key",
+            "backend": "claude", "model": "haiku", "why": None}])
+        self.assertEqual(self.turns(), ["claude opus"])
+        self.assertEqual(self.profiles()[0]["source"], "default")
+
+    def test_a_confident_routed_verdict_picks_its_profile(self):
+        self.claude.answer("small", 0.9, reason="one config key")
+        self.classify(ROUTING)
+        self.assertEqual(self.turns(), ["claude sonnet"])
+        self.assertEqual(self.profiles(), [{
+            "profile": "sonnet", "source": "classifier", "requested": None,
+            "why": None, "label": "claude sonnet"}])
+
+    def test_a_low_confidence_verdict_keeps_the_classifier_out(self):
+        self.claude.answer("small", 0.5, reason="one config key")
+        self.classify(ROUTING)
+        self.assertEqual(self.turns(), ["claude opus"])
+        self.assertEqual(self.profiles()[0]["source"], "default")
+
+    def test_a_ticket_line_outranks_a_confident_verdict(self):
+        self.claude.answer("small", 0.9, reason="one config key")
+        self.classify(ROUTING + '[agents.implementer_profiles.opus]\n'
+                      'harness = "claude"\nmodel = "opus"\n',
+                      implementer_line("opus"))
+        self.assertEqual(self.profiles()[0]["profile"], "opus")
+        self.assertEqual(self.profiles()[0]["source"], "ticket")
+
+    def test_a_timed_out_classifier_leaves_the_run_on_its_usual_route(self):
+        self.claude.answer("small", 0.9, reason="one config key")
+        self.claude.stall(5)
+        with patch.object(holophyte.question_cli, "TIMEOUT", 0.5):
+            self.classify(ROUTING)
+        self.assertEqual(self.turns(), ["claude opus"])
+        verdict, = self.verdicts()
+        self.assertEqual((verdict["verdict"], verdict["why"]),
+                         (None, "timeout"))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])

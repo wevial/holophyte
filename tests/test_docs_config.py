@@ -15,7 +15,7 @@ from holophyte.config.config_tables import (
 )
 from holophyte.config.reader import AGENT_CONFIG_KEYS, KNOWN_KEYS, REVIEW_ROUTE_KEYS
 from holophyte.config.serve_settings import SERVE_KEYS
-from holophyte.questions import FAILURE_KEYS
+from holophyte.questions import COMPLEXITY_KEYS, FAILURE_KEYS
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
 TABLES = {
@@ -32,6 +32,7 @@ TABLES = {
     # The nested bucket validator has no exported key table.
     "merge.media_bucket": {"endpoint", "bucket", "public_base", "retention_days"},
     "questions.failures": FAILURE_KEYS,
+    "questions.complexity": COMPLEXITY_KEYS,
 }
 
 

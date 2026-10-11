@@ -38,8 +38,11 @@ class FakeClaude:
         (self.bin / f"claude.{mode}.out").write_text(output)
         (self.bin / f"claude.{mode}.exit").write_text(str(exit_code))
 
-    def answer(self, choice, confidence):
-        self.reply("question", claude_output(choice, confidence))
+    def answer(self, choice, confidence, reason=None):
+        self.reply("question", claude_output(choice, confidence, reason=reason))
+
+    def stall(self, seconds):
+        (self.bin / "claude.question.sleep").write_text(str(seconds))
 
     def codex_fallback(self, choice, confidence):
         path = self.bin / "codex"
