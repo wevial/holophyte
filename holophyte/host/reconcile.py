@@ -440,6 +440,8 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
             f"{', '.join(sorted({item[0] for item in arrived}))}; updated"
             f" {status.updated_at} (last seen {seen_at}), {threads} review"
             f" threads (last seen {seen_threads})") if arrived else reason
+    if arrived and kind == "conflict_wake":
+        note = f"{reason}; {note}"
     try:
         with store.transaction(conn):
             store.record_pr_seen(conn, run_id, mark)

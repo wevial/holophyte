@@ -649,11 +649,22 @@ class ContentWakeTests(MergeModeFixture):
         self.assertEqual(len(events), 1)
         self.assertIn('conflicted-head', events[0][0])
 
-    def reconcile_parked(self, mergeable, head='conflicted-head'):
+    def test_a_conflict_with_new_review_activity_names_both(self):
         from test_pullrequest_parked import ParkedPullRequestTests as H
-        H.fake_client(self, dict(H.OPEN_PULL, updatedAt=H.T1,
-                                 reviewThreads={'totalCount': 0},
-                                 mergeable=mergeable, headRefOid=head))
+        H.parked_with_mark(self, H.T1, 0)
+        self.reconcile_parked('CONFLICTING', updatedAt=H.T2, comments={
+            'nodes': [{'id': 'c', 'createdAt': H.T2,
+                       'author': {'login': 'person'}, 'body': 'Please check'}]})
+        ((note,),) = self.read("SELECT note FROM interventions"
+                               " WHERE action = 'babysit'")
+        self.assertIn(f'{self.URL} conflicts with main', note)
+        self.assertIn('new review activity', note)
+
+    def reconcile_parked(self, mergeable, head='conflicted-head', **fields):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.fake_client(self, dict(H.OPEN_PULL, **dict(
+            dict(updatedAt=H.T1, reviewThreads={'totalCount': 0},
+                 mergeable=mergeable, headRefOid=head), **fields)))
         conn = store.open(self.db)
         self.addCleanup(conn.close)
         with patch.object(sys, 'stdout', io.StringIO()):
