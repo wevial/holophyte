@@ -107,5 +107,15 @@
       "stop_requested": null,
       "stop_action": null
     }
+  ],
+  "queued": [
+    {
+      "ticket": "KO-9",
+      "ticket_url": null,
+      "title": "Approved ticket",
+      "reason": "approved for merge; the next claim resumes the candidate at the merge gate",
+      "pr_url": "https://github.com/example/repo/pull/9",
+      "waiting_ms": 60000
+    }
   ]
 }

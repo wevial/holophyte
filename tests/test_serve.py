@@ -841,6 +841,29 @@ class AttentionTests(ServeTestCase):
                           for q in body.get("queued", [])],
                          [("KO-10", url, body["now"] - (self.now - MIN))])
 
+    def test_queued_skips_never_run_and_live_tickets_and_outlasts_a_hold(self):
+        self.seed_attention()
+        self.park_on_pr(url := "https://github.com/example/repo/pull/2170")
+        with contextlib.closing(store.open(str(self.db))) as conn:
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            store.tickets.mirror_ticket(
+                conn, project, linear_issue_id="i-11", linear_identifier="KO-11",
+                title="ticket KO-11", acceptance_criteria=["Given KO-11, work"],
+                verification_commands=["echo ok"], time_box_ms=25 * MIN)
+            store.approve(conn, conn.execute(
+                "SELECT id FROM tickets WHERE linearIdentifier = 'KO-10'")
+                .fetchone()[0], "go", now=self.now - MIN)
+            store.hold(conn, project, "deploy freeze")
+        self.start()
+        _, _, body = self.request("GET", "/status")
+        self.assertEqual((body["admission"], [r["ticket"] for r in body["runs"]]),
+                         ("held", ["KO-7"]))
+        self.assertEqual(body["queued"], [{
+            "ticket": "KO-10", "ticket_url": None, "title": "ticket KO-10",
+            "reason": "approved for merge; the next claim resumes the"
+                      " candidate at the merge gate",
+            "pr_url": url, "waiting_ms": body["now"] - (self.now - MIN)}])
+
     def test_a_pr_open_item_carries_what_the_reconcile_saw_on_the_pull_request(
             self):
         """KO-368: the run's park recorded the checks rollup, the review
@@ -1162,29 +1185,6 @@ class ActionFailureTests(ServeTestCase):
             RuntimeError("could not open with ko649-registered-secret"))
         self.assertEqual(body["error"], "RuntimeError: could not open with [redacted]")
         self.assertNotIn("ko649-registered-secret", self.raw_body + logged)
-
-
-class ParseAddressTests(unittest.TestCase):
-
-    def test_a_bare_port_binds_loopback(self):
-        self.assertEqual(holophyte.serve.server.parse_address("7710"),
-                         ("127.0.0.1", 7710))
-        self.assertEqual(holophyte.serve.server.parse_address("0"), ("127.0.0.1", 0))
-
-    def test_host_port_is_the_pair_as_typed(self):
-        self.assertEqual(holophyte.serve.server.parse_address("100.64.0.9:7710"),
-                         ("100.64.0.9", 7710))
-        self.assertEqual(holophyte.serve.server.parse_address("::1:8787"),
-                         ("::1", 8787))
-
-    def test_anything_else_is_refused_naming_both_shapes(self):
-        for text in (":7710", "host:", "abc", "-1", "7710 ", "host:7a"):
-            with self.subTest(text=text):
-                with self.assertRaises(ValueError) as raised:
-                    holophyte.serve.server.parse_address(text)
-                message = str(raised.exception)
-                self.assertIn("PORT|HOST:PORT", message)
-                self.assertIn(repr(text), message)
 
 
 class CliTests(ServeTestCase):

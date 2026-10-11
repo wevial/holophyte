@@ -186,6 +186,9 @@ EXPECTED_READ = [
     "open_readonly",
     # KO-747: the store-mode notes the host sweep has yet to post.
     "pending_notes",
+    # HOLO-250: the `serve` daemon's Floor read of the ready tickets whose
+    # last run ended, waiting for the next claim.
+    "queued_tickets",
     # KO-409: the supervisor's read of the ready tickets owed a loop,
     # however they became ready.
     "ready_tickets",
