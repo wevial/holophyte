@@ -322,14 +322,16 @@ test("a peer run link stays in this console and authenticates the peer run page"
   } finally { window.location.hash = ""; }
 });
 
-test("a ci park waits on CI by its checks state with no Merge, while other parks keep their reason and Merge", async () => {
+test("a ci park waits on CI by its checks state and never draws Merge, while other parks keep their reason and Merge", async () => {
   const pending = { ...item, run: 51, ticket: "KO-51", park_kind: "ci", reason: "pending checks: unit",
     pr: { ...(item.pr as object), checks: "pending" } };
   const quiet = { ...item, run: 52, ticket: "KO-52", park_kind: "ci", asked_ms: status.now - 500000 };
   const human = { ...item, run: 53, ticket: "KO-53", park_kind: "pull_request", asked_ms: status.now - 400000 };
   const older = { ...item, run: 54, ticket: "KO-54", asked_ms: status.now - 300000 };
+  const unread = { ...item, run: 55, ticket: "KO-55", park_kind: "ci", asked_ms: status.now - 200000,
+    pr: { ...(item.pr as object), checks: null } };
   const hosts = [hostOf({ ...status, project: "/projects/repo", actions: true },
-    { level: "attention", now: status.now, items: [pending, quiet, human, older] })];
+    { level: "attention", now: status.now, items: [pending, quiet, human, older, unread] })];
   storeToken(host.address, "test-token");
   const deps = { fetch: tokenedFetch(async (url: string) => {
     const merge = url.match(/\/runs\/(\d+)\/merge$/);
@@ -345,7 +347,8 @@ test("a ci park waits on CI by its checks state with no Merge, while other parks
   expect(rows["KO-51"]![2]!.textContent).toContain("pending checks: unit");
   expect(within(rows["KO-51"]![1]!).getByRole("link", { name: "#2170" }).getAttribute("href")).toBe(item.pr_url!);
   expect(rows["KO-52"]![2]!.querySelector("p")!.textContent).toBe("Waiting on CI · checks green, quiet period");
-  for (const ticket of ["KO-51", "KO-52"]) {
+  expect(rows["KO-55"]![2]!.querySelector("p")!.textContent).toBe("Waiting for maintainer review");
+  for (const ticket of ["KO-51", "KO-52", "KO-55"]) {
     expect(within(rows[ticket]![4]!).getByRole("button", { name: "Open PR" })).toBeTruthy();
     expect(within(rows[ticket]![4]!).queryByRole("button", { name: "Merge" })).toBeNull();
   }

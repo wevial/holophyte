@@ -1,6 +1,6 @@
 import { Fragment, useId, useState } from "react";
 import { useTick } from "../hooks/useTick";
-import { describe, filterItems, orderByAge, prTitle, splitPullRequests, waitingOnCi, type ProjectChoice } from "../lib/attention";
+import { describe, filterItems, orderByAge, prTitle, splitPullRequests, type ProjectChoice } from "../lib/attention";
 import { projectName } from "../lib/derive";
 import { formatAge } from "../lib/format";
 import { hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
@@ -94,7 +94,7 @@ export function PullRequestTable({ hosts, project, now, actionFetch, polls = 0, 
                       prUrl={item.pr_url} runId={typeof item.run === "number" ? item.run : undefined}
                       daemon={host ? { base: host.base, actions: host.status?.actions === true, fetch: actionFetch } : undefined} />
                     {host?.status?.actions === true && typeof item.run === "number" && <>
-                      {waitingOnCi(item) == null && <MergeAction base={host.base} runId={item.run} prUrl={item.pr_url} polls={polls} deps={deps} fetch={actionFetch} />}
+                      {item.park_kind !== "ci" && <MergeAction base={host.base} runId={item.run} prUrl={item.pr_url} polls={polls} deps={deps} fetch={actionFetch} />}
                       <AskAction base={host.base} runId={item.run} prUrl={item.pr_url} polls={polls} deps={deps} fetch={actionFetch} />
                     </>}
                   </div></td>
