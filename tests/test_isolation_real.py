@@ -41,6 +41,80 @@ class IsolationRealTests(IsolationCase):
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
+    def test_real_codex_fallback_probe_reads_the_login_and_records_no_secret(self):
+        import json
+
+        from holophyte.agents import probes
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        release = self.fake_codex_release()
+        (release / "codex").write_text(
+            '#!/bin/sh\ngrep -q codex-login-secret'
+            ' "${CODEX_HOME:-$HOME/.codex}/auth.json" && echo ready\n')
+        codex_home = self.root / "codex-home"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text("codex-login-secret\n")
+        token = self.root / "token"
+        token.write_text("provider")
+        source = self.root / "worktree.env"
+        source.write_text("CODEX_HOME=/home/implementer/custom-codex\n")
+        path = f"{release}{os.pathsep}{os.environ.get('PATH', '')}"
+        for credential, allow in (
+                ({}, []),
+                ({}, ["CODEX_HOME"]),
+                ({"file": str(token),
+                  "destination": "/home/implementer/.codex/provider/token"}, [])):
+            with self.subTest(credential=credential, allow=allow):
+                self.table["worktree"] = {"env_source": str(source),
+                                          "env_allow": allow}
+                self.table["agents"] = {
+                    "implementer_isolation": "container",
+                    "implementer": {"harness": "claude"},
+                    "implementer_fallback": "codex exec -m MODEL",
+                    "implementer_credential": credential}
+                with patch.dict(os.environ, {"PATH": path,
+                                             "CODEX_HOME": str(codex_home)}):
+                    probe = probes.probe_seat(self.target, "implement",
+                                              fallback=True, timeout=120)
+                self.assertTrue(probe.ok, probe.describe())
+                recorded = (json.dumps(probe.to_json())
+                            + probes.probe_diagnostic(self.target, probe))
+                self.assertNotIn("codex-login-secret", recorded)
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
+    def test_real_codex_fallback_reads_the_host_login_read_only(self):
+        from holophyte.isolation import launcher
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        _, worktree = self.make_worktree()
+        release = self.fake_codex_release()
+        codex_home = self.root / "codex-home"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text("host-login\n")
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": {"harness": "claude"},
+                                "implementer_fallback": "codex exec -m MODEL"}
+        script = ("cat ~/.codex/auth.json; mkdir ~/.codex/sessions && echo writable;"
+                  " echo changed > ~/.codex/auth.json")
+        path = f"{release}{os.pathsep}{os.environ.get('PATH', '')}"
+        with patch.dict(os.environ, {"PATH": path, "CODEX_HOME": str(codex_home)}):
+            route = replace(launcher.route_for(self.target), writable=False)
+            code, output = launcher.launch(route, worktree, {},
+                                           ["/bin/sh", "-c", script])
+        self.assertNotEqual(code, 0, output)
+        self.assertEqual(output.split()[:2], ["host-login", "writable"], output)
+        self.assertIn("Read-only file system", output)
+        self.assertEqual((codex_home / "auth.json").read_text(), "host-login\n")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
     def test_real_session_files_persist_per_task_worktree(self):
         from holophyte.isolation import launcher
         from holophyte.isolation.isolation_git import git

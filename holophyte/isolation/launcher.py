@@ -26,6 +26,7 @@ class Route:
     memory: str = "4g"
     writable: bool = True
     codex: bool = False
+    codex_login: bool = False
 
 
 def runs_codex(value):
@@ -63,7 +64,8 @@ def route_for(project):
     validate_credential(credential)
     codex = any(runs_codex(table.get(key))
                 for key in ("implementer", "implementer_fallback"))
-    return Route(backend, image, credential, memory, writable, codex)
+    codex_login = runs_codex(table.get("implementer_fallback"))
+    return Route(backend, image, credential, memory, writable, codex, codex_login)
 
 
 def container_docker_problems(project, ticket):
@@ -189,6 +191,23 @@ def codex_mount_flags():
             raise RuntimeError(f"bind source {source} must not contain a colon")
         flags += ["--volume", f"{source}:{CODEX_BIN}/{name}:ro"]
     return flags
+
+
+CODEX_HOME = PurePosixPath("/home/implementer/.codex")
+CODEX_LOGIN = PurePosixPath("/opt/codex/login/auth.json")
+
+
+def codex_login_flags(credential, codex_home):
+    destination = PurePosixPath(credential.get("destination", "/"))
+    if destination == PurePosixPath(codex_home, CODEX_LOGIN.name):
+        return []
+    home = os.environ.get("CODEX_HOME") or Path.home() / ".codex"
+    source = Path(home, CODEX_LOGIN.name).resolve()
+    if not source.is_file():
+        return []
+    if ":" in str(source):
+        raise RuntimeError(f"bind source {source} must not contain a colon")
+    return ["--volume", f"{source}:{CODEX_LOGIN}:ro"]
 
 
 def private_directory(path):
@@ -331,8 +350,15 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
     command += file_mount_flags(mounts)
     if route.codex:
         command += codex_mount_flags()
-        argv = ["/bin/sh", "-c", f'PATH="{CODEX_BIN}:$PATH" exec "$@"', "codex",
-                *argv]
+        home = (env or {}).get("CODEX_HOME") or CODEX_HOME
+        login = codex_login_flags(credential, home) if route.codex_login else []
+        link = (f'{{ mkdir -p "${{CODEX_HOME:-{CODEX_HOME}}}" && ln -sf {CODEX_LOGIN} '
+                f'"${{CODEX_HOME:-{CODEX_HOME}}}/auth.json"; }} 2>/dev/null || '
+                f'{{ CODEX_HOME=$(mktemp -d) && export CODEX_HOME && ln -s '
+                f'{CODEX_LOGIN} "$CODEX_HOME/auth.json"; }} && ' if login else "")
+        command += login
+        argv = ["/bin/sh", "-c", f'{link}PATH="{CODEX_BIN}:$PATH" exec "$@"',
+                "codex", *argv]
     values = dict(
         env or {},
         **caches,
