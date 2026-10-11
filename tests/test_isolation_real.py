@@ -54,15 +54,15 @@ class IsolationRealTests(IsolationCase):
         self.table["agents"] = {"implementer_isolation": "container",
                                 "implementer": {"harness": "claude"},
                                 "implementer_fallback": "codex exec -m MODEL"}
-        script = ("cat /home/implementer/.codex/auth.json;"
-                  " echo changed > /home/implementer/.codex/auth.json")
+        script = ("cat ~/.codex/auth.json; mkdir ~/.codex/sessions && echo writable;"
+                  " echo changed > ~/.codex/auth.json")
         path = f"{release}{os.pathsep}{os.environ.get('PATH', '')}"
         with patch.dict(os.environ, {"PATH": path, "CODEX_HOME": str(codex_home)}):
             route = replace(launcher.route_for(self.target), writable=False)
             code, output = launcher.launch(route, worktree, {},
                                            ["/bin/sh", "-c", script])
         self.assertNotEqual(code, 0, output)
-        self.assertIn("host-login", output)
+        self.assertEqual(output.split()[:2], ["host-login", "writable"], output)
         self.assertIn("Read-only file system", output)
         self.assertEqual((codex_home / "auth.json").read_text(), "host-login\n")
 

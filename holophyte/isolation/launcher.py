@@ -193,12 +193,13 @@ def codex_mount_flags():
     return flags
 
 
-CODEX_LOGIN = PurePosixPath("/home/implementer/.codex/auth.json")
+CODEX_HOME = PurePosixPath("/home/implementer/.codex")
+CODEX_LOGIN = PurePosixPath("/opt/codex/login/auth.json")
 
 
 def codex_login_flags(credential):
     destination = PurePosixPath(credential.get("destination", "/"))
-    if destination.is_relative_to(CODEX_LOGIN.parent):
+    if destination.is_relative_to(CODEX_HOME):
         return []
     home = os.environ.get("CODEX_HOME") or Path.home() / ".codex"
     source = Path(home, CODEX_LOGIN.name).resolve()
@@ -349,10 +350,12 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
     command += file_mount_flags(mounts)
     if route.codex:
         command += codex_mount_flags()
-    if route.codex_login:
-        command += codex_login_flags(credential)
-        argv = ["/bin/sh", "-c", f'PATH="{CODEX_BIN}:$PATH" exec "$@"', "codex",
-                *argv]
+        login = codex_login_flags(credential) if route.codex_login else []
+        link = (f'mkdir -p {CODEX_HOME} && ln -sf {CODEX_LOGIN} '
+                f'{CODEX_HOME / CODEX_LOGIN.name} && ' if login else "")
+        command += login
+        argv = ["/bin/sh", "-c", f'{link}PATH="{CODEX_BIN}:$PATH" exec "$@"',
+                "codex", *argv]
     values = dict(
         env or {},
         **caches,

@@ -471,7 +471,7 @@ class IsolationTests(GoRaceCases, IsolationCase):
                           if part == "--volume"]
                 self.assertIn(f"{release}/codex:/opt/codex/bin/codex:ro", mounts)
 
-    def probe_codex_fallback(self, fallback):
+    def probe_codex_fallback(self, fallback, implementer=None):
         from holophyte.agents import probes
         from holophyte.isolation import launcher
 
@@ -480,7 +480,7 @@ class IsolationTests(GoRaceCases, IsolationCase):
         codex_home.mkdir()
         (codex_home / "auth.json").write_text("codex-login-secret")
         self.table["agents"] = {"implementer_isolation": "container",
-                                "implementer": {"harness": "claude"},
+                                "implementer": implementer or {"harness": "claude"},
                                 "implementer_fallback": fallback}
         path = f"{release}{os.pathsep}{os.environ.get('PATH', '')}"
         with (patch.dict(os.environ, {"PATH": path, "CODEX_HOME": str(codex_home)}),
@@ -497,13 +497,17 @@ class IsolationTests(GoRaceCases, IsolationCase):
         login, call, result = self.probe_codex_fallback("codex exec -m model")
         argv = call.args[0]
         mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
-        self.assertIn(f"{login}:/home/implementer/.codex/auth.json:ro", mounts)
+        self.assertIn(f"{login}:/opt/codex/login/auth.json:ro", mounts)
+        self.assertIn("ln -sf /opt/codex/login/auth.json "
+                      "/home/implementer/.codex/auth.json", " ".join(argv))
         self.assertNotIn("codex-login-secret", str(call))
         self.assertNotIn("codex-login-secret", str(result))
 
     def test_non_codex_fallback_probe_gets_no_codex_login(self):
-        _, call, _ = self.probe_codex_fallback("claude -p")
-        self.assertNotIn(".codex", " ".join(call.args[0]))
+        _, call, _ = self.probe_codex_fallback("claude -p", "codex exec -m model")
+        command = " ".join(call.args[0])
+        self.assertIn('PATH="/opt/codex/bin:$PATH" exec', command)
+        self.assertNotIn("auth.json", command)
 
     def test_quoted_codex_program_is_a_codex_implementer(self):
         from holophyte.isolation.launcher import route_for
