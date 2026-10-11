@@ -639,17 +639,7 @@ class ContentWakeTests(MergeModeFixture):
     def test_a_conflicting_park_is_sent_back_to_merge_main(self):
         from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_with_mark(self, H.T1, 0)
-        H.fake_client(self, dict(H.OPEN_PULL, updatedAt=H.T1,
-                                 reviewThreads={'totalCount': 0},
-                                 mergeable='CONFLICTING',
-                                 headRefOid='conflicted-head'))
-        conn = store.open(self.db)
-        self.addCleanup(conn.close)
-        with patch.object(sys, 'stdout', io.StringIO()):
-            holophyte.host.reconcile._reconcile_pull_requests(
-                self.project, conn,
-                conn.execute('SELECT id FROM projects').fetchone()[0],
-                StubProvider())
+        self.reconcile_parked('CONFLICTING')
         notes = self.read("SELECT note FROM interventions"
                           " WHERE action = 'babysit'")
         self.assertEqual(len(notes), 1)
