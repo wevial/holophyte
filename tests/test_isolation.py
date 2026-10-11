@@ -502,8 +502,9 @@ class IsolationTests(GoRaceCases, IsolationCase):
         argv = call.args[0]
         mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
         self.assertIn(f"{login}:/opt/codex/login/auth.json:ro", mounts)
-        self.assertIn("ln -sf /opt/codex/login/auth.json "
-                      "/home/implementer/.codex/auth.json", " ".join(argv))
+        self.assertIn('ln -sf /opt/codex/login/auth.json '
+                      '"${CODEX_HOME:-/home/implementer/.codex}/auth.json"',
+                      " ".join(argv))
         self.assertNotIn("codex-login-secret", str(call))
         self.assertNotIn("codex-login-secret", str(result))
 

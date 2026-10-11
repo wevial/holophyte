@@ -57,10 +57,17 @@ class IsolationRealTests(IsolationCase):
         (codex_home / "auth.json").write_text("codex-login-secret\n")
         token = self.root / "token"
         token.write_text("provider")
+        source = self.root / "worktree.env"
+        source.write_text("CODEX_HOME=/home/implementer/custom-codex\n")
         path = f"{release}{os.pathsep}{os.environ.get('PATH', '')}"
-        for credential in ({}, {"file": str(token), "destination":
-                                "/home/implementer/.codex/provider/token"}):
-            with self.subTest(credential=credential):
+        for credential, allow in (
+                ({}, []),
+                ({}, ["CODEX_HOME"]),
+                ({"file": str(token),
+                  "destination": "/home/implementer/.codex/provider/token"}, [])):
+            with self.subTest(credential=credential, allow=allow):
+                self.table["worktree"] = {"env_source": str(source),
+                                          "env_allow": allow}
                 self.table["agents"] = {
                     "implementer_isolation": "container",
                     "implementer": {"harness": "claude"},
