@@ -37,6 +37,12 @@ def outage_reason(command, output):
                  if any(sig in line for sig in signatures)), None)
 
 
+def failed_turn(output):
+    return (getattr(output, "timed_out", False)
+            or getattr(output, "is_error", False)
+            or getattr(output, "exit_code", None) != 0)
+
+
 def record_pending_switch(project, role, conn, run_id):
     """Startup has no run; its switch goes on the first turn it affects."""
     import store

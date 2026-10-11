@@ -380,7 +380,8 @@ def _budget_low():
 
 def _seen(status):
     at = max([status.updated_at or "", *(item[1] for item in status.activity)])
-    return (at or None, status.threads, status.checks, status.review,
+    return (at or None, status.threads, status.open_threads,
+            status.open_threads_floor, status.checks, status.review,
             status.title)
 
 
