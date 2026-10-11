@@ -333,6 +333,25 @@ class SteerNowTests(SweepTestCase):
         self.assertIn(NOTE, self.argv(1)[-1])
         self.assertEqual(self.notes(), [(1, self.run_id)])
 
+    def test_now_checks_the_run_profile_not_the_default_route(self):
+        script = self.stand_in("claude", first="", later="")
+        self.configure(f'[harnesses]\nclaude = "{script}"\n'
+                       '[agents]\nimplementer = "true"\n'
+                       '[agents.implementer_profiles.sonnet]\n'
+                       'harness = "claude"\nmodel = "sonnet"\n')
+        store.record_agent_session(self.conn, self.run_id, "a-session",
+                                   "implement", "primary")
+        store.record_event(self.conn, self.run_id, "implementer_profile",
+                           "implementer profile sonnet", level="detail",
+                           payload=json.dumps({"profile": "sonnet"}))
+        self.conn.commit()
+
+        code, said = self.steer_now_by_cli()
+
+        self.assertEqual(code, 0, said)
+        self.assertNotIn("cannot resume", said)
+        self.assertEqual(self.notes(), [(1, None)])
+
     def test_a_ready_ticket_with_no_run_refuses_now_and_writes_nothing(self):
         self.claude()
         store.tickets.mirror_ticket(

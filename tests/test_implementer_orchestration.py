@@ -6,6 +6,7 @@ Run: python3 -m unittest discover -s tests -p 'test_implementer_orchestration.py
 import json
 import subprocess
 import sys
+import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -260,12 +261,15 @@ def implementer_line(name):
 
 
 @contextmanager
-def profile_routes(db, reviews, probe=(0, "ready"), pause=False, down=()):
+def profile_routes(db, reviews, probe=(0, "ready"), pause=False, down=(),
+                   on_probe=None):
     """Implement and fix turns run through the real role dispatch, so their
     `agent_turn` labels come from the route the run resolved. A model in
     `down` is out of quota on every turn after its probe."""
     def runner(cmd, cwd, timeout, **kwargs):
         if cmd[-1] == PROBE_GOAL:
+            if on_probe is not None and "sonnet" in cmd:
+                on_probe()
             return probe if "sonnet" in cmd else (0, "ready")
         if any(model in cmd for model in down):
             return 1, "You've hit your limit"
@@ -308,8 +312,9 @@ def resume_in_this_process(target, body):
 
 class ImplementerProfileTests(LoopFixture):
     def run_ticket(self, body, *reviews, probe=(0, "ready"), pause=False,
-                   down=()):
-        with profile_routes(self.db, reviews, probe, pause, down) as dispatch:
+                   down=(), on_probe=None):
+        with profile_routes(self.db, reviews, probe, pause, down,
+                            on_probe) as dispatch:
             self.loop(fake=dispatch, provider=StubProvider(
                 dict(a_task(), body=body)))
 
@@ -409,3 +414,40 @@ class ImplementerProfileTests(LoopFixture):
             self.loop(fake=dispatch, provider=StubProvider(*tickets))
         self.assertEqual(self.turns(),
                          ["claude sonnet", "codex", "codex", "claude opus"])
+
+    def test_a_slow_profile_probe_keeps_the_run_heartbeating(self):
+        self.configure(PROFILES + '[supervisor]\nheartbeat_stale_min = 0.002\n')
+        beats = []
+
+        def slow_probe():
+            conn = store.open(self.db)
+            try:
+                for _ in range(2):
+                    beats.append(conn.execute(
+                        "SELECT lastHeartbeat FROM runs").fetchone()[0])
+                    time.sleep(0.4)
+            finally:
+                conn.close()
+
+        self.run_ticket(implementer_line("sonnet"), APPROVE,
+                        on_probe=slow_probe)
+        self.assertLess(beats[0], beats[1])
+        self.assertEqual(self.turns(), ["claude sonnet"])
+
+    def test_merge_gate_resume_whose_profile_left_the_config_stops(self):
+        from pause_fixture import PauseReply
+
+        from holophyte.loop.stop import command
+        self.configure(PROFILES + '[merge]\napprove = "human"\n')
+        self.run_ticket(implementer_line("sonnet"),
+                        PauseReply(self.db, APPROVE))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "merge_gate")])
+        command(self.project, a_task()["id"], None, resume=True)
+        self.configure('[agents.implementer]\nharness = "claude"\n'
+                       'model = "opus"\n[merge]\napprove = "human"\n')
+        self.run_ticket(implementer_line("sonnet"))
+        self.assertEqual(len(self.profiles()), 1)
+        self.assertEqual(self.read(
+            "SELECT outcome, failureKind FROM runs ORDER BY id")[-1],
+            ("failed", "infra"))

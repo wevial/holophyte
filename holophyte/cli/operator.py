@@ -26,6 +26,7 @@ from holophyte.host.supervisor import linear_budget_low, supervisor_liveness_lin
 from holophyte.loop.claim import _claim_next
 from holophyte.loop.claim_store import BOARD_DOWN, announce, store_mode, sync_board
 from holophyte.loop.gates import sh
+from holophyte.loop.implementer_profile import run_view
 from holophyte.loop.pool import scheduler
 from holophyte.loop.pool_handoff import (  # noqa: F401
     _fetch_main,
@@ -420,9 +421,11 @@ def _interrupts(target, conn, ticket_id, out):
     if run is None or not babysat and (
             run.phase not in steer_notes.LIVE_PHASES or run.prUrl):
         return True
+    view = run_view(target, conn, live)
     argv, reason = ((None, "fallback implementer route")
                     if "implementer" in active_fallbacks(target)
-                    else resume_argv(target, conn, live))
+                    else (None, "implementer profile no longer configured")
+                    if view is None else resume_argv(view, conn, live))
     if argv is None:
         print(f"[holo2] --now: cannot resume the implementer session"
               f" ({reason}); the note lands at the next turn boundary",

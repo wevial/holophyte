@@ -2,6 +2,7 @@ import dataclasses
 import json
 
 import store
+import store.read
 import ticket_template
 from holophyte.agents.agent_routes import ProfileRoutes, routes
 from holophyte.agents.agent_turns import turn_label
@@ -12,8 +13,10 @@ from holophyte.agents.probes import (
     probe_diagnostic,
     probe_launch,
 )
+from holophyte.config.config_tables import sweep_config
 from holophyte.config.reader import config_table
 from holophyte.loop.gates import InfraFailure
+from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.stop import continuation
 from holophyte.redact import safe_print as print
 
@@ -23,7 +26,7 @@ EVENT = "implementer_profile"
 def profiled_run(run, task):
     project, conn, run_id = run.project, run.conn, run.run_id
     seats = implementer_profiles(project)
-    recorded = recorded_profile(conn, run_id)
+    recorded = carried_profile(run)
     if recorded is not None:
         name = recorded["profile"]
         if name is not None and name not in seats:
@@ -36,8 +39,10 @@ def profiled_run(run, task):
     name, why = None, None
     if requested in seats:
         view = scoped(project, requested)
-        probe = probe_launch(view, seats[requested].turn(PROBE_GOAL),
-                             PROBE_TIMEOUT, f"{PROFILES_KEY}.{requested}")
+        beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+        with heartbeat_while(conn, run_id, beat_s):
+            probe = probe_launch(view, seats[requested].turn(PROBE_GOAL),
+                                 PROBE_TIMEOUT, f"{PROFILES_KEY}.{requested}")
         if probe.ok:
             name = requested
         else:
@@ -63,7 +68,19 @@ def scoped(project, name):
     return view
 
 
-def recorded_profile(conn, run_id):
+def carried_profile(run):
+    conn, run_id = run.conn, run.run_id
+    row = latest_profile(conn, run_id)
+    if row is None or row[0] == run_id:
+        return row and row[1]
+    resumes = continuation(conn, run_id) is not None or (
+        store.read.approved_candidate(
+            conn, store.read.run_snapshot(conn, run_id).ticketId, run_id)
+        is not None and run.wt.exists())
+    return row[1] if resumes else None
+
+
+def latest_profile(conn, run_id):
     if conn is None or run_id is None:
         return None
     row = conn.execute(
@@ -71,9 +88,15 @@ def recorded_profile(conn, run_id):
         " JOIN runs current ON current.ticketId = r.ticketId"
         " WHERE current.id = ? AND r.id <= current.id AND e.kind = ?"
         " ORDER BY e.id DESC LIMIT 1", (run_id, EVENT)).fetchone()
-    if row is None or (row[0] != run_id and continuation(conn, run_id) is None):
+    return row and (row[0], json.loads(row[1]))
+
+
+def run_view(project, conn, run_id):
+    row = latest_profile(conn, run_id)
+    name = row and row[1]["profile"]
+    if name is not None and name not in implementer_profiles(project):
         return None
-    return json.loads(row[1])
+    return scoped(project, name)
 
 
 def record(view, conn, run_id, name, requested, why):
