@@ -13,6 +13,7 @@ from unittest.mock import patch
 import store
 from holophyte.config import config_tables
 from holophyte.config.project import Project
+from holophyte.loop import task_worktree
 from holophyte.story.witness import LOG_TAIL_BYTES, main_tip, red_kind, run_witnesses
 from store.stories import approve_story, file_story, witness_ledger
 
@@ -393,6 +394,145 @@ class WitnessWorktreeTests(WitnessRunnerFixture, unittest.TestCase):
                               Path(row.evidencePath).read_text())
         self.assertFalse(self.marker.exists())
         self.assertEqual(len(git(self.repo, "worktree", "list").splitlines()), 1)
+
+
+class WitnessSetupTests(WitnessRunnerFixture, unittest.TestCase):
+    def test_each_witness_command_sees_the_files_worktree_setup_writes(self):
+        target = self.project(
+            '[worktree]\nsetup = ["echo e2e > .env.e2e.local"]\n')
+        needs_env = "test -f .env.e2e.local && {} -m unittest tests.{}"
+        self.approve([
+            ("W1", "tests/test_w1.py", needs_env.format(PYTHON, "test_w1"),
+             PASSES),
+            ("W2", "tests/test_w2.py", needs_env.format(PYTHON, "test_w2"),
+             PASSES)])
+
+        rows = run_witnesses(target, self.conn, self.story_id,
+                             main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual([(row.witnessKey, row.verdict) for row in rows],
+                         [("W1", "green"), ("W2", "green")])
+
+    def test_a_failed_setup_is_red_unrun_with_the_setup_output_logged(self):
+        target = self.project(
+            '[worktree]\nsetup = ["printf \'prisma %s\\\\n\' broke; exit 3"]\n')
+        touch = f"touch {shlex.quote(str(self.marker))}"
+        self.approve([("W1", "tests/test_w1.py", touch, PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual((row.verdict, row.redKind), ("red", "exception"))
+        log = Path(row.evidencePath).read_text()
+        self.assertIn("[setup failed]", log)
+        self.assertIn("prisma broke", log)
+        self.assertFalse(self.marker.exists())
+
+    def test_a_passing_setup_output_is_kept_in_the_witness_log(self):
+        target = self.project(
+            '[worktree]\nsetup = ["printf \'installed %s\\\\n\' $((6 * 7))"]\n')
+        self.approve([("W1", "tests/test_w1.py",
+                       f"{PYTHON} -m unittest tests.test_w1", PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual(row.verdict, "green")
+        self.assertIn("installed 42", Path(row.evidencePath).read_text())
+
+    def test_a_setup_past_the_budget_is_an_error_and_is_stopped(self):
+        target = self.project(
+            '[story]\nwitness_sec = 1\n[worktree]\nsetup = ["sleep 5"]\n')
+        touch = f"touch {shlex.quote(str(self.marker))}"
+        self.approve([("W1", "tests/test_w1.py", touch, PASSES)])
+
+        started = time.monotonic()
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "loop", copy_files=True)
+
+        self.assertLess(time.monotonic() - started, 4)
+        self.assertEqual((row.verdict, row.redKind), ("error", None))
+        self.assertFalse(self.marker.exists())
+
+    def test_without_setup_commands_a_tracked_env_file_is_left_alone(self):
+        source = self.root / "env.source"
+        source.write_text("PUBLIC=from-source\n")
+        target = self.project(f'[worktree]\nenv_source = "{source}"\n'
+                              'env_allow = ["PUBLIC"]\n')
+        commit_file(self.repo, ".env", "PUBLIC=tracked\n", "tracked env")
+        self.approve([("W1", "tests/test_w1.py",
+                       "grep -qx PUBLIC=tracked .env && "
+                       f"{PYTHON} -m unittest tests.test_w1", PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual(row.verdict, "green")
+
+    def test_a_setup_that_cannot_launch_is_red_with_the_reason_logged(self):
+        target = self.project('[worktree]\nsetup = ["true"]\n')
+        touch = f"touch {shlex.quote(str(self.marker))}"
+        self.approve([("W1", "tests/test_w1.py", touch, PASSES)])
+        unlaunchable = patch("holophyte.loop.task_worktree.run_verify",
+                             side_effect=FileNotFoundError("no docker binary"))
+
+        with unlaunchable:
+            (row,) = run_witnesses(target, self.conn, self.story_id,
+                                   main_tip(target), "loop", copy_files=True)
+
+        self.assertEqual((row.verdict, row.redKind), ("red", "exception"))
+        log = Path(row.evidencePath).read_text()
+        self.assertIn("[setup failed]", log)
+        self.assertIn("no docker binary", log)
+        self.assertFalse(self.marker.exists())
+
+    def test_a_later_setup_that_cannot_launch_keeps_the_earlier_output(self):
+        target = self.project('[worktree]\nsetup = '
+                              '["printf \'first-%s\\\\n\' done", "docker up"]\n')
+        self.approve([("W1", "tests/test_w1.py", "true", PASSES)])
+        real = task_worktree.run_verify
+
+        def launch(command, *args, **kwargs):
+            if command == "docker up":
+                raise FileNotFoundError("no docker binary")
+            return real(command, *args, **kwargs)
+
+        with patch("holophyte.loop.task_worktree.run_verify",
+                   side_effect=launch):
+            (row,) = run_witnesses(target, self.conn, self.story_id,
+                                   main_tip(target), "loop", copy_files=True)
+
+        self.assertEqual((row.verdict, row.redKind), ("red", "exception"))
+        log = Path(row.evidencePath).read_text()
+        self.assertIn("first-done", log)
+        self.assertIn("no docker binary", log)
+
+    def test_a_witness_command_out_of_budget_keeps_the_setup_output(self):
+        target = self.project(
+            '[story]\nwitness_sec = 1\n'
+            '[worktree]\nsetup = ["printf \'setup-%s\\\\n\' marker"]\n')
+        self.approve([("W1", "tests/test_w1.py", "sleep 5", PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "loop", copy_files=True)
+
+        self.assertEqual(row.verdict, "error")
+        log = Path(row.evidencePath).read_text()
+        self.assertIn("setup-marker", log)
+        self.assertIn("timed out", log)
+
+    def test_a_termination_during_setup_ends_the_pass(self):
+        target = self.project('[worktree]\nsetup = ["true"]\n')
+        self.approve([("W1", "tests/test_w1.py", "true", PASSES)])
+        terminated = patch("holophyte.loop.task_worktree.run_verify",
+                           side_effect=SystemExit(143))
+
+        with terminated, self.assertRaises(SystemExit) as raised:
+            run_witnesses(target, self.conn, self.story_id, main_tip(target),
+                          "loop", copy_files=True)
+
+        self.assertEqual(raised.exception.code, 143)
+        self.assertEqual(witness_ledger(self.conn, self.story_id), [])
 
 
 class WitnessBudgetConfigTests(WitnessRunnerFixture, unittest.TestCase):
