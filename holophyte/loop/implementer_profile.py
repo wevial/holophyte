@@ -103,7 +103,7 @@ def run_view(project, conn, run_id):
     return scoped(project, name)
 
 
-def record(view, conn, run_id, name, requested, why, source=None):
+def record(view, conn, run_id, name, requested, why, source):
     label = turn_label(view, "implement")
     if conn is None or run_id is None:
         return
