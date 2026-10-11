@@ -19,13 +19,23 @@ def newest_payload(conn, run_id, kind):
     return None if row is None else json.loads(row[0])
 
 
+def run_profile(conn, run_id):
+    row = conn.execute(
+        "SELECT e.payload FROM runEvents e JOIN runs r ON r.id = e.runId"
+        " JOIN runs current ON current.ticketId = r.ticketId"
+        " WHERE current.id = ? AND r.id <= current.id"
+        " AND e.kind = 'implementer_profile' ORDER BY e.id DESC LIMIT 1",
+        (run_id,)).fetchone()
+    return {} if row is None else json.loads(row[0])
+
+
 def classified_runs(conn):
     runs = []
     for run in store.read.ended_runs(conn):
         verdict = newest_payload(conn, run.id, "complexity")
         if verdict is None:
             continue
-        profile = newest_payload(conn, run.id, "implementer_profile") or {}
+        profile = run_profile(conn, run.id)
         shadow = newest_payload(conn, run.id, "shadow_result")
         (attempt,) = conn.execute("SELECT attempt FROM runs WHERE id = ?",
                                   (run.id,)).fetchone()

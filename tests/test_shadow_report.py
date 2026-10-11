@@ -279,3 +279,19 @@ class ComplexityReportTests(ReportStoreCase):
     def test_a_store_without_complexity_events_prints_no_section(self):
         self.run_with(1, [])
         self.assertFalse([line for line in self.report() if "complexity" in line])
+
+    def test_a_resumed_run_shows_the_profile_its_earlier_attempt_recorded(self):
+        paused = self.run_with(1, [
+            ("implementer_profile", profile("sonnet", "ticket"))],
+            outcome="paused")
+        (ticket,) = self.conn.execute("SELECT ticketId FROM runs WHERE id = ?",
+                                      (paused,)).fetchone()
+        resumed = store.claim(self.conn, self.project_id, ticket, now=AT + 100)
+        store.record_event(self.conn, resumed, "complexity", "complexity",
+                           level="detail",
+                           payload=json.dumps(complexity("small", 0.9)))
+        self.conn.commit()
+        finish_run(self.conn, resumed, "merged", now=AT + 200)
+        (row,) = complexity_rows(self.section())
+        self.assertEqual((row["profile"], row["source"], row["first"]),
+                         ("sonnet", "ticket", "-"))
