@@ -6,6 +6,7 @@ import holophyte.serve.server
 import store
 from holophyte.config.project import Project
 from store.operator_notes import consume
+from tests.phase_fixture import park_run
 
 NOW = 1_750_000_000_000
 
@@ -28,7 +29,8 @@ def normalize_contract(value, key=""):
 
 
 def contract_answers(case):
-    """A reviewed run plus an unestimated run predating host recording."""
+    """A reviewed run, an unestimated run predating host recording, and an
+    approved pull request waiting for a claim."""
     case.seed()
     with store.open(str(case.db)) as conn:
         store.record_review_round(
@@ -59,6 +61,17 @@ def contract_answers(case):
             verification_commands=["echo ok"], time_box_ms=None)
         store.tickets.transition(conn, ticket, "in_flight")
         unestimated_run = store.claim(conn, project, ticket, now=NOW)
+        approved = store.tickets.mirror_ticket(
+            conn, project, linear_issue_id="issue-9", linear_identifier="KO-9",
+            title="Approved ticket", acceptance_criteria=["Merge once approved"],
+            verification_commands=["echo ok"], time_box_ms=None)
+        store.tickets.transition(conn, approved, "in_flight")
+        parked = store.claim(conn, project, approved, now=NOW - 180_000)
+        store.tickets.transition(conn, approved, "blocked_on_operator")
+        park_run(conn, parked, "awaiting_merge_approval", "PR open",
+                 candidate_sha="a" * 40, pr_url="https://github.com/example/repo/pull/9",
+                 park_kind="pull_request", now=NOW - 120_000)
+        store.approve(conn, approved, "go", now=NOW - 60_000)
     case.null_host(unestimated_run)
     target = Project.locate(case.target)
     answers = {}

@@ -33,16 +33,20 @@
   "now": 1750000000000,
   "toil": {
     "24h": {
-      "interventions": 0,
+      "interventions": 1,
       "merged": 0,
       "per_merge": null,
-      "by_action": {}
+      "by_action": {
+        "approve": 1
+      }
     },
     "7d": {
-      "interventions": 0,
+      "interventions": 1,
       "merged": 0,
       "per_merge": null,
-      "by_action": {}
+      "by_action": {
+        "approve": 1
+      }
     }
   },
   "daemon": {
