@@ -14,8 +14,9 @@ import holophyte.config.checks
 import store
 import store.tickets
 from holophyte.agents.fix_session import resume_argv
+from holophyte.agents.probes import PROBE_GOAL
 from holophyte.loop.runs import open_store
-from tests.fake_agent import APPROVE, Commit, FakeAgent
+from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit, FakeAgent
 from tests.loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task
 
 SUBAGENT_PHRASES = (
@@ -227,3 +228,99 @@ class OrchestrationResumeTests(LoopFixture):
         with_key = self.resume(CODEX + 'orchestration = "subagents"\n')
         without = self.resume(CODEX)
         self.assertEqual(with_key, without)
+
+
+PROFILES = ('[agents.implementer]\nharness = "claude"\nmodel = "opus"\n'
+            '[agents.implementer_profiles.sonnet]\nharness = "claude"\n'
+            'model = "sonnet"\n')
+
+
+def implementer_line(name):
+    return VALID_BODY.replace("Depends on: none\n",
+                              f"Depends on: none\nImplementer: {name}\n")
+
+
+class ImplementerProfileTests(LoopFixture):
+    """Implement and fix turns run through the real role dispatch, so their
+    `agent_turn` labels come from the route the run resolved."""
+
+    def run_ticket(self, body, *reviews, probe=(0, "ready"), pause=False):
+        def runner(cmd, cwd, timeout, **kwargs):
+            if cmd[-1] == PROBE_GOAL:
+                return probe if "sonnet" in cmd else (0, "ready")
+            Commit("the thing").play(Path(cwd), len(self.turns()) + 1)
+            if pause:
+                conn = store.open(self.db)
+                run, = conn.execute("SELECT id FROM runs WHERE endedAt IS NULL"
+                                    ).fetchone()
+                store.pause(conn, run, "reboot writer")
+                conn.close()
+            return 0, "done"
+
+        reviewer = FakeAgent(*reviews)
+
+        def dispatch(target, role, goal, cwd, **kwargs):
+            if role != "implement":
+                return reviewer(target, role, goal, cwd, **kwargs)
+            return holophyte.agents.roles.agent(target, role, goal, cwd,
+                                                **kwargs)
+
+        with patch.object(holophyte.agents.roles, "run_capped", runner), \
+                patch.object(holophyte.agents.probes, "run_capped", runner):
+            self.loop(fake=dispatch, provider=StubProvider(
+                dict(a_task(), body=body)))
+
+    def turns(self):
+        return [json.loads(payload)["label"] for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'agent_turn' "
+            "ORDER BY id")]
+
+    def profiles(self):
+        return [json.loads(payload) for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'implementer_profile'")]
+
+    def test_ticket_profile_routes_the_implement_and_fix_turns(self):
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("sonnet"), REQUEST_CHANGES, APPROVE)
+        self.assertEqual(self.turns(), ["claude sonnet", "claude sonnet"])
+        self.assertEqual(self.profiles(), [{
+            "profile": "sonnet", "source": "ticket", "requested": "sonnet",
+            "why": None, "label": "claude sonnet"}])
+
+    def test_ticket_without_a_line_runs_on_the_default(self):
+        self.configure(PROFILES)
+        self.run_ticket(VALID_BODY, APPROVE)
+        self.assertEqual(self.turns(), ["claude opus"])
+        self.assertEqual(self.profiles(), [{
+            "profile": None, "source": "default", "requested": None,
+            "why": None, "label": "claude opus"}])
+
+    def test_unknown_profile_runs_on_the_default(self):
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("haiku"), APPROVE)
+        self.assertEqual(self.turns(), ["claude opus"])
+        self.assertEqual(self.profiles(), [{
+            "profile": None, "source": "default", "requested": "haiku",
+            "why": "unknown profile", "label": "claude opus"}])
+
+    def test_profile_whose_probe_fails_runs_on_the_default(self):
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("sonnet"), APPROVE,
+                        probe=(1, "sonnet route refused"))
+        self.assertEqual(self.turns(), ["claude opus"])
+        event, = self.profiles()
+        self.assertEqual((event["profile"], event["requested"]),
+                         (None, "sonnet"))
+        self.assertIn("probe failed (exit 1)", event["why"])
+        self.assertIn("sonnet route refused", event["why"])
+
+    def test_continuation_in_a_new_process_keeps_the_profile(self):
+        from holophyte.loop.stop import command
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("sonnet"), pause=True)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+        command(self.project, a_task()["id"], None, resume=True)
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("sonnet"), REQUEST_CHANGES, APPROVE)
+        self.assertEqual(self.turns(), ["claude sonnet", "claude sonnet"])
+        self.assertEqual(len(self.profiles()), 1)

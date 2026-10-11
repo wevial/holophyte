@@ -16,6 +16,8 @@ WRITING_ROLES = ("implementer", "trimmer")
 TABLE_KEYS = ("harness", "model", "effort")
 IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
 SHADOW_KEY = "implementer_shadow"
+PROFILES_KEY = "implementer_profiles"
+PROFILE_NAME = re.compile(r"[A-Za-z0-9_-]+")
 
 SUBAGENTS_BRIEF = (
     "\n\nYou may orchestrate subagents for this ticket. Independent pieces "
@@ -227,12 +229,13 @@ class Seat:
 
 
 def parse_role(where, key, table):
-    role = "implementer" if key == SHADOW_KEY else key
+    profile = key.startswith(PROFILES_KEY + ".")
+    role = "implementer" if key == SHADOW_KEY or profile else key
     if role not in TABLE_ROLES:
         raise SystemExit(
             f"{where}: [agents.{key}]: only {', '.join(TABLE_ROLES)} may be a "
             f"table; write [agents] {key} as a command string")
-    accepted = IMPLEMENTER_KEYS if key == "implementer" else TABLE_KEYS
+    accepted = IMPLEMENTER_KEYS if key == "implementer" or profile else TABLE_KEYS
     for option in table:
         if option not in accepted:
             raise SystemExit(
@@ -269,19 +272,19 @@ def parse_role(where, key, table):
         raise SystemExit(
             f"{where}: [agents.{key}] effort must be one of "
             f"{', '.join(adapter.efforts)}, got {effort!r}")
-    check_orchestration(where, table, adapter)
+    check_orchestration(where, table, adapter, key)
     return adapter
 
 
-def check_orchestration(where, table, adapter):
+def check_orchestration(where, table, adapter, key="implementer"):
     mode = table.get("orchestration", "off")
     if mode not in ORCHESTRATION_MODES:
         raise SystemExit(
-            f"{where}: [agents.implementer] orchestration must be one of "
+            f"{where}: [agents.{key}] orchestration must be one of "
             f"{', '.join(ORCHESTRATION_MODES)}, got {mode!r}")
     if mode != "off" and mode not in adapter.orchestrations:
         raise SystemExit(
-            f"{where}: [agents.implementer] orchestration: harness "
+            f"{where}: [agents.{key}] orchestration: harness "
             f"{adapter.name!r} supports "
             f"{', '.join(['off', *sorted(adapter.orchestrations)])}, "
             f"not {mode!r}")
@@ -343,6 +346,7 @@ def check_target(target):
         seat(target, role)
         seat(target, role, fallback=True)
     shadow_seat(target)
+    implementer_profiles(target)
     check_fallback_orchestration(where, config_table(target, "agents"))
     if seat(target, "implement") is None:
         return
@@ -378,6 +382,32 @@ def shadow_seat(target):
             f"[agents.{SHADOW_KEY}] table")
     return table_seat(target, where, SHADOW_KEY, table, "implementer",
                       launched=True)
+
+
+def implementer_profiles(target):
+    from holophyte.config.reader import config_table
+    profiles = config_table(target, "agents").get(PROFILES_KEY)
+    if profiles is None:
+        return {}
+    where = f"[holo2] {target.config_path}"
+    if not isinstance(profiles, dict):
+        raise SystemExit(
+            f"{where}: [agents] {PROFILES_KEY}: write each profile as an "
+            f"[agents.{PROFILES_KEY}.NAME] table")
+    seats = {}
+    for name, table in profiles.items():
+        key = f"{PROFILES_KEY}.{name}"
+        if not PROFILE_NAME.fullmatch(name):
+            raise SystemExit(
+                f"{where}: [agents.{key}]: a profile name takes only letters, "
+                f"digits, _ and -")
+        if not isinstance(table, dict):
+            raise SystemExit(
+                f"{where}: [agents.{key}]: write it as a table with harness, "
+                f"model, effort and orchestration, not a command string")
+        seats[name] = table_seat(target, where, key, table, "implementer",
+                                 launched=True)
+    return seats
 
 
 def table_seat(target, where, key, table, role, *, launched):

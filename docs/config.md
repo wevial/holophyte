@@ -91,6 +91,7 @@ implementer's command and isolation settings.
 | `adjudicator_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup adjudicator. |
 | `adversary_fallback` | Default: Absent (disabled) | Non-empty command string distinct from `adversary`; set for a probed backup adversary. When it is set startup probes the adversary seat, and an adversary turn whose output carries an outage line probes it and switches to it, as `reviewer_fallback` does. |
 | `trimmer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from `trimmer`; set for a probed backup trimmer. Startup activates it when the trimmer's probe fails and its own passes, and a trim turn whose output carries an outage line switches to it; a trimmer that fails with no fallback, or a fallback that fails its probe, reverts that run's trim. |
+| `implementer_profiles` | Default: Absent (every ticket runs on `[agents.implementer]`) | Only tables `[agents.implementer_profiles.NAME]`, `NAME` of letters, digits, `_` and `-`, each with `harness`, `model`, `effort` and `orchestration` under the rules of `[agents.implementer]`; startup refuses a non-table, a command string, an unknown key, a harness that cannot implement, a bad effort or a bad name, naming `[agents.implementer_profiles.NAME]`. A ticket's `Implementer: NAME` line in "Estimate & dependencies" runs that run's implement and fix turns on the profile in place of `[agents.implementer]`, which stays the default (see below). |
 | `implementer_shadow` | Default: Absent (no shadow) | Only the table `[agents.implementer_shadow]`, with `harness`, `model` and `effort` under the same rules as `[agents.implementer]` (no `orchestration`); startup refuses a command string, an unknown key, a harness that cannot implement or a bad effort, naming `[agents.implementer_shadow]`. Set it to run a second implementer on a claimed run's ticket for comparison: the shadow probes its route, implements the ticket once in its own worktree `SLUG.shadow` on the local branch `shadow/SLUG`, cut from the run's base commit, runs the ticket's verify commands and the baseline checks, and records one `shadow_result` run event (see below). It never pushes, opens a pull request, merges, writes to the board, changes the run's phase or adds to its working time, and a down shadow route switches no route. `--report` compares each shadowed run's primary and shadow implementations side by side. |
 
 ```toml
@@ -177,6 +178,31 @@ shadow's commits stay on a local `shadow/SLUG` branch: list them with
 `git branch -D shadow/SLUG` once its diff is no longer needed. The factory never pushes or deletes them, and an
 existing `shadow/SLUG` branch or `SLUG.shadow` path is left untouched: the
 shadow records `branch_exists` and stops.
+
+`[agents.implementer_profiles.NAME]` names an implementer route a ticket can
+pick with an `Implementer: NAME` line beside its estimate:
+
+```toml
+[agents.implementer]
+harness = "claude"
+model = "opus"
+
+[agents.implementer_profiles.sonnet]
+harness = "claude"
+model = "sonnet"
+effort = "high"
+```
+
+Before a run's first agent turn the claim resolves its profile. A name the
+config defines is probed once; when the probe passes, every implement and fix
+turn of the run uses the profile, its orchestration, isolation mounts and
+resume included, and `implementer_fallback` keeps its outage role. A name the
+config does not define, or a profile whose probe fails, runs on
+`[agents.implementer]`. Each run records one `implementer_profile` run event
+with the `profile` used (or null), its `source` (`ticket` or `default`), the
+`requested` name (or null), `why` it fell back (null, `unknown profile` or the
+probe's diagnostic) and the route `label` its turns record. A continuation of
+a paused run reuses the recorded profile without a new probe or event.
 
 `[agents.reviewer] harness = "codex"` (and the same for `adjudicator`) does
 what a host wrapper script used to. Each turn runs in a throwaway detached

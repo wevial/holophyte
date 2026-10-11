@@ -23,6 +23,7 @@ from holophyte.loop.gates import (
     MergeParked as MergeParked,
 )
 from holophyte.loop.implement import _check_run_cap, _implement, _timed
+from holophyte.loop.implementer_profile import profiled_run
 from holophyte.loop.merge_gate import (
     DriftRequeued,
     _gate_lock,
@@ -49,6 +50,7 @@ def run_task(project, task, conn=None, run_id=None, provider=None):
         run = project if isinstance(project, run_state.Run) else task.get("_run")
         run = run or claimed_run(
             project, task, conn, run_id, provider, clock=monotonic)
+        run = profiled_run(run, task)
         return _run_stages(run, task)
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused

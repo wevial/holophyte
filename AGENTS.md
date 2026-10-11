@@ -89,8 +89,10 @@ the same commit:
 * Schema changes bump `SCHEMA_VERSION` and stay additive where they can
   (`store/schema.py` says when `READABLE_FROM` must rise). Tickets never state
   a literal schema version.
-* Agent routes are live-probed before dispatch; the only substitution is a
-  configured `*_fallback`, probed and recorded. Never switch silently.
+* Agent routes are live-probed before dispatch; the only substitutions are a
+  configured `*_fallback`, and a ticket's implementer profile falling back to
+  the default implementer when its probe fails, each probed and recorded;
+  never switch silently.
 * The store is the run record (console, `--report`, `--status`); this
   repository keeps no FINDINGS.md file.
 * The repository is public: name roles (the writer host, the operator seat),

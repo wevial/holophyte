@@ -66,6 +66,7 @@ EVIDENCE_STATES_FOR_MOCKUP = 3
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
 ORCHESTRATION_RE = re.compile(r"^Orchestration:\s*(.*?)\s*$")
 ORCHESTRATION_MODES = ("off", "subagents", "workflow")
+IMPLEMENTER_RE = re.compile(r"^Implementer:\s*(.*?)\s*$")
 LINEAR_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}|<[^<>\n\s][^<>\n]*>")
 # Linear wraps file names and ticket ids in links on save; only links unwrap.
@@ -212,6 +213,7 @@ class Ticket:
         self.estimate_min = None
         self.depends_on = None
         self.orchestration = None
+        self.implementer = None
         self.open_questions_none = False
 
 
@@ -264,6 +266,9 @@ def parse(text):
         mode = ORCHESTRATION_RE.match(ln.strip())
         if mode and t.orchestration is None:
             t.orchestration = mode.group(1)
+        named = IMPLEMENTER_RE.match(ln.strip())
+        if named and t.implementer is None:
+            t.implementer = named.group(1)
     t.estimate_min = int(est.group(1)) if est else None
     t.depends_on = _deps(est.group(2)) if est else None
     oq = COMMENT_RE.sub("", t.sections.get("Open questions", ""))
