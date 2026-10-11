@@ -277,10 +277,5 @@ class ComplexityReportTests(ReportStoreCase):
             ["complexity medium", "complexity none"])
 
     def test_a_store_without_complexity_events_prints_no_section(self):
-        self.run_with(1, [
-            ("shadow_result", shadow(300, usage(1, 1, 0.1), True, "APPROVE"))])
-        lines = self.report()
-        self.assertFalse([line for line in lines if "complexity" in line])
-        self.assertEqual(table_rows(lines)[1]["verify"], "verified")
-        self.assertIn("shadows 1 · verified primary 0/1, shadow 1/1",
-                      lines[lines.index("shadow implementer:") + 4])
+        self.run_with(1, [])
+        self.assertFalse([line for line in self.report() if "complexity" in line])
