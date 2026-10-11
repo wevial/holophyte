@@ -379,12 +379,11 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                                  launcher.environment(project), cmd,
                                  timeout=cap, runner=run_capped, project=project,
                                  keep_session=True, **hook)
-    claude = seat is not None and seat.name == "claude"
-    decoded = claude_result(out) if claude else None
+    decoded = claude_result(out) if seat is not None and seat.name == "claude" else None
     if decoded is None:
         output = ImplementerOutput(out.strip(), code, dispatched_route)
     else:
         output = ImplementerOutput(decoded[0].strip(), code, dispatched_route)
         output.usage = decoded[1]
-    output.is_error = claude and claude_marked_error(out)
+    output.is_error = claude_marked_error(out)
     return output
