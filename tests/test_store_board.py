@@ -281,6 +281,17 @@ class StoreBoardTests(unittest.TestCase):
                       " configured: opus, sonnet", str(refused.exception))
         self.assertEqual((self.ticket_count(), self.seq()), (0, 0))
 
+    def test_a_draft_naming_no_configured_profile_never_moves_to_ready(self):
+        self.configure_profiles()
+        draft = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                        body(implementer="haiku"), "backlog")
+        with self.assertRaises(store.board.FilingRefused) as refused:
+            store.board.move_ticket(self.conn, self.project_id, draft,
+                                    "ready", self.row(draft)[3])
+        self.assertIn("'Implementer: haiku' names no configured profile",
+                      str(refused.exception))
+        self.assertEqual(self.row(draft)[2], "backlog")
+
     def test_an_implementer_naming_a_configured_profile_is_filed(self):
         self.configure_profiles()
         filed = store.board.file_ticket(self.conn, self.project_id, "NAT",

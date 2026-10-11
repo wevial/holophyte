@@ -166,6 +166,18 @@ class RepositoryChecksTests(unittest.TestCase):
         self.assertIn("'Implementer: haiku' names no configured profile;"
                       " configured: opus, sonnet", result.stdout)
 
+    def test_cli_names_a_malformed_agents_table_without_its_contents(self):
+        config = Project.locate(self.repo, adopt=False).config_path
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('[agents.implementer_profiles."/private/host/profile"]\n'
+                          'harness = "claude"\n')
+        result = self.check('haiku')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("'Implementer: haiku' checked against [agents], which is"
+                      " malformed", result.stdout)
+        self.assertNotIn('/private/host/profile', result.stdout)
+        self.assertNotIn(str(config), result.stdout)
+
     def test_cli_without_project_config_leaves_the_profile_unchecked(self):
         self.assertFalse(Project.locate(self.repo, adopt=False).config_path.exists())
         result = self.check('sonnet')

@@ -125,10 +125,8 @@ def filing_problems(project, ticket):
                 f"checked; the project has no config file"]
     try:
         seats = implementer_profiles(project)
-    except SystemExit as error:
-        detail = str(error).rpartition(f"{project.config_path}: ")[2]
-        return [f"{line} checked against [agents], which is malformed: "
-                f"{detail}"]
+    except SystemExit:
+        return [f"{line} checked against [agents], which is malformed"]
     if name in seats:
         return []
     return [f"{line} names no configured profile; configured: "
