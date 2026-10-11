@@ -308,12 +308,15 @@ class StoreSurfaceTests(unittest.TestCase):
                                                        "pending"]),
                                  # HOLO-174: a merged run's FOLLOW_UP rows,
                                  # captured pending and settled at the merge.
+                                 # HOLO-252: `settle_superseded`, a row a later
+                                 # fix turn's ADDRESS(follow-up N) line fixed.
                                  (store.follow_ups, ["filed_drafts",
                                                      "pending_follow_ups",
                                                      "record_follow_up",
                                                      "settle_duplicate",
                                                      "settle_filed",
                                                      "settle_ledger",
+                                                     "settle_superseded",
                                                      "settle_unfiled"]),
                                  # HOLO-225: `holo steer`'s notes, routed by
                                  # the ticket's state, read and consumed.

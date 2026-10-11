@@ -11,6 +11,7 @@ from holophyte.config.config_tables import loop_config
 from holophyte.config.reader import config_table
 from holophyte.loop import steering
 from holophyte.loop.follow_ups import capture as capture_follow_ups
+from holophyte.loop.follow_ups import pending_prompt
 from holophyte.loop.gates import RunFailure, sh
 from holophyte.redact import safe_print as print
 
@@ -57,7 +58,8 @@ STEER_ASK = ('Apply the maintainer\'s notes above to your work on this '
 
 def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
              *, timed, check_cap):
-    findings = steering.take(conn, run_id) + (
+    pending = pending_prompt(conn, run_id) if conn is not None else ''
+    findings = steering.take(conn, run_id) + pending + (
         f'Reviewer findings:\n\n{verdict}\n\n'
         'For EACH finding, adjudicate it first: ADDRESS (concrete '
         'blocker — fix now), FOLLOW_UP (valid but out of scope — name '

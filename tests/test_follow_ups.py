@@ -31,6 +31,7 @@ import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
+import store.follow_ups  # noqa: E402
 import store.tickets  # noqa: E402
 import ticket_template  # noqa: E402
 from holophyte.agents.fix_session import fix_turn  # noqa: E402
@@ -68,11 +69,13 @@ class CaptureTests(LoopFixture):
             self.conn, project, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="ticket 1")
         self.run_id = store.claim(self.conn, project, ticket)
+        self.prompts = []
 
     def fix(self, *messages):
         sha = self.git("rev-parse", "HEAD").strip()
 
         def timed(*args, argv=None):
+            self.prompts.append(args[-1])
             for turn, message in enumerate(messages):
                 Commit(message).play(self.target, f"{sha[:8]}-{turn}")
             return "done", False
@@ -137,6 +140,44 @@ class CaptureTests(LoopFixture):
             ("feature", 0, "(bogus): Lint the verify block")])
         self.assertEqual(len(events(self.conn, self.run_id,
                                     "follow_up_kind_missing")), 3)
+
+    def test_a_fix_turn_is_shown_its_pending_feature_follow_ups(self):
+        self.fix(f"{FIX}")
+        self.fix("fix again\n\nADDRESS: fixed it\n")
+
+        [(feature,), (guardrail,)] = self.conn.execute(
+            "SELECT id FROM followUps ORDER BY id").fetchall()
+        first, second = self.prompts
+        self.assertNotIn("ADDRESS(follow-up", first)
+        self.assertIn(f"follow-up {feature}: Cache the board read"
+                      " @ provider.py:185", second)
+        self.assertIn("ADDRESS(follow-up N)", second)
+        self.assertNotIn(f"follow-up {guardrail}:", second)
+
+    def test_an_address_line_settles_only_this_run_s_pending_features(self):
+        project = store.tickets.ensure_project(self.conn, "team",
+                                               str(self.target))
+        other_ticket = store.tickets.mirror_ticket(
+            self.conn, project, linear_issue_id="issue-2",
+            linear_identifier="KO-2", title="ticket 2")
+        other_run = store.claim(self.conn, project, other_ticket)
+        other = store.follow_ups.record_follow_up(
+            self.conn, other_run, "0" * 40, "feature", True, "Elsewhere",
+            "other-fingerprint")
+        self.fix(FIX)
+        [(feature,), (guardrail,)] = self.conn.execute(
+            "SELECT id FROM followUps WHERE runId = ? ORDER BY id",
+            (self.run_id,)).fetchall()
+
+        self.fix(f"fix again\n\nADDRESS(follow-up {other}): Elsewhere\n"
+                 f"ADDRESS(follow-up {guardrail}): Lint ticket checks\n"
+                 f"ADDRESS(follow-up {feature}): Cache the board read\n")
+
+        settled = dict(self.conn.execute(
+            "SELECT id, settledAt IS NOT NULL FROM followUps").fetchall())
+        self.assertEqual(settled, {other: 0, guardrail: 0, feature: 1})
+        self.assertEqual([event["id"] for event in events(
+            self.conn, self.run_id, "follow_up_superseded")], [feature])
 
 class Recording(LinearBoard):
     """A Linear board that records each filing instead of calling Linear."""
@@ -463,6 +504,18 @@ class NativeSettleTests(NativeProject):
         self.assertEqual(sorted(self.read(
             f"SELECT filedAs, duplicateOf FROM followUps WHERE runId = {run_id}"),
             key=str), sorted([(key, None), (None, key)], key=str))
+
+    def test_adjacent_lines_and_line_less_paths_file_a_draft_each(self):
+        run_id = self.merged_run(
+            f"fix\n\n{FEATURE}\n"
+            "FOLLOW_UP(feature): Reuse the cached board @ provider.py:186\n"
+            "FOLLOW_UP(feature): Retry the label write @ provider.py\n"
+            "FOLLOW_UP(feature): Log the board latency @ provider.py\n")
+
+        self.assertEqual(len(self.drafts()), 4)
+        self.assertEqual(self.read(
+            f"SELECT count(*) FROM followUps WHERE runId = {run_id}"
+            " AND filedAs IS NOT NULL AND duplicateOf IS NULL"), [(4,)])
 
 class LinearMergeTests(LoopRuns):
     """The default Linear-mode project, its board a recording stand-in."""

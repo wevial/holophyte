@@ -125,6 +125,12 @@ def settle_duplicate(conn, follow_up_id, key, now=None, of="open draft"):
                    f"duplicate of {of} {key}", now, duplicateOf=key)
 
 
+def settle_superseded(conn, follow_up_id, commit_sha, now=None):
+    return _settle(conn, follow_up_id, "follow_up_superseded",
+                   f"superseded by fix commit {commit_sha}", now,
+                   named=commit_sha)
+
+
 def settle_ledger(conn, follow_up_id, now=None):
     return _settle(conn, follow_up_id, "follow_up_ledger",
                    "kept in the findings ledger", now)
