@@ -659,6 +659,46 @@ class ContentWakeTests(MergeModeFixture):
         self.assertEqual(len(events), 1)
         self.assertIn('conflicted-head', events[0][0])
 
+    def reconcile_parked(self, mergeable, head='conflicted-head'):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.fake_client(self, dict(H.OPEN_PULL, updatedAt=H.T1,
+                                 reviewThreads={'totalCount': 0},
+                                 mergeable=mergeable, headRefOid=head))
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        with patch.object(sys, 'stdout', io.StringIO()):
+            holophyte.host.reconcile._reconcile_pull_requests(
+                self.project, conn,
+                conn.execute('SELECT id FROM projects').fetchone()[0],
+                StubProvider())
+
+    def test_a_conflict_wakes_once_per_head_commit(self):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.parked_with_mark(self, H.T1, 0)
+        with patch.object(store, 'babysit'):
+            self.reconcile_parked('CONFLICTING')
+        self.assertEqual(self.read("SELECT phase FROM runs"),
+                         [('awaiting_merge_approval',)])
+        self.reconcile_parked('CONFLICTING')
+        self.assertEqual(self.read("SELECT note FROM interventions"
+                                   " WHERE action = 'babysit'"), [])
+        self.reconcile_parked('CONFLICTING', head='merged-main-head')
+        notes = self.read("SELECT note FROM interventions"
+                          " WHERE action = 'babysit'")
+        self.assertEqual(len(notes), 1)
+        self.assertIn('merged-main-head', notes[0][0])
+
+    def test_an_unknown_or_mergeable_park_is_not_woken(self):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.parked_with_mark(self, H.T1, 0)
+        for mergeable in ('UNKNOWN', 'MERGEABLE'):
+            with self.subTest(mergeable=mergeable):
+                self.reconcile_parked(mergeable)
+                self.assertEqual(self.read("SELECT action FROM interventions"
+                                           " WHERE action = 'babysit'"), [])
+                self.assertEqual(self.read("SELECT kind FROM runEvents"
+                                           " WHERE kind = 'conflict_wake'"), [])
+
     def test_only_new_authored_content_wakes_once(self):
         from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_with_mark(self, H.T1, 3)
