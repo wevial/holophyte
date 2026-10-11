@@ -215,7 +215,7 @@ interventions row whose note starts `escalation:`, and records an
 branch. The escalated implement turn is told the profile, the failure reason
 and the branch head, decides whether to build on the earlier commits or
 restart from main with a forward commit that returns the tree to main's, and
-ends its reply with `ESCALATION: build — reason` or
+declares, before any closing outcome line, `ESCALATION: build — reason` or
 `ESCALATION: restart — reason`; an `escalation_choice` run event records the
 `choice` (`build`, `restart` or `undeclared`) and its `reason`. Other failure
 kinds, runs on the default implementer and an escalated run's own failure are

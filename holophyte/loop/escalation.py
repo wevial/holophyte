@@ -60,7 +60,8 @@ def brief(conn, run_id, branch, head):
         "To restart, first commit a change that returns the tree to main's, "
         "then do the new work on top; never reset, rebase or otherwise "
         "rewrite the branch's history, because the factory only "
-        "fast-forwards it. End your reply with one line naming your choice:\n"
+        "fast-forwards it. Include in your reply, before any closing line "
+        "asked for below, one line naming your choice:\n"
         "ESCALATION: build — reason\n"
         "or\n"
         "ESCALATION: restart — reason\n\n")
