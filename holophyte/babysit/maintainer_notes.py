@@ -66,6 +66,7 @@ def take_hints(conn, run_id):
 
 FINDINGS_CAP = 1500
 REQUEUE_PREFIX = "human requeue: "
+FACTORY_PREFIX = "factory requeue: "
 
 
 def requeue_context(conn, run_id):
@@ -84,11 +85,14 @@ def requeue_context(conn, run_id):
     (prev,) = prev
     event = conn.execute(
         "SELECT summary FROM runEvents WHERE runId = ? AND kind = 'intervention'"
-        " AND summary LIKE ? ORDER BY seq DESC LIMIT 1",
-        (prev, REQUEUE_PREFIX + "%")).fetchone()
-    note = event[0][len(REQUEUE_PREFIX):] if event else ""
+        " AND (summary LIKE ? OR summary LIKE ?) ORDER BY seq DESC LIMIT 1",
+        (prev, REQUEUE_PREFIX + "%", FACTORY_PREFIX + "%")).fetchone()
+    summary = event[0] if event else REQUEUE_PREFIX
+    factory = summary.startswith(FACTORY_PREFIX)
+    note = summary[len(FACTORY_PREFIX if factory else REQUEUE_PREFIX):]
     block = (f"Context from the previous attempt (run {prev}):\n"
-             f"Operator's requeue note:\n{note}\n")
+             f"{'The factory' if factory else 'Operator'}'s requeue note:\n"
+             f"{note}\n")
     last = conn.execute(
         "SELECT round, verdict, findings FROM reviewRounds WHERE runId = ?"
         " ORDER BY round DESC LIMIT 1", (prev,)).fetchone()

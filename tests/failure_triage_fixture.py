@@ -6,7 +6,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from holophyte import question_cli
-from tests.fake_agent import AGENT_BINARIES, SpawnGuard
+from holophyte.agents import probes, roles
+from holophyte.agents.probes import PROBE_GOAL
+from tests.fake_agent import AGENT_BINARIES, FakeAgent, SpawnGuard
 from tests.test_question_backends import FAKE, claude_output, codex_output
 
 FAILURES = '[questions.failures]\nbackend = "claude"\n'
@@ -55,3 +57,38 @@ class FakeClaude:
         if not log.exists():
             return []
         return [json.loads(line) for line in log.read_text().splitlines()]
+
+
+class ProfileTurns:
+    """Implement and fix turns through the real role dispatch, so their
+    `agent_turn` labels name the route the run resolved, played from the
+    script's implement steps; the rest from a FakeAgent. Every profile probe
+    passes."""
+
+    def __init__(self, *script):
+        self.implements = [step for step in script if step.role == "implement"]
+        self.others = FakeAgent(*[step for step in script
+                                  if step.role != "implement"])
+        self.goals = []
+
+    def runner(self, cmd, cwd, timeout, **kwargs):
+        if cmd[-1] == PROBE_GOAL:
+            return 0, "ready"
+        return 0, self.implements.pop(0).play(Path(cwd), len(self.goals))
+
+    def __call__(self, target, role, goal, cwd, **kwargs):
+        if role != "implement":
+            return self.others(target, role, goal, cwd, **kwargs)
+        self.goals.append(goal)
+        return roles.agent(target, role, goal, cwd, **kwargs)
+
+    def __enter__(self):
+        self.patches = (patch.object(roles, "run_capped", self.runner),
+                        patch.object(probes, "run_capped", self.runner))
+        for each in self.patches:
+            each.start()
+        return self
+
+    def __exit__(self, *exc):
+        for each in self.patches:
+            each.stop()

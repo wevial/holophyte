@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -15,10 +16,26 @@ from failure_triage_fixture import (  # noqa: E402 - after the sys.path insert a
     FAILURES,
     REQUEUE,
     FakeClaude,
+    ProfileTurns,
     question_guard,
 )
-from fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle  # noqa: E402
-from loop_fixture import BRANCH, LoopFixture, MergeModeFixture  # noqa: E402
+from fake_agent import (  # noqa: E402 - after the sys.path insert above
+    APPROVE,
+    FAIL,
+    REQUEST_CHANGES,
+    Commit,
+    Idle,
+)
+from loop_fixture import (  # noqa: E402 - after the sys.path insert above
+    BRANCH,
+    VALID_BODY,
+    InfraRefuse,
+    LoopFixture,
+    MergeModeFixture,
+    StubProvider,
+    a_task,
+)
+from test_steer import SteerFixture  # noqa: E402 - after the sys.path insert above
 
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
@@ -296,3 +313,172 @@ class ParkedRunTriageTests(MergeModeFixture):
         self.assertEqual(self.read(
             "SELECT COUNT(*) FROM runEvents WHERE kind = 'failure_triage'"),
             [(0,)])
+
+
+PROFILES = ('[agents.implementer]\nharness = "claude"\nmodel = "opus"\n'
+            '[agents.implementer_profiles.sonnet]\nharness = "claude"\n'
+            'model = "sonnet"\n')
+ON_SONNET = VALID_BODY.replace("Depends on: none\n",
+                               "Depends on: none\nImplementer: sonnet\n")
+
+
+class Restart(Idle):
+    """An escalated turn that commits main's tree back, then new work."""
+
+    def play(self, cwd, turn):
+        self.git(cwd, "read-tree", "-u", "--reset", "main")
+        self.git(cwd, "commit", "-q", "-m", "return to main's tree")
+        Commit("the new approach", path="new.txt").play(cwd, turn)
+        return self.reply
+
+    @staticmethod
+    def git(cwd, *args):
+        subprocess.run(["git", *args], cwd=cwd, check=True,
+                       capture_output=True)
+
+
+class EscalationTests(LoopFixture):
+    def setUp(self):
+        super().setUp()
+        self.claude = FakeClaude(self)
+
+    def run_ticket(self, *script, body=ON_SONNET, verify="echo ok", n=1):
+        with ProfileTurns(*script) as turns:
+            self.loop(fake=turns, guard=question_guard(), provider=StubProvider(
+                dict(a_task(n), body=body, verify=verify)))
+        return turns
+
+    def fail_on_sonnet(self):
+        self.configure(PROFILES)
+        self.run_ticket(Commit("work", path="work.txt"), REQUEST_CHANGES,
+                        Idle())
+        return self.git("rev-parse", BRANCH).strip()
+
+    def events(self, kind):
+        return [(run, json.loads(payload)) for run, payload in self.read(
+            "SELECT runId, payload FROM runEvents WHERE kind = '" + kind
+            + "' ORDER BY id")]
+
+    def factory_requeues(self):
+        return self.read('SELECT runId, note FROM interventions'
+                         " WHERE \"action\" = 'requeue' AND source = 'factory'")
+
+    def test_a_profile_run_without_fix_progress_is_requeued_for_escalation(self):
+        self.fail_on_sonnet()
+
+        self.assertEqual(self.ticket_status(), [("ready",)])
+        ((failed,),) = self.read("SELECT id FROM runs")
+        ((run, note),) = self.factory_requeues()
+        self.assertEqual(run, failed)
+        self.assertTrue(note.startswith("escalation:"), note)
+        self.assertIn("sonnet", note)
+        ((run, payload),) = self.events("escalation")
+        self.assertEqual((run, payload["profile"], payload["failure_kind"],
+                          payload["requeued"]),
+                         (failed, "sonnet", "fix_no_progress", True))
+
+    def test_the_escalated_claim_runs_on_the_default_with_the_brief(self):
+        head = self.fail_on_sonnet()
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+
+        turns = self.run_ticket(Commit("build on it", path="more.txt"),
+                                APPROVE)
+
+        _, (run, profile) = self.events("implementer_profile")
+        self.assertEqual((profile["profile"], profile["source"]),
+                         (None, "escalation"))
+        labels = [json.loads(payload)["label"] for (payload,) in self.read(
+            f"SELECT payload FROM runEvents WHERE kind = 'agent_turn'"
+            f" AND runId = {run}")]
+        self.assertEqual(labels, ["claude opus"])
+        (goal,) = turns.goals
+        for expected in ("sonnet", reason, head[:12]):
+            self.assertIn(expected, goal)
+        self.assertNotIn("Operator's requeue note", goal)
+        self.assertEqual(self.events("escalation_choice"), [
+            (run, {"choice": "undeclared", "reason": None})])
+
+    def test_a_declared_restart_is_recorded_and_reviewed_against_main(self):
+        self.fail_on_sonnet()
+
+        turns = self.run_ticket(
+            Restart("Started over.\nESCALATION: restart \u2014 the approach"
+                    " was wrong"), APPROVE)
+
+        ((run,),) = self.read("SELECT MAX(id) FROM runs")
+        self.assertEqual(self.events("escalation_choice"), [
+            (run, {"choice": "restart", "reason": "the approach was wrong"})])
+        (review,) = turns.others.turns
+        self.assertEqual(self.git("diff", "--name-only", review.base_sha,
+                                  review.candidate_sha), "new.txt\n")
+
+    def test_an_escalated_run_that_fails_is_not_escalated_again(self):
+        self.fail_on_sonnet()
+
+        self.run_ticket(Commit("more work", path="more.txt"), REQUEST_CHANGES,
+                        Idle())
+
+        ((first,), _) = self.read("SELECT id FROM runs ORDER BY id")
+        self.assertNotEqual(self.ticket_status(), [("ready",)])
+        self.assertEqual(len(self.factory_requeues()), 1)
+        self.assertEqual([run for run, _ in self.events("escalation")], [first])
+
+    def test_infra_on_a_profile_and_verify_on_the_default_are_not_escalated(self):
+        self.configure(PROFILES)
+        self.run_ticket(InfraRefuse())
+        self.run_ticket(Commit(), REQUEST_CHANGES, Commit(), REQUEST_CHANGES,
+                        Commit(), body=VALID_BODY, verify="exit 3", n=2)
+
+        self.assertEqual(self.read("SELECT failureKind FROM runs ORDER BY id"),
+                         [("infra",), ("verify",)])
+        self.assertEqual([payload["profile"] for _, payload
+                          in self.events("implementer_profile")],
+                         ["sonnet", None])
+        self.assertEqual(self.factory_requeues(), [])
+        self.assertEqual(self.events("escalation"), [])
+
+    def test_failure_triage_after_an_escalation_does_not_requeue_again(self):
+        self.configure(PROFILES + REQUEUE)
+        self.claude.answer("infra", 0.95)
+        self.run_ticket(Commit("work", path="work.txt"), REQUEST_CHANGES,
+                        Idle())
+
+        self.assertEqual(self.ticket_status(), [("ready",)])
+        ((_, note),) = self.factory_requeues()
+        self.assertTrue(note.startswith("escalation:"), note)
+        (payload,) = self.triage()
+        self.assertEqual((payload["requeued"], payload["why"]),
+                         (False, "ticket not in flight"))
+
+    def ticket_status(self):
+        return self.read("SELECT status FROM tickets")
+
+    def triage(self):
+        return [json.loads(payload) for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'failure_triage'")]
+
+
+class SteeredEscalationTests(SteerFixture):
+    def test_a_steered_profile_run_failing_its_round_cap_is_escalated(self):
+        FakeClaude(self)
+        self.configure(PROFILES)
+        self.steer("-n", "also log the port")
+
+        with ProfileTurns(
+                Commit("work", path="app.txt"), REQUEST_CHANGES,
+                Commit("fix", path="app.txt", body="fixed\n"), REQUEST_CHANGES,
+                Commit("fix again", path="app.txt", body="fixed again\n"),
+                FAIL) as turns:
+            self.loop(fake=turns, guard=question_guard(), provider=StubProvider(
+                dict(a_task(), body=ON_SONNET)))
+
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertTrue(reason.startswith("terminal adjudication: FAIL"), reason)
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
+        ((note,),) = self.read(
+            "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
+            " AND source = 'factory'")
+        self.assertTrue(note.startswith("escalation:"), note)
+        ((payload,),) = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'escalation'")
+        self.assertIs(json.loads(payload)["requeued"], True)

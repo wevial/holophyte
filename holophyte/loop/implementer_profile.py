@@ -21,6 +21,7 @@ from holophyte.loop.stop import continuation
 from holophyte.redact import safe_print as print
 
 EVENT = "implementer_profile"
+ESCALATION_NOTE = "escalation:"
 
 
 def profiled_run(run, task):
@@ -36,8 +37,11 @@ def profiled_run(run, task):
                 f"to continue it")
         return dataclasses.replace(run, project=scoped(project, name))
     requested = ticket_template.parse(task.get("body") or "").implementer or None
-    name, why = None, None
-    if requested in seats:
+    name, why, source = None, None, None
+    earlier = escalated_from(conn, run_id)
+    if earlier is not None:
+        why, source = f"escalated after run {earlier['run']} failed", "escalation"
+    elif requested in seats:
         view = scoped(project, requested)
         beat_s = sweep_config(project).heartbeat_stale_ms / 2000
         with heartbeat_while(conn, run_id, beat_s):
@@ -51,7 +55,7 @@ def profiled_run(run, task):
     elif requested is not None:
         why = "unknown profile"
     view = scoped(project, name)
-    record(view, conn, run_id, name, requested, why)
+    record(view, conn, run_id, name, requested, why, source)
     return dataclasses.replace(run, project=view)
 
 
@@ -99,7 +103,7 @@ def run_view(project, conn, run_id):
     return scoped(project, name)
 
 
-def record(view, conn, run_id, name, requested, why):
+def record(view, conn, run_id, name, requested, why, source):
     label = turn_label(view, "implement")
     if conn is None or run_id is None:
         return
@@ -110,9 +114,31 @@ def record(view, conn, run_id, name, requested, why):
     store.record_event(conn, run_id, EVENT, summary, level="detail",
                        payload=json.dumps({
                            "profile": name,
-                           "source": "default" if name is None else "ticket",
+                           "source": source or (
+                               "default" if name is None else "ticket"),
                            "requested": requested, "why": why,
                            "label": label}))
+
+
+def escalated_from(conn, run_id):
+    if conn is None or run_id is None:
+        return None
+    row = conn.execute(
+        "SELECT p.id, p.outcomeReason, e.payload, p.id = (SELECT MAX(q.id)"
+        "  FROM runs q WHERE q.ticketId = r.ticketId AND q.id < r.id)"
+        " FROM runs p JOIN runs r ON r.ticketId = p.ticketId"
+        " JOIN interventions i ON i.runId = p.id"
+        " LEFT JOIN runEvents e ON e.id = (SELECT MAX(id) FROM runEvents"
+        "  WHERE runId = p.id AND kind = 'escalation')"
+        " WHERE r.id = ? AND p.id < r.id AND i.source = 'factory'"
+        " AND i.\"action\" = 'requeue' AND substr(i.note, 1, ?) = ?"
+        " ORDER BY p.id DESC LIMIT 1",
+        (run_id, len(ESCALATION_NOTE), ESCALATION_NOTE)).fetchone()
+    if row is None:
+        return None
+    run, reason, payload, last = row
+    return {"run": run, "reason": reason, "last": bool(last),
+            "profile": json.loads(payload)["profile"] if payload else None}
 
 
 def filing_problems(project, ticket):

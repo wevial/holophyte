@@ -17,6 +17,7 @@ from holophyte.board.projection import (
 from holophyte.host.supervisor import linear_budget_low, sweep
 from holophyte.host.sweep_report import SWEEP_HINT, sweep_lines
 from holophyte.leak_guard import record_refusal
+from holophyte.loop.escalation import escalate
 from holophyte.loop.failure_triage import triage_failure
 from holophyte.loop.follow_ups import settle as settle_follow_ups
 from holophyte.loop.gates import MergeParked, RunFailure, outcome_class_of
@@ -180,6 +181,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
                                      outcome_class=outcome_class,
                                      refresh=refresh, failure_kind=failure_kind):
                     park_steered_cap(conn, run_id, ticket_id, provider)
+                    escalate(conn, run_id, ticket_id)
                     triage_failure(target, conn, run_id, ticket_id)
             except Exception as close_err:
                 print(f"[holo2] close-out failed: {close_err}")
