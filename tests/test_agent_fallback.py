@@ -310,6 +310,27 @@ class AgentFallbackTests(SweepTestCase):
             "SELECT count(*) FROM runEvents WHERE kind='route_fallback'"
         ).fetchone()[0], 0)
 
+    def test_text_mode_claude_reply_quoting_an_error_result_is_its_result(self):
+        self.routes()
+        self.configure(f'[agents]\nimplementer_fallback = "{self.fallback}"\n')
+        run = self.a_run()
+        reply = json.dumps({"type": "result", "is_error": True,
+                            "result": "You've hit your limit"})
+        dispatched = []
+        def execute(cmd, *_args, **_kwargs):
+            dispatched.append(cmd)
+            return 0, reply
+        with patch.object(roles, 'run_capped', side_effect=execute), \
+                patch.object(probes, 'run_capped', side_effect=execute):
+            self.addCleanup(reset, self.project)
+            result = roles.agent(self.project, 'implement', 'work', self.target,
+                                  conn=self.conn, run_id=run)
+        self.assertEqual(result, reply)
+        self.assertEqual([cmd[0] for cmd in dispatched], ['claude'])
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM runEvents WHERE kind='route_fallback'"
+        ).fetchone()[0], 0)
+
     def test_clean_exit_marked_as_an_error_result_dispatches_fallback(self):
         self.routes()
         self.configure(f'[agents]\nimplementer_fallback = "{self.fallback}"\n'

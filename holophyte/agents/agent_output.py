@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 TRANSPORT_SIGNATURES = (
     "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "getaddrinfo",
@@ -50,6 +51,12 @@ def claude_result(output):
         return None
     return document["result"], dict(claude_usage(document),
                                     num_turns=count(document.get("num_turns")))
+
+
+def claude_json_turn(argv, harness=None):
+    return ((harness or Path(argv[0]).name) == "claude"
+            and ("--output-format=json" in argv
+                 or ["--output-format", "json"] in map(list, zip(argv, argv[1:]))))
 
 
 def claude_marked_error(output):
