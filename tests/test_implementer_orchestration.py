@@ -195,6 +195,14 @@ class OrchestrationConfigTests(LoopFixture):
                        + workflow)
         self.check('[agents]\nimplementer_fallback = "claude -p"\n' + workflow)
 
+    def test_profile_workflow_beside_a_non_claude_fallback_is_refused(self):
+        with self.assertRaisesRegex(
+                SystemExit, r"\[agents\.implementer_profiles\.big\] "
+                            r"orchestration.*implementer_fallback"):
+            self.check('[agents]\nimplementer_fallback = "codex exec"\n'
+                       '[agents.implementer_profiles.big]\nharness = "claude"\n'
+                       'orchestration = "workflow"\n')
+
     def test_workflow_accepts_a_quoted_claude_fallback(self):
         workflow = CLAUDE + 'orchestration = "workflow"\n'
         for fallback in ('\'"claude" -p\'',
@@ -321,6 +329,6 @@ class ImplementerProfileTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
         command(self.project, a_task()["id"], None, resume=True)
         self.configure(PROFILES)
-        self.run_ticket(implementer_line("sonnet"), REQUEST_CHANGES, APPROVE)
+        self.run_ticket(VALID_BODY, REQUEST_CHANGES, APPROVE)
         self.assertEqual(self.turns(), ["claude sonnet", "claude sonnet"])
         self.assertEqual(len(self.profiles()), 1)

@@ -298,13 +298,13 @@ def claude_command(command):
     return bool(words) and os.path.basename(words[0]) == "claude"
 
 
-def check_fallback_orchestration(where, agents):
+def check_fallback_orchestration(where, agents, key="implementer"):
     table = agents.get("implementer")
     fallback = agents.get("implementer_fallback")
     if (isinstance(table, dict) and table.get("orchestration") == "workflow"
             and fallback is not None and not claude_command(fallback)):
         raise SystemExit(
-            f"{where}: [agents.implementer] orchestration = \"workflow\" "
+            f"{where}: [agents.{key}] orchestration = \"workflow\" "
             f"beside a non-Claude [agents] implementer_fallback: an outage "
             f"switch reuses the brief -- use \"subagents\" or a Claude "
             f"implementer_fallback")
@@ -407,6 +407,8 @@ def implementer_profiles(target):
                 f"model, effort and orchestration, not a command string")
         seats[name] = table_seat(target, where, key, table, "implementer",
                                  launched=True)
+        check_fallback_orchestration(where, dict(
+            config_table(target, "agents"), implementer=table), key)
     return seats
 
 
