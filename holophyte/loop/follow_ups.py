@@ -203,7 +203,7 @@ def _notes(*notes):
     return "\n\n".join(note for note in notes if note) or None
 
 
-def settle_row(target, conn, row, origin, board_of, note=None):
+def settle_row(target, conn, row, origin, board_of, note):
     if row.kind == "guardrail":
         store.follow_ups.settle_ledger(conn, row.id)
         return
@@ -217,7 +217,7 @@ def settle_row(target, conn, row, origin, board_of, note=None):
 
 
 def _settle_story_row(target, conn, row, origin, board_of, story_id,
-                      same_line=None):
+                      same_line):
     (story_key,) = conn.execute("SELECT linearIdentifier FROM tickets"
                                 " WHERE id = ?", (story_id,)).fetchone()
     duplicate = store.story_proposals.story_duplicate(
