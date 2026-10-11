@@ -17,7 +17,6 @@ from holophyte.loop.stop import continuation
 from holophyte.redact import safe_print as print
 
 EVENT = "implementer_profile"
-UNKNOWN = "unknown profile"
 
 
 def profiled_run(run, task):
@@ -40,7 +39,7 @@ def profiled_run(run, task):
             why = probe_diagnostic(project, probe)
             print(why)
     elif requested is not None:
-        why = UNKNOWN
+        why = "unknown profile"
     view = scoped(project, name)
     record(view, conn, run_id, name, requested, why)
     return dataclasses.replace(run, project=view)

@@ -386,7 +386,8 @@ def shadow_seat(target):
 
 def implementer_profiles(target):
     from holophyte.config.reader import config_table
-    profiles = config_table(target, "agents").get(PROFILES_KEY)
+    agents = config_table(target, "agents")
+    profiles = agents.get(PROFILES_KEY)
     if profiles is None:
         return {}
     where = f"[holo2] {target.config_path}"
@@ -407,8 +408,8 @@ def implementer_profiles(target):
                 f"model, effort and orchestration, not a command string")
         seats[name] = table_seat(target, where, key, table, "implementer",
                                  launched=True)
-        check_fallback_orchestration(where, dict(
-            config_table(target, "agents"), implementer=table), key)
+        check_fallback_orchestration(
+            where, dict(agents, implementer=table), key)
     return seats
 
 
