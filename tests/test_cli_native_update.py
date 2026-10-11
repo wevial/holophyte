@@ -80,6 +80,11 @@ class NativeUpdateCliTests(ConfigTestCase):
         with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
             return conn.execute(ROW).fetchall()
 
+    def notes(self):
+        with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
+            return conn.execute(
+                "SELECT kind, text FROM ticketNotes ORDER BY id").fetchall()
+
     def test_an_update_at_the_read_revision_lands_and_a_stale_one_changes_nothing(self):
         self.native()
         self.assertEqual(self.rows()[0][5], 1)
@@ -100,6 +105,27 @@ class NativeUpdateCliTests(ConfigTestCase):
         self.assertEqual((status, printed), (1, f"[holo2] {t2}: NAT-1 is at "
                                              "revision 2, not 1; nothing changed\n"))
         self.assertEqual(self.rows(), [row])
+
+    def test_an_update_posts_its_note_and_a_stale_one_posts_none(self):
+        self.native()
+        t2 = self.ticket("T2.md", body("Second"))
+
+        with patch("getpass.getuser", return_value="login"):
+            status, _ = self.cli(t2, "--update", "NAT-1", "--revision", "1",
+                                 "--note", "why")
+            self.assertEqual(status, 0)
+            (row,) = self.rows()
+            self.assertEqual(row[1:3], ("Second", body("Second")))
+            self.assertEqual(self.notes(), [("comment", "login: why")])
+
+            status, printed = self.cli(self.ticket("T3.md", body("Third")),
+                                       "--update", "NAT-1", "--revision", "1",
+                                       "--note", "again")
+
+        self.assertEqual(status, 1)
+        self.assertIn("NAT-1 is at revision 2, not 1", printed)
+        self.assertEqual(self.rows(), [row])
+        self.assertEqual(self.notes(), [("comment", "login: why")])
 
     def test_a_missing_revision_and_an_unknown_dependency_are_one_line_each(self):
         self.native()
