@@ -67,6 +67,7 @@ ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
 ORCHESTRATION_RE = re.compile(r"^Orchestration:\s*(.*?)\s*$")
 ORCHESTRATION_MODES = ("off", "subagents", "workflow")
 IMPLEMENTER_RE = re.compile(r"^Implementer:\s*(.*?)\s*$")
+IMPLEMENTER_NAME_RE = re.compile(r"[A-Za-z0-9_-]+")
 LINEAR_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 PLACEHOLDER_RE = re.compile(r"\{\{[^{}]*\}\}|<[^<>\n\s][^<>\n]*>")
 # Linear wraps file names and ticket ids in links on save; only links unwrap.
@@ -838,6 +839,11 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
         p.append(f"'Estimate & dependencies' line 'Orchestration: "
                  f"{t.orchestration}' must name one of "
                  f"{', '.join(ORCHESTRATION_MODES)}")
+    if (t.implementer is not None
+            and not IMPLEMENTER_NAME_RE.fullmatch(t.implementer)):
+        p.append(f"'Estimate & dependencies' line 'Implementer: "
+                 f"{t.implementer}' must name one profile of letters, "
+                 f"digits, _ and -")
 
     if not t.open_questions_none:
         p.append("'Open questions' must read exactly '- None' before the "
@@ -927,8 +933,10 @@ def main(argv):
                          for reason in landmark_reasons(repo, text)]
             from holophyte.config.project import Project
             from holophyte.isolation.launcher import container_docker_problems
-            problems += container_docker_problems(
-                Project.locate(repo, adopt=False), ticket)
+            from holophyte.loop.implementer_profile import filing_problems
+            project = Project.locate(repo, adopt=False)
+            problems += container_docker_problems(project, ticket)
+            problems += filing_problems(project, ticket)
             problems = ticket_problems(repo, text, problems)
         blockers = blocking(problems)
         if blockers:

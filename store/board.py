@@ -35,10 +35,13 @@ def ticket_problems(text, repo):
         from holophyte.config.project import Project
         from holophyte.isolation.launcher import container_docker_problems
         from holophyte.leak_guard import ticket_problems as private_problems
+        from holophyte.loop.implementer_profile import filing_problems
         from holophyte.pr.pr_media import project_problems
         project = Project.locate(repo, adopt=False)
         problems += project_problems(project, ticket)
         problems += container_docker_problems(project, ticket)
+        problems += ticket_template.filing_refusals(
+            filing_problems(project, ticket))
         problems = private_problems(repo, text, problems)
     return problems
 

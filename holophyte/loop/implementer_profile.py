@@ -113,3 +113,21 @@ def record(view, conn, run_id, name, requested, why):
                            "source": "default" if name is None else "ticket",
                            "requested": requested, "why": why,
                            "label": label}))
+
+
+def filing_problems(project, ticket):
+    name = ticket.implementer
+    if name is None or not ticket_template.IMPLEMENTER_NAME_RE.fullmatch(name):
+        return []
+    line = f"'Estimate & dependencies' line 'Implementer: {name}'"
+    if not project.config_path.exists():
+        return [f"{ticket_template.ADVISORY_PREFIX}{line}: profile name not "
+                f"checked; the project has no config file"]
+    try:
+        seats = implementer_profiles(project)
+    except SystemExit as error:
+        return [f"{line} checked against [agents], which is malformed: {error}"]
+    if name in seats:
+        return []
+    return [f"{line} names no configured profile; configured: "
+            f"{', '.join(sorted(seats)) or 'none'}"]
