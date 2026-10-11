@@ -505,6 +505,20 @@ class NativeSettleTests(NativeProject):
             f"SELECT filedAs, duplicateOf FROM followUps WHERE runId = {run_id}"),
             key=str), sorted([(key, None), (None, key)], key=str))
 
+    def test_a_later_repeat_of_a_joined_wording_joins_the_open_draft(self):
+        self.merged_run(
+            f"fix\n\n{FEATURE}",
+            "fix again\n\nFOLLOW_UP(feature): Reuse the cached board"
+            " @ provider.py:185")
+        [(key, _)] = self.drafts()
+
+        repeat = self.merged_run(f"fix\n\n{FEATURE}")
+
+        self.assertEqual([draft for draft, _ in self.drafts()], [key])
+        self.assertEqual(self.read(
+            f"SELECT filedAs, duplicateOf FROM followUps WHERE runId = {repeat}"),
+            [(None, key)])
+
     def test_adjacent_lines_and_line_less_paths_file_a_draft_each(self):
         run_id = self.merged_run(
             f"fix\n\n{FEATURE}\n"

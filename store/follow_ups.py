@@ -81,14 +81,18 @@ def pending_follow_ups(conn, run_id):
 
 
 def filed_drafts(conn, follow_up_id):
-    """Keys other rows of this project filed for the fingerprint, newest first."""
-    return [key for (key,) in conn.execute(
-        "SELECT f.filedAs FROM followUps f JOIN runs r ON r.id = f.runId"
+    """Drafts other rows of this project filed or joined for the fingerprint."""
+    return list(dict.fromkeys(key for (key,) in conn.execute(
+        "SELECT coalesce(f.filedAs, f.duplicateOf) FROM followUps f"
+        " JOIN runs r ON r.id = f.runId"
         " JOIN followUps this ON this.id = ?"
         " JOIN runs thisRun ON thisRun.id = this.runId"
         " WHERE r.projectId = thisRun.projectId AND f.id <> this.id"
         " AND f.fingerprint = this.fingerprint AND f.kind = 'feature'"
-        " AND f.filedAs IS NOT NULL ORDER BY f.id DESC", (follow_up_id,))]
+        " AND (f.filedAs IS NOT NULL OR EXISTS (SELECT 1 FROM followUps d"
+        "   JOIN runs dr ON dr.id = d.runId WHERE d.filedAs = f.duplicateOf"
+        "   AND dr.projectId = thisRun.projectId))"
+        " ORDER BY f.id DESC", (follow_up_id,))))
 
 
 def _settle(conn, follow_up_id, event, summary, now, named=None, **columns):
