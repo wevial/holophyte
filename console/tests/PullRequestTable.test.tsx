@@ -9,6 +9,7 @@ import { tokenedFetch } from "../src/lib/poll";
 import { storeToken } from "../src/lib/token";
 import type { AttentionItem, Status, RunDetailBody } from "../src/lib/types";
 import asks from "../../tests/fixtures/serve/run-asks.json";
+import ready from "../../tests/fixtures/serve/run-merge-ready.json";
 import { fakeFetch } from "./actionFakes";
 import { fakeDeps, fixture, hostOf, settle } from "./harness";
 
@@ -319,4 +320,37 @@ test("a peer run link stays in this console and authenticates the peer run page"
     expect(requests).toContainEqual({ url: `${peer}/runs/47`, authorization: "Bearer peer-test-token" });
     expect(requests.some(request => request.url.startsWith(host.base))).toBe(false);
   } finally { window.location.hash = ""; }
+});
+
+test("a ci park waits on CI by its checks state with no Merge, while other parks keep their reason and Merge", async () => {
+  const pending = { ...item, run: 51, ticket: "KO-51", park_kind: "ci", reason: "pending checks: unit",
+    pr: { ...(item.pr as object), checks: "pending" } };
+  const quiet = { ...item, run: 52, ticket: "KO-52", park_kind: "ci", asked_ms: status.now - 500000 };
+  const human = { ...item, run: 53, ticket: "KO-53", park_kind: "pull_request", asked_ms: status.now - 400000 };
+  const older = { ...item, run: 54, ticket: "KO-54", asked_ms: status.now - 300000 };
+  const hosts = [hostOf({ ...status, project: "/projects/repo", actions: true },
+    { level: "attention", now: status.now, items: [pending, quiet, human, older] })];
+  storeToken(host.address, "test-token");
+  const deps = { fetch: tokenedFetch(async (url: string) => {
+    const merge = url.match(/\/runs\/(\d+)\/merge$/);
+    return merge ? Response.json({ ...ready, run: Number(merge[1]) }) : new Response("not found", { status: 404 });
+  }) };
+  render(<PullRequestTable hosts={hosts} project="all" now={status.now} deps={deps} />);
+  await act(settle);
+  const rows = Object.fromEntries(screen.getAllByRole("row").slice(1).map(row => {
+    const cells = within(row).getAllByRole("cell");
+    return [cells[0]!.textContent!.replace(/^[▸▾]/, ""), cells];
+  }));
+  expect(rows["KO-51"]![2]!.querySelector("p")!.textContent).toBe("Waiting on CI · checks running");
+  expect(rows["KO-51"]![2]!.textContent).toContain("pending checks: unit");
+  expect(within(rows["KO-51"]![1]!).getByRole("link", { name: "#2170" }).getAttribute("href")).toBe(item.pr_url!);
+  expect(rows["KO-52"]![2]!.querySelector("p")!.textContent).toBe("Waiting on CI · checks green, quiet period");
+  for (const ticket of ["KO-51", "KO-52"]) {
+    expect(within(rows[ticket]![4]!).getByRole("button", { name: "Open PR" })).toBeTruthy();
+    expect(within(rows[ticket]![4]!).queryByRole("button", { name: "Merge" })).toBeNull();
+  }
+  for (const ticket of ["KO-53", "KO-54"]) {
+    expect(rows[ticket]![2]!.querySelector("p")!.textContent).toBe("Waiting for maintainer review");
+    expect(within(rows[ticket]![4]!).getByRole("button", { name: "Merge" })).toBeTruthy();
+  }
 });

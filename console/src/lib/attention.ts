@@ -240,6 +240,20 @@ export function prFacts(pr: PrFacts): Fact[] {
   ];
 }
 
+const CI_WAIT: Record<string, string> = {
+  pending: "checks running",
+  success: "checks green, quiet period",
+};
+
+/** A `ci` park's checks state while the factory, not the maintainer, takes
+ *  the next step; null for any other park, or for checks the wake is about
+ *  to act on. */
+export function waitingOnCi(item: AttentionItem): string | null {
+  if (item.kind !== "pr_open" || item.park_kind !== "ci") return null;
+  const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PrFacts) : null;
+  return (pr?.checks != null ? CI_WAIT[pr.checks] : undefined) ?? null;
+}
+
 export interface Description {
   pill: string;
   ticket: string | null;
@@ -357,12 +371,22 @@ export function describe(
       const asked = num(item.asked_ms);
       const reason = str(item.reason) ?? "";
       const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PrFacts) : null;
+      const parked = asked == null ? null : `parked at ${formatClock(asked)}`;
+      const waiting = waitingOnCi(item);
+      if (pr && waiting) {
+        return {
+          ...base,
+          body: `Waiting on CI · ${waiting}`,
+          meta: joinMeta(reason.split("\n", 1)[0] || null, runLabel(item), parked),
+          facts: prFacts(pr),
+        };
+      }
       return {
         ...base,
         // With `pr` the chips carry the facts, so the body keeps to the
         // reason's first line; without it (an older daemon) the prose stands.
         body: pr ? (reason.split("\n", 1)[0] ?? "") : reason,
-        meta: joinMeta(runLabel(item), asked == null ? null : `parked at ${formatClock(asked)}`),
+        meta: joinMeta(runLabel(item), parked),
         ...(pr ? { facts: prFacts(pr) } : {}),
       };
     }
