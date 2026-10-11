@@ -183,6 +183,10 @@ Each module, one line:
   per run with a `shadow_result`, the primary's and the shadow's first
   implementation (route, minutes, tokens, cost, verify, round-1 verdict and
   findings) side by side, with a summary line totalling both.
+- `holophyte/cli/complexity_report.py` — `--report`'s complexity classifier
+  section: per ended run with a `complexity` verdict, the profile it used, its
+  first-attempt result, outcome, rounds, minutes and shadow result, with one
+  summary line per verdict.
 - `holophyte/loop/run.py` — the frozen claimed run and the shared landing entry point.
 - `holophyte/loop/stop.py` — cooperative pause requests, operator aborts and durable
   continuations.

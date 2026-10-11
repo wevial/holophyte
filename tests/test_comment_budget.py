@@ -80,6 +80,7 @@ PINNED = {
     "holophyte/cli/board_verbs.py": 0,
     "holophyte/cli/cli_project.py": 0,
     "holophyte/cli/cli_story.py": 0,
+    "holophyte/cli/complexity_report.py": 0,
     "holophyte/cli/entry.py": 2,
     "holophyte/cli/host_modes.py": 2,
     "holophyte/cli/operator.py": 4,

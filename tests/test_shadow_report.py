@@ -10,7 +10,7 @@ import holophyte.cli.entry
 import holophyte.cli.report as report
 import store
 import store.tickets
-from tests.phase_fixture import finish_run
+from tests.phase_fixture import advance_phase, finish_run
 from tests.test_wiring_telemetry import ReportStoreCase, no_network
 
 AT = 1_700_000_000_000
@@ -168,3 +168,138 @@ class ShadowReportTests(ReportStoreCase):
             "findings: none",
             "supervisor: none recorded",
         ])
+
+
+def complexity(verdict, confidence):
+    return {"verdict": verdict, "confidence": confidence, "reason": "scope",
+            "backend": "claude", "model": "haiku", "why": None}
+
+
+def profile(name, source):
+    return {"profile": name, "source": source, "requested": None, "why": None,
+            "label": "claude sonnet"}
+
+
+def complexity_rows(lines):
+    start = lines.index("complexity classifier:")
+    header = re.split(r"\s{2,}", lines[start + 1])
+    rows = []
+    for line in lines[start + 2:]:
+        if line.startswith("complexity "):
+            break
+        rows.append(dict(zip(header, re.split(r"\s{2,}", line.strip()))))
+    return rows
+
+
+def round_events(count, verdict="changes_requested"):
+    return [("review_round", {"round_number": n, "verdict": verdict,
+                              "reviewer_model": "codex"})
+            for n in range(1, count + 1)]
+
+
+class ComplexityReportTests(ReportStoreCase):
+
+    run_with = ShadowReportTests.run_with
+    report = ShadowReportTests.report
+    section = ShadowReportTests.section
+
+    def worked(self, run_id, minutes):
+        self.conn.execute("UPDATE runs SET workingMs = ? WHERE id = ?",
+                          (minutes * 60_000, run_id))
+        self.conn.commit()
+
+    def classified_store(self):
+        small = self.run_with(1, [
+            ("complexity", complexity("small", 0.9)),
+            ("implementer_profile", profile("cheap", "classifier")),
+            *round_events(1, "pass"),
+            ("shadow_result", shadow(300, usage(1, 1, 0.1), True, "APPROVE")),
+        ])
+        large = self.run_with(2, [
+            ("complexity", complexity("large", 0.7)),
+            ("implementer_profile", profile(None, "default")),
+            *round_events(3),
+        ], outcome="failed")
+        first = self.run_with(3, [], outcome="failed")
+        (ticket,) = self.conn.execute("SELECT ticketId FROM runs WHERE id = ?",
+                                      (first,)).fetchone()
+        retry = store.claim(self.conn, self.project_id, ticket, now=AT + 100)
+        for kind, payload in [("complexity", complexity("small", 0.8)),
+                              ("implementer_profile", profile(None, "default"))]:
+            store.record_event(self.conn, retry, kind, kind, level="detail",
+                               payload=json.dumps(payload))
+        for round_event in round_events(2):
+            store.record_review_round(self.conn, retry, **round_event[1])
+        self.conn.commit()
+        finish_run(self.conn, retry, "merged", now=AT + 100 + 240_000)
+        for run_id, minutes in ((small, 1), (large, 2), (retry, 4)):
+            self.worked(run_id, minutes)
+
+    def test_each_classified_run_shows_its_verdict_profile_and_first_attempt(self):
+        self.classified_store()
+        rows = complexity_rows(self.report())
+        self.assertEqual([{key: row.get(key, "") for key in (
+            "ticket", "verdict", "conf", "profile", "source", "first",
+            "outcome", "rounds", "shadow")} for row in rows], [
+            {"ticket": "KO-1", "verdict": "small", "conf": "0.90",
+             "profile": "cheap", "source": "classifier", "first": "pass",
+             "outcome": "merged", "rounds": "1", "shadow": "verified APPROVE"},
+            {"ticket": "KO-2", "verdict": "large", "conf": "0.70",
+             "profile": "default", "source": "default", "first": "fail",
+             "outcome": "failed", "rounds": "3", "shadow": ""},
+            {"ticket": "KO-3", "verdict": "small", "conf": "0.80",
+             "profile": "default", "source": "default", "first": "-",
+             "outcome": "merged", "rounds": "2", "shadow": ""}])
+        self.assertEqual([row["min"] for row in rows], ["1.0", "2.0", "4.0"])
+
+    def test_one_summary_line_per_verdict_counts_first_attempts_and_shadows(self):
+        self.classified_store()
+        lines = self.section()
+        summaries = [line for line in lines if line.startswith("complexity ")]
+        self.assertEqual(summaries, [
+            "complexity classifier:",
+            "complexity small: 2 runs · first-attempt pass 1/1 · median rounds"
+            " 1.5 · median min 2.5 · shadowed 1 (verified 1,"
+            " round-1 approvals 1)",
+            "complexity large: 1 runs · first-attempt pass 0/1 · median rounds"
+            " 3 · median min 2.0"])
+
+    def test_an_unanswered_question_reads_none_and_summarises_last(self):
+        self.run_with(1, [("complexity", complexity(None, None))])
+        self.run_with(2, [("complexity", complexity("medium", 0.6))])
+        lines = self.section()
+        self.assertEqual([(row["ticket"], row["verdict"], row["conf"])
+                          for row in complexity_rows(lines)],
+                         [("KO-1", "none", "-"), ("KO-2", "medium", "0.60")])
+        self.assertEqual(
+            [line.split(":")[0] for line in lines
+             if line.startswith("complexity ")][1:],
+            ["complexity medium", "complexity none"])
+
+    def test_a_store_without_complexity_events_prints_no_section(self):
+        self.run_with(1, [])
+        self.assertFalse([line for line in self.report() if "complexity" in line])
+
+    def retry_after(self, outcome, phase):
+        first = self.run_with(1, [
+            ("implementer_profile", profile("sonnet", "ticket"))], outcome=None)
+        advance_phase(self.conn, first, phase, now=AT + 10)
+        finish_run(self.conn, first, outcome, now=AT + 50,
+                   **({"resume_phase": phase} if outcome == "paused" else {}))
+        (ticket,) = self.conn.execute("SELECT ticketId FROM runs WHERE id = ?",
+                                      (first,)).fetchone()
+        retry = store.claim(self.conn, self.project_id, ticket, now=AT + 100)
+        store.record_event(self.conn, retry, "complexity", "complexity",
+                           level="detail",
+                           payload=json.dumps(complexity("small", 0.9)))
+        self.conn.commit()
+        finish_run(self.conn, retry, "failed", now=AT + 200)
+        (row,) = complexity_rows(self.section())
+        return row["profile"], row["source"]
+
+    def test_a_resumed_run_shows_the_profile_its_earlier_attempt_recorded(self):
+        self.assertEqual(self.retry_after("paused", "working"),
+                         ("sonnet", "ticket"))
+
+    def test_a_fresh_retry_does_not_inherit_the_failed_attempts_profile(self):
+        self.assertEqual(self.retry_after("failed", "working"), ("default", "-"))
