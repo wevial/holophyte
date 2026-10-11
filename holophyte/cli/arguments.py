@@ -101,8 +101,8 @@ def _note_checks(parser, args):
                          " --cancel, --gap-layer, --approve-story and --decide"
                          " require --note TEXT")
         return
-    filed = args.file_ticket if args.update is None else None
-    optional = args.approve or args.babysit or args.close or args.move or filed
+    optional = args.approve or args.babysit or args.close or args.move \
+        or args.file_ticket
     if args.note is not None and args.requeue is None \
             and args.repoint is None and optional is None:
         parser.error("--note is what --requeue, --approve, --babysit, "
@@ -362,15 +362,16 @@ def build_parser():
              f"unless {BABYSIT_DEFAULT_NOTE!r}; with --close: context for the external "
              "landing; recorded on the intervention row's "
              "event; with --cancel, required, or --move: the ticket's note; "
-             "with --file-ticket: the filed ticket's first board note; "
+             "with --file-ticket: the filed ticket's first board note, or "
+             "with --update the updated ticket's note after the update; "
              "with --approve-story, required: the approval's; with "
              "--decide, required: the answer's")
     parser.add_argument(
         "--author", metavar="NAME",
         help="with --babysit and --note: the maintainer instruction's"
              " author, sent as one even when the note is the default; with"
-             " --file-ticket and --note: who the filed ticket's first board"
-             " note, AUTHOR: NOTE, is from; default the caller's login")
+             " --file-ticket and --note: who the filed or updated ticket's"
+             " board note, AUTHOR: NOTE, is from; default the caller's login")
     parser.add_argument(
         "--state", choices=FILE_TICKET_STATES,
         help="with --file-ticket: the workflow state the issue is created in "

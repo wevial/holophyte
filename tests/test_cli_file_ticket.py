@@ -388,6 +388,20 @@ class FileTicketCliTests(unittest.TestCase):
             [v for q, v in linear.mutations() if "commentCreate" in q],
             [{"issue": "KO-7000", "body": "seat: why"}])
 
+    def test_an_update_refuses_a_blank_note_and_an_author_without_a_note(self):
+        self.with_board()
+        for args, words in ((("--note", "   "), "rather than blank"),
+                            (("--author", "seat"), "nothing to sign")):
+            with self.subTest(args=args):
+                err = io.StringIO()
+                linear = FakeLinear()
+                with self.assertRaises(SystemExit) as raised, \
+                        contextlib.redirect_stderr(err):
+                    self.cli("--update", "KO-7000", *args, linear=linear)
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(words, err.getvalue())
+                self.assertEqual(linear.calls, [])
+
     def test_update_of_a_file_with_a_blocker_sends_nothing_and_exits_1(self):
         self.with_board()
         self.ticket.write_text(TICKET.replace(
