@@ -471,17 +471,21 @@ class IsolationTests(GoRaceCases, IsolationCase):
                           if part == "--volume"]
                 self.assertIn(f"{release}/codex:/opt/codex/bin/codex:ro", mounts)
 
-    def probe_codex_fallback(self, fallback, implementer=None):
+    def probe_codex_fallback(self, fallback, implementer=None, credential=None):
         from holophyte.agents import probes
         from holophyte.isolation import launcher
 
-        release = self.fake_codex_release()
+        release = self.root / "release"
+        if not release.exists():
+            self.fake_codex_release()
         codex_home = self.root / "codex-home"
-        codex_home.mkdir()
+        codex_home.mkdir(exist_ok=True)
         (codex_home / "auth.json").write_text("codex-login-secret")
         self.table["agents"] = {"implementer_isolation": "container",
                                 "implementer": implementer or {"harness": "claude"},
                                 "implementer_fallback": fallback}
+        if credential is not None:
+            self.table["agents"]["implementer_credential"] = credential
         path = f"{release}{os.pathsep}{os.environ.get('PATH', '')}"
         with (patch.dict(os.environ, {"PATH": path, "CODEX_HOME": str(codex_home)}),
               patch.object(launcher, "image_ready"),
@@ -508,6 +512,19 @@ class IsolationTests(GoRaceCases, IsolationCase):
         command = " ".join(call.args[0])
         self.assertIn('PATH="/opt/codex/bin:$PATH" exec', command)
         self.assertNotIn("auth.json", command)
+
+    def test_only_an_explicit_codex_auth_file_replaces_the_host_login(self):
+        token = self.root / "token"
+        token.write_text("provider")
+        for destination, mounted in (
+                ("/home/implementer/.codex/provider/token", True),
+                ("/home/implementer/.codex/auth.json", False)):
+            with self.subTest(destination=destination):
+                login, call, _ = self.probe_codex_fallback(
+                    "codex exec -m model",
+                    credential={"file": str(token), "destination": destination})
+                mount = f"{login}:/opt/codex/login/auth.json:ro"
+                self.assertEqual(mount in call.args[0], mounted)
 
     def test_quoted_codex_program_is_a_codex_implementer(self):
         from holophyte.isolation.launcher import route_for
