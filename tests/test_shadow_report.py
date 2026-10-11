@@ -281,6 +281,6 @@ class ComplexityReportTests(ReportStoreCase):
             ("shadow_result", shadow(300, usage(1, 1, 0.1), True, "APPROVE"))])
         lines = self.report()
         self.assertFalse([line for line in lines if "complexity" in line])
-        start = lines.index("shadow implementer:")
-        self.assertEqual(lines[start:start + 5],
-                         report.shadow_lines(self.conn))
+        self.assertEqual(table_rows(lines)[1]["verify"], "verified")
+        self.assertIn("shadows 1 · verified primary 0/1, shadow 1/1",
+                      lines[lines.index("shadow implementer:") + 4])

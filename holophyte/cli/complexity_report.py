@@ -93,10 +93,8 @@ def complexity_lines(conn):
         cell.rjust(width) if i in (2, 7, 8) else cell.ljust(width)
         for i, (cell, width) in enumerate(zip(row, widths))).rstrip()
         for row in table]
-    verdicts = [*VERDICT_ORDER, *sorted({run["verdict"] for run in runs}
-                                        - set(VERDICT_ORDER))]
     summaries = [summary_line(verdict, [run for run in runs
                                         if run["verdict"] == verdict])
-                 for verdict in verdicts
+                 for verdict in VERDICT_ORDER
                  if any(run["verdict"] == verdict for run in runs)]
     return ["complexity classifier:", *lines, *summaries]
