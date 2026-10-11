@@ -20,6 +20,12 @@ export const runSchema = z.looseObject({
   run_count: z.number().optional(),
 });
 
+// A ready ticket whose last run ended, waiting for the next claim.
+export const queuedSchema = z.looseObject({
+  ticket: z.string(), ticket_url: z.string().nullable().optional(), title: z.string().nullable().optional(),
+  reason: z.string().nullable(), pr_url: z.string().nullable(), waiting_ms: z.number(),
+});
+
 // One window of the daemon's operator interventions per merged run;
 // `per_merge` is null for a window with no merges.
 export const toilWindowSchema = z.looseObject({
@@ -44,6 +50,7 @@ export const statusSchema = z.looseObject({
   thresholds: z.looseObject({ heartbeat_stale_ms: z.number(), strikes: z.number() }),
   actions: z.boolean().optional(), config_edit: z.boolean().optional(),
   runs: z.array(runSchema),
+  queued: z.array(queuedSchema).optional(),
 });
 
 // The last host sweep as a host daemon's root `/status` reports it

@@ -33,16 +33,20 @@
   "now": 1750000000000,
   "toil": {
     "24h": {
-      "interventions": 0,
+      "interventions": 1,
       "merged": 0,
       "per_merge": null,
-      "by_action": {}
+      "by_action": {
+        "approve": 1
+      }
     },
     "7d": {
-      "interventions": 0,
+      "interventions": 1,
       "merged": 0,
       "per_merge": null,
-      "by_action": {}
+      "by_action": {
+        "approve": 1
+      }
     }
   },
   "daemon": {
@@ -106,6 +110,16 @@
       "host": null,
       "stop_requested": null,
       "stop_action": null
+    }
+  ],
+  "queued": [
+    {
+      "ticket": "KO-9",
+      "ticket_url": null,
+      "title": "Approved ticket",
+      "reason": "approved for merge; the next claim resumes the candidate at the merge gate",
+      "pr_url": "https://github.com/example/repo/pull/9",
+      "waiting_ms": 60000
     }
   ]
 }

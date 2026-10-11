@@ -365,6 +365,43 @@ class FileTicketCliTests(unittest.TestCase):
         self.assertEqual(linear.relations(), [])
         self.assertEqual(printed.strip(), "[holo2] updated KO-7000: T2")
 
+    def test_an_update_with_a_note_and_author_posts_the_signed_note_on_it(self):
+        self.with_board()
+
+        class Comments(FakeLinear):
+            def __call__(self, query, variables=None):
+                if "commentCreate" in query:
+                    self.calls.append((query, variables))
+                    return {"commentCreate": {"success": True}}
+                return super().__call__(query, variables)
+
+        linear = Comments()
+
+        status, _ = self.cli("--update", "KO-7000", "--note", "why",
+                             "--author", "seat", linear=linear)
+
+        self.assertEqual(status, 0)
+        self.assertEqual(linear.updates(), [("uuid-KO-7000", {
+            "title": "Add export endpoint", "description": TICKET,
+            "estimate": 25})])
+        self.assertEqual(
+            [v for q, v in linear.mutations() if "commentCreate" in q],
+            [{"issue": "KO-7000", "body": "seat: why"}])
+
+    def test_an_update_refuses_a_blank_note_and_an_author_without_a_note(self):
+        self.with_board()
+        for args, words in ((("--note", "   "), "rather than blank"),
+                            (("--author", "seat"), "nothing to sign")):
+            with self.subTest(args=args):
+                err = io.StringIO()
+                linear = FakeLinear()
+                with self.assertRaises(SystemExit) as raised, \
+                        contextlib.redirect_stderr(err):
+                    self.cli("--update", "KO-7000", *args, linear=linear)
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(words, err.getvalue())
+                self.assertEqual(linear.calls, [])
+
     def test_update_of_a_file_with_a_blocker_sends_nothing_and_exits_1(self):
         self.with_board()
         self.ticket.write_text(TICKET.replace(
