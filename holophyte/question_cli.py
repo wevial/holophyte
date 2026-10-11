@@ -41,10 +41,6 @@ def schema(question):
     }
 
 
-def answer_keys(question):
-    return {"choice", "confidence"} | ({"reason"} if question.reason else set())
-
-
 def prompt(question, state, secrets):
     options = "\n".join(f"- {name}: {text}" for name, text in question.criteria.items())
     record = bounded(questions.safe(state, secrets))
@@ -142,7 +138,8 @@ def answer(route, question, state, config):
 
 
 def checked(document, question):
-    if (isinstance(document, dict) and set(document) == answer_keys(question)
+    if (isinstance(document, dict)
+            and set(document) == set(schema(question)["properties"])
             and isinstance(document["choice"], str)
             and document["choice"] in question.criteria
             and questions.probability(document["confidence"])
