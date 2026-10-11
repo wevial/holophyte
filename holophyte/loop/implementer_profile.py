@@ -13,6 +13,7 @@ from holophyte.agents.probes import (
     probe_launch,
 )
 from holophyte.config.reader import config_table
+from holophyte.loop.gates import InfraFailure
 from holophyte.loop.stop import continuation
 from holophyte.redact import safe_print as print
 
@@ -23,10 +24,14 @@ def profiled_run(run, task):
     project, conn, run_id = run.project, run.conn, run.run_id
     seats = implementer_profiles(project)
     recorded = recorded_profile(conn, run_id)
-    if recorded is not None and (recorded["profile"] is None
-                                 or recorded["profile"] in seats):
-        return dataclasses.replace(run, project=scoped(project,
-                                                       recorded["profile"]))
+    if recorded is not None:
+        name = recorded["profile"]
+        if name is not None and name not in seats:
+            raise InfraFailure(
+                f"the run's recorded implementer profile {name!r} is no "
+                f"longer configured; restore [agents.{PROFILES_KEY}.{name}] "
+                f"to continue it")
+        return dataclasses.replace(run, project=scoped(project, name))
     requested = ticket_template.parse(task.get("body") or "").implementer or None
     name, why = None, None
     if requested in seats:

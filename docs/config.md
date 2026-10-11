@@ -202,7 +202,8 @@ config does not define, or a profile whose probe fails, runs on
 with the `profile` used (or null), its `source` (`ticket` or `default`), the
 `requested` name (or null), `why` it fell back (null, `unknown profile` or the
 probe's diagnostic) and the route `label` its turns record. A continuation of
-a paused run reuses the recorded profile without a new probe or event.
+a paused run reuses the recorded profile without a new probe or event,
+and fails as an infra failure if that profile is no longer configured.
 
 `[agents.reviewer] harness = "codex"` (and the same for `adjudicator`) does
 what a host wrapper script used to. Each turn runs in a throwaway detached
