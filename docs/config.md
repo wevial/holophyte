@@ -205,6 +205,23 @@ probe's diagnostic) and the route `label` its turns record. A continuation of
 a paused run reuses the recorded profile without a new probe or event,
 and fails as an infra failure if that profile is no longer configured.
 
+A run on a profile that fails on its merits (a verify failure, a fix round
+that made no progress, or a terminal adjudication FAIL) is escalated once:
+after its close-out the factory requeues the ticket with a `factory`
+interventions row whose note starts `escalation:`, and records an
+`escalation` run event with the `profile`, the `failure_kind`, whether it was
+`requeued` and `why`. Every later claim of the ticket runs on
+`[agents.implementer]` with `source` `escalation`, reusing the preserved
+branch. The escalated implement turn is told the profile, the failure reason
+and the branch head, decides whether to build on the earlier commits or
+restart from main with a forward commit that returns the tree to main's, and
+ends its reply with `ESCALATION: build — reason` or
+`ESCALATION: restart — reason`; an `escalation_choice` run event records the
+`choice` (`build`, `restart` or `undeclared`) and its `reason`. Other failure
+kinds, runs on the default implementer and an escalated run's own failure are
+not escalated; `[questions.failures]` triage then finds the ticket already
+requeued and does not requeue it again.
+
 `[agents.reviewer] harness = "codex"` (and the same for `adjudicator`) does
 what a host wrapper script used to. Each turn runs in a throwaway detached
 worktree of `refs/review/RUN/candidate` inside the review scratch directory,

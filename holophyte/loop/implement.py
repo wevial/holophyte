@@ -31,7 +31,7 @@ from holophyte.environment_git import (
     unstage_environment,
 )
 from holophyte.leak_guard import register_matches
-from holophyte.loop import steering
+from holophyte.loop import escalation, steering
 from holophyte.loop.claim import conflict_brief, mid_merge, unmerged_paths
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
@@ -658,6 +658,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                                         branch, task_id, goal, out, deadline,
                                         budget_min, limit, start_sha)
     blast_radius.record_declared(conn, run_id, out)
+    escalation.record_choice(conn, run_id, out)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     added = head != start_sha and not _failed_wip_only(wt, out, timed_out,
