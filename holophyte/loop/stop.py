@@ -4,6 +4,7 @@ from contextvars import ContextVar
 from dataclasses import asdict
 
 import store
+import store.read
 from holophyte.config.project import Project, worktree_path
 from store.schema import _transaction
 
@@ -183,6 +184,14 @@ def continuation(conn, run_id):
                          " AND kind = 'pause_checkpoint' ORDER BY id DESC LIMIT 1",
                          (row[0],)).fetchone()
     return {"phase": row[1], **(json.loads(event[0]) if event else {})}
+
+
+def resumes(run):
+    conn, run_id = run.conn, run.run_id
+    return continuation(conn, run_id) is not None or (
+        store.read.approved_candidate(
+            conn, store.read.run_snapshot(conn, run_id).ticketId, run_id)
+        is not None and run.wt.exists())
 
 
 def command(target, identifier, note, *, resume=False):

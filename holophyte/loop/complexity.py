@@ -4,7 +4,7 @@ import store
 import ticket_template
 from holophyte import questions, redact
 from holophyte.loop.failure_triage import asked_route
-from holophyte.loop.stop import continuation
+from holophyte.loop.stop import resumes
 from holophyte.redact import safe_print as print
 
 EVENT = "complexity"
@@ -18,7 +18,7 @@ def classifier_profile(run, task):
         options = questions.settings(run.project.config())["complexity"]
         if options is None or run.conn is None or run.run_id is None:
             return None
-        verdict = recorded(run.conn, run.run_id) or classify(run, task, options)
+        verdict = recorded(run) or classify(run, task, options)
     except Exception as error:
         print(f"[holo2] complexity question skipped: {error}")
         return None
@@ -28,13 +28,14 @@ def classifier_profile(run, task):
     return options["profiles"].get(verdict["verdict"])
 
 
-def recorded(conn, run_id):
+def recorded(run):
+    conn, run_id = run.conn, run.run_id
     row = conn.execute(
         "SELECT e.runId, e.payload FROM runEvents e JOIN runs r ON r.id = e.runId"
         " JOIN runs current ON current.ticketId = r.ticketId"
         " WHERE current.id = ? AND r.id <= current.id AND e.kind = ?"
         " ORDER BY e.id DESC LIMIT 1", (run_id, EVENT)).fetchone()
-    if row is None or (row[0] != run_id and continuation(conn, run_id) is None):
+    if row is None or (row[0] != run_id and not resumes(run)):
         return None
     return json.loads(row[1])
 

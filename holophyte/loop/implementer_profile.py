@@ -2,7 +2,6 @@ import dataclasses
 import json
 
 import store
-import store.read
 import ticket_template
 from holophyte.agents.agent_routes import ProfileRoutes, routes
 from holophyte.agents.agent_turns import turn_label
@@ -18,7 +17,7 @@ from holophyte.config.reader import config_table
 from holophyte.loop.complexity import classifier_profile
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
-from holophyte.loop.stop import continuation
+from holophyte.loop.stop import resumes
 from holophyte.redact import safe_print as print
 
 EVENT = "implementer_profile"
@@ -82,11 +81,7 @@ def carried_profile(run):
     row = latest_profile(conn, run_id)
     if row is None or row[0] == run_id:
         return row and row[1]
-    resumes = continuation(conn, run_id) is not None or (
-        store.read.approved_candidate(
-            conn, store.read.run_snapshot(conn, run_id).ticketId, run_id)
-        is not None and run.wt.exists())
-    return row[1] if resumes else None
+    return row[1] if resumes(run) else None
 
 
 def latest_profile(conn, run_id):

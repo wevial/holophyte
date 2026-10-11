@@ -516,3 +516,19 @@ class ComplexityClassifierTests(ProfileRunFixture):
         self.assertEqual((verdict["verdict"], verdict["why"]),
                          (None, "timeout"))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_merge_gate_resume_reuses_the_recorded_verdict(self):
+        from pause_fixture import PauseReply
+
+        from holophyte.loop.stop import command
+        self.claude.answer("small", 0.9, reason="one config key")
+        self.configure(CLASSIFIER + '[merge]\napprove = "human"\n')
+        self.run_ticket(VALID_BODY, PauseReply(self.db, APPROVE),
+                        guard=question_guard())
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "merge_gate")])
+        command(self.project, a_task()["id"], None, resume=True)
+        self.run_ticket(VALID_BODY, guard=question_guard())
+        self.assertEqual(len(self.verdicts()), 1)
+        self.assertEqual(
+            [call["mode"] for call in self.claude.calls()].count("question"), 1)
