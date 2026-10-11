@@ -41,6 +41,35 @@ class IsolationRealTests(IsolationCase):
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
+    def test_real_codex_fallback_reads_the_host_login_read_only(self):
+        from holophyte.isolation import launcher
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        _, worktree = self.make_worktree()
+        release = self.fake_codex_release()
+        codex_home = self.root / "codex-home"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text("host-login\n")
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": {"harness": "claude"},
+                                "implementer_fallback": "codex exec -m MODEL"}
+        script = ("cat /home/implementer/.codex/auth.json;"
+                  " echo changed > /home/implementer/.codex/auth.json")
+        path = f"{release}{os.pathsep}{os.environ.get('PATH', '')}"
+        with patch.dict(os.environ, {"PATH": path, "CODEX_HOME": str(codex_home)}):
+            route = replace(launcher.route_for(self.target), writable=False)
+            code, output = launcher.launch(route, worktree, {},
+                                           ["/bin/sh", "-c", script])
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("host-login", output)
+        self.assertIn("Read-only file system", output)
+        self.assertEqual((codex_home / "auth.json").read_text(), "host-login\n")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
     def test_real_session_files_persist_per_task_worktree(self):
         from holophyte.isolation import launcher
         from holophyte.isolation.isolation_git import git

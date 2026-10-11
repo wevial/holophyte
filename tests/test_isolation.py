@@ -471,6 +471,40 @@ class IsolationTests(GoRaceCases, IsolationCase):
                           if part == "--volume"]
                 self.assertIn(f"{release}/codex:/opt/codex/bin/codex:ro", mounts)
 
+    def probe_codex_fallback(self, fallback):
+        from holophyte.agents import probes
+        from holophyte.isolation import launcher
+
+        release = self.fake_codex_release()
+        codex_home = self.root / "codex-home"
+        codex_home.mkdir()
+        (codex_home / "auth.json").write_text("codex-login-secret")
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": {"harness": "claude"},
+                                "implementer_fallback": fallback}
+        path = f"{release}{os.pathsep}{os.environ.get('PATH', '')}"
+        with (patch.dict(os.environ, {"PATH": path, "CODEX_HOME": str(codex_home)}),
+              patch.object(launcher, "image_ready"),
+              patch.object(launcher.review_runner, "_remove_container"),
+              patch.object(launcher, "run_capped",
+                           return_value=(0, "PROBE_OK")) as run):
+            result = probes.probe_launch(self.target, fallback.split(), 5,
+                                         "implementer")
+        self.assertEqual(result.returncode, 0, result.launch_error)
+        return codex_home / "auth.json", run.call_args, result
+
+    def test_codex_fallback_probe_mounts_the_codex_login_read_only(self):
+        login, call, result = self.probe_codex_fallback("codex exec -m model")
+        argv = call.args[0]
+        mounts = [argv[i + 1] for i, part in enumerate(argv) if part == "--volume"]
+        self.assertIn(f"{login}:/home/implementer/.codex/auth.json:ro", mounts)
+        self.assertNotIn("codex-login-secret", str(call))
+        self.assertNotIn("codex-login-secret", str(result))
+
+    def test_non_codex_fallback_probe_gets_no_codex_login(self):
+        _, call, _ = self.probe_codex_fallback("claude -p")
+        self.assertNotIn(".codex", " ".join(call.args[0]))
+
     def test_quoted_codex_program_is_a_codex_implementer(self):
         from holophyte.isolation.launcher import route_for
 
