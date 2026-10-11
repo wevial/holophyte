@@ -276,7 +276,7 @@ def parse_role(where, key, table):
     return adapter
 
 
-def check_orchestration(where, table, adapter, key="implementer"):
+def check_orchestration(where, table, adapter, key):
     mode = table.get("orchestration", "off")
     if mode not in ORCHESTRATION_MODES:
         raise SystemExit(
