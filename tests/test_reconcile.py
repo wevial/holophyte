@@ -636,6 +636,29 @@ class ContentWakeTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT prSeenThreads, prSeenOpenThreads"
                                    " FROM runs"), [(4, 0)])
 
+    def test_a_conflicting_park_is_sent_back_to_merge_main(self):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.parked_with_mark(self, H.T1, 0)
+        H.fake_client(self, dict(H.OPEN_PULL, updatedAt=H.T1,
+                                 reviewThreads={'totalCount': 0},
+                                 mergeable='CONFLICTING',
+                                 headRefOid='conflicted-head'))
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        with patch.object(sys, 'stdout', io.StringIO()):
+            holophyte.host.reconcile._reconcile_pull_requests(
+                self.project, conn,
+                conn.execute('SELECT id FROM projects').fetchone()[0],
+                StubProvider())
+        notes = self.read("SELECT note FROM interventions"
+                          " WHERE action = 'babysit'")
+        self.assertEqual(len(notes), 1)
+        self.assertIn(f'{self.URL} conflicts with main', notes[0][0])
+        events = self.read("SELECT summary FROM runEvents"
+                           " WHERE kind = 'conflict_wake'")
+        self.assertEqual(len(events), 1)
+        self.assertIn('conflicted-head', events[0][0])
+
     def test_only_new_authored_content_wakes_once(self):
         from test_pullrequest_parked import ParkedPullRequestTests as H
         H.parked_with_mark(self, H.T1, 3)
