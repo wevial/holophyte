@@ -283,8 +283,10 @@ def _same_line_groups(rows):
 
 
 def _settled_key(conn, row_id):
-    return conn.execute("SELECT coalesce(filedAs, duplicateOf) FROM followUps"
-                        " WHERE id = ?", (row_id,)).fetchone()[0]
+    return conn.execute(
+        "SELECT coalesce(f.filedAs, f.duplicateOf, 'p' || p.id) FROM followUps f"
+        " LEFT JOIN storyProposals p ON p.followUpId = f.id WHERE f.id = ?",
+        (row_id,)).fetchone()[0]
 
 
 def _settle_one(target, conn, row, origin, board_of, note=None):
@@ -308,6 +310,6 @@ def _settle_rows(target, conn, run_id):
         for row in others:
             if key:
                 store.follow_ups.settle_duplicate(conn, row.id, key,
-                                                  of="same-line draft")
+                                                  of="same-line follow-up")
             else:
                 _settle_one(target, conn, row, origin, board_of)

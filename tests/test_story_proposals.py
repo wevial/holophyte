@@ -247,6 +247,26 @@ class ScopeCallTests(StoryProposalTests):
                       parsed.summary)
         self.assertIn("Depends on: NAT-2", body)
 
+    def test_two_wordings_of_one_line_make_one_proposal_with_both_texts(self):
+        self.approved_story()
+        self.reply(**{TEXT: (IN_STORY, 0), "Add the refund total": (IN_STORY, 0)})
+        tickets = self.ticket_count()
+
+        run_id = self.merged(self.merged_child, f"fix\n\n{FEATURE}",
+                             "fix again\n\nFOLLOW_UP(feature): Add the refund"
+                             " total @ export.py:42")
+
+        [(proposal, _, newest, _, _, _)] = self.proposals()
+        (body,) = self.read(f"SELECT body FROM storyProposals"
+                            f" WHERE id = {proposal}")[0]
+        self.assertIn(TEXT, body)
+        self.assertIn("Add the refund total", body)
+        self.assertEqual(self.ticket_count(), tickets)
+        self.assertEqual(self.read(
+            f"SELECT id = {newest}, duplicateOf FROM followUps"
+            f" WHERE runId = {run_id} ORDER BY id"),
+            [(0, f"p{proposal}"), (1, None)])
+
     def test_a_proposal_leaves_the_story_its_frontier_and_claims_unchanged(self):
         parent = self.approved_story(second="ready")
         self.reply(**{TEXT: (IN_STORY, 0)})
