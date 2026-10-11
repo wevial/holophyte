@@ -10,7 +10,7 @@ import holophyte.cli.entry
 import holophyte.cli.report as report
 import store
 import store.tickets
-from tests.phase_fixture import finish_run
+from tests.phase_fixture import advance_phase, finish_run
 from tests.test_wiring_telemetry import ReportStoreCase, no_network
 
 AT = 1_700_000_000_000
@@ -280,18 +280,26 @@ class ComplexityReportTests(ReportStoreCase):
         self.run_with(1, [])
         self.assertFalse([line for line in self.report() if "complexity" in line])
 
-    def test_a_resumed_run_shows_the_profile_its_earlier_attempt_recorded(self):
-        paused = self.run_with(1, [
-            ("implementer_profile", profile("sonnet", "ticket"))],
-            outcome="paused")
+    def retry_after(self, outcome, phase):
+        first = self.run_with(1, [
+            ("implementer_profile", profile("sonnet", "ticket"))], outcome=None)
+        advance_phase(self.conn, first, phase, now=AT + 10)
+        finish_run(self.conn, first, outcome, now=AT + 50,
+                   **({"resume_phase": phase} if outcome == "paused" else {}))
         (ticket,) = self.conn.execute("SELECT ticketId FROM runs WHERE id = ?",
-                                      (paused,)).fetchone()
-        resumed = store.claim(self.conn, self.project_id, ticket, now=AT + 100)
-        store.record_event(self.conn, resumed, "complexity", "complexity",
+                                      (first,)).fetchone()
+        retry = store.claim(self.conn, self.project_id, ticket, now=AT + 100)
+        store.record_event(self.conn, retry, "complexity", "complexity",
                            level="detail",
                            payload=json.dumps(complexity("small", 0.9)))
         self.conn.commit()
-        finish_run(self.conn, resumed, "merged", now=AT + 200)
+        finish_run(self.conn, retry, "failed", now=AT + 200)
         (row,) = complexity_rows(self.section())
-        self.assertEqual((row["profile"], row["source"], row["first"]),
-                         ("sonnet", "ticket", "-"))
+        return row["profile"], row["source"]
+
+    def test_a_resumed_run_shows_the_profile_its_earlier_attempt_recorded(self):
+        self.assertEqual(self.retry_after("paused", "working"),
+                         ("sonnet", "ticket"))
+
+    def test_a_fresh_retry_does_not_inherit_the_failed_attempts_profile(self):
+        self.assertEqual(self.retry_after("failed", "working"), ("default", "-"))

@@ -19,14 +19,31 @@ def newest_payload(conn, run_id, kind):
     return None if row is None else json.loads(row[0])
 
 
-def run_profile(conn, run_id):
+RESUMED_PAUSES = ("working", "verifying", "reviewing", "addressing")
+RESUMED_CANDIDATES = ("merge_gate", "merging")
+
+
+def resumed_from(conn, run_id):
     row = conn.execute(
-        "SELECT e.payload FROM runEvents e JOIN runs r ON r.id = e.runId"
-        " JOIN runs current ON current.ticketId = r.ticketId"
-        " WHERE current.id = ? AND r.id <= current.id"
-        " AND e.kind = 'implementer_profile' ORDER BY e.id DESC LIMIT 1",
+        "SELECT old.id, old.resumePhase, old.outcome FROM runs old JOIN runs current"
+        " ON old.ticketId = current.ticketId WHERE current.id = ?"
+        " AND old.attempt < current.attempt ORDER BY old.attempt DESC LIMIT 1",
         (run_id,)).fetchone()
-    return {} if row is None else json.loads(row[0])
+    if row is None:
+        return None
+    older, phase, outcome = row
+    resumed = (phase in RESUMED_CANDIDATES
+               or (outcome == "paused" and phase in RESUMED_PAUSES))
+    return older if resumed else None
+
+
+def run_profile(conn, run_id):
+    while run_id is not None:
+        profile = newest_payload(conn, run_id, "implementer_profile")
+        if profile is not None:
+            return profile
+        run_id = resumed_from(conn, run_id)
+    return {}
 
 
 def classified_runs(conn):
