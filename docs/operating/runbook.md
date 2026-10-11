@@ -211,7 +211,8 @@ python3 factory.py PROJECT --release-hold --note "on the native board"
 ```
 
 Hold, then drain: the loop claims nothing new, and `--status` shows the
-live runs finishing. The host sweep delivers the pending board pushes and
+live runs finishing. Parked pull requests are still reconciled during the
+hold, so a woken run waits in the ready queue until the release. The host sweep delivers the pending board pushes and
 notes; the import's summary counts them, and the switch waits for both to
 read 0, since nothing posts to Linear afterwards. The import upserts by
 board id, so rows, runs, ledger and `dependsOn` stay, old tickets keep
