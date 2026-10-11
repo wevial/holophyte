@@ -331,6 +331,18 @@ class TypedParkAttentionTests(unittest.TestCase):
             parkKind="pull_request")
         self.assertEqual(holophyte.serve.server.parked_item(ticket)["kind"], "pr_open")
 
+    def test_the_pull_request_item_carries_its_park_kind(self):
+        kinds = []
+        for park_kind in ("ci", "pull_request"):
+            ticket = store.read.BlockedTicket(
+                id=1, linearIdentifier="KO-1",
+                blockedQuestion="PR open\npending checks",
+                prUrl="https://github.com/example/repo/pull/7",
+                parkKind=park_kind)
+            item = holophyte.serve.server.parked_item(ticket)
+            kinds.append((item["kind"], item.get("park_kind")))
+        self.assertEqual(kinds, [("pr_open", "ci"), ("pr_open", "pull_request")])
+
 
 if __name__ == "__main__":
     unittest.main()
