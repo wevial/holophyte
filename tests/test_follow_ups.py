@@ -419,6 +419,51 @@ class NativeSettleTests(NativeProject):
             "SELECT runId, filedAs, duplicateOf FROM followUps ORDER BY runId"),
             [(first, None, key), (second, key, None)])
 
+    def test_a_follow_up_a_later_fix_turn_addressed_files_no_draft(self):
+        key = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                      VALID_BODY)
+        ticket = store.read.ticket_by_identifier(self.conn, key)
+        run_id = store.claim(self.conn, self.project_id, ticket.id)
+        base = self.git("rev-parse", "HEAD").strip()
+        self.git("commit", "-q", "--allow-empty", "-m", f"fix\n\n{FEATURE}")
+        capture(self.conn, run_id, self.target, base)
+        [(row_id,)] = self.read("SELECT id FROM followUps")
+        base = self.git("rev-parse", "HEAD").strip()
+        self.git("commit", "-q", "--allow-empty", "-m",
+                 f"fix again\n\nADDRESS(follow-up {row_id}): Cache the board read")
+        fixing = self.git("rev-parse", "HEAD").strip()
+        capture(self.conn, run_id, self.target, base)
+        for phase in ("working", "verifying", "reviewing", "merge_gate",
+                      "merging"):
+            store.set_phase(self.conn, run_id, phase)
+        release_run(self.conn, run_id, True, merge_sha=fixing)
+        settle(self.project, self.conn, run_id)
+
+        self.assertEqual(self.drafts(), [])
+        self.assertEqual(self.read("SELECT settledAt IS NOT NULL, filedAs"
+                                   " FROM followUps"), [(1, None)])
+        superseded = self.conn.execute(
+            "SELECT summary || coalesce(payload, '') FROM runEvents"
+            " WHERE runId = ? AND kind = ?",
+            (run_id, "follow_up_superseded")).fetchall()
+        self.assertEqual(len(superseded), 1)
+        self.assertIn(fixing, superseded[0][0])
+
+    def test_two_wordings_of_one_line_file_one_draft_with_both_texts(self):
+        run_id = self.merged_run(
+            f"fix\n\n{FEATURE}",
+            "fix again\n\nFOLLOW_UP(feature): Reuse the cached board"
+            " @ provider.py:185")
+
+        drafts = self.drafts()
+        self.assertEqual(len(drafts), 1, drafts)
+        [(key, body)] = drafts
+        self.assertIn("Cache the board read", body)
+        self.assertIn("Reuse the cached board", body)
+        self.assertEqual(sorted(self.read(
+            f"SELECT filedAs, duplicateOf FROM followUps WHERE runId = {run_id}"),
+            key=str), sorted([(key, None), (None, key)], key=str))
+
 class LinearMergeTests(LoopRuns):
     """The default Linear-mode project, its board a recording stand-in."""
 
