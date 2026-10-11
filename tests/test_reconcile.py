@@ -1024,6 +1024,35 @@ class CiParkTests(MergeModeFixture):
 
         self.assertEqual(self.wakes(), [("supervisor",)])
 
+    def test_red_checks_wake_a_park_on_a_held_project_to_ready(self):
+        self.ci_parked("PENDING")
+        self.age()
+        conn = store.open(self.db)
+        store.hold(conn, conn.execute("SELECT id FROM projects").fetchone()[0],
+                   "draining")
+        conn.close()
+
+        self.reconcile(self.pull(self.OLD, "FAILURE"))
+
+        self.assertEqual(self.wakes(), [("supervisor",)])
+        self.assertEqual(self.read("SELECT status, activeRunId FROM tickets"),
+                         [("ready", None)])
+
+    def test_a_disabled_project_s_ci_park_is_not_read_or_woken(self):
+        self.ci_parked("PENDING")
+        self.age()
+        conn = store.open(self.db)
+        store.tickets.set_admission(
+            conn, conn.execute("SELECT id FROM projects").fetchone()[0],
+            "disabled", "retired")
+        conn.close()
+
+        asked = self.reconcile(self.pull(self.OLD, "FAILURE"))
+
+        self.assertEqual(asked, [])
+        self.assertEqual(self.wakes(), [])
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])
+
     def test_pending_checks_past_check_wait_sec_park_for_a_human_unwoken(self):
         pending = self.pull(self.OLD, "PENDING")
         self.ci_parked("PENDING")
