@@ -395,6 +395,39 @@ class WitnessWorktreeTests(WitnessRunnerFixture, unittest.TestCase):
         self.assertEqual(len(git(self.repo, "worktree", "list").splitlines()), 1)
 
 
+class WitnessSetupTests(WitnessRunnerFixture, unittest.TestCase):
+    def test_each_witness_command_sees_the_files_worktree_setup_writes(self):
+        target = self.project(
+            '[worktree]\nsetup = ["echo e2e > .env.e2e.local"]\n')
+        needs_env = "test -f .env.e2e.local && {} -m unittest tests.{}"
+        self.approve([
+            ("W1", "tests/test_w1.py", needs_env.format(PYTHON, "test_w1"),
+             PASSES),
+            ("W2", "tests/test_w2.py", needs_env.format(PYTHON, "test_w2"),
+             PASSES)])
+
+        rows = run_witnesses(target, self.conn, self.story_id,
+                             main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual([(row.witnessKey, row.verdict) for row in rows],
+                         [("W1", "green"), ("W2", "green")])
+
+    def test_a_failed_setup_is_red_unrun_with_the_setup_output_logged(self):
+        target = self.project(
+            '[worktree]\nsetup = ["echo prisma generate broke; exit 3"]\n')
+        touch = f"touch {shlex.quote(str(self.marker))}"
+        self.approve([("W1", "tests/test_w1.py", touch, PASSES)])
+
+        (row,) = run_witnesses(target, self.conn, self.story_id,
+                               main_tip(target), "baseline", copy_files=True)
+
+        self.assertEqual((row.verdict, row.redKind), ("red", "exception"))
+        log = Path(row.evidencePath).read_text()
+        self.assertIn("[setup failed]", log)
+        self.assertIn("prisma generate broke", log)
+        self.assertFalse(self.marker.exists())
+
+
 class WitnessBudgetConfigTests(WitnessRunnerFixture, unittest.TestCase):
     def test_the_budget_defaults_to_ten_minutes(self):
         self.assertEqual(

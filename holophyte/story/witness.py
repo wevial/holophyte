@@ -12,6 +12,7 @@ from holophyte import deadline, redact
 from holophyte.admission import held_line
 from holophyte.config.config_tables import merge_config, story_config
 from holophyte.loop.gates import _verify_command, run_capped, vacuous_green_report
+from holophyte.loop.task_worktree import run_worktree_setup
 from holophyte.pr import github
 from holophyte.redact import safe_print as print
 from holophyte.story.story_close import (
@@ -338,6 +339,17 @@ def _run_one(run, witness, file_hash, log):
     if remaining <= 0:
         _write_log(log, SPENT, secrets)
         return "error", None, file_hash, 0.0
+    try:
+        ready, report = run_worktree_setup(run.target, run.tree)
+    except SystemExit as error:
+        ready, report = False, str(error)
+    if not ready:
+        _write_log(log, f"[setup failed]\n{report}\n", secrets)
+        return "red", "exception", file_hash, time.monotonic() - started
+    remaining = run.deadline - time.monotonic()
+    if remaining <= 0:
+        _write_log(log, SPENT, secrets)
+        return "error", None, file_hash, time.monotonic() - started
     try:
         code, output = _verify_command(run.target, NO_COLOR + witness.command,
                                        run.tree, remaining)
