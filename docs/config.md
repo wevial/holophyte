@@ -199,9 +199,11 @@ turn of the run uses the profile, its orchestration, isolation mounts and
 resume included, and `implementer_fallback` keeps its outage role. A name the
 config does not define, or a profile whose probe fails, runs on
 `[agents.implementer]`. Each run records one `implementer_profile` run event
-with the `profile` used (or null), its `source` (`ticket` or `default`), the
-`requested` name (or null), `why` it fell back (null, `unknown profile` or the
-probe's diagnostic) and the route `label` its turns record. A continuation of
+with the `profile` used (or null), its `source` (`ticket`, `classifier`,
+`escalation` or `default`), the `requested` name (or null), `why` it fell
+back (null, `unknown profile` or the probe's diagnostic) and the route
+`label` its turns record. The order is an escalation, then the ticket's line,
+then a routing `[questions.complexity]` verdict, then the default. A continuation of
 a paused run reuses the recorded profile without a new probe or event,
 and fails as an infra failure if that profile is no longer configured.
 
@@ -1503,6 +1505,7 @@ or Codex CLI.
 | `fallback_model` | Default: the fallback backend's own `model` default | Model of a CLI fallback. |
 | `fallback_effort` | Default: the fallback backend's own `effort` default | Effort of a CLI fallback. |
 | `failures` | Default: Absent (failed runs are not classified) | Table described under [questions.failures](#questionsfailures) below; set to classify each failed run. |
+| `complexity` | Default: Absent (claimed tickets are not classified) | Table described under [questions.complexity](#questionscomplexity) below; set to record each claimed run's complexity. |
 
 ```toml
 [questions]
@@ -1598,6 +1601,53 @@ survives. A factory requeue is not a human intervention, so a second failure
 escalates to `blocked_on_operator` under the usual strike rule. Every other
 answer, and a question that fails, leaves the run stranded as before, and
 `/attention` shows the classification on its `failed` item.
+
+## `[questions.complexity]`
+
+The complexity question a claimed run gets before its implementer profile is
+resolved: `small`, `medium` or `large`, with a confidence and a one-line
+reason. With the table absent, nothing is asked. By default the verdict is
+only recorded; with `route = true` a confident verdict picks a profile.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `backend` | Default: `claude` | `jev`, `claude` or `codex`, as in `[questions]`; not inherited from it. |
+| `model` | Default: `haiku` for `claude`, `gpt-6-luna` for `codex` | Model of a CLI backend; refused beside `jev`. |
+| `effort` | Default: `high` for `claude`, `low` for `codex` | Effort of a CLI backend; refused beside `jev`. |
+| `backend_fallback` | Default: none | Backend used when the backend fails its probe, as in `[questions]`. |
+| `fallback_model` | Default: the fallback backend's own `model` default | Model of a CLI fallback. |
+| `fallback_effort` | Default: the fallback backend's own `effort` default | Effort of a CLI fallback. |
+| `route` | Default: `false` | Let a confident verdict pick the implementer profile mapped to it in `profiles`. |
+| `route_confidence` | Default: `0.8` | Confidence floor for that pick, a number from 0 to 1. |
+| `profiles` | Default: empty | Table mapping any of `small`, `medium` and `large` to a profile name `[agents.implementer_profiles]` defines. |
+
+```toml
+[questions.complexity]
+backend = "claude"
+model = "haiku"
+effort = "high"
+# route defaults to false: the verdict is then only recorded.
+route = true
+route_confidence = 0.8
+profiles = { small = "sonnet" }
+```
+
+Startup refuses `route = true` without `profiles`, and a `profiles` entry
+naming a profile `[agents.implementer_profiles]` does not define, naming
+`[questions.complexity]`. A `jev` backend reads `url` and `key_env` from
+`[questions]` and returns no reason. The question sees the ticket's redacted
+title and body (its first 24000 characters, fewer when escaping would push
+the record past 96 KiB), its estimate and its number of acceptance criteria. Each run asks once; a continuation of a paused run that
+already has a verdict does not ask again. The run records one detail
+`complexity` event whose payload holds `verdict` (null when the question
+failed), `confidence`, `reason` (its first line, at most 200 characters),
+`backend`, `model` and `why` (the failure, else null). A failed question
+leaves the run on its usual route.
+
+With `route = true`, a run with no escalation and no `Implementer:` line runs
+on the profile mapped to a verdict at or above `route_confidence`. The profile
+is probed as a ticket's would be, and its `implementer_profile` event has
+`source` `classifier`; a failed probe runs on `[agents.implementer]`.
 
 ## `[story]`
 

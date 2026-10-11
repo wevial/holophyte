@@ -2,7 +2,6 @@ import dataclasses
 import json
 
 import store
-import store.read
 import ticket_template
 from holophyte.agents.agent_routes import ProfileRoutes, routes
 from holophyte.agents.agent_turns import turn_label
@@ -15,9 +14,10 @@ from holophyte.agents.probes import (
 )
 from holophyte.config.config_tables import sweep_config
 from holophyte.config.reader import config_table
+from holophyte.loop.complexity import classifier_profile
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
-from holophyte.loop.stop import continuation
+from holophyte.loop.stop import resumes
 from holophyte.redact import safe_print as print
 
 EVENT = "implementer_profile"
@@ -27,6 +27,9 @@ ESCALATION_NOTE = "escalation:"
 def profiled_run(run, task):
     project, conn, run_id = run.project, run.conn, run.run_id
     seats = implementer_profiles(project)
+    beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+    with heartbeat_while(conn, run_id, beat_s):
+        picked = classifier_profile(run, task)
     recorded = carried_profile(run)
     if recorded is not None:
         name = recorded["profile"]
@@ -39,20 +42,21 @@ def profiled_run(run, task):
     requested = ticket_template.parse(task.get("body") or "").implementer or None
     name, why, source = None, None, None
     earlier = escalated_from(conn, run_id)
+    candidate = requested or picked
     if earlier is not None:
         why, source = f"escalated after run {earlier['run']} failed", "escalation"
-    elif requested in seats:
-        view = scoped(project, requested)
-        beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+    elif candidate in seats:
+        view = scoped(project, candidate)
         with heartbeat_while(conn, run_id, beat_s):
-            probe = probe_launch(view, seats[requested].turn(PROBE_GOAL),
-                                 PROBE_TIMEOUT, f"{PROFILES_KEY}.{requested}")
+            probe = probe_launch(view, seats[candidate].turn(PROBE_GOAL),
+                                 PROBE_TIMEOUT, f"{PROFILES_KEY}.{candidate}")
         if probe.ok:
-            name = requested
+            name = candidate
+            source = "classifier" if requested is None else None
         else:
             why = probe_diagnostic(project, probe)
             print(why)
-    elif requested is not None:
+    elif candidate is not None:
         why = "unknown profile"
     view = scoped(project, name)
     record(view, conn, run_id, name, requested, why, source)
@@ -77,11 +81,7 @@ def carried_profile(run):
     row = latest_profile(conn, run_id)
     if row is None or row[0] == run_id:
         return row and row[1]
-    resumes = continuation(conn, run_id) is not None or (
-        store.read.approved_candidate(
-            conn, store.read.run_snapshot(conn, run_id).ticketId, run_id)
-        is not None and run.wt.exists())
-    return row[1] if resumes else None
+    return row[1] if resumes(run) else None
 
 
 def latest_profile(conn, run_id):

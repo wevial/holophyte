@@ -287,6 +287,8 @@ Each module, one line:
   under its scaled budget, the run cap and the transport retry.
 - `holophyte/loop/implementer_profile.py` — `profiled_run`: resolves, probes
   and records a run's implementer profile, and scopes the run's project to it.
+- `holophyte/loop/complexity.py` — the complexity question a claimed run
+  asks once, its `complexity` event and the profile a confident verdict picks.
 - `holophyte/loop/escalation.py` — a run failed on its merits on an
   implementer profile requeued once on the default implementer, its brief and
   the `ESCALATION:` choice the escalated turn declares.

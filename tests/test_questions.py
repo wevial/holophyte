@@ -4,7 +4,9 @@ import http.client
 import io
 import json
 import os
+import re
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -14,6 +16,9 @@ import store.tickets
 from holophyte import questions, redact
 from holophyte.babysit import thread_mentions
 from holophyte.pr import github
+
+DOCS = Path(__file__).resolve().parents[1] / "docs" / "config.md"
+SONNET = {"agents": {"implementer_profiles": {"sonnet": {"harness": "claude"}}}}
 
 
 class QuestionsTests(unittest.TestCase):
@@ -162,6 +167,22 @@ class QuestionsTests(unittest.TestCase):
         for value in (True, -1, 1.1, float("nan"), "0.6"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 questions.settings({"questions": {"min_confidence": value}})
+
+    def test_complexity_routing_without_a_defined_profile_is_refused(self):
+        for table in ({"route": True},
+                      {"route": True, "profiles": {"small": "opus"}},
+                      {"profiles": {"large": "opus"}}):
+            with self.subTest(table=table), self.assertRaisesRegex(
+                    ValueError, r"\[questions\.complexity\]"):
+                questions.settings(SONNET | {"questions": {"complexity": table}})
+
+    def test_complexity_example_in_the_reference_is_accepted(self):
+        section = DOCS.read_text().split("## `[questions.complexity]`", 1)[1]
+        example = re.search(r"```toml\n(.*?)```", section, re.DOTALL).group(1)
+        options = questions.settings(SONNET | tomllib.loads(example))["complexity"]
+        self.assertEqual((options["backend"], options["model"], options["route"],
+                          options["route_confidence"], options["profiles"]),
+                         ("claude", "haiku", True, 0.8, {"small": "sonnet"}))
 
     def test_truncated_http_response_fails_closed(self):
         with patch.dict(os.environ, {"TYPESAFE_API_KEY": "test-question-key"}), patch(

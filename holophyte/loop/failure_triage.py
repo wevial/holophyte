@@ -90,12 +90,12 @@ def failure_state(conn, run_id, config):
                 last_review_findings=outbound(findings, FINDINGS_CHARS))
 
 
-def asked_route(conn, run_id, options):
+def asked_route(conn, run_id, options, question=FAILURE_CAUSE):
     row = conn.execute(
         "SELECT payload FROM runEvents WHERE runId = ? AND kind = 'question'"
         " ORDER BY seq DESC LIMIT 1", (run_id,)).fetchone()
     asked = json.loads(row[0]) if row else {}
-    if asked.get("question") != FAILURE_CAUSE.name:
+    if asked.get("question") != question.name:
         asked = options
     return asked["backend"], asked["model"], asked["effort"]
 
