@@ -175,6 +175,22 @@ test("an empty floor says so, and another project's selection empties it", () =>
   expect(screen.getByText("0 runs · 0 projects")).toBeTruthy();
 });
 
+test("an idle project with one queued ticket keeps its block and draws a Queued row with the reason and pull request", () => {
+  const reason = "sent back to the babysitter; the next claim resumes the candidate on its pull request\nfix the flaky check";
+  const queued = [{ ticket: "KO-230", ticket_url: null, title: "Name the held project", reason,
+    pr_url: "https://github.com/example/repo/pull/41", waiting_ms: 95_000 }];
+  render(<Floor daemons={on({ ...working, runs: [], queued })} project="all" expandedRun={null} onToggleRun={noop} />);
+  expect(screen.getByText("0 runs · 1 queued · 1 project")).toBeTruthy();
+  expect(screen.queryByText("Nothing on the floor")).toBeNull();
+  const [row] = within(screen.getByRole("region", { name: "writer" })).getAllByRole("listitem");
+  expect(within(row!).getByText("Queued").getAttribute("data-phase")).toBe("neutral");
+  expect(within(row!).getByText("KO-230")).toBeTruthy();
+  const shown = within(row!).getByText(reason.split("\n")[0]!);
+  expect(shown.getAttribute("title")).toBe(reason);
+  expect(within(row!).getByRole("link", { name: "PR #41" }).getAttribute("href")).toBe(queued[0]!.pr_url);
+  expect(within(row!).getByText("waiting 1m 35s")).toBeTruthy();
+});
+
 test("run #52 on two daemons of one project is two rows; expanding one leaves the other shut and reads its own daemon's detail", async () => {
   const SECOND = "http://second:7710";
   const asked: string[] = [];
