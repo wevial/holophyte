@@ -281,6 +281,24 @@ class ScopeCallTests(StoryProposalTests):
         self.assertEqual([payload["key"] for _, payload in events(
             self.conn, repeat, "follow_up_duplicate")], [f"p{proposal}"])
 
+    def test_a_wording_joined_to_an_older_proposal_is_proposed_on_its_own(self):
+        self.approved_story()
+        self.reply(**{TEXT: (IN_STORY, 0), "Add the refund total": (IN_STORY, 0)})
+        self.merged(self.merged_child, f"fix\n\n{FEATURE}")
+        [(first, *_)] = self.proposals()
+
+        repeat = self.merged(self.backlog_child,
+                             "fix\n\nFOLLOW_UP(feature): Add the refund"
+                             " total @ export.py:42", f"fix again\n\n{FEATURE}")
+
+        [_, (second, *_)] = self.proposals()
+        (body,) = self.read(f"SELECT body FROM storyProposals"
+                            f" WHERE id = {second}")[0]
+        self.assertIn("Add the refund total", body)
+        self.assertEqual(self.read(
+            f"SELECT duplicateOf FROM followUps WHERE runId = {repeat}"
+            " ORDER BY id"), [(None,), (f"p{first}",)])
+
     def test_a_proposal_leaves_the_story_its_frontier_and_claims_unchanged(self):
         parent = self.approved_story(second="ready")
         self.reply(**{TEXT: (IN_STORY, 0)})

@@ -179,6 +179,17 @@ class CaptureTests(LoopFixture):
         self.assertEqual([event["id"] for event in events(
             self.conn, self.run_id, "follow_up_superseded")], [feature])
 
+    def test_an_address_line_cannot_settle_its_own_commit_s_follow_up(self):
+        (next_id,) = self.conn.execute(
+            "SELECT coalesce(max(id), 0) + 1 FROM followUps").fetchone()
+
+        self.fix(f"fix\n\n{FEATURE}\n"
+                 f"ADDRESS(follow-up {next_id}): Cache the board read\n")
+
+        self.assertEqual([row[0::6] for row in self.rows()], [(next_id, None)])
+        self.assertEqual(events(self.conn, self.run_id,
+                                "follow_up_superseded"), [])
+
 class Recording(LinearBoard):
     """A Linear board that records each filing instead of calling Linear."""
 
@@ -518,6 +529,20 @@ class NativeSettleTests(NativeProject):
         self.assertEqual(self.read(
             f"SELECT filedAs, duplicateOf FROM followUps WHERE runId = {repeat}"),
             [(None, key)])
+
+    def test_a_wording_joined_to_an_older_draft_files_its_own(self):
+        self.merged_run(f"fix\n\n{FEATURE}")
+        [(first, _)] = self.drafts()
+
+        repeat = self.merged_run(
+            "fix\n\nFOLLOW_UP(feature): Add board read metrics"
+            " @ provider.py:185", f"fix again\n\n{FEATURE}")
+
+        [_, (second, body)] = self.drafts()
+        self.assertIn("Add board read metrics", body)
+        self.assertEqual(self.read(
+            f"SELECT filedAs, duplicateOf FROM followUps WHERE runId = {repeat}"
+            " ORDER BY id"), [(second, None), (None, first)])
 
     def test_adjacent_lines_and_line_less_paths_file_a_draft_each(self):
         run_id = self.merged_run(

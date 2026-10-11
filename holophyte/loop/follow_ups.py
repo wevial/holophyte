@@ -85,8 +85,7 @@ def _pending_features(conn, run_id):
             if row.kind == "feature"]
 
 
-def _supersede(conn, run_id, commit, ids):
-    pending = {row.id for row in _pending_features(conn, run_id)}
+def _supersede(conn, commit, ids, pending):
     for row_id in ids:
         if row_id in pending:
             store.follow_ups.settle_superseded(conn, row_id, commit)
@@ -96,12 +95,13 @@ def capture(conn, run_id, wt, sha):
     """Each FOLLOW_UP line of the commits after `sha`, stored pending."""
     try:
         for commit, message in _commits(wt, sha):
+            pending = {row.id for row in _pending_features(conn, run_id)}
             for finding in parse(message):
                 store.follow_ups.record_follow_up(
                     conn, run_id, commit, finding.kind, finding.kind_given,
                     finding.text, fingerprint(finding.text, finding.path),
                     path=finding.path, line=finding.line)
-            _supersede(conn, run_id, commit, addressed(message))
+            _supersede(conn, commit, addressed(message), pending)
     except Exception as e:
         print(f"[holo2] follow-ups not captured: {e}")
 
@@ -284,7 +284,7 @@ def _same_line_groups(rows):
 
 def _settled_key(conn, row_id):
     return conn.execute(
-        "SELECT coalesce(f.filedAs, f.duplicateOf, 'p' || p.id) FROM followUps f"
+        "SELECT coalesce(f.filedAs, 'p' || p.id) FROM followUps f"
         " LEFT JOIN storyProposals p ON p.followUpId = f.id WHERE f.id = ?",
         (row_id,)).fetchone()[0]
 
