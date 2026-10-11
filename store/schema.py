@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 46
+SCHEMA_VERSION = 47
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -239,6 +239,8 @@ ADDED_COLUMNS = (
         "prSeenThreads",
         "prSeenThreads INTEGER",
     ),
+    ("runs", "prSeenOpenThreads", "prSeenOpenThreads INTEGER"),
+    ("runs", "prSeenOpenThreadsFloor", "prSeenOpenThreadsFloor INTEGER"),
     (
         "runs",
         "prSeenChecks",

@@ -196,6 +196,9 @@ export interface PrFacts {
   checks?: string | null;
   review?: string | null;
   threads?: number | null;
+  /** The unresolved ones among `threads`; "100+" when only
+   *  the first page of them was counted. */
+  open_threads?: number | string | null;
   title?: string | null;
 }
 
@@ -225,7 +228,7 @@ const REVIEW: Record<string, Fact> = {
  *  "unknown" as a neutral chip rather than nothing, so a run polled never
  *  is visible as such. */
 export function prFacts(pr: PrFacts): Fact[] {
-  const threads = num(pr.threads);
+  const threads = num(pr.open_threads) ?? str(pr.open_threads);
   return [
     (pr.checks != null ? CHECKS[pr.checks] : undefined) ?? { label: "checks unknown", tone: "neutral" },
     (pr.review != null ? REVIEW[pr.review] : undefined) ?? { label: "review unknown", tone: "neutral" },
