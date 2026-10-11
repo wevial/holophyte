@@ -846,10 +846,10 @@ class AttentionTests(ServeTestCase):
         self.park_on_pr(url := "https://github.com/example/repo/pull/2170")
         with contextlib.closing(store.open(str(self.db))) as conn:
             project = store.tickets.ensure_project(conn, "team-1", self.target)
-            store.tickets.mirror_ticket(
-                conn, project, linear_issue_id="i-11", linear_identifier="KO-11",
-                title="ticket KO-11", acceptance_criteria=["Given KO-11, work"],
-                verification_commands=["echo ok"], time_box_ms=25 * MIN)
+            store.tickets.mirror_ticket(conn, project, "i-11", "KO-11", "ticket KO-11",
+                                        ["Given KO-11, work"], ["echo ok"])
+            store.requeue(conn, self.failed_ticket, "retry", now=self.now - 2 * MIN)
+            store.claim(conn, project, self.failed_ticket, now=self.now - MIN)
             store.approve(conn, conn.execute(
                 "SELECT id FROM tickets WHERE linearIdentifier = 'KO-10'")
                 .fetchone()[0], "go", now=self.now - MIN)
@@ -857,7 +857,7 @@ class AttentionTests(ServeTestCase):
         self.start()
         _, _, body = self.request("GET", "/status")
         self.assertEqual((body["admission"], [r["ticket"] for r in body["runs"]]),
-                         ("held", ["KO-7"]))
+                         ("held", ["KO-7", "KO-9"]))
         self.assertEqual(body["queued"], [{
             "ticket": "KO-10", "ticket_url": None, "title": "ticket KO-10",
             "reason": "approved for merge; the next claim resumes the"
