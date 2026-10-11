@@ -1074,3 +1074,22 @@ class CiParkTests(MergeModeFixture):
                     " 'pr_empty_wakes' ORDER BY id DESC LIMIT 1"), [("0",)])
         self.assertEqual(self.read("SELECT id FROM runEvents"
                                    " WHERE kind = 'pr_wake_breaker'"), [])
+
+    def test_repeated_conflict_wakes_never_trip_the_empty_wake_breaker(self):
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.ci_parked("PENDING")
+        for n in (1, 2):
+            with self.subTest(wake=n):
+                self.age()
+                self.github(dict(self.pull(self.OLD, "PENDING"),
+                                 mergeable="CONFLICTING",
+                                 headRefOid=f"head-{n}"),
+                            self.pull(fresh, "PENDING"))
+                self.serve(self.pr_state(checks="PENDING"))
+                self.main_output(provider=self.provider())
+                self.assertEqual(len(self.wakes()), n)
+                self.assertEqual(self.read(
+                    "SELECT summary FROM runEvents WHERE kind ="
+                    " 'pr_empty_wakes' ORDER BY id DESC LIMIT 1"), [("0",)])
+        self.assertEqual(self.read("SELECT id FROM runEvents"
+                                   " WHERE kind = 'pr_wake_breaker'"), [])
