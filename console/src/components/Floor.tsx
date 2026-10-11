@@ -10,7 +10,7 @@ import { ProjectBlock } from "./ProjectBlock";
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** What is running, under the needs-you band: one block per project and
- *  daemon in view with a row per live run. An idle project whose daemon
+ *  daemon in view with a row per live run and per queued ticket. An idle project whose daemon
  *  reports its `admission` keeps its block, so Hold and Release hold stay
  *  in reach with no run on the floor. `expandedRun` is the Now view's
  *  `runKey`, and `renderDetail` fills the open row's slot. */
@@ -34,19 +34,20 @@ export function Floor({
   const localNow = useTick(TICK_MS);
   const groups = groupByProject(daemons).filter((group) => project === "all" || group.path === project);
   const runs = groups.reduce((total, group) => total + group.runs.length, 0);
+  const queued = groups.reduce((total, group) => total + (group.queued?.length ?? 0), 0);
   const projects = new Set(groups.map((group) => group.path)).size;
   const blocks = groups.filter((group) =>
-    group.runs.length > 0 || group.status.admission === "enabled" || group.status.admission === "held");
+    group.runs.length > 0 || (group.queued?.length ?? 0) > 0 || group.status.admission === "enabled" || group.status.admission === "held");
   return (
     <section aria-label="Floor" className="px-6 pt-[18px] pb-6">
       <div className="flex items-baseline gap-3">
         <h2 className="text-[20px] font-semibold text-ink">Floor</h2>
         <span className="text-[13px] text-muted">
-          {plural(runs, "run")} · {plural(projects, "project")}
+          {plural(runs, "run")}{queued > 0 ? ` · ${queued} queued` : ""} · {plural(projects, "project")}
         </span>
       </div>
       {contractErrors.map((error) => <p role="alert" key={error} className="mt-3 text-sm font-semibold text-bad">{error}</p>)}
-      {runs === 0 && (
+      {runs === 0 && queued === 0 && (
         <p className="mt-3 text-[13px] text-muted">{contractErrors.length ? "Floor data unavailable" : "Nothing on the floor"}</p>
       )}
       {blocks.length > 0 && (
