@@ -18,9 +18,7 @@ def classifier_profile(run, task):
         options = questions.settings(run.project.config())["complexity"]
         if options is None or run.conn is None or run.run_id is None:
             return None
-        verdict = recorded(run.conn, run.run_id)
-        if verdict is None:
-            verdict = classify(run, task, options)
+        verdict = recorded(run.conn, run.run_id) or classify(run, task, options)
     except Exception as error:
         print(f"[holo2] complexity question skipped: {error}")
         return None

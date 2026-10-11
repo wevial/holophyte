@@ -44,8 +44,6 @@ def profiled_run(run, task):
     name, why, source = None, None, None
     earlier = escalated_from(conn, run_id)
     candidate = requested or picked
-    if requested is None and picked is not None:
-        source = "classifier"
     if earlier is not None:
         why, source = f"escalated after run {earlier['run']} failed", "escalation"
     elif candidate in seats:
@@ -55,11 +53,12 @@ def profiled_run(run, task):
                                  PROBE_TIMEOUT, f"{PROFILES_KEY}.{candidate}")
         if probe.ok:
             name = candidate
+            source = "classifier" if requested is None else None
         else:
-            why, source = probe_diagnostic(project, probe), None
+            why = probe_diagnostic(project, probe)
             print(why)
     elif candidate is not None:
-        why, source = "unknown profile", None
+        why = "unknown profile"
     view = scoped(project, name)
     record(view, conn, run_id, name, requested, why, source)
     return dataclasses.replace(run, project=view)
