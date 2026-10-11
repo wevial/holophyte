@@ -353,7 +353,7 @@ class ScopeFallbackTests(StoryProposalTests):
         self.assertEqual(self.proposals(), [])
         self.assertEqual(len(self.drafts()), 1)
 
-    def test_an_outage_exiting_zero_with_a_scope_line_still_defaults(self):
+    def test_a_clean_reply_quoting_an_outage_keeps_its_scope_verdict(self):
         self.approved_story()
         self.reply(**{TEXT: (f"{OUTAGE}\n{IN_STORY}", 0)})
 
@@ -361,14 +361,11 @@ class ScopeFallbackTests(StoryProposalTests):
 
         self.assertEqual([turn["route"] for turn in self.turns(probes=True)],
                          ["codex-adjudicator"])
-        [(summary, payload)] = events(self.conn, run_id, "follow_up_scope")
+        [(_, payload)] = events(self.conn, run_id, "follow_up_scope")
         self.assertEqual((payload["verdict"], payload["default"]),
-                         ("standalone", True))
-        self.assertIn(OUTAGE, summary)
-        self.assertEqual(self.proposals(), [])
-        [(_, body, parent)] = self.drafts()
-        self.assertIn("Related: story NAT-1", body)
-        self.assertIsNone(parent)
+                         ("in_story", False))
+        self.assertEqual(len(self.proposals()), 1)
+        self.assertEqual(self.drafts(), [])
 
 
 class NoScopeCallTests(StoryProposalTests):

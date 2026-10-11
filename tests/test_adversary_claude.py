@@ -409,7 +409,7 @@ class FamilyTests(test_adversary.AdversaryFixture):
                          ("fallback", "gpt-6-luna"))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
-    def test_a_done_reply_holding_a_limit_line_fails_without_a_fallback(self):
+    def test_a_clean_done_reply_quoting_a_limit_line_is_the_reply(self):
         self.configure(ON + CREDENTIAL)
         calls = []
 
@@ -421,9 +421,12 @@ class FamilyTests(test_adversary.AdversaryFixture):
             self.loop(fake=RealAdversary(Change("poetry.lock"), APPROVE))
 
         self.assertEqual(calls, ["claude"])
-        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
-                         [("failed", "review_route")])
-        self.assertEqual(self.rounds(), [])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        [(_, event)] = self.rounds()
+        self.assertEqual(event["family"], "claude")
+        self.assertEqual(self.read(
+            "SELECT COUNT(*) FROM runEvents WHERE kind = 'route_fallback'"),
+            [(0,)])
 
     def test_a_claude_limit_with_no_fallback_fails_and_runs_no_codex_turn(self):
         self.configure(ON + CREDENTIAL)

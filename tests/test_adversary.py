@@ -324,7 +324,9 @@ class FailureTests(AdversaryFixture):
             containers.append(kwargs.get("multi_agent", False))
             if prompt == probes.REVIEW_PROBE_GOAL:
                 return f"ready {candidate_sha}"
-            return "ERROR: You've hit your usage limit. Try again later."
+            error = roles.review_runner.ReviewBoundaryError("command failed (1)")
+            error.output = "ERROR: You've hit your usage limit. Try again later."
+            raise error
 
         class RealAdversary(FakeAgent):
             def __call__(self, target, role, goal, cwd, **kwargs):

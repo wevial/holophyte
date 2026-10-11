@@ -163,17 +163,11 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             else:
                 output = launch()
         command = getattr(output, "command", agent_route(project, role))
-        reason = turn_outage(role, command, output)
+        reason = failed_turn(output) and outage_reason(command, output)
         if (argv is None and reason
                 and activate_fallback(project, role, reason, conn, run_id)):
             return launch()
         return output
-
-
-def turn_outage(role, command, output):
-    if role in WRITING_ROLES and not failed_turn(output):
-        return None
-    return outage_reason(command, output)
 
 
 def route_down(project, role, failure):
@@ -379,11 +373,12 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                                  launcher.environment(project), cmd,
                                  timeout=cap, runner=run_capped, project=project,
                                  keep_session=True, **hook)
-    decoded = claude_result(out) if seat is not None and seat.name == "claude" else None
+    claude = (seat.name if seat is not None else Path(cmd[0]).name) == "claude"
+    decoded = claude_result(out) if seat is not None and claude else None
     if decoded is None:
         output = ImplementerOutput(out.strip(), code, dispatched_route)
     else:
         output = ImplementerOutput(decoded[0].strip(), code, dispatched_route)
         output.usage = decoded[1]
-    output.is_error = claude_marked_error(out)
+    output.is_error = claude and claude_marked_error(out)
     return output

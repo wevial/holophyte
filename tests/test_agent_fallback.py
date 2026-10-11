@@ -314,6 +314,15 @@ class AgentFallbackTests(SweepTestCase):
         self.routes()
         self.configure(f'[agents]\nimplementer_fallback = "{self.fallback}"\n'
                        '[agents.implementer]\nharness = "claude"\n')
+        self.assert_error_result_dispatches_fallback()
+
+    def test_configured_claude_error_result_dispatches_fallback(self):
+        self.routes()
+        self.configure('[agents]\nimplementer = "claude -p --output-format json"\n'
+                       f'implementer_fallback = "{self.fallback}"\n')
+        self.assert_error_result_dispatches_fallback()
+
+    def assert_error_result_dispatches_fallback(self):
         run = self.a_run()
         limited = json.dumps({"type": "result", "is_error": True,
                               "result": "You've hit your limit · resets tomorrow"})
@@ -331,6 +340,23 @@ class AgentFallbackTests(SweepTestCase):
         self.assertEqual(result, 'completed')
         self.assertEqual([cmd[0] for cmd in dispatched],
                          ['claude', self.fallback, self.fallback])
+
+    def test_a_non_claude_reply_holding_is_error_is_its_result(self):
+        self.routes()
+        run = self.a_run()
+        reply = json.dumps({"type": "result", "is_error": True,
+                            "result": "Document You've hit your usage limit"})
+        dispatched = []
+        def execute(cmd, *_args, **_kwargs):
+            dispatched.append(cmd)
+            return 0, reply
+        with patch.object(roles, 'run_capped', side_effect=execute), \
+                patch.object(probes, 'run_capped', side_effect=execute):
+            self.addCleanup(reset, self.project)
+            result = roles.agent(self.project, 'implement', 'work', self.target,
+                                  conn=self.conn, run_id=run)
+        self.assertEqual(result, reply)
+        self.assertEqual([cmd[0] for cmd in dispatched], [self.primary])
 
     def test_scheduler_readiness_does_not_activate_fallback(self):
         from holophyte.agents.agent_routes import routes
@@ -689,6 +715,19 @@ class ContainerReviewFallbackTests(SweepTestCase):
                          ('reviewer', 'codex-sol-high'))
         self.assertEqual(roles.agent_route(self.project, 'review'),
                          'codex-sol-high')
+
+    def test_a_clean_review_quoting_a_capacity_message_is_its_verdict(self):
+        self.configure(self.PAIRS)
+        reply = 'Selected model is at capacity is an outage.\nVERDICT: PASS'
+        models = []
+        def run_review(*, model, **_):
+            models.append(model)
+            return reply
+        with patch.object(roles.review_runner, 'run_review',
+                          side_effect=run_review):
+            self.assertEqual(self.review(self.a_run()), reply)
+        self.assertEqual(models, ['gpt-6-astra'])
+        self.assertEqual(self.switches(), [])
 
     def test_boundary_error_mid_run_retries_the_round_on_the_fallback_pair(self):
         from holophyte.loop.gates import InfraFailure

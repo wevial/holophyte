@@ -9,7 +9,7 @@ from time import monotonic
 import store
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.agent_turns import family_label
-from holophyte.agents.fallback import outage_reason
+from holophyte.agents.fallback import failed_turn, outage_reason
 from holophyte.agents.review_workspace import review_refs
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import fallback_entries, review_route
@@ -264,7 +264,8 @@ def attack(project, conn, run_id, wt, base, ticket, plan, run_agent):
 
 
 def claude_down(project, route, reply):
-    if route is None or "adversary" in routes(project).commands:
+    if (route is None or "adversary" in routes(project).commands
+            or not failed_turn(reply)):
         return
     reason = outage_reason(family_label(route), str(reply))
     if reason:

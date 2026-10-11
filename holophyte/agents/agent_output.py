@@ -57,7 +57,8 @@ def claude_marked_error(output):
         document = json.loads(output)
     except ValueError:
         return False
-    return isinstance(document, dict) and document.get("is_error") is True
+    return (isinstance(document, dict) and document.get("type") == "result"
+            and document.get("is_error") is True)
 
 
 class AgentOutput(str):
