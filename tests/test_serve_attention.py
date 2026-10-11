@@ -384,20 +384,24 @@ class PullRequestTitleTests(ServeTestCase):
                  candidate_sha="a" * 40, pr_url=self.URL,
                  park_kind="pull_request", now=self.now - MIN)
 
-    def read_status(self, title):
+    def read_status(self, title, threads=None, facts_only=None):
         """One reconcile read of the pull request answering `title`,
-        recorded as the reconcile records an unchanged pull request."""
+        recorded as the reconcile records an unchanged pull request, or
+        as its first read when GitHub also answers `threads`."""
         from holophyte.host import reconcile
         from holophyte.pr import pr_status
         node = {"state": "OPEN", "merged": False, "mergeCommit": None,
                 "mergedBy": None, "updatedAt": "2026-09-22T10:00:00Z",
                 "title": title}
+        if threads is not None:
+            node["threadCount"] = threads
         with patch.object(pr_status, "graphql", return_value={
                 "repository": {"pullRequest": node}}):
             status = pr_status.pull_status(
                 None, pr_status.parse_pr_url(self.URL))
         store.record_pr_seen(self.conn, self.run, reconcile._seen(status),
-                             parked_only=True, facts_only=True)
+                             parked_only=True, facts_only=threads is None
+                             if facts_only is None else facts_only)
 
     def pr_open(self):
         self.start()
@@ -425,6 +429,20 @@ class PullRequestTitleTests(ServeTestCase):
         self.assertEqual((item["pr"]["title"], item["title"]),
                          (None, "ticket 7"))
 
+    def test_resolved_threads_are_counted_but_not_open(self):
+        self.read_status(self.TITLE, {"totalCount": 4, "nodes": [
+            {"isResolved": True} for _ in range(4)]})
+        pr = self.pr_open()["pr"]
+        self.assertEqual((pr["open_threads"], pr["threads"]), (0, 4))
+
+    def test_a_count_over_only_the_first_page_is_served_as_100_plus(self):
+        page = [{"isResolved": True}] * 100
+        self.read_status(self.TITLE, {"totalCount": 100, "nodes": page})
+        self.read_status(self.TITLE, {"totalCount": 101, "nodes": page},
+                         facts_only=True)
+        pr = self.pr_open()["pr"]
+        self.assertEqual((pr["open_threads"], pr["threads"]), ("100+", 100))
+
 
 class CiParkAttentionTests(ServeTestCase):
     URL = "https://github.com/example/repo/pull/31"
@@ -438,7 +456,7 @@ class CiParkAttentionTests(ServeTestCase):
         store.set_question(conn, ticket.id, f"PR open: {self.URL}\npending checks")
         park_run(conn, self.run, "awaiting_merge_approval", "pending checks",
                  candidate_sha="a" * 40, pr_url=self.URL, park_kind="ci",
-                 pr_seen=("2026-09-29T10:00:00Z", 0, "pending", None, None),
+                 pr_seen=("2026-09-29T10:00:00Z", 0, None, None, "pending", None, None),
                  now=self.now)
         (blocked,) = store.read.blocked_tickets(conn)
         item = holophyte.serve.server.parked_item(blocked)

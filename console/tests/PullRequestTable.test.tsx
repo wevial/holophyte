@@ -17,7 +17,7 @@ const item: AttentionItem = {
   kind: "pr_open", level: "attention", run: 47, ticket: "KO-7",
   ticket_url: "https://linear.app/team/issue/KO-7", pr_url: "https://github.com/o/r/pull/2170",
   reason: "Waiting for maintainer review", asked_ms: status.now - 600000,
-  pr: { number: 2170, checks: "success", review: "review_required", threads: 0 },
+  pr: { number: 2170, checks: "success", review: "review_required", threads: 0, open_threads: 0 },
 };
 const host = hostOf({ ...status, project: "/projects/repo", actions: true }, { level: "attention", now: status.now, items: [item] });
 const offline = { fetch: async () => new Response("not found", { status: 404 }) };

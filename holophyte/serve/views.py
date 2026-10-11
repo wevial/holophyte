@@ -11,7 +11,7 @@ from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import board_mode, sweep_config
 from holophyte.config.serve_settings import serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
-from holophyte.pr.pr_status import PR_URL_RE
+from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
 from holophyte.serve.serve_levers import paused_item
 from holophyte.serve.serve_runs import json_host, no_store
 from store.working import agent_work, chain_work, effective_work, verify_work
@@ -116,6 +116,7 @@ def parked_item(ticket):
                        "checks": ticket.prSeenChecks,
                        "review": ticket.prSeenReview,
                        "threads": ticket.prSeenThreads,
+                       "open_threads": _open_threads(ticket),
                        "title": ticket.prSeenTitle},
                 "level": "attention"}
     return {"kind": "blocked", "ticket": ticket.linearIdentifier,
@@ -123,6 +124,12 @@ def parked_item(ticket):
             "question": ticket.blockedQuestion,
             "run": ticket.runId, "asked_ms": ticket.askedMs,
             "pr_url": ticket.prUrl, "level": "attention"}
+
+
+def _open_threads(ticket):
+    count = ticket.prSeenOpenThreads
+    return f"{THREADS_PAGE}+" if count is not None \
+        and ticket.prSeenOpenThreadsFloor else count
 
 
 def triage_view(triage):

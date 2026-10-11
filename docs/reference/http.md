@@ -692,9 +692,13 @@ the pull request as the loop's reconcile last read it: `number` from the
 URL, `checks` (`success`, `pending`, `failure`, null for a PR with no
 checks), `review` (GitHub's review decision lower-cased: `approved`,
 `changes_requested`, `review_required`, null when none is required) and
-`threads`, the review-thread count, and `title`, the pull request's
-title (`runs.prSeenChecks`, `prSeenReview`, `prSeenThreads`,
-`prSeenTitle`); all four facts are null for a run never polled. The
+`threads`, the review-thread count, `open_threads`, the count of those
+unresolved (the string `"100+"` when the read that counted it saw more
+threads than the first page of 100 it counts over,
+`runs.prSeenOpenThreadsFloor`), and `title`, the pull
+request's title (`runs.prSeenChecks`, `prSeenReview`, `prSeenThreads`,
+`prSeenOpenThreads`, `prSeenTitle`); all five facts are null for a run
+never polled, and `open_threads` for one polled before it was recorded. The
 item's own `title` is the ticket's title, which the console shows when
 `pr.title` is null. A `failed` item's `attempt` is the run's 1-based
 attempt number. Its `triage` is the run's cause question under

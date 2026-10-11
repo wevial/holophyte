@@ -43,7 +43,7 @@ export function PullRequestDetail({ base, id, item, now, polls, deps }: {
       <section aria-label="Pull request facts">
         <h4 className="font-semibold text-ink">Pull request facts</h4>
         <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1">
-          {Object.entries({ "Number": facts?.number, "Checks": facts?.checks, "Review": facts?.review, "Open threads": facts?.threads })
+          {Object.entries({ "Number": facts?.number, "Checks": facts?.checks, "Review": facts?.review, "Open threads": facts?.open_threads })
             .map(([label, value]) => <div key={label}><dt className="inline font-semibold">{label}: </dt><dd className="inline">{value ?? "unknown"}</dd></div>)}
         </dl>
         {item.pr_url && <a className="break-all text-link" href={item.pr_url} target="_blank" rel="noopener noreferrer">{item.pr_url}</a>}
