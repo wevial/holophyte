@@ -304,6 +304,12 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(tt.validate(tt.parse(with_mode)), [])
         self.assertEqual(tt.validate(tt.parse(FILLED)), [])
 
+    def test_implementer_line_naming_two_words_is_named(self):
+        self.assert_problems_contain(
+            FILLED.replace("Depends on: none\n",
+                           "Depends on: none\nImplementer: sonnet haiku\n"),
+            "'Implementer: sonnet haiku'")
+
     def test_autolinked_file_name_is_not_a_placeholder(self):
         # Linear rewrites a bare "factory.py:1632" into this exact link.
         linked = FILLED.replace(
@@ -374,6 +380,11 @@ class TemplateFileTests(unittest.TestCase):
         problems = tt.validate(self.t)
         self.assertTrue(problems)
         self.assertTrue(any("placeholder" in p for p in problems), problems)
+
+    def test_implementer_comment_requests_no_profile(self):
+        self.assertIn("Implementer:",
+                      self.t.sections["Estimate & dependencies"])
+        self.assertIsNone(self.t.implementer)
 
     def test_criteria_comment_names_the_five_reviewer_rules(self):
         for phrase in ("witnesses", "closed list", "never a criterion",

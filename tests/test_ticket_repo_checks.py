@@ -7,6 +7,7 @@ from pathlib import Path
 
 import holophyte.board.projection
 import ticket_template as tt
+from holophyte.config.project import Project
 from tests.test_ticket_template import FILLED
 
 
@@ -144,3 +145,48 @@ class RepositoryChecksTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count('check skipped'), 1)
         self.assertIn('repository', result.stdout)
+
+    def check(self, implementer, repo=None):
+        ticket = self.repo / 'ticket.md'
+        ticket.write_text(self.body.replace(
+            'Depends on: none\n', f'Depends on: none\nImplementer: {implementer}\n'))
+        return subprocess.run(
+            [sys.executable, str(Path(tt.__file__).resolve()), '--repo',
+             repo or str(self.repo), str(ticket)],
+            capture_output=True, text=True, cwd=self.repo)
+
+    def test_cli_refuses_an_implementer_naming_no_configured_profile(self):
+        config = Project.locate(self.repo, adopt=False).config_path
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            '[agents.implementer_profiles.sonnet]\nharness = "claude"\n'
+            '[agents.implementer_profiles.opus]\nharness = "claude"\n')
+        for repo in (None, '.'):
+            with self.subTest(repo=repo):
+                result = self.check('haiku', repo)
+                self.assertEqual(result.returncode, 1,
+                                 result.stdout + result.stderr)
+                self.assertIn('ticket.md: INVALID', result.stdout)
+                self.assertIn("'Implementer: haiku' names no configured"
+                              " profile; configured: opus, sonnet", result.stdout)
+
+    def test_cli_names_a_malformed_agents_table_without_its_contents(self):
+        config = Project.locate(self.repo, adopt=False).config_path
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('[agents.implementer_profiles."/private/host/profile"]\n'
+                          'harness = "claude"\n')
+        result = self.check('haiku')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("'Implementer: haiku' checked against [agents], which is"
+                      " malformed", result.stdout)
+        self.assertNotIn('/private/host/profile', result.stdout)
+        self.assertNotIn(str(config), result.stdout)
+
+    def test_cli_without_project_config_leaves_the_profile_unchecked(self):
+        self.assertFalse(Project.locate(self.repo, adopt=False).config_path.exists())
+        result = self.check('sonnet')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('ticket.md: OK', result.stdout)
+        self.assertIn(f"{tt.ADVISORY_PREFIX}'Estimate & dependencies' line "
+                      f"'Implementer: sonnet': profile name not checked",
+                      result.stdout)
