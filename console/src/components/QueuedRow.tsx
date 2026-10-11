@@ -7,7 +7,7 @@ import { TicketLink } from "./TicketLink";
 /** A ticket released to the ready queue, waiting for a worker: ticket,
  *  title over the first line of why it waits (all of it on hover), the
  *  Queued pill, its pull request and the wait so far. */
-export function QueuedRow({ entry, sinceMs = 0 }: { entry: Queued; sinceMs?: number }) {
+export function QueuedRow({ entry, sinceMs }: { entry: Queued; sinceMs: number }) {
   const reason = entry.reason ?? "";
   return (
     <li data-queued={entry.ticket} className="border-t border-line-faint">
