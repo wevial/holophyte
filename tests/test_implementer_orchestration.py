@@ -4,19 +4,32 @@ config refusals, the run event and the unchanged resume command line.
 Run: python3 -m unittest discover -s tests -p 'test_implementer_orchestration.py'
 """
 import json
+import subprocess
+import sys
+import time
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.agents.probes
 import holophyte.agents.roles
 import holophyte.board.projection
+import holophyte.cli.operator
 import holophyte.config.checks
+import holophyte.config.project
+import holophyte.loop.adjudicate
+import holophyte.loop.implement
+import holophyte.loop.review_round
 import store
 import store.tickets
 from holophyte.agents.fix_session import resume_argv
+from holophyte.agents.probes import PROBE_GOAL
 from holophyte.loop.runs import open_store
-from tests.fake_agent import APPROVE, Commit, FakeAgent
+from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit, FakeAgent
 from tests.loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task
+
+ROOT = Path(__file__).resolve().parents[1]
 
 SUBAGENT_PHRASES = (
     "may go to subagents you start with your own tools",
@@ -194,6 +207,14 @@ class OrchestrationConfigTests(LoopFixture):
                        + workflow)
         self.check('[agents]\nimplementer_fallback = "claude -p"\n' + workflow)
 
+    def test_profile_workflow_beside_a_non_claude_fallback_is_refused(self):
+        with self.assertRaisesRegex(
+                SystemExit, r"\[agents\.implementer_profiles\.big\] "
+                            r"orchestration.*implementer_fallback"):
+            self.check('[agents]\nimplementer_fallback = "codex exec"\n'
+                       '[agents.implementer_profiles.big]\nharness = "claude"\n'
+                       'orchestration = "workflow"\n')
+
     def test_workflow_accepts_a_quoted_claude_fallback(self):
         workflow = CLAUDE + 'orchestration = "workflow"\n'
         for fallback in ('\'"claude" -p\'',
@@ -227,3 +248,206 @@ class OrchestrationResumeTests(LoopFixture):
         with_key = self.resume(CODEX + 'orchestration = "subagents"\n')
         without = self.resume(CODEX)
         self.assertEqual(with_key, without)
+
+
+PROFILES = ('[agents.implementer]\nharness = "claude"\nmodel = "opus"\n'
+            '[agents.implementer_profiles.sonnet]\nharness = "claude"\n'
+            'model = "sonnet"\n')
+
+
+def implementer_line(name):
+    return VALID_BODY.replace("Depends on: none\n",
+                              f"Depends on: none\nImplementer: {name}\n")
+
+
+@contextmanager
+def profile_routes(db, reviews, probe=(0, "ready"), pause=False, down=(),
+                   on_probe=None):
+    """Implement and fix turns run through the real role dispatch, so their
+    `agent_turn` labels come from the route the run resolved. A model in
+    `down` is out of quota on every turn after its probe."""
+    def runner(cmd, cwd, timeout, **kwargs):
+        if cmd[-1] == PROBE_GOAL:
+            if on_probe is not None and "sonnet" in cmd:
+                on_probe()
+            return probe if "sonnet" in cmd else (0, "ready")
+        if any(model in cmd for model in down):
+            return 1, "You've hit your limit"
+        Commit("the thing", path=f"work-{uuid.uuid4().hex}.txt").play(
+            Path(cwd), 0)
+        if pause:
+            conn = store.open(db)
+            run, = conn.execute("SELECT id FROM runs WHERE endedAt IS NULL"
+                                ).fetchone()
+            store.pause(conn, run, "reboot writer")
+            conn.close()
+        return 0, "done"
+
+    reviewer = FakeAgent(*reviews)
+
+    def dispatch(target, role, goal, cwd, **kwargs):
+        if role != "implement":
+            return reviewer(target, role, goal, cwd, **kwargs)
+        return holophyte.agents.roles.agent(target, role, goal, cwd, **kwargs)
+
+    with patch.object(holophyte.agents.roles, "run_capped", runner), \
+            patch.object(holophyte.agents.probes, "run_capped", runner):
+        yield dispatch
+
+
+def resume_in_this_process(target, body):
+    """The loop's entry in a fresh interpreter, against a fixture's store."""
+    project = holophyte.config.project.Project.locate(Path(target))
+    provider = StubProvider(dict(a_task(), body=body))
+    with patch("holophyte.loop.pool_handoff.factory_checkout",
+               return_value=Path(target)), \
+            profile_routes(project.store_path,
+                           (REQUEST_CHANGES, APPROVE)) as dispatch, \
+            patch.dict(sys.modules, {"linear_provider": provider}), \
+            patch.object(holophyte.loop.implement, "agent", dispatch), \
+            patch.object(holophyte.loop.review_round, "agent", dispatch), \
+            patch.object(holophyte.loop.adjudicate, "agent", dispatch):
+        return holophyte.cli.operator.main(project, provider)
+
+
+class ImplementerProfileTests(LoopFixture):
+    def run_ticket(self, body, *reviews, probe=(0, "ready"), pause=False,
+                   down=(), on_probe=None):
+        with profile_routes(self.db, reviews, probe, pause, down,
+                            on_probe) as dispatch:
+            self.loop(fake=dispatch, provider=StubProvider(
+                dict(a_task(), body=body)))
+
+    def pause_on_sonnet_and_resume(self):
+        from holophyte.loop.stop import command
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("sonnet"), pause=True)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+        command(self.project, a_task()["id"], None, resume=True)
+
+    def turns(self):
+        return [json.loads(payload)["label"] for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'agent_turn' "
+            "ORDER BY id")]
+
+    def profiles(self):
+        return [json.loads(payload) for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'implementer_profile'")]
+
+    def test_ticket_profile_routes_the_implement_and_fix_turns(self):
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("sonnet"), REQUEST_CHANGES, APPROVE)
+        self.assertEqual(self.turns(), ["claude sonnet", "claude sonnet"])
+        self.assertEqual(self.profiles(), [{
+            "profile": "sonnet", "source": "ticket", "requested": "sonnet",
+            "why": None, "label": "claude sonnet"}])
+
+    def test_ticket_without_a_line_runs_on_the_default(self):
+        self.configure(PROFILES)
+        self.run_ticket(VALID_BODY, APPROVE)
+        self.assertEqual(self.turns(), ["claude opus"])
+        self.assertEqual(self.profiles(), [{
+            "profile": None, "source": "default", "requested": None,
+            "why": None, "label": "claude opus"}])
+
+    def test_unknown_profile_runs_on_the_default(self):
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("haiku"), APPROVE)
+        self.assertEqual(self.turns(), ["claude opus"])
+        self.assertEqual(self.profiles(), [{
+            "profile": None, "source": "default", "requested": "haiku",
+            "why": "unknown profile", "label": "claude opus"}])
+
+    def test_profile_whose_probe_fails_runs_on_the_default(self):
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("sonnet"), APPROVE,
+                        probe=(1, "sonnet route refused"))
+        self.assertEqual(self.turns(), ["claude opus"])
+        event, = self.profiles()
+        self.assertEqual((event["profile"], event["requested"]),
+                         (None, "sonnet"))
+        self.assertIn("probe failed (exit 1)", event["why"])
+        self.assertIn("sonnet route refused", event["why"])
+
+    def test_continuation_in_a_new_process_keeps_the_profile(self):
+        self.pause_on_sonnet_and_resume()
+        child = subprocess.run(
+            [sys.executable, "-c",
+             "import sys\n"
+             "from tests.test_implementer_orchestration import "
+             "resume_in_this_process\n"
+             f"sys.exit(resume_in_this_process({str(self.target)!r}, "
+             f"{VALID_BODY!r}))"],
+            cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+        self.assertEqual(self.turns(), ["claude sonnet", "claude sonnet"])
+        self.assertEqual(len(self.profiles()), 1)
+
+    def test_continuation_whose_profile_left_the_config_stops(self):
+        self.pause_on_sonnet_and_resume()
+        self.configure('[agents.implementer]\nharness = "claude"\n'
+                       'model = "opus"\n')
+        self.run_ticket(VALID_BODY, REQUEST_CHANGES, APPROVE)
+        self.assertEqual(self.turns(), ["claude sonnet"])
+        self.assertEqual(len(self.profiles()), 1)
+        self.assertEqual(self.read(
+            "SELECT outcome, failureKind FROM runs ORDER BY id")[-1],
+            ("failed", "infra"))
+
+    def test_default_route_fallback_leaves_a_healthy_profile_in_place(self):
+        self.configure(PROFILES + '[agents]\nimplementer_fallback = "codex exec"\n')
+        down_at_startup = (1, "You've hit your limit")
+        with patch.object(holophyte.cli.operator, "probe_implementer",
+                          return_value=holophyte.agents.probes.ProbeResult(
+                              ["claude", "--model", "opus"], *down_at_startup,
+                              timeout=90)):
+            self.run_ticket(implementer_line("sonnet"), APPROVE)
+        self.assertEqual(self.turns(), ["claude sonnet"])
+        self.assertEqual(self.profiles()[0]["label"], "claude sonnet")
+
+    def test_profile_outage_switch_holds_for_its_turns_not_the_default(self):
+        self.configure(PROFILES + '[agents]\nimplementer_fallback = "codex exec"\n')
+        tickets = (dict(a_task(1), body=implementer_line("sonnet")),
+                   dict(a_task(2), body=VALID_BODY))
+        with profile_routes(self.db, (REQUEST_CHANGES, APPROVE, APPROVE),
+                            down=("sonnet",)) as dispatch:
+            self.loop(fake=dispatch, provider=StubProvider(*tickets))
+        self.assertEqual(self.turns(),
+                         ["claude sonnet", "codex", "codex", "claude opus"])
+
+    def test_a_slow_profile_probe_keeps_the_run_heartbeating(self):
+        self.configure(PROFILES + '[supervisor]\nheartbeat_stale_min = 0.002\n')
+        beats = []
+
+        def slow_probe():
+            conn = store.open(self.db)
+            try:
+                for _ in range(2):
+                    beats.append(conn.execute(
+                        "SELECT lastHeartbeat FROM runs").fetchone()[0])
+                    time.sleep(0.4)
+            finally:
+                conn.close()
+
+        self.run_ticket(implementer_line("sonnet"), APPROVE,
+                        on_probe=slow_probe)
+        self.assertLess(beats[0], beats[1])
+        self.assertEqual(self.turns(), ["claude sonnet"])
+
+    def test_merge_gate_resume_whose_profile_left_the_config_stops(self):
+        from pause_fixture import PauseReply
+
+        from holophyte.loop.stop import command
+        self.configure(PROFILES + '[merge]\napprove = "human"\n')
+        self.run_ticket(implementer_line("sonnet"),
+                        PauseReply(self.db, APPROVE))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "merge_gate")])
+        command(self.project, a_task()["id"], None, resume=True)
+        self.configure('[agents.implementer]\nharness = "claude"\n'
+                       'model = "opus"\n[merge]\napprove = "human"\n')
+        self.run_ticket(implementer_line("sonnet"))
+        self.assertEqual(len(self.profiles()), 1)
+        self.assertEqual(self.read(
+            "SELECT outcome, failureKind FROM runs ORDER BY id")[-1],
+            ("failed", "infra"))

@@ -3,6 +3,7 @@ import json
 import re
 import shlex
 import tempfile
+from collections.abc import MutableMapping
 from pathlib import Path
 
 from holophyte.agents.harness import route_text
@@ -65,6 +66,7 @@ class ActiveRoutes:
         self.critic_failed = False
         self.stream = None
         self.project = project
+        self.profiles = {}
 
     def publish(self):
         if self.stream is None:
@@ -93,6 +95,45 @@ class ActiveRoutes:
             self.stream.close()
         self.commands.clear()
         self.pending.clear()
+        self.profiles.clear()
+
+
+class OwnImplementer(MutableMapping):
+    def __init__(self, shared, own):
+        self.shared, self.own = shared, own
+
+    def table(self, role):
+        return self.own if role == 'implement' else self.shared
+
+    def __getitem__(self, role):
+        return self.table(role)[role]
+
+    def __setitem__(self, role, value):
+        self.table(role)[role] = value
+
+    def __delitem__(self, role):
+        del self.table(role)[role]
+
+    def __iter__(self):
+        yield from (role for role in self.shared if role != 'implement')
+        yield from self.own
+
+    def __len__(self):
+        return sum(1 for _ in self)
+
+
+class ProfileRoutes:
+    def __init__(self, shared, name):
+        own = shared.profiles.setdefault(name, ({}, {}))
+        vars(self).update(shared=shared,
+                          commands=OwnImplementer(shared.commands, own[0]),
+                          pending=OwnImplementer(shared.pending, own[1]))
+
+    def __getattr__(self, name):
+        return getattr(self.shared, name)
+
+    def __setattr__(self, name, value):
+        setattr(self.shared, name, value)
 
 
 def routes(project):

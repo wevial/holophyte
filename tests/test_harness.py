@@ -744,6 +744,46 @@ class ShadowTableTests(unittest.TestCase):
                      r"effort must be one of low, medium, high, xhigh, "
                      r"got 'extreme'")
 
+class ImplementerProfileTableTests(unittest.TestCase):
+    """`[agents.implementer_profiles.NAME]`: implementer rules, refused under
+    the profile's own name."""
+
+    setUp = ClaudeTableTests.setUp
+
+    def refused(self, table, message):
+        self.target.config_path.write_text(
+            "[agents.implementer_profiles.small]\n" + table)
+        self.target._config = None
+        with self.assertRaisesRegex(
+                SystemExit, r"\[agents\.implementer_profiles\.small\] " + message):
+            holophyte.config.checks.check_config(self.target)
+
+    def test_startup_refuses_a_bad_profile_key_harness_or_effort(self):
+        for table, message in (
+            ('harness = "claude"\nprompt = "x"\n',
+             r"prompt: unknown key; .* accepts: harness, model, effort, "
+             r"orchestration"),
+            ('harness = "cursor"\nmodel = "gpt-6"\n',
+             r"harness: 'cursor' supports adjudicator, adversary, reviewer, "
+             r"not implementer_profiles\.small"),
+            ('harness = "codex"\neffort = "extreme"\n',
+             r"effort must be one of low, medium, high, xhigh, got 'extreme'"),
+        ):
+            with self.subTest(table=table):
+                self.refused(table, message)
+
+    def test_docs_example_is_accepted_at_startup(self):
+        document = (Path(__file__).resolve().parents[1] / "docs"
+                    / "config.md").read_text()
+        example, = [block for block in document.split("```toml\n")[1:]
+                    if "[agents.implementer_profiles." in block.split("```")[0]]
+        self.target.config_path.write_text(example.split("```")[0])
+        holophyte.config.checks.check_config(self.target)
+        profiles = holophyte.agents.harness.implementer_profiles(self.target)
+        self.assertEqual(profiles["sonnet"].turn("go")[4:8],
+                         ["--model", "sonnet", "--effort", "high"])
+
+
 RESULT_DOCUMENT = {"type": "result", "result": "finished work", "num_turns": 3,
                    "total_cost_usd": 0.25,
                    "usage": {"input_tokens": 10, "cache_creation_input_tokens": 20,

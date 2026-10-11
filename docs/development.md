@@ -285,6 +285,8 @@ Each module, one line:
   order, from the worktree to the merge or the pull request.
 - `holophyte/loop/implement.py` — the implement stage and the timed agent turn
   under its scaled budget, the run cap and the transport retry.
+- `holophyte/loop/implementer_profile.py` — `profiled_run`: resolves, probes
+  and records a run's implementer profile, and scopes the run's project to it.
 - `holophyte/loop/trim.py` — the trim step between the implement turn and
   the first review: one turn, its commits judged by subject, file scope and
   verify.
