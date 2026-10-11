@@ -2,7 +2,7 @@ import json
 
 import store
 import ticket_template
-from holophyte import questions, redact
+from holophyte import question_cli, questions, redact
 from holophyte.loop.failure_triage import asked_route
 from holophyte.loop.stop import resumes
 from holophyte.redact import safe_print as print
@@ -10,6 +10,7 @@ from holophyte.redact import safe_print as print
 EVENT = "complexity"
 BODY_CHARS = 24000
 REASON_CHARS = 200
+RECORD_MARGIN = 1024
 
 
 def classifier_profile(run, task):
@@ -67,8 +68,21 @@ def ticket_state(task, config):
     body = task.get("body") or ""
     ticket = ticket_template.parse(body)
     secrets = redact.known_secrets(config)
-    return dict(title=redact.outbound(task.get("title") or "", secrets),
-                body=redact.outbound(body, secrets)[:BODY_CHARS],
-                estimate_min=ticket.estimate_min,
-                criteria=len(ticket.acceptance) + len(ticket.acceptance_done)
-                + len(ticket.acceptance_other))
+    state = dict(title=redact.outbound(task.get("title") or "", secrets),
+                 body="", estimate_min=ticket.estimate_min,
+                 criteria=len(ticket.acceptance) + len(ticket.acceptance_done)
+                 + len(ticket.acceptance_other))
+    room = question_cli.MAX_RECORD - RECORD_MARGIN - len(question_cli.dumped(state))
+    body = redact.outbound(body, secrets)[:BODY_CHARS]
+    return dict(state, body=prefix_fitting_escaped(body, room))
+
+
+def prefix_fitting_escaped(text, room):
+    low, high = 0, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if len(question_cli.dumped(text[:middle])) <= room:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low]

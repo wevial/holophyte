@@ -532,3 +532,13 @@ class ComplexityClassifierTests(ProfileRunFixture):
         self.assertEqual(len(self.verdicts()), 1)
         self.assertEqual(
             [call["mode"] for call in self.claude.calls()].count("question"), 1)
+
+    def test_a_long_escaped_body_keeps_the_record_whole(self):
+        self.claude.answer("large", 0.9, reason="a long ticket")
+        body = VALID_BODY.replace("The thing, added.", "変" * 20000)
+        self.classify(CLASSIFIER, body)
+        prompt = next(call["argv"][-1] for call in self.claude.calls()
+                      if call["mode"] == "question")
+        record = json.loads(prompt.split("```json\n", 1)[1].rsplit("\n```", 1)[0])
+        self.assertEqual((record["estimate_min"], record["criteria"]), (5, 1))
+        self.assertTrue(record["body"].startswith("# Add a thing"))

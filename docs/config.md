@@ -1636,8 +1636,8 @@ Startup refuses `route = true` without `profiles`, and a `profiles` entry
 naming a profile `[agents.implementer_profiles]` does not define, naming
 `[questions.complexity]`. A `jev` backend reads `url` and `key_env` from
 `[questions]` and returns no reason. The question sees the ticket's redacted
-title and body (its first 24000 characters), its estimate and its number of
-acceptance criteria. Each run asks once; a continuation of a paused run that
+title and body (its first 24000 characters, fewer when escaping would push
+the record past 96 KiB), its estimate and its number of acceptance criteria. Each run asks once; a continuation of a paused run that
 already has a verdict does not ask again. The run records one detail
 `complexity` event whose payload holds `verdict` (null when the question
 failed), `confidence`, `reason` (its first line, at most 200 characters),
