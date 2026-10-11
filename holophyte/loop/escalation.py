@@ -17,6 +17,13 @@ CHOICE_RE = re.compile(
 
 
 def escalate(conn, run_id, ticket_id):
+    try:
+        requeue_on_default(conn, run_id, ticket_id)
+    except Exception as error:
+        print(f"[holo2] escalation skipped: {error}")
+
+
+def requeue_on_default(conn, run_id, ticket_id):
     row = latest_profile(conn, run_id)
     profile = row and row[1]["profile"]
     kind, reason = conn.execute(
@@ -25,8 +32,10 @@ def escalate(conn, run_id, ticket_id):
     if profile is None or not (
             kind in KINDS or (reason or "").startswith(ROUND_CAP_REASON)):
         return
-    why = held_back(conn, run_id, ticket_id)
-    if why is None:
+    if conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
+                    " AND kind = 'steer_cap_park'", (run_id,)).fetchone():
+        why = "parked for the operator"
+    else:
         note = (f"{ESCALATION_NOTE} implementer profile {profile} failed"
                 f" ({reason}); requeued once on the default implementer")
         try:
@@ -40,15 +49,6 @@ def escalate(conn, run_id, ticket_id):
                            "profile": profile, "failure_kind": kind,
                            "requeued": why == "requeued", "why": why}))
     print(f"[holo2] {summary}")
-
-
-def held_back(conn, run_id, ticket_id):
-    if escalated_from(conn, run_id) is not None:
-        return "already escalated"
-    if conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
-                    " AND kind = 'steer_cap_park'", (run_id,)).fetchone():
-        return "parked for the operator"
-    return None
 
 
 def brief(conn, run_id, branch, head):

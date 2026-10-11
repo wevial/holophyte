@@ -431,6 +431,9 @@ class EscalationTests(LoopFixture):
 
         self.assertEqual(self.read("SELECT failureKind FROM runs ORDER BY id"),
                          [("infra",), ("verify",)])
+        self.assertEqual([payload["profile"] for _, payload
+                          in self.events("implementer_profile")],
+                         ["sonnet", None])
         self.assertEqual(self.factory_requeues(), [])
         self.assertEqual(self.events("escalation"), [])
 

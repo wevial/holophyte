@@ -120,7 +120,8 @@ def _run_stages(run, task):
             beat_s, test.sha if test else start_sha, ticket, verify_cmd,
             budget_min, conflicts=conflicts,
             opening=maintainer_notes.requeue_context(conn, run_id)
-            + escalation.brief(conn, run_id, branch, start_sha)
+            + escalation.brief(conn, run_id, branch,
+                               test.sha if test else start_sha)
             + maintainer_notes.take_hints(conn, run_id)
             + (test.opening() if test else ""),
             shadow=None if resume or not cut else shadow_starter(
