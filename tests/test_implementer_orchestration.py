@@ -129,7 +129,7 @@ class OrchestrationBriefTests(LoopFixture):
                 return 0, "ready"
             implement_calls.append(cmd)
             if cmd[0] == "claude":
-                return 0, "You've hit your limit"
+                return 1, "You've hit your limit"
             Commit("the thing", path="app.txt").play(Path(cwd), 1)
             return 0, "done"
 

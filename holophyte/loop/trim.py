@@ -6,7 +6,7 @@ from pathlib import Path
 
 import store
 from holophyte.agents.agent_routes import routes
-from holophyte.agents.fallback import outage_reason
+from holophyte.agents.fallback import failed_turn, outage_reason
 from holophyte.config.config_tables import trim_config, verify_config
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import InfraFailure, run_verify, sh, with_baseline
@@ -85,7 +85,7 @@ def _turn(project, conn, run_id, beat_s, wt, budget_min, goal):
         return str(error), f"the route could not start: {error}"
     if timed_out:
         return out, "the turn timed out"
-    outage = outage_reason(getattr(out, "command", ""), out)
+    outage = failed_turn(out) and outage_reason(getattr(out, "command", ""), out)
     if outage:
         return out, f"the route failed: {outage}"
     if _killed_by_signal(out, timed_out):
