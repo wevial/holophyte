@@ -13,6 +13,7 @@ from unittest.mock import patch
 import store
 from holophyte.config import config_tables
 from holophyte.config.project import Project
+from holophyte.loop import task_worktree
 from holophyte.story.witness import LOG_TAIL_BYTES, main_tip, red_kind, run_witnesses
 from store.stories import approve_story, file_story, witness_ledger
 
@@ -484,6 +485,27 @@ class WitnessSetupTests(WitnessRunnerFixture, unittest.TestCase):
         self.assertIn("[setup failed]", log)
         self.assertIn("no docker binary", log)
         self.assertFalse(self.marker.exists())
+
+    def test_a_later_setup_that_cannot_launch_keeps_the_earlier_output(self):
+        target = self.project('[worktree]\nsetup = '
+                              '["printf \'first-%s\\\\n\' done", "docker up"]\n')
+        self.approve([("W1", "tests/test_w1.py", "true", PASSES)])
+        real = task_worktree.run_verify
+
+        def launch(command, *args, **kwargs):
+            if command == "docker up":
+                raise FileNotFoundError("no docker binary")
+            return real(command, *args, **kwargs)
+
+        with patch("holophyte.loop.task_worktree.run_verify",
+                   side_effect=launch):
+            (row,) = run_witnesses(target, self.conn, self.story_id,
+                                   main_tip(target), "loop", copy_files=True)
+
+        self.assertEqual((row.verdict, row.redKind), ("red", "exception"))
+        log = Path(row.evidencePath).read_text()
+        self.assertIn("first-done", log)
+        self.assertIn("no docker binary", log)
 
     def test_a_witness_command_out_of_budget_keeps_the_setup_output(self):
         target = self.project(

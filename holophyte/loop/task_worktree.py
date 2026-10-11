@@ -124,6 +124,8 @@ def _run_setup_commands(project, wt, commands, deadline):
                                  rerun=False)
         except subprocess.TimeoutExpired as e:
             ok, out = False, timeout_report(command, e)
+        except OSError as error:
+            ok, out = False, f"[holo2] could not launch: {error}"
         if not ok:
             return False, (f"[holo2] worktree setup command {n} of "
                            f"{len(commands)} FAILED: {redact_values(command)}\n"
