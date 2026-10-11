@@ -3,7 +3,7 @@ import json
 
 import store
 import ticket_template
-from holophyte.agents.agent_routes import routes
+from holophyte.agents.agent_routes import ProfileRoutes, routes
 from holophyte.agents.agent_turns import turn_label
 from holophyte.agents.harness import PROFILES_KEY, implementer_profiles
 from holophyte.agents.probes import (
@@ -51,14 +51,15 @@ def profiled_run(run, task):
 
 
 def scoped(project, name):
-    """The view shares the project's route state, so an outage switch holds."""
+    """The view shares the project's route state but switches its own
+    implementer: a default route's fallback does not displace the profile."""
     if name is None:
         return project
     agents = config_table(project, "agents")
     config = dict(project.config(),
                   agents=dict(agents, implementer=agents[PROFILES_KEY][name]))
     view = dataclasses.replace(project, _config=config)
-    view._active_agent_routes = routes(project)
+    view._active_agent_routes = ProfileRoutes(routes(project), name)
     return view
 
 

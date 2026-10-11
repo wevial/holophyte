@@ -154,7 +154,7 @@ PINNED = {
     "holophyte/loop/follow_ups.py": 5,
     "holophyte/loop/gates.py": 20,
     "holophyte/loop/implement.py": 8,
-    "holophyte/loop/implementer_profile.py": 1,
+    "holophyte/loop/implementer_profile.py": 2,
     "holophyte/loop/merge_gate.py": 10,
     "holophyte/loop/merge_lock.py": 0,
     "holophyte/loop/pause_notice.py": 1,

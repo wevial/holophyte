@@ -260,12 +260,15 @@ def implementer_line(name):
 
 
 @contextmanager
-def profile_routes(db, reviews, probe=(0, "ready"), pause=False):
+def profile_routes(db, reviews, probe=(0, "ready"), pause=False, down=()):
     """Implement and fix turns run through the real role dispatch, so their
-    `agent_turn` labels come from the route the run resolved."""
+    `agent_turn` labels come from the route the run resolved. A model in
+    `down` is out of quota on every turn after its probe."""
     def runner(cmd, cwd, timeout, **kwargs):
         if cmd[-1] == PROBE_GOAL:
             return probe if "sonnet" in cmd else (0, "ready")
+        if any(model in cmd for model in down):
+            return 1, "You've hit your limit"
         Commit("the thing", path=f"work-{uuid.uuid4().hex}.txt").play(
             Path(cwd), 0)
         if pause:
@@ -304,8 +307,9 @@ def resume_in_this_process(target, body):
 
 
 class ImplementerProfileTests(LoopFixture):
-    def run_ticket(self, body, *reviews, probe=(0, "ready"), pause=False):
-        with profile_routes(self.db, reviews, probe, pause) as dispatch:
+    def run_ticket(self, body, *reviews, probe=(0, "ready"), pause=False,
+                   down=()):
+        with profile_routes(self.db, reviews, probe, pause, down) as dispatch:
             self.loop(fake=dispatch, provider=StubProvider(
                 dict(a_task(), body=body)))
 
@@ -384,3 +388,24 @@ class ImplementerProfileTests(LoopFixture):
         self.assertEqual(self.read(
             "SELECT outcome, failureKind FROM runs ORDER BY id")[-1],
             ("failed", "infra"))
+
+    def test_default_route_fallback_leaves_a_healthy_profile_in_place(self):
+        self.configure(PROFILES + '[agents]\nimplementer_fallback = "codex exec"\n')
+        down_at_startup = (1, "You've hit your limit")
+        with patch.object(holophyte.cli.operator, "probe_implementer",
+                          return_value=holophyte.agents.probes.ProbeResult(
+                              ["claude", "--model", "opus"], *down_at_startup,
+                              timeout=90)):
+            self.run_ticket(implementer_line("sonnet"), APPROVE)
+        self.assertEqual(self.turns(), ["claude sonnet"])
+        self.assertEqual(self.profiles()[0]["label"], "claude sonnet")
+
+    def test_profile_outage_switch_holds_for_its_turns_not_the_default(self):
+        self.configure(PROFILES + '[agents]\nimplementer_fallback = "codex exec"\n')
+        tickets = (dict(a_task(1), body=implementer_line("sonnet")),
+                   dict(a_task(2), body=VALID_BODY))
+        with profile_routes(self.db, (REQUEST_CHANGES, APPROVE, APPROVE),
+                            down=("sonnet",)) as dispatch:
+            self.loop(fake=dispatch, provider=StubProvider(*tickets))
+        self.assertEqual(self.turns(),
+                         ["claude sonnet", "codex", "codex", "claude opus"])
