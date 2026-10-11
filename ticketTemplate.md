@@ -146,7 +146,9 @@ Estimate: N min · Depends on: <ticket IDs or "none">
 <!-- Optional, beside the estimate: `Orchestration: off`, `Orchestration:
 subagents` or `Orchestration: workflow` overrides the project's
 `[agents.implementer] orchestration` for this ticket's implement turn. Leave
-the line out to use the project's setting. -->
+the line out to use the project's setting. A line reading `Implementer:
+NAME` runs the ticket on the `[agents.implementer_profiles.NAME]` profile;
+filing refuses a NAME the project does not configure. -->
 
 ## Open questions
 

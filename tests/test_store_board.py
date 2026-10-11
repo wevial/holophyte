@@ -24,7 +24,7 @@ from holophyte.config.project import Project  # noqa: E402 - after the sys.path 
 
 
 def body(title="Add export endpoint", depends="none", what=True,
-         evidence=False, ui_change=None, mockup=False):
+         evidence=False, ui_change=None, mockup=False, implementer=None):
     what_line = ("**What:** GET /orders.csv streams the current user's orders"
                  " as CSV.\n\n") if what else ""
     evidence_section = ("## Evidence\n\n- The orders page with its Export"
@@ -33,6 +33,7 @@ def body(title="Add export endpoint", depends="none", what=True,
     mockup_section = ("## Mock-up\n\nhttps://claude.ai/artifact/3f2a9c\n\n"
                       "Approved 2026-10-07: the orders page with its Export"
                       " button\n\n") if mockup else ""
+    implementer_line = f"Implementer: {implementer}\n" if implementer else ""
     return f"""\
 # {title}
 
@@ -71,7 +72,7 @@ python3 -m unittest test_orders_export
 ## Estimate & dependencies
 
 Estimate: 25 min · Depends on: {depends}
-
+{implementer_line}
 ## Open questions
 
 - None
@@ -261,6 +262,40 @@ class StoreBoardTests(unittest.TestCase):
         self.configure('mode = "pr"')
         filed = store.board.file_ticket(self.conn, self.project_id, "NAT",
                                         body(ui_change="major"))
+        self.assertEqual(self.row(filed)[1], "ready")
+
+    def configure_profiles(self):
+        config = Project.locate(self.repo, adopt=False).config_path
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            '[agents.implementer_profiles.sonnet]\nharness = "claude"\n'
+            'model = "sonnet"\n[agents.implementer_profiles.opus]\n'
+            'harness = "claude"\nmodel = "opus"\n')
+
+    def test_an_implementer_naming_no_configured_profile_is_refused(self):
+        self.configure_profiles()
+        with self.assertRaises(store.board.FilingRefused) as refused:
+            store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                    body(implementer="haiku"))
+        self.assertIn("'Implementer: haiku' names no configured profile;"
+                      " configured: opus, sonnet", str(refused.exception))
+        self.assertEqual((self.ticket_count(), self.seq()), (0, 0))
+
+    def test_a_draft_naming_no_configured_profile_never_moves_to_ready(self):
+        self.configure_profiles()
+        draft = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                        body(implementer="haiku"), "backlog")
+        with self.assertRaises(store.board.FilingRefused) as refused:
+            store.board.move_ticket(self.conn, self.project_id, draft,
+                                    "ready", self.row(draft)[3])
+        self.assertIn("'Implementer: haiku' names no configured profile",
+                      str(refused.exception))
+        self.assertEqual(self.row(draft)[2], "backlog")
+
+    def test_an_implementer_naming_a_configured_profile_is_filed(self):
+        self.configure_profiles()
+        filed = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                        body(implementer="sonnet"))
         self.assertEqual(self.row(filed)[1], "ready")
 
 
