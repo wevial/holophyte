@@ -416,12 +416,10 @@ class EscalationTests(LoopFixture):
         self.run_ticket(Commit("more work", path="more.txt"), REQUEST_CHANGES,
                         Idle())
 
-        self.assertEqual(self.read("SELECT COUNT(*) FROM runs"), [(2,)])
+        ((first,), _) = self.read("SELECT id FROM runs ORDER BY id")
         self.assertNotEqual(self.ticket_status(), [("ready",)])
         self.assertEqual(len(self.factory_requeues()), 1)
-        ((first,), (second,)) = self.read("SELECT id FROM runs ORDER BY id")
-        self.assertEqual([payload["requeued"] for run, payload
-                          in self.events("escalation") if run == second], [])
+        self.assertEqual([run for run, _ in self.events("escalation")], [first])
 
     def test_infra_on_a_profile_and_verify_on_the_default_are_not_escalated(self):
         self.configure(PROFILES)
