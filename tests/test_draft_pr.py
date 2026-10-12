@@ -234,6 +234,19 @@ class UiDraftPullRequestTests(DraftFixture):
         self.assert_held()
         self.assertEqual(len(self.held_events()), 2)
 
+    def test_a_fix_on_a_held_draft_is_reviewed_first_under_review_fixes(self):
+        self.configure(UI + "review_fixes = true\n")
+        self.fake_route(states=[self.pr_state(draft=True)])
+        self.run_ui_loop("page.tsx")
+
+        self.serve(self.pr_state(draft=True))
+        holophyte.cli.operator.babysit_ticket(
+            self.project, "KO-131", "make the button blue", out=io.StringIO())
+        fake, _ = self.loop(Commit("fix: blue button", path="page.tsx"),
+                            APPROVE, Idle(""), provider=self.provider())
+        self.assertIn("review", fake.roles)
+        self.assert_held()
+
     def ui_worktree(self, path):
         wt = Path(tempfile.mkdtemp()) / "wt"
         self.addCleanup(shutil.rmtree, wt.parent)

@@ -487,11 +487,11 @@ def _validate_ui(project, values):
         raise SystemExit(f"{project.config_path}: [merge] media_repo"
                          " must be in owner/name form")
     paths, command = values["ui_paths"], values["ui_capture"]
-    if bool(paths) != bool(command.strip()):
-        raise SystemExit("[merge] ui_paths and ui_capture must be configured together")
     if values["pr_draft"] == "ui" and not paths:
         raise SystemExit(f"[holo2] {project.config_path}: [merge] pr_draft"
                          ' = "ui" needs ui_paths')
+    if bool(paths) != bool(command.strip()):
+        raise SystemExit("[merge] ui_paths and ui_capture must be configured together")
     if any(not p.strip() or PurePosixPath(p).is_absolute()
            or ".." in PurePosixPath(p).parts for p in paths):
         raise SystemExit("[merge] ui_paths must be non-empty repository-relative globs")
