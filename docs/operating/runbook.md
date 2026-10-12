@@ -69,7 +69,8 @@ merge lands on the checkout's own `main` and the factory does not push it
 ### A run failed and the ticket needs to go back in the queue
 
 ```
-python3 factory.py PROJECT --requeue HOLO-n --note "why: contract fixed / infra outage / …"
+python3 factory.py PROJECT --requeue HOLO-n \
+    --note "why: contract fixed / infra outage / …"
 # then relaunch the loop
 ```
 
@@ -104,7 +105,8 @@ through the store API.
 ### A run is parked on its pull request and the PR has moved
 
 ```
-python3 factory.py PROJECT --babysit HOLO-n --note "new review thread; look at the PR again"
+python3 factory.py PROJECT --babysit HOLO-n \
+    --note "new review thread; look at the PR again"
 # then relaunch the loop
 ```
 
@@ -124,8 +126,9 @@ merged -- is named and nothing is written.
 
 ```
 # in the preserved worktree, after main was rewritten (a filtered history, say)
-git rebase --onto main OLD_BASE task/HOLO-n-SLUG     # the same commits, new tips
-python3 factory.py PROJECT --repoint HOLO-n $(git rev-parse HEAD) --note "rebased onto the filtered main; same commits"
+git rebase --onto main OLD_BASE task/HOLO-n-SLUG  # same commits, new tips
+python3 factory.py PROJECT --repoint HOLO-n $(git rev-parse HEAD) \
+    --note "rebased onto the filtered main; same commits"
 python3 factory.py PROJECT --approve HOLO-n --note "looked at the diff; merge"
 ```
 
@@ -157,7 +160,8 @@ The loop refuses to reuse it and says so. In the worktree:
 ```
 git merge --no-ff main        # resolve, keep the branch's intent
 git commit -q -m "HOLO-n: merge main (why)"
-python3 factory.py PROJECT --requeue HOLO-n --note "merged main into the preserved branch by hand"
+python3 factory.py PROJECT --requeue HOLO-n \
+    --note "merged main into the preserved branch by hand"
 ```
 
 ### The loop died mid-review
@@ -253,7 +257,7 @@ maintainer's own handle, names exactly one ticket key, and asks for a change
 to that ticket's work.
 
 ```
-holo steer -p PROJECT HOLO-n -n "the comment's text, as written" --author "maintainer via Lotuspod"
+holo steer -p PROJECT HOLO-n -n "COMMENT" --author "maintainer via Lotuspod"
 ```
 
 The note is the comment's text as written. Add `--hint` only when the
